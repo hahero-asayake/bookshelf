@@ -1,0 +1,53 @@
+name: Sync library.json from Obsidian vault
+
+on:
+  # obsidianリポジトリからrepository_dispatchで呼び出す（推奨）
+  repository_dispatch:
+    types: [obsidian-sync]
+  # 手動実行
+  workflow_dispatch: {}
+  # 定期実行（フォールバック）
+  schedule:
+    - cron: '0 * * * *'  # 毎時0分
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      # bookshelfリポジトリをチェックアウト
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      # obsidianリポジトリをサブディレクトリにチェックアウト
+      - uses: actions/checkout@v4
+        with:
+          repository: hahero-asayake/obsidian
+          path: _obsidian
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Copy library.json
+        run: |
+          # Obsidian vault内のbookshelfフォルダからコピー
+          # パスはObsidian側でフォルダを選択した場所に合わせて調整
+          SOURCE="_obsidian/80_🚀project/81_🚀development/bookshelf/library.json"
+          if [ -f "$SOURCE" ]; then
+            cp "$SOURCE" data/library.json
+            echo "Copied library.json ($(wc -c < data/library.json) bytes)"
+          else
+            echo "library.json not found at $SOURCE — skipping"
+            exit 0
+          fi
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "vault-sync-bot"
+          git config user.email "vault-sync-bot@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add data/library.json
+            git commit -m "sync: update library.json from obsidian vault"
+            git push
+          else
+            echo "No changes."
+          fi

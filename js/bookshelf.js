@@ -2,6 +2,37 @@
 // Debug flag system
 const DEBUG = false; // Set to false for production
 
+// --- Obsidian Folder Sync: IndexedDB helpers ---
+function openSyncDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('bookshelf-sync', 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore('config');
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function getStoredDirHandle() {
+    const db = await openSyncDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('config', 'readonly');
+        const req = tx.objectStore('config').get('obsidianDirHandle');
+        req.onsuccess = e => resolve(e.target.result || null);
+        req.onerror = e => reject(e.target.error);
+    });
+}
+
+async function storeDirHandle(handle) {
+    const db = await openSyncDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('config', 'readwrite');
+        tx.objectStore('config').put(handle, 'obsidianDirHandle');
+        tx.oncomplete = resolve;
+        tx.onerror = e => reject(e.target.error);
+    });
+}
+// --- end IndexedDB helpers ---
+
 function debugLog(...args) {
     if (DEBUG) {
         console.log('[BookShelf Debug]', ...args);
@@ -40,7 +71,10 @@ class VirtualBookshelf {
             
             // Initialize HighlightsManager after bookshelf is ready
             window.highlightsManager = new HighlightsManager(this);
-            
+
+            // Initialize Obsidian folder sync
+            await this.initObsidianSync();
+
             // Hide loading indicator
             this.hideLoading();
         } catch (error) {
@@ -206,6 +240,12 @@ class VirtualBookshelf {
         document.getElementById('export-unified').addEventListener('click', () => {
             this.exportUnifiedData();
         });
+
+        // Obsidian folder sync button
+        const obsidianSyncBtn = document.getElementById('obsidian-sync-btn');
+        if (obsidianSyncBtn) {
+            obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
+        }
 
         // Bookshelf management
         const manageBookshelves = document.getElementById('manage-bookshelves');
@@ -1174,7 +1214,121 @@ class VirtualBookshelf {
 
     saveUserData() {
         localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
+        if (this.obsidianDirHandle) {
+            this.syncToObsidianFolder().catch(() => {});
+        }
     }
+
+    // --- Obsidian Folder Sync methods ---
+
+    async initObsidianSync() {
+        this.obsidianDirHandle = null;
+        if (!('showDirectoryPicker' in window)) return;
+        try {
+            const handle = await getStoredDirHandle();
+            if (!handle) return;
+            const perm = await handle.queryPermission({ mode: 'readwrite' });
+            if (perm === 'granted') {
+                this.obsidianDirHandle = handle;
+                this.updateSyncStatus('connected', handle.name);
+            }
+        } catch (e) {
+            // 権限切れなどは無視
+        }
+    }
+
+    async selectObsidianFolder() {
+        if (!('showDirectoryPicker' in window)) {
+            alert('フォルダ選択はChrome/Edgeでのみ対応しています。');
+            return;
+        }
+        try {
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            await storeDirHandle(handle);
+            this.obsidianDirHandle = handle;
+            this.updateSyncStatus('connected', handle.name);
+            await this.syncToObsidianFolder();
+            alert(`✅ 「${handle.name}」に同期しました。以降は保存のたびに自動更新されます。`);
+        } catch (e) {
+            if (e.name !== 'AbortError') console.error('フォルダ選択エラー:', e);
+        }
+    }
+
+    buildExportData() {
+        const exportData = {
+            exportDate: new Date().toISOString(),
+            books: {},
+            bookshelves: this.userData.bookshelves || [],
+            settings: (() => {
+                const { affiliateId, ...rest } = this.userData.settings;
+                return rest;
+            })(),
+            bookOrder: this.userData.bookOrder || {},
+            stats: { totalBooks: 0, notesCount: Object.keys(this.userData.notes || {}).length },
+            version: '2.0'
+        };
+        const books = {};
+        (this.books || []).forEach(book => {
+            if (!book.asin) return;
+            books[book.asin] = {
+                title: book.title || '',
+                authors: book.authors || '',
+                acquiredTime: book.acquiredTime || Date.now(),
+                readStatus: book.readStatus || 'UNREAD',
+                productImage: book.productImage || '',
+                source: book.source || 'unknown',
+                addedDate: book.addedDate || Date.now(),
+                memo: this.userData.notes?.[book.asin]?.memo || '',
+                rating: this.userData.notes?.[book.asin]?.rating || 0,
+                ...(book.updatedAsin?.trim() && { updatedAsin: book.updatedAsin })
+            };
+        });
+        exportData.books = books;
+        exportData.stats.totalBooks = Object.keys(books).length;
+        return exportData;
+    }
+
+    async syncToObsidianFolder() {
+        if (!this.obsidianDirHandle) return;
+        try {
+            let perm = await this.obsidianDirHandle.queryPermission({ mode: 'readwrite' });
+            if (perm !== 'granted') {
+                perm = await this.obsidianDirHandle.requestPermission({ mode: 'readwrite' });
+            }
+            if (perm !== 'granted') {
+                this.obsidianDirHandle = null;
+                this.updateSyncStatus('disconnected');
+                return;
+            }
+            const fileHandle = await this.obsidianDirHandle.getFileHandle('library.json', { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(this.buildExportData(), null, 2));
+            await writable.close();
+            this.updateSyncStatus('synced', this.obsidianDirHandle.name);
+        } catch (e) {
+            console.error('Obsidian同期エラー:', e);
+        }
+    }
+
+    updateSyncStatus(state, folderName = '') {
+        const btn = document.getElementById('obsidian-sync-btn');
+        const status = document.getElementById('obsidian-sync-status');
+        if (!btn || !status) return;
+        if (state === 'synced') {
+            btn.textContent = `📁 ${folderName}`;
+            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み`;
+            status.style.color = '#4caf50';
+        } else if (state === 'connected') {
+            btn.textContent = `📁 ${folderName}`;
+            status.textContent = '接続中...';
+            status.style.color = '#888';
+        } else {
+            btn.textContent = '📁 Obsidianフォルダを選択';
+            status.textContent = '';
+        }
+    }
+
+    // --- end Obsidian Folder Sync methods ---
 
     // exportUserData function removed - replaced with exportUnifiedData
 
@@ -2181,54 +2335,7 @@ class VirtualBookshelf {
      * 蔵書データをエクスポート
      */
     exportUnifiedData() {
-        console.log('📦 エクスポート開始...');
-        
-        // 既存のlibrary.jsonを読み込み、現在のデータと統合
-        const exportData = {
-            exportDate: new Date().toISOString(),
-            books: {}, // 後で設定
-            bookshelves: this.userData.bookshelves || [],
-            settings: (() => {
-                const { affiliateId, ...settingsWithoutAffiliateId } = this.userData.settings;
-                return settingsWithoutAffiliateId;
-            })(),
-            bookOrder: this.userData.bookOrder || {},
-            stats: {
-                totalBooks: 0,
-                notesCount: Object.keys(this.userData.notes || {}).length
-            },
-            version: '2.0'
-        };
-        
-        // 現在表示されている書籍データをbooks形式に変換
-        const books = {};
-        if (this.books && this.books.length > 0) {
-            console.log(`📚 ${this.books.length}冊の書籍データを処理中...`);
-            this.books.forEach(book => {
-                const asin = book.asin;
-                if (asin) {
-                    books[asin] = {
-                        title: book.title || '',
-                        authors: book.authors || '',
-                        acquiredTime: book.acquiredTime || Date.now(),
-                        readStatus: book.readStatus || 'UNREAD',
-                        productImage: book.productImage || '',
-                        source: book.source || 'unknown',
-                        addedDate: book.addedDate || Date.now(),
-                        memo: this.userData.notes?.[asin]?.memo || '',
-                        rating: this.userData.notes?.[asin]?.rating || 0,
-                        // updatedAsinフィールドも含める
-                        ...(book.updatedAsin && book.updatedAsin.trim() !== '' && { updatedAsin: book.updatedAsin })
-                    };
-                }
-            });
-        }
-        
-        exportData.books = books;
-        exportData.stats.totalBooks = Object.keys(books).length;
-        
-        console.log(`📊 エクスポートデータ: ${exportData.stats.totalBooks}冊, ${exportData.stats.notesCount}メモ`);
-        
+        const exportData = this.buildExportData();
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -2238,7 +2345,6 @@ class VirtualBookshelf {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
         alert('📦 library.json をエクスポートしました！');
     }
 
