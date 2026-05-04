@@ -248,7 +248,13 @@ class VirtualBookshelf {
         // Obsidian folder sync button
         const obsidianSyncBtn = document.getElementById('obsidian-sync-btn');
         if (obsidianSyncBtn) {
-            obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
+            obsidianSyncBtn.addEventListener('click', () => {
+                if (this.obsidianDirHandle) {
+                    this.reloadFromObsidianFile();
+                } else {
+                    this.selectObsidianFolder();
+                }
+            });
         }
 
         // Series grouping toggle
@@ -1254,7 +1260,17 @@ class VirtualBookshelf {
             const perm = await handle.queryPermission({ mode: 'readwrite' });
             if (perm === 'granted') {
                 this.obsidianDirHandle = handle;
-                this.updateSyncStatus('connected', handle.name);
+                this.updateSyncStatus('loading', handle.name);
+                const loaded = await this.loadFromObsidianFile();
+                this.updateSyncStatus('synced', handle.name);
+                if (loaded) {
+                    this.updateDisplay();
+                    this.updateStats();
+                    this.updateBookshelfSelector();
+                    this.renderBookshelfOverview();
+                }
+            } else {
+                this.updateSyncStatus('reconnect');
             }
         } catch (e) {
             // 権限切れなどは無視
@@ -1270,9 +1286,19 @@ class VirtualBookshelf {
             const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
             await storeDirHandle(handle);
             this.obsidianDirHandle = handle;
-            this.updateSyncStatus('connected', handle.name);
-            await this.syncToObsidianFolder();
-            alert(`✅ 「${handle.name}」に同期しました。以降は保存のたびに自動更新されます。`);
+            this.updateSyncStatus('loading', handle.name);
+            const loaded = await this.loadFromObsidianFile();
+            if (loaded) {
+                this.updateDisplay();
+                this.updateStats();
+                this.updateBookshelfSelector();
+                this.renderBookshelfOverview();
+                this.updateSyncStatus('synced', handle.name);
+                alert(`✅ 「${handle.name}」から ${this.books.length} 冊を読み込みました。以降は保存のたびに自動更新されます。`);
+            } else {
+                await this.syncToObsidianFolder();
+                alert(`✅ 「${handle.name}」に同期しました。以降は保存のたびに自動更新されます。`);
+            }
         } catch (e) {
             if (e.name === 'AbortError') return;
             console.error('フォルダ選択エラー:', e);
@@ -1281,6 +1307,62 @@ class VirtualBookshelf {
             } else {
                 alert(`フォルダ選択エラー: ${e.message}`);
             }
+        }
+    }
+
+    async loadFromObsidianFile() {
+        if (!this.obsidianDirHandle) return false;
+        try {
+            const fileHandle = await this.obsidianDirHandle.getFileHandle('library.json');
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data.books) return false;
+
+            const booksArray = [];
+            const notes = {};
+            Object.entries(data.books).forEach(([asin, book]) => {
+                const { memo, rating, ...bookData } = book;
+                booksArray.push({ asin, ...bookData });
+                if (memo || rating) notes[asin] = { memo: memo || '', rating: rating || 0 };
+            });
+
+            localStorage.setItem('virtualBookshelf_library', JSON.stringify(booksArray));
+
+            const currentSettings = this.userData?.settings || {};
+            this.userData = {
+                ...(this.userData || {}),
+                bookshelves: data.bookshelves || this.userData?.bookshelves || [],
+                notes,
+                bookOrder: data.bookOrder || this.userData?.bookOrder || {},
+                settings: { ...currentSettings, ...(data.settings || {}) },
+            };
+            localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
+
+            await this.bookManager.initialize();
+            this.books = this.bookManager.getAllBooks();
+            if (window.seriesManager) window.seriesManager.clearCache();
+            return true;
+        } catch (e) {
+            if (e.name === 'NotFoundError') return false;
+            console.error('ファイル読み込みエラー:', e);
+            return false;
+        }
+    }
+
+    async reloadFromObsidianFile() {
+        if (!this.obsidianDirHandle) return;
+        this.updateSyncStatus('loading', this.obsidianDirHandle.name);
+        const loaded = await this.loadFromObsidianFile();
+        if (loaded) {
+            this.updateDisplay();
+            this.updateStats();
+            this.updateBookshelfSelector();
+            this.renderBookshelfOverview();
+            this.updateSyncStatus('synced', this.obsidianDirHandle.name);
+        } else {
+            this.updateSyncStatus('synced', this.obsidianDirHandle.name);
+            alert('library.json が見つかりません。');
         }
     }
 
@@ -1346,12 +1428,16 @@ class VirtualBookshelf {
         if (!btn || !status) return;
         if (state === 'synced') {
             btn.textContent = `📁 ${folderName}`;
-            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み`;
+            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み（クリックで再読み込み）`;
             status.style.color = '#4caf50';
-        } else if (state === 'connected') {
+        } else if (state === 'loading') {
             btn.textContent = `📁 ${folderName}`;
-            status.textContent = '接続中...';
+            status.textContent = '⏳ 読み込み中...';
             status.style.color = '#888';
+        } else if (state === 'reconnect') {
+            btn.textContent = '📁 再接続が必要';
+            status.textContent = '⚠️ クリックしてフォルダを再選択';
+            status.style.color = '#f44336';
         } else {
             btn.textContent = '📁 Obsidianフォルダを選択';
             status.textContent = '';
