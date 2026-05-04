@@ -55,7 +55,8 @@ class VirtualBookshelf {
         this.booksPerPage = 50;
         this.sortOrder = 'custom';
         this.sortDirection = 'desc';
-        
+        this.seriesGroupingEnabled = false;
+
         this.init();
     }
 
@@ -71,6 +72,9 @@ class VirtualBookshelf {
             
             // Initialize HighlightsManager after bookshelf is ready
             window.highlightsManager = new HighlightsManager(this);
+
+            // Initialize SeriesManager
+            window.seriesManager = new SeriesManager();
 
             // Initialize Obsidian folder sync
             await this.initObsidianSync();
@@ -245,6 +249,16 @@ class VirtualBookshelf {
         const obsidianSyncBtn = document.getElementById('obsidian-sync-btn');
         if (obsidianSyncBtn) {
             obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
+        }
+
+        // Series grouping toggle
+        const seriesGroupingCheckbox = document.getElementById('series-grouping');
+        if (seriesGroupingCheckbox) {
+            seriesGroupingCheckbox.addEventListener('change', e => {
+                this.seriesGroupingEnabled = e.target.checked;
+                this.applyFilters();
+                this.updateDisplay();
+            });
         }
 
         // Bookshelf management
@@ -452,6 +466,16 @@ class VirtualBookshelf {
             return true;
         });
         
+        // Series grouping: show only representative book per series
+        if (this.seriesGroupingEnabled && window.seriesManager) {
+            const { seriesGroups, bookToSeriesMap } = window.seriesManager.detectAndGroupSeries(this.books);
+            const representativeAsins = new Set(seriesGroups.map(s => s.representativeBook.asin));
+            this.filteredBooks = this.filteredBooks.filter(book => {
+                const inSeries = bookToSeriesMap.has(book.asin);
+                return !inSeries || representativeAsins.has(book.asin);
+            });
+        }
+
         this.applySorting();
     }
 
@@ -1239,7 +1263,7 @@ class VirtualBookshelf {
 
     async selectObsidianFolder() {
         if (!('showDirectoryPicker' in window)) {
-            alert('フォルダ選択はChrome/Edgeでのみ対応しています。');
+            alert('このブラウザはフォルダ選択に対応していません。\nChrome または Edge をご利用ください。');
             return;
         }
         try {
@@ -1250,7 +1274,13 @@ class VirtualBookshelf {
             await this.syncToObsidianFolder();
             alert(`✅ 「${handle.name}」に同期しました。以降は保存のたびに自動更新されます。`);
         } catch (e) {
-            if (e.name !== 'AbortError') console.error('フォルダ選択エラー:', e);
+            if (e.name === 'AbortError') return;
+            console.error('フォルダ選択エラー:', e);
+            if (e.name === 'SecurityError') {
+                alert('フォルダへのアクセスが拒否されました。\nHTTPS環境（GitHub Pages）またはlocalhost上で実行してください。');
+            } else {
+                alert(`フォルダ選択エラー: ${e.message}`);
+            }
         }
     }
 
