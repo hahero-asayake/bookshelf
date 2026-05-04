@@ -1327,7 +1327,15 @@ class VirtualBookshelf {
                 if (memo || rating) notes[asin] = { memo: memo || '', rating: rating || 0 };
             });
 
-            localStorage.setItem('virtualBookshelf_library', JSON.stringify(booksArray));
+            localStorage.setItem('virtualBookshelf_library', JSON.stringify({
+                books: booksArray,
+                metadata: {
+                    totalBooks: booksArray.length,
+                    manuallyAdded: 0,
+                    importedFromKindle: booksArray.length,
+                    lastImportDate: data.exportDate || new Date().toISOString()
+                }
+            }));
 
             const currentSettings = this.userData?.settings || {};
             this.userData = {
