@@ -1509,21 +1509,27 @@ class VirtualBookshelf {
             if (!this.userData._storage) this.userData._storage = {};
             this.userData._storage.allInternalId = allInternalId;
 
-            // library.json: 全書誌（除外含む）
-            // _storage.libraryBooks に全本があればそれを優先、無ければ this.books から構築
-            const libraryBooks = (this.userData._storage && Array.isArray(this.userData._storage.libraryBooks))
-                ? this.userData._storage.libraryBooks
-                : (this.books || []).map(b => ({
-                    asin: b.asin,
-                    title: b.title || '',
-                    authors: b.authors || '',
-                    acquiredTime: b.acquiredTime || Date.now(),
-                    readStatus: b.readStatus || 'UNKNOWN',
-                    productImage: b.productImage || '',
-                    source: b.source || 'unknown',
-                    addedDate: b.addedDate || Date.now(),
-                    ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
-                }));
+            // library.json: 全書誌（除外含む全本）を毎回再構築
+            // 表示中の本（this.books）+ 除外で this.books に無い本（_storage.libraryBooks から取り出す）
+            const exclusionsSet = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
+            const currentBooksByAsin = new Map((this.books || []).map(b => [b.asin, b]));
+            const excludedCache = ((this.userData._storage && this.userData._storage.libraryBooks) || [])
+                .filter(b => exclusionsSet.has(b.asin) && !currentBooksByAsin.has(b.asin));
+            const normalize = (b) => ({
+                asin: b.asin,
+                title: b.title || '',
+                authors: b.authors || '',
+                acquiredTime: b.acquiredTime || Date.now(),
+                readStatus: b.readStatus || 'UNKNOWN',
+                productImage: b.productImage || '',
+                source: b.source || 'unknown',
+                addedDate: b.addedDate || Date.now(),
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+            });
+            const libraryBooks = [
+                ...Array.from(currentBooksByAsin.values()).map(normalize),
+                ...excludedCache.map(normalize)
+            ];
             this.userData._storage.libraryBooks = libraryBooks;
             await this.storage.writeLibrary({
                 exportDate: new Date().toISOString(),
@@ -2322,15 +2328,27 @@ class VirtualBookshelf {
         try {
             const results = await this.bookManager.importSelectedBooks(selectedBooks);
             this.showImportResults(results);
-            
+
             // 表示を更新
             this.books = this.bookManager.getAllBooks();
+
+            // bookOrder.all の先頭に新規追加分を反映
+            if (!this.userData.bookOrder) this.userData.bookOrder = {};
+            if (!Array.isArray(this.userData.bookOrder.all)) this.userData.bookOrder.all = [];
+            const allOrderSet = new Set(this.userData.bookOrder.all);
+            for (const imported of (results.imported || [])) {
+                if (!allOrderSet.has(imported.asin)) {
+                    this.userData.bookOrder.all.unshift(imported.asin);
+                }
+            }
+
+            this.saveUserData();
             this.applyFilters();
             this.updateStats();
-            
+
             // 選択UIを非表示
             document.getElementById('book-selection').style.display = 'none';
-            
+
         } catch (error) {
             console.error('選択インポートエラー:', error);
             alert(`❌ インポートに失敗しました: ${error.message}`);
