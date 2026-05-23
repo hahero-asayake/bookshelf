@@ -2638,6 +2638,12 @@ class VirtualBookshelf {
         const manualAuthors = document.getElementById('manual-authors');
         if (manualAuthors) manualAuthors.value = '';
 
+        const manualImageUrl = document.getElementById('manual-image-url');
+        if (manualImageUrl) manualImageUrl.value = '';
+
+        const manualAcquiredDate = document.getElementById('manual-acquired-date');
+        if (manualAcquiredDate) manualAcquiredDate.value = '';
+
         // ASINステータスをリセット
         const asinStatus = document.getElementById('asin-status');
         if (asinStatus) asinStatus.style.display = 'none';
@@ -2773,6 +2779,8 @@ class VirtualBookshelf {
         const asin = document.getElementById('manual-asin').value.trim();
         const title = document.getElementById('manual-title').value.trim();
         const authors = document.getElementById('manual-authors').value.trim();
+        const imageUrl = document.getElementById('manual-image-url')?.value.trim() || '';
+        const dateInput = document.getElementById('manual-acquired-date')?.value;
 
         if (!asin) {
             alert('📝 ASINを入力してください');
@@ -2784,23 +2792,44 @@ class VirtualBookshelf {
             return;
         }
 
+        const acquiredTime = dateInput ? new Date(dateInput).getTime() : Date.now();
+
         try {
             const bookData = {
                 asin: asin,
                 title: title,
                 authors: authors || '著者未設定',
-                readStatus: 'UNKNOWN',
-                acquiredTime: Date.now()
+                readStatus: dateInput ? 'READ' : 'UNKNOWN',
+                acquiredTime,
+                ...(imageUrl ? { productImage: imageUrl } : {})
             };
 
             const newBook = await this.bookManager.addBookManually(bookData);
+
+            // _storage.libraryBooks にも追加（除外/同期で参照されるため）
+            if (this.userData._storage) {
+                if (!Array.isArray(this.userData._storage.libraryBooks)) {
+                    this.userData._storage.libraryBooks = [];
+                }
+                if (!this.userData._storage.libraryBooks.some(b => b.asin === newBook.asin)) {
+                    this.userData._storage.libraryBooks.push({ ...newBook });
+                }
+            }
+            // all bookshelf 順序の先頭に追加
+            if (!this.userData.bookOrder) this.userData.bookOrder = {};
+            if (!Array.isArray(this.userData.bookOrder.all)) this.userData.bookOrder.all = [];
+            if (!this.userData.bookOrder.all.includes(newBook.asin)) {
+                this.userData.bookOrder.all.unshift(newBook.asin);
+            }
+
             this.showAddBookSuccess(newBook);
-            
+
             // 表示を更新
             this.books = this.bookManager.getAllBooks();
+            this.saveUserData();
             this.applyFilters();
             this.updateStats();
-            
+
         } catch (error) {
             console.error('追加エラー:', error);
             alert(`❌ 追加に失敗しました: ${error.message}`);
