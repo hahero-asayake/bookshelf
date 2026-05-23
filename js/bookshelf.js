@@ -1562,8 +1562,12 @@ class VirtualBookshelf {
             });
 
             // bookshelves.json + 各 slug ファイル
+            // internalId 未設定なら発行して this.userData.bookshelves[i] に書き戻す（永続化）
+            for (const b of (this.userData.bookshelves || [])) {
+                if (!b.internalId) b.internalId = generateInternalId();
+            }
             const bookshelvesMetaEntries = (this.userData.bookshelves || []).map(b => ({
-                internalId: b.internalId || generateInternalId(),
+                internalId: b.internalId,
                 slug: b.id,
                 name: b.name,
                 parent: b.parent || allInternalId,
@@ -1829,11 +1833,13 @@ class VirtualBookshelf {
             // Create new bookshelf
             const newBookshelf = {
                 id: `bookshelf_${Date.now()}`,
+                internalId: generateInternalId(),
                 name: name,
                 emoji: emojiInput.value.trim() || '📚',
                 description: descriptionInput.value.trim(),
                 isPublic: isPublicInput.checked,
                 books: [],
+                notes: {},
                 createdAt: new Date().toISOString()
             };
             this.userData.bookshelves.push(newBookshelf);
@@ -1896,11 +1902,27 @@ class VirtualBookshelf {
         }
 
         bookshelf.books.push(asin);
+
+        // bookOrder にも反映（表示順序の正本）
+        if (!this.userData.bookOrder) this.userData.bookOrder = {};
+        if (!Array.isArray(this.userData.bookOrder[bookshelfId])) {
+            this.userData.bookOrder[bookshelfId] = [];
+        }
+        if (!this.userData.bookOrder[bookshelfId].includes(asin)) {
+            this.userData.bookOrder[bookshelfId].unshift(asin);
+        }
+
         this.saveUserData();
         this.renderBookshelfList(); // Update the bookshelf management UI if open
-        
+
+        // 開いている詳細モーダルを再描画して「現在の本棚」を更新
+        const book = this.books.find(b => b.asin === asin);
+        if (book) {
+            this.showBookDetail(book, true);
+        }
+
         alert(`✅ 「${bookshelf.name}」に追加しました！`);
-        
+
         // Reset the dropdown
         bookshelfSelect.value = '';
     }
@@ -1922,6 +1944,9 @@ class VirtualBookshelf {
         
         if (confirm(`📚 「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n⚠️ 本自体は削除されず、この本棚からのみ削除されます。`)) {
             bookshelf.books = bookshelf.books.filter(bookAsin => bookAsin !== asin);
+            if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder[bookshelfId])) {
+                this.userData.bookOrder[bookshelfId] = this.userData.bookOrder[bookshelfId].filter(a => a !== asin);
+            }
             this.saveUserData();
             this.renderBookshelfList(); // Update the bookshelf management UI if open
             
@@ -2021,6 +2046,7 @@ class VirtualBookshelf {
 
     /**
      * 長文メモ books/<ASIN>__<title>.md を作成 / Obsidian で開く
+     * 同期フォルダが vault 外の場合があるため、初回に vault 名・サブパスを設定で持つ
      */
     async openOrCreateBookMemo(asin) {
         if (!this.obsidianDirHandle) {
@@ -2051,20 +2077,52 @@ class VirtualBookshelf {
 
         const fileName = this.storage.bookMemoFileName(asin, book.title);
         const relativePath = `books/${fileName}`;
+        const folderName = this.obsidianDirHandle.name;
 
-        // Obsidian URL を試行（vault 名・サブパスは設定から、無ければ dirHandle.name を vault 名と仮定）
-        const settings = this.userData.settings || {};
-        const vaultName = settings.obsidianVaultName || this.obsidianDirHandle.name;
-        const subPath = settings.obsidianSubPath || '';
-        const filePath = subPath ? `${subPath.replace(/^\/+|\/+$/g, '')}/${relativePath}` : relativePath;
-        const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
+        // ファイルパスをクリップボードへコピー（失敗しても続行）
+        try {
+            await navigator.clipboard.writeText(relativePath);
+        } catch (e) { /* permission/non-secure context は無視 */ }
 
-        const message = created
-            ? `✅ 詳細メモを作成しました\n\n📁 ${relativePath}\n\nObsidian を開きますか？\n（Obsidian未起動 or vault名が異なる場合は失敗します）`
-            : `📝 詳細メモ\n\n📁 ${relativePath}\n\nObsidian を開きますか？`;
+        if (!this.userData.settings) this.userData.settings = {};
+        const settings = this.userData.settings;
 
-        if (confirm(message)) {
-            window.location.href = obsidianUrl;
+        // vault 名未設定 → 初回プロンプトで設定
+        if (typeof settings.obsidianVaultName === 'undefined') {
+            const vaultInput = prompt(
+                '📝 Obsidian で開くために vault 名を設定します\n\n' +
+                '同期フォルダが vault 自体: vault 名を入力\n' +
+                '同期フォルダが vault 外: 空欄でキャンセル（毎回パス表示のみ）\n' +
+                '同期フォルダが vault のサブフォルダ: vault 名を入力（後でサブパスも聞きます）',
+                folderName
+            );
+            if (vaultInput && vaultInput.trim()) {
+                settings.obsidianVaultName = vaultInput.trim();
+                const subInput = prompt(
+                    'vault 内のサブパス（同期フォルダが vault のサブフォルダの場合のみ）\n\n例: project/bookshelf\n空欄で vault 直下',
+                    ''
+                );
+                settings.obsidianSubPath = (subInput || '').trim();
+            } else {
+                settings.obsidianVaultName = '';
+                settings.obsidianSubPath = '';
+            }
+            this.saveUserData();
+        }
+
+        const vaultName = settings.obsidianVaultName;
+        const action = created ? '✅ 詳細メモを作成しました' : '📝 詳細メモ';
+
+        if (vaultName) {
+            const subPath = (settings.obsidianSubPath || '').replace(/^\/+|\/+$/g, '');
+            const filePath = subPath ? `${subPath}/${relativePath}` : relativePath;
+            const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
+
+            if (confirm(`${action}\n\n📁 ${folderName}/${relativePath}\n（クリップボードにコピー済み）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
+                window.location.href = obsidianUrl;
+            }
+        } else {
+            alert(`${action}\n\n📁 ${folderName}/${relativePath}\n（クリップボードにコピー済み）\n\nファイルパスをコピーしてエディタで開いてください。\n（Obsidian で直接開きたい場合は vault 名を設定）`);
         }
 
         const modal = document.getElementById('book-modal');
