@@ -439,6 +439,10 @@ class VirtualBookshelf {
     }
 
     applyFilters() {
+        if (!Array.isArray(this.books)) {
+            this.filteredBooks = [];
+            return;
+        }
         this.filteredBooks = this.books.filter(book => {
             // Bookshelf filter
             if (this.currentBookshelf && this.currentBookshelf !== 'all') {

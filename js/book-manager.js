@@ -23,11 +23,16 @@ class BookManager {
         const savedLibrary = localStorage.getItem('virtualBookshelf_library');
         if (savedLibrary) {
             try {
-                this.library = JSON.parse(savedLibrary);
-                // Data restored from localStorage
-                return;
+                const parsed = JSON.parse(savedLibrary);
+                if (parsed && Array.isArray(parsed.books) && parsed.metadata && typeof parsed.metadata === 'object') {
+                    this.library = parsed;
+                    return;
+                }
+                console.warn('localStorage の library 形式が不正のため破棄します', parsed);
+                localStorage.removeItem('virtualBookshelf_library');
             } catch (error) {
-                // LocalStorage loading error (fallback to file)
+                console.warn('localStorage の library パース失敗、破棄します', error);
+                localStorage.removeItem('virtualBookshelf_library');
             }
         }
         
