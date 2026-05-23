@@ -925,6 +925,9 @@ class VirtualBookshelf {
                             <a class="amazon-link" href="${amazonUrl}" target="_blank" rel="noopener">
                                 📚 Amazonで見る
                             </a>
+                            <button class="btn btn-secondary memo-file-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
+                                📝 ${userNote.hasDetailMemo ? '詳細メモを開く' : '詳細メモを書く'}
+                            </button>
                             <button class="btn btn-warning exclude-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
                                 🚫 all から除外
                             </button>
@@ -1059,6 +1062,13 @@ class VirtualBookshelf {
         if (excludeBtn) {
             excludeBtn.addEventListener('click', (e) => {
                 this.excludeBook(e.target.dataset.asin);
+            });
+        }
+
+        const memoFileBtn = modalBody.querySelector('.memo-file-btn');
+        if (memoFileBtn) {
+            memoFileBtn.addEventListener('click', (e) => {
+                this.openOrCreateBookMemo(e.currentTarget.dataset.asin);
             });
         }
         
@@ -2001,6 +2011,60 @@ class VirtualBookshelf {
         this.updateDisplay();
         this.updateStats();
         this.renderExclusionsList();
+    }
+
+    /**
+     * 長文メモ books/<ASIN>__<title>.md を作成 / Obsidian で開く
+     */
+    async openOrCreateBookMemo(asin) {
+        if (!this.obsidianDirHandle) {
+            alert('⚠️ 同期フォルダを選択してから操作してください。');
+            return;
+        }
+        const book = this.books.find(b => b.asin === asin);
+        if (!book) return;
+
+        this.storage.setDirHandle(this.obsidianDirHandle);
+
+        let created = false;
+        try {
+            const exists = await this.storage.bookMemoExists(asin, book.title);
+            if (!exists) {
+                const content = this.storage.buildBookMemoTemplate(book);
+                await this.storage.writeBookMemo(asin, book.title, content);
+                created = true;
+            }
+            if (!this.userData.notes[asin]) this.userData.notes[asin] = { memo: '', rating: 0 };
+            this.userData.notes[asin].hasDetailMemo = true;
+            this.saveUserData();
+        } catch (e) {
+            console.error('長文メモ作成エラー:', e);
+            alert(`❌ ファイル操作に失敗しました: ${e.message}`);
+            return;
+        }
+
+        const fileName = this.storage.bookMemoFileName(asin, book.title);
+        const relativePath = `books/${fileName}`;
+
+        // Obsidian URL を試行（vault 名・サブパスは設定から、無ければ dirHandle.name を vault 名と仮定）
+        const settings = this.userData.settings || {};
+        const vaultName = settings.obsidianVaultName || this.obsidianDirHandle.name;
+        const subPath = settings.obsidianSubPath || '';
+        const filePath = subPath ? `${subPath.replace(/^\/+|\/+$/g, '')}/${relativePath}` : relativePath;
+        const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
+
+        const message = created
+            ? `✅ 詳細メモを作成しました\n\n📁 ${relativePath}\n\nObsidian を開きますか？\n（Obsidian未起動 or vault名が異なる場合は失敗します）`
+            : `📝 詳細メモ\n\n📁 ${relativePath}\n\nObsidian を開きますか？`;
+
+        if (confirm(message)) {
+            window.location.href = obsidianUrl;
+        }
+
+        const modal = document.getElementById('book-modal');
+        if (modal && modal.classList.contains('show')) {
+            this.showBookDetail(book, true);
+        }
     }
 
     showExclusionsModal() {
