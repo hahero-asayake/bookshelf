@@ -383,6 +383,16 @@ class VirtualBookshelf {
             this.clearLibrary();
         });
 
+        // Exclusions modal
+        const showExclusionsBtn = document.getElementById('show-exclusions');
+        if (showExclusionsBtn) {
+            showExclusionsBtn.addEventListener('click', () => this.showExclusionsModal());
+        }
+        const exclusionsModalClose = document.getElementById('exclusions-modal-close');
+        if (exclusionsModalClose) {
+            exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
+        }
+
         // Static share modal
         const staticShareModalClose = document.getElementById('static-share-modal-close');
         if (staticShareModalClose) {
@@ -915,6 +925,9 @@ class VirtualBookshelf {
                             <a class="amazon-link" href="${amazonUrl}" target="_blank" rel="noopener">
                                 📚 Amazonで見る
                             </a>
+                            <button class="btn btn-warning exclude-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
+                                🚫 all から除外
+                            </button>
                             <button class="btn btn-danger delete-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
                                 🗑️ 本を削除
                             </button>
@@ -1039,6 +1052,13 @@ class VirtualBookshelf {
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
                 this.deleteBook(e.target.dataset.asin);
+            });
+        }
+
+        const excludeBtn = modalBody.querySelector('.exclude-btn');
+        if (excludeBtn) {
+            excludeBtn.addEventListener('click', (e) => {
+                this.excludeBook(e.target.dataset.asin);
             });
         }
         
@@ -1391,7 +1411,8 @@ class VirtualBookshelf {
             _storage: {
                 allInternalId: state.allBookshelf.internalId,
                 exclusions: state.exclusions.excludedASINs || [],
-                main: state.privateMain
+                main: state.privateMain,
+                libraryBooks: libraryBooks
             }
         };
         localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
@@ -1478,18 +1499,22 @@ class VirtualBookshelf {
             if (!this.userData._storage) this.userData._storage = {};
             this.userData._storage.allInternalId = allInternalId;
 
-            // library.json: 書誌のみ
-            const libraryBooks = (this.books || []).map(b => ({
-                asin: b.asin,
-                title: b.title || '',
-                authors: b.authors || '',
-                acquiredTime: b.acquiredTime || Date.now(),
-                readStatus: b.readStatus || 'UNKNOWN',
-                productImage: b.productImage || '',
-                source: b.source || 'unknown',
-                addedDate: b.addedDate || Date.now(),
-                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
-            }));
+            // library.json: 全書誌（除外含む）
+            // _storage.libraryBooks に全本があればそれを優先、無ければ this.books から構築
+            const libraryBooks = (this.userData._storage && Array.isArray(this.userData._storage.libraryBooks))
+                ? this.userData._storage.libraryBooks
+                : (this.books || []).map(b => ({
+                    asin: b.asin,
+                    title: b.title || '',
+                    authors: b.authors || '',
+                    acquiredTime: b.acquiredTime || Date.now(),
+                    readStatus: b.readStatus || 'UNKNOWN',
+                    productImage: b.productImage || '',
+                    source: b.source || 'unknown',
+                    addedDate: b.addedDate || Date.now(),
+                    ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+                }));
+            this.userData._storage.libraryBooks = libraryBooks;
             await this.storage.writeLibrary({
                 exportDate: new Date().toISOString(),
                 books: libraryBooks
@@ -1898,6 +1923,142 @@ class VirtualBookshelf {
     }
 
     /**
+     * all本棚から除外（library.json には残るが表示・操作対象から外れる）
+     */
+    excludeBook(asin) {
+        const book = this.books.find(b => b.asin === asin);
+        if (!book) {
+            alert('❌ 指定された書籍が見つかりません');
+            return;
+        }
+        if (!confirm(`🚫 「${book.title}」を all から除外しますか？\n\n再Kindle取込でも復活しません。\n除外一覧から解除できます。`)) {
+            return;
+        }
+        if (!this.userData._storage) this.userData._storage = {};
+        if (!Array.isArray(this.userData._storage.exclusions)) this.userData._storage.exclusions = [];
+        if (!Array.isArray(this.userData._storage.libraryBooks)) {
+            this.userData._storage.libraryBooks = (this.books || []).map(b => ({
+                asin: b.asin,
+                title: b.title || '',
+                authors: b.authors || '',
+                acquiredTime: b.acquiredTime || Date.now(),
+                readStatus: b.readStatus || 'UNKNOWN',
+                productImage: b.productImage || '',
+                source: b.source || 'unknown',
+                addedDate: b.addedDate || Date.now(),
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+            }));
+        }
+        if (!this.userData._storage.exclusions.includes(asin)) {
+            this.userData._storage.exclusions.push(asin);
+        }
+
+        this.bookManager.library.books = this.bookManager.library.books.filter(b => b.asin !== asin);
+        this.bookManager.library.metadata.totalBooks = this.bookManager.library.books.length;
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        this.books = this.bookManager.getAllBooks();
+
+        if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all)) {
+            this.userData.bookOrder.all = this.userData.bookOrder.all.filter(a => a !== asin);
+        }
+
+        this.saveUserData();
+        this.applyFilters();
+        this.updateDisplay();
+        this.updateStats();
+        this.closeModal();
+        alert(`✅ 「${book.title}」を除外しました`);
+    }
+
+    /**
+     * 除外を解除（library.json から書誌を取り出して復活）
+     */
+    unexcludeBook(asin) {
+        if (!this.userData._storage || !Array.isArray(this.userData._storage.exclusions)) return;
+        if (!this.userData._storage.exclusions.includes(asin)) return;
+
+        this.userData._storage.exclusions = this.userData._storage.exclusions.filter(a => a !== asin);
+
+        const libraryBooks = this.userData._storage.libraryBooks || [];
+        const book = libraryBooks.find(b => b.asin === asin);
+        if (book) {
+            if (!this.bookManager.library.books.some(b => b.asin === asin)) {
+                this.bookManager.library.books.push(book);
+            }
+            this.bookManager.library.metadata.totalBooks = this.bookManager.library.books.length;
+            localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+            this.books = this.bookManager.getAllBooks();
+
+            if (!this.userData.bookOrder) this.userData.bookOrder = {};
+            if (!Array.isArray(this.userData.bookOrder.all)) this.userData.bookOrder.all = [];
+            if (!this.userData.bookOrder.all.includes(asin)) {
+                this.userData.bookOrder.all.unshift(asin);
+            }
+        }
+
+        this.saveUserData();
+        this.applyFilters();
+        this.updateDisplay();
+        this.updateStats();
+        this.renderExclusionsList();
+    }
+
+    showExclusionsModal() {
+        const modal = document.getElementById('exclusions-modal');
+        if (!modal) return;
+        modal.classList.add('show');
+        this.renderExclusionsList();
+    }
+
+    closeExclusionsModal() {
+        const modal = document.getElementById('exclusions-modal');
+        if (modal) modal.classList.remove('show');
+    }
+
+    renderExclusionsList() {
+        const listDiv = document.getElementById('exclusions-list');
+        if (!listDiv) return;
+
+        if (!this.obsidianDirHandle) {
+            listDiv.innerHTML = '<p style="color: #888;">同期フォルダを選択すると除外一覧を管理できます。</p>';
+            return;
+        }
+
+        const exclusions = (this.userData._storage && this.userData._storage.exclusions) || [];
+        if (exclusions.length === 0) {
+            listDiv.innerHTML = '<p style="color: #888;">除外中の本はありません。</p>';
+            return;
+        }
+
+        const libraryBooks = (this.userData._storage && this.userData._storage.libraryBooks) || [];
+        const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const items = exclusions.map(asin => {
+            const book = libraryBooks.find(b => b.asin === asin) || {};
+            const title = escapeHtml(book.title || asin);
+            const authors = escapeHtml(book.authors || '');
+            const image = book.productImage ? escapeHtml(book.productImage) : '';
+            return `
+                <div class="exclusion-item" style="display: flex; align-items: center; padding: 0.5rem; border-bottom: 1px solid #eee; gap: 1rem;">
+                    ${image ? `<img src="${image}" alt="" style="width: 40px; height: 60px; object-fit: cover;">` : '<div style="width: 40px; height: 60px; background: #eee; display: flex; align-items: center; justify-content: center;">📖</div>'}
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: bold; overflow: hidden; text-overflow: ellipsis;">${title}</div>
+                        <div style="color: #888; font-size: 0.85rem;">${authors}</div>
+                        <div style="color: #aaa; font-size: 0.75rem;">${escapeHtml(asin)}</div>
+                    </div>
+                    <button class="btn btn-small btn-primary unexclude-btn" data-asin="${escapeHtml(asin)}">✓ 解除</button>
+                </div>
+            `;
+        }).join('');
+
+        listDiv.innerHTML = items;
+        listDiv.querySelectorAll('.unexclude-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.unexcludeBook(e.currentTarget.dataset.asin);
+            });
+        });
+    }
+
+    /**
      * 書籍を完全削除（BookManager連携）
      */
     async deleteBook(asin) {
@@ -1919,12 +2080,12 @@ class VirtualBookshelf {
         try {
             // BookManager で完全削除
             await this.bookManager.deleteBook(asin, true);
-            
+
             // ユーザーデータからも削除
             if (this.userData.notes[asin]) {
                 delete this.userData.notes[asin];
             }
-            
+
             // 全ての本棚から削除
             if (this.userData.bookshelves) {
                 this.userData.bookshelves.forEach(bookshelf => {
@@ -1932,6 +2093,19 @@ class VirtualBookshelf {
                         bookshelf.books = bookshelf.books.filter(id => id !== asin);
                     }
                 });
+            }
+
+            // _storage の参照からも削除
+            if (this.userData._storage) {
+                if (Array.isArray(this.userData._storage.libraryBooks)) {
+                    this.userData._storage.libraryBooks = this.userData._storage.libraryBooks.filter(b => b.asin !== asin);
+                }
+                if (Array.isArray(this.userData._storage.exclusions)) {
+                    this.userData._storage.exclusions = this.userData._storage.exclusions.filter(a => a !== asin);
+                }
+            }
+            if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all)) {
+                this.userData.bookOrder.all = this.userData.bookOrder.all.filter(a => a !== asin);
             }
 
             this.saveUserData();

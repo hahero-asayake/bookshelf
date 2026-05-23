@@ -136,6 +136,7 @@
                         <div class="management-buttons">
                             <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
                             <button id="import-kindle" class="btn btn-secondary">📥 Kindleインポート</button>
+                            <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
                             <button id="export-unified" class="btn btn-secondary">💾 データエクスポート</button>
                             <button id="obsidian-sync-btn" class="btn btn-secondary">📁 Obsidianフォルダを選択</button>
                             <span id="obsidian-sync-status" style="font-size:0.85em;margin-left:4px;"></span>
@@ -309,6 +310,22 @@
                 </div>
                 <div id="import-results" class="import-results" style="display: none;">
                     <!-- Import results will be shown here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exclusions Modal -->
+    <div id="exclusions-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="exclusions-modal-close">×</button>
+            <div class="modal-header">
+                <h2>🚫 除外中の本</h2>
+            </div>
+            <div class="modal-body">
+                <p style="color: #7f8c8d; font-size: 0.9rem;">all本棚から除外された本の一覧。Kindle再取込時もここに含まれる本は反映されません。</p>
+                <div id="exclusions-list">
+                    <!-- 除外中の本がここに -->
                 </div>
             </div>
         </div>
