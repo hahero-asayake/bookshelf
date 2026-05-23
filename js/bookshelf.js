@@ -56,6 +56,7 @@ class VirtualBookshelf {
         this.sortOrder = 'custom';
         this.sortDirection = 'desc';
         this.seriesGroupingEnabled = false;
+        this.storage = new BookshelfStorage();
 
         this.init();
     }
@@ -1264,6 +1265,7 @@ class VirtualBookshelf {
             const perm = await handle.queryPermission({ mode: 'readwrite' });
             if (perm === 'granted') {
                 this.obsidianDirHandle = handle;
+                this.storage.setDirHandle(handle);
                 this.updateSyncStatus('loading', handle.name);
                 const loaded = await this.loadFromObsidianFile();
                 this.updateSyncStatus('synced', handle.name);
@@ -1277,7 +1279,7 @@ class VirtualBookshelf {
                 this.updateSyncStatus('reconnect');
             }
         } catch (e) {
-            // 権限切れなどは無視
+            console.warn('initObsidianSync:', e);
         }
     }
 
@@ -1290,6 +1292,7 @@ class VirtualBookshelf {
             const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
             await storeDirHandle(handle);
             this.obsidianDirHandle = handle;
+            this.storage.setDirHandle(handle);
             this.updateSyncStatus('loading', handle.name);
             const loaded = await this.loadFromObsidianFile();
             if (loaded) {
@@ -1301,7 +1304,7 @@ class VirtualBookshelf {
                 alert(`✅ 「${handle.name}」から ${this.books.length} 冊を読み込みました。以降は保存のたびに自動更新されます。`);
             } else {
                 await this.syncToObsidianFolder();
-                alert(`✅ 「${handle.name}」に同期しました。以降は保存のたびに自動更新されます。`);
+                alert(`✅ 「${handle.name}」に新ファイル構造で初期化しました。以降は保存のたびに自動更新されます。`);
             }
         } catch (e) {
             if (e.name === 'AbortError') return;
@@ -1316,50 +1319,85 @@ class VirtualBookshelf {
 
     async loadFromObsidianFile() {
         if (!this.obsidianDirHandle) return false;
+        this.storage.setDirHandle(this.obsidianDirHandle);
         try {
-            const fileHandle = await this.obsidianDirHandle.getFileHandle('library.json');
-            const file = await fileHandle.getFile();
-            const text = await file.text();
-            const data = JSON.parse(text);
-            if (!data.books) return false;
+            const format = await this.storage.detectFormat();
 
-            const booksArray = [];
-            const notes = {};
-            Object.entries(data.books).forEach(([asin, book]) => {
-                const { memo, rating, ...bookData } = book;
-                booksArray.push({ asin, ...bookData });
-                if (memo || rating) notes[asin] = { memo: memo || '', rating: rating || 0 };
-            });
+            if (format === 'legacy') {
+                console.log('旧形式 library.json を検出。新ファイル構造へマイグレーションします。');
+                await this.storage.migrateFromLegacy();
+            } else if (format === 'empty') {
+                return false;
+            }
 
-            localStorage.setItem('virtualBookshelf_library', JSON.stringify({
-                books: booksArray,
-                metadata: {
-                    totalBooks: booksArray.length,
-                    manuallyAdded: 0,
-                    importedFromKindle: booksArray.length,
-                    lastImportDate: data.exportDate || new Date().toISOString()
-                }
-            }));
-
-            const currentSettings = this.userData?.settings || {};
-            this.userData = {
-                ...(this.userData || {}),
-                bookshelves: data.bookshelves || this.userData?.bookshelves || [],
-                notes,
-                bookOrder: data.bookOrder || this.userData?.bookOrder || {},
-                settings: { ...currentSettings, ...(data.settings || {}) },
-            };
-            localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
-
-            await this.bookManager.initialize();
-            this.books = this.bookManager.getAllBooks();
-            if (window.seriesManager) window.seriesManager.clearCache();
-            return true;
+            const state = await this.storage.loadAll();
+            return this._applyLoadedState(state);
         } catch (e) {
-            if (e.name === 'NotFoundError') return false;
             console.error('ファイル読み込みエラー:', e);
             return false;
         }
+    }
+
+    _applyLoadedState(state) {
+        if (!state.allBookshelf || !state.library) return false;
+
+        const libraryBooks = Array.isArray(state.library.books) ? state.library.books : [];
+        const excluded = new Set(state.exclusions.excludedASINs || []);
+
+        const visibleBooks = libraryBooks.filter(b => !excluded.has(b.asin));
+        this.bookManager.library = {
+            books: visibleBooks,
+            metadata: {
+                totalBooks: visibleBooks.length,
+                manuallyAdded: visibleBooks.filter(b => b.source === 'manual_add').length,
+                importedFromKindle: visibleBooks.filter(b => b.source === 'kindle_import').length,
+                lastImportDate: state.library.exportDate || null
+            }
+        };
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        this.books = this.bookManager.getAllBooks();
+
+        const notes = {};
+        Object.entries(state.allBookshelf.notes || {}).forEach(([asin, n]) => {
+            notes[asin] = {
+                memo: n.memo || '',
+                rating: n.rating || 0,
+                ...(n.hasDetailMemo ? { hasDetailMemo: true } : {})
+            };
+        });
+
+        const bookshelves = (state.bookshelvesMeta.bookshelves || []).map(meta => ({
+            id: meta.slug,
+            internalId: meta.internalId,
+            name: meta.name,
+            ...(meta.color ? { color: meta.color } : {}),
+            parent: meta.parent,
+            appliedPlugins: meta.appliedPlugins || [],
+            isPublic: meta.isPublic || false,
+            books: (state.bookshelfFiles[meta.internalId] && state.bookshelfFiles[meta.internalId].books) || [],
+            notes: (state.bookshelfFiles[meta.internalId] && state.bookshelfFiles[meta.internalId].notes) || {}
+        }));
+
+        const bookOrder = { all: state.allBookshelf.books || [] };
+        bookshelves.forEach(b => { bookOrder[b.id] = b.books; });
+
+        const currentSettings = this.userData?.settings || {};
+        const mergedSettings = { ...currentSettings, ...state.privateSettings };
+        this.userData = {
+            bookshelves,
+            notes,
+            bookOrder,
+            settings: mergedSettings,
+            _storage: {
+                allInternalId: state.allBookshelf.internalId,
+                exclusions: state.exclusions.excludedASINs || [],
+                main: state.privateMain
+            }
+        };
+        localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
+
+        if (window.seriesManager) window.seriesManager.clearCache();
+        return true;
     }
 
     async reloadFromObsidianFile() {
@@ -1378,6 +1416,7 @@ class VirtualBookshelf {
         }
     }
 
+    // 旧形式の単一 library.json ダウンロード用（exportUnifiedData が利用）
     buildExportData() {
         const exportData = {
             exportDate: new Date().toISOString(),
@@ -1412,6 +1451,7 @@ class VirtualBookshelf {
         return exportData;
     }
 
+    // 同期フォルダへの書き出し（新ファイル構造、分散保存）
     async syncToObsidianFolder() {
         if (!this.obsidianDirHandle) return;
         try {
@@ -1424,10 +1464,98 @@ class VirtualBookshelf {
                 this.updateSyncStatus('disconnected');
                 return;
             }
-            const fileHandle = await this.obsidianDirHandle.getFileHandle('library.json', { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(JSON.stringify(this.buildExportData(), null, 2));
-            await writable.close();
+            this.storage.setDirHandle(this.obsidianDirHandle);
+
+            const format = await this.storage.detectFormat();
+            if (format === 'empty') {
+                const { allInternalId } = await this.storage.initEmpty();
+                if (!this.userData._storage) this.userData._storage = {};
+                this.userData._storage.allInternalId = allInternalId;
+            }
+
+            const allInternalId = (this.userData._storage && this.userData._storage.allInternalId)
+                || generateInternalId();
+            if (!this.userData._storage) this.userData._storage = {};
+            this.userData._storage.allInternalId = allInternalId;
+
+            // library.json: 書誌のみ
+            const libraryBooks = (this.books || []).map(b => ({
+                asin: b.asin,
+                title: b.title || '',
+                authors: b.authors || '',
+                acquiredTime: b.acquiredTime || Date.now(),
+                readStatus: b.readStatus || 'UNKNOWN',
+                productImage: b.productImage || '',
+                source: b.source || 'unknown',
+                addedDate: b.addedDate || Date.now(),
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+            }));
+            await this.storage.writeLibrary({
+                exportDate: new Date().toISOString(),
+                books: libraryBooks
+            });
+
+            // exclusions.json
+            await this.storage.writeExclusions({
+                excludedASINs: (this.userData._storage && this.userData._storage.exclusions) || []
+            });
+
+            // bookshelves/all.json
+            const allNotes = {};
+            Object.entries(this.userData.notes || {}).forEach(([asin, n]) => {
+                allNotes[asin] = {
+                    memo: n.memo || '',
+                    rating: n.rating || 0,
+                    ...(n.hasDetailMemo ? { hasDetailMemo: true } : {})
+                };
+            });
+            await this.storage.writeAllBookshelf({
+                internalId: allInternalId,
+                name: 'すべての本',
+                isSpecial: true,
+                defaultBookOrder: this.userData.settings?.defaultBookOrder || 'addedDate-desc',
+                appliedPlugins: [],
+                books: (this.userData.bookOrder && this.userData.bookOrder.all)
+                    || libraryBooks.map(b => b.asin),
+                notes: allNotes
+            });
+
+            // bookshelves.json + 各 slug ファイル
+            const bookshelvesMetaEntries = (this.userData.bookshelves || []).map(b => ({
+                internalId: b.internalId || generateInternalId(),
+                slug: b.id,
+                name: b.name,
+                parent: b.parent || allInternalId,
+                ...(b.color ? { color: b.color } : {}),
+                appliedPlugins: b.appliedPlugins || [],
+                isPublic: b.isPublic || false
+            }));
+            await this.storage.writeBookshelvesMeta({ bookshelves: bookshelvesMetaEntries });
+            for (let i = 0; i < (this.userData.bookshelves || []).length; i++) {
+                const b = this.userData.bookshelves[i];
+                const meta = bookshelvesMetaEntries[i];
+                await this.storage.writeBookshelfFile(meta.slug, {
+                    internalId: meta.internalId,
+                    books: b.books || [],
+                    notes: b.notes || {}
+                });
+            }
+
+            // private/settings.json
+            await this.storage.writePrivateSettings({
+                version: '2.0',
+                ...(this.userData.settings || {})
+            });
+
+            // private/main.json
+            const existingMain = (this.userData._storage && this.userData._storage.main) || {};
+            await this.storage.writePrivateMain({
+                enabledPlugins: existingMain.enabledPlugins || [],
+                appliedPlugins: existingMain.appliedPlugins || [],
+                bookshelves: [allInternalId, ...bookshelvesMetaEntries.map(b => b.internalId)],
+                defaultSort: existingMain.defaultSort || 'addedDate-desc'
+            });
+
             this.updateSyncStatus('synced', this.obsidianDirHandle.name);
         } catch (e) {
             console.error('Obsidian同期エラー:', e);
