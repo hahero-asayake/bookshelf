@@ -866,12 +866,34 @@ class VirtualBookshelf {
         this.updateDisplay();
     }
 
+    _currentBookshelfInternalId() {
+        if (!this.currentBookshelf || this.currentBookshelf === 'all') return null;
+        const bs = this.bookshelfManager.getBySlug(this.currentBookshelf);
+        return bs ? bs.internalId : null;
+    }
+
     showBookDetail(book, isEditMode = false) {
         const modal = document.getElementById('book-modal');
         const modalBody = document.getElementById('modal-body');
 
         const isHidden = this.userData.hiddenBooks && this.userData.hiddenBooks.includes(book.asin);
-        const userNote = this.userData.notes[book.asin] || { memo: '', rating: 0 };
+        const contextInternalId = this._currentBookshelfInternalId();
+        const allRecord = this.userData.notes[book.asin] || {};
+        const resolvedMemo = this.bookshelfManager.resolveMemo(book.asin, contextInternalId);
+        const userNote = {
+            memo: resolvedMemo,
+            rating: this.bookshelfManager.resolveRating(book.asin),
+            hasDetailMemo: allRecord.hasDetailMemo || false
+        };
+        const memoIsInherited = contextInternalId && resolvedMemo && (() => {
+            const bs = this.bookshelfManager.getById(contextInternalId);
+            return !(bs && bs.notes && bs.notes[book.asin] && bs.notes[book.asin].memo);
+        })();
+        const contextLabel = (() => {
+            if (!contextInternalId) return null;
+            const bs = this.bookshelfManager.getById(contextInternalId);
+            return bs ? `${bs.emoji || '📚'} ${bs.name}` : null;
+        })();
         const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
 
         modalBody.innerHTML = `
@@ -974,7 +996,8 @@ class VirtualBookshelf {
                 </div>
                 
                 <div class="book-notes-section" style="${!isEditMode && !userNote.memo ? 'display: none;' : ''}">
-                    <h3>📝 個人メモ</h3>
+                    <h3>📝 個人メモ${contextLabel ? ` <span style="font-size: 0.8rem; color: #888;">（コンテキスト: ${contextLabel}）</span>` : ''}</h3>
+                    ${memoIsInherited ? `<p style="margin: 0 0 0.5rem; color: #888; font-size: 0.85rem;">💡 親または all から継承中。編集すると本棚自身のメモになります。</p>` : ''}
                     ${!isEditMode && userNote.memo ? `
                         <div class="note-display" style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #007bff;">${this.convertMarkdownLinksToHtml(userNote.memo)}</div>
                     ` : ''}
@@ -983,6 +1006,12 @@ class VirtualBookshelf {
                         <h4>📄 プレビュー</h4>
                         <div class="note-preview-content">${isEditMode && userNote.memo ? this.convertMarkdownLinksToHtml(userNote.memo) : ''}</div>
                     </div>
+                    ${isEditMode && contextInternalId ? `
+                        <label style="display: block; margin-top: 0.5rem; color: #555;">
+                            <input type="checkbox" class="apply-to-parent" data-asin="${book.asin}">
+                            親本棚（または all）にも反映
+                        </label>
+                    ` : ''}
                     <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 メモを記入すると自動的に公開されます • 改行は表示に反映されます</p>
 
                     <div class="rating-section" style="${isEditMode ? '' : 'display: none;'}">
@@ -1166,12 +1195,17 @@ class VirtualBookshelf {
 
 
 
-    saveNote(asin, memo) {
-        if (!this.userData.notes[asin]) {
-            this.userData.notes[asin] = { memo: '', rating: 0 };
-        }
-        this.userData.notes[asin].memo = memo;
-        this.saveUserData();
+    async saveNote(asin, memo) {
+        const contextInternalId = this._currentBookshelfInternalId();
+        const applyToParentEl = document.querySelector(`.apply-to-parent[data-asin="${asin}"]`);
+        const alsoApplyToParent = applyToParentEl ? applyToParentEl.checked : false;
+
+        this.bookshelfManager.setMemo(asin, memo, {
+            scope: contextInternalId || 'all',
+            alsoApplyToParent
+        });
+
+        await this.saveUserData();
     }
 
 
