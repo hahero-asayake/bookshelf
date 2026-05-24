@@ -326,6 +326,11 @@ class BookshelfStorage {
     writePrivateSettings(data) { return this._writeJSON(data, 'private', 'settings.json'); }
     writePrivateMain(data) { return this._writeJSON(data, 'private', 'main.json'); }
 
+    readPublicMain() { return this._readJSON('public', 'main.json'); }
+    readPublicSettings() { return this._readJSON('public', 'settings.json'); }
+    writePublicMain(data) { return this._writeJSON(data, 'public', 'main.json'); }
+    writePublicSettings(data) { return this._writeJSON(data, 'public', 'settings.json'); }
+
     async deleteBookshelfFile(slug) {
         try {
             const dir = await this._resolveDir(['bookshelves']);

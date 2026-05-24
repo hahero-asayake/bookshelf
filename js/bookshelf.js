@@ -394,6 +394,12 @@ class VirtualBookshelf {
             exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
         }
 
+        // Copy to public
+        const copyToPublicBtn = document.getElementById('copy-to-public');
+        if (copyToPublicBtn) {
+            copyToPublicBtn.addEventListener('click', () => this.copyToPublic());
+        }
+
         // Static share modal
         const staticShareModalClose = document.getElementById('static-share-modal-close');
         if (staticShareModalClose) {
@@ -2236,6 +2242,67 @@ class VirtualBookshelf {
         this.updateDisplay();
         this.updateStats();
         this.renderExclusionsList();
+    }
+
+    /**
+     * private/main.json + bookshelves.json の isPublic を元に public/main.json と public/settings.json を生成
+     * 公開対象本棚のリストだけが含まれた main.json になる。手動で編集していた場合は上書き確認。
+     */
+    async copyToPublic() {
+        if (!this.obsidianDirHandle) {
+            alert('⚠️ 同期フォルダを選択してから操作してください。');
+            return;
+        }
+        this.storage.setDirHandle(this.obsidianDirHandle);
+
+        const main = (this.userData._storage && this.userData._storage.main) || {};
+        const allId = this.userData._storage && this.userData._storage.allInternalId;
+
+        // 公開対象 internalId 集合（isPublic=true の本棚 + all）
+        const publicSet = new Set(
+            this.bookshelfManager.getBookshelves()
+                .filter(b => b.isPublic)
+                .map(b => b.internalId)
+        );
+        if (allId) publicSet.add(allId);
+
+        const baseOrder = Array.isArray(main.bookshelves)
+            ? main.bookshelves
+            : [allId, ...this.bookshelfManager.getBookshelves().map(b => b.internalId)].filter(Boolean);
+        const filteredBookshelves = baseOrder.filter(id => publicSet.has(id));
+
+        // TODO Phase 5: appliedPlugins から publishable=false を除外
+        const publicMain = {
+            enabledPlugins: main.enabledPlugins || [],
+            appliedPlugins: main.appliedPlugins || [],
+            bookshelves: filteredBookshelves,
+            defaultSort: main.defaultSort || 'addedDate-desc'
+        };
+
+        // 既存確認
+        const existing = await this.storage.readPublicMain();
+        if (existing) {
+            if (!confirm('既に public/main.json があります。\n上書きしますか？\n（手動で編集していた場合、変更が失われます）')) {
+                return;
+            }
+        }
+
+        // 公開 settings は private から affiliateId 等の個人情報を除いてコピー
+        const privateSettings = this.userData.settings || {};
+        const { affiliateId, obsidianVaultName, obsidianSubPath, extensionImportOrigins, ...publicSafe } = privateSettings;
+        const publicSettings = {
+            version: '2.0',
+            ...publicSafe
+        };
+
+        try {
+            await this.storage.writePublicMain(publicMain);
+            await this.storage.writePublicSettings(publicSettings);
+            alert(`✅ public/main.json と public/settings.json を更新しました\n\n公開対象本棚: ${filteredBookshelves.length}個\n（all を含む）`);
+        } catch (e) {
+            console.error('公開にコピーエラー:', e);
+            alert(`❌ 失敗しました: ${e.message}`);
+        }
     }
 
     /**
