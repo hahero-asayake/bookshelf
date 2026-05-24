@@ -158,6 +158,26 @@ class VirtualBookshelf {
             // Obsidian folder sync は private モードのみ
             if (!this.isPublicMode) {
                 await this.initObsidianSync();
+                // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
+                // 重要な同期は flushSync() を明示的に呼ぶ運用とする
+                window.addEventListener('beforeunload', () => {
+                    if (this._syncDebounceTimer) {
+                        clearTimeout(this._syncDebounceTimer);
+                        this._syncDebounceTimer = null;
+                        // 同期的に発火（await は出来ないので最小限）
+                        this._runPendingSync();
+                    }
+                });
+                // ページ非表示時にも flush（モバイル等）
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'hidden' && this._pendingSync) {
+                        if (this._syncDebounceTimer) {
+                            clearTimeout(this._syncDebounceTimer);
+                            this._syncDebounceTimer = null;
+                        }
+                        this._runPendingSync();
+                    }
+                });
             }
 
             // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
@@ -1561,8 +1581,19 @@ class VirtualBookshelf {
         };
     }
 
+    /**
+     * ユーザデータの保存。localStorage は即時、Obsidian 同期は debounce してバックグラウンドで実行。
+     *
+     * 設計意図:
+     *   - 編集 → サイレント sync で UI が再描画されモーダルやフォームが閉じる問題を回避
+     *   - 連続操作 (複数プラグイン有効化、メモ高速入力など) を 1 回の I/O にまとめる
+     *   - await で呼ばれてもブロックしない（同期はバックグラウンドで進む）
+     *   - ページ離脱時は _flushPendingSync() で残り分を強制実行（beforeunload）
+     *
+     * 呼び出し側で「sync 完了を待ちたい」（例: copyToPublic 直前）場合は
+     * 明示的に await this.flushSync() を呼ぶ。
+     */
     async saveUserData() {
-        // _storage.libraryBooks は容量大（蔵書全件）でファイル正本なので localStorage には保存しない
         const persisted = { ...this.userData };
         if (persisted._storage) {
             const { libraryBooks, ...rest } = persisted._storage;
@@ -1574,10 +1605,63 @@ class VirtualBookshelf {
             console.error('localStorage 保存失敗:', e);
         }
         if (this.obsidianDirHandle) {
-            try {
-                await this.syncToObsidianFolder();
-            } catch (e) {
-                console.error('Obsidian同期エラー:', e);
+            this._scheduleSync();
+        }
+    }
+
+    /**
+     * Obsidian 同期をスケジュール（debounce）
+     */
+    _scheduleSync() {
+        this._pendingSync = true;
+        if (this._syncDebounceTimer) clearTimeout(this._syncDebounceTimer);
+        const delay = this._syncDebounceMs || 800;
+        this._syncDebounceTimer = setTimeout(() => {
+            this._syncDebounceTimer = null;
+            this._runPendingSync();
+        }, delay);
+    }
+
+    async _runPendingSync() {
+        if (this._syncInProgress) {
+            // 既に進行中。完了後にもう一度走らせるため pending を残す
+            this._pendingSync = true;
+            return;
+        }
+        if (!this._pendingSync) return;
+        this._pendingSync = false;
+        this._syncInProgress = true;
+        try {
+            await this.syncToObsidianFolder();
+        } catch (e) {
+            console.error('Obsidian同期エラー:', e);
+        } finally {
+            this._syncInProgress = false;
+            // 進行中に再要求されていれば再度実行
+            if (this._pendingSync) {
+                this._scheduleSync();
+            }
+        }
+    }
+
+    /**
+     * 同期完了まで待つ。debounce タイマーをキャンセルして即実行。
+     * 公開エクスポート前など「ファイルに反映済みを保証したい」場面で呼ぶ。
+     */
+    async flushSync() {
+        if (this._syncDebounceTimer) {
+            clearTimeout(this._syncDebounceTimer);
+            this._syncDebounceTimer = null;
+        }
+        if (this._pendingSync || this._syncInProgress) {
+            // pending を確実に処理してから完了待ち
+            await this._runPendingSync();
+            // 進行中だった場合、終わるまで待つ
+            while (this._syncInProgress) {
+                await new Promise(r => setTimeout(r, 50));
+            }
+            if (this._pendingSync) {
+                await this._runPendingSync();
             }
         }
     }
@@ -2563,6 +2647,8 @@ class VirtualBookshelf {
             return;
         }
         this.storage.setDirHandle(this.obsidianDirHandle);
+        // 編集中の変更を確実に書き出してから公開コピー
+        await this.flushSync();
 
         const main = (this.userData._storage && this.userData._storage.main) || {};
 
@@ -2635,6 +2721,8 @@ class VirtualBookshelf {
             alert('⚠️ 同期フォルダを選択してから操作してください');
             return;
         }
+        // 編集中の変更を確実に同期フォルダに反映してからエクスポート
+        await this.flushSync();
         if (!this.exporter.exportDirHandle) {
             await this.exporter.loadStoredHandle();
         }
