@@ -1277,10 +1277,24 @@ class VirtualBookshelf {
         };
     }
 
-    saveUserData() {
-        localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
+    async saveUserData() {
+        // _storage.libraryBooks は容量大（蔵書全件）でファイル正本なので localStorage には保存しない
+        const persisted = { ...this.userData };
+        if (persisted._storage) {
+            const { libraryBooks, ...rest } = persisted._storage;
+            persisted._storage = rest;
+        }
+        try {
+            localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
+        } catch (e) {
+            console.error('localStorage 保存失敗:', e);
+        }
         if (this.obsidianDirHandle) {
-            this.syncToObsidianFolder().catch(() => {});
+            try {
+                await this.syncToObsidianFolder();
+            } catch (e) {
+                console.error('Obsidian同期エラー:', e);
+            }
         }
     }
 
@@ -1425,7 +1439,15 @@ class VirtualBookshelf {
                 libraryBooks: libraryBooks
             }
         };
-        localStorage.setItem('virtualBookshelf_userData', JSON.stringify(this.userData));
+        // libraryBooks は容量大のため localStorage には保存しない
+        const persisted = { ...this.userData };
+        const { libraryBooks: _omit, ...storageRest } = persisted._storage;
+        persisted._storage = storageRest;
+        try {
+            localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
+        } catch (e) {
+            console.error('localStorage 保存失敗:', e);
+        }
 
         if (window.seriesManager) window.seriesManager.clearCache();
         return true;
@@ -1877,10 +1899,10 @@ class VirtualBookshelf {
         }
     }
 
-    addBookToBookshelf(asin) {
+    async addBookToBookshelf(asin) {
         const bookshelfSelect = document.getElementById(`bookshelf-select-${asin}`);
         const bookshelfId = bookshelfSelect.value;
-        
+
         if (!bookshelfId) {
             alert('📚 本棚を選択してください');
             return;
@@ -1912,18 +1934,16 @@ class VirtualBookshelf {
             this.userData.bookOrder[bookshelfId].unshift(asin);
         }
 
-        this.saveUserData();
-        this.renderBookshelfList(); // Update the bookshelf management UI if open
+        // 同期完了を待ってから UI 更新（書き込み前の状態でロードされる事故を防ぐ）
+        await this.saveUserData();
+        this.renderBookshelfList();
 
-        // 開いている詳細モーダルを再描画して「現在の本棚」を更新
         const book = this.books.find(b => b.asin === asin);
         if (book) {
             this.showBookDetail(book, true);
         }
 
         alert(`✅ 「${bookshelf.name}」に追加しました！`);
-
-        // Reset the dropdown
         bookshelfSelect.value = '';
     }
 
