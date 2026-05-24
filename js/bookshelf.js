@@ -1018,7 +1018,13 @@ class VirtualBookshelf {
                             子孫本棚にも反映する（全子孫の短文メモを上書き）
                         </label>
                     ` : ''}
-                    <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 メモを記入すると自動的に公開されます • 改行は表示に反映されます</p>
+                    ${isEditMode ? `
+                        <button class="btn btn-primary save-note-btn" data-asin="${book.asin}" style="margin-top: 0.75rem;">
+                            💾 メモを保存
+                        </button>
+                        <span class="save-note-status" data-asin="${book.asin}" style="margin-left: 0.5rem; color: #888; font-size: 0.85rem;"></span>
+                    ` : ''}
+                    <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 編集後は「💾 メモを保存」を押してください</p>
 
                     <div class="rating-section" style="${isEditMode ? '' : 'display: none;'}">
                         <h4>⭐ 星評価</h4>
@@ -1038,14 +1044,32 @@ class VirtualBookshelf {
         
         // Setup modal event listeners
         const noteTextarea = modalBody.querySelector('.note-textarea');
-        noteTextarea.addEventListener('blur', (e) => {
-            this.saveNote(e.target.dataset.asin, e.target.value);
-        });
-
-        // リアルタイムプレビュー（編集モードの時のみ）
+        // 自動保存は廃止。明示的な「💾 メモを保存」ボタンで保存する
         if (isEditMode) {
             noteTextarea.addEventListener('input', (e) => {
                 this.updateMemoPreview(e.target);
+            });
+        }
+
+        const saveNoteBtn = modalBody.querySelector('.save-note-btn');
+        if (saveNoteBtn) {
+            saveNoteBtn.addEventListener('click', async (e) => {
+                const asin = e.currentTarget.dataset.asin;
+                const textarea = modalBody.querySelector(`.note-textarea[data-asin="${asin}"]`);
+                const statusEl = modalBody.querySelector(`.save-note-status[data-asin="${asin}"]`);
+                if (!textarea) return;
+                saveNoteBtn.disabled = true;
+                if (statusEl) statusEl.textContent = '💾 保存中...';
+                try {
+                    await this.saveNote(asin, textarea.value);
+                    if (statusEl) statusEl.textContent = '✅ 保存しました';
+                    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
+                } catch (err) {
+                    if (statusEl) statusEl.textContent = `❌ ${err.message || '保存失敗'}`;
+                    console.error('メモ保存エラー:', err);
+                } finally {
+                    saveNoteBtn.disabled = false;
+                }
             });
         }
         
