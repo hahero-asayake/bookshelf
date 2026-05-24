@@ -72,6 +72,7 @@ export function activate(api, manifest) {
 | 読み取り | `api.getBooks()`, `api.getBook(asin)`, `api.getBookshelves()`, `api.getBookshelf(internalId)`, `api.getBookshelfBySlug(slug)`, `api.getNotes()`, `api.getNote(asin)` |
 | 書き込み | `api.updateNote(asin, partial)`, `api.refreshUI()` |
 | UI 拡張 | `api.addUIButton({ id, where, label, onClick, emoji, title })`, `api.removeUIButton(id)` |
+| 蔵書フィルタ | `api.registerBookFilter(fn)` — `fn(books) => books` を applyFilters の末尾で適用 |
 | エクスポート | `api.registerExportTransform(fn)` |
 | ストレージ | `api.writePluginFile(pluginId, relPath, text)`, `api.readPluginFile(pluginId, relPath)` |
 
@@ -84,6 +85,7 @@ export function activate(api, manifest) {
 | `book:added` | `{ book }` |
 | `book:updated` | `{ book, prev }` |
 | `book:removed` | `{ asin }` |
+| `books:changed` | `{}` — 同期完了などで蔵書配列が差し替わったタイミング |
 | `bookshelf:created` | `{ meta }` |
 | `bookshelf:updated` | `{ meta, prev }` |
 | `bookshelf:removed` | `{ internalId }` |
@@ -91,3 +93,4 @@ export function activate(api, manifest) {
 | `export:before` | `{ state }` |
 | `export:after` | `{ result }` |
 | `sync:completed` | `{}` |
+| `ui:book-modal-opened` | `{ asin }` — 本詳細モーダル表示直後 |

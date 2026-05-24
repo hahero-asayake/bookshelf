@@ -1,0 +1,9 @@
+{
+    "id": "series-grouping",
+    "name": "シリーズまとめ",
+    "version": "0.1.0",
+    "description": "漫画などのシリーズを検出し、第1巻だけを代表表示に折りたたむ。ボタンで ON/OFF を切替。",
+    "publishable": true,
+    "files": ["index.js"],
+    "dependencies": []
+}

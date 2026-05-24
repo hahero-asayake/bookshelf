@@ -55,7 +55,6 @@ class VirtualBookshelf {
         this.booksPerPage = 50;
         this.sortOrder = 'custom';
         this.sortDirection = 'desc';
-        this.seriesGroupingEnabled = false;
         this.storage = new BookshelfStorage();
         this.bookshelfManager = new BookshelfManager(this);
         this.exporter = new BookshelfExporter(this);
@@ -149,8 +148,6 @@ class VirtualBookshelf {
             this.updateDisplay();
             this.updateStats();
 
-            // Initialize SeriesManager
-            window.seriesManager = new SeriesManager();
 
             // Obsidian folder sync は private モードのみ
             if (!this.isPublicMode) {
@@ -397,16 +394,6 @@ class VirtualBookshelf {
             });
         }
 
-        // Series grouping toggle
-        const seriesGroupingCheckbox = document.getElementById('series-grouping');
-        if (seriesGroupingCheckbox) {
-            seriesGroupingCheckbox.addEventListener('change', e => {
-                this.seriesGroupingEnabled = e.target.checked;
-                this.applyFilters();
-                this.updateDisplay();
-            });
-        }
-
         // Bookshelf management
         const manageBookshelves = document.getElementById('manage-bookshelves');
         if (manageBookshelves) {
@@ -650,14 +637,9 @@ class VirtualBookshelf {
             return true;
         });
         
-        // Series grouping: show only representative book per series
-        if (this.seriesGroupingEnabled && window.seriesManager) {
-            const { seriesGroups, bookToSeriesMap } = window.seriesManager.detectAndGroupSeries(this.books);
-            const representativeAsins = new Set(seriesGroups.map(s => s.representativeBook.asin));
-            this.filteredBooks = this.filteredBooks.filter(book => {
-                const inSeries = bookToSeriesMap.has(book.asin);
-                return !inSeries || representativeAsins.has(book.asin);
-            });
+        // プラグイン由来のフィルタを適用
+        if (this.pluginAPI && typeof this.pluginAPI._runBookFilters === 'function') {
+            this.filteredBooks = this.pluginAPI._runBookFilters(this.filteredBooks);
         }
 
         this.applySorting();
@@ -1793,7 +1775,7 @@ class VirtualBookshelf {
             console.error('localStorage 保存失敗:', e);
         }
 
-        if (window.seriesManager) window.seriesManager.clearCache();
+        if (this.pluginAPI) this.pluginAPI._emit('books:changed', {});
         if (this.bookshelfManager) this.bookshelfManager.rebuildReverseIndex();
         return true;
     }

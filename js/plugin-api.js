@@ -56,7 +56,8 @@ class BookshelfPluginAPI {
         this._bus = new PluginEventBus();
         this._uiButtons = []; // { id, where, label, onClick, element, _pluginId }
         this._exportTransforms = []; // { fn, _pluginId }
-        // pluginId → { eventHandlers: [{ event, handler }], uiButtonIds: Set, exportTransforms: [fn] }
+        this._bookFilters = []; // fn(books) => filteredBooks。applyFilters 内で順次適用
+        // pluginId → { eventHandlers: [{ event, handler }], uiButtonIds: Set, exportTransforms: [fn], bookFilters: [fn] }
         this._pluginRegistrations = new Map();
     }
 
@@ -71,7 +72,8 @@ class BookshelfPluginAPI {
             this._pluginRegistrations.set(pluginId, {
                 eventHandlers: [],
                 uiButtonIds: new Set(),
-                exportTransforms: []
+                exportTransforms: [],
+                bookFilters: []
             });
         }
         const reg = this._pluginRegistrations.get(pluginId);
@@ -106,6 +108,10 @@ class BookshelfPluginAPI {
                 self.registerExportTransform(fn);
                 reg.exportTransforms.push(fn);
             },
+            registerBookFilter: (fn) => {
+                self.registerBookFilter(fn);
+                reg.bookFilters.push(fn);
+            },
             writePluginFile: (rel, text) => self.writePluginFile(pluginId, rel, text),
             readPluginFile: (rel) => self.readPluginFile(pluginId, rel)
         };
@@ -126,6 +132,9 @@ class BookshelfPluginAPI {
         // exportTransforms は配列実体から filter で除外
         if (reg.exportTransforms.length > 0) {
             this._exportTransforms = this._exportTransforms.filter(fn => !reg.exportTransforms.includes(fn));
+        }
+        if (reg.bookFilters && reg.bookFilters.length > 0) {
+            this._bookFilters = this._bookFilters.filter(fn => !reg.bookFilters.includes(fn));
         }
         this._pluginRegistrations.delete(pluginId);
     }
@@ -244,6 +253,25 @@ class BookshelfPluginAPI {
             try { return fn(acc) || acc; }
             catch (e) { console.error('[exportTransform] error:', e); return acc; }
         }, state);
+    }
+
+    // ===== 蔵書フィルタフック =====
+    // fn: (books) => books  applyFilters の末尾で全フィルタを順次適用
+    registerBookFilter(fn) {
+        if (typeof fn !== 'function') return;
+        this._bookFilters.push(fn);
+    }
+
+    _runBookFilters(books) {
+        return this._bookFilters.reduce((acc, fn) => {
+            try {
+                const out = fn(acc);
+                return Array.isArray(out) ? out : acc;
+            } catch (e) {
+                console.error('[bookFilter] error:', e);
+                return acc;
+            }
+        }, books);
     }
 
     // ===== ストレージ補助 =====
