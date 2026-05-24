@@ -1757,14 +1757,27 @@ class VirtualBookshelf {
                     ...(n.hasDetailMemo ? { hasDetailMemo: true } : {})
                 };
             });
+            const orderedAll = (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all))
+                ? this.userData.bookOrder.all
+                : [];
+            const libraryAsins = libraryBooks.map(b => b.asin);
+            // bookOrder.all をベースに、library に存在する ASIN だけ + 未登録分を追加
+            const orderedSet = new Set(orderedAll);
+            const allBooksList = [
+                ...orderedAll.filter(a => libraryAsins.includes(a)),
+                ...libraryAsins.filter(a => !orderedSet.has(a))
+            ];
+            // bookOrder.all も同期（漏れた本があれば追加、library に無い本は削除）
+            this.userData.bookOrder = this.userData.bookOrder || {};
+            this.userData.bookOrder.all = allBooksList;
+
             await this.storage.writeAllBookshelf({
                 internalId: allInternalId,
                 name: 'すべての本',
                 isSpecial: true,
                 defaultBookOrder: this.userData.settings?.defaultBookOrder || 'addedDate-desc',
                 appliedPlugins: [],
-                books: (this.userData.bookOrder && this.userData.bookOrder.all)
-                    || libraryBooks.map(b => b.asin),
+                books: allBooksList,
                 notes: allNotes
             });
 
