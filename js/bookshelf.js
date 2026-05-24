@@ -58,6 +58,7 @@ class VirtualBookshelf {
         this.seriesGroupingEnabled = false;
         this.storage = new BookshelfStorage();
         this.bookshelfManager = new BookshelfManager(this);
+        this.exporter = new BookshelfExporter(this);
 
         this.init();
     }
@@ -398,6 +399,16 @@ class VirtualBookshelf {
         const copyToPublicBtn = document.getElementById('copy-to-public');
         if (copyToPublicBtn) {
             copyToPublicBtn.addEventListener('click', () => this.copyToPublic());
+        }
+        // Run export
+        const runExportBtn = document.getElementById('run-export');
+        if (runExportBtn) {
+            runExportBtn.addEventListener('click', () => this.runPublicExport());
+        }
+        // Pick export dir
+        const pickExportDirBtn = document.getElementById('pick-export-dir');
+        if (pickExportDirBtn) {
+            pickExportDirBtn.addEventListener('click', () => this.pickExportDir());
         }
 
         // Static share modal
@@ -2302,6 +2313,48 @@ class VirtualBookshelf {
         } catch (e) {
             console.error('公開にコピーエラー:', e);
             alert(`❌ 失敗しました: ${e.message}`);
+        }
+    }
+
+    async pickExportDir() {
+        try {
+            const handle = await this.exporter.pickExportDir();
+            alert(`✅ 出力先を「${handle.name}」に設定しました`);
+        } catch (e) {
+            if (e.name === 'AbortError') return;
+            console.error('出力先選択エラー:', e);
+            alert(`❌ ${e.message}`);
+        }
+    }
+
+    async runPublicExport() {
+        if (!this.obsidianDirHandle) {
+            alert('⚠️ 同期フォルダを選択してから操作してください');
+            return;
+        }
+        if (!this.exporter.exportDirHandle) {
+            await this.exporter.loadStoredHandle();
+        }
+        if (!this.exporter.exportDirHandle) {
+            if (!confirm('📦 出力先フォルダが未選択です。\n選択しますか？\n（推奨: 同期フォルダの隣に bookshelf-export/）')) return;
+            try {
+                await this.exporter.pickExportDir();
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                alert(`❌ ${e.message}`);
+                return;
+            }
+        }
+
+        try {
+            const result = await this.exporter.export();
+            const errorMsg = result.errors.length > 0
+                ? `\n\n⚠️ エラー ${result.errors.length} 件:\n${result.errors.slice(0, 3).join('\n')}${result.errors.length > 3 ? '\n...' : ''}`
+                : '';
+            alert(`✅ エクスポート完了\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個${errorMsg}\n\n※ index.html / css / js のコピーは Phase 3-C で対応予定`);
+        } catch (e) {
+            console.error('エクスポートエラー:', e);
+            alert(`❌ ${e.message}`);
         }
     }
 
