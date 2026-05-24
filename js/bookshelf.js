@@ -59,6 +59,14 @@ class VirtualBookshelf {
         this.storage = new BookshelfStorage();
         this.bookshelfManager = new BookshelfManager(this);
         this.exporter = new BookshelfExporter(this);
+        // プラグインAPI とローダを早期に生成（plugins から window.bookshelfAPI を参照可能に）
+        if (window.BookshelfPluginAPI) {
+            window.bookshelfAPI = new BookshelfPluginAPI(this);
+            this.pluginAPI = window.bookshelfAPI;
+        }
+        if (window.BookshelfPluginLoader) {
+            this.pluginLoader = new BookshelfPluginLoader(this);
+        }
         // 公開モード判定: URL クエリ ?mode=public または body[data-public-mode="true"]
         const queryPublic = new URLSearchParams(window.location.search).get('mode') === 'public';
         const bodyPublic = document.body.dataset.publicMode === 'true';
@@ -150,6 +158,15 @@ class VirtualBookshelf {
             // Obsidian folder sync は private モードのみ
             if (!this.isPublicMode) {
                 await this.initObsidianSync();
+            }
+
+            // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
+            if (this.pluginLoader) {
+                try {
+                    await this.pluginLoader.loadEnabledPlugins();
+                } catch (e) {
+                    console.warn('プラグイン読み込み中にエラー:', e);
+                }
             }
 
             this.hideLoading();
@@ -417,6 +434,20 @@ class VirtualBookshelf {
         document.getElementById('import-from-file').addEventListener('click', () => {
             this.importFromFile();
         });
+
+        // Plugin manager
+        const managePluginsBtn = document.getElementById('manage-plugins');
+        if (managePluginsBtn) {
+            managePluginsBtn.addEventListener('click', () => this.showPluginsModal());
+        }
+        const pluginsClose = document.getElementById('plugins-modal-close');
+        if (pluginsClose) {
+            pluginsClose.addEventListener('click', () => this.closePluginsModal());
+        }
+        const installPluginBtn = document.getElementById('install-plugin-btn');
+        if (installPluginBtn) {
+            installPluginBtn.addEventListener('click', () => this.installPluginFromInput());
+        }
 
         // Bookmarklet-based import (no extension required)
         const copyBookmarkletBtn = document.getElementById('copy-bookmarklet');
@@ -2552,10 +2583,12 @@ class VirtualBookshelf {
             : this.bookshelfManager.getBookshelves().map(b => b.internalId);
         const filteredBookshelves = baseOrder.filter(id => publicSet.has(id));
 
-        // TODO Phase 5: appliedPlugins から publishable=false を除外
+        // appliedPlugins / enabledPlugins から publishable=false のものを除外
+        const publishableIds = await this._collectPublishablePluginIds();
+        const filterPlugins = (arr) => (arr || []).filter(id => publishableIds.has(id));
         const publicMain = {
-            enabledPlugins: main.enabledPlugins || [],
-            appliedPlugins: main.appliedPlugins || [],
+            enabledPlugins: filterPlugins(main.enabledPlugins),
+            appliedPlugins: filterPlugins(main.appliedPlugins),
             bookshelves: filteredBookshelves,
             defaultSort: main.defaultSort || 'addedDate-desc'
         };
@@ -3228,6 +3261,144 @@ class VirtualBookshelf {
         } catch (error) {
             console.error('ファイル読み込みエラー:', error);
             alert(`❌ ファイルの読み込みに失敗しました: ${error.message}`);
+        }
+    }
+
+    // インストール済みプラグインのうち manifest.publishable=true の id 集合を返す
+    async _collectPublishablePluginIds() {
+        const ids = new Set();
+        if (!this.pluginLoader || !this.obsidianDirHandle) return ids;
+        try {
+            const installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
+            for (const { id, manifest } of installed) {
+                if (manifest && manifest.publishable) ids.add(id);
+            }
+        } catch (e) {
+            console.warn('publishable plugin 収集失敗:', e);
+        }
+        return ids;
+    }
+
+    // ===== プラグイン管理 UI =====
+
+    async showPluginsModal() {
+        const modal = document.getElementById('plugins-modal');
+        modal.classList.add('show');
+        document.getElementById('plugin-repo-url').value = '';
+        await this._renderPluginsList();
+    }
+
+    closePluginsModal() {
+        document.getElementById('plugins-modal').classList.remove('show');
+    }
+
+    async _renderPluginsList() {
+        const container = document.getElementById('plugins-list');
+        if (!container || !this.pluginLoader) {
+            container.innerHTML = '<p style="color:#888">プラグインローダ未初期化</p>';
+            return;
+        }
+        container.innerHTML = '<p style="color:#888;">読み込み中...</p>';
+
+        if (!this.obsidianDirHandle) {
+            container.innerHTML = '<p style="color:#888;">同期フォルダを先に接続してください。</p>';
+            return;
+        }
+
+        let installed;
+        try {
+            installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
+        } catch (e) {
+            container.innerHTML = `<p style="color:#c00;">読み込み失敗: ${e.message}</p>`;
+            return;
+        }
+
+        if (installed.length === 0) {
+            container.innerHTML = '<p style="color:#888;">インストール済みのプラグインはありません。</p>';
+            return;
+        }
+
+        const enabledSet = new Set(this.userData?.settings?.enabledPlugins || []);
+        const loadedSet = new Set(this.pluginLoader.loaded.keys());
+
+        container.innerHTML = installed.map(({ id, manifest }) => {
+            const enabled = enabledSet.has(id);
+            const loaded = loadedSet.has(id);
+            const failure = this.pluginLoader.failedToLoad.get(id);
+            return `
+                <div class="plugin-card" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+                    <div style="flex:1 1 200px; min-width:0;">
+                        <div style="font-weight:600;">${manifest.name || id} <span style="color:#888; font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '🌐' : ''}</span></div>
+                        <div style="font-size:0.85rem; color:#666;">${manifest.description || ''}</div>
+                        ${failure ? `<div style="font-size:0.8rem; color:#c00;">⚠️ ${failure}</div>` : ''}
+                        ${loaded ? '<div style="font-size:0.8rem; color:#0a0;">✓ 読み込み済み（再起動不要で有効）</div>' : ''}
+                    </div>
+                    <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+                        <label style="display:flex; gap:0.3rem; align-items:center; font-size:0.85rem;">
+                            <input type="checkbox" data-toggle-plugin="${id}" ${enabled ? 'checked' : ''}> 有効
+                        </label>
+                        <button class="btn btn-secondary btn-small" data-uninstall-plugin="${id}">🗑️ 削除</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.querySelectorAll('[data-toggle-plugin]').forEach(cb => {
+            cb.addEventListener('change', (e) => this.togglePlugin(e.target.dataset.togglePlugin, e.target.checked));
+        });
+        container.querySelectorAll('[data-uninstall-plugin]').forEach(btn => {
+            btn.addEventListener('click', (e) => this.uninstallPluginById(e.target.dataset.uninstallPlugin));
+        });
+    }
+
+    async installPluginFromInput() {
+        const input = document.getElementById('plugin-repo-url');
+        const url = (input.value || '').trim();
+        if (!url) {
+            alert('GitHub の repo URL を入力してください');
+            return;
+        }
+        if (!this.obsidianDirHandle) {
+            alert('同期フォルダを先に接続してください');
+            return;
+        }
+        try {
+            const manifest = await this.pluginLoader.installFromGitHub(url);
+            if (manifest) {
+                alert(`✅ ${manifest.name || manifest.id} v${manifest.version || '?'} をインストールしました`);
+                await this._renderPluginsList();
+            }
+        } catch (e) {
+            alert(`❌ インストール失敗: ${e.message}`);
+        }
+    }
+
+    async togglePlugin(id, enabled) {
+        if (!this.userData.settings) this.userData.settings = {};
+        if (!Array.isArray(this.userData.settings.enabledPlugins)) this.userData.settings.enabledPlugins = [];
+        const list = this.userData.settings.enabledPlugins;
+        if (enabled && !list.includes(id)) list.push(id);
+        if (!enabled) this.userData.settings.enabledPlugins = list.filter(x => x !== id);
+        await this.saveUserData();
+        // 有効化のみその場で読み込み（無効化はリロードで反映）
+        if (enabled && !this.pluginLoader.loaded.has(id)) {
+            const installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
+            const target = installed.find(p => p.id === id);
+            if (target) await this.pluginLoader._loadPlugin(target);
+        } else if (!enabled) {
+            alert('無効化を反映するにはページを再読み込みしてください。');
+        }
+        await this._renderPluginsList();
+    }
+
+    async uninstallPluginById(id) {
+        if (!confirm(`プラグイン "${id}" を削除しますか？\n同期フォルダの plugins/${id}/ も削除されます。`)) return;
+        try {
+            await this.pluginLoader.uninstall(id);
+            alert(`🗑️ ${id} を削除しました。無効化を完全反映するにはページを再読み込みしてください。`);
+            await this._renderPluginsList();
+        } catch (e) {
+            alert(`❌ 削除失敗: ${e.message}`);
         }
     }
 

@@ -203,12 +203,62 @@ class BookshelfExporter {
         const shellErrors = await this._copyAppShell();
         errors.push(...shellErrors);
 
+        // publishable=true のプラグインを同期フォルダから出力先 plugins/ にコピー
+        const pluginResult = await this._copyPublishablePlugins();
+        errors.push(...pluginResult.errors);
+
         return {
             exported: publishAsins.size,
             bookshelves: filteredBookshelfFiles.length,
             longMemos: publishAsins.size - hideDetailAsins.size,
+            plugins: pluginResult.copied,
             errors
         };
+    }
+
+    // 同期フォルダの plugins/<id>/ のうち manifest.publishable=true のものを出力先へコピー
+    async _copyPublishablePlugins() {
+        const errors = [];
+        const copied = [];
+        const storage = this.app.storage;
+        if (!storage.dirHandle) return { copied, errors };
+
+        let srcPluginsDir;
+        try {
+            srcPluginsDir = await storage.dirHandle.getDirectoryHandle('plugins', { create: false });
+        } catch (e) {
+            if (e.name === 'NotFoundError') return { copied, errors };
+            errors.push(`plugins/: ${e.message}`);
+            return { copied, errors };
+        }
+
+        for await (const entry of srcPluginsDir.values()) {
+            if (entry.kind !== 'directory') continue;
+            const id = entry.name;
+            try {
+                const srcDir = await srcPluginsDir.getDirectoryHandle(id);
+                const mh = await srcDir.getFileHandle('manifest.json');
+                const mfile = await mh.getFile();
+                const manifest = JSON.parse(await mfile.text());
+                if (!manifest.publishable) continue;
+
+                const files = ['manifest.json', ...(manifest.files || ['index.js'])];
+                for (const f of files) {
+                    try {
+                        const sh = await srcDir.getFileHandle(f);
+                        const sfile = await sh.getFile();
+                        const text = await sfile.text();
+                        await this._writeText(text, 'plugins', id, f);
+                    } catch (e) {
+                        errors.push(`plugins/${id}/${f}: ${e.message}`);
+                    }
+                }
+                copied.push(id);
+            } catch (e) {
+                errors.push(`plugins/${id}/manifest.json: ${e.message}`);
+            }
+        }
+        return { copied, errors };
     }
 
     // 公開サイトを動かすための index.html / css / js を出力先にコピー
@@ -240,6 +290,8 @@ class BookshelfExporter {
             'book-manager.js',
             'bookshelf-manager.js',
             'exporter.js',
+            'plugin-api.js',
+            'plugin-loader.js',
             'highlights.js',
             'series-manager.js',
             'static-bookshelf-generator.js',
