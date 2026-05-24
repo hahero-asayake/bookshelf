@@ -3417,15 +3417,12 @@ class VirtualBookshelf {
 
         container.innerHTML = installed.map(({ id, manifest }) => {
             const enabled = enabledSet.has(id);
-            const loaded = loadedSet.has(id);
-            const failure = this.pluginLoader.failedToLoad.get(id);
             return `
-                <div class="plugin-card" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+                <div class="plugin-card" data-plugin-card="${id}" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
                     <div style="flex:1 1 200px; min-width:0;">
                         <div style="font-weight:600;">${manifest.name || id} <span style="color:#888; font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '🌐' : ''}</span></div>
                         <div style="font-size:0.85rem; color:#666;">${manifest.description || ''}</div>
-                        ${failure ? `<div style="font-size:0.8rem; color:#c00;">⚠️ ${failure}</div>` : ''}
-                        ${loaded ? '<div style="font-size:0.8rem; color:#0a0;">✓ 読み込み済み（再起動不要で有効）</div>' : ''}
+                        <div class="plugin-status"></div>
                     </div>
                     <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
                         <label style="display:flex; gap:0.3rem; align-items:center; font-size:0.85rem;">
@@ -3443,6 +3440,26 @@ class VirtualBookshelf {
         container.querySelectorAll('[data-uninstall-plugin]').forEach(btn => {
             btn.addEventListener('click', (e) => this.uninstallPluginById(e.target.dataset.uninstallPlugin));
         });
+
+        // 各カードの status 部分のみ部分更新
+        installed.forEach(({ id }) => this._refreshPluginCardStatus(id));
+    }
+
+    /**
+     * トグル時に DOM 全体を再描画せず、該当カードの status 部分だけ更新
+     * （checkbox 含む再生成を避けて UI チラつき/フォーカス喪失を防ぐ）
+     */
+    _refreshPluginCardStatus(id) {
+        const container = document.getElementById('plugins-list');
+        if (!container) return;
+        const statusEl = container.querySelector(`[data-plugin-card="${CSS.escape(id)}"] .plugin-status`);
+        if (!statusEl) return;
+        const loaded = this.pluginLoader && this.pluginLoader.loaded.has(id);
+        const failure = this.pluginLoader && this.pluginLoader.failedToLoad.get(id);
+        let html = '';
+        if (failure) html += `<div style="font-size:0.8rem; color:#c00;">⚠️ ${failure}</div>`;
+        if (loaded) html += '<div style="font-size:0.8rem; color:#0a0;">✓ 読み込み済み（リロード不要で有効）</div>';
+        statusEl.innerHTML = html;
     }
 
     async installPluginFromInput() {
@@ -3482,7 +3499,8 @@ class VirtualBookshelf {
         } else if (!enabled && this.pluginLoader.loaded.has(id)) {
             await this.pluginLoader.unloadPlugin(id);
         }
-        await this._renderPluginsList();
+        // モーダル全体は再描画せず、該当カードの status 部分だけ更新
+        this._refreshPluginCardStatus(id);
     }
 
     async uninstallPluginById(id) {
