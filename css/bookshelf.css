@@ -280,6 +280,18 @@ body.app-view-bookshelf details.view-only-bookshelf { display: block !important;
 body.app-view-bookshelf .view-only-bookshelf.btn { display: inline-block !important; }
 body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: flex !important; }
 
+#current-bookshelf-title {
+    color: var(--primary-color, #2c3e50);
+    margin: 0 0 1rem 0;
+    font-size: 1.4rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+#back-to-main {
+    margin-right: 0.5rem;
+}
+
 .filter-section h3, .stats-section h3 {
     margin-bottom: 1rem;
     color: var(--primary-color);

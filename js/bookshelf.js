@@ -413,6 +413,7 @@ class VirtualBookshelf {
             });
         }
 
+
         // Bookshelf management
         const manageBookshelves = document.getElementById('manage-bookshelves');
         if (manageBookshelves) {
@@ -3988,16 +3989,35 @@ class VirtualBookshelf {
     renderBookshelfOverview() {
         const overviewSection = document.getElementById('bookshelves-overview');
         const grid = document.getElementById('bookshelves-grid');
-        
-        if (!this.userData.bookshelves || this.userData.bookshelves.length === 0) {
-            overviewSection.style.display = 'none';
-            return;
-        }
+
+        // 「すべての本」を常に先頭カードに追加し、ユーザ作成本棚を後ろに並べる
+        const allBookCount = (this.books || []).length;
+        const allPreviewBooks = (this.books || []).slice(0, 8);
+        const allCard = `
+            <div class="bookshelf-preview" data-bookshelf-id="all">
+                <div class="bookshelf-preview-header">
+                    <h3>📚 すべての本</h3>
+                    <div class="bookshelf-preview-actions">
+                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="all">📚 表示</button>
+                    </div>
+                </div>
+                <p>除外していない全ての蔵書</p>
+                <p class="book-count">${allBookCount}冊</p>
+                <div class="bookshelf-preview-books">
+                    ${allPreviewBooks.map(book => {
+                        if (book && book.productImage) {
+                            return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
+                        }
+                        return '<div class="bookshelf-preview-book bookshelf-preview-placeholder">📖</div>';
+                    }).join('')}
+                </div>
+            </div>
+        `;
 
         overviewSection.style.display = 'block';
-        
-        let html = '';
-        this.userData.bookshelves.forEach(bookshelf => {
+
+        let html = allCard;
+        (this.userData.bookshelves || []).forEach(bookshelf => {
             const bookCount = bookshelf.books ? bookshelf.books.length : 0;
             
             // Apply custom book order for preview if it exists
@@ -4054,7 +4074,11 @@ class VirtualBookshelf {
         });
 
         grid.innerHTML = html;
-        
+
+        // ハンドラは1回だけ登録（再 render 時の累積を防ぐ）
+        if (this._bookshelfGridClickBound) return;
+        this._bookshelfGridClickBound = true;
+
         // Add click handlers for bookshelf actions
         grid.addEventListener('click', (e) => {
             if (e.target.classList.contains('select-bookshelf')) {
