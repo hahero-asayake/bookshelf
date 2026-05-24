@@ -16,6 +16,27 @@ php -S localhost:8000
 
 ブラウザで `http://localhost:8000` を開く
 
+#### ⚠️ VS Code Live Server を使う場合の注意
+Live Server は VS Code ワークスペース内のファイル変更を watch してブラウザを reload する。
+**同期フォルダ (Obsidian vault) がワークスペース内にある場合、同期書き込みのたびにアプリがリロードされて編集状態が失われる**。
+
+対策 (どれか):
+1. **Live Server を使わず `python -m http.server` に切り替える** (一番確実)
+2. ワークスペースを bookshelf プロジェクト直下のみに絞る (`File → Open Folder...` で bookshelf を直接開く)
+3. ワークスペースの `.vscode/settings.json` (ユーザ自身のローカル設定) に以下を追加して同期フォルダを除外:
+   ```json
+   {
+       "liveServer.settings.ignoreFiles": [
+           "**/.vscode/**",
+           "**/.git/**",
+           "**/node_modules/**",
+           "**/obsidian/**",
+           "**/bookshelf-export/**"
+       ]
+   }
+   ```
+   (このリポジトリの `.gitignore` は `.vscode/` を除外しているため、設定はユーザ各自のローカルに置く)
+
 ### ハイライト機能の管理
 ```bash
 # ハイライトインデックス生成（ハイライト機能を使用する場合）
