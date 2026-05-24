@@ -1,0 +1,9 @@
+{
+    "id": "highlights-builtin",
+    "name": "Kindle ハイライト表示",
+    "version": "0.1.0",
+    "description": "本詳細モーダルに Kindle ハイライトを表示する。同期フォルダ plugins/highlights-builtin/data/HighlightsASCII/ に置いた .txt を ASIN ベースで読み込む。",
+    "publishable": true,
+    "files": ["index.js"],
+    "dependencies": []
+}

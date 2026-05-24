@@ -149,9 +149,6 @@ class VirtualBookshelf {
             this.updateDisplay();
             this.updateStats();
 
-            // Initialize HighlightsManager after bookshelf is ready
-            window.highlightsManager = new HighlightsManager(this);
-
             // Initialize SeriesManager
             window.seriesManager = new SeriesManager();
 
@@ -1213,11 +1210,6 @@ class VirtualBookshelf {
                         <button class="btn btn-small rating-reset" data-asin="${book.asin}">評価をリセット</button>
                     </div>
                 </div>
-                
-                <div class="book-highlights-section" id="highlights-${book.asin}">
-                    <h3>🎯 ハイライト</h3>
-                    <div class="highlights-loading">ハイライトを読み込み中...</div>
-                </div>
             </div>
         `;
         
@@ -1380,10 +1372,8 @@ class VirtualBookshelf {
             });
         }
         
-        // Load highlights
-        this.loadBookHighlights(book);
-        
         modal.classList.add('show');
+        if (this.pluginAPI) this.pluginAPI._emit('ui:book-modal-opened', { asin: book.asin });
     }
 
     closeModal() {
@@ -1453,40 +1443,6 @@ class VirtualBookshelf {
             }
         }, 300);
         this._noteAutoSaveTimers.set(asin, timer);
-    }
-
-
-    async loadBookHighlights(book) {
-        const highlightsContainer = document.getElementById(`highlights-${book.asin}`);
-        const loadingElement = highlightsContainer.querySelector('.highlights-loading');
-        
-        try {
-            // Use HighlightsManager for ASIN-based loading
-            if (window.highlightsManager) {
-                const highlights = await window.highlightsManager.loadHighlightsForBook(book);
-                
-                loadingElement.style.display = 'none';
-                
-                if (highlights.length > 0) {
-                    // Use the HighlightsManager's render method
-                    const highlightsListContainer = document.createElement('div');
-                    window.highlightsManager.renderHighlights(highlights, highlightsListContainer);
-                    
-                    // Replace loading with rendered highlights
-                    highlightsContainer.innerHTML = '<h3>🎯 ハイライト</h3>';
-                    highlightsContainer.appendChild(highlightsListContainer);
-                } else {
-                    // No highlights found
-                    highlightsContainer.innerHTML = '<h3>🎯 ハイライト</h3><p class="no-highlights">この本のハイライトはありません</p>';
-                }
-            } else {
-                // Fallback if HighlightsManager not available
-                loadingElement.textContent = 'ハイライトマネージャーが利用できません';
-            }
-        } catch (error) {
-            console.error('ハイライト読み込みエラー:', error);
-            loadingElement.textContent = 'ハイライトの読み込みに失敗しました';
-        }
     }
 
 

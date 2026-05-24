@@ -292,7 +292,6 @@ class BookshelfExporter {
             'exporter.js',
             'plugin-api.js',
             'plugin-loader.js',
-            'highlights.js',
             'series-manager.js',
             'bookshelf.js'
         ];
