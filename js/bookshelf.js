@@ -1962,7 +1962,7 @@ class VirtualBookshelf {
         bookshelfSelect.value = '';
     }
 
-    removeFromBookshelf(asin, bookshelfId) {
+    async removeFromBookshelf(asin, bookshelfId) {
         const bookshelf = this.userData.bookshelves.find(b => b.id === bookshelfId);
         if (!bookshelf || !bookshelf.books) {
             alert('❌ 本棚が見つかりません');
@@ -1982,7 +1982,7 @@ class VirtualBookshelf {
             if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder[bookshelfId])) {
                 this.userData.bookOrder[bookshelfId] = this.userData.bookOrder[bookshelfId].filter(a => a !== asin);
             }
-            this.saveUserData();
+            await this.saveUserData();
             this.renderBookshelfList(); // Update the bookshelf management UI if open
             
             // If currently viewing this bookshelf, update the display
@@ -2001,7 +2001,7 @@ class VirtualBookshelf {
     /**
      * all本棚から除外（library.json には残るが表示・操作対象から外れる）
      */
-    excludeBook(asin) {
+    async excludeBook(asin) {
         const book = this.books.find(b => b.asin === asin);
         if (!book) {
             alert('❌ 指定された書籍が見つかりません');
@@ -2038,7 +2038,7 @@ class VirtualBookshelf {
             this.userData.bookOrder.all = this.userData.bookOrder.all.filter(a => a !== asin);
         }
 
-        this.saveUserData();
+        await this.saveUserData();
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
@@ -2049,7 +2049,7 @@ class VirtualBookshelf {
     /**
      * 除外を解除（library.json から書誌を取り出して復活）
      */
-    unexcludeBook(asin) {
+    async unexcludeBook(asin) {
         if (!this.userData._storage || !Array.isArray(this.userData._storage.exclusions)) return;
         if (!this.userData._storage.exclusions.includes(asin)) return;
 
@@ -2072,7 +2072,7 @@ class VirtualBookshelf {
             }
         }
 
-        this.saveUserData();
+        await this.saveUserData();
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
@@ -2271,17 +2271,17 @@ class VirtualBookshelf {
                 this.userData.bookOrder.all = this.userData.bookOrder.all.filter(a => a !== asin);
             }
 
-            this.saveUserData();
-            
+            await this.saveUserData();
+
             // 表示を更新
             this.books = this.bookManager.getAllBooks();
             this.applyFilters();
             this.updateStats();
             this.renderBookshelfOverview();
-            
+
             // モーダルを閉じる
             this.closeModal();
-            
+
             alert(`✅ 「${book.title}」を削除しました`);
         } catch (error) {
             console.error('削除エラー:', error);
@@ -2435,7 +2435,7 @@ class VirtualBookshelf {
                 }
             }
 
-            this.saveUserData();
+            await this.saveUserData();
             this.applyFilters();
             this.updateStats();
 
