@@ -1525,6 +1525,13 @@ class VirtualBookshelf {
             this.obsidianDirHandle = handle;
             this.storage.setDirHandle(handle);
             this.updateSyncStatus('loading', handle.name);
+
+            // フォルダの内容を先に判定: 空のときだけ初期化、それ以外はあるデータを尊重して読み込む
+            const format = await this.storage.detectFormat();
+            if (format === 'empty') {
+                await this.storage.initEmpty();
+            }
+
             const loaded = await this.loadFromObsidianFile();
             if (loaded) {
                 this.updateDisplay();
@@ -1532,10 +1539,15 @@ class VirtualBookshelf {
                 this.updateBookshelfSelector();
                 this.renderBookshelfOverview();
                 this.updateSyncStatus('synced', handle.name);
-                alert(`✅ 「${handle.name}」から ${this.books.length} 冊を読み込みました。以降は保存のたびに自動更新されます。`);
+                if (format === 'empty') {
+                    alert(`✅ 「${handle.name}」に新ファイル構造で初期化しました。`);
+                } else {
+                    alert(`✅ 「${handle.name}」から ${this.books.length} 冊を読み込みました。`);
+                }
             } else {
-                await this.syncToObsidianFolder();
-                alert(`✅ 「${handle.name}」に新ファイル構造で初期化しました。以降は保存のたびに自動更新されます。`);
+                // load 失敗時は同期フォルダの既存データを上書きしないため、ここでは何もしない
+                this.updateSyncStatus('reconnect', handle.name);
+                alert(`⚠️ 「${handle.name}」のデータ読み込みに失敗しました。\nlibrary.json / bookshelves/all.json の存在を確認してください。\n（既存ファイルを保護するため、自動初期化は行いませんでした）`);
             }
         } catch (e) {
             if (e.name === 'AbortError') return;
@@ -1573,9 +1585,9 @@ class VirtualBookshelf {
     }
 
     _applyLoadedState(state) {
-        if (!state.allBookshelf || !state.library) return false;
-
-        const libraryBooks = Array.isArray(state.library.books) ? state.library.books : [];
+        if (!state.allBookshelf) return false;
+        // library.json が無くても allBookshelf があれば空 library として続行
+        const libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
         const excluded = new Set(state.exclusions.excludedASINs || []);
 
         const visibleBooks = libraryBooks.filter(b => !excluded.has(b.asin));
@@ -2067,13 +2079,15 @@ class VirtualBookshelf {
         const isPublicInput = document.getElementById('bookshelf-is-public');
 
         // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）
+        // bookshelves[] には all 本棚も含まれているのでハードコードしない
         const allId = this.bookshelfManager.getAllInternalId();
         const excludedIds = bookshelfToEdit
             ? new Set([bookshelfToEdit.internalId, ...this.bookshelfManager.getDescendants(bookshelfToEdit.internalId).map(b => b.internalId)])
             : new Set();
         const candidates = this.bookshelfManager.getBookshelves().filter(b => !excludedIds.has(b.internalId));
-        parentSelect.innerHTML = `<option value="${allId || ''}">📚 すべての本（all）</option>` +
-            candidates.map(b => `<option value="${b.internalId}">${b.emoji || '📚'} ${b.name}</option>`).join('');
+        parentSelect.innerHTML = candidates
+            .map(b => `<option value="${b.internalId}">${b.emoji || '📚'} ${b.name}</option>`)
+            .join('');
 
         if (bookshelfToEdit) {
             title.textContent = '📚 本棚を編集';
