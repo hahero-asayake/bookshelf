@@ -59,36 +59,92 @@ class VirtualBookshelf {
         this.storage = new BookshelfStorage();
         this.bookshelfManager = new BookshelfManager(this);
         this.exporter = new BookshelfExporter(this);
+        // 公開モード判定: URL クエリ ?mode=public または body[data-public-mode="true"]
+        const queryPublic = new URLSearchParams(window.location.search).get('mode') === 'public';
+        const bodyPublic = document.body.dataset.publicMode === 'true';
+        this.isPublicMode = queryPublic || bodyPublic;
+
+        if (this.isPublicMode) {
+            document.body.classList.add('public-mode');
+        }
 
         this.init();
     }
 
     async init() {
         try {
-            await this.loadData();
+            if (this.isPublicMode) {
+                await this.loadDataPublicMode();
+            } else {
+                await this.loadData();
+            }
             this.setupEventListeners();
             this.updateBookshelfSelector();
             this.updateSortDirectionButton();
             this.renderBookshelfOverview();
             this.updateDisplay();
             this.updateStats();
-            
+
             // Initialize HighlightsManager after bookshelf is ready
             window.highlightsManager = new HighlightsManager(this);
 
             // Initialize SeriesManager
             window.seriesManager = new SeriesManager();
 
-            // Initialize Obsidian folder sync
-            await this.initObsidianSync();
+            // Obsidian folder sync は private モードのみ
+            if (!this.isPublicMode) {
+                await this.initObsidianSync();
+            }
 
-            // Hide loading indicator
             this.hideLoading();
         } catch (error) {
             console.error('初期化エラー:', error);
             this.showError('データの読み込みに失敗しました。');
             this.hideLoading();
         }
+    }
+
+    // 公開モード: data/ 配下を fetch で読み込み
+    async loadDataPublicMode() {
+        this.bookManager = new BookManager();
+
+        const fetchJSON = async (path) => {
+            const r = await fetch(path);
+            if (!r.ok) throw new Error(`${path} の取得に失敗 (${r.status})`);
+            return r.json();
+        };
+
+        const [main, settings, library, bookshelvesMeta, allBookshelf] = await Promise.all([
+            fetchJSON('data/main.json').catch(() => ({})),
+            fetchJSON('data/settings.json').catch(() => ({})),
+            fetchJSON('data/library.json').catch(() => ({ books: [] })),
+            fetchJSON('data/bookshelves.json').catch(() => ({ bookshelves: [] })),
+            fetchJSON('data/bookshelves/all.json').catch(() => null)
+        ]);
+
+        const bookshelfFiles = {};
+        for (const meta of (bookshelvesMeta.bookshelves || [])) {
+            try {
+                const data = await fetchJSON(`data/bookshelves/${meta.slug}.json`);
+                bookshelfFiles[meta.internalId] = data;
+            } catch (e) {
+                console.warn(`本棚ファイル取得失敗: ${meta.slug}`, e);
+            }
+        }
+
+        this._applyLoadedState({
+            library,
+            exclusions: { excludedASINs: [] },
+            bookshelvesMeta,
+            allBookshelf: allBookshelf || { internalId: 'public-all', name: 'すべての本', books: [], notes: {} },
+            bookshelfFiles,
+            privateSettings: settings,
+            privateMain: main
+        });
+
+        // 初期化が必要だが Obsidian sync しないので、StaticBookshelfGenerator など
+        this.staticGenerator = new StaticBookshelfGenerator(this.bookManager, this.userData);
+        this.applyFilters();
     }
 
     async loadData() {
