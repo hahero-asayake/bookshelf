@@ -225,9 +225,9 @@
                     <input type="text" id="bookshelf-name" placeholder="本棚の名前を入力してください" required>
                 </div>
                 <div class="form-group">
-                    <label for="bookshelf-slug">slug（ファイル名、英数ハイフンのみ）</label>
-                    <input type="text" id="bookshelf-slug" placeholder="tech-books（自動生成可）" pattern="[a-z0-9_-]+">
-                    <small style="color: #888;">bookshelves/&lt;slug&gt;.json のファイル名になります</small>
+                    <label for="bookshelf-slug">slug *（ファイル名、英数ハイフンのみ・一意）</label>
+                    <input type="text" id="bookshelf-slug" placeholder="bookshelf1（空欄なら連番自動）" pattern="[a-z0-9_-]+">
+                    <small style="color: #888;">bookshelves/&lt;slug&gt;.json のファイル名。名前とは独立。空欄なら bookshelf1 / bookshelf2 ... が振られる</small>
                 </div>
                 <div class="form-group">
                     <label for="bookshelf-parent">親本棚</label>

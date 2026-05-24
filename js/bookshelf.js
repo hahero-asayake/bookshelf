@@ -1929,7 +1929,7 @@ class VirtualBookshelf {
         }
 
         const slugRaw = slugInput.value.trim();
-        const slug = slugRaw || this._slugifyName(name);
+        const slug = slugRaw || this._generateDefaultSlug();
         if (!/^[a-z0-9_-]+$/.test(slug)) {
             alert('slug は英小文字・数字・ハイフン・アンダースコアのみ使えます');
             slugInput.focus();
@@ -1967,12 +1967,11 @@ class VirtualBookshelf {
         this.closeBookshelfForm();
     }
 
-    _slugifyName(name) {
-        return name
-            .toLowerCase()
-            .replace(/[^a-z0-9_-]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            || `bookshelf-${Date.now()}`;
+    _generateDefaultSlug() {
+        const existing = new Set(this.bookshelfManager.getBookshelves().map(b => b.id));
+        let i = 1;
+        while (existing.has(`bookshelf${i}`)) i++;
+        return `bookshelf${i}`;
     }
 
     editBookshelf(bookshelfId) {
