@@ -132,13 +132,16 @@ class BookshelfManager {
         if (this.getBySlug(slug)) {
             throw new Error(`slug "${slug}" は既に存在します`);
         }
+        const parentId = meta.parent || this.getAllInternalId();
+        const allId = this.getAllInternalId();
+
         const newBookshelf = {
             id: slug,
             internalId,
             name: meta.name || slug,
             emoji: meta.emoji || '📚',
             description: meta.description || '',
-            parent: meta.parent || this.getAllInternalId(),
+            parent: parentId,
             color: meta.color,
             isPublic: !!meta.isPublic,
             appliedPlugins: meta.appliedPlugins || [],
@@ -146,6 +149,23 @@ class BookshelfManager {
             notes: {},
             createdAt: new Date().toISOString()
         };
+
+        // 親が all 以外なら親の books を初期値としてコピー（子はサブセット、最大集合 = 親と同じ）
+        if (parentId && parentId !== allId) {
+            const parent = this.getById(parentId);
+            if (parent && Array.isArray(parent.books)) {
+                newBookshelf.books = [...parent.books];
+                if (!this.app.userData.bookOrder) this.app.userData.bookOrder = {};
+                const parentOrder = this.app.userData.bookOrder[parent.id];
+                this.app.userData.bookOrder[slug] = Array.isArray(parentOrder)
+                    ? [...parentOrder]
+                    : [...newBookshelf.books];
+                for (const asin of newBookshelf.books) {
+                    this.addToReverseIndex(internalId, asin);
+                }
+            }
+        }
+
         this.app.userData.bookshelves.push(newBookshelf);
         return newBookshelf;
     }
@@ -292,16 +312,24 @@ class BookshelfManager {
     }
 
     // ===== 短文メモ・評価の編集 =====
-    // setMemo(asin, memo, { scope, alsoApplyToParent })
+    // setMemo(asin, memo, { scope, propagateToDescendants })
     //   scope: 'all' | internalId
-    //   alsoApplyToParent: true なら親（または all）にも反映
-    setMemo(asin, memo, { scope = 'all', alsoApplyToParent = false } = {}) {
+    //   propagateToDescendants: true なら子孫本棚の notes[asin].memo も上書き
+    //   （子→親の伝播はしない。継承は読み取り時の resolveMemo で実現）
+    setMemo(asin, memo, { scope = 'all', propagateToDescendants = false } = {}) {
         const allId = this.getAllInternalId();
         if (!this.app.userData.notes) this.app.userData.notes = {};
 
         if (scope === 'all' || scope === allId || !scope) {
             if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
             this.app.userData.notes[asin].memo = memo;
+            if (propagateToDescendants) {
+                for (const bs of this.getBookshelves()) {
+                    if (!bs.notes) bs.notes = {};
+                    if (!bs.notes[asin]) bs.notes[asin] = {};
+                    bs.notes[asin].memo = memo;
+                }
+            }
             return;
         }
 
@@ -311,15 +339,11 @@ class BookshelfManager {
         if (!bs.notes[asin]) bs.notes[asin] = {};
         bs.notes[asin].memo = memo;
 
-        if (alsoApplyToParent) {
-            const parent = bs.parent ? this.getById(bs.parent) : null;
-            if (parent) {
-                if (!parent.notes) parent.notes = {};
-                if (!parent.notes[asin]) parent.notes[asin] = {};
-                parent.notes[asin].memo = memo;
-            } else {
-                if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
-                this.app.userData.notes[asin].memo = memo;
+        if (propagateToDescendants) {
+            for (const d of this.getDescendants(scope)) {
+                if (!d.notes) d.notes = {};
+                if (!d.notes[asin]) d.notes[asin] = {};
+                d.notes[asin].memo = memo;
             }
         }
     }

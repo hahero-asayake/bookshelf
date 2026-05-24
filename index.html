@@ -325,6 +325,24 @@
         </div>
     </div>
 
+    <!-- Descendants Pick Modal -->
+    <div id="descendants-pick-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="descendants-pick-modal-close">×</button>
+            <div class="modal-header">
+                <h2>👇 子孫本棚にも追加</h2>
+            </div>
+            <div class="modal-body">
+                <p style="color: #888; font-size: 0.9rem;">親本棚への追加と同時に、以下の子孫本棚にも追加できます。</p>
+                <div id="descendants-pick-list" style="margin: 1rem 0;"></div>
+                <div class="form-actions" style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1rem;">
+                    <button id="descendants-pick-skip" class="btn btn-secondary">親のみに追加</button>
+                    <button id="descendants-pick-confirm" class="btn btn-primary">選択した本棚にも追加</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Exclusions Modal -->
     <div id="exclusions-modal" class="modal">
         <div class="modal-content">

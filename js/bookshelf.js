@@ -997,7 +997,7 @@ class VirtualBookshelf {
                 
                 <div class="book-notes-section" style="${!isEditMode && !userNote.memo ? 'display: none;' : ''}">
                     <h3>📝 個人メモ${contextLabel ? ` <span style="font-size: 0.8rem; color: #888;">（コンテキスト: ${contextLabel}）</span>` : ''}</h3>
-                    ${memoIsInherited ? `<p style="margin: 0 0 0.5rem; color: #888; font-size: 0.85rem;">💡 親または all から継承中。編集すると本棚自身のメモになります。</p>` : ''}
+                    ${memoIsInherited ? `<p style="margin: 0 0 0.5rem; color: #888; font-size: 0.85rem;">💡 親または all から継承中。編集するとこの本棚専用のメモになります（親には影響しません）。</p>` : ''}
                     ${!isEditMode && userNote.memo ? `
                         <div class="note-display" style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #007bff;">${this.convertMarkdownLinksToHtml(userNote.memo)}</div>
                     ` : ''}
@@ -1006,10 +1006,16 @@ class VirtualBookshelf {
                         <h4>📄 プレビュー</h4>
                         <div class="note-preview-content">${isEditMode && userNote.memo ? this.convertMarkdownLinksToHtml(userNote.memo) : ''}</div>
                     </div>
-                    ${isEditMode && contextInternalId ? `
+                    ${isEditMode && (() => {
+                        // 子孫がいる本棚 or all コンテキストなら「子孫にも反映」チェック表示
+                        if (!contextInternalId) {
+                            return this.bookshelfManager.getBookshelves().length > 0;
+                        }
+                        return this.bookshelfManager.getDescendants(contextInternalId).length > 0;
+                    })() ? `
                         <label style="display: block; margin-top: 0.5rem; color: #555;">
-                            <input type="checkbox" class="apply-to-parent" data-asin="${book.asin}">
-                            親本棚（または all）にも反映
+                            <input type="checkbox" class="propagate-to-descendants" data-asin="${book.asin}">
+                            子孫本棚にも反映する（全子孫の短文メモを上書き）
                         </label>
                     ` : ''}
                     <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 メモを記入すると自動的に公開されます • 改行は表示に反映されます</p>
@@ -1197,12 +1203,12 @@ class VirtualBookshelf {
 
     async saveNote(asin, memo) {
         const contextInternalId = this._currentBookshelfInternalId();
-        const applyToParentEl = document.querySelector(`.apply-to-parent[data-asin="${asin}"]`);
-        const alsoApplyToParent = applyToParentEl ? applyToParentEl.checked : false;
+        const propagateEl = document.querySelector(`.propagate-to-descendants[data-asin="${asin}"]`);
+        const propagateToDescendants = propagateEl ? propagateEl.checked : false;
 
         this.bookshelfManager.setMemo(asin, memo, {
             scope: contextInternalId || 'all',
-            alsoApplyToParent
+            propagateToDescendants
         });
 
         await this.saveUserData();
@@ -1639,6 +1645,9 @@ class VirtualBookshelf {
                 const meta = bookshelvesMetaEntries[i];
                 await this.storage.writeBookshelfFile(meta.slug, {
                     internalId: meta.internalId,
+                    slug: meta.slug,
+                    name: meta.name,
+                    parent: meta.parent,
                     books: b.books || [],
                     notes: b.notes || {}
                 });
@@ -2028,19 +2037,60 @@ class VirtualBookshelf {
         bookshelfSelect.value = '';
     }
 
-    async _chooseDescendantsToAddTo(descendants) {
-        if (!descendants || descendants.length === 0) return [];
-        const list = descendants.map((d, i) => `${i + 1}. ${d.emoji || '📚'} ${d.name}`).join('\n');
-        const input = prompt(
-            `子・孫本棚にも追加しますか？\n\n${list}\n\n追加する本棚の番号をカンマ区切りで入力（例: 1,3）\n空欄で追加なし、"all" で全部`,
-            ''
-        );
-        if (!input || !input.trim()) return [];
-        if (input.trim().toLowerCase() === 'all') return descendants.map(d => d.internalId);
-        const indices = input.split(',')
-            .map(s => parseInt(s.trim(), 10) - 1)
-            .filter(n => n >= 0 && n < descendants.length);
-        return indices.map(i => descendants[i].internalId);
+    _chooseDescendantsToAddTo(descendants) {
+        return new Promise((resolve) => {
+            if (!descendants || descendants.length === 0) {
+                resolve([]);
+                return;
+            }
+            const modal = document.getElementById('descendants-pick-modal');
+            const list = document.getElementById('descendants-pick-list');
+            const confirmBtn = document.getElementById('descendants-pick-confirm');
+            const skipBtn = document.getElementById('descendants-pick-skip');
+            const closeBtn = document.getElementById('descendants-pick-modal-close');
+
+            list.innerHTML = `
+                <label style="display: block; padding: 0.25rem 0; font-weight: bold;">
+                    <input type="checkbox" id="descendants-pick-all">
+                    全て選択
+                </label>
+                <hr style="margin: 0.5rem 0;">
+            ` + descendants.map(d => `
+                <label style="display: block; padding: 0.25rem 0;">
+                    <input type="checkbox" class="descendants-pick-item" value="${d.internalId}">
+                    ${d.emoji || '📚'} ${d.name}
+                </label>
+            `).join('');
+
+            const allCheck = document.getElementById('descendants-pick-all');
+            allCheck.addEventListener('change', () => {
+                list.querySelectorAll('.descendants-pick-item').forEach(c => {
+                    c.checked = allCheck.checked;
+                });
+            });
+
+            modal.classList.add('show');
+
+            const cleanup = () => {
+                modal.classList.remove('show');
+                confirmBtn.removeEventListener('click', onConfirm);
+                skipBtn.removeEventListener('click', onSkip);
+                closeBtn.removeEventListener('click', onSkip);
+            };
+            const onConfirm = () => {
+                const selected = Array.from(list.querySelectorAll('.descendants-pick-item:checked'))
+                    .map(c => c.value);
+                cleanup();
+                resolve(selected);
+            };
+            const onSkip = () => {
+                cleanup();
+                resolve([]);
+            };
+            confirmBtn.addEventListener('click', onConfirm);
+            skipBtn.addEventListener('click', onSkip);
+            closeBtn.addEventListener('click', onSkip);
+        });
     }
 
     async removeFromBookshelf(asin, bookshelfId) {
