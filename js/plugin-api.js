@@ -54,8 +54,80 @@ class BookshelfPluginAPI {
     constructor(app) {
         this._app = app;
         this._bus = new PluginEventBus();
-        this._uiButtons = []; // { id, where, label, onClick, element }
-        this._exportTransforms = []; // (state) => state
+        this._uiButtons = []; // { id, where, label, onClick, element, _pluginId }
+        this._exportTransforms = []; // { fn, _pluginId }
+        // pluginId → { eventHandlers: [{ event, handler }], uiButtonIds: Set, exportTransforms: [fn] }
+        this._pluginRegistrations = new Map();
+    }
+
+    /**
+     * プラグインスコープ付き API を返す。activate(scopedApi, manifest) に渡される。
+     * scopedApi 経由で登録された UI ボタン / イベントハンドラ / エクスポート変換は
+     * pluginId 別にトラックされ、unloadPlugin 時に一括解除可能。
+     */
+    forPlugin(pluginId) {
+        if (!pluginId) return this;
+        if (!this._pluginRegistrations.has(pluginId)) {
+            this._pluginRegistrations.set(pluginId, {
+                eventHandlers: [],
+                uiButtonIds: new Set(),
+                exportTransforms: []
+            });
+        }
+        const reg = this._pluginRegistrations.get(pluginId);
+        const self = this;
+        // Proxy ではなくシンプルな wrapper を返す（メソッド数が限定的なので明示）
+        return {
+            on(event, handler) {
+                const off = self._bus.on(event, handler);
+                reg.eventHandlers.push({ event, handler, off });
+                return off;
+            },
+            off(event, handler) { self._bus.off(event, handler); },
+            getBooks: () => self.getBooks(),
+            getBook: (asin) => self.getBook(asin),
+            getNotes: () => self.getNotes(),
+            getNote: (asin) => self.getNote(asin),
+            getBookshelves: () => self.getBookshelves(),
+            getBookshelf: (id) => self.getBookshelf(id),
+            getBookshelfBySlug: (slug) => self.getBookshelfBySlug(slug),
+            updateNote: (asin, partial) => self.updateNote(asin, partial),
+            refreshUI: () => self.refreshUI(),
+            addUIButton: (opts) => {
+                const entry = self.addUIButton(opts);
+                if (entry) reg.uiButtonIds.add(entry.id);
+                return entry;
+            },
+            removeUIButton: (id) => {
+                self.removeUIButton(id);
+                reg.uiButtonIds.delete(id);
+            },
+            registerExportTransform: (fn) => {
+                self.registerExportTransform(fn);
+                reg.exportTransforms.push(fn);
+            },
+            writePluginFile: (rel, text) => self.writePluginFile(pluginId, rel, text),
+            readPluginFile: (rel) => self.readPluginFile(pluginId, rel)
+        };
+    }
+
+    /**
+     * プラグインが登録した拡張点を一括解除（無効化時に loader が呼ぶ）
+     */
+    unregisterPlugin(pluginId) {
+        const reg = this._pluginRegistrations.get(pluginId);
+        if (!reg) return;
+        for (const { off } of reg.eventHandlers) {
+            try { off(); } catch (_) {}
+        }
+        for (const id of reg.uiButtonIds) {
+            this.removeUIButton(id);
+        }
+        // exportTransforms は配列実体から filter で除外
+        if (reg.exportTransforms.length > 0) {
+            this._exportTransforms = this._exportTransforms.filter(fn => !reg.exportTransforms.includes(fn));
+        }
+        this._pluginRegistrations.delete(pluginId);
     }
 
     // ===== イベントバス =====

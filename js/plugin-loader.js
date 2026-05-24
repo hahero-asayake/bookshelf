@@ -94,23 +94,52 @@ class BookshelfPluginLoader {
             if (indexJs === null) throw new Error('index.js が見つかりません');
             const blob = new Blob([indexJs], { type: 'application/javascript' });
             const url = URL.createObjectURL(blob);
+            let mod, deactivate;
             try {
-                const mod = await import(url);
+                mod = await import(url);
                 const activate = mod.activate || mod.default;
                 if (typeof activate === 'function') {
-                    await activate(window.bookshelfAPI, manifest);
+                    // スコープ付き API を渡す（unloadPlugin で一括解除可能にする）
+                    const scopedApi = window.bookshelfAPI.forPlugin(id);
+                    const result = await activate(scopedApi, manifest);
+                    deactivate = (result && typeof result.deactivate === 'function')
+                        ? result.deactivate
+                        : (typeof mod.deactivate === 'function' ? mod.deactivate : null);
                 } else {
                     console.warn(`[pluginLoader] ${id} に activate / default export がありません`);
                 }
             } finally {
                 URL.revokeObjectURL(url);
             }
-            this.loaded.set(id, manifest);
+            this.loaded.set(id, { manifest, deactivate, module: mod });
+            this.failedToLoad.delete(id);
             console.log(`[pluginLoader] ${id} v${manifest.version || '?'} 読み込み完了`);
         } catch (e) {
             console.error(`[pluginLoader] ${id} 読み込み失敗:`, e);
             this.failedToLoad.set(id, e.message || String(e));
         }
+    }
+
+    /**
+     * プラグインを即時アンロード。
+     * - プラグイン自前の deactivate を呼ぶ（あれば）
+     * - scopedApi 経由で登録された UI ボタン / イベントハンドラ / エクスポート変換を一括解除
+     * - this.loaded から除外
+     * - 設定からは外さない（呼び出し側が settings.enabledPlugins を更新する）
+     */
+    async unloadPlugin(id) {
+        const entry = this.loaded.get(id);
+        if (!entry) return false;
+        if (typeof entry.deactivate === 'function') {
+            try { await entry.deactivate(); }
+            catch (e) { console.error(`[pluginLoader] ${id} deactivate 失敗:`, e); }
+        }
+        if (window.bookshelfAPI && typeof window.bookshelfAPI.unregisterPlugin === 'function') {
+            window.bookshelfAPI.unregisterPlugin(id);
+        }
+        this.loaded.delete(id);
+        console.log(`[pluginLoader] ${id} アンロード完了`);
+        return true;
     }
 
     async _readPluginFile(id, filename) {
@@ -208,9 +237,12 @@ class BookshelfPluginLoader {
     // ===== アンインストール =====
     async uninstall(pluginId) {
         if (!this.app.obsidianDirHandle) throw new Error('同期フォルダ未接続');
+        // 先に即時アンロードして UI / イベントハンドラを解除
+        if (this.loaded.has(pluginId)) {
+            await this.unloadPlugin(pluginId);
+        }
         const pluginsDir = await this.app.obsidianDirHandle.getDirectoryHandle('plugins');
         await pluginsDir.removeEntry(pluginId, { recursive: true });
-        // 設定からも除外
         const settings = this.app.userData?.settings || {};
         if (Array.isArray(settings.enabledPlugins)) {
             settings.enabledPlugins = settings.enabledPlugins.filter(id => id !== pluginId);
@@ -220,7 +252,6 @@ class BookshelfPluginLoader {
             main.appliedPlugins = main.appliedPlugins.filter(id => id !== pluginId);
         }
         await this.app.saveUserData();
-        this.loaded.delete(pluginId);
         this._installed = null;
     }
 }

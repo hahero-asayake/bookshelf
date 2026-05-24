@@ -1212,10 +1212,7 @@ class VirtualBookshelf {
                         </label>
                     ` : ''}
                     ${isEditMode ? `
-                        <button class="btn btn-primary save-note-btn" data-asin="${book.asin}" style="margin-top: 0.75rem;">
-                            💾 メモを保存
-                        </button>
-                        <span class="save-note-status" data-asin="${book.asin}" style="margin-left: 0.5rem; color: #888; font-size: 0.85rem;"></span>
+                        <span class="save-note-status" data-asin="${book.asin}" style="margin-left: 0.25rem; color: #888; font-size: 0.85rem;"></span>
                     ` : ''}
                     ${isEditMode && contextInternalId ? (() => {
                         const bs = this.bookshelfManager.getById(contextInternalId);
@@ -1234,7 +1231,7 @@ class VirtualBookshelf {
                             </div>
                         `;
                     })() : ''}
-                    <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 編集後は「💾 メモを保存」を押してください</p>
+                    <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 入力を止めると自動保存されます（同期は背景で実行）</p>
 
                     <div class="rating-section" style="${isEditMode ? '' : 'display: none;'}">
                         <h4>⭐ 星評価</h4>
@@ -1254,10 +1251,11 @@ class VirtualBookshelf {
         
         // Setup modal event listeners
         const noteTextarea = modalBody.querySelector('.note-textarea');
-        // 自動保存は廃止。明示的な「💾 メモを保存」ボタンで保存する
+        // 自動保存: 入力停止 300ms 後に保存。Obsidian 同期側でも debounce されるので連続入力負荷は低い
         if (isEditMode) {
             noteTextarea.addEventListener('input', (e) => {
                 this.updateMemoPreview(e.target);
+                this._scheduleNoteAutoSave(e.target.dataset.asin, e.target.value, modalBody);
             });
         }
 
@@ -1274,27 +1272,7 @@ class VirtualBookshelf {
             });
         }
 
-        const saveNoteBtn = modalBody.querySelector('.save-note-btn');
-        if (saveNoteBtn) {
-            saveNoteBtn.addEventListener('click', async (e) => {
-                const asin = e.currentTarget.dataset.asin;
-                const textarea = modalBody.querySelector(`.note-textarea[data-asin="${asin}"]`);
-                const statusEl = modalBody.querySelector(`.save-note-status[data-asin="${asin}"]`);
-                if (!textarea) return;
-                saveNoteBtn.disabled = true;
-                if (statusEl) statusEl.textContent = '💾 保存中...';
-                try {
-                    await this.saveNote(asin, textarea.value);
-                    if (statusEl) statusEl.textContent = '✅ 保存しました';
-                    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
-                } catch (err) {
-                    if (statusEl) statusEl.textContent = `❌ ${err.message || '保存失敗'}`;
-                    console.error('メモ保存エラー:', err);
-                } finally {
-                    saveNoteBtn.disabled = false;
-                }
-            });
-        }
+        // 旧「💾 メモを保存」ボタンは廃止。自動保存に切り替わったため不要。
         
         const addToBookshelfBtn = modalBody.querySelector('.add-to-bookshelf');
         if (addToBookshelfBtn) {
@@ -1475,6 +1453,34 @@ class VirtualBookshelf {
         });
 
         await this.saveUserData();
+        if (this.pluginAPI) this.pluginAPI._emit('note:updated', { asin, note: this.userData.notes?.[asin] || { memo } });
+    }
+
+    /**
+     * メモ自動保存（textarea の oninput から呼ばれる）
+     * 300ms 入力停止で saveNote 実行。さらに saveUserData 側で 800ms debounce されるので
+     * 連続入力時の Obsidian I/O は最小化される。
+     */
+    _scheduleNoteAutoSave(asin, value, modalRoot) {
+        if (!this._noteAutoSaveTimers) this._noteAutoSaveTimers = new Map();
+        const existing = this._noteAutoSaveTimers.get(asin);
+        if (existing) clearTimeout(existing);
+        const statusEl = (modalRoot || document).querySelector(`.save-note-status[data-asin="${asin}"]`);
+        if (statusEl) statusEl.textContent = '✏️ 入力中…';
+        const timer = setTimeout(async () => {
+            this._noteAutoSaveTimers.delete(asin);
+            try {
+                await this.saveNote(asin, value);
+                if (statusEl) {
+                    statusEl.textContent = '✅ 保存しました';
+                    setTimeout(() => { if (statusEl.textContent === '✅ 保存しました') statusEl.textContent = ''; }, 1500);
+                }
+            } catch (e) {
+                console.error('メモ自動保存エラー:', e);
+                if (statusEl) statusEl.textContent = `❌ ${e.message || '保存失敗'}`;
+            }
+        }, 300);
+        this._noteAutoSaveTimers.set(asin, timer);
     }
 
 
@@ -3468,13 +3474,13 @@ class VirtualBookshelf {
         if (enabled && !list.includes(id)) list.push(id);
         if (!enabled) this.userData.settings.enabledPlugins = list.filter(x => x !== id);
         await this.saveUserData();
-        // 有効化のみその場で読み込み（無効化はリロードで反映）
+        // 即時反映: 有効化→_loadPlugin, 無効化→unloadPlugin（リロード不要）
         if (enabled && !this.pluginLoader.loaded.has(id)) {
             const installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
             const target = installed.find(p => p.id === id);
             if (target) await this.pluginLoader._loadPlugin(target);
-        } else if (!enabled) {
-            alert('無効化を反映するにはページを再読み込みしてください。');
+        } else if (!enabled && this.pluginLoader.loaded.has(id)) {
+            await this.pluginLoader.unloadPlugin(id);
         }
         await this._renderPluginsList();
     }
@@ -3483,7 +3489,6 @@ class VirtualBookshelf {
         if (!confirm(`プラグイン "${id}" を削除しますか？\n同期フォルダの plugins/${id}/ も削除されます。`)) return;
         try {
             await this.pluginLoader.uninstall(id);
-            alert(`🗑️ ${id} を削除しました。無効化を完全反映するにはページを再読み込みしてください。`);
             await this._renderPluginsList();
         } catch (e) {
             alert(`❌ 削除失敗: ${e.message}`);
