@@ -1451,6 +1451,7 @@ class VirtualBookshelf {
         }
 
         if (window.seriesManager) window.seriesManager.clearCache();
+        if (this.bookshelfManager) this.bookshelfManager.rebuildReverseIndex();
         return true;
     }
 
@@ -1915,27 +1916,20 @@ class VirtualBookshelf {
     }
 
     async deleteBookshelf(bookshelfId) {
-        const bookshelf = this.userData.bookshelves.find(b => b.id === bookshelfId);
+        const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf) return;
 
-        if (!confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ この操作は取り消せません。`)) return;
-
-        const slugToDelete = bookshelf.id;
-        this.userData.bookshelves = this.userData.bookshelves.filter(b => b.id !== bookshelfId);
-
-        if (this.userData.bookOrder && Object.prototype.hasOwnProperty.call(this.userData.bookOrder, bookshelfId)) {
-            delete this.userData.bookOrder[bookshelfId];
-        }
-
-        // 同期フォルダの bookshelves/<slug>.json ファイルも削除
-        if (this.obsidianDirHandle && this.storage) {
-            this.storage.setDirHandle(this.obsidianDirHandle);
-            try {
-                await this.storage.deleteBookshelfFile(slugToDelete);
-            } catch (e) {
-                console.error('本棚ファイル削除エラー:', e);
+        const result = await this.bookshelfManager.remove(bookshelf.internalId, {
+            confirmCallback: async (targets) => {
+                if (targets.length === 1) {
+                    return confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ この操作は取り消せません。`);
+                }
+                const names = targets.map(t => `・${t.name}`).join('\n');
+                return confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ 子孫本棚もカスケード削除されます:\n${names}\n\nこの操作は取り消せません。`);
             }
-        }
+        });
+
+        if (!result) return;
 
         await this.saveUserData();
         this.updateBookshelfSelector();
@@ -1957,33 +1951,31 @@ class VirtualBookshelf {
             return;
         }
 
-        const bookshelf = this.userData.bookshelves.find(b => b.id === bookshelfId);
+        const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf) {
             alert('❌ 本棚が見つかりません');
             return;
         }
 
-        if (!bookshelf.books) {
-            bookshelf.books = [];
-        }
-
-        if (bookshelf.books.includes(asin)) {
+        if ((bookshelf.books || []).includes(asin)) {
             alert(`📚 この本は既に「${bookshelf.name}」に追加済みです`);
             return;
         }
 
-        bookshelf.books.push(asin);
+        // サブセット制約: 祖先で本を含んでいない本棚は自動追加
+        const ancestors = this.bookshelfManager.getAncestors(bookshelf.internalId);
+        const ancestorsToAdd = ancestors.filter(a => !(a.books || []).includes(asin));
 
-        // bookOrder にも反映（表示順序の正本）
-        if (!this.userData.bookOrder) this.userData.bookOrder = {};
-        if (!Array.isArray(this.userData.bookOrder[bookshelfId])) {
-            this.userData.bookOrder[bookshelfId] = [];
-        }
-        if (!this.userData.bookOrder[bookshelfId].includes(asin)) {
-            this.userData.bookOrder[bookshelfId].unshift(asin);
+        // 子孫がいれば「子孫にも追加するか」プロンプト（Phase 2 では prompt 簡易UI）
+        const descendants = this.bookshelfManager.getDescendants(bookshelf.internalId);
+        const propagateTo = await this._chooseDescendantsToAddTo(descendants);
+
+        // 祖先 + 自身 + 選択した子孫 に追加
+        const targetIds = [...ancestorsToAdd.map(a => a.internalId), bookshelf.internalId, ...propagateTo];
+        for (const id of targetIds) {
+            this.bookshelfManager.addBookToBookshelf(id, asin);
         }
 
-        // 同期完了を待ってから UI 更新（書き込み前の状態でロードされる事故を防ぐ）
         await this.saveUserData();
         this.renderBookshelfList();
 
@@ -1992,44 +1984,70 @@ class VirtualBookshelf {
             this.showBookDetail(book, true);
         }
 
-        alert(`✅ 「${bookshelf.name}」に追加しました！`);
+        const ancestorMsg = ancestorsToAdd.length > 0
+            ? `\n（祖先にも自動追加: ${ancestorsToAdd.map(a => a.name).join('、')}）`
+            : '';
+        const descendantMsg = propagateTo.length > 0
+            ? `\n（子孫にも追加: ${propagateTo.length}個の本棚）`
+            : '';
+        alert(`✅ 「${bookshelf.name}」に追加しました${ancestorMsg}${descendantMsg}`);
         bookshelfSelect.value = '';
     }
 
+    async _chooseDescendantsToAddTo(descendants) {
+        if (!descendants || descendants.length === 0) return [];
+        const list = descendants.map((d, i) => `${i + 1}. ${d.emoji || '📚'} ${d.name}`).join('\n');
+        const input = prompt(
+            `子・孫本棚にも追加しますか？\n\n${list}\n\n追加する本棚の番号をカンマ区切りで入力（例: 1,3）\n空欄で追加なし、"all" で全部`,
+            ''
+        );
+        if (!input || !input.trim()) return [];
+        if (input.trim().toLowerCase() === 'all') return descendants.map(d => d.internalId);
+        const indices = input.split(',')
+            .map(s => parseInt(s.trim(), 10) - 1)
+            .filter(n => n >= 0 && n < descendants.length);
+        return indices.map(i => descendants[i].internalId);
+    }
+
     async removeFromBookshelf(asin, bookshelfId) {
-        const bookshelf = this.userData.bookshelves.find(b => b.id === bookshelfId);
+        const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf || !bookshelf.books) {
             alert('❌ 本棚が見つかりません');
             return;
         }
-        
+
         const book = this.books.find(b => b.asin === asin);
         const bookTitle = book ? book.title : 'この本';
-        
+
         if (!bookshelf.books.includes(asin)) {
             alert(`📚 この本は「${bookshelf.name}」にありません`);
             return;
         }
-        
-        if (confirm(`📚 「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n⚠️ 本自体は削除されず、この本棚からのみ削除されます。`)) {
-            bookshelf.books = bookshelf.books.filter(bookAsin => bookAsin !== asin);
-            if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder[bookshelfId])) {
-                this.userData.bookOrder[bookshelfId] = this.userData.bookOrder[bookshelfId].filter(a => a !== asin);
-            }
-            await this.saveUserData();
-            this.renderBookshelfList(); // Update the bookshelf management UI if open
-            
-            // If currently viewing this bookshelf, update the display
-            if (this.currentBookshelf === bookshelfId) {
-                this.applyFilters();
-                this.updateDisplay();
-            }
-            
-            alert(`✅ 「${bookTitle}」を「${bookshelf.name}」から除外しました`);
-            
-            // Close modal to show the updated bookshelf
-            this.closeModal();
+
+        const descendants = this.bookshelfManager.getDescendants(bookshelf.internalId);
+        const descendantsWithBook = descendants.filter(d => (d.books || []).includes(asin));
+
+        let confirmMsg = `📚 「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n⚠️ 本自体は削除されず、この本棚からのみ削除されます。`;
+        if (descendantsWithBook.length > 0) {
+            const names = descendantsWithBook.map(d => `・${d.name}`).join('\n');
+            confirmMsg += `\n\n⚠️ 子孫本棚にも含まれているため、自動カスケード削除されます:\n${names}`;
         }
+
+        if (!confirm(confirmMsg)) return;
+
+        // BookshelfManager 経由でカスケード削除
+        this.bookshelfManager.removeBookFromBookshelf(bookshelf.internalId, asin);
+
+        await this.saveUserData();
+        this.renderBookshelfList();
+
+        if (this.currentBookshelf === bookshelfId) {
+            this.applyFilters();
+            this.updateDisplay();
+        }
+
+        alert(`✅ 「${bookTitle}」を「${bookshelf.name}」から除外しました`);
+        this.closeModal();
     }
 
     /**
