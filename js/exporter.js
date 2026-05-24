@@ -189,11 +189,8 @@ class BookshelfExporter {
         }
 
         // app shell（index.html / css / js）をコピー
-        try {
-            await this._copyAppShell();
-        } catch (e) {
-            errors.push(`app shell コピー失敗: ${e.message}`);
-        }
+        const shellErrors = await this._copyAppShell();
+        errors.push(...shellErrors);
 
         return {
             exported: publishAsins.size,
@@ -204,28 +201,29 @@ class BookshelfExporter {
     }
 
     // 公開サイトを動かすための index.html / css / js を出力先にコピー
+    // 失敗は配列で返す（呼び出し側でエクスポート結果に集約）
     async _copyAppShell() {
+        const errors = [];
         const fetchText = async (path) => {
             const r = await fetch(path);
-            if (!r.ok) throw new Error(`${path} の取得失敗 (${r.status})`);
+            if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
             return r.text();
         };
 
-        // index.html: ?mode=public で起動するため、href の修正は不要（JS 側で判定）
-        // 公開時に編集系UIをDOMから消すのは CSS .public-mode セレクタで対応
-        // ただし、デフォルトで public モードを誘導するため、起動時のクエリを書き込む方法はない
-        // → ユーザは ?mode=public 付きで開く必要がある
-        const indexHtml = await fetchText('index.html');
-        // 公開版では <body> に class="public-mode" を入れて、URL クエリ無しでも公開モードで起動
-        const publicIndex = indexHtml.replace('<body>', '<body class="public-mode" data-public-mode="true">');
-        await this._writeText(publicIndex, 'index.html');
+        try {
+            const indexHtml = await fetchText('index.html');
+            const publicIndex = indexHtml.replace('<body>', '<body class="public-mode" data-public-mode="true">');
+            await this._writeText(publicIndex, 'index.html');
+        } catch (e) {
+            errors.push(`index.html: ${e.message}`);
+        }
 
-        // CSS
         try {
             await this._writeText(await fetchText('css/bookshelf.css'), 'css', 'bookshelf.css');
-        } catch (e) { console.warn(e); }
+        } catch (e) {
+            errors.push(`css/bookshelf.css: ${e.message}`);
+        }
 
-        // JS（必要なもの全部、IS_PUBLIC=true で振る舞いが変わる）
         const jsFiles = [
             'storage.js',
             'book-manager.js',
@@ -240,9 +238,11 @@ class BookshelfExporter {
             try {
                 await this._writeText(await fetchText(`js/${f}`), 'js', f);
             } catch (e) {
-                console.warn(`js/${f} コピー失敗:`, e);
+                errors.push(`js/${f}: ${e.message}`);
             }
         }
+
+        return errors;
     }
 }
 
