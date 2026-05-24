@@ -292,6 +292,7 @@ class BookshelfExporter {
             'exporter.js',
             'plugin-api.js',
             'plugin-loader.js',
+            'router.js',
             'bookshelf.js'
         ];
         for (const f of jsFiles) {
