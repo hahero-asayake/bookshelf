@@ -294,9 +294,18 @@
             <div class="modal-body">
                 <div class="import-options">
                     <div class="import-option">
-                        <h3>ファイルからインポート</h3>
+                        <h3>🚀 ワンクリック取込（Chrome拡張版）</h3>
+                        <p style="font-size: 0.9rem; color: #666; margin: 0.5rem 0;">
+                            「ハヘロ版_Kindle bookshelf exporter」拡張機能(v0.9.5以降)が必要です。<br>
+                            ボタンを押すと Amazon Kindle ライブラリページが自動で開き、書誌を取得してこのウィンドウに戻ります。
+                        </p>
+                        <button id="import-from-extension" class="btn btn-primary">📥 ワンクリック取込を開始</button>
+                    </div>
+                    <hr style="margin: 1.5rem 0; opacity: 0.3;">
+                    <div class="import-option">
+                        <h3>ファイルからインポート（手動）</h3>
                         <input type="file" id="kindle-file-input" accept=".json" />
-                        <button id="import-from-file" class="btn btn-primary">ファイルをインポート</button>
+                        <button id="import-from-file" class="btn btn-secondary">ファイルをインポート</button>
                     </div>
 
                 </div>

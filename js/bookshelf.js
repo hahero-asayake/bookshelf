@@ -362,6 +362,14 @@ class VirtualBookshelf {
             this.importFromFile();
         });
 
+        // Import from Chrome extension (one-click)
+        const importExtBtn = document.getElementById('import-from-extension');
+        if (importExtBtn) {
+            importExtBtn.addEventListener('click', () => {
+                this.oneClickKindleImport();
+            });
+        }
+
         // Bookshelf display toggle
         const toggleBtn = document.getElementById('toggle-bookshelf-display');
         if (toggleBtn) {
@@ -3166,9 +3174,68 @@ class VirtualBookshelf {
     }
 
     /**
-     * data/kindle.jsonからインポート
+     * Chrome拡張からワンクリックでKindle取込
+     * 拡張のcontent.jsがbookshelfImport=1パラメータを検知して
+     * postMessageで結果を返してくる
      */
-    // This method is no longer needed - removed data/kindle.json import option
+    oneClickKindleImport() {
+        if (this._kindleImportInFlight) {
+            alert('⏳ 既に取込中です。新しいタブの完了を待ってください。');
+            return;
+        }
+
+        const url = 'https://www.amazon.co.jp/hz/mycd/digital-console/contentlist/booksAll/?bookshelfImport=1';
+        const win = window.open(url, '_blank');
+        if (!win) {
+            alert('🚫 ポップアップがブロックされました。\nブラウザのポップアップを許可してから再試行してください。');
+            return;
+        }
+        this._kindleImportInFlight = true;
+
+        // 送信元 origin は Amazon 固定。設定で extensionImportOrigins があれば加える（拡張テスト用）
+        const allowedOrigins = new Set([
+            'https://www.amazon.co.jp',
+            ...((this.userData && this.userData.settings && this.userData.settings.extensionImportOrigins) || [])
+        ]);
+
+        let timer = null;
+        const cleanup = () => {
+            window.removeEventListener('message', handler);
+            if (timer) clearTimeout(timer);
+            this._kindleImportInFlight = false;
+        };
+
+        const handler = (event) => {
+            // origin: ワイルドカード許可は許容しない
+            if (!allowedOrigins.has(event.origin)) return;
+            const data = event.data;
+            if (!data || data.type !== 'kindleBookshelfExport') return;
+
+            cleanup();
+
+            if (!data.ok) {
+                alert(`❌ Kindle 取込に失敗しました: ${data.error || '不明なエラー'}`);
+                return;
+            }
+            const items = Array.isArray(data.items) ? data.items : [];
+            if (items.length === 0) {
+                alert('⚠️ 取込対象の本がありませんでした。');
+                return;
+            }
+
+            // 既存のインポートUIを再利用
+            this.showImportModal();
+            this.showBookSelectionForImport(items, 'extension');
+        };
+
+        window.addEventListener('message', handler);
+
+        // 5分でタイムアウト
+        timer = setTimeout(() => {
+            cleanup();
+            alert('⏱️ Kindle 取込がタイムアウトしました（5分）。\n拡張機能 v0.9.5 以降がインストール・有効化されているか確認してください。');
+        }, 5 * 60 * 1000);
+    }
 
     /**
      * インポート結果を表示
