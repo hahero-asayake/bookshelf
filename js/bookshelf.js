@@ -66,6 +66,10 @@ class VirtualBookshelf {
         if (window.BookshelfPluginLoader) {
             this.pluginLoader = new BookshelfPluginLoader(this);
         }
+        if (window.BookshelfRouter) {
+            this.router = new BookshelfRouter();
+            this._suppressRouterUpdate = false;
+        }
         // 公開モード判定: URL クエリ ?mode=public または body[data-public-mode="true"]
         const queryPublic = new URLSearchParams(window.location.search).get('mode') === 'public';
         const bodyPublic = document.body.dataset.publicMode === 'true';
@@ -181,6 +185,12 @@ class VirtualBookshelf {
                 } catch (e) {
                     console.warn('プラグイン読み込み中にエラー:', e);
                 }
+            }
+
+            // Router 起動（最後に行うことでデータ・プラグインがすべて準備済みになる）
+            if (this.router) {
+                this.router.onChange((route) => this._applyRoute(route));
+                this.router.start();
             }
 
             this.hideLoading();
@@ -391,6 +401,15 @@ class VirtualBookshelf {
                 } else {
                     this.selectObsidianFolder();
                 }
+            });
+        }
+
+        // 「← 一覧」ボタン: メインに戻る
+        const backToMain = document.getElementById('back-to-main');
+        if (backToMain) {
+            backToMain.addEventListener('click', () => {
+                if (this.router) this.router.navigateMain();
+                else this._setBodyView('main');
             });
         }
 
@@ -1017,6 +1036,11 @@ class VirtualBookshelf {
     }
 
     showBookDetail(book, isEditMode = false) {
+        // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
+        if (this.router && !this._suppressRouterUpdate && book && book.asin) {
+            const fromInternalId = this._currentBookshelfInternalId();
+            this.router.navigateBook(book.asin, fromInternalId);
+        }
         const modal = document.getElementById('book-modal');
         const modalBody = document.getElementById('modal-body');
 
@@ -1359,12 +1383,22 @@ class VirtualBookshelf {
     }
 
     closeModal() {
-        const modal = document.getElementById('book-modal');
-        modal.classList.remove('show');
-        
-        // Clear modal body to prevent event listener conflicts
-        const modalBody = document.getElementById('modal-body');
-        modalBody.innerHTML = '';
+        this._closeBookModalDom();
+        // Router 連携: 現在のルートが book なら戻す
+        if (this.router && !this._suppressRouterUpdate) {
+            const cur = this.router.current;
+            if (cur && cur.view === 'book') {
+                if (cur.from) {
+                    const bs = this.bookshelfManager?.getByInternalId?.(cur.from)
+                            || this.bookshelfManager?.getById?.(cur.from);
+                    if (bs?.slug) {
+                        this.router.navigateBookshelf(bs.slug, { replace: true });
+                        return;
+                    }
+                }
+                this.router.navigateMain({ replace: true });
+            }
+        }
     }
 
 
@@ -2094,6 +2128,106 @@ class VirtualBookshelf {
     switchBookshelf(bookshelfId) {
         this.currentBookshelf = bookshelfId;
         this.applyFilters();
+        // ヘッダ select も同期
+        const sel = document.getElementById('bookshelf-selector');
+        if (sel && sel.value !== bookshelfId) sel.value = bookshelfId;
+        // 本棚ビューに切替
+        this._setBodyView('bookshelf');
+        this._updateBookshelfViewTitle();
+        // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
+        if (this.router && !this._suppressRouterUpdate) {
+            const bs = this.bookshelfManager?.getById?.(bookshelfId);
+            const slug = bs?.slug || (bookshelfId === 'all' ? 'all' : bookshelfId);
+            this.router.navigateBookshelf(slug);
+        }
+    }
+
+    /**
+     * ビュー切替: body クラスを app-view-{main|bookshelf} に
+     */
+    _setBodyView(view) {
+        document.body.classList.remove('app-view-main', 'app-view-bookshelf');
+        document.body.classList.add(`app-view-${view}`);
+    }
+
+    /**
+     * 本棚ビューのタイトルを更新
+     */
+    _updateBookshelfViewTitle() {
+        const titleEl = document.getElementById('current-bookshelf-title');
+        if (!titleEl) return;
+        const id = this.currentBookshelf;
+        const bs = id ? this.bookshelfManager?.getById?.(id) : null;
+        if (bs) {
+            titleEl.textContent = `${bs.emoji || '📚'} ${bs.name}`;
+        } else if (id === 'all') {
+            titleEl.textContent = '📚 全ての本';
+        } else {
+            titleEl.textContent = '';
+        }
+    }
+
+    /**
+     * Router からのルート変更を受信
+     */
+    _applyRoute(route) {
+        if (!route) return;
+        this._suppressRouterUpdate = true;
+        try {
+            if (route.view === 'main') {
+                this._setBodyView('main');
+                this._closeBookModalDom();
+                if (typeof this.renderBookshelfOverview === 'function') this.renderBookshelfOverview();
+            } else if (route.view === 'bookshelf') {
+                this._closeBookModalDom();
+                let targetId = null;
+                if (route.slug === 'all') {
+                    targetId = 'all';
+                } else {
+                    const bs = this.bookshelfManager?.getBySlug?.(route.slug);
+                    targetId = bs ? (bs.id || bs.internalId) : null;
+                }
+                if (targetId) {
+                    this.switchBookshelf(targetId);
+                } else {
+                    // slug 解決できなければメインに戻す
+                    this.router.navigateMain({ replace: true });
+                }
+            } else if (route.view === 'book') {
+                // from が指定されていれば、まず本棚を切替えてから本を開く
+                if (route.from) {
+                    const bs = this.bookshelfManager?.getByInternalId?.(route.from)
+                            || this.bookshelfManager?.getById?.(route.from);
+                    if (bs) {
+                        const id = bs.id || bs.internalId;
+                        this.currentBookshelf = id;
+                        this.applyFilters();
+                        const sel = document.getElementById('bookshelf-selector');
+                        if (sel) sel.value = id;
+                        this._setBodyView('bookshelf');
+                        this._updateBookshelfViewTitle();
+                    }
+                }
+                const book = (this.books || []).find(b => b.asin === route.asin);
+                if (!book) {
+                    this.router.navigateMain({ replace: true });
+                    return;
+                }
+                this.showBookDetail(book, false);
+            }
+        } finally {
+            this._suppressRouterUpdate = false;
+        }
+    }
+
+    /**
+     * 本詳細モーダルの DOM をクリア（router の都合でナビゲーション無し）
+     */
+    _closeBookModalDom() {
+        const modal = document.getElementById('book-modal');
+        if (modal) modal.classList.remove('show');
+        const modalBody = document.getElementById('modal-body');
+        if (modalBody) modalBody.innerHTML = '';
     }
 
     showBookshelfManager() {
