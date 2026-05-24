@@ -57,6 +57,7 @@ class VirtualBookshelf {
         this.sortDirection = 'desc';
         this.seriesGroupingEnabled = false;
         this.storage = new BookshelfStorage();
+        this.bookshelfManager = new BookshelfManager(this);
 
         this.init();
     }
@@ -1799,28 +1800,41 @@ class VirtualBookshelf {
         const modal = document.getElementById('bookshelf-form-modal');
         const title = document.getElementById('bookshelf-form-title');
         const nameInput = document.getElementById('bookshelf-name');
+        const slugInput = document.getElementById('bookshelf-slug');
+        const parentSelect = document.getElementById('bookshelf-parent');
         const emojiInput = document.getElementById('bookshelf-emoji');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
 
-        // Set form title and populate fields for editing
+        // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）
+        const allId = this.bookshelfManager.getAllInternalId();
+        const excludedIds = bookshelfToEdit
+            ? new Set([bookshelfToEdit.internalId, ...this.bookshelfManager.getDescendants(bookshelfToEdit.internalId).map(b => b.internalId)])
+            : new Set();
+        const candidates = this.bookshelfManager.getBookshelves().filter(b => !excludedIds.has(b.internalId));
+        parentSelect.innerHTML = `<option value="${allId || ''}">📚 すべての本（all）</option>` +
+            candidates.map(b => `<option value="${b.internalId}">${b.emoji || '📚'} ${b.name}</option>`).join('');
+
         if (bookshelfToEdit) {
             title.textContent = '📚 本棚を編集';
             nameInput.value = bookshelfToEdit.name;
+            slugInput.value = bookshelfToEdit.id || '';
+            parentSelect.value = bookshelfToEdit.parent || allId || '';
             emojiInput.value = bookshelfToEdit.emoji || '📚';
             descriptionInput.value = bookshelfToEdit.description || '';
             isPublicInput.checked = bookshelfToEdit.isPublic || false;
         } else {
             title.textContent = '📚 新しい本棚';
             nameInput.value = '';
+            slugInput.value = '';
+            parentSelect.value = allId || '';
             emojiInput.value = '📚';
             descriptionInput.value = '';
             isPublicInput.checked = false;
         }
-        
-        // Store current editing bookshelf
+
         this.currentEditingBookshelf = bookshelfToEdit;
-        
+
         modal.classList.add('show');
         nameInput.focus();
     }
@@ -1833,6 +1847,8 @@ class VirtualBookshelf {
 
     async saveBookshelfForm() {
         const nameInput = document.getElementById('bookshelf-name');
+        const slugInput = document.getElementById('bookshelf-slug');
+        const parentSelect = document.getElementById('bookshelf-parent');
         const emojiInput = document.getElementById('bookshelf-emoji');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
@@ -1844,33 +1860,51 @@ class VirtualBookshelf {
             return;
         }
 
-        if (this.currentEditingBookshelf) {
-            // Edit existing bookshelf
-            this.currentEditingBookshelf.name = name;
-            this.currentEditingBookshelf.emoji = emojiInput.value.trim() || '📚';
-            this.currentEditingBookshelf.description = descriptionInput.value.trim();
-            this.currentEditingBookshelf.isPublic = isPublicInput.checked;
-            this.currentEditingBookshelf.lastUpdated = new Date().toISOString();
-        } else {
-            // Create new bookshelf
-            const newBookshelf = {
-                id: `bookshelf_${Date.now()}`,
-                internalId: generateInternalId(),
-                name: name,
-                emoji: emojiInput.value.trim() || '📚',
-                description: descriptionInput.value.trim(),
-                isPublic: isPublicInput.checked,
-                books: [],
-                notes: {},
-                createdAt: new Date().toISOString()
-            };
-            this.userData.bookshelves.push(newBookshelf);
+        const slugRaw = slugInput.value.trim();
+        const slug = slugRaw || this._slugifyName(name);
+        if (!/^[a-z0-9_-]+$/.test(slug)) {
+            alert('slug は英小文字・数字・ハイフン・アンダースコアのみ使えます');
+            slugInput.focus();
+            return;
+        }
+
+        const parentId = parentSelect.value || this.bookshelfManager.getAllInternalId();
+        const meta = {
+            name,
+            slug,
+            parent: parentId,
+            emoji: emojiInput.value.trim() || '📚',
+            description: descriptionInput.value.trim(),
+            isPublic: isPublicInput.checked
+        };
+
+        try {
+            if (this.currentEditingBookshelf) {
+                this.bookshelfManager.update(this.currentEditingBookshelf.internalId, meta);
+                // slug 変更があれば rename（ファイル削除も走る）
+                if (slug !== this.currentEditingBookshelf.id) {
+                    await this.bookshelfManager.rename(this.currentEditingBookshelf.internalId, slug);
+                }
+            } else {
+                this.bookshelfManager.create(meta);
+            }
+        } catch (e) {
+            alert(`❌ ${e.message}`);
+            return;
         }
 
         await this.saveUserData();
         this.updateBookshelfSelector();
         this.renderBookshelfList();
         this.closeBookshelfForm();
+    }
+
+    _slugifyName(name) {
+        return name
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            || `bookshelf-${Date.now()}`;
     }
 
     editBookshelf(bookshelfId) {
