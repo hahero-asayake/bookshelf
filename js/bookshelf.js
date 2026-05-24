@@ -1603,9 +1603,26 @@ class VirtualBookshelf {
 
         // 本棚配列: bookshelves.json のエントリ全部
         // all 本棚は state.bookshelfFiles に無いので、state.allBookshelf から構築
+        // all.books は常に library - exclusions と一致するよう正規化（保存値の順序は維持）
+        const libraryAsins = libraryBooks.map(b => b.asin);
+        const libraryAsinSet = new Set(libraryAsins);
+        const visibleLibraryAsins = libraryAsins.filter(a => !excluded.has(a));
+
         const bookshelves = (state.bookshelvesMeta.bookshelves || []).map(meta => {
             const isAll = meta.slug === 'all';
             const fileData = isAll ? state.allBookshelf : state.bookshelfFiles[meta.internalId];
+            const savedBooks = (fileData && Array.isArray(fileData.books)) ? fileData.books : [];
+
+            let books = savedBooks;
+            if (isAll) {
+                // all.books = library - exclusions（保存順序を維持しつつ漏れを補完、無効ASIN除外）
+                const orderedSet = new Set(savedBooks);
+                books = [
+                    ...savedBooks.filter(a => libraryAsinSet.has(a) && !excluded.has(a)),
+                    ...visibleLibraryAsins.filter(a => !orderedSet.has(a))
+                ];
+            }
+
             return {
                 id: meta.slug,
                 internalId: meta.internalId,
@@ -1615,7 +1632,7 @@ class VirtualBookshelf {
                 appliedPlugins: meta.appliedPlugins || [],
                 isPublic: meta.isPublic || false,
                 isSpecial: meta.isSpecial || isAll,
-                books: (fileData && fileData.books) || [],
+                books,
                 notes: (fileData && fileData.notes) || {}
             };
         });
