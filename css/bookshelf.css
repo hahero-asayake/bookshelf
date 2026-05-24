@@ -275,6 +275,29 @@ body {
     padding-bottom: 0.5rem;
 }
 
+.filter-section > summary {
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid var(--border-color);
+    list-style: none;
+    user-select: none;
+}
+
+.filter-section > summary::-webkit-details-marker { display: none; }
+
+.filter-section > summary::before {
+    content: '▸ ';
+    transition: transform 0.15s;
+}
+
+.filter-section[open] > summary::before {
+    content: '▾ ';
+}
+
 .filter-group {
     margin-bottom: 1rem;
 }
