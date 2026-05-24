@@ -110,29 +110,19 @@ class BookshelfExporter {
 
         const state = await storage.loadAll();
         const publishBookshelfIds = new Set(publicMain.bookshelves || []);
-        const allId = state.allBookshelf && state.allBookshelf.internalId;
 
         const publishAsins = new Set();
         const hideDetailAsins = new Set();
         const filteredBookshelfFiles = []; // [{ slug, data }]
         const filteredMetas = [];
 
-        // all（特殊）
-        if (allId && publishBookshelfIds.has(allId) && state.allBookshelf) {
-            for (const asin of (state.allBookshelf.books || [])) publishAsins.add(asin);
-            // all.notes の hideDetailMemo フラグ
-            for (const [asin, note] of Object.entries(state.allBookshelf.notes || {})) {
-                if (note && note.hideDetailMemo) hideDetailAsins.add(asin);
-            }
-            filteredBookshelfFiles.push({ slug: 'all', data: state.allBookshelf });
-        }
-
-        // ユーザ本棚
+        // 全本棚（all 含む）を統一的に扱う
         for (const meta of (state.bookshelvesMeta.bookshelves || [])) {
             if (!publishBookshelfIds.has(meta.internalId)) continue;
-            const data = state.bookshelfFiles[meta.internalId];
+            const isAll = meta.slug === 'all';
+            const data = isAll ? state.allBookshelf : state.bookshelfFiles[meta.internalId];
             if (!data) continue;
-            // publishHide フラグでフィルタ
+            // publishHide フラグでフィルタ（all は通常 notes 持たない）
             const filteredBooks = (data.books || []).filter(asin => {
                 const note = data.notes && data.notes[asin];
                 return !(note && note.publishHide);
@@ -147,6 +137,13 @@ class BookshelfExporter {
                 publishAsins.add(asin);
                 const note = data.notes && data.notes[asin];
                 if (note && note.hideDetailMemo) hideDetailAsins.add(asin);
+            }
+        }
+
+        // 全本の hideDetailMemo は notes.json (= state.notes) も参照
+        for (const [asin, note] of Object.entries(state.notes || {})) {
+            if (note && note.hideDetailMemo && publishAsins.has(asin)) {
+                hideDetailAsins.add(asin);
             }
         }
 
@@ -165,19 +162,33 @@ class BookshelfExporter {
             await this._writeJSON(f.data, 'data', 'bookshelves', `${f.slug}.json`);
         }
 
+        // notes.json（公開対象 ASIN のみ、hideDetailMemo の hasDetailMemo は除く）
+        const filteredNotes = {};
+        for (const asin of publishAsins) {
+            const n = state.notes[asin];
+            if (!n) continue;
+            if (hideDetailAsins.has(asin)) {
+                const { hasDetailMemo, ...rest } = n;
+                if (Object.keys(rest).length > 0) filteredNotes[asin] = rest;
+            } else {
+                filteredNotes[asin] = n;
+            }
+        }
+        await this._writeJSON({ notes: filteredNotes }, 'data', 'notes.json');
+
         // main.json / settings.json
         await this._writeJSON(publicMain, 'data', 'main.json');
         await this._writeJSON(publicSettings, 'data', 'settings.json');
 
         // 長文メモ
         const errors = [];
-        const allNotes = (state.allBookshelf && state.allBookshelf.notes) || {};
+        const notesSource = state.notes || {};
         for (const asin of publishAsins) {
             if (hideDetailAsins.has(asin)) continue;
             const book = libraryBooks.find(b => b.asin === asin);
             if (!book) continue;
-            const allNote = allNotes[asin];
-            if (!allNote || !allNote.hasDetailMemo) continue;
+            const note = notesSource[asin];
+            if (!note || !note.hasDetailMemo) continue;
             try {
                 const text = await storage.readBookMemo(asin, book.title);
                 if (text !== null) {

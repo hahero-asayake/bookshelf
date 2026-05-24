@@ -180,10 +180,14 @@ class BookshelfManager {
         if (typeof meta.color === 'string') bs.color = meta.color;
         if (Array.isArray(meta.appliedPlugins)) bs.appliedPlugins = meta.appliedPlugins;
         if (typeof meta.parent === 'string') {
-            if (!this.canSetParent(internalId, meta.parent)) {
-                throw new Error('循環参照になるため親に設定できません');
+            if (bs.isSpecial) {
+                // all 等の特殊本棚は親を持てない
+            } else {
+                if (!this.canSetParent(internalId, meta.parent)) {
+                    throw new Error('循環参照になるため親に設定できません');
+                }
+                bs.parent = meta.parent;
             }
-            bs.parent = meta.parent;
         }
         bs.lastUpdated = new Date().toISOString();
         return bs;
@@ -193,6 +197,7 @@ class BookshelfManager {
     async rename(internalId, newSlug) {
         const bs = this.getById(internalId);
         if (!bs) throw new Error('本棚が見つかりません');
+        if (bs.isSpecial) throw new Error('特殊本棚（all 等）は slug を変更できません');
         if (bs.id === newSlug) return bs;
         if (this.getBySlug(newSlug)) {
             throw new Error(`slug "${newSlug}" は既に存在します`);
@@ -222,6 +227,7 @@ class BookshelfManager {
     async remove(internalId, { confirmCallback } = {}) {
         const bs = this.getById(internalId);
         if (!bs) return false;
+        if (bs.isSpecial) throw new Error('特殊本棚（all 等）は削除できません');
         const descendants = this.getDescendants(internalId);
         const allTargets = [bs, ...descendants];
 

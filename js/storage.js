@@ -103,16 +103,59 @@ class BookshelfStorage {
     }
 
     // ===== 形式判定 =====
-    // 'new'    : bookshelves/all.json が存在 → 新構造
+    // 'new'    : bookshelves/all.json + notes.json が存在 → 新構造（notes 分離済）
+    // 'pre-notes-split': bookshelves/all.json はあるが notes.json 無し（all.json に notes が混在）
     // 'legacy' : 旧 library.json（books が object 形式）のみ → マイグレーション要
     // 'empty'  : どちらも無し → 初回
     async detectFormat() {
-        if (await this._fileExists('bookshelves', 'all.json')) return 'new';
+        const hasAll = await this._fileExists('bookshelves', 'all.json');
+        const hasNotes = await this._fileExists('notes.json');
+        if (hasAll && hasNotes) return 'new';
+        if (hasAll && !hasNotes) return 'pre-notes-split';
         const legacy = await this._readJSON('library.json');
         if (legacy && legacy.books && !Array.isArray(legacy.books) && typeof legacy.books === 'object') {
             return 'legacy';
         }
         return 'empty';
+    }
+
+    // notes.json への分離マイグレーション
+    // 旧 all.json の notes を notes.json に移動 + all.json は notes 抜きで書き直し
+    // + bookshelves.json に all 本棚エントリを追加（isSpecial=true）
+    async migrateNotesSplit() {
+        const allBookshelf = await this._readJSON('bookshelves', 'all.json');
+        if (!allBookshelf) return;
+        const notes = allBookshelf.notes || {};
+        await this.writeNotes({ notes });
+
+        const cleanedAll = {
+            internalId: allBookshelf.internalId,
+            slug: 'all',
+            name: allBookshelf.name || 'すべての本',
+            isSpecial: true,
+            isPublic: allBookshelf.isPublic || false,
+            parent: null,
+            appliedPlugins: allBookshelf.appliedPlugins || [],
+            defaultBookOrder: allBookshelf.defaultBookOrder || 'addedDate-desc',
+            books: allBookshelf.books || []
+        };
+        await this._writeJSON(cleanedAll, 'bookshelves', 'all.json');
+
+        // bookshelves.json に all 本棚を含める（既に含まれていれば追加しない）
+        const meta = (await this._readJSON('bookshelves.json')) || { bookshelves: [] };
+        const hasAllEntry = meta.bookshelves.some(b => b.slug === 'all');
+        if (!hasAllEntry) {
+            meta.bookshelves.unshift({
+                internalId: allBookshelf.internalId,
+                slug: 'all',
+                name: allBookshelf.name || 'すべての本',
+                isSpecial: true,
+                parent: null,
+                appliedPlugins: allBookshelf.appliedPlugins || [],
+                isPublic: allBookshelf.isPublic || false
+            });
+            await this._writeJSON(meta, 'bookshelves.json');
+        }
     }
 
     // ===== マイグレーション =====
@@ -157,13 +200,16 @@ class BookshelfStorage {
         const allInternalId = generateInternalId();
         const allBookshelf = {
             internalId: allInternalId,
+            slug: 'all',
             name: 'すべての本',
             isSpecial: true,
+            isPublic: false,
+            parent: null,
             defaultBookOrder: 'addedDate-desc',
             appliedPlugins: [],
-            books: allBooks,
-            notes: allNotes
+            books: allBooks
         };
+        const notesFile = { notes: allNotes };
 
         // 旧 bookshelves 配列を新形式に変換（all 以外）
         const userBookshelvesLegacy = (legacy.bookshelves || []).filter(b => b.id !== 'all');
@@ -212,7 +258,21 @@ class BookshelfStorage {
             });
         }
 
-        const bookshelvesMeta = { bookshelves: bookshelvesMetaEntries };
+        // bookshelves.json に all を最初のエントリとして含める
+        const bookshelvesMeta = {
+            bookshelves: [
+                {
+                    internalId: allInternalId,
+                    slug: 'all',
+                    name: 'すべての本',
+                    isSpecial: true,
+                    parent: null,
+                    appliedPlugins: [],
+                    isPublic: false
+                },
+                ...bookshelvesMetaEntries
+            ]
+        };
 
         const settings = legacy.settings || {};
         const privateSettings = {
@@ -241,6 +301,7 @@ class BookshelfStorage {
         // 一斉書き込み
         await this._writeJSON(newLibrary, 'library.json');
         await this._writeJSON({ excludedASINs: [] }, 'exclusions.json');
+        await this._writeJSON(notesFile, 'notes.json');
         await this._writeJSON(bookshelvesMeta, 'bookshelves.json');
         await this._writeJSON(allBookshelf, 'bookshelves', 'all.json');
         for (const { slug, data } of bookshelfFilesToWrite) {
@@ -257,15 +318,28 @@ class BookshelfStorage {
         const allInternalId = generateInternalId();
         await this._writeJSON({ exportDate: new Date().toISOString(), books: [] }, 'library.json');
         await this._writeJSON({ excludedASINs: [] }, 'exclusions.json');
-        await this._writeJSON({ bookshelves: [] }, 'bookshelves.json');
+        await this._writeJSON({ notes: {} }, 'notes.json');
+        await this._writeJSON({
+            bookshelves: [{
+                internalId: allInternalId,
+                slug: 'all',
+                name: 'すべての本',
+                isSpecial: true,
+                parent: null,
+                appliedPlugins: [],
+                isPublic: false
+            }]
+        }, 'bookshelves.json');
         await this._writeJSON({
             internalId: allInternalId,
+            slug: 'all',
             name: 'すべての本',
             isSpecial: true,
+            isPublic: false,
+            parent: null,
             defaultBookOrder: 'addedDate-desc',
             appliedPlugins: [],
-            books: [],
-            notes: {}
+            books: []
         }, 'bookshelves', 'all.json');
         await this._writeJSON({
             version: '2.0',
@@ -295,6 +369,7 @@ class BookshelfStorage {
     async loadAll() {
         const library = await this._readJSON('library.json');
         const exclusions = (await this._readJSON('exclusions.json')) || { excludedASINs: [] };
+        const notesFile = (await this._readJSON('notes.json')) || { notes: {} };
         const bookshelvesMeta = (await this._readJSON('bookshelves.json')) || { bookshelves: [] };
         const allBookshelf = await this._readJSON('bookshelves', 'all.json');
         const privateSettings = (await this._readJSON('private', 'settings.json')) || {};
@@ -302,6 +377,8 @@ class BookshelfStorage {
 
         const bookshelfFiles = {};
         for (const meta of bookshelvesMeta.bookshelves) {
+            // all は別途 allBookshelf として返すので bookshelfFiles には入れない
+            if (meta.slug === 'all') continue;
             const data = await this._readJSON('bookshelves', `${meta.slug}.json`);
             if (data) bookshelfFiles[meta.internalId] = data;
         }
@@ -309,6 +386,7 @@ class BookshelfStorage {
         return {
             library,
             exclusions,
+            notes: notesFile.notes || {},
             bookshelvesMeta,
             allBookshelf,
             bookshelfFiles,
@@ -330,6 +408,9 @@ class BookshelfStorage {
     readPublicSettings() { return this._readJSON('public', 'settings.json'); }
     writePublicMain(data) { return this._writeJSON(data, 'public', 'main.json'); }
     writePublicSettings(data) { return this._writeJSON(data, 'public', 'settings.json'); }
+
+    readNotes() { return this._readJSON('notes.json'); }
+    writeNotes(data) { return this._writeJSON(data, 'notes.json'); }
 
     async deleteBookshelfFile(slug) {
         try {
