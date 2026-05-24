@@ -16,6 +16,15 @@
 
 </head>
 <body>
+    <!-- モバイル案内バナー (JS で UA 判定後に表示制御) -->
+    <div id="mobile-setup-banner" class="mobile-setup-banner" style="display: none;">
+        <div class="mobile-setup-banner-inner">
+            <div class="mobile-setup-banner-msg" id="mobile-setup-banner-msg"></div>
+            <div class="mobile-setup-banner-actions" id="mobile-setup-banner-actions"></div>
+            <button class="mobile-setup-banner-close" id="mobile-setup-banner-close" title="閉じる">×</button>
+        </div>
+    </div>
+
     <header class="header">
         <div class="container">
             <h1 class="header-title">📚 Virtual Bookshelf</h1>

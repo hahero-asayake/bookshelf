@@ -68,7 +68,63 @@ class VirtualBookshelf {
             document.body.classList.add('public-mode');
         }
 
+        // モバイル案内バナー（編集モード、かつ showDirectoryPicker 非対応端末で表示）
+        if (!this.isPublicMode) {
+            this._setupMobileBanner();
+        }
+
         this.init();
+    }
+
+    /**
+     * モバイル端末で showDirectoryPicker が無い場合の案内バナー
+     * - iOS: App Store の File Picker 拡張をインストールして再読み込み
+     * - Android: 配布 APK をインストール
+     * - File Picker 拡張で API が生えている場合はバナー出さない
+     */
+    _setupMobileBanner() {
+        try {
+            const ua = navigator.userAgent || '';
+            const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+            const isAndroid = /Android/.test(ua);
+            const hasDirPicker = 'showDirectoryPicker' in window;
+
+            if (!isIOS && !isAndroid) return; // PC は何もしない
+            if (hasDirPicker) return; // 既に API が生えている（File Picker 入り / Capacitor アプリ内）
+
+            const dismissedKey = 'bookshelf_mobileBanner_dismissed';
+            if (localStorage.getItem(dismissedKey) === '1') return;
+
+            const banner = document.getElementById('mobile-setup-banner');
+            const msg = document.getElementById('mobile-setup-banner-msg');
+            const actions = document.getElementById('mobile-setup-banner-actions');
+            const closeBtn = document.getElementById('mobile-setup-banner-close');
+            if (!banner || !msg || !actions) return;
+
+            if (isIOS) {
+                msg.innerHTML = '📱 <strong>iOS Safari</strong> でローカル vault を編集するには、無料の Safari 拡張「<strong>File Picker</strong>」が必要です。インストール後にこのページを再読み込みしてください。';
+                actions.innerHTML = `
+                    <a href="https://apps.apple.com/jp/app/file-picker/id1595132894" target="_blank" rel="noopener">📥 App Store で入手</a>
+                    <a href="https://filepicker.app/" target="_blank" rel="noopener">ℹ️ 詳細</a>
+                `;
+            } else if (isAndroid) {
+                msg.innerHTML = '📱 <strong>Android Chrome</strong> ではローカル vault に直接アクセスできません。<strong>Android アプリ版</strong>（Capacitor ラップ APK）のインストールが必要です。';
+                actions.innerHTML = `
+                    <a href="https://github.com/hahero-asayake/bookshelf/releases/latest" target="_blank" rel="noopener">📥 最新 APK をダウンロード</a>
+                `;
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    banner.style.display = 'none';
+                    localStorage.setItem(dismissedKey, '1');
+                });
+            }
+
+            banner.style.display = 'block';
+        } catch (e) {
+            console.warn('mobile banner setup failed:', e);
+        }
     }
 
     async init() {

@@ -1,3 +1,54 @@
+/* ===== モバイル案内バナー ===== */
+.mobile-setup-banner {
+    background: linear-gradient(135deg, #fff7e0 0%, #fff0b8 100%);
+    border-bottom: 2px solid #f0c020;
+    color: #5a4400;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.mobile-setup-banner-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.mobile-setup-banner-msg {
+    flex: 1 1 200px;
+    line-height: 1.4;
+}
+.mobile-setup-banner-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.mobile-setup-banner-actions a,
+.mobile-setup-banner-actions button {
+    background: #f0a020;
+    color: white;
+    border: none;
+    padding: 0.45rem 0.9rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: inline-block;
+}
+.mobile-setup-banner-actions a:hover,
+.mobile-setup-banner-actions button:hover {
+    background: #d88800;
+}
+.mobile-setup-banner-close {
+    background: transparent;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    color: #5a4400;
+    padding: 0 0.3rem;
+}
+
 /* ===== Public mode: 編集系UIを全て非表示 ===== */
 .public-mode #add-book-manually,
 .public-mode #import-kindle,
