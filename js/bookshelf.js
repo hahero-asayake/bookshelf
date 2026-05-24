@@ -1097,6 +1097,23 @@ class VirtualBookshelf {
                         </button>
                         <span class="save-note-status" data-asin="${book.asin}" style="margin-left: 0.5rem; color: #888; font-size: 0.85rem;"></span>
                     ` : ''}
+                    ${isEditMode && contextInternalId ? (() => {
+                        const bs = this.bookshelfManager.getById(contextInternalId);
+                        const note = (bs && bs.notes && bs.notes[book.asin]) || {};
+                        return `
+                            <div class="publish-flags" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: #fff8e1; border-radius: 4px;">
+                                <p style="margin: 0 0 0.4rem; font-size: 0.85rem; color: #5d4037;">📤 公開時の挙動（この本棚での設定）</p>
+                                <label style="display: block; padding: 0.15rem 0;">
+                                    <input type="checkbox" class="publish-hide-check" data-asin="${book.asin}" ${note.publishHide ? 'checked' : ''}>
+                                    公開時にこの本棚から除外する
+                                </label>
+                                <label style="display: block; padding: 0.15rem 0;">
+                                    <input type="checkbox" class="hide-detail-memo-check" data-asin="${book.asin}" ${note.hideDetailMemo ? 'checked' : ''}>
+                                    公開時に長文メモを非公開
+                                </label>
+                            </div>
+                        `;
+                    })() : ''}
                     <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 編集後は「💾 メモを保存」を押してください</p>
 
                     <div class="rating-section" style="${isEditMode ? '' : 'display: none;'}">
@@ -1121,6 +1138,19 @@ class VirtualBookshelf {
         if (isEditMode) {
             noteTextarea.addEventListener('input', (e) => {
                 this.updateMemoPreview(e.target);
+            });
+        }
+
+        const publishHideCheck = modalBody.querySelector('.publish-hide-check');
+        if (publishHideCheck) {
+            publishHideCheck.addEventListener('change', async (e) => {
+                await this._togglePublishFlag(e.currentTarget.dataset.asin, 'publishHide', e.currentTarget.checked);
+            });
+        }
+        const hideDetailMemoCheck = modalBody.querySelector('.hide-detail-memo-check');
+        if (hideDetailMemoCheck) {
+            hideDetailMemoCheck.addEventListener('change', async (e) => {
+                await this._togglePublishFlag(e.currentTarget.dataset.asin, 'hideDetailMemo', e.currentTarget.checked);
             });
         }
 
@@ -1297,6 +1327,22 @@ class VirtualBookshelf {
 
 
 
+
+    async _togglePublishFlag(asin, flag, value) {
+        const internalId = this._currentBookshelfInternalId();
+        if (!internalId) return;
+        const bs = this.bookshelfManager.getById(internalId);
+        if (!bs) return;
+        if (!bs.notes) bs.notes = {};
+        if (!bs.notes[asin]) bs.notes[asin] = {};
+        if (value) {
+            bs.notes[asin][flag] = true;
+        } else {
+            delete bs.notes[asin][flag];
+            if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
+        }
+        await this.saveUserData();
+    }
 
     async saveNote(asin, memo) {
         const contextInternalId = this._currentBookshelfInternalId();
