@@ -294,7 +294,6 @@ class BookshelfExporter {
             'plugin-loader.js',
             'highlights.js',
             'series-manager.js',
-            'static-bookshelf-generator.js',
             'bookshelf.js'
         ];
         for (const f of jsFiles) {

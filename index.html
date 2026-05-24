@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Virtual Bookshelf - 読書ライブラリ</title>
-    <meta name="description" content="個人読書コレクション - お気に入りの本を美しく展示">
-    
+    <title>📚 bookshelf</title>
+    <meta name="description" content="ローカルファイル正本＋本棚を一級概念＋プラグイン拡張可能な読書ライブラリ">
+
     <!-- Open Graph for social sharing -->
-    <meta property="og:title" content="Virtual Bookshelf - 読書ライブラリ">
-    <meta property="og:description" content="お気に入りコレクション">
+    <meta property="og:title" content="📚 bookshelf">
+    <meta property="og:description" content="読書ライブラリ">
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
@@ -36,7 +36,6 @@
                         <option value="all">📚 全ての本</option>
                     </select>
                     <button id="manage-bookshelves" class="btn btn-outline">📝 本棚管理</button>
-                    <button id="view-static-page" class="btn btn-secondary" style="display: none;">🌐 静的ページ</button>
                 </div>
                 
                 <div class="view-toggle">
@@ -188,15 +187,14 @@
 
     <footer class="footer">
         <div class="container">
-            <p>© 2025 からあげ | Powered by Kindle & GitHub Pages</p>
+            <p>📚 bookshelf — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
             <p class="affiliate-disclosure">
                 ⚠️ <strong>アフィリエイト開示:</strong> このサイトはAmazon.co.jpアソシエイトプログラムに参加しており、
                 適格販売により収入を得る場合があります。
             </p>
             <p>
-                <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">
-                    GitHub Repository
-                </a>
+                <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
+                ｜ Forked from <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">karaage0703/karaage-virtual-bookshelf</a>
             </p>
         </div>
     </footer>
@@ -258,36 +256,12 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="bookshelf-is-public">
-                        📤 この本棚を公開する（静的ページ生成可能）
+                        📤 この本棚を公開する（公開エクスポート対象）
                     </label>
                 </div>
                 <div class="form-actions" style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
                     <button id="cancel-bookshelf-form" class="btn btn-secondary">キャンセル</button>
                     <button id="save-bookshelf-form" class="btn btn-primary">保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Static Bookshelf Share Modal -->
-    <div id="static-share-modal" class="modal">
-        <div class="modal-content">
-            <button class="modal-close" id="static-share-modal-close">×</button>
-            <div class="modal-header">
-                <h2>📄 静的ページ生成</h2>
-            </div>
-            <div class="modal-body">
-                <div id="share-generation-form">
-
-                    <div class="form-actions">
-                        <button id="generate-static-page" class="btn btn-primary">📄 静的ページを生成</button>
-                        <button id="cancel-static-share" class="btn btn-secondary">キャンセル</button>
-                    </div>
-                </div>
-                <div id="share-results" style="display: none;">
-                    <div class="share-result-content">
-                        <!-- Generation results will be shown here -->
-                    </div>
                 </div>
             </div>
         </div>
@@ -470,7 +444,6 @@
     <script src="js/plugin-loader.js"></script>
     <script src="js/highlights.js"></script>
     <script src="js/series-manager.js"></script>
-    <script src="js/static-bookshelf-generator.js"></script>
     <script src="js/bookshelf.js"></script>
 </body>
 </html>

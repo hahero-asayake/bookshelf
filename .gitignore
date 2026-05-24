@@ -47,3 +47,6 @@ backup/
 node_modules/
 
 .serena/
+
+# Local-only trash (削除予定。git 履歴から復元可能なため commit 不要)
+_trash/

@@ -1,292 +1,128 @@
-# 📚 Virtual Bookshelf Template
+# 📚 bookshelf
 
-あなたの個人読書ライブラリを美しく展示するWebアプリケーションテンプレートです。
+ローカルファイル（Obsidian vault 等の同期フォルダ）を正本に、本棚を一級概念として扱い、プラグインで拡張可能な個人読書ライブラリ。
 
-[Virtual Bookshelf](https://karaage0703.github.io/karaage-virtual-bookshelf/)
-
-## 🎯 概要
-
-このテンプレートは、iPadのKindleアプリや他の電子書籍リーダーで読書をしている方向けの、個人蔵書管理・展示システムです。読んだ本を見つけやすくし、5星評価システムで本を評価・管理できます。
-
-### 主な機能
-
-- 📖 **2つの表示モード**: 表紙表示・リスト表示
-- 📚 **複数本棚管理**: テーマ別本棚の作成・キュレーション
-- ⭐ **5星評価システム**: 1-5星による本の評価管理・フィルタリング
-- 🎯 **ハイライト表示**: ASINベースでKindleのマーカー情報を自動読み込み
-- 📝 **個人メモ**: 本ごとのレビューとおすすめ文
-
-- 🔍 **検索・フィルター**: タイトル・著者・星評価での絞り込み
-- 📊 **読書統計**: 総蔵書数の表示
-- 🔗 **Amazon Associates**: 自動アフィリエイトリンク生成
-- 🌐 **公開・共有**: 本棚ごとの公開設定と静的ページ生成
-- 💾 **データエクスポート**: 設定・星評価・メモの永続化
-- 📥 **蔵書管理**: Kindleインポート、手動追加、削除機能
-- 🔄 **ハイライトファイル管理**: スクリプトベースでのハイライトインデックス生成
-- 🔀 **並び替え機能**: ドラッグ&ドロップによる本の順序変更・保存
-
-## 🚀 使い始めるには
-
-### 1. このテンプレートを使用してリポジトリを作成
-
-1. GitHub上でこのリポジトリの「Use this template」ボタンをクリック
-2. 新しいリポジトリ名を入力（例: `my-bookshelf`）
-3. 「Create repository from template」をクリック
-
-### 2. リポジトリをGitHubに公開
-
-1. 作成したリポジトリをPublic（公開）に設定
-2. ファイルがすべてアップロードされていることを確認
-
-### 3. GitHub Pagesを有効化
-
-1. 作成したリポジトリで Settings > Pages を開く
-2. Source を「Deploy from a branch」に設定
-3. Branch を「main」に設定
-4. Saveボタンをクリック
-5. 数分待つとサイトが公開される（URLが表示されます）
-
-### 4. あなたの本を追加する
-
-#### 初回セットアップ（サンプルデータで確認）
-テンプレートにはサンプルデータが含まれています：
-1. ローカルサーバーを起動（後述）
-2. ブラウザでアクセスして動作を確認
-3. サンプル本「面倒なことはＣｈａｔＧＰＴにやらせよう」にはハイライトも含まれています
-
-#### 本格運用：あなたのデータに置き換え
-
-**方法1: Kindleデータのインポート（推奨）**
-1. [Kindle Bookshelf Exporter](https://chromewebstore.google.com/detail/kindle-bookshelf-exporter/olimpmeljimffgjonlpmiaebaonnegdp)をChromeにインストール
-2. Kindle Cloud Readerで蔵書データをJSONファイルとしてエクスポート
-3. ブラウザで「📥 Kindleインポート」ボタンをクリックしてインポート
-
-**方法2: 手動で本を追加**
-1. 「➕ 手動追加」ボタンをクリック
-2. ASIN、タイトル、著者を入力
-3. 購入日と読書状況を設定
-
-**方法3: データファイルを直接編集**
-1. `data/my_library.json` を編集（後述のデータフォーマット参照）
-2. `data/user_data.json` でお気に入りや本棚を設定
-
-### 5. カスタマイズ
-
-#### 基本設定
-- **アフィリエイトID**: `data/user_data.json`の`settings.affiliateId`を変更
-- **本棚の作成**: デフォルトの本棚を編集、新しい本棚を追加
-- **カラーテーマ**: CSS変数でカスタマイズ
-
-#### ハイライト機能（オプション）
-1. [Obsidian Kindle Plugin](https://github.com/hadynz/obsidian-kindle-plugin)をObsidianにインストール
-2. プラグインを使ってKindleハイライトをMarkdown形式でエクスポート
-3. エクスポートしたファイルを`data/KindleHighlights/`フォルダに配置
-4. ターミナルで`scripts/generate-highlights-index.sh`を実行してインデックス作成
-5. YAMLフロントマターにASIN情報が含まれていることを確認
-
-## 📁 プロジェクト構造
-
-```
-virtual-bookshelf/
-├── index.html              # メインページ
-├── css/
-│   └── bookshelf.css      # スタイルシート
-├── js/
-│   ├── bookshelf.js       # メイン機能
-│   ├── book-manager.js    # 蔵書CRUD管理
-│   ├── highlights.js      # ハイライト表示
-│   └── static-bookshelf-generator.js # 静的ページ生成
-├── templates/
-│   └── bookshelf-template.html # 静的ページテンプレート
-├── static/                 # 静的ページファイル（手動配置）
-│   └── bookshelf-*.html   # 生成された静的本棚ページ
-├── data/
-│   ├── my_library.json    # メイン蔵書データ
-│   ├── user_data.json     # ユーザー設定・メモ・本棚設定
-│   ├── highlights-index.json # ハイライトファイルのASINマッピング
-│   ├── KindleHighlights/  # ハイライトMarkdownファイル（元ファイル）
-│   └── HighlightsASCII/   # ASCIIファイル名のハイライト（Web表示用）
-├── scripts/
-│   └── generate-highlights-index.sh # ハイライトインデックス生成スクリプト
-├── sample/
-│   └── sample_books.json  # サンプル蔵書データ（参考用）
-└── .gitignore             # Git除外設定
-```
-
-## 🛠️ ローカル開発
-
-```bash
-# HTTPサーバーを起動（CORS制約回避のため）
-python -m http.server 8000
-# または
-npx serve .
-# または
-php -S localhost:8000
-
-# ハイライトインデックス生成（ハイライト機能を使用する場合）
-./scripts/generate-highlights-index.sh
-```
-
-ブラウザで `http://localhost:8000` を開く
-
-## 💾 データフォーマット
-
-### 蔵書データ (data/my_library.json)
-```json
-{
-  "books": [
-    {
-      "asin": "B0XXXXXXXXX",
-      "title": "書籍タイトル",
-      "authors": "著者名",
-      "acquiredTime": 1756899555435,
-      "readStatus": "READ|UNKNOWN",
-      "productImage": "https://m.media-amazon.com/images/I/...",
-      "source": "kindle_import|manual_add",
-      "addedDate": 1756899555435
-    }
-  ],
-  "metadata": {
-    "totalBooks": 100,
-    "manuallyAdded": 5,
-    "importedFromKindle": 95,
-    "lastImportDate": 1756899555435
-  }
-}
-```
-
-### ユーザー設定 (data/user_data.json)
-```json
-{
-  "bookshelves": [
-    {
-      "id": "tech-books",
-      "name": "💻 技術書",
-      "description": "プログラミング・技術関連の本",
-      "books": ["B0XXXXXXXXX"],
-      "isPublic": true,
-      "color": "#3498db"
-    }
-  ],
-  "notes": {
-    "B0XXXXXXXXX": {
-      "memo": "素晴らしい本でした！詳細は[こちら](https://example.com)をご覧ください",
-      "rating": 5
-    }
-  },
-  "settings": {
-    "defaultView": "hybrid",
-    "affiliateId": "your-affiliate-id",
-    "showHighlights": true,
-    "currentBookshelf": "all",
-    "theme": "light",
-    "booksPerPage": 50
-  },
-  "bookOrder": {
-    "all": ["B0XXXXXXXXX", "B0YYYYYYYYY"],
-    "tech-books": ["B0XXXXXXXXX"]
-  }
-}
-```
-
-## 🎨 使い方
-
-### 基本操作
-1. **表示切り替え**: ヘッダーのボタンで表紙・リスト表示を切り替え
-2. **本棚選択**: ドロップダウンで表示する本棚を選択
-3. **検索**: 検索ボックスでタイトル・著者を検索
-4. **フィルター**: サイドバーで読書状況や星評価で絞り込み
-5. **詳細表示**: 本をクリックして詳細モーダルを表示
-6. **星評価**: モーダル内で1-5星の評価を設定・変更・リセット
-
-### 本棚管理
-1. **本棚の作成**: 新しいテーマの本棚を作成
-2. **本の追加**: 詳細モーダルで本を複数の本棚に追加
-3. **公開設定**: 本棚ごとに公開・非公開を設定
-4. **並び替え**: ドラッグハンドル（⋮⋮）で本の順序を変更
-5. **静的ページ生成**: 公開本棚のSNS共有用静的HTMLページ作成
-
-### 静的ページ生成・SNS共有
-1. **公開設定**: 本棚編集時に「📤 この本棚を公開する」をチェック
-2. **静的ページ生成**: 本棚管理で「📤 共有ページ」ボタンをクリック
-3. **HTMLファイルダウンロード**: `bookshelf-{ID}.html`ファイルが自動ダウンロード
-4. **ファイル配置**: ダウンロードしたファイルを`static/`フォルダに配置
-5. **SNS共有**: Twitter/Facebook/LINEで直接共有、またはURLコピー
-6. **アクセス方法**:
-   - 本棚セレクターで公開本棚選択→「🌐 静的ページ」ボタン
-   - 本棚一覧カードの「🌐 静的ページ」ボタン
-
-#### 静的ページファイルの配置方法
-```bash
-# 1. ダウンロードされたHTMLファイルを確認
-ls ~/Downloads/bookshelf-*.html
-
-# 2. staticフォルダを作成（まだない場合）
-mkdir -p static
-
-# 3. HTMLファイルを配置
-cp ~/Downloads/bookshelf-*.html static/
-
-# 4. Gitにコミット・プッシュ
-git add static/
-git commit -m "Add static bookshelf pages"
-git push origin main
-```
-
-**注意**: GitHubページにファイルをプッシュ後、URLが有効になります（例: `https://yourusername.github.io/your-repo/static/bookshelf-12345.html`）
-
-### 星評価システム
-1. **評価設定**: 詳細モーダルで本に1-5星の評価を設定
-2. **評価リセット**: 「評価をリセット」ボタンで未評価に戻す
-3. **フィルタリング**: チェックボックスで特定の星評価の本のみ表示
-4. **複数選択**: 星2,3,4や星4,5など複数の評価を組み合わせ表示
-
-### データの永続化
-1. 「💾 設定をエクスポート」でuser_data.jsonをダウンロード
-2. ダウンロードしたファイルを`data/user_data.json`として保存
-3. GitHubリポジトリにpushして設定を永続化
-
-## 📱 対応環境
-
-- **ブラウザ**: Chrome, Firefox, Safari, Edge (最新版)
-- **デバイス**: デスクトップ、タブレット、スマートフォン
-- **要件**: JavaScript有効、LocalStorage利用可能
-
-## 🔒 プライバシー
-
-- 個人データはブラウザのローカルストレージに保存
-- 公開設定しない限り個人メモは非公開
-- サーバーサイド処理なし（完全クライアントサイド）
-
-## 🤝 カスタマイズのヒント
-
-### スタイルのカスタマイズ
-- `css/bookshelf.css`でカラーテーマや表示サイズを調整
-- CSS変数`--book-width`, `--book-height`で本のサイズ調整
-
-### 機能の追加
-- 新機能は適切なクラス（VirtualBookshelf/BookManager等）に追加
-- スタイリングは`css/bookshelf.css`に追加
-
-### Amazon Associatesの設定
-- `data/user_data.json`の`settings.affiliateId`を変更
-- アフィリエイトプログラムの利用規約を確認
-
-## 📄 ライセンス
-
-MIT License
+[karaage0703/karaage-virtual-bookshelf](https://github.com/karaage0703/karaage-virtual-bookshelf) からフォーク → 全面再設計。
 
 ---
 
-## 💡 参考リソース
+## コンセプト
 
-### 必須ツール
-- [Kindle Bookshelf Exporter](https://chromewebstore.google.com/detail/kindle-bookshelf-exporter/olimpmeljimffgjonlpmiaebaonnegdp) - Kindleデータエクスポート用Chrome拡張機能
-- [Obsidian Kindle Plugin](https://github.com/hadynz/obsidian-kindle-plugin) - Kindleハイライト抽出用Obsidianプラグイン
+- **ローカルファイル正本**: 同期フォルダ（Obsidian vault など）に全データを保存。GitHub やバックエンド不要
+- **本棚が一級**: 親子継承・本棚ごとの短文メモ上書き・順引きと逆引きの整合
+- **編集と公開の完全分離**: 編集用 main.json と公開用 main.json を別ファイルで保持
+- **プラグインで拡張可能**: イベントフック + UI 拡張点 + GitHub からのインストール
+- **PC ブラウザ完結**: File System Access API でローカルディレクトリを直接読み書き
 
-### 関連リソース
-- [元のVirtual Bookshelf](https://github.com/karaage0703/virtual-bookshelf)
-- [GitHub Pages Documentation](https://pages.github.com/)
-- [Amazon Associates Program](https://affiliate.amazon.com/)
+## 同期フォルダ構造
 
-🎉 **Happy Reading!** あなただけの素敵な本棚を作成してください！
+```
+<同期フォルダ>/
+├── library.json              # Kindle 生データ
+├── exclusions.json           # all 本棚から除外する ASIN
+├── bookshelves.json          # 本棚一覧（メタ + isPublic）
+├── books/
+│   └── <ASIN>__<タイトル>.md  # 長文メモ（外部エディタで編集前提）
+├── bookshelves/
+│   ├── all.json              # 特殊本棚（本データ正本）
+│   └── <slug>.json           # ユーザ作成本棚（books順序 + 上書きnotes）
+├── private/
+│   ├── settings.json
+│   └── main.json             # 編集用メイン設定
+├── public/
+│   ├── settings.json
+│   └── main.json             # 公開用メイン設定（編集側からコピー）
+└── plugins/
+    └── <plugin-id>/
+        ├── manifest.json
+        └── index.js
+```
+
+詳細は [obsidian/80_🚀project/81_🚀development/bookshelf/設計.md](https://github.com/hahero-asayake/obsidian-private) を参照（vault 内、私的）。
+
+## セットアップ
+
+### 1. リポジトリ取得
+
+```bash
+git clone https://github.com/hahero-asayake/bookshelf.git
+cd bookshelf
+```
+
+### 2. ローカルサーバー起動
+
+CORS 制約回避のため HTTP サーバーで開く必要がある:
+
+```bash
+python -m http.server 8000
+# または
+npx serve .
+```
+
+ブラウザで `http://localhost:8000` を開く。
+
+> ⚠️ **VS Code Live Server は非推奨**: 同期フォルダの書き込みでブラウザがリロードされる現象がある。詳細と回避策は [CLAUDE.md](CLAUDE.md) を参照。
+
+### 3. 同期フォルダの接続
+
+1. ブラウザで「📁 Obsidian フォルダを選択」を押す
+2. 同期フォルダを指定（初回のみ。FileSystemDirectoryHandle は IndexedDB に永続化される）
+3. 中身が空でも自動で初期構造を作成
+
+## 主な機能
+
+| 機能 | 説明 |
+|---|---|
+| 📥 **Kindle 取込** | Bookmarklet 方式（拡張不要）。Amazon ライブラリページで実行 → postMessage で受信 |
+| ➕ **手動追加** | ASIN・タイトル・著者・画像 URL・読んだ日付を入力 |
+| 🚫 **除外** | Kindle 再取込時もスキップされる ASIN リスト |
+| 📚 **本棚作成** | 親本棚継承・短文メモ上書き・本の並び替え（DnD）・isPublic フラグ |
+| 📤 **公開にコピー** | private/main.json → 公開対象だけを public/main.json に書き出し |
+| 📦 **エクスポート実行** | public/* + 該当本棚 + 本データ + 長文メモ + 編集 UI を抜いた html/js/css を `bookshelf-export/` に出力 |
+| 🧩 **プラグイン** | GitHub repo URL から install。`activate(api, manifest)` で UI ボタン追加・イベントハック・エクスポート変換 |
+
+## プラグイン
+
+`plugins-sample/` にサンプル実装あり。最小スキーマ:
+
+```json
+{
+  "id": "your-plugin-id",
+  "name": "表示名",
+  "version": "0.1.0",
+  "publishable": false,
+  "files": ["index.js"]
+}
+```
+
+```js
+// index.js
+export function activate(api, manifest) {
+    api.addUIButton({ id: 'hello', where: 'library-management', label: 'Hello', onClick: () => alert('hi') });
+    api.on('note:updated', ({ asin, note }) => console.log('memo updated', asin, note));
+}
+```
+
+API 詳細は [js/plugin-api.js](js/plugin-api.js) と [plugins-sample/README.md](plugins-sample/README.md) を参照。
+
+## アーキテクチャ
+
+| ファイル | 役割 |
+|---|---|
+| [js/bookshelf.js](js/bookshelf.js) | メインアプリケーションクラス（UI + ビジネスロジック） |
+| [js/storage.js](js/storage.js) | File System Access API ラッパ、新ファイル構造のマイグレーション |
+| [js/book-manager.js](js/book-manager.js) | 蔵書 CRUD |
+| [js/bookshelf-manager.js](js/bookshelf-manager.js) | 本棚操作・継承・逆引きマップ |
+| [js/exporter.js](js/exporter.js) | 公開エクスポート |
+| [js/plugin-api.js](js/plugin-api.js) | プラグイン公開 API |
+| [js/plugin-loader.js](js/plugin-loader.js) | プラグイン読込・GitHub install |
+
+## モバイル
+
+現状 PC ブラウザ専用（File System Access API が必須）。iOS は File Picker 拡張、Android は Capacitor ラッパで対応する計画（未実装）。
+
+UA 検出時にバナーで案内を表示。
+
+## ライセンス
+
+オリジナルは MIT License（karaage0703）。
