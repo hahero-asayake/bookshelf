@@ -1831,7 +1831,7 @@ class VirtualBookshelf {
         this.currentEditingBookshelf = null;
     }
 
-    saveBookshelfForm() {
+    async saveBookshelfForm() {
         const nameInput = document.getElementById('bookshelf-name');
         const emojiInput = document.getElementById('bookshelf-emoji');
         const descriptionInput = document.getElementById('bookshelf-description');
@@ -1867,7 +1867,7 @@ class VirtualBookshelf {
             this.userData.bookshelves.push(newBookshelf);
         }
 
-        this.saveUserData();
+        await this.saveUserData();
         this.updateBookshelfSelector();
         this.renderBookshelfList();
         this.closeBookshelfForm();
@@ -1880,22 +1880,37 @@ class VirtualBookshelf {
         this.showBookshelfForm(bookshelf);
     }
 
-    deleteBookshelf(bookshelfId) {
+    async deleteBookshelf(bookshelfId) {
         const bookshelf = this.userData.bookshelves.find(b => b.id === bookshelfId);
         if (!bookshelf) return;
 
-        if (confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ この操作は取り消せません。`)) {
-            this.userData.bookshelves = this.userData.bookshelves.filter(b => b.id !== bookshelfId);
-            this.saveUserData();
-            this.updateBookshelfSelector();
-            this.renderBookshelfList();
-            
-            // If currently viewing this bookshelf, switch to "all"
-            if (this.currentBookshelf === bookshelfId) {
-                this.currentBookshelf = 'all';
-                document.getElementById('bookshelf-selector').value = 'all';
-                this.applyFilters();
+        if (!confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ この操作は取り消せません。`)) return;
+
+        const slugToDelete = bookshelf.id;
+        this.userData.bookshelves = this.userData.bookshelves.filter(b => b.id !== bookshelfId);
+
+        if (this.userData.bookOrder && Object.prototype.hasOwnProperty.call(this.userData.bookOrder, bookshelfId)) {
+            delete this.userData.bookOrder[bookshelfId];
+        }
+
+        // 同期フォルダの bookshelves/<slug>.json ファイルも削除
+        if (this.obsidianDirHandle && this.storage) {
+            this.storage.setDirHandle(this.obsidianDirHandle);
+            try {
+                await this.storage.deleteBookshelfFile(slugToDelete);
+            } catch (e) {
+                console.error('本棚ファイル削除エラー:', e);
             }
+        }
+
+        await this.saveUserData();
+        this.updateBookshelfSelector();
+        this.renderBookshelfList();
+
+        if (this.currentBookshelf === bookshelfId) {
+            this.currentBookshelf = 'all';
+            document.getElementById('bookshelf-selector').value = 'all';
+            this.applyFilters();
         }
     }
 
