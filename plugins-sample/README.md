@@ -3,6 +3,27 @@
 このディレクトリは bookshelf アプリ用プラグインのサンプル集です。
 本体に組み込まれるわけではなく、参考実装として配置しています。
 
+## 収録プラグイン一覧
+
+| id | 種別 | 説明 |
+|---|---|---|
+| [hello-bookshelf](hello-bookshelf/) | 基礎 | API 利用例。UI ボタン追加 + イベント購読 |
+| [highlights-builtin](highlights-builtin/) | 表示 | 本詳細モーダルに Kindle ハイライトを表示 |
+| [series-grouping](series-grouping/) | フィルタ | 漫画シリーズを第1巻だけ代表表示に折りたたむ |
+| [dark-theme](dark-theme/) | テーマ | 暗色テーマに切替（トグルボタン付） |
+| [reading-stats](reading-stats/) | 統計 | 蔵書総数 / 年別取得 / 評価分布 / 本棚別 Top5 |
+| [random-pick](random-pick/) | 操作 | ランダムに1冊選んで開く（右クリックで未読のみ） |
+| [csv-export](csv-export/) | エクスポート | 蔵書を CSV (UTF-8 BOM 付) でダウンロード |
+| [export-markdown](export-markdown/) | エクスポート | 本棚別セクション付きの Markdown でダウンロード |
+| [duplicate-detector](duplicate-detector/) | 分析 | 同タイトル+著者の重複候補を検出（シリーズ除外） |
+| [author-grouping](author-grouping/) | 表示 | 本詳細に「この著者の他の蔵書」を表示 |
+| [acquisition-heatmap](acquisition-heatmap/) | 統計 | 年×月の取得数ヒートマップ |
+| [unrated-list](unrated-list/) | 操作 | 未評価本の一覧 + クイック評価ボタン |
+| [reading-goal](reading-goal/) | 統計 | 年間読書目標と進捗バー（★4以上を読了とみなす） |
+| [quick-switcher](quick-switcher/) | 操作 | Ctrl/Cmd+K で本・本棚をインクリメンタル検索 |
+| [last-acquired](last-acquired/) | 統計 | 直近 N 日に取得した本を一覧 |
+| [memo-templates](memo-templates/) | 編集 | 本モーダルのメモ欄にテンプレ挿入ボタン |
+
 ## ローカルにインストールして試す
 
 1. 同期フォルダ (Obsidian vault 等) に `plugins/<id>/` を作成

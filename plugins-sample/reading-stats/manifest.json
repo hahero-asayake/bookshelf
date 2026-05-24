@@ -1,0 +1,9 @@
+{
+    "id": "reading-stats",
+    "name": "読書統計",
+    "version": "0.1.0",
+    "description": "蔵書総数・年別取得数・評価分布・本棚別冊数などをモーダルに表示する統計プラグイン。",
+    "publishable": true,
+    "files": ["index.js"],
+    "dependencies": []
+}

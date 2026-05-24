@@ -1,0 +1,9 @@
+{
+    "id": "memo-templates",
+    "name": "メモテンプレート",
+    "version": "0.1.0",
+    "description": "本詳細モーダルのメモ欄にテンプレート (感想・要点・引用 ...) を1クリックで挿入するボタンを追加。",
+    "publishable": true,
+    "files": ["index.js"],
+    "dependencies": []
+}

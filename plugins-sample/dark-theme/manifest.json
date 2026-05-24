@@ -1,0 +1,9 @@
+{
+    "id": "dark-theme",
+    "name": "ダークテーマ",
+    "version": "0.1.0",
+    "description": "アプリ全体を暗色テーマに切替えるテーマプラグイン。トグルボタン付き。",
+    "publishable": true,
+    "files": ["index.js"],
+    "dependencies": []
+}
