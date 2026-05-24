@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="css/bookshelf.css">
 
 </head>
-<body>
+<body class="app-view-main">
     <!-- モバイル案内バナー (JS で UA 判定後に表示制御) -->
     <div id="mobile-setup-banner" class="mobile-setup-banner" style="display: none;">
         <div class="mobile-setup-banner-inner">
@@ -32,18 +32,19 @@
             
             <div class="header-controls">
                 <div class="bookshelf-controls">
-                    <select id="bookshelf-selector" class="bookshelf-selector">
+                    <button id="back-to-main" class="btn btn-outline view-only-bookshelf" title="本棚一覧に戻る" >← 一覧</button>
+                    <select id="bookshelf-selector" class="bookshelf-selector view-only-bookshelf" >
                         <option value="all">📚 全ての本</option>
                     </select>
                     <button id="manage-bookshelves" class="btn btn-outline">📝 本棚管理</button>
                 </div>
-                
-                <div class="view-toggle">
+
+                <div class="view-toggle view-only-bookshelf" >
                     <button id="view-covers" class="btn btn-primary active">表紙表示</button>
                     <button id="view-list" class="btn btn-secondary">リスト表示</button>
                 </div>
-                
-                <div class="search-box">
+
+                <div class="search-box view-only-bookshelf" >
                     <input type="text" id="search-input" placeholder="タイトルや著者で検索...">
                 </div>
             </div>
@@ -53,7 +54,7 @@
     <main class="main">
         <div class="container">
             <aside class="sidebar">
-                <details class="filter-section" id="filter-section">
+                <details class="filter-section view-only-bookshelf" id="filter-section" >
                     <summary>フィルター / 表示設定</summary>
 
                     <div class="filter-group">
@@ -178,25 +179,31 @@
                 <div class="loading" id="loading">
                     📚 本棚を準備中...
                 </div>
-                
-                <!-- Bookshelf Overview Section -->
-                <div class="bookshelves-overview" id="bookshelves-overview" style="display: none;">
-                    <h2 class="section-title">📚 本棚一覧</h2>
-                    <div class="bookshelf-overview-controls">
-                        <button id="toggle-bookshelf-display" class="btn btn-secondary">🖼️ 画像表示切替</button>
+
+                <!-- View: Main (本棚一覧) -->
+                <section class="view view-main" id="view-main">
+                    <div class="bookshelves-overview" id="bookshelves-overview">
+                        <h2 class="section-title">📚 本棚一覧</h2>
+                        <div class="bookshelf-overview-controls">
+                            <button id="toggle-bookshelf-display" class="btn btn-secondary">🖼️ 画像表示切替</button>
+                        </div>
+                        <div class="bookshelves-grid" id="bookshelves-grid">
+                            <!-- Bookshelves overview will be loaded here -->
+                        </div>
                     </div>
-                    <div class="bookshelves-grid" id="bookshelves-grid">
-                        <!-- Bookshelves overview will be loaded here -->
+                </section>
+
+                <!-- View: Bookshelf (本一覧) -->
+                <section class="view view-bookshelf" id="view-bookshelf" >
+                    <h2 class="section-title" id="current-bookshelf-title"></h2>
+                    <div class="bookshelf" id="bookshelf">
+                        <!-- Books will be dynamically loaded here -->
                     </div>
-                </div>
-                
-                <div class="bookshelf" id="bookshelf">
-                    <!-- Books will be dynamically loaded here -->
-                </div>
-                
-                <div class="pagination" id="pagination">
-                    <!-- Pagination controls will be added here -->
-                </div>
+
+                    <div class="pagination" id="pagination">
+                        <!-- Pagination controls will be added here -->
+                    </div>
+                </section>
             </section>
         </div>
     </main>

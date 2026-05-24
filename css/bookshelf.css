@@ -268,6 +268,18 @@ body {
     margin-bottom: 1.5rem;
 }
 
+/* ===== View 切替 (router 経由で body.app-view-* を切り替える) ===== */
+body.app-view-main .view-bookshelf { display: none !important; }
+body.app-view-main .view-only-bookshelf { display: none !important; }
+body.app-view-bookshelf .view-main { display: none !important; }
+
+/* デフォルトの details/section 表示。app-view-* が付くまでは main view 想定。 */
+.view-bookshelf { display: none; }
+body.app-view-bookshelf .view-bookshelf { display: block !important; }
+body.app-view-bookshelf details.view-only-bookshelf { display: block !important; }
+body.app-view-bookshelf .view-only-bookshelf.btn { display: inline-block !important; }
+body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: flex !important; }
+
 .filter-section h3, .stats-section h3 {
     margin-bottom: 1rem;
     color: var(--primary-color);
