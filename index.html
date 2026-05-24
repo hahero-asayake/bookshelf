@@ -133,20 +133,43 @@
                     
                     
                     <div class="library-management">
-                        <h3>蔵書管理</h3>
-                        <div class="management-buttons">
-                            <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
-                            <button id="import-kindle" class="btn btn-secondary">📥 Kindleインポート</button>
-                            <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
-                            <button id="manage-plugins" class="btn btn-secondary">🧩 プラグイン管理</button>
-                            <button id="export-unified" class="btn btn-secondary">💾 データエクスポート</button>
-                            <button id="obsidian-sync-btn" class="btn btn-secondary">📁 Obsidianフォルダを選択</button>
-                            <span id="obsidian-sync-status" style="font-size:0.85em;margin-left:4px;"></span>
-                            <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
-                            <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
-                            <button id="pick-export-dir" class="btn btn-secondary">📁 エクスポート先を選択</button>
-                            <button id="clear-library" class="btn btn-danger">🗑️ 蔵書をクリア</button>
-                        </div>
+                        <h3>管理</h3>
+
+                        <details class="management-group" open>
+                            <summary>📚 蔵書</summary>
+                            <div class="management-buttons">
+                                <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
+                                <button id="import-kindle" class="btn btn-secondary">📥 Kindleインポート</button>
+                                <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
+                            </div>
+                        </details>
+
+                        <details class="management-group">
+                            <summary>📁 同期 / 公開</summary>
+                            <div class="management-buttons">
+                                <button id="obsidian-sync-btn" class="btn btn-secondary">📁 Obsidianフォルダを選択</button>
+                                <span id="obsidian-sync-status" style="font-size:0.85em;margin-left:4px;"></span>
+                                <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
+                                <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
+                                <button id="pick-export-dir" class="btn btn-secondary">📁 エクスポート先を選択</button>
+                                <button id="export-unified" class="btn btn-secondary">💾 データエクスポート</button>
+                            </div>
+                        </details>
+
+                        <details class="management-group" open>
+                            <summary>🛠️ 拡張</summary>
+                            <div class="management-buttons">
+                                <button id="manage-plugins" class="btn btn-secondary">🧩 プラグイン管理</button>
+                                <div id="plugin-buttons" class="plugin-buttons-host"></div>
+                            </div>
+                        </details>
+
+                        <details class="management-group">
+                            <summary>⚠️ 危険な操作</summary>
+                            <div class="management-buttons">
+                                <button id="clear-library" class="btn btn-danger">🗑️ 蔵書をクリア</button>
+                            </div>
+                        </details>
                     </div>
                 </div>
             </aside>
