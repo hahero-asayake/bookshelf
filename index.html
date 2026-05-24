@@ -294,12 +294,20 @@
             <div class="modal-body">
                 <div class="import-options">
                     <div class="import-option">
-                        <h3>🚀 ワンクリック取込（Chrome拡張版）</h3>
+                        <h3>🚀 ブックマークレット取込（拡張不要）</h3>
                         <p style="font-size: 0.9rem; color: #666; margin: 0.5rem 0;">
-                            「ハヘロ版_Kindle bookshelf exporter」拡張機能(v0.9.5以降)が必要です。<br>
-                            ボタンを押すと Amazon Kindle ライブラリページが自動で開き、書誌を取得してこのウィンドウに戻ります。
+                            初回のみブックマークレットの登録が必要です：
                         </p>
-                        <button id="import-from-extension" class="btn btn-primary">📥 ワンクリック取込を開始</button>
+                        <ol style="font-size: 0.85rem; color: #555; margin: 0.5rem 0 0.8rem 1.2rem;">
+                            <li>「📋 ブックマークレットをコピー」を押す</li>
+                            <li>ブラウザのブックマークバーに新規ブックマークを作成 → 名前「Kindle取込」、URL 欄にコピー内容を貼り付け</li>
+                            <li>「📥 Amazon ライブラリページを開く」を押す</li>
+                            <li>開いた Amazon ページでブックマークレットをクリック → 自動で取り込まれる</li>
+                        </ol>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button id="copy-bookmarklet" class="btn btn-secondary">📋 ブックマークレットをコピー</button>
+                            <button id="open-amazon-for-import" class="btn btn-primary">📥 Amazon ライブラリページを開く</button>
+                        </div>
                     </div>
                     <hr style="margin: 1.5rem 0; opacity: 0.3;">
                     <div class="import-option">
