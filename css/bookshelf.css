@@ -60,9 +60,9 @@
 .public-mode #copy-to-public,
 .public-mode #run-export,
 .public-mode #pick-export-dir,
-.public-mode #clear-library,
 .public-mode #manage-bookshelves,
-.public-mode .library-management,
+.public-mode #open-settings,
+.public-mode #settings-modal,
 .public-mode .edit-mode-btn,
 .public-mode .delete-btn,
 .public-mode .exclude-btn,
@@ -91,9 +91,9 @@
 .public-mode #copy-to-public,
 .public-mode #run-export,
 .public-mode #pick-export-dir,
-.public-mode #clear-library,
 .public-mode #manage-bookshelves,
-.public-mode .library-management,
+.public-mode #open-settings,
+.public-mode #settings-modal,
 .public-mode .edit-mode-btn,
 .public-mode .delete-btn,
 .public-mode .exclude-btn,
@@ -1194,119 +1194,128 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: f
     display: none;
 }
 
-/* Library Management Section */
-.library-management {
-    margin-top: 2rem;
-    padding-top: 1rem;
-    border-top: 1px solid #e0e0e0;
+/* ===== Settings Modal ===== */
+.settings-modal-content {
+    max-width: 720px;
+    width: min(720px, 92vw);
 }
 
-.library-management h3 {
+.settings-section {
+    margin-bottom: 2rem;
+}
+
+.settings-section:last-child {
+    margin-bottom: 0;
+}
+
+.settings-section-title {
+    font-size: 1rem;
+    color: #2c3e50;
+    margin: 0 0 0.8rem 0;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+/* path card: パス + 変更ボタン + ステータスを 1 つのカードにまとめる */
+.path-card {
+    background: #f7f8fa;
+    border: 1px solid #e0e0e6;
+    border-radius: 8px;
+    padding: 1rem;
     margin-bottom: 1rem;
+}
+
+.path-card-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.6rem;
+}
+
+.path-card-icon {
     font-size: 1.1rem;
-    color: #2c3e50;
 }
 
-.management-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.management-group {
-    margin: 0.5rem 0;
-    border-radius: 6px;
-    background: #fafafa;
-    overflow: hidden;
-}
-
-.management-group > summary {
-    cursor: pointer;
-    padding: 0.6rem 0.8rem;
+.path-card-label {
     font-weight: 600;
     color: #2c3e50;
-    list-style: none;
-    user-select: none;
+    font-size: 0.95rem;
+}
+
+.path-card-hint {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.path-card-hint code {
     background: #ececf0;
-    transition: background 0.15s;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.85em;
 }
 
-.management-group > summary::-webkit-details-marker {
-    display: none;
+.path-card-body {
+    margin-bottom: 0.8rem;
 }
 
-.management-group > summary::before {
-    content: '▸ ';
-    display: inline-block;
-    transition: transform 0.15s;
-    margin-right: 0.2rem;
+.path-display {
+    display: block;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.9rem;
+    background: white;
+    border: 1px solid #d0d0d6;
+    border-radius: 4px;
+    padding: 0.5rem 0.7rem;
+    color: #444;
+    word-break: break-all;
+    min-height: 1.4em;
+    line-height: 1.4;
 }
 
-.management-group[open] > summary::before {
-    content: '▾ ';
+.path-display.unset {
+    color: #999;
+    font-style: italic;
 }
 
-.management-group > summary:hover {
-    background: #e0e0e6;
-}
-
-.management-group .management-buttons {
-    padding: 0.6rem 0.6rem 0.8rem;
-}
-
-.plugin-buttons-host {
-    display: contents;
-}
-
-/* ===== 同期/公開 設定行 ===== */
-.settings-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.4rem 0;
-}
-
-.settings-label {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #555;
-}
-
-.settings-value {
+.path-card-footer {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.7rem;
+    flex-wrap: wrap;
 }
 
-.settings-path {
-    flex: 1;
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+.path-status {
     font-size: 0.85rem;
-    background: #f3f3f5;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: #888;
+    flex: 1;
     min-width: 0;
 }
 
-.settings-value .btn-small {
-    padding: 0.25rem 0.6rem;
-    font-size: 0.8rem;
-    flex-shrink: 0;
+/* セクション末尾のアクションボタン行 */
+.settings-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
-.settings-status {
-    font-size: 0.8rem;
-    color: #888;
-    min-height: 1em;
+.settings-action-row .btn {
+    flex: 0 1 auto;
 }
 
-.settings-divider {
-    border: none;
-    border-top: 1px solid #e0e0e0;
-    margin: 0.6rem 0 0.4rem;
+.plugin-buttons-host {
+    margin-top: 0.5rem;
+}
+
+.plugin-buttons-host:empty {
+    display: none;
+}
+
+/* ===== Header の設定ボタン ===== */
+#open-settings {
+    padding: 0.5rem 0.75rem;
+    font-size: 1.1rem;
+    line-height: 1;
 }
 
 

@@ -37,6 +37,7 @@
                         <option value="all">📚 全ての本</option>
                     </select>
                     <button id="manage-bookshelves" class="btn btn-outline">📝 本棚管理</button>
+                    <button id="open-settings" class="btn btn-outline" title="設定">⚙️</button>
                 </div>
 
                 <div class="view-toggle view-only-bookshelf" >
@@ -128,56 +129,6 @@
                             <span class="stat-value" id="total-books">-</span>
                             <span class="stat-label">総蔵書数</span>
                         </div>
-
-                    </div>
-                    
-                    
-                    
-                    <div class="library-management">
-                        <h3>管理</h3>
-
-                        <details class="management-group" open>
-                            <summary>📚 蔵書</summary>
-                            <div class="management-buttons">
-                                <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
-                                <button id="import-kindle" class="btn btn-secondary">📥 Kindleインポート</button>
-                                <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
-                            </div>
-                        </details>
-
-                        <details class="management-group" open>
-                            <summary>📁 同期 / 公開</summary>
-                            <div class="management-buttons">
-                                <div class="settings-row">
-                                    <div class="settings-label">📁 Obsidian 同期フォルダ</div>
-                                    <div class="settings-value">
-                                        <span id="obsidian-sync-path" class="settings-path" title="">(未接続)</span>
-                                        <button id="obsidian-sync-btn" class="btn btn-small btn-secondary">変更</button>
-                                    </div>
-                                    <div id="obsidian-sync-status" class="settings-status"></div>
-                                </div>
-                                <div class="settings-row">
-                                    <div class="settings-label">📦 公開エクスポート先</div>
-                                    <div class="settings-value">
-                                        <span id="export-dir-path" class="settings-path" title="">(未設定)</span>
-                                        <button id="pick-export-dir" class="btn btn-small btn-secondary">変更</button>
-                                    </div>
-                                </div>
-                                <hr class="settings-divider">
-                                <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
-                                <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
-                                <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
-                            </div>
-                        </details>
-
-                        <details class="management-group" open>
-                            <summary>🛠️ 拡張</summary>
-                            <div class="management-buttons">
-                                <button id="manage-plugins" class="btn btn-secondary">🧩 プラグイン管理</button>
-                                <div id="plugin-buttons" class="plugin-buttons-host"></div>
-                            </div>
-                        </details>
-
                     </div>
                 </div>
             </aside>
@@ -235,6 +186,74 @@
             <button class="modal-close" id="modal-close">×</button>
             <div class="modal-body" id="modal-body">
                 <!-- Book details will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content settings-modal-content">
+            <button class="modal-close" id="settings-modal-close">×</button>
+            <div class="modal-header">
+                <h2>⚙️ 設定</h2>
+            </div>
+            <div class="modal-body">
+
+                <section class="settings-section">
+                    <h3 class="settings-section-title">📁 同期 / 公開</h3>
+
+                    <div class="path-card">
+                        <div class="path-card-header">
+                            <span class="path-card-icon">📁</span>
+                            <span class="path-card-label">Obsidian 同期フォルダ</span>
+                        </div>
+                        <div class="path-card-body">
+                            <code class="path-display" id="obsidian-sync-path" title="">(未接続)</code>
+                        </div>
+                        <div class="path-card-footer">
+                            <button id="obsidian-sync-btn" class="btn btn-primary btn-small">📁 変更</button>
+                            <span id="obsidian-sync-status" class="path-status"></span>
+                        </div>
+                    </div>
+
+                    <div class="path-card">
+                        <div class="path-card-header">
+                            <span class="path-card-icon">📦</span>
+                            <span class="path-card-label">公開エクスポート先</span>
+                            <span class="path-card-hint">推奨: 同期フォルダの隣に <code>bookshelf-export/</code></span>
+                        </div>
+                        <div class="path-card-body">
+                            <code class="path-display" id="export-dir-path" title="">(未設定)</code>
+                        </div>
+                        <div class="path-card-footer">
+                            <button id="pick-export-dir" class="btn btn-primary btn-small">📁 変更</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-action-row">
+                        <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
+                        <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
+                        <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h3 class="settings-section-title">📚 蔵書</h3>
+                    <div class="settings-action-row">
+                        <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
+                        <button id="import-kindle" class="btn btn-secondary">📥 Kindle インポート</button>
+                        <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h3 class="settings-section-title">🛠️ 拡張</h3>
+                    <div class="settings-action-row">
+                        <button id="manage-plugins" class="btn btn-secondary">🧩 プラグイン管理</button>
+                    </div>
+                    <div id="plugin-buttons" class="plugin-buttons-host settings-action-row"></div>
+                </section>
+
             </div>
         </div>
     </div>

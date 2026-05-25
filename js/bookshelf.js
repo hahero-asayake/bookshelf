@@ -423,6 +423,22 @@ class VirtualBookshelf {
             });
         }
 
+        // 設定モーダルの開閉
+        const openSettings = document.getElementById('open-settings');
+        if (openSettings) {
+            openSettings.addEventListener('click', () => this._openSettingsModal());
+        }
+        const closeSettings = document.getElementById('settings-modal-close');
+        if (closeSettings) {
+            closeSettings.addEventListener('click', () => this._closeSettingsModal());
+        }
+        const settingsModal = document.getElementById('settings-modal');
+        if (settingsModal) {
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target === settingsModal) this._closeSettingsModal();
+            });
+        }
+
 
         // Bookshelf management
         const manageBookshelves = document.getElementById('manage-bookshelves');
@@ -2180,6 +2196,19 @@ class VirtualBookshelf {
     _setBodyView(view) {
         document.body.classList.remove('app-view-main', 'app-view-bookshelf');
         document.body.classList.add(`app-view-${view}`);
+    }
+
+    _openSettingsModal() {
+        const modal = document.getElementById('settings-modal');
+        if (!modal) return;
+        // 開く瞬間にパス表示を refresh
+        this._updateExportDirDisplay();
+        modal.classList.add('show');
+    }
+
+    _closeSettingsModal() {
+        const modal = document.getElementById('settings-modal');
+        if (modal) modal.classList.remove('show');
     }
 
     /**
