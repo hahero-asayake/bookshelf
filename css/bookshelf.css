@@ -1415,8 +1415,9 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
 .header-controls {
     display: grid;
     grid-template-columns: repeat(var(--header-cols, 8), minmax(0, 1fr));
-    gap: 0.5rem;
-    align-items: center;
+    grid-template-rows: repeat(var(--header-rows, 1), 44px);
+    gap: 0.4rem;
+    align-items: stretch;
     width: 100%;
 }
 
@@ -1473,91 +1474,159 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     margin: -0.4rem 0 0.8rem;
 }
 
-.header-customizer-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.6rem 0.8rem;
-    background: #eef1f5;
-    border-radius: 6px;
-    margin-bottom: 0.6rem;
-    flex-wrap: wrap;
+/* ===== Header editor ===== */
+.header-editor-hint {
+    color: #888;
+    font-size: 0.85rem;
 }
 
-.header-customizer-controls label {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 600;
-    color: #2c3e50;
-}
-
-.header-customizer-controls input[type="number"] {
-    padding: 0.2rem 0.4rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-.header-customizer-rows {
+/* ===== Dimension picker (hover-based table-insert) ===== */
+.dim-picker-wrap {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 0.4rem;
-}
-
-.header-customizer-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.45rem 0.7rem;
+    padding: 0.8rem;
     background: #f7f8fa;
     border: 1px solid #e0e0e6;
     border-radius: 6px;
+    margin-bottom: 0.8rem;
+}
+
+.dim-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--max-c, 12), 18px);
+    grid-template-rows: repeat(var(--max-r, 4), 18px);
+    gap: 2px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.dim-picker-cell {
+    background: white;
+    border: 1px solid #d0d0d6;
+    border-radius: 2px;
+    transition: background 0.06s ease;
+}
+
+.dim-picker-cell.committed {
+    background: #f0f0f5;
+    border-color: #c0c0c8;
+}
+
+.dim-picker-cell.preview {
+    background: #93c5fd;
+    border-color: #3b82f6;
+}
+
+.dim-picker-label {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+/* ===== Layout grid (square cells, color-coded only) ===== */
+.header-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--ecols, 8), 36px);
+    grid-template-rows: repeat(var(--erows, 1), 36px);
+    gap: 4px;
+    padding: 0.8rem;
+    background: #fafafa;
+    border-radius: 6px;
+    border: 1px dashed #d0d0d6;
+    overflow-x: auto;
+    justify-content: start;
+    margin-bottom: 0.8rem;
+}
+
+.header-editor-cell {
+    background: white;
+    border: 1px solid #d0d0d6;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.header-editor-cell:hover {
+    background: #f0f7ff;
+}
+
+.header-editor-cell.occupied {
+    background: #dbeafe;
+    border-color: #3b82f6;
+}
+
+.header-editor-cell.occupied:hover {
+    background: #c7ddfd;
+}
+
+.header-editor-cell.selected {
+    outline: 2px solid #f59e0b;
+    outline-offset: -2px;
+    background: #fff7e0;
+}
+
+.header-editor-cell.occupied.selected {
+    background: #fed7aa;
+    outline-color: #d97706;
+}
+
+.header-editor-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    background: #f7f8fa;
+    border: 1px solid #e0e0e6;
+    border-radius: 6px;
+    margin-bottom: 0.7rem;
     flex-wrap: wrap;
 }
 
-.header-customizer-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    cursor: pointer;
-    min-width: 180px;
+.header-editor-action-info {
+    font-size: 0.85rem;
+    color: #444;
     flex: 1;
 }
 
-.header-customizer-label {
-    font-weight: 500;
-    color: #2c3e50;
+.header-editor-pool h4 {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 0 0 0.4rem 0;
+    font-weight: 600;
 }
 
-.header-customizer-label small {
+.header-editor-pool h4 small {
     color: #888;
     font-weight: normal;
 }
 
-.header-customizer-span {
+.header-editor-chips {
     display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    color: #666;
-    font-size: 0.85rem;
+    flex-wrap: wrap;
+    gap: 0.4rem;
 }
 
-.header-customizer-span input[type="number"] {
-    padding: 0.2rem 0.3rem;
+.header-editor-chip {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+    background: white;
     border: 1px solid #ccc;
-    border-radius: 4px;
-    text-align: center;
+    border-radius: 16px;
+    cursor: pointer;
 }
 
-.header-customizer-reorder {
-    display: flex;
-    gap: 0.25rem;
+.header-editor-chip:hover {
+    background: #dbeafe;
+    border-color: #3b82f6;
 }
 
-.header-customizer-reorder .btn {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.85rem;
-    min-width: 30px;
+.header-editor-chip small {
+    color: #888;
+    font-size: 0.85em;
 }
 
 /* ===== Bookshelf view header (description) ===== */
