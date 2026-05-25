@@ -211,24 +211,27 @@ class BookshelfPluginAPI {
         const idx = this._uiButtons.findIndex(b => b.id === id);
         if (idx < 0) return;
         const [entry] = this._uiButtons.splice(idx, 1);
-        if (entry.element && entry.element.parentNode) {
-            entry.element.parentNode.removeChild(entry.element);
+        const node = entry.wrapper || entry.element;
+        if (node && node.parentNode) {
+            node.parentNode.removeChild(node);
         }
     }
 
     _renderUIButton(entry) {
-        const containerMap = {
-            'library-management': '#plugin-buttons',
-            'header': '#header-plugin-buttons',
-            'bookshelf-toolbar': '#bookshelf-toolbar',
-            'book-modal-actions': '#book-modal-actions'
-        };
-        const sel = containerMap[entry.where] || containerMap['library-management'];
-        const container = document.querySelector(sel);
+        // 'header' 等は受け付けるが、実体はすべて #plugin-buttons プールに置く。
+        // ヘッダーへの配置はヘッダーカスタマイザ側で個別に切替する設計。
+        const poolSel = entry.where === 'book-modal-actions' ? '#book-modal-actions'
+            : entry.where === 'bookshelf-toolbar' ? '#bookshelf-toolbar'
+            : '#plugin-buttons';
+        const container = document.querySelector(poolSel);
         if (!container) {
-            console.warn(`[pluginAPI] addUIButton: container "${sel}" not found yet`);
+            console.warn(`[pluginAPI] addUIButton: container "${poolSel}" not found yet`);
             return;
         }
+        // ヘッダーに移動できるよう、ラッパで包む（個別 key で識別）
+        const wrapper = document.createElement('span');
+        wrapper.className = 'header-item plugin-button-item';
+        wrapper.dataset.headerItem = `plugin:${entry.id}`;
         const btn = document.createElement('button');
         btn.id = `plugin-btn-${entry.id}`;
         btn.className = 'btn btn-secondary plugin-ui-button';
@@ -238,8 +241,14 @@ class BookshelfPluginAPI {
             try { entry.onClick(); }
             catch (e) { console.error(`[plugin button "${entry.id}"]`, e); }
         });
-        container.appendChild(btn);
+        wrapper.appendChild(btn);
+        container.appendChild(wrapper);
         entry.element = btn;
+        entry.wrapper = wrapper;
+        // ヘッダーレイアウト適用を要求（app 側に通知）
+        if (window.bookshelf && typeof window.bookshelf._applyHeaderLayout === 'function') {
+            window.bookshelf._applyHeaderLayout();
+        }
     }
 
     // ===== エクスポート変換フック =====

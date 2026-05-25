@@ -162,28 +162,11 @@ body {
 .header {
     background: linear-gradient(135deg, var(--primary-color), #34495e);
     color: white;
-    padding: 2rem 0;
+    padding: 0.8rem 0;
     box-shadow: 0 2px 10px var(--shadow-color);
-}
-
-.header-title {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
-    text-align: center;
-}
-
-.header-subtitle {
-    text-align: center;
-    opacity: 0.9;
-    margin-bottom: 2rem;
-}
-
-.header-controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 2rem;
-    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
 
 .view-toggle {
@@ -898,8 +881,8 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     }
 
     .header-controls {
-        flex-direction: column;
-        gap: 1rem;
+        /* モバイルでは列数を半分以下に縮約 */
+        grid-template-columns: repeat(min(var(--header-cols, 8), 4), minmax(0, 1fr));
     }
     
     .view-toggle {
@@ -921,10 +904,6 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     :root {
         --book-width: 100px;
         --book-height: 150px;
-    }
-    
-    .header-title {
-        font-size: 2rem;
     }
     
     .bookshelf.view-covers {
@@ -1432,18 +1411,28 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     text-align: left;
 }
 
-/* ===== Header items (customizable) ===== */
-.header-item {
-    display: inline-flex;
+/* ===== Header grid (customizable) ===== */
+.header-controls {
+    display: grid;
+    grid-template-columns: repeat(var(--header-cols, 8), minmax(0, 1fr));
+    gap: 0.5rem;
     align-items: center;
+    width: 100%;
+}
+
+.header-item {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.header-item > * {
+    width: 100%;
+    min-width: 0;
 }
 
 .header-item.header-hidden {
     display: none !important;
-}
-
-.header-item-fixed {
-    margin-left: auto;
 }
 
 #open-settings,
@@ -1453,6 +1442,30 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     line-height: 1;
 }
 
+.header-item .search-box,
+.header-item .view-toggle,
+.header-item .filter-popover-host {
+    width: 100%;
+}
+
+.header-item .search-box input,
+.header-item select {
+    width: 100%;
+}
+
+.header-item .view-toggle {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.header-item .view-toggle .btn {
+    flex: 1;
+}
+
+.plugin-button-item .btn {
+    width: 100%;
+}
+
 /* ===== Header customizer (in settings modal) ===== */
 .settings-section-hint {
     font-size: 0.85rem;
@@ -1460,7 +1473,32 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     margin: -0.4rem 0 0.8rem;
 }
 
-.header-customizer {
+.header-customizer-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.8rem;
+    background: #eef1f5;
+    border-radius: 6px;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.header-customizer-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.header-customizer-controls input[type="number"] {
+    padding: 0.2rem 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.header-customizer-rows {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
@@ -1469,11 +1507,12 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
 .header-customizer-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.7rem;
+    gap: 0.6rem;
+    padding: 0.45rem 0.7rem;
     background: #f7f8fa;
     border: 1px solid #e0e0e6;
     border-radius: 6px;
+    flex-wrap: wrap;
 }
 
 .header-customizer-toggle {
@@ -1481,7 +1520,8 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     align-items: center;
     gap: 0.4rem;
     cursor: pointer;
-    min-width: 160px;
+    min-width: 180px;
+    flex: 1;
 }
 
 .header-customizer-label {
@@ -1489,10 +1529,24 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     color: #2c3e50;
 }
 
-.header-customizer-hint {
-    flex: 1;
+.header-customizer-label small {
     color: #888;
+    font-weight: normal;
+}
+
+.header-customizer-span {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: #666;
     font-size: 0.85rem;
+}
+
+.header-customizer-span input[type="number"] {
+    padding: 0.2rem 0.3rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-align: center;
 }
 
 .header-customizer-reorder {
@@ -1515,16 +1569,6 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     color: #666;
     font-size: 0.9rem;
     margin-top: 0.25rem;
-}
-
-/* Empty plugin-buttons-host in header should not occupy space */
-#header-plugin-buttons:empty {
-    display: none;
-}
-
-#header-plugin-buttons:not(:empty) {
-    display: inline-flex;
-    gap: 0.3rem;
 }
 
 /* ===== Book item: 全体をクリッカブルに ===== */

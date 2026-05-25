@@ -27,9 +27,6 @@
 
     <header class="header">
         <div class="container">
-            <h1 class="header-title">📚 Virtual Bookshelf</h1>
-            <p class="header-subtitle">読書ライブラリ</p>
-            
             <div class="header-controls" id="header-controls">
                 <span class="header-item view-only-bookshelf" data-header-item="back-to-main">
                     <button id="back-to-main" class="btn btn-outline" title="本棚一覧に戻る">← 一覧</button>
@@ -121,11 +118,7 @@
                     </span>
                 </span>
 
-                <!-- プラグインが where:'header' で追加するボタンが入る -->
-                <span class="header-item header-plugin-host" data-header-item="plugin-buttons" id="header-plugin-buttons"></span>
-
-                <!-- 設定ボタンは常時固定で右端 -->
-                <span class="header-item header-item-fixed" data-header-item="open-settings">
+                <span class="header-item" data-header-item="open-settings">
                     <button id="open-settings" class="btn btn-outline" title="設定">⚙️</button>
                 </span>
             </div>

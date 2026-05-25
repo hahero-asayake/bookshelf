@@ -2200,26 +2200,36 @@ class VirtualBookshelf {
     }
 
     // ===== Header customization =====
+    //
+    // ヘッダーは CSS Grid。layout.cols でグリッド列数、各 item に span (1〜cols) を設定。
+    // 並びは layout.items の順。表示/非表示は visible で制御。
+    // プラグイン由来のボタン (id=plugin:<button-id>) も含めて統一的に扱う。
+    // 設定ボタン (open-settings) は required: 非表示にできない。位置は自由。
     static HEADER_ITEMS_META = {
-        'back-to-main': { label: '← 一覧', hint: '本棚一覧に戻る' },
-        'bookshelf-selector': { label: '📚 本棚セレクタ', hint: '本棚を切替えるドロップダウン' },
-        'manage-bookshelves': { label: '📝 本棚管理', hint: '本棚管理モーダルを開く' },
-        'view-toggle': { label: '🖼️ 表紙/リスト切替', hint: '本一覧の表示モード' },
-        'search-box': { label: '🔍 検索ボックス', hint: 'タイトル・著者で検索' },
-        'filter': { label: '🔧 フィルター', hint: '星評価・並び順・表示数・カバーサイズ' },
-        'plugin-buttons': { label: '🧩 プラグイン由来ボタン', hint: 'プラグインが where:"header" で追加したボタン' }
+        'back-to-main':        { label: '← 一覧',           defaultVisible: true,  defaultSpan: 1 },
+        'bookshelf-selector':  { label: '📚 本棚セレクタ',     defaultVisible: true,  defaultSpan: 2 },
+        'manage-bookshelves':  { label: '📝 本棚管理',        defaultVisible: true,  defaultSpan: 1 },
+        'view-toggle':         { label: '🖼️ 表紙/リスト切替',  defaultVisible: true,  defaultSpan: 2 },
+        'search-box':          { label: '🔍 検索ボックス',     defaultVisible: true,  defaultSpan: 3, minSpan: 3 },
+        'filter':              { label: '🔧 フィルター',       defaultVisible: true,  defaultSpan: 1 },
+        'open-settings':       { label: '⚙️ 設定',            defaultVisible: true,  defaultSpan: 1, required: true }
     };
-    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayout';
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV2';
+    static HEADER_DEFAULT_COLS = 8;
 
     _loadHeaderLayout() {
         try {
             const raw = localStorage.getItem(VirtualBookshelf.HEADER_LAYOUT_STORAGE_KEY);
             if (!raw) return null;
-            const parsed = JSON.parse(raw);
-            if (!parsed || !Array.isArray(parsed.order)) return null;
+            const p = JSON.parse(raw);
+            if (!p || !Array.isArray(p.items)) return null;
             return {
-                order: parsed.order.filter(k => k in VirtualBookshelf.HEADER_ITEMS_META),
-                hidden: Array.isArray(parsed.hidden) ? parsed.hidden : []
+                cols: Number.isFinite(p.cols) && p.cols >= 1 ? Math.min(24, p.cols) : VirtualBookshelf.HEADER_DEFAULT_COLS,
+                items: p.items.filter(it => it && typeof it.key === 'string').map(it => ({
+                    key: it.key,
+                    visible: it.visible !== false,
+                    span: Math.max(1, Math.min(24, Number(it.span) || 1))
+                }))
             };
         } catch (_) { return null; }
     }
@@ -2230,29 +2240,105 @@ class VirtualBookshelf {
         } catch (_) {}
     }
 
-    _currentHeaderLayout() {
-        const stored = this._loadHeaderLayout();
-        const allKeys = Object.keys(VirtualBookshelf.HEADER_ITEMS_META);
-        if (stored) {
-            // 後から増えた未知の key は末尾に追加
-            const missing = allKeys.filter(k => !stored.order.includes(k));
-            return { order: [...stored.order, ...missing], hidden: stored.hidden };
+    /**
+     * 利用可能なヘッダー項目一覧を返す ({ key, label, required, minSpan, isPlugin })。
+     * 静的項目 + プラグインボタン (pluginAPI から動的取得)。
+     */
+    _enumerateHeaderItems() {
+        const meta = VirtualBookshelf.HEADER_ITEMS_META;
+        const list = Object.keys(meta).map(key => ({
+            key,
+            label: meta[key].label,
+            required: !!meta[key].required,
+            minSpan: meta[key].minSpan || 1,
+            defaultVisible: meta[key].defaultVisible !== false,
+            defaultSpan: meta[key].defaultSpan || 1,
+            isPlugin: false
+        }));
+        if (this.pluginAPI && Array.isArray(this.pluginAPI._uiButtons)) {
+            for (const btn of this.pluginAPI._uiButtons) {
+                list.push({
+                    key: `plugin:${btn.id}`,
+                    label: `${btn.emoji || '🧩'} ${btn.label}`,
+                    required: false,
+                    minSpan: 1,
+                    defaultVisible: false,  // プラグインボタンは初期は header に出ない (#plugin-buttons プールに置く)
+                    defaultSpan: 1,
+                    isPlugin: true,
+                    buttonId: btn.id
+                });
+            }
         }
-        return { order: allKeys.slice(), hidden: [] };
+        return list;
     }
 
+    /**
+     * stored layout に未知 key (新規プラグイン等) を補完して返す
+     */
+    _currentHeaderLayout() {
+        const all = this._enumerateHeaderItems();
+        const allKeys = new Set(all.map(i => i.key));
+        const metaByKey = Object.fromEntries(all.map(i => [i.key, i]));
+
+        const stored = this._loadHeaderLayout();
+        const cols = stored?.cols || VirtualBookshelf.HEADER_DEFAULT_COLS;
+
+        if (!stored) {
+            return {
+                cols,
+                items: all.map(i => ({ key: i.key, visible: i.defaultVisible, span: i.defaultSpan }))
+            };
+        }
+
+        // stored.items から有効な key だけ残し、未知 key (新プラグイン) を末尾に追加
+        const items = stored.items
+            .filter(it => allKeys.has(it.key))
+            .map(it => ({
+                key: it.key,
+                visible: metaByKey[it.key].required ? true : it.visible,
+                span: Math.max(metaByKey[it.key].minSpan, it.span)
+            }));
+        const knownKeys = new Set(items.map(it => it.key));
+        for (const meta of all) {
+            if (!knownKeys.has(meta.key)) {
+                items.push({ key: meta.key, visible: meta.defaultVisible, span: meta.defaultSpan });
+            }
+        }
+        return { cols, items };
+    }
+
+    /**
+     * ヘッダーレイアウトを DOM に適用
+     */
     _applyHeaderLayout() {
         const layout = this._currentHeaderLayout();
-        const hidden = new Set(layout.hidden);
-        const container = document.getElementById('header-controls');
-        if (!container) return;
-        const fixedAnchor = container.querySelector('[data-header-item="open-settings"]');
-        // DOM 順序を layout.order の順に並べ替え (open-settings 直前に insertBefore)
-        for (const key of layout.order) {
-            const el = container.querySelector(`[data-header-item="${CSS.escape(key)}"]`);
-            if (!el) continue;
-            el.classList.toggle('header-hidden', hidden.has(key));
-            if (fixedAnchor) container.insertBefore(el, fixedAnchor);
+        const header = document.getElementById('header-controls');
+        if (!header) return;
+        header.style.setProperty('--header-cols', layout.cols);
+
+        // プラグインボタンプール
+        const pool = document.getElementById('plugin-buttons');
+
+        for (const item of layout.items) {
+            let el;
+            if (item.key.startsWith('plugin:')) {
+                const btnId = item.key.slice('plugin:'.length);
+                const entry = this.pluginAPI?._uiButtons?.find(b => b.id === btnId);
+                el = entry?.wrapper;
+                if (!el) continue;
+            } else {
+                el = header.querySelector(`[data-header-item="${CSS.escape(item.key)}"]`);
+                if (!el) continue;
+            }
+            el.style.gridColumn = `span ${item.span}`;
+            el.classList.toggle('header-hidden', !item.visible);
+            if (item.visible) {
+                if (el.parentElement !== header) header.appendChild(el);
+                else header.appendChild(el);  // 並び替え (既に header 内でも append で末尾移動)
+            } else if (item.key.startsWith('plugin:') && pool) {
+                // 非表示プラグインボタンは settings の plugin-buttons プールに戻す
+                if (el.parentElement !== pool) pool.appendChild(el);
+            }
         }
     }
 
@@ -2260,28 +2346,57 @@ class VirtualBookshelf {
         const host = document.getElementById('header-customizer');
         if (!host) return;
         const layout = this._currentHeaderLayout();
-        const hidden = new Set(layout.hidden);
-        host.innerHTML = layout.order.map((key, idx) => {
-            const meta = VirtualBookshelf.HEADER_ITEMS_META[key];
-            if (!meta) return '';
-            const isHidden = hidden.has(key);
-            return `
-                <div class="header-customizer-row" data-key="${key}">
-                    <label class="header-customizer-toggle">
-                        <input type="checkbox" data-toggle-header="${key}" ${isHidden ? '' : 'checked'}>
-                        <span class="header-customizer-label">${meta.label}</span>
-                    </label>
-                    <span class="header-customizer-hint">${meta.hint}</span>
-                    <span class="header-customizer-reorder">
-                        <button class="btn btn-small" data-move-header="up" data-key="${key}" ${idx === 0 ? 'disabled' : ''}>↑</button>
-                        <button class="btn btn-small" data-move-header="down" data-key="${key}" ${idx === layout.order.length - 1 ? 'disabled' : ''}>↓</button>
-                    </span>
-                </div>
-            `;
-        }).join('');
+        const all = this._enumerateHeaderItems();
+        const byKey = Object.fromEntries(all.map(i => [i.key, i]));
 
+        host.innerHTML = `
+            <div class="header-customizer-controls">
+                <label>列数:
+                    <input type="number" id="header-cols-input" min="1" max="24" value="${layout.cols}" style="width:60px;">
+                </label>
+                <span class="header-customizer-hint">数を増やすとブロックが細かくなり、span 値で項目幅を調整できます。</span>
+            </div>
+            <div class="header-customizer-rows">
+                ${layout.items.map((it, idx) => {
+                    const meta = byKey[it.key];
+                    if (!meta) return '';
+                    return `
+                        <div class="header-customizer-row" data-key="${it.key}">
+                            <label class="header-customizer-toggle">
+                                <input type="checkbox" data-toggle-header="${it.key}"
+                                    ${it.visible ? 'checked' : ''}
+                                    ${meta.required ? 'disabled title="必須項目"' : ''}>
+                                <span class="header-customizer-label">${meta.label}${meta.required ? ' <small>(必須)</small>' : ''}${meta.isPlugin ? ' <small>(プラグイン)</small>' : ''}</span>
+                            </label>
+                            <label class="header-customizer-span">
+                                幅:
+                                <input type="number" data-span-header="${it.key}"
+                                    min="${meta.minSpan}" max="${layout.cols}" value="${it.span}"
+                                    style="width:55px;">
+                            </label>
+                            <span class="header-customizer-reorder">
+                                <button class="btn btn-small" data-move-header="up" data-key="${it.key}" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                                <button class="btn btn-small" data-move-header="down" data-key="${it.key}" ${idx === layout.items.length - 1 ? 'disabled' : ''}>↓</button>
+                            </span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+        host.querySelector('#header-cols-input').addEventListener('change', (e) => {
+            const v = Math.max(1, Math.min(24, Number(e.target.value) || 1));
+            const l = this._currentHeaderLayout();
+            l.cols = v;
+            this._saveHeaderLayout(l);
+            this._applyHeaderLayout();
+            this._renderHeaderCustomizer();
+        });
         host.querySelectorAll('[data-toggle-header]').forEach(cb => {
             cb.addEventListener('change', (e) => this._toggleHeaderItem(e.target.dataset.toggleHeader, e.target.checked));
+        });
+        host.querySelectorAll('[data-span-header]').forEach(inp => {
+            inp.addEventListener('change', (e) => this._setHeaderSpan(e.target.dataset.spanHeader, Number(e.target.value)));
         });
         host.querySelectorAll('[data-move-header]').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -2294,22 +2409,33 @@ class VirtualBookshelf {
 
     _toggleHeaderItem(key, visible) {
         const layout = this._currentHeaderLayout();
-        const set = new Set(layout.hidden);
-        if (visible) set.delete(key);
-        else set.add(key);
-        layout.hidden = [...set];
+        const it = layout.items.find(i => i.key === key);
+        if (!it) return;
+        const meta = this._enumerateHeaderItems().find(m => m.key === key);
+        if (meta?.required && !visible) return;
+        it.visible = visible;
+        this._saveHeaderLayout(layout);
+        this._applyHeaderLayout();
+    }
+
+    _setHeaderSpan(key, span) {
+        const layout = this._currentHeaderLayout();
+        const it = layout.items.find(i => i.key === key);
+        const meta = this._enumerateHeaderItems().find(m => m.key === key);
+        if (!it || !meta) return;
+        it.span = Math.max(meta.minSpan, Math.min(layout.cols, Number(span) || 1));
         this._saveHeaderLayout(layout);
         this._applyHeaderLayout();
     }
 
     _moveHeaderItem(key, delta) {
         const layout = this._currentHeaderLayout();
-        const idx = layout.order.indexOf(key);
+        const idx = layout.items.findIndex(i => i.key === key);
         if (idx < 0) return;
         const newIdx = idx + delta;
-        if (newIdx < 0 || newIdx >= layout.order.length) return;
-        const [item] = layout.order.splice(idx, 1);
-        layout.order.splice(newIdx, 0, item);
+        if (newIdx < 0 || newIdx >= layout.items.length) return;
+        const [moved] = layout.items.splice(idx, 1);
+        layout.items.splice(newIdx, 0, moved);
         this._saveHeaderLayout(layout);
         this._applyHeaderLayout();
         this._renderHeaderCustomizer();
