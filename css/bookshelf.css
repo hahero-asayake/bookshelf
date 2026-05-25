@@ -53,7 +53,6 @@
 .public-mode #add-book-manually,
 .public-mode #import-kindle,
 .public-mode #show-exclusions,
-.public-mode #manage-plugins,
 .public-mode #export-unified,
 .public-mode #obsidian-sync-btn,
 .public-mode #obsidian-sync-status,
@@ -84,7 +83,6 @@
 .public-mode #add-book-manually,
 .public-mode #import-kindle,
 .public-mode #show-exclusions,
-.public-mode #manage-plugins,
 .public-mode #export-unified,
 .public-mode #obsidian-sync-btn,
 .public-mode #obsidian-sync-status,
@@ -254,18 +252,10 @@ body {
     gap: 2rem;
 }
 
-/* Sidebar Styles */
-.sidebar {
-    width: 250px;
-    flex-shrink: 0;
-}
-
-.filter-section, .stats-section {
-    background: white;
-    padding: 1.5rem;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px var(--shadow-color);
-    margin-bottom: 1.5rem;
+/* bookshelf-container がフル幅に */
+.bookshelf-container.full-width {
+    flex: 1;
+    width: 100%;
 }
 
 /* ===== View 切替 (router 経由で body.app-view-* を切り替える) ===== */
@@ -273,12 +263,71 @@ body.app-view-main .view-bookshelf { display: none !important; }
 body.app-view-main .view-only-bookshelf { display: none !important; }
 body.app-view-bookshelf .view-main { display: none !important; }
 
-/* デフォルトの details/section 表示。app-view-* が付くまでは main view 想定。 */
 .view-bookshelf { display: none; }
 body.app-view-bookshelf .view-bookshelf { display: block !important; }
-body.app-view-bookshelf details.view-only-bookshelf { display: block !important; }
 body.app-view-bookshelf .view-only-bookshelf.btn { display: inline-block !important; }
-body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: flex !important; }
+body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !important; }
+
+/* ===== Filter Popover (ヘッダ内に floating) ===== */
+.filter-popover-host {
+    position: relative;
+}
+
+#toggle-filter {
+    padding: 0.5rem 0.75rem;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.filter-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 280px;
+    background: white;
+    color: #2c3e50;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    padding: 1rem;
+    z-index: 100;
+}
+
+.filter-popover[hidden] { display: none; }
+
+.filter-popover .filter-group {
+    margin-bottom: 1rem;
+}
+
+.filter-popover .filter-group:last-child {
+    margin-bottom: 0;
+}
+
+.filter-popover label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0.4rem;
+}
+
+.filter-popover .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.2rem;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.filter-popover select,
+.filter-popover input[type="text"] {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
 
 #current-bookshelf-title {
     color: var(--primary-color, #2c3e50);
@@ -832,15 +881,22 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: f
         gap: 1rem;
     }
     
-    .sidebar {
-        width: 100%;
-        order: 2;
-    }
-    
     .bookshelf-container {
-        order: 1;
+        width: 100%;
     }
-    
+
+    .filter-popover {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        border-radius: 12px 12px 0 0;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
     .header-controls {
         flex-direction: column;
         gap: 1rem;
@@ -875,9 +931,6 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: f
         grid-template-columns: repeat(3, 1fr);
     }
     
-    .filter-section, .stats-section {
-        padding: 1rem;
-    }
 }
 
 /* Animation & Transitions */
@@ -1292,23 +1345,91 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: f
     min-width: 0;
 }
 
-/* セクション末尾のアクションボタン行 */
-.settings-action-row {
+/* セクション末尾のアクションボタンを縦並び */
+.settings-action-row,
+.settings-action-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 0.5rem;
 }
 
-.settings-action-row .btn {
-    flex: 0 1 auto;
+.settings-action-row .btn,
+.settings-action-list .btn {
+    width: 100%;
+    text-align: left;
 }
 
-.plugin-buttons-host {
+.settings-subsection-title {
+    font-size: 0.9rem;
+    color: #555;
+    margin: 1.4rem 0 0.6rem;
+    font-weight: 600;
+}
+
+/* プラグインインストールカード */
+.plugin-install-card {
+    background: #f7f8fa;
+    border: 1px solid #e0e0e6;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.plugin-install-label {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.plugin-install-input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.plugin-install-input-group input[type="url"] {
+    flex: 1;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid #d0d0d6;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    background: white;
+}
+
+.plugin-install-hint {
+    display: block;
+    font-size: 0.8rem;
+    color: #888;
     margin-top: 0.5rem;
 }
 
-.plugin-buttons-host:empty {
-    display: none;
+.plugin-install-hint code {
+    background: #ececf0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.plugins-list-host {
+    margin-bottom: 0.5rem;
+}
+
+.plugin-buttons-host {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.plugin-buttons-host:empty::before {
+    content: '(プラグインが追加するボタンはありません)';
+    color: #999;
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.plugin-buttons-host .btn {
+    width: 100%;
+    text-align: left;
 }
 
 /* ===== Header の設定ボタン ===== */

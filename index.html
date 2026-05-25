@@ -48,92 +48,79 @@
                 <div class="search-box view-only-bookshelf" >
                     <input type="text" id="search-input" placeholder="タイトルや著者で検索...">
                 </div>
+
+                <div class="filter-popover-host view-only-bookshelf">
+                    <button id="toggle-filter" class="btn btn-outline" title="フィルター / 表示設定">🔧</button>
+                    <div class="filter-popover" id="filter-popover" hidden>
+                        <div class="filter-group">
+                            <label>星評価フィルター</label>
+                            <div class="star-filter-checkboxes">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-1" value="1" checked>
+                                    ⭐ 星1
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-2" value="2" checked>
+                                    ⭐⭐ 星2
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-3" value="3" checked>
+                                    ⭐⭐⭐ 星3
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-4" value="4" checked>
+                                    ⭐⭐⭐⭐ 星4
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-5" value="5" checked>
+                                    ⭐⭐⭐⭐⭐ 星5
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="star-0" value="0" checked>
+                                    ☆ 未評価
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>並び順</label>
+                            <select id="sort-order">
+                                <option value="custom" selected>カスタム順</option>
+                                <option value="acquiredTime">購入日</option>
+                                <option value="title">タイトル</option>
+                                <option value="authors">著者</option>
+                            </select>
+                            <button id="sort-direction" class="btn btn-small">↓ 新しい順</button>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>表示数</label>
+                            <select id="books-per-page">
+                                <option value="25">25冊</option>
+                                <option value="50" selected>50冊</option>
+                                <option value="100">100冊</option>
+                                <option value="200">200冊</option>
+                                <option value="all">全て表示</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label>カバーサイズ</label>
+                            <select id="cover-size">
+                                <option value="small">小 (120×180px)</option>
+                                <option value="medium" selected>中 (160×240px)</option>
+                                <option value="large">大 (200×300px)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </header>
 
     <main class="main">
         <div class="container">
-            <aside class="sidebar">
-                <details class="filter-section view-only-bookshelf" id="filter-section" >
-                    <summary>フィルター / 表示設定</summary>
-
-                    <div class="filter-group">
-                        <label>星評価フィルター</label>
-                        <div class="star-filter-checkboxes">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-1" value="1" checked>
-                                ⭐ 星1
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-2" value="2" checked>
-                                ⭐⭐ 星2
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-3" value="3" checked>
-                                ⭐⭐⭐ 星3
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-4" value="4" checked>
-                                ⭐⭐⭐⭐ 星4
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-5" value="5" checked>
-                                ⭐⭐⭐⭐⭐ 星5
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="star-0" value="0" checked>
-                                ☆ 未評価
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>並び順</label>
-                        <select id="sort-order">
-                            <option value="custom" selected>カスタム順</option>
-                            <option value="acquiredTime">購入日</option>
-                            <option value="title">タイトル</option>
-                            <option value="authors">著者</option>
-
-                        </select>
-                        <button id="sort-direction" class="btn btn-small">↓ 新しい順</button>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>表示数</label>
-                        <select id="books-per-page">
-                            <option value="25">25冊</option>
-                            <option value="50" selected>50冊</option>
-                            <option value="100">100冊</option>
-                            <option value="200">200冊</option>
-                            <option value="all">全て表示</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>カバーサイズ</label>
-                        <select id="cover-size">
-                            <option value="small">小 (120×180px)</option>
-                            <option value="medium" selected>中 (160×240px)</option>
-                            <option value="large">大 (200×300px)</option>
-                        </select>
-                    </div>
-
-                </details>
-
-                <div class="stats-section">
-                    <h3>統計情報</h3>
-                    <div class="stats">
-                        <div class="stat-item">
-                            <span class="stat-value" id="total-books">-</span>
-                            <span class="stat-label">総蔵書数</span>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            <section class="bookshelf-container">
+            <section class="bookshelf-container full-width">
                 <div class="loading" id="loading">
                     📚 本棚を準備中...
                 </div>
@@ -239,7 +226,7 @@
 
                 <section class="settings-section">
                     <h3 class="settings-section-title">📚 蔵書</h3>
-                    <div class="settings-action-row">
+                    <div class="settings-action-list">
                         <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
                         <button id="import-kindle" class="btn btn-secondary">📥 Kindle インポート</button>
                         <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
@@ -247,11 +234,24 @@
                 </section>
 
                 <section class="settings-section">
-                    <h3 class="settings-section-title">🛠️ 拡張</h3>
-                    <div class="settings-action-row">
-                        <button id="manage-plugins" class="btn btn-secondary">🧩 プラグイン管理</button>
+                    <h3 class="settings-section-title">🧩 プラグイン</h3>
+
+                    <div class="plugin-install-card">
+                        <div class="plugin-install-label">GitHub からインストール</div>
+                        <div class="plugin-install-input-group">
+                            <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
+                            <button id="install-plugin-btn" class="btn btn-primary btn-small">📥 インストール</button>
+                        </div>
+                        <small class="plugin-install-hint">manifest.json と index.js を含む repo を指定。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
                     </div>
-                    <div id="plugin-buttons" class="plugin-buttons-host settings-action-row"></div>
+
+                    <h4 class="settings-subsection-title">インストール済み</h4>
+                    <div id="plugins-list" class="plugins-list-host">
+                        <p style="color:#888;">設定を開くと一覧が表示されます</p>
+                    </div>
+
+                    <h4 class="settings-subsection-title">プラグイン由来のクイックボタン</h4>
+                    <div id="plugin-buttons" class="plugin-buttons-host"></div>
                 </section>
 
             </div>
@@ -373,33 +373,6 @@
                 </div>
                 <div id="import-results" class="import-results" style="display: none;">
                     <!-- Import results will be shown here -->
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Plugins Manager Modal -->
-    <div id="plugins-modal" class="modal">
-        <div class="modal-content">
-            <button class="modal-close" id="plugins-modal-close">×</button>
-            <div class="modal-header">
-                <h2>🧩 プラグイン管理</h2>
-            </div>
-            <div class="modal-body">
-                <div style="margin-bottom: 1.5rem;">
-                    <h3>📦 GitHub からインストール</h3>
-                    <p style="font-size: 0.85rem; color: #666;">manifest.json と index.js を含む repo を指定してください。例: <code>https://github.com/owner/repo</code> または <code>https://github.com/owner/repo/tree/main/plugins/foo</code></p>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" style="flex: 1;" />
-                        <button id="install-plugin-btn" class="btn btn-primary">📥 インストール</button>
-                    </div>
-                </div>
-                <hr style="margin: 1rem 0; opacity: 0.3;">
-                <div>
-                    <h3>📋 インストール済み</h3>
-                    <div id="plugins-list" style="margin-top: 0.8rem;">
-                        <p style="color: #888;">読み込み中...</p>
-                    </div>
                 </div>
             </div>
         </div>

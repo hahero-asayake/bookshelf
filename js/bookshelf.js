@@ -402,16 +402,10 @@ class VirtualBookshelf {
             this.exportUnifiedData();
         });
 
-        // Obsidian folder sync button
+        // Obsidian folder sync button: 「変更」は常にフォルダピッカーを開く（同期先を切替/再選択）
         const obsidianSyncBtn = document.getElementById('obsidian-sync-btn');
         if (obsidianSyncBtn) {
-            obsidianSyncBtn.addEventListener('click', () => {
-                if (this.obsidianDirHandle) {
-                    this.reloadFromObsidianFile();
-                } else {
-                    this.selectObsidianFolder();
-                }
-            });
+            obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
         }
 
         // 「← 一覧」ボタン: メインに戻る
@@ -427,6 +421,28 @@ class VirtualBookshelf {
         const openSettings = document.getElementById('open-settings');
         if (openSettings) {
             openSettings.addEventListener('click', () => this._openSettingsModal());
+        }
+
+        // フィルタポップオーバー
+        const filterToggle = document.getElementById('toggle-filter');
+        const filterPopover = document.getElementById('filter-popover');
+        if (filterToggle && filterPopover) {
+            filterToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                filterPopover.hidden = !filterPopover.hidden;
+            });
+            // 外側クリックで閉じる
+            document.addEventListener('click', (e) => {
+                if (filterPopover.hidden) return;
+                if (filterPopover.contains(e.target) || filterToggle.contains(e.target)) return;
+                filterPopover.hidden = true;
+            });
+            // Esc で閉じる
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !filterPopover.hidden) {
+                    filterPopover.hidden = true;
+                }
+            });
         }
         const closeSettings = document.getElementById('settings-modal-close');
         if (closeSettings) {
@@ -473,15 +489,7 @@ class VirtualBookshelf {
             this.importFromFile();
         });
 
-        // Plugin manager
-        const managePluginsBtn = document.getElementById('manage-plugins');
-        if (managePluginsBtn) {
-            managePluginsBtn.addEventListener('click', () => this.showPluginsModal());
-        }
-        const pluginsClose = document.getElementById('plugins-modal-close');
-        if (pluginsClose) {
-            pluginsClose.addEventListener('click', () => this.closePluginsModal());
-        }
+        // Plugin install (in settings modal)
         const installPluginBtn = document.getElementById('install-plugin-btn');
         if (installPluginBtn) {
             installPluginBtn.addEventListener('click', () => this.installPluginFromInput());
@@ -1485,9 +1493,8 @@ class VirtualBookshelf {
 
 
     updateStats() {
-        const totalBooks = this.books.length;
-        
-        document.getElementById('total-books').textContent = totalBooks.toLocaleString();
+        const el = document.getElementById('total-books');
+        if (el) el.textContent = this.books.length.toLocaleString();
     }
 
 
@@ -2198,12 +2205,17 @@ class VirtualBookshelf {
         document.body.classList.add(`app-view-${view}`);
     }
 
-    _openSettingsModal() {
+    async _openSettingsModal() {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        // 開く瞬間にパス表示を refresh
+        // 開く瞬間にパス表示と plugin リストを refresh
         this._updateExportDirDisplay();
         modal.classList.add('show');
+        const urlInput = document.getElementById('plugin-repo-url');
+        if (urlInput) urlInput.value = '';
+        if (this.pluginLoader) {
+            try { await this._renderPluginsList(); } catch (_) {}
+        }
     }
 
     _closeSettingsModal() {
