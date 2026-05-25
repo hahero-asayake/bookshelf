@@ -145,15 +145,28 @@
                             </div>
                         </details>
 
-                        <details class="management-group">
+                        <details class="management-group" open>
                             <summary>📁 同期 / 公開</summary>
                             <div class="management-buttons">
-                                <button id="obsidian-sync-btn" class="btn btn-secondary">📁 Obsidianフォルダを選択</button>
-                                <span id="obsidian-sync-status" style="font-size:0.85em;margin-left:4px;"></span>
+                                <div class="settings-row">
+                                    <div class="settings-label">📁 Obsidian 同期フォルダ</div>
+                                    <div class="settings-value">
+                                        <span id="obsidian-sync-path" class="settings-path" title="">(未接続)</span>
+                                        <button id="obsidian-sync-btn" class="btn btn-small btn-secondary">変更</button>
+                                    </div>
+                                    <div id="obsidian-sync-status" class="settings-status"></div>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="settings-label">📦 公開エクスポート先</div>
+                                    <div class="settings-value">
+                                        <span id="export-dir-path" class="settings-path" title="">(未設定)</span>
+                                        <button id="pick-export-dir" class="btn btn-small btn-secondary">変更</button>
+                                    </div>
+                                </div>
+                                <hr class="settings-divider">
                                 <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
                                 <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
-                                <button id="pick-export-dir" class="btn btn-secondary">📁 エクスポート先を選択</button>
-                                <button id="export-unified" class="btn btn-secondary">💾 データエクスポート</button>
+                                <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
                             </div>
                         </details>
 
@@ -165,12 +178,6 @@
                             </div>
                         </details>
 
-                        <details class="management-group">
-                            <summary>⚠️ 危険な操作</summary>
-                            <div class="management-buttons">
-                                <button id="clear-library" class="btn btn-danger">🗑️ 蔵書をクリア</button>
-                            </div>
-                        </details>
                     </div>
                 </div>
             </aside>

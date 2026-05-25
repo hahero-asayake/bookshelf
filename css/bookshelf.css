@@ -1258,6 +1258,57 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn):not(details) { display: f
     display: contents;
 }
 
+/* ===== 同期/公開 設定行 ===== */
+.settings-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.4rem 0;
+}
+
+.settings-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #555;
+}
+
+.settings-value {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.settings-path {
+    flex: 1;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    background: #f3f3f5;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.settings-value .btn-small {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.settings-status {
+    font-size: 0.8rem;
+    color: #888;
+    min-height: 1em;
+}
+
+.settings-divider {
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    margin: 0.6rem 0 0.4rem;
+}
+
 
 .management-buttons .btn {
     width: 100%;

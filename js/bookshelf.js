@@ -178,6 +178,16 @@ class VirtualBookshelf {
                 });
             }
 
+            // 公開エクスポート先 handle を IDB から復元 → サイドバーに表示
+            try {
+                if (this.exporter && typeof this.exporter.loadStoredHandle === 'function') {
+                    await this.exporter.loadStoredHandle();
+                }
+            } catch (e) {
+                console.warn('exportDirHandle 復元失敗:', e);
+            }
+            this._updateExportDirDisplay();
+
             // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
             if (this.pluginLoader) {
                 try {
@@ -547,11 +557,6 @@ class VirtualBookshelf {
                 }
             });
         }
-
-        // Clear library button
-        document.getElementById('clear-library').addEventListener('click', () => {
-            this.clearLibrary();
-        });
 
         // Exclusions modal
         const showExclusionsBtn = document.getElementById('show-exclusions');
@@ -2032,24 +2037,50 @@ class VirtualBookshelf {
     }
 
     updateSyncStatus(state, folderName = '') {
-        const btn = document.getElementById('obsidian-sync-btn');
+        const pathEl = document.getElementById('obsidian-sync-path');
         const status = document.getElementById('obsidian-sync-status');
-        if (!btn || !status) return;
+        if (!pathEl || !status) return;
         if (state === 'synced') {
-            btn.textContent = `📁 ${folderName}`;
-            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み（クリックで再読み込み）`;
+            pathEl.textContent = folderName;
+            pathEl.title = folderName;
+            pathEl.style.color = '';
+            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み（「変更」で再読み込み）`;
             status.style.color = '#4caf50';
         } else if (state === 'loading') {
-            btn.textContent = `📁 ${folderName}`;
+            pathEl.textContent = folderName;
+            pathEl.title = folderName;
+            pathEl.style.color = '';
             status.textContent = '⏳ 読み込み中...';
             status.style.color = '#888';
         } else if (state === 'reconnect') {
-            btn.textContent = '📁 再接続が必要';
-            status.textContent = '⚠️ クリックしてフォルダを再選択';
+            pathEl.textContent = `${folderName || ''} (要再接続)`;
+            pathEl.title = folderName || '';
+            pathEl.style.color = '#f44336';
+            status.textContent = '⚠️ 「変更」を押してフォルダを再選択';
             status.style.color = '#f44336';
         } else {
-            btn.textContent = '📁 Obsidianフォルダを選択';
+            pathEl.textContent = '(未接続)';
+            pathEl.title = '';
+            pathEl.style.color = '#888';
             status.textContent = '';
+        }
+    }
+
+    /**
+     * 公開エクスポート先のパス表示を更新
+     */
+    _updateExportDirDisplay() {
+        const pathEl = document.getElementById('export-dir-path');
+        if (!pathEl) return;
+        const handle = this.exporter?.exportDirHandle;
+        if (handle && handle.name) {
+            pathEl.textContent = handle.name;
+            pathEl.title = handle.name;
+            pathEl.style.color = '';
+        } else {
+            pathEl.textContent = '(未設定)';
+            pathEl.title = '';
+            pathEl.style.color = '#888';
         }
     }
 
@@ -2755,6 +2786,7 @@ class VirtualBookshelf {
     async pickExportDir() {
         try {
             const handle = await this.exporter.pickExportDir();
+            this._updateExportDirDisplay();
             alert(`✅ 出力先を「${handle.name}」に設定しました`);
         } catch (e) {
             if (e.name === 'AbortError') return;
@@ -3926,66 +3958,6 @@ class VirtualBookshelf {
         alert('📦 library.json をエクスポートしました！');
     }
 
-    /**
-     * 蔵書を全てクリア
-     */
-    async clearLibrary() {
-        const confirmMessage = `🗑️ 全データを完全にクリアしますか？
-
-この操作により以下のデータが削除されます：
-• 全ての書籍データ
-• 全ての本棚設定
-• 全ての評価・メモ
-• 全ての並び順設定
-
-この操作は元に戻せません。`;
-        
-        if (!confirm(confirmMessage)) {
-            return;
-        }
-        
-        try {
-            this.showLoading();
-            
-            // BookManagerで蔵書をクリア
-            await this.bookManager.clearAllBooks();
-            
-            // 全てのuserDataを完全にクリア
-            if (this.userData) {
-                // 本棚データを完全クリア
-                this.userData.bookshelves = [];
-                
-                // 評価・メモを完全クリア  
-                this.userData.notes = {};
-                
-                // 並び順データを完全クリア
-                this.userData.bookOrder = {};
-                
-                // 統計データもリセット
-                this.userData.stats = {
-                    totalBooks: 0,
-                    notesCount: 0
-                };
-            }
-            
-            // 本のリストを更新
-            this.books = [];
-            this.filteredBooks = [];
-            
-            // UIを更新
-            this.saveUserData();
-            this.updateDisplay();
-            this.updateStats();
-            
-            alert('✅ 全データを完全にクリアしました');
-        } catch (error) {
-            console.error('蔵書クリア中にエラーが発生しました:', error);
-            alert('❌ 蔵書のクリアに失敗しました: ' + error.message);
-        } finally {
-            this.hideLoading();
-        }
-    }
-
     renderBookshelfOverview() {
         const overviewSection = document.getElementById('bookshelves-overview');
         const grid = document.getElementById('bookshelves-grid');
@@ -4017,7 +3989,7 @@ class VirtualBookshelf {
         overviewSection.style.display = 'block';
 
         let html = allCard;
-        (this.userData.bookshelves || []).forEach(bookshelf => {
+        (this.userData.bookshelves || []).filter(b => b.id !== 'all').forEach(bookshelf => {
             const bookCount = bookshelf.books ? bookshelf.books.length : 0;
             
             // Apply custom book order for preview if it exists
