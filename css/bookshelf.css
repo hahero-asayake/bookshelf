@@ -1432,11 +1432,114 @@ body.app-view-bookshelf .view-only-bookshelf:not(.btn) { display: inline-flex !i
     text-align: left;
 }
 
-/* ===== Header の設定ボタン ===== */
-#open-settings {
+/* ===== Header items (customizable) ===== */
+.header-item {
+    display: inline-flex;
+    align-items: center;
+}
+
+.header-item.header-hidden {
+    display: none !important;
+}
+
+.header-item-fixed {
+    margin-left: auto;
+}
+
+#open-settings,
+#toggle-filter {
     padding: 0.5rem 0.75rem;
     font-size: 1.1rem;
     line-height: 1;
+}
+
+/* ===== Header customizer (in settings modal) ===== */
+.settings-section-hint {
+    font-size: 0.85rem;
+    color: #888;
+    margin: -0.4rem 0 0.8rem;
+}
+
+.header-customizer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.header-customizer-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    background: #f7f8fa;
+    border: 1px solid #e0e0e6;
+    border-radius: 6px;
+}
+
+.header-customizer-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    min-width: 160px;
+}
+
+.header-customizer-label {
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.header-customizer-hint {
+    flex: 1;
+    color: #888;
+    font-size: 0.85rem;
+}
+
+.header-customizer-reorder {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.header-customizer-reorder .btn {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.85rem;
+    min-width: 30px;
+}
+
+/* ===== Bookshelf view header (description) ===== */
+.bookshelf-view-header {
+    margin-bottom: 1rem;
+}
+
+.bookshelf-view-description {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+}
+
+/* Empty plugin-buttons-host in header should not occupy space */
+#header-plugin-buttons:empty {
+    display: none;
+}
+
+#header-plugin-buttons:not(:empty) {
+    display: inline-flex;
+    gap: 0.3rem;
+}
+
+/* ===== Book item: 全体をクリッカブルに ===== */
+.book-item.clickable {
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.book-item.clickable:hover {
+    transform: translateY(-2px);
+}
+
+.book-cover-link {
+    display: block;
+    cursor: pointer;
 }
 
 

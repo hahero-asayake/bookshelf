@@ -146,6 +146,7 @@ class VirtualBookshelf {
                 await this.loadData();
             }
             this.setupEventListeners();
+            this._applyHeaderLayout();
             this.updateBookshelfSelector();
             this.updateSortDirectionButton();
             this.renderBookshelfOverview();
@@ -870,51 +871,41 @@ class VirtualBookshelf {
         
         const userNote = this.userData.notes[book.asin];
         
+        bookElement.classList.add('clickable');
         if (displayType === 'cover' || displayType === 'covers') {
-            const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
             bookElement.innerHTML = `
                 <div class="book-cover-container">
                     <div class="drag-handle">⋮⋮</div>
-                    <a href="${amazonUrl}" target="_blank" rel="noopener noreferrer" class="book-cover-link">
+                    <div class="book-cover-link">
                         ${book.productImage ?
                             `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
                             `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
                         }
-                    </a>
+                    </div>
                 </div>
                 <div class="book-info">
                     <div class="book-title">${this.escapeHtml(book.title)}</div>
                     <div class="book-author">${this.escapeHtml(book.authors)}</div>
-                    <div class="book-links">
-                        <a href="${amazonUrl}" target="_blank" rel="noopener noreferrer" class="book-link amazon-link">Amazon</a>
-                        <a href="#" class="book-link detail-link" data-asin="${book.asin}">詳細</a>
-                    </div>
                     ${userNote && userNote.memo ? `<div class="book-memo">📝 ${this.formatMemoForDisplay(userNote.memo, 300)}</div>` : ''}
                     ${this.displayStarRating(userNote?.rating)}
                 </div>
             `;
         } else {
-            const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
             bookElement.innerHTML = `
                 <div class="book-cover-container">
                     <div class="drag-handle">⋮⋮</div>
-                    <a href="${amazonUrl}" target="_blank" rel="noopener noreferrer" class="book-cover-link">
+                    <div class="book-cover-link">
                         ${book.productImage ?
                             `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
                             '<div class="book-cover-placeholder">📖</div>'
                         }
-                    </a>
+                    </div>
                 </div>
                 <div class="book-info">
                     <div class="book-title">${book.title}</div>
                     <div class="book-author">${book.authors}</div>
-                    <div class="book-links">
-                        <a href="${amazonUrl}" target="_blank" rel="noopener noreferrer" class="book-link amazon-link">Amazon</a>
-                        <a href="#" class="book-link detail-link" data-asin="${book.asin}">詳細</a>
-                    </div>
                     ${userNote && userNote.memo ? `<div class="book-memo">📝 ${this.formatMemoForDisplay(userNote.memo, 400)}</div>` : ''}
                     ${this.displayStarRating(userNote?.rating)}
-
                 </div>
             `;
         }
@@ -926,26 +917,15 @@ class VirtualBookshelf {
         bookElement.addEventListener('dragend', (e) => this.handleDragEnd(e));
         
         bookElement.addEventListener('click', (e) => {
-            // Prevent click when dragging or clicking drag handle
             if (e.target.closest('.drag-handle') || bookElement.classList.contains('dragging')) {
                 e.preventDefault();
                 e.stopPropagation();
                 return;
             }
-
-            // Only show detail if clicking the detail link
-            if (e.target.classList.contains('detail-link')) {
-                e.preventDefault();
-                e.stopPropagation();
-                this.showBookDetail(book);
-                return;
-            }
-
-            // Prevent default click behavior for other elements
-            if (!e.target.closest('a')) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
+            // 本のどこをクリックしても詳細モーダル
+            e.preventDefault();
+            e.stopPropagation();
+            this.showBookDetail(book);
         });
         
         return bookElement;
@@ -2208,8 +2188,9 @@ class VirtualBookshelf {
     async _openSettingsModal() {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        // 開く瞬間にパス表示と plugin リストを refresh
+        // 開く瞬間にパス表示・ヘッダーカスタマイザ・plugin リストを refresh
         this._updateExportDirDisplay();
+        this._renderHeaderCustomizer();
         modal.classList.add('show');
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
@@ -2218,25 +2199,149 @@ class VirtualBookshelf {
         }
     }
 
+    // ===== Header customization =====
+    static HEADER_ITEMS_META = {
+        'back-to-main': { label: '← 一覧', hint: '本棚一覧に戻る' },
+        'bookshelf-selector': { label: '📚 本棚セレクタ', hint: '本棚を切替えるドロップダウン' },
+        'manage-bookshelves': { label: '📝 本棚管理', hint: '本棚管理モーダルを開く' },
+        'view-toggle': { label: '🖼️ 表紙/リスト切替', hint: '本一覧の表示モード' },
+        'search-box': { label: '🔍 検索ボックス', hint: 'タイトル・著者で検索' },
+        'filter': { label: '🔧 フィルター', hint: '星評価・並び順・表示数・カバーサイズ' },
+        'plugin-buttons': { label: '🧩 プラグイン由来ボタン', hint: 'プラグインが where:"header" で追加したボタン' }
+    };
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayout';
+
+    _loadHeaderLayout() {
+        try {
+            const raw = localStorage.getItem(VirtualBookshelf.HEADER_LAYOUT_STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || !Array.isArray(parsed.order)) return null;
+            return {
+                order: parsed.order.filter(k => k in VirtualBookshelf.HEADER_ITEMS_META),
+                hidden: Array.isArray(parsed.hidden) ? parsed.hidden : []
+            };
+        } catch (_) { return null; }
+    }
+
+    _saveHeaderLayout(layout) {
+        try {
+            localStorage.setItem(VirtualBookshelf.HEADER_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+        } catch (_) {}
+    }
+
+    _currentHeaderLayout() {
+        const stored = this._loadHeaderLayout();
+        const allKeys = Object.keys(VirtualBookshelf.HEADER_ITEMS_META);
+        if (stored) {
+            // 後から増えた未知の key は末尾に追加
+            const missing = allKeys.filter(k => !stored.order.includes(k));
+            return { order: [...stored.order, ...missing], hidden: stored.hidden };
+        }
+        return { order: allKeys.slice(), hidden: [] };
+    }
+
+    _applyHeaderLayout() {
+        const layout = this._currentHeaderLayout();
+        const hidden = new Set(layout.hidden);
+        const container = document.getElementById('header-controls');
+        if (!container) return;
+        const fixedAnchor = container.querySelector('[data-header-item="open-settings"]');
+        // DOM 順序を layout.order の順に並べ替え (open-settings 直前に insertBefore)
+        for (const key of layout.order) {
+            const el = container.querySelector(`[data-header-item="${CSS.escape(key)}"]`);
+            if (!el) continue;
+            el.classList.toggle('header-hidden', hidden.has(key));
+            if (fixedAnchor) container.insertBefore(el, fixedAnchor);
+        }
+    }
+
+    _renderHeaderCustomizer() {
+        const host = document.getElementById('header-customizer');
+        if (!host) return;
+        const layout = this._currentHeaderLayout();
+        const hidden = new Set(layout.hidden);
+        host.innerHTML = layout.order.map((key, idx) => {
+            const meta = VirtualBookshelf.HEADER_ITEMS_META[key];
+            if (!meta) return '';
+            const isHidden = hidden.has(key);
+            return `
+                <div class="header-customizer-row" data-key="${key}">
+                    <label class="header-customizer-toggle">
+                        <input type="checkbox" data-toggle-header="${key}" ${isHidden ? '' : 'checked'}>
+                        <span class="header-customizer-label">${meta.label}</span>
+                    </label>
+                    <span class="header-customizer-hint">${meta.hint}</span>
+                    <span class="header-customizer-reorder">
+                        <button class="btn btn-small" data-move-header="up" data-key="${key}" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                        <button class="btn btn-small" data-move-header="down" data-key="${key}" ${idx === layout.order.length - 1 ? 'disabled' : ''}>↓</button>
+                    </span>
+                </div>
+            `;
+        }).join('');
+
+        host.querySelectorAll('[data-toggle-header]').forEach(cb => {
+            cb.addEventListener('change', (e) => this._toggleHeaderItem(e.target.dataset.toggleHeader, e.target.checked));
+        });
+        host.querySelectorAll('[data-move-header]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const dir = e.currentTarget.dataset.moveHeader;
+                const key = e.currentTarget.dataset.key;
+                this._moveHeaderItem(key, dir === 'up' ? -1 : 1);
+            });
+        });
+    }
+
+    _toggleHeaderItem(key, visible) {
+        const layout = this._currentHeaderLayout();
+        const set = new Set(layout.hidden);
+        if (visible) set.delete(key);
+        else set.add(key);
+        layout.hidden = [...set];
+        this._saveHeaderLayout(layout);
+        this._applyHeaderLayout();
+    }
+
+    _moveHeaderItem(key, delta) {
+        const layout = this._currentHeaderLayout();
+        const idx = layout.order.indexOf(key);
+        if (idx < 0) return;
+        const newIdx = idx + delta;
+        if (newIdx < 0 || newIdx >= layout.order.length) return;
+        const [item] = layout.order.splice(idx, 1);
+        layout.order.splice(newIdx, 0, item);
+        this._saveHeaderLayout(layout);
+        this._applyHeaderLayout();
+        this._renderHeaderCustomizer();
+    }
+
     _closeSettingsModal() {
         const modal = document.getElementById('settings-modal');
         if (modal) modal.classList.remove('show');
     }
 
     /**
-     * 本棚ビューのタイトルを更新
+     * 本棚ビューのタイトル・説明を更新
      */
     _updateBookshelfViewTitle() {
         const titleEl = document.getElementById('current-bookshelf-title');
+        const descEl = document.getElementById('current-bookshelf-desc');
         if (!titleEl) return;
         const id = this.currentBookshelf;
         const bs = id ? this.bookshelfManager?.getById?.(id) : null;
+        let title = '';
+        let desc = '';
         if (bs) {
-            titleEl.textContent = `${bs.emoji || '📚'} ${bs.name}`;
+            title = `${bs.emoji || '📚'} ${bs.name}`;
+            desc = bs.description || '';
         } else if (id === 'all') {
-            titleEl.textContent = '📚 全ての本';
-        } else {
-            titleEl.textContent = '';
+            title = '📚 全ての本';
+            desc = '除外していない全ての蔵書';
+        }
+        titleEl.textContent = title;
+        if (descEl) {
+            descEl.textContent = desc;
+            descEl.style.display = desc ? '' : 'none';
         }
     }
 

@@ -219,6 +219,7 @@ class BookshelfPluginAPI {
     _renderUIButton(entry) {
         const containerMap = {
             'library-management': '#plugin-buttons',
+            'header': '#header-plugin-buttons',
             'bookshelf-toolbar': '#bookshelf-toolbar',
             'book-modal-actions': '#book-modal-actions'
         };

@@ -30,90 +30,104 @@
             <h1 class="header-title">📚 Virtual Bookshelf</h1>
             <p class="header-subtitle">読書ライブラリ</p>
             
-            <div class="header-controls">
-                <div class="bookshelf-controls">
-                    <button id="back-to-main" class="btn btn-outline view-only-bookshelf" title="本棚一覧に戻る" >← 一覧</button>
-                    <select id="bookshelf-selector" class="bookshelf-selector view-only-bookshelf" >
+            <div class="header-controls" id="header-controls">
+                <span class="header-item view-only-bookshelf" data-header-item="back-to-main">
+                    <button id="back-to-main" class="btn btn-outline" title="本棚一覧に戻る">← 一覧</button>
+                </span>
+                <span class="header-item view-only-bookshelf" data-header-item="bookshelf-selector">
+                    <select id="bookshelf-selector" class="bookshelf-selector">
                         <option value="all">📚 全ての本</option>
                     </select>
+                </span>
+                <span class="header-item" data-header-item="manage-bookshelves">
                     <button id="manage-bookshelves" class="btn btn-outline">📝 本棚管理</button>
-                    <button id="open-settings" class="btn btn-outline" title="設定">⚙️</button>
-                </div>
+                </span>
+                <span class="header-item view-only-bookshelf" data-header-item="view-toggle">
+                    <span class="view-toggle">
+                        <button id="view-covers" class="btn btn-primary active">表紙</button>
+                        <button id="view-list" class="btn btn-secondary">リスト</button>
+                    </span>
+                </span>
+                <span class="header-item view-only-bookshelf" data-header-item="search-box">
+                    <span class="search-box">
+                        <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
+                    </span>
+                </span>
+                <span class="header-item view-only-bookshelf" data-header-item="filter">
+                    <span class="filter-popover-host">
+                        <button id="toggle-filter" class="btn btn-outline" title="フィルター / 表示設定">🔧</button>
+                        <div class="filter-popover" id="filter-popover" hidden>
+                            <div class="filter-group">
+                                <label>星評価フィルター</label>
+                                <div class="star-filter-checkboxes">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-1" value="1" checked>
+                                        ⭐ 星1
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-2" value="2" checked>
+                                        ⭐⭐ 星2
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-3" value="3" checked>
+                                        ⭐⭐⭐ 星3
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-4" value="4" checked>
+                                        ⭐⭐⭐⭐ 星4
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-5" value="5" checked>
+                                        ⭐⭐⭐⭐⭐ 星5
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="star-0" value="0" checked>
+                                        ☆ 未評価
+                                    </label>
+                                </div>
+                            </div>
 
-                <div class="view-toggle view-only-bookshelf" >
-                    <button id="view-covers" class="btn btn-primary active">表紙表示</button>
-                    <button id="view-list" class="btn btn-secondary">リスト表示</button>
-                </div>
+                            <div class="filter-group">
+                                <label>並び順</label>
+                                <select id="sort-order">
+                                    <option value="custom" selected>カスタム順</option>
+                                    <option value="acquiredTime">購入日</option>
+                                    <option value="title">タイトル</option>
+                                    <option value="authors">著者</option>
+                                </select>
+                                <button id="sort-direction" class="btn btn-small">↓ 新しい順</button>
+                            </div>
 
-                <div class="search-box view-only-bookshelf" >
-                    <input type="text" id="search-input" placeholder="タイトルや著者で検索...">
-                </div>
+                            <div class="filter-group">
+                                <label>表示数</label>
+                                <select id="books-per-page">
+                                    <option value="25">25冊</option>
+                                    <option value="50" selected>50冊</option>
+                                    <option value="100">100冊</option>
+                                    <option value="200">200冊</option>
+                                    <option value="all">全て表示</option>
+                                </select>
+                            </div>
 
-                <div class="filter-popover-host view-only-bookshelf">
-                    <button id="toggle-filter" class="btn btn-outline" title="フィルター / 表示設定">🔧</button>
-                    <div class="filter-popover" id="filter-popover" hidden>
-                        <div class="filter-group">
-                            <label>星評価フィルター</label>
-                            <div class="star-filter-checkboxes">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-1" value="1" checked>
-                                    ⭐ 星1
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-2" value="2" checked>
-                                    ⭐⭐ 星2
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-3" value="3" checked>
-                                    ⭐⭐⭐ 星3
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-4" value="4" checked>
-                                    ⭐⭐⭐⭐ 星4
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-5" value="5" checked>
-                                    ⭐⭐⭐⭐⭐ 星5
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="star-0" value="0" checked>
-                                    ☆ 未評価
-                                </label>
+                            <div class="filter-group">
+                                <label>カバーサイズ</label>
+                                <select id="cover-size">
+                                    <option value="small">小 (120×180px)</option>
+                                    <option value="medium" selected>中 (160×240px)</option>
+                                    <option value="large">大 (200×300px)</option>
+                                </select>
                             </div>
                         </div>
+                    </span>
+                </span>
 
-                        <div class="filter-group">
-                            <label>並び順</label>
-                            <select id="sort-order">
-                                <option value="custom" selected>カスタム順</option>
-                                <option value="acquiredTime">購入日</option>
-                                <option value="title">タイトル</option>
-                                <option value="authors">著者</option>
-                            </select>
-                            <button id="sort-direction" class="btn btn-small">↓ 新しい順</button>
-                        </div>
+                <!-- プラグインが where:'header' で追加するボタンが入る -->
+                <span class="header-item header-plugin-host" data-header-item="plugin-buttons" id="header-plugin-buttons"></span>
 
-                        <div class="filter-group">
-                            <label>表示数</label>
-                            <select id="books-per-page">
-                                <option value="25">25冊</option>
-                                <option value="50" selected>50冊</option>
-                                <option value="100">100冊</option>
-                                <option value="200">200冊</option>
-                                <option value="all">全て表示</option>
-                            </select>
-                        </div>
-
-                        <div class="filter-group">
-                            <label>カバーサイズ</label>
-                            <select id="cover-size">
-                                <option value="small">小 (120×180px)</option>
-                                <option value="medium" selected>中 (160×240px)</option>
-                                <option value="large">大 (200×300px)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+                <!-- 設定ボタンは常時固定で右端 -->
+                <span class="header-item header-item-fixed" data-header-item="open-settings">
+                    <button id="open-settings" class="btn btn-outline" title="設定">⚙️</button>
+                </span>
             </div>
         </div>
     </header>
@@ -140,7 +154,10 @@
 
                 <!-- View: Bookshelf (本一覧) -->
                 <section class="view view-bookshelf" id="view-bookshelf" >
-                    <h2 class="section-title" id="current-bookshelf-title"></h2>
+                    <header class="bookshelf-view-header">
+                        <h2 class="section-title" id="current-bookshelf-title"></h2>
+                        <p class="bookshelf-view-description" id="current-bookshelf-desc"></p>
+                    </header>
                     <div class="bookshelf" id="bookshelf">
                         <!-- Books will be dynamically loaded here -->
                     </div>
@@ -221,6 +238,14 @@
                         <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
                         <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
                         <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h3 class="settings-section-title">🎛️ ヘッダー</h3>
+                    <p class="settings-section-hint">ヘッダーに表示する項目を選び、順序を入れ替えできます。⚙️ 設定ボタンだけは常に右端固定です。</p>
+                    <div id="header-customizer" class="header-customizer">
+                        <!-- 動的に項目リストが入る -->
                     </div>
                 </section>
 
