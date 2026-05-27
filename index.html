@@ -28,32 +28,36 @@
     <header class="header">
         <div class="container">
             <div class="header-controls" id="header-controls">
-                <span class="header-item view-only-bookshelf" data-header-item="back-to-main">
-                    <button id="back-to-main" class="btn btn-outline" title="本棚一覧に戻る">← 一覧</button>
+                <span class="header-item needs-bookshelf" data-header-item="back-to-main">
+                    <button id="back-to-main" class="btn-icon-square" title="本棚一覧に戻る">←</button>
                 </span>
-                <span class="header-item view-only-bookshelf" data-header-item="bookshelf-selector">
-                    <select id="bookshelf-selector" class="bookshelf-selector">
-                        <option value="all">📚 全ての本</option>
-                    </select>
+                <span class="header-item" data-header-item="bookshelf-selector">
+                    <span class="popover-host">
+                        <button id="bookshelf-selector-btn" class="btn-icon-square" title="本棚を切替">📚</button>
+                        <div class="popover popover-bookshelf" id="bookshelf-popover" hidden>
+                            <div class="popover-title">本棚を切替</div>
+                            <div id="bookshelf-popover-list" class="bookshelf-popover-list"></div>
+                        </div>
+                    </span>
                 </span>
                 <span class="header-item" data-header-item="manage-bookshelves">
-                    <button id="manage-bookshelves" class="btn btn-outline">📝 本棚管理</button>
+                    <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理">📝</button>
                 </span>
-                <span class="header-item view-only-bookshelf" data-header-item="view-toggle">
-                    <span class="view-toggle">
-                        <button id="view-covers" class="btn btn-primary active">表紙</button>
-                        <button id="view-list" class="btn btn-secondary">リスト</button>
+                <span class="header-item needs-bookshelf" data-header-item="view-toggle">
+                    <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替">🖼️</button>
+                </span>
+                <span class="header-item needs-bookshelf" data-header-item="search-box">
+                    <span class="popover-host">
+                        <button id="toggle-search" class="btn-icon-square" title="検索">🔍</button>
+                        <div class="popover popover-search" id="search-popover" hidden>
+                            <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
+                        </div>
                     </span>
                 </span>
-                <span class="header-item view-only-bookshelf" data-header-item="search-box">
-                    <span class="search-box">
-                        <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
-                    </span>
-                </span>
-                <span class="header-item view-only-bookshelf" data-header-item="filter">
-                    <span class="filter-popover-host">
-                        <button id="toggle-filter" class="btn btn-outline" title="フィルター / 表示設定">🔧</button>
-                        <div class="filter-popover" id="filter-popover" hidden>
+                <span class="header-item needs-bookshelf" data-header-item="filter">
+                    <span class="popover-host">
+                        <button id="toggle-filter" class="btn-icon-square" title="フィルター / 表示設定">🔧</button>
+                        <div class="popover popover-filter" id="filter-popover" hidden>
                             <div class="filter-group">
                                 <label>星評価フィルター</label>
                                 <div class="star-filter-checkboxes">
@@ -119,7 +123,7 @@
                 </span>
 
                 <span class="header-item" data-header-item="open-settings">
-                    <button id="open-settings" class="btn btn-outline" title="設定">⚙️</button>
+                    <button id="open-settings" class="btn-icon-square" title="設定">⚙️</button>
                 </span>
             </div>
         </div>
@@ -235,14 +239,6 @@
                 </section>
 
                 <section class="settings-section">
-                    <h3 class="settings-section-title">🎛️ ヘッダー</h3>
-                    <p class="settings-section-hint">ヘッダーに表示する項目を選び、順序を入れ替えできます。⚙️ 設定ボタンだけは常に右端固定です。</p>
-                    <div id="header-customizer" class="header-customizer">
-                        <!-- 動的に項目リストが入る -->
-                    </div>
-                </section>
-
-                <section class="settings-section">
                     <h3 class="settings-section-title">📚 蔵書</h3>
                     <div class="settings-action-list">
                         <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
@@ -252,10 +248,16 @@
                 </section>
 
                 <section class="settings-section">
+                    <h3 class="settings-section-title">🎛️ ヘッダー</h3>
+                    <p class="settings-section-hint">ヘッダーに表示するボタンを「配置中 / 未配置」エリア間でドラッグ&ドロップで移動。⚙️ 設定 と ← 一覧 は必ず1つ残ります。</p>
+                    <div id="header-customizer" class="header-customizer"></div>
+                </section>
+
+                <section class="settings-section">
                     <h3 class="settings-section-title">🧩 プラグイン</h3>
 
+                    <h4 class="settings-subsection-title">GitHub からインストール</h4>
                     <div class="plugin-install-card">
-                        <div class="plugin-install-label">GitHub からインストール</div>
                         <div class="plugin-install-input-group">
                             <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
                             <button id="install-plugin-btn" class="btn btn-primary btn-small">📥 インストール</button>
@@ -263,13 +265,18 @@
                         <small class="plugin-install-hint">manifest.json と index.js を含む repo を指定。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
                     </div>
 
-                    <h4 class="settings-subsection-title">インストール済み</h4>
-                    <div id="plugins-list" class="plugins-list-host">
-                        <p style="color:#888;">設定を開くと一覧が表示されます</p>
+                    <h4 class="settings-subsection-title">インストール済みプラグイン</h4>
+                    <div class="plugin-search-row">
+                        <input type="text" id="plugin-search" placeholder="🔍 名前 / 説明で絞り込み..." />
+                    </div>
+                    <div id="plugin-list-section" class="plugin-grid">
+                        <p style="color:#888;">設定を開くと一覧が表示されます…</p>
                     </div>
 
-                    <h4 class="settings-subsection-title">プラグイン由来のクイックボタン</h4>
-                    <div id="plugin-buttons" class="plugin-buttons-host"></div>
+                    <!-- 内部用 hidden プラグイン UI ボタン受け皿 -->
+                    <div id="plugin-buttons" class="plugin-buttons-host" hidden></div>
+                    <!-- 旧プラグイン管理 UI コンテナ (互換: 一部 legacy 呼び出しが #plugins-list を参照) -->
+                    <div id="plugins-list" class="plugins-list-host" hidden></div>
                 </section>
 
             </div>

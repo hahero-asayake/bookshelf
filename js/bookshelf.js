@@ -146,6 +146,7 @@ class VirtualBookshelf {
                 await this.loadData();
             }
             this.setupEventListeners();
+            this._initHeaderTemplates();
             this._applyHeaderLayout();
             this.updateBookshelfSelector();
             this.updateSortDirectionButton();
@@ -354,31 +355,31 @@ class VirtualBookshelf {
     }
 
     setupEventListeners() {
-        // View toggle buttons
-        document.getElementById('view-covers').addEventListener('click', () => this.setView('covers'));
-        document.getElementById('view-list').addEventListener('click', () => this.setView('list'));
+        // View toggle (1ボタンでトグル)
+        const viewToggleBtn = document.getElementById('view-toggle');
+        if (viewToggleBtn) {
+            viewToggleBtn.addEventListener('click', () => {
+                this.setView(this.currentView === 'covers' ? 'list' : 'covers');
+            });
+        }
 
-        
-        // Search
+        // Search (popover 内の input)
         document.getElementById('search-input').addEventListener('input', (e) => {
             this.search(e.target.value);
         });
-        
-        // Filters
-        
-        
+
         // Star rating filters
         ['star-0', 'star-1', 'star-2', 'star-3', 'star-4', 'star-5'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.applyFilters());
         });
-        
+
         // Sort
         document.getElementById('sort-order').addEventListener('change', (e) => {
             this.sortOrder = e.target.value;
             this.updateSortDirectionButton();
             this.applySorting();
         });
-        
+
         document.getElementById('sort-direction').addEventListener('click', () => {
             this.toggleSortDirection();
         });
@@ -393,11 +394,6 @@ class VirtualBookshelf {
             this.setCoverSize(e.target.value);
         });
 
-        // Bookshelf selector
-        document.getElementById('bookshelf-selector').addEventListener('change', (e) => {
-            this.switchBookshelf(e.target.value);
-        });
-
         // Export button
         document.getElementById('export-unified').addEventListener('click', () => {
             this.exportUnifiedData();
@@ -409,42 +405,33 @@ class VirtualBookshelf {
             obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
         }
 
-        // 「← 一覧」ボタン: メインに戻る
-        const backToMain = document.getElementById('back-to-main');
-        if (backToMain) {
-            backToMain.addEventListener('click', () => {
-                if (this.router) this.router.navigateMain();
-                else this._setBodyView('main');
-            });
-        }
-
-        // 設定モーダルの開閉
-        const openSettings = document.getElementById('open-settings');
-        if (openSettings) {
-            openSettings.addEventListener('click', () => this._openSettingsModal());
-        }
-
-        // フィルタポップオーバー
-        const filterToggle = document.getElementById('toggle-filter');
-        const filterPopover = document.getElementById('filter-popover');
-        if (filterToggle && filterPopover) {
-            filterToggle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                filterPopover.hidden = !filterPopover.hidden;
-            });
-            // 外側クリックで閉じる
-            document.addEventListener('click', (e) => {
-                if (filterPopover.hidden) return;
-                if (filterPopover.contains(e.target) || filterToggle.contains(e.target)) return;
-                filterPopover.hidden = true;
-            });
-            // Esc で閉じる
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && !filterPopover.hidden) {
-                    filterPopover.hidden = true;
+        // ヘッダー: 静的ボタン全部を event delegation で処理 (clone でも動くように)
+        const headerEl = document.getElementById('header-controls');
+        if (headerEl) {
+            headerEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const item = e.target.closest('[data-header-item]');
+                if (!item) return;
+                const key = item.dataset.headerItem;
+                switch (key) {
+                    case 'back-to-main':
+                        if (this.router) this.router.navigateMain();
+                        else this._setBodyView('main');
+                        break;
+                    case 'manage-bookshelves':
+                        this.showBookshelfManager();
+                        break;
+                    case 'open-settings':
+                        this._openSettingsModal();
+                        break;
                 }
             });
         }
+
+        // 全 popover の共通制御 (toggle ボタン押下 / 外側クリック / Esc)
+        this._setupPopovers();
+
         const closeSettings = document.getElementById('settings-modal-close');
         if (closeSettings) {
             closeSettings.addEventListener('click', () => this._closeSettingsModal());
@@ -457,13 +444,7 @@ class VirtualBookshelf {
         }
 
 
-        // Bookshelf management
-        const manageBookshelves = document.getElementById('manage-bookshelves');
-        if (manageBookshelves) {
-            manageBookshelves.addEventListener('click', () => {
-                this.showBookshelfManager();
-            });
-        }
+        // manage-bookshelves は上記 delegation で処理 (複製配置可能なため)
 
         // Add bookshelf button
         const addBookshelfBtn = document.getElementById('add-bookshelf');
@@ -633,15 +614,110 @@ class VirtualBookshelf {
 
     setView(view) {
         this.currentView = view;
-        
-        // Update button states
-        document.querySelectorAll('.view-toggle .btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.getElementById(`view-${view}`).classList.add('active');
-        
+        this._updateViewToggleButton();
         this.updateDisplay();
         this.saveUserData();
+    }
+
+    _updateViewToggleButton() {
+        // ヘッダーに展開された clone も含めて全 view-toggle ボタンを更新
+        const buttons = document.querySelectorAll('[data-header-item="view-toggle"] button, #view-toggle');
+        buttons.forEach(btn => {
+            if (this.currentView === 'covers') {
+                btn.textContent = '🖼️';
+                btn.title = 'リスト表示に切替';
+            } else {
+                btn.textContent = '📃';
+                btn.title = '表紙表示に切替';
+            }
+        });
+    }
+
+    /**
+     * ヘッダー全 popover の共通制御 (toggle / 外側クリック / Esc)
+     * data-popover-toggle 属性を持つボタンと、それに対応する popover をペアで処理。
+     */
+    _setupPopovers() {
+        const pairs = [
+            { btnId: 'toggle-filter',           popId: 'filter-popover',     onOpen: null },
+            { btnId: 'toggle-search',           popId: 'search-popover',     onOpen: () => {
+                const input = document.getElementById('search-input');
+                if (input) setTimeout(() => input.focus(), 0);
+            }},
+            { btnId: 'bookshelf-selector-btn',  popId: 'bookshelf-popover',  onOpen: () => this._renderBookshelfPopover() }
+        ];
+
+        const closeAll = (except) => {
+            pairs.forEach(p => {
+                const pop = document.getElementById(p.popId);
+                if (pop && pop !== except) pop.hidden = true;
+            });
+        };
+
+        for (const { btnId, popId, onOpen } of pairs) {
+            const btn = document.getElementById(btnId);
+            const pop = document.getElementById(popId);
+            if (!btn || !pop) continue;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasHidden = pop.hidden;
+                closeAll(wasHidden ? pop : null);
+                pop.hidden = !wasHidden;
+                if (!pop.hidden && typeof onOpen === 'function') onOpen();
+            });
+        }
+
+        // 外側クリックで閉じる
+        document.addEventListener('click', (e) => {
+            for (const { btnId, popId } of pairs) {
+                const pop = document.getElementById(popId);
+                const btn = document.getElementById(btnId);
+                if (!pop || pop.hidden) continue;
+                if (pop.contains(e.target)) continue;
+                if (btn && btn.contains(e.target)) continue;
+                pop.hidden = true;
+            }
+        });
+
+        // Esc で全 popover 閉じる
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            pairs.forEach(({ popId }) => {
+                const pop = document.getElementById(popId);
+                if (pop) pop.hidden = true;
+            });
+        });
+    }
+
+    _renderBookshelfPopover() {
+        const host = document.getElementById('bookshelf-popover-list');
+        if (!host) return;
+        const allBookshelf = (this.userData.bookshelves || []).find(bs => bs.id === 'all');
+        const allEmoji = (allBookshelf && allBookshelf.emoji) || '📚';
+        const allName = (allBookshelf && allBookshelf.name) || '全ての本';
+        const current = this.currentBookshelf || 'all';
+
+        const items = [{ id: 'all', emoji: allEmoji, name: allName }];
+        for (const bs of (this.userData.bookshelves || [])) {
+            if (bs.id === 'all') continue;
+            items.push({ id: bs.id, emoji: bs.emoji || '📚', name: bs.name });
+        }
+
+        host.innerHTML = items.map(it => `
+            <button type="button" class="bookshelf-popover-item ${it.id === current ? 'is-current' : ''}" data-bs-id="${it.id}">
+                <span>${it.emoji}</span>
+                <span>${it.name}</span>
+            </button>
+        `).join('');
+
+        host.querySelectorAll('[data-bs-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.bsId;
+                this.switchBookshelf(id);
+                const pop = document.getElementById('bookshelf-popover');
+                if (pop) pop.hidden = true;
+            });
+        });
     }
 
     search(query) {
@@ -822,7 +898,7 @@ class VirtualBookshelf {
 
     renderStandardView(container) {
         // Apply custom book order only if sort order is set to 'custom'
-        const currentBookshelfId = document.getElementById('bookshelf-selector').value;
+        const currentBookshelfId = this.currentBookshelf || 'all';
         let booksToRender = [...this.filteredBooks];
         
         if (this.sortOrder === 'custom' && this.userData.bookOrder && this.userData.bookOrder[currentBookshelfId]) {
@@ -992,7 +1068,7 @@ class VirtualBookshelf {
     }
 
     reorderBooks(draggedASIN, targetASIN) {
-        const currentBookshelfId = document.getElementById('bookshelf-selector').value;
+        const currentBookshelfId = this.currentBookshelf || 'all';
         
         // Initialize bookOrder if it doesn't exist
         if (!this.userData.bookOrder) {
@@ -2142,30 +2218,15 @@ class VirtualBookshelf {
     }
 
     updateBookshelfSelector() {
-        const selector = document.getElementById('bookshelf-selector');
-        if (!selector) return;
-
-        const allBookshelf = (this.userData.bookshelves || []).find(bs => bs.id === 'all');
-        const allEmoji = (allBookshelf && allBookshelf.emoji) || '📚';
-        const allName = (allBookshelf && allBookshelf.name) || '全ての本';
-        selector.innerHTML = `<option value="all">${allEmoji} ${allName}</option>`;
-
-        (this.userData.bookshelves || [])
-            .filter(bs => bs.id !== 'all')
-            .forEach(bookshelf => {
-                const option = document.createElement('option');
-                option.value = bookshelf.id;
-                option.textContent = `${bookshelf.emoji || '📚'} ${bookshelf.name}`;
-                selector.appendChild(option);
-            });
+        // V6 では popover ベース。popover が開かれた時に _renderBookshelfPopover が呼ばれる。
+        // 開いていない場合でも、開いている時の中身を最新化しておく。
+        const pop = document.getElementById('bookshelf-popover');
+        if (pop && !pop.hidden) this._renderBookshelfPopover();
     }
 
     switchBookshelf(bookshelfId) {
         this.currentBookshelf = bookshelfId;
         this.applyFilters();
-        // ヘッダ select も同期
-        const sel = document.getElementById('bookshelf-selector');
-        if (sel && sel.value !== bookshelfId) sel.value = bookshelfId;
         // 本棚ビューに切替
         this._setBodyView('bookshelf');
         this._updateBookshelfViewTitle();
@@ -2188,51 +2249,50 @@ class VirtualBookshelf {
     async _openSettingsModal() {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        // 開く瞬間にパス表示・ヘッダーカスタマイザ・plugin リストを refresh
         this._updateExportDirDisplay();
-        this._renderHeaderCustomizer();
         modal.classList.add('show');
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
-        if (this.pluginLoader) {
-            try { await this._renderPluginsList(); } catch (_) {}
-        }
+        // ヘッダーカスタマイザはインストール済みプラグイン情報を非同期で取得して描画
+        try { await this._renderHeaderCustomizer(); } catch (e) { console.warn(e); }
     }
 
-    // ===== Header customization (V3: 行×列のグリッド + 矩形配置) =====
+    // ===== Header customization (V6: square icon buttons, linear flow, vertical drag&drop editor) =====
     //
     // レイアウト構造:
-    //   { rows, cols, items: [{ key, row, col, rowSpan, colSpan }] }
-    // items に含まれない項目 = 未配置 (header に出ない、plugin-buttons プールに残る)
-    // 設定モーダルの編集UI:
-    //   1. 行数/列数を入力 → グリッドが再描画
-    //   2. 空セルをクリックして複数選択 (bbox)
-    //   3. 「未配置」リストからボタンを押す → 選択 bbox に配置 (既存と重なれば押し出し)
-    //   4. 配置済みセルをクリック → そのアイテム全体を選択 → 「取り外す」ボタンで外す
-    // 設定ボタン (open-settings) は required: 取り外し不可、ただし位置は自由
+    //   { items: [{ id, key }] }
+    // - id は placement 単位の一意値
+    // - 全アイテム duplicatable: false (1つのボタンに状態が紐づくため)
+    // - プラグインボタン (plugin:<id>) は duplicatable: false 扱い (1配置のみ)
+    // - needsBookshelf: メインビューでは disabled 表示
+    // - required: 取り外せない (open-settings のみ)
     static HEADER_ITEMS_META = {
-        'back-to-main':        { label: '← 一覧' },
-        'bookshelf-selector':  { label: '📚 本棚セレクタ' },
-        'manage-bookshelves':  { label: '📝 本棚管理' },
-        'view-toggle':         { label: '🖼️ 表紙/リスト' },
-        'search-box':          { label: '🔍 検索' },
-        'filter':              { label: '🔧 フィルター' },
-        'open-settings':       { label: '⚙️ 設定', required: true }
+        'back-to-main':        { label: '← 一覧',       emoji: '←',  duplicatable: false, needsBookshelf: true,  required: true },
+        'bookshelf-selector':  { label: '本棚切替',     emoji: '📚', duplicatable: false },
+        'manage-bookshelves':  { label: '本棚管理',     emoji: '📝', duplicatable: false },
+        'view-toggle':         { label: '表紙/リスト',  emoji: '🖼️', duplicatable: false, needsBookshelf: true  },
+        'search-box':          { label: '検索',         emoji: '🔍', duplicatable: false, needsBookshelf: true  },
+        'filter':              { label: 'フィルター',   emoji: '🔧', duplicatable: false, needsBookshelf: true  },
+        'open-settings':       { label: '設定',         emoji: '⚙️', duplicatable: false, required: true }
     };
-    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV3';
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV6';
 
     _defaultHeaderLayout() {
         return {
-            rows: 1, cols: 8,
             items: [
-                { key: 'back-to-main',       row: 1, col: 1, rowSpan: 1, colSpan: 1 },
-                { key: 'bookshelf-selector', row: 1, col: 2, rowSpan: 1, colSpan: 2 },
-                { key: 'manage-bookshelves', row: 1, col: 4, rowSpan: 1, colSpan: 1 },
-                { key: 'view-toggle',        row: 1, col: 5, rowSpan: 1, colSpan: 2 },
-                { key: 'filter',             row: 1, col: 7, rowSpan: 1, colSpan: 1 },
-                { key: 'open-settings',      row: 1, col: 8, rowSpan: 1, colSpan: 1 }
+                { id: this._newPlacementId(), key: 'back-to-main' },
+                { id: this._newPlacementId(), key: 'bookshelf-selector' },
+                { id: this._newPlacementId(), key: 'manage-bookshelves' },
+                { id: this._newPlacementId(), key: 'view-toggle' },
+                { id: this._newPlacementId(), key: 'search-box' },
+                { id: this._newPlacementId(), key: 'filter' },
+                { id: this._newPlacementId(), key: 'open-settings' }
             ]
         };
+    }
+
+    _newPlacementId() {
+        return 'p_' + Math.random().toString(36).slice(2, 10);
     }
 
     _loadHeaderLayout() {
@@ -2242,18 +2302,9 @@ class VirtualBookshelf {
             const p = JSON.parse(raw);
             if (!p || !Array.isArray(p.items)) return null;
             return {
-                rows: Math.max(1, Math.min(8, Number(p.rows) || 1)),
-                cols: Math.max(1, Math.min(24, Number(p.cols) || 8)),
                 items: p.items
-                    .filter(it => it && typeof it.key === 'string'
-                        && Number.isFinite(it.row) && Number.isFinite(it.col))
-                    .map(it => ({
-                        key: it.key,
-                        row: Math.max(1, it.row),
-                        col: Math.max(1, it.col),
-                        rowSpan: Math.max(1, Number(it.rowSpan) || 1),
-                        colSpan: Math.max(1, Number(it.colSpan) || 1)
-                    }))
+                    .filter(it => it && typeof it.key === 'string')
+                    .map(it => ({ id: it.id || this._newPlacementId(), key: it.key }))
             };
         } catch (_) { return null; }
     }
@@ -2270,14 +2321,23 @@ class VirtualBookshelf {
     _enumerateHeaderItems() {
         const meta = VirtualBookshelf.HEADER_ITEMS_META;
         const list = Object.keys(meta).map(key => ({
-            key, label: meta[key].label, required: !!meta[key].required, isPlugin: false
+            key,
+            label: meta[key].label,
+            emoji: meta[key].emoji || '',
+            required: !!meta[key].required,
+            duplicatable: !!meta[key].duplicatable,
+            needsBookshelf: !!meta[key].needsBookshelf,
+            isPlugin: false
         }));
         if (this.pluginAPI && Array.isArray(this.pluginAPI._uiButtons)) {
             for (const btn of this.pluginAPI._uiButtons) {
                 list.push({
                     key: `plugin:${btn.id}`,
-                    label: `${btn.emoji || '🧩'} ${btn.label}`,
+                    label: btn.label,
+                    emoji: btn.emoji || '🧩',
                     required: false,
+                    duplicatable: false,
+                    needsBookshelf: false,
                     isPlugin: true,
                     buttonId: btn.id
                 });
@@ -2286,347 +2346,626 @@ class VirtualBookshelf {
         return list;
     }
 
+    _getItemMeta(key) {
+        if (key.startsWith('plugin:')) {
+            return { duplicatable: false, required: false };
+        }
+        const m = VirtualBookshelf.HEADER_ITEMS_META[key];
+        return m ? { duplicatable: !!m.duplicatable, required: !!m.required } : null;
+    }
+
     /**
-     * 現在のレイアウト (stored 優先、なければデフォルト)
-     * 設定ボタン (required) が未配置なら自動配置を補完
+     * 現在のレイアウト (検証 + open-settings 自動補完)
      */
     _currentHeaderLayout() {
         let layout = this._loadHeaderLayout();
         if (!layout) layout = this._defaultHeaderLayout();
 
-        // 範囲外のアイテムを除去 (rows/cols が縮まった場合)
-        layout.items = layout.items.filter(it =>
-            it.row + it.rowSpan - 1 <= layout.rows &&
-            it.col + it.colSpan - 1 <= layout.cols
-        );
-
-        // 未知 key (削除されたプラグイン) を除去
+        // 未知 key を除去
         const knownKeys = new Set(this._enumerateHeaderItems().map(i => i.key));
         layout.items = layout.items.filter(it => knownKeys.has(it.key));
 
-        // 設定ボタンの存在保証
-        if (!layout.items.some(it => it.key === 'open-settings')) {
-            const slot = this._findFirstFreeCell(layout);
-            if (slot) {
-                layout.items.push({ key: 'open-settings', row: slot.r, col: slot.c, rowSpan: 1, colSpan: 1 });
-            } else {
-                layout.rows += 1;
-                layout.items.push({ key: 'open-settings', row: layout.rows, col: 1, rowSpan: 1, colSpan: 1 });
+        // 非 duplicatable の重複を除去 (古い stored 互換)
+        const seenNonDup = new Set();
+        layout.items = layout.items.filter(it => {
+            const m = this._getItemMeta(it.key);
+            if (m && !m.duplicatable) {
+                if (seenNonDup.has(it.key)) return false;
+                seenNonDup.add(it.key);
+            }
+            return true;
+        });
+
+        for (const it of layout.items) if (!it.id) it.id = this._newPlacementId();
+
+        // required アイテム (open-settings, back-to-main) の存在保証
+        for (const [key, meta] of Object.entries(VirtualBookshelf.HEADER_ITEMS_META)) {
+            if (meta.required && !layout.items.some(it => it.key === key)) {
+                layout.items.push({ id: this._newPlacementId(), key });
             }
         }
         return layout;
     }
 
-    _findFirstFreeCell(layout) {
-        const occ = this._buildOccupancy(layout);
-        for (let r = 1; r <= layout.rows; r++) {
-            for (let c = 1; c <= layout.cols; c++) {
-                if (!occ.has(`${r}-${c}`)) return { r, c };
-            }
+    /**
+     * 起動時に静的アイテムの DOM テンプレートを記録 (元 DOM は除去)。
+     * 全静的アイテムをテンプレ化することで、_applyHeaderLayout は常にクリーンビルドできる。
+     */
+    _initHeaderTemplates() {
+        if (this._headerTemplates) return;
+        this._headerTemplates = new Map();
+        const staticKeys = Object.keys(VirtualBookshelf.HEADER_ITEMS_META);
+        for (const key of staticKeys) {
+            const el = document.querySelector(`[data-header-item="${key}"]:not(.plugin-button-item)`);
+            if (!el) continue;
+            this._headerTemplates.set(key, el);
+            el.remove();
         }
-        return null;
-    }
-
-    _buildOccupancy(layout) {
-        const occ = new Map();
-        for (const it of layout.items) {
-            for (let r = it.row; r < it.row + it.rowSpan; r++) {
-                for (let c = it.col; c < it.col + it.colSpan; c++) {
-                    occ.set(`${r}-${c}`, it);
-                }
-            }
-        }
-        return occ;
     }
 
     /**
-     * key からヘッダー項目要素を取得 (静的: ヘッダー DOM 内 / プラグイン: wrapper)
+     * placement の DOM 要素を取得 (全アイテム non-duplicatable のためテンプレート実体を返す)。
      */
-    _resolveHeaderElement(key) {
+    _buildPlacementElement(item) {
+        const { key, id: placementId } = item;
         if (key.startsWith('plugin:')) {
             const btnId = key.slice('plugin:'.length);
             const entry = this.pluginAPI?._uiButtons?.find(b => b.id === btnId);
-            return entry?.wrapper || null;
+            if (!entry) return null;
+            const span = document.createElement('span');
+            span.className = 'header-item plugin-button-item';
+            span.dataset.headerItem = key;
+            span.dataset.placementId = placementId;
+            const btn = document.createElement('button');
+            btn.className = 'btn-icon-square plugin-ui-button';
+            btn.textContent = entry.emoji || '🧩';
+            btn.title = entry.title || entry.label;
+            btn.addEventListener('click', () => {
+                try { entry.onClick(); }
+                catch (e) { console.error(`[plugin button "${entry.id}"]`, e); }
+            });
+            span.appendChild(btn);
+            return span;
         }
-        return document.querySelector(`[data-header-item="${CSS.escape(key)}"]`);
+        const meta = VirtualBookshelf.HEADER_ITEMS_META[key];
+        if (!meta) return null;
+        const tpl = this._headerTemplates?.get(key);
+        if (!tpl) return null;
+        tpl.dataset.placementId = placementId;
+        return tpl;
     }
 
     /**
-     * ヘッダーレイアウトを DOM に適用
+     * ヘッダーレイアウトを DOM に適用 (linear flow)
      */
     _applyHeaderLayout() {
+        if (!this._headerTemplates) this._initHeaderTemplates();
         const layout = this._currentHeaderLayout();
         const header = document.getElementById('header-controls');
         if (!header) return;
-        header.style.setProperty('--header-cols', layout.cols);
-        header.style.setProperty('--header-rows', layout.rows);
 
-        const pool = document.getElementById('plugin-buttons');
-        const placedKeys = new Set(layout.items.map(it => it.key));
+        // ヘッダーから既存要素を全 detach (static は _headerTemplates に保持されているので OK)
+        Array.from(header.querySelectorAll('[data-header-item]')).forEach(el => el.remove());
 
-        // 全候補要素: 静的 (data-header-item 既存) + プラグイン wrapper
-        const allElements = new Map();
-        // 静的: ヘッダー DOM + (元々ヘッダーにあったが移されたもの) を一括で拾う
-        document.querySelectorAll('[data-header-item]:not(.plugin-button-item)').forEach(el => {
-            allElements.set(el.dataset.headerItem, el);
-        });
-        // プラグインボタン: pluginAPI._uiButtons から
-        if (this.pluginAPI && Array.isArray(this.pluginAPI._uiButtons)) {
-            for (const btn of this.pluginAPI._uiButtons) {
-                if (btn.wrapper) allElements.set(`plugin:${btn.id}`, btn.wrapper);
-            }
-        }
-
-        // 配置: layout.items にあるものを header に置き、grid-area を設定
+        // 順に追加
         for (const item of layout.items) {
-            const el = allElements.get(item.key);
-            if (!el) continue;
-            el.style.gridArea = `${item.row} / ${item.col} / ${item.row + item.rowSpan} / ${item.col + item.colSpan}`;
-            el.classList.remove('header-hidden');
-            if (el.parentElement !== header) header.appendChild(el);
+            const el = this._buildPlacementElement(item);
+            if (el) header.appendChild(el);
         }
 
-        // 未配置: 静的要素は隠す、プラグイン要素は plugin-buttons プールに戻す
-        for (const [key, el] of allElements) {
-            if (placedKeys.has(key)) continue;
-            el.style.gridArea = '';
-            if (key.startsWith('plugin:')) {
-                el.classList.remove('header-hidden');
-                if (pool && el.parentElement !== pool) pool.appendChild(el);
-            } else {
-                el.classList.add('header-hidden');
-            }
-        }
+        // view-toggle ボタンのアイコンを現在の view 状態で更新
+        this._updateViewToggleButton();
     }
 
-    // ===== ヘッダー編集 UI (グリッド + チップ) =====
+    // ===== ヘッダー編集 UI (V6: 縦リスト 2 ゾーン + プラグイン統合) =====
 
-    static HEADER_EDITOR_MAX_ROWS = 4;
-    static HEADER_EDITOR_MAX_COLS = 12;
-
-    _renderHeaderCustomizer() {
+    async _renderHeaderCustomizer() {
         const host = document.getElementById('header-customizer');
         if (!host) return;
-        if (!this._headerEditorState) this._headerEditorState = { selected: new Set() };
-        const state = this._headerEditorState;
+
         const layout = this._currentHeaderLayout();
         const all = this._enumerateHeaderItems();
-        const occ = this._buildOccupancy(layout);
-        const placedKeys = new Set(layout.items.map(i => i.key));
-        const unassigned = all.filter(i => !placedKeys.has(i.key));
+        const allByKey = new Map(all.map(i => [i.key, i]));
+
+        const placedKeys = new Set(layout.items.map(it => it.key));
+        const unplacedItems = all.filter(i => !placedKeys.has(i.key));
+
+        const renderRow = (item, opts = {}) => {
+            const { source, placementId } = opts;
+            const required = !!VirtualBookshelf.HEADER_ITEMS_META[item.key]?.required;
+            const isPlugin = item.isPlugin;
+            const badge = isPlugin
+                ? '<span class="hdr-row-badge plugin">🧩 プラグイン</span>'
+                : required ? '<span class="hdr-row-badge muted">必須</span>' : '';
+            const needsBs = item.needsBookshelf ? '<span class="hdr-row-badge muted">本棚必須</span>' : '';
+            // 必須項目は配置中で ↓ ボタンを出さない (外せない)
+            let moveBtn = '';
+            if (source === 'placed' && !required) {
+                moveBtn = `<button type="button" class="hdr-row-move-btn" data-move-pid="${placementId}" data-direction="down" title="未配置に移す">↓</button>`;
+            } else if (source === 'unplaced') {
+                moveBtn = `<button type="button" class="hdr-row-move-btn" data-move-key="${item.key}" data-direction="up" title="配置中に移す">↑</button>`;
+            }
+            // 未配置時に「▶ 操作」ボタンを出す (静的 / プラグイン共通)
+            let invokeBtn = '';
+            if (source === 'unplaced' && !required) {
+                if (isPlugin && item.buttonId) {
+                    invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-plugin="${item.buttonId}" title="このボタンを実行">▶ 操作</button>`;
+                } else {
+                    invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-key="${item.key}" title="このボタンを実行">▶ 操作</button>`;
+                }
+            }
+            return `
+                <div class="hdr-row" draggable="true"
+                     data-source="${source}"
+                     data-key="${item.key}"
+                     ${placementId ? `data-placement-id="${placementId}"` : ''}>
+                    <span class="hdr-row-grip" aria-hidden="true">≡</span>
+                    <span class="hdr-row-icon">${item.emoji || ''}</span>
+                    <span class="hdr-row-label">${item.label}</span>
+                    <span class="hdr-row-badges">${badge}${needsBs}</span>
+                    <span class="hdr-row-actions">${moveBtn}${invokeBtn}</span>
+                </div>`;
+        };
+
+        const placedHtml = layout.items.length === 0
+            ? '<div class="hdr-empty">配置中の項目はありません。下から ↑ ボタンかドラッグで追加してください。</div>'
+            : layout.items.map(it => {
+                const meta = allByKey.get(it.key) || { key: it.key, label: it.key, emoji: '', isPlugin: false };
+                return renderRow(meta, {
+                    source: 'placed',
+                    placementId: it.id
+                });
+            }).join('');
+
+        const unplacedHtml = unplacedItems.length === 0
+            ? `<div class="hdr-empty">未配置のヘッダー項目はありません。</div>`
+            : unplacedItems.map(i => renderRow(i, { source: 'unplaced' })).join('');
 
         host.innerHTML = `
-            <div class="dim-picker-wrap">
-                <div class="dim-picker-grid" id="dim-picker"
-                     style="--max-r:${VirtualBookshelf.HEADER_EDITOR_MAX_ROWS};--max-c:${VirtualBookshelf.HEADER_EDITOR_MAX_COLS};"></div>
-                <div class="dim-picker-label" id="dim-picker-label">${layout.rows} × ${layout.cols}</div>
-                <span class="header-editor-hint">マウスホバーで行×列、クリックで決定</span>
-            </div>
-            <div class="header-editor-grid" id="hdr-grid"
-                 style="--ecols:${layout.cols};--erows:${layout.rows};"></div>
-            <div class="header-editor-action-bar" id="hdr-actions"></div>
-            <div class="header-editor-pool">
-                <h4>未配置の項目 <small>(セル選択 → クリックで配置)</small></h4>
-                <div class="header-editor-chips" id="hdr-chips">
-                    ${unassigned.length === 0
-                        ? '<span style="color:#888;">未配置の項目はありません</span>'
-                        : unassigned.map(i => `<button class="btn btn-small header-editor-chip" data-assign-key="${i.key}">${i.label}${i.isPlugin ? ' <small>🧩</small>' : ''}</button>`).join('')
-                    }
+            <div class="hdr-editor-v6">
+                <div class="hdr-zone hdr-zone-placed">
+                    <div class="hdr-zone-title">配置中 <small>左→右の順にヘッダーへ表示</small></div>
+                    <div class="hdr-zone-list" id="hdr-zone-placed">${placedHtml}</div>
+                </div>
+                <div class="hdr-zone hdr-zone-unplaced">
+                    <div class="hdr-zone-title">未配置 <small>使わないボタン / 有効プラグインの未配置 UI ボタン</small></div>
+                    <div class="hdr-zone-list" id="hdr-zone-unplaced">${unplacedHtml}</div>
+                </div>
+                <div class="hdr-editor-hint">
+                    ドラッグ&ドロップ または ↑↓ ボタンで移動 / 「外す」で取り外し
+                    <button type="button" id="hdr-reset" class="btn btn-small btn-secondary">デフォルトに戻す</button>
                 </div>
             </div>
         `;
 
-        // ==== Dimension picker (hover/click table-insert UI) ====
-        const dpEl = host.querySelector('#dim-picker');
-        const dpLabel = host.querySelector('#dim-picker-label');
-        const MAX_R = VirtualBookshelf.HEADER_EDITOR_MAX_ROWS;
-        const MAX_C = VirtualBookshelf.HEADER_EDITOR_MAX_COLS;
-        for (let r = 1; r <= MAX_R; r++) {
-            for (let c = 1; c <= MAX_C; c++) {
-                const d = document.createElement('div');
-                d.className = 'dim-picker-cell';
-                if (r <= layout.rows && c <= layout.cols) d.classList.add('committed');
-                d.dataset.r = r;
-                d.dataset.c = c;
-                dpEl.appendChild(d);
-            }
-        }
-        const updatePreview = (r, c) => {
-            dpEl.querySelectorAll('.dim-picker-cell').forEach(el => {
-                const rr = Number(el.dataset.r), cc = Number(el.dataset.c);
-                el.classList.toggle('preview', rr <= r && cc <= c);
-            });
-            dpLabel.textContent = `${r} × ${c} を選択中`;
-        };
-        const resetPreview = () => {
-            dpEl.querySelectorAll('.dim-picker-cell').forEach(el => el.classList.remove('preview'));
-            dpLabel.textContent = `${layout.rows} × ${layout.cols}`;
-        };
-        dpEl.querySelectorAll('.dim-picker-cell').forEach(el => {
-            el.addEventListener('mouseenter', () => updatePreview(Number(el.dataset.r), Number(el.dataset.c)));
-            el.addEventListener('click', () => {
-                this._setHeaderDims(Number(el.dataset.r), Number(el.dataset.c));
-            });
-        });
-        dpEl.addEventListener('mouseleave', resetPreview);
+        this._bindHeaderEditorEvents();
+        await this._renderPluginListSection();
+    }
 
-        // ==== Main grid (square cells, color-coded, no labels) ====
-        const gridEl = host.querySelector('#hdr-grid');
-        for (let r = 1; r <= layout.rows; r++) {
-            for (let c = 1; c <= layout.cols; c++) {
-                const key = `${r}-${c}`;
-                const item = occ.get(key);
-                const cell = document.createElement('div');
-                cell.className = 'header-editor-cell';
-                cell.dataset.row = r;
-                cell.dataset.col = c;
-                if (item) {
-                    cell.classList.add('occupied');
-                    cell.dataset.itemKey = item.key;
-                }
-                if (state.selected.has(key)) cell.classList.add('selected');
-                cell.addEventListener('click', () => this._onHeaderCellClick(r, c));
-                gridEl.appendChild(cell);
-            }
-        }
+    /**
+     * プラグイン一覧セクションを描画 (#plugin-list-section)
+     * 各プラグイン: 名前/version/desc + [有効] チェックボックス + 🗑️ 削除
+     */
+    static PLUGIN_ORDER_STORAGE_KEY = 'pluginOrderV1';
+    // 検索対象 (タイトル + 説明) の最大文字数。長すぎる説明文の中だけマッチするのを避ける。
+    static PLUGIN_SEARCH_NAME_LIMIT = 60;
+    static PLUGIN_SEARCH_DESC_LIMIT = 140;
 
-        this._updateHeaderEditorActionBar();
+    _loadPluginOrder() {
+        try {
+            const raw = localStorage.getItem(VirtualBookshelf.PLUGIN_ORDER_STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (_) { return []; }
+    }
 
-        host.querySelectorAll('[data-assign-key]').forEach(btn => {
-            btn.addEventListener('click', () => this._assignHeaderItem(btn.dataset.assignKey));
+    _savePluginOrder(order) {
+        try { localStorage.setItem(VirtualBookshelf.PLUGIN_ORDER_STORAGE_KEY, JSON.stringify(order)); } catch (_) {}
+    }
+
+    _applyPluginOrder(plugins) {
+        const order = this._loadPluginOrder();
+        const orderIdx = new Map(order.map((id, i) => [id, i]));
+        return plugins.slice().sort((a, b) => {
+            const ai = orderIdx.has(a.id) ? orderIdx.get(a.id) : Infinity;
+            const bi = orderIdx.has(b.id) ? orderIdx.get(b.id) : Infinity;
+            if (ai !== bi) return ai - bi;
+            return (a.id || '').localeCompare(b.id || '');
         });
     }
 
-    _onHeaderCellClick(r, c) {
-        const state = this._headerEditorState;
-        const layout = this._currentHeaderLayout();
-        const occ = this._buildOccupancy(layout);
-        const clickedItem = occ.get(`${r}-${c}`);
+    async _renderPluginListSection() {
+        const host = document.getElementById('plugin-list-section');
+        if (!host) return;
 
-        if (clickedItem) {
-            // 占有セル: そのアイテム全体を選択 (既選択ならクリア)
-            const itemKey = `${clickedItem.row}-${clickedItem.col}`;
-            if (state.selected.has(itemKey)) {
-                state.selected.clear();
+        let installedPlugins = [];
+        if (this.pluginLoader && this.obsidianDirHandle) {
+            try {
+                installedPlugins = await this.pluginLoader.listInstalledPlugins({ refresh: true });
+            } catch (e) {
+                console.warn('[plugin-list] listInstalledPlugins failed:', e);
+            }
+        }
+        const enabledSet = new Set(this.userData?.settings?.enabledPlugins || []);
+        const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
+
+        if (!this.obsidianDirHandle) {
+            host.innerHTML = '<p style="color:#888;">同期フォルダを先に接続してください。</p>';
+            return;
+        }
+        if (installedPlugins.length === 0) {
+            host.innerHTML = '<p style="color:#888;">インストール済みのプラグインはありません。上の「GitHub からインストール」で追加できます。</p>';
+            return;
+        }
+
+        // 保存された順序を適用
+        installedPlugins = this._applyPluginOrder(installedPlugins);
+
+        host.innerHTML = installedPlugins.map(({ id, manifest }) => {
+            const m = manifest || {};
+            const enabled = enabledSet.has(id);
+            const loaded = loadedSet.has(id);
+            let stateLabel, actionBtns;
+            if (enabled && loaded) {
+                stateLabel = '<span class="plugin-state ok">● 有効</span>';
+                actionBtns = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">⏸ 無効化</button>
+                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
+            } else if (enabled && !loaded) {
+                stateLabel = '<span class="plugin-state warn">⚠ 読み込み失敗</span>';
+                actionBtns = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">⏸ 無効化</button>
+                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
             } else {
-                state.selected.clear();
-                for (let rr = clickedItem.row; rr < clickedItem.row + clickedItem.rowSpan; rr++) {
-                    for (let cc = clickedItem.col; cc < clickedItem.col + clickedItem.colSpan; cc++) {
-                        state.selected.add(`${rr}-${cc}`);
+                stateLabel = '<span class="plugin-state muted">○ 無効</span>';
+                actionBtns = `<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">▶ 有効化</button>
+                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
+            }
+            const nameForSearch = (m.name || id || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_NAME_LIMIT);
+            const descForSearch = (m.description || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_DESC_LIMIT);
+            const searchText = `${nameForSearch}${descForSearch}`.toLowerCase();
+            // 検索文字列の HTML 属性用エスケープ
+            const searchAttr = searchText.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `
+                <div class="plugin-card-v2" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
+                    <div class="plugin-card-info">
+                        <div class="plugin-card-title">
+                            <strong>${m.name || id}</strong>
+                            <small>v${m.version || '?'}${m.publishable ? ' 🌐' : ''}</small>
+                        </div>
+                        <div class="plugin-card-desc">${m.description || ''}</div>
+                        ${stateLabel}
+                    </div>
+                    <div class="plugin-card-actions">${actionBtns}</div>
+                </div>
+            `;
+        }).join('');
+
+        this._bindPluginListEvents();
+        this._applyPluginSearchFilter();
+    }
+
+    _applyPluginSearchFilter() {
+        const input = document.getElementById('plugin-search');
+        if (!input) return;
+        const q = (input.value || '').toLowerCase().trim();
+        const host = document.getElementById('plugin-list-section');
+        if (!host) return;
+        host.querySelectorAll('.plugin-card-v2').forEach(card => {
+            if (!q) { card.style.display = ''; return; }
+            // 検索範囲はカード textContent ではなく data-search-text (= タイトル+説明、各々文字数制限) のみ
+            const text = card.dataset.searchText || '';
+            card.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+
+    /**
+     * sourceId のプラグインを index 位置に挿入して順序を保存、再描画
+     */
+    async _reorderPluginByIndex(sourceId, index) {
+        const host = document.getElementById('plugin-list-section');
+        if (!host) return;
+        const cards = Array.from(host.querySelectorAll('.plugin-card-v2'));
+        const ids = cards.map(c => c.dataset.pluginId);
+        const fromIdx = ids.indexOf(sourceId);
+        if (fromIdx < 0) return;
+        ids.splice(fromIdx, 1);
+        const insertAt = Math.max(0, Math.min(index > fromIdx ? index - 1 : index, ids.length));
+        ids.splice(insertAt, 0, sourceId);
+        this._savePluginOrder(ids);
+        await this._renderPluginListSection();
+    }
+
+    _bindPluginListEvents() {
+        const host = document.getElementById('plugin-list-section');
+        if (!host) return;
+        if (this._pluginListAbort) {
+            try { this._pluginListAbort.abort(); } catch (_) {}
+        }
+        this._pluginListAbort = new AbortController();
+        const signal = this._pluginListAbort.signal;
+
+        // 検索バー (host の外側)
+        const searchInput = document.getElementById('plugin-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => this._applyPluginSearchFilter(), { signal });
+        }
+
+        // ===== D&D による並び替え (ヘッダー設定と同じく行間ハイライト) =====
+        const dragState = { id: null };
+
+        const computeInsertIndex = (clientY) => {
+            const cards = Array.from(host.querySelectorAll('.plugin-card-v2'));
+            for (let i = 0; i < cards.length; i++) {
+                const r = cards[i].getBoundingClientRect();
+                if (clientY < r.top + r.height / 2) return i;
+            }
+            return cards.length;
+        };
+        const showInsertIndicator = (index) => {
+            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
+            const cards = Array.from(host.querySelectorAll('.plugin-card-v2'));
+            const indicator = document.createElement('div');
+            indicator.className = 'plugin-drop-indicator';
+            if (index >= cards.length) host.appendChild(indicator);
+            else host.insertBefore(indicator, cards[index]);
+        };
+
+        host.addEventListener('dragstart', (e) => {
+            const card = e.target.closest('.plugin-card-v2');
+            if (!card) return;
+            dragState.id = card.dataset.pluginId;
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', dragState.id); } catch (_) {}
+            }
+            card.classList.add('is-dragging');
+        }, { signal });
+
+        host.addEventListener('dragend', () => {
+            host.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
+            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
+            dragState.id = null;
+        }, { signal });
+
+        host.addEventListener('dragover', (e) => {
+            if (!dragState.id) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            showInsertIndicator(computeInsertIndex(e.clientY));
+        }, { signal });
+
+        host.addEventListener('drop', (e) => {
+            if (!dragState.id) return;
+            e.preventDefault();
+            const idx = computeInsertIndex(e.clientY);
+            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
+            this._reorderPluginByIndex(dragState.id, idx);
+        }, { signal });
+
+        host.addEventListener('click', (e) => {
+            const enable = e.target.closest('[data-enable-plugin]');
+            if (enable) {
+                e.stopPropagation();
+                const id = enable.dataset.enablePlugin;
+                (async () => {
+                    try {
+                        await this.togglePlugin(id, true);
+                        await this._renderHeaderCustomizer();
+                        this._applyHeaderLayout();
+                    } catch (err) {
+                        alert('有効化失敗: ' + err.message);
+                    }
+                })();
+                return;
+            }
+            const disable = e.target.closest('[data-disable-plugin]');
+            if (disable) {
+                e.stopPropagation();
+                const id = disable.dataset.disablePlugin;
+                (async () => {
+                    try {
+                        await this.togglePlugin(id, false);
+                        await this._renderHeaderCustomizer();
+                        this._applyHeaderLayout();
+                    } catch (err) {
+                        alert('無効化失敗: ' + err.message);
+                    }
+                })();
+                return;
+            }
+            const uninstall = e.target.closest('[data-uninstall-plugin]');
+            if (uninstall) {
+                e.stopPropagation();
+                const id = uninstall.dataset.uninstallPlugin;
+                if (!confirm(`プラグイン "${id}" を削除しますか？同期フォルダから plugins/${id}/ も削除されます。`)) return;
+                (async () => {
+                    try {
+                        await this.uninstallPluginById(id);
+                        await this._renderHeaderCustomizer();
+                        this._applyHeaderLayout();
+                    } catch (err) {
+                        alert('アンインストール失敗: ' + err.message);
+                    }
+                })();
+                return;
+            }
+        }, { signal });
+    }
+
+    _bindHeaderEditorEvents() {
+        const host = document.getElementById('header-customizer');
+        if (!host) {
+            console.warn('[hdr-editor] host #header-customizer not found at bind time');
+            return;
+        }
+        // 前回のリスナを abort して、新規 AbortController で再バインド
+        if (this._hdrAbort) {
+            try { this._hdrAbort.abort(); } catch (_) {}
+        }
+        this._hdrAbort = new AbortController();
+        const signal = this._hdrAbort.signal;
+
+        // ===== クリック系: イベント委譲 =====
+        host.addEventListener('click', (e) => {
+            const reset = e.target.closest('#hdr-reset');
+            if (reset) { this._resetHeaderLayout(); return; }
+
+            const moveDown = e.target.closest('[data-move-pid][data-direction="down"]');
+            if (moveDown) {
+                e.stopPropagation();
+                this._removePlacementByPid(moveDown.dataset.movePid);
+                return;
+            }
+            const moveUp = e.target.closest('[data-move-key][data-direction="up"]');
+            if (moveUp) {
+                e.stopPropagation();
+                this._insertHeaderItem(moveUp.dataset.moveKey, Number.MAX_SAFE_INTEGER);
+                return;
+            }
+            const invoke = e.target.closest('[data-invoke-plugin], [data-invoke-key]');
+            if (invoke) {
+                e.stopPropagation();
+                if (invoke.dataset.invokePlugin) {
+                    const id = invoke.dataset.invokePlugin;
+                    const entry = this.pluginAPI?._uiButtons?.find(b => b.id === id);
+                    if (entry && typeof entry.onClick === 'function') {
+                        try { entry.onClick(); }
+                        catch (err) { console.error(`[plugin "${id}"] onClick`, err); }
+                    }
+                } else {
+                    // 静的ボタン: テンプレ DOM の button.click() を呼ぶ (未配置でも handler は生存)
+                    const key = invoke.dataset.invokeKey;
+                    const tpl = this._headerTemplates?.get(key);
+                    const btn = tpl?.querySelector('button');
+                    if (btn) {
+                        try { btn.click(); }
+                        catch (err) { console.error(`[static "${key}"] click`, err); }
                     }
                 }
+                return;
             }
-        } else {
-            // 空セル: トグル
-            const k = `${r}-${c}`;
-            if (state.selected.has(k)) state.selected.delete(k);
-            else state.selected.add(k);
-        }
-        this._renderHeaderCustomizer();
+        }, { signal });
+
+        // ===== ドラッグ&ドロップ: イベント委譲 =====
+        const dragState = { source: null, key: null, placementId: null };
+
+        host.addEventListener('dragstart', (e) => {
+            const row = e.target.closest('.hdr-row');
+            if (!row || !host.contains(row)) return;
+            dragState.source = row.dataset.source;
+            dragState.key = row.dataset.key;
+            dragState.placementId = row.dataset.placementId || null;
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', row.dataset.key || ''); } catch (_) {}
+            }
+            row.classList.add('hdr-row-dragging');
+        }, { signal });
+
+        host.addEventListener('dragend', (e) => {
+            const row = e.target.closest('.hdr-row');
+            if (row) row.classList.remove('hdr-row-dragging');
+            host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
+            host.querySelectorAll('.hdr-drop-target').forEach(el => el.classList.remove('hdr-drop-target'));
+            dragState.source = null;
+            dragState.key = null;
+            dragState.placementId = null;
+        }, { signal });
+
+        const computeInsertIndex = (zoneEl, clientY) => {
+            const rows = Array.from(zoneEl.querySelectorAll('.hdr-row'));
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i].getBoundingClientRect();
+                if (clientY < r.top + r.height / 2) return i;
+            }
+            return rows.length;
+        };
+        const showInsertIndicator = (zoneEl, index) => {
+            zoneEl.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
+            const rows = Array.from(zoneEl.querySelectorAll('.hdr-row'));
+            const indicator = document.createElement('div');
+            indicator.className = 'hdr-drop-indicator';
+            if (index >= rows.length) zoneEl.appendChild(indicator);
+            else zoneEl.insertBefore(indicator, rows[index]);
+        };
+
+        host.addEventListener('dragover', (e) => {
+            if (!dragState.source) return;
+            const zone = e.target.closest('.hdr-zone-list');
+            if (!zone) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            host.querySelectorAll('.hdr-drop-target').forEach(el => {
+                if (el !== zone) el.classList.remove('hdr-drop-target');
+            });
+            zone.classList.add('hdr-drop-target');
+            if (zone.id === 'hdr-zone-placed') {
+                showInsertIndicator(zone, computeInsertIndex(zone, e.clientY));
+            } else {
+                host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
+            }
+        }, { signal });
+
+        host.addEventListener('drop', (e) => {
+            const zone = e.target.closest('.hdr-zone-list');
+            if (!zone || !dragState.source) return;
+            e.preventDefault();
+            host.querySelectorAll('.hdr-drop-target').forEach(el => el.classList.remove('hdr-drop-target'));
+            host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
+
+            if (zone.id === 'hdr-zone-placed') {
+                const idx = computeInsertIndex(zone, e.clientY);
+                if (dragState.source === 'unplaced') {
+                    this._insertHeaderItem(dragState.key, idx);
+                } else if (dragState.source === 'placed' && dragState.placementId) {
+                    this._reorderHeaderPlacement(dragState.placementId, idx);
+                }
+            } else if (zone.id === 'hdr-zone-unplaced') {
+                if (dragState.source === 'placed' && dragState.placementId) {
+                    this._removePlacementByPid(dragState.placementId);
+                }
+            }
+            dragState.source = null;
+            dragState.key = null;
+            dragState.placementId = null;
+        }, { signal });
     }
 
-    _selectionBbox() {
-        const state = this._headerEditorState;
-        if (!state.selected.size) return null;
-        let r1 = Infinity, c1 = Infinity, r2 = -Infinity, c2 = -Infinity;
-        for (const k of state.selected) {
-            const [r, c] = k.split('-').map(Number);
-            r1 = Math.min(r1, r); c1 = Math.min(c1, c);
-            r2 = Math.max(r2, r); c2 = Math.max(c2, c);
-        }
-        return { r1, c1, r2, c2 };
-    }
-
-    _updateHeaderEditorActionBar() {
-        const bar = document.getElementById('hdr-actions');
-        if (!bar) return;
-        const state = this._headerEditorState;
-        if (!state.selected.size) {
-            bar.innerHTML = '<span style="color:#888;">配置先セルを選択してください</span>';
-            return;
-        }
-        const bbox = this._selectionBbox();
+    _insertHeaderItem(key, index) {
         const layout = this._currentHeaderLayout();
-        const occ = this._buildOccupancy(layout);
-        const selectedItemKeys = new Set();
-        state.selected.forEach(k => {
-            const it = occ.get(k);
-            if (it) selectedItemKeys.add(it.key);
-        });
-        const all = this._enumerateHeaderItems();
-        const allByKey = new Map(all.map(i => [i.key, i]));
-
-        let html = `<div class="header-editor-action-info">選択: 行${bbox.r1}〜${bbox.r2} 列${bbox.c1}〜${bbox.c2} (${bbox.r2 - bbox.r1 + 1}×${bbox.c2 - bbox.c1 + 1})</div>
-            <button class="btn btn-small" id="hdr-clear-sel">選択解除</button>`;
-        for (const k of selectedItemKeys) {
-            const meta = allByKey.get(k);
-            if (!meta) continue;
-            html += `<button class="btn btn-small btn-danger" data-remove-key="${k}" ${meta.required ? 'disabled title="必須項目は取り外せません"' : ''}>「${meta.label}」を取り外す</button>`;
-        }
-        bar.innerHTML = html;
-
-        bar.querySelector('#hdr-clear-sel').addEventListener('click', () => {
-            state.selected.clear();
-            this._renderHeaderCustomizer();
-        });
-        bar.querySelectorAll('[data-remove-key]').forEach(b => {
-            b.addEventListener('click', () => this._unassignHeaderItem(b.dataset.removeKey));
-        });
-    }
-
-    _assignHeaderItem(key) {
-        const state = this._headerEditorState;
-        if (!state.selected.size) {
-            alert('先にセルを選択してください');
-            return;
-        }
-        const bbox = this._selectionBbox();
-        const layout = this._currentHeaderLayout();
-        // 既存重なりを除去 (required は除く)
-        layout.items = layout.items.filter(item => {
-            const meta = VirtualBookshelf.HEADER_ITEMS_META[item.key];
-            if (meta?.required) return true;
-            const ir2 = item.row + item.rowSpan - 1;
-            const ic2 = item.col + item.colSpan - 1;
-            const overlap = !(item.row > bbox.r2 || ir2 < bbox.r1 || item.col > bbox.c2 || ic2 < bbox.c1);
-            return !overlap;
-        });
-        // 同じ key が既にあれば除去 (移動扱い)
+        // 全アイテム non-duplicatable: 既存があれば削除
         layout.items = layout.items.filter(it => it.key !== key);
-        // 追加
-        layout.items.push({
-            key,
-            row: bbox.r1, col: bbox.c1,
-            rowSpan: bbox.r2 - bbox.r1 + 1,
-            colSpan: bbox.c2 - bbox.c1 + 1
-        });
-        state.selected.clear();
+        const insertAt = Math.max(0, Math.min(index, layout.items.length));
+        layout.items.splice(insertAt, 0, { id: this._newPlacementId(), key });
         this._saveHeaderLayout(layout);
         this._applyHeaderLayout();
         this._renderHeaderCustomizer();
     }
 
-    _unassignHeaderItem(key) {
+    _reorderHeaderPlacement(placementId, index) {
         const layout = this._currentHeaderLayout();
-        layout.items = layout.items.filter(i => i.key !== key);
-        this._headerEditorState.selected.clear();
-        // open-settings は自動で再配置される (_currentHeaderLayout 内)
+        const fromIdx = layout.items.findIndex(it => it.id === placementId);
+        if (fromIdx < 0) return;
+        const [item] = layout.items.splice(fromIdx, 1);
+        const insertAt = Math.max(0, Math.min(index > fromIdx ? index - 1 : index, layout.items.length));
+        layout.items.splice(insertAt, 0, item);
         this._saveHeaderLayout(layout);
         this._applyHeaderLayout();
         this._renderHeaderCustomizer();
     }
 
-    _setHeaderDims(rows, cols) {
+    _removePlacementByPid(placementId) {
         const layout = this._currentHeaderLayout();
-        if (rows != null) layout.rows = rows;
-        if (cols != null) layout.cols = cols;
-        // 範囲外を除去
-        layout.items = layout.items.filter(it =>
-            it.row + it.rowSpan - 1 <= layout.rows &&
-            it.col + it.colSpan - 1 <= layout.cols
-        );
-        this._headerEditorState.selected.clear();
+        const target = layout.items.find(it => it.id === placementId);
+        if (!target) return;
+        const required = !!VirtualBookshelf.HEADER_ITEMS_META[target.key]?.required;
+        if (required && layout.items.filter(it => it.key === target.key).length <= 1) return;
+        layout.items = layout.items.filter(it => it.id !== placementId);
         this._saveHeaderLayout(layout);
+        this._applyHeaderLayout();
+        this._renderHeaderCustomizer();
+    }
+
+    _resetHeaderLayout() {
+        localStorage.removeItem(VirtualBookshelf.HEADER_LAYOUT_STORAGE_KEY);
         this._applyHeaderLayout();
         this._renderHeaderCustomizer();
     }
@@ -2696,8 +3035,6 @@ class VirtualBookshelf {
                         const id = bs.id || bs.internalId;
                         this.currentBookshelf = id;
                         this.applyFilters();
-                        const sel = document.getElementById('bookshelf-selector');
-                        if (sel) sel.value = id;
                         this._setBodyView('bookshelf');
                         this._updateBookshelfViewTitle();
                     }
@@ -2942,7 +3279,6 @@ class VirtualBookshelf {
 
         if (this.currentBookshelf === bookshelfId) {
             this.currentBookshelf = 'all';
-            document.getElementById('bookshelf-selector').value = 'all';
             this.applyFilters();
         }
     }
@@ -4013,6 +4349,10 @@ class VirtualBookshelf {
             if (manifest) {
                 alert(`✅ ${manifest.name || manifest.id} v${manifest.version || '?'} をインストールしました`);
                 await this._renderPluginsList();
+                // ヘッダーカスタマイザに新規プラグインを反映
+                this._renderHeaderCustomizer();
+                this._applyHeaderLayout();
+                input.value = '';
             }
         } catch (e) {
             alert(`❌ インストール失敗: ${e.message}`);
@@ -4518,7 +4858,6 @@ class VirtualBookshelf {
             if (e.target.classList.contains('select-bookshelf')) {
                 // 本棚選択ボタン
                 const bookshelfId = e.target.dataset.bookshelfId;
-                document.getElementById('bookshelf-selector').value = bookshelfId;
                 this.switchBookshelf(bookshelfId);
 
                 // 本が表示されているエリアにスムーズスクロール
@@ -4536,7 +4875,6 @@ class VirtualBookshelf {
                 const bookshelfPreview = e.target.closest('.bookshelf-preview');
                 if (bookshelfPreview && !e.target.closest('.bookshelf-preview-actions')) {
                     const bookshelfId = bookshelfPreview.dataset.bookshelfId;
-                    document.getElementById('bookshelf-selector').value = bookshelfId;
                     this.switchBookshelf(bookshelfId);
 
                     // 本が表示されているエリアにスムーズスクロール
