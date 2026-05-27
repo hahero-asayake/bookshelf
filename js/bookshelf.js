@@ -2477,7 +2477,7 @@ class VirtualBookshelf {
             const badge = isPlugin
                 ? '<span class="hdr-row-badge plugin">🧩 プラグイン</span>'
                 : required ? '<span class="hdr-row-badge muted">必須</span>' : '';
-            const needsBs = item.needsBookshelf ? '<span class="hdr-row-badge muted">本棚必須</span>' : '';
+            const needsBs = item.needsBookshelf ? '<span class="hdr-row-badge muted">本棚画面のみ</span>' : '';
             // 必須項目は配置中で ↓ ボタンを出さない (外せない)
             let moveBtn = '';
             if (source === 'placed' && !required) {

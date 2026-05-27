@@ -145,6 +145,39 @@
     box-sizing: border-box;
 }
 
+/* ===== Custom scrollbar (細め、控えめな色) ===== */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #c4c4cc transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: #c4c4cc;
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background 0.15s;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #9a9aa3;
+    background-clip: padding-box;
+    border: 2px solid transparent;
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--bg-color);
@@ -171,38 +204,57 @@ body {
 
 /* Button Styles */
 .btn {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 5px;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.9rem;
-    transition: all 0.3s ease;
+    line-height: 1.2;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
     font-family: inherit;
+    background: white;
+    color: var(--text-color);
 }
 
 .btn-primary {
     background-color: var(--secondary-color);
     color: white;
+    border-color: var(--secondary-color);
+}
+
+.btn-primary:hover {
+    background-color: #2780c3;
+    border-color: #2780c3;
 }
 
 .btn-secondary {
-    background-color: transparent;
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    background-color: #f4f5f7;
+    color: var(--text-color);
+    border-color: #d4d6da;
+}
+
+.btn-secondary:hover {
+    background-color: #e8eaee;
+    border-color: #a8acb3;
 }
 
 .btn-small {
-    padding: 0.25rem 0.5rem;
+    padding: 0.25rem 0.55rem;
     font-size: 0.8rem;
 }
 
 .btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 5px var(--shadow-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.btn:active {
+    transform: translateY(1px);
 }
 
 .btn.active, .btn-primary.active {
     background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
 }
 
 /* Main Layout */
@@ -590,14 +642,28 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 .modal-close {
     position: absolute;
-    top: 15px;
-    right: 20px;
-    background: none;
-    border: none;
-    font-size: 2rem;
+    top: 12px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    font-size: 1.4rem;
+    line-height: 1;
     cursor: pointer;
-    color: #666;
+    color: #6b6b75;
     z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.modal-close:hover {
+    background: #f3f4f6;
+    color: #1f2937;
+    border-color: #d1d5db;
 }
 
 .modal-body {
@@ -982,14 +1048,15 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     align-items: center;
 }
 
+/* .btn-outline は V6 で未使用 (header は btn-icon-square に統一)。互換のため最小定義のみ残す。 */
 .btn-outline {
     background-color: transparent;
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: var(--text-color);
+    border: 1px solid #d4d6da;
 }
 
 .btn-outline:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: #f4f5f7;
 }
 
 .modal-header {
@@ -1082,14 +1149,14 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 }
 
 .bookshelf-overview-controls .btn {
-    background-color: var(--secondary-color) !important;
-    color: white !important;
-    border: 1px solid var(--secondary-color) !important;
+    background-color: var(--secondary-color);
+    color: white;
+    border: 1px solid var(--secondary-color);
 }
 
 .bookshelf-overview-controls .btn:hover {
-    background-color: var(--primary-color) !important;
-    border-color: var(--primary-color) !important;
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
 }
 
 .bookshelves-grid {
@@ -2002,19 +2069,31 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    font-size: 1rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #d4d6da;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    background: white;
+    color: var(--text-color);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.form-group input:hover,
+.form-group select:hover,
+.form-group textarea:hover {
+    border-color: #a8acb3;
 }
 
 .form-group input:focus,
-.form-group select:focus {
+.form-group select:focus,
+.form-group textarea:focus {
     outline: none;
     border-color: #3498db;
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
 }
 
 .form-group small,
