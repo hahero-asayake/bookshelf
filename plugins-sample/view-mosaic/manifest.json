@@ -1,0 +1,8 @@
+{
+    "id": "view-mosaic",
+    "name": "View: Mosaic",
+    "version": "0.1.0",
+    "description": "本棚を Pinterest 風の masonry レイアウトに切り替える。表紙の縦横比をそのまま使い、隙間なく敷き詰める。",
+    "publishable": true,
+    "files": ["index.js"]
+}

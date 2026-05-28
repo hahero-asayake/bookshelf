@@ -1,0 +1,8 @@
+{
+    "id": "view-spines",
+    "name": "View: Spines",
+    "version": "0.1.0",
+    "description": "本棚を物理本棚風（背表紙縦書き）に切り替える。ASIN ハッシュで色を生成、ホバーで本が前に出る。",
+    "publishable": true,
+    "files": ["index.js"]
+}

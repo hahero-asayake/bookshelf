@@ -1,0 +1,8 @@
+{
+    "id": "view-coverflow",
+    "name": "View: Coverflow",
+    "version": "0.1.0",
+    "description": "本棚を iTunes 風の Coverflow 表示に切り替える。横スクロール + 傾斜カバーで探索的な閲覧体験。",
+    "publishable": true,
+    "files": ["index.js"]
+}
