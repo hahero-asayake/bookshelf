@@ -1940,31 +1940,6 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 
 
-.management-buttons .btn {
-    width: 100%;
-    text-align: center;
-    font-size: 0.9rem;
-    padding: 0.75rem;
-    color: white !important;
-    background-color: #3498db;
-    border: 1px solid #2980b9;
-}
-
-.management-buttons .btn:hover {
-    background-color: #2980b9;
-    color: white !important;
-}
-
-.management-buttons .btn-danger {
-    margin: 0;
-    background-color: #e74c3c;
-    border: 1px solid #c0392b;
-}
-
-.management-buttons .btn-danger:hover {
-    background-color: #c0392b;
-}
-
 /* Import Modal Styles */
 .import-options {
     display: flex;

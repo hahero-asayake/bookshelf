@@ -310,9 +310,9 @@
                     <input type="text" id="bookshelf-name" placeholder="本棚の名前を入力してください" required>
                 </div>
                 <div class="form-group">
-                    <label for="bookshelf-slug">slug *（ファイル名、英数ハイフンのみ・一意）</label>
-                    <input type="text" id="bookshelf-slug" placeholder="bookshelf1（空欄なら連番自動）" pattern="[a-z0-9_-]+">
-                    <small style="color: #888;">bookshelves/&lt;slug&gt;.json のファイル名。名前とは独立。空欄なら bookshelf1 / bookshelf2 ... が振られる</small>
+                    <label for="bookshelf-slug">識別子 (URL・ファイル名に使う)</label>
+                    <input type="text" id="bookshelf-slug" placeholder="my-bookshelf （空欄なら自動）" pattern="[a-z0-9_-]+">
+                    <small style="color: #888;">英小文字 / 数字 / ハイフンのみ。空欄なら bookshelf1, bookshelf2 ... が自動で振られます。表示名とは別物。</small>
                 </div>
                 <div class="form-group">
                     <label for="bookshelf-parent">親本棚</label>
@@ -429,7 +429,7 @@
                 <h2>🚫 除外中の本</h2>
             </div>
             <div class="modal-body">
-                <p style="color: #7f8c8d; font-size: 0.9rem;">all本棚から除外された本の一覧。Kindle再取込時もここに含まれる本は反映されません。</p>
+                <p style="color: #7f8c8d; font-size: 0.9rem;">「全ての本」から除外している本の一覧。Kindle 再取込時もここにある本はスキップされます。</p>
                 <div id="exclusions-list">
                     <!-- 除外中の本がここに -->
                 </div>

@@ -193,15 +193,17 @@ class BookshelfPluginAPI {
     }
 
     // ===== UI 拡張ポイント =====
-    // where: 'library-management' | 'bookshelf-toolbar' | 'book-modal-actions'
-    addUIButton({ id, where, label, title, onClick, emoji }) {
+    // V6 以降、ボタンの可視 DOM はヘッダーカスタマイザ側で都度生成する。
+    // ここでは entry の登録 + 内部 pool への参照 wrapper 生成のみを行う。
+    // `where` パラメータは過去互換で受け取るが利用しない。
+    addUIButton({ id, label, title, onClick, emoji }) {
         if (!id || !label || typeof onClick !== 'function') {
             console.warn('[pluginAPI] addUIButton: id, label, onClick are required');
             return null;
         }
         const existing = this._uiButtons.find(b => b.id === id);
         if (existing) return existing;
-        const entry = { id, where: where || 'library-management', label, title: title || '', onClick, emoji: emoji || '🧩', element: null };
+        const entry = { id, label, title: title || '', onClick, emoji: emoji || '🧩', element: null };
         this._uiButtons.push(entry);
         this._renderUIButton(entry);
         return entry;
@@ -218,24 +220,19 @@ class BookshelfPluginAPI {
     }
 
     _renderUIButton(entry) {
-        // 'header' 等は受け付けるが、実体はすべて #plugin-buttons プールに置く。
-        // ヘッダーへの配置はヘッダーカスタマイザ側で個別に切替する設計。
-        const poolSel = entry.where === 'book-modal-actions' ? '#book-modal-actions'
-            : entry.where === 'bookshelf-toolbar' ? '#bookshelf-toolbar'
-            : '#plugin-buttons';
-        const container = document.querySelector(poolSel);
+        // 内部 pool (#plugin-buttons, hidden) に登録だけする。
+        // ヘッダーへの配置とアイコンボタン化はカスタマイザ + _buildPlacementElement 側で行う。
+        const container = document.querySelector('#plugin-buttons');
         if (!container) {
-            console.warn(`[pluginAPI] addUIButton: container "${poolSel}" not found yet`);
+            console.warn('[pluginAPI] addUIButton: #plugin-buttons pool not found');
             return;
         }
-        // ヘッダーに移動できるよう、ラッパで包む（個別 key で識別）
         const wrapper = document.createElement('span');
         wrapper.className = 'header-item plugin-button-item';
         wrapper.dataset.headerItem = `plugin:${entry.id}`;
         const btn = document.createElement('button');
-        btn.id = `plugin-btn-${entry.id}`;
-        btn.className = 'btn btn-secondary plugin-ui-button';
-        btn.textContent = `${entry.emoji} ${entry.label}`;
+        btn.className = 'btn-icon-square plugin-ui-button';
+        btn.textContent = entry.emoji || '🧩';
         if (entry.title) btn.title = entry.title;
         btn.addEventListener('click', () => {
             try { entry.onClick(); }
