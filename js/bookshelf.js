@@ -2488,9 +2488,9 @@ class VirtualBookshelf {
             } else if (source === 'unplaced') {
                 moveBtn = `<button type="button" class="hdr-row-move-btn" data-move-key="${item.key}" data-direction="up" title="配置中に移す">↑</button>`;
             }
-            // 未配置時に「▶ 操作」ボタンを出す (静的 / プラグイン共通)
+            // 「▶ 操作」ボタンは配置中/未配置どちらでも表示（必須項目は除く）
             let invokeBtn = '';
-            if (source === 'unplaced' && !required) {
+            if (!required) {
                 if (isPlugin && item.buttonId) {
                     invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-plugin="${item.buttonId}" title="このボタンを実行">▶ 操作</button>`;
                 } else {
@@ -2588,7 +2588,7 @@ class VirtualBookshelf {
                 console.warn('[plugin-list] listInstalledPlugins failed:', e);
             }
         }
-        const enabledSet = new Set(this.userData?.settings?.enabledPlugins || []);
+        const disabledSet = new Set(this.userData?.settings?.disabledPlugins || []);
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this.obsidianDirHandle) {
@@ -2605,7 +2605,7 @@ class VirtualBookshelf {
 
         host.innerHTML = installedPlugins.map(({ id, manifest }) => {
             const m = manifest || {};
-            const enabled = enabledSet.has(id);
+            const enabled = !disabledSet.has(id);
             const loaded = loadedSet.has(id);
             let stateLabel, actionBtns;
             if (enabled && loaded) {
@@ -4291,11 +4291,11 @@ class VirtualBookshelf {
             return;
         }
 
-        const enabledSet = new Set(this.userData?.settings?.enabledPlugins || []);
+        const disabledSet = new Set(this.userData?.settings?.disabledPlugins || []);
         const loadedSet = new Set(this.pluginLoader.loaded.keys());
 
         container.innerHTML = installed.map(({ id, manifest }) => {
-            const enabled = enabledSet.has(id);
+            const enabled = !disabledSet.has(id);
             return `
                 <div class="plugin-card" data-plugin-card="${id}" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
                     <div style="flex:1 1 200px; min-width:0;">
@@ -4369,10 +4369,14 @@ class VirtualBookshelf {
 
     async togglePlugin(id, enabled) {
         if (!this.userData.settings) this.userData.settings = {};
-        if (!Array.isArray(this.userData.settings.enabledPlugins)) this.userData.settings.enabledPlugins = [];
-        const list = this.userData.settings.enabledPlugins;
-        if (enabled && !list.includes(id)) list.push(id);
-        if (!enabled) this.userData.settings.enabledPlugins = list.filter(x => x !== id);
+        if (!Array.isArray(this.userData.settings.disabledPlugins)) this.userData.settings.disabledPlugins = [];
+        const list = this.userData.settings.disabledPlugins;
+        // オプトアウト: enabled=true なら disabled から除去、false なら追加
+        if (enabled) {
+            this.userData.settings.disabledPlugins = list.filter(x => x !== id);
+        } else if (!list.includes(id)) {
+            list.push(id);
+        }
         await this.saveUserData();
         // 即時反映: 有効化→_loadPlugin, 無効化→unloadPlugin（リロード不要）
         if (enabled && !this.pluginLoader.loaded.has(id)) {

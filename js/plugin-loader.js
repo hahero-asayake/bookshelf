@@ -9,9 +9,10 @@
 //     index.js         export function activate(api, manifest) { ... }
 //     data/            プラグイン固有の任意ファイル
 //
-// 読み込み判定:
-//   userData.settings.enabledPlugins  → 起動時に activate
-//   userData._storage.main.appliedPlugins → 全本棚共通で適用（読み込み判定としては enabled と同等扱い）
+// 読み込み判定（オプトアウト方式）:
+//   インストール済みは原則すべて自動有効化
+//   userData.settings.disabledPlugins に含まれる id だけ無効化
+//   userData._storage.main.appliedPlugins → 全本棚共通で適用（無効化されていれば除外）
 
 class BookshelfPluginLoader {
     constructor(app) {
@@ -50,22 +51,18 @@ class BookshelfPluginLoader {
         return plugins;
     }
 
-    // ===== 有効なプラグインを起動 =====
+    // ===== 有効なプラグインを起動（オプトアウト: disabledPlugins に無いものを全部有効化） =====
     async loadEnabledPlugins() {
         if (!window.bookshelfAPI) {
             console.warn('[pluginLoader] bookshelfAPI が未生成、スキップ');
             return [];
         }
         const settings = (this.app.userData && this.app.userData.settings) || {};
-        const main = (this.app.userData && this.app.userData._storage && this.app.userData._storage.main) || {};
-        const enabledIds = new Set([
-            ...(settings.enabledPlugins || []),
-            ...(main.enabledPlugins || []),
-            ...(main.appliedPlugins || [])
-        ]);
-        if (enabledIds.size === 0) return [];
+        const disabledIds = new Set(settings.disabledPlugins || []);
+
         const installed = await this.listInstalledPlugins({ refresh: true });
-        const enabled = installed.filter(p => enabledIds.has(p.manifest.id || p.id));
+        if (installed.length === 0) return [];
+        const enabled = installed.filter(p => !disabledIds.has(p.manifest.id || p.id));
 
         // 依存関係チェック
         const enabledSet = new Set(enabled.map(p => p.manifest.id || p.id));
@@ -199,11 +196,11 @@ class BookshelfPluginLoader {
             await w.close();
         }
 
-        // 設定に追加して即時有効化
+        // オプトアウト方式: 新規インストール時に disabledPlugins から除外して即時有効化
         if (!this.app.userData.settings) this.app.userData.settings = {};
-        if (!Array.isArray(this.app.userData.settings.enabledPlugins)) this.app.userData.settings.enabledPlugins = [];
-        if (!this.app.userData.settings.enabledPlugins.includes(manifest.id)) {
-            this.app.userData.settings.enabledPlugins.push(manifest.id);
+        if (Array.isArray(this.app.userData.settings.disabledPlugins)) {
+            this.app.userData.settings.disabledPlugins =
+                this.app.userData.settings.disabledPlugins.filter(id => id !== manifest.id);
         }
         await this.app.saveUserData();
 
@@ -244,8 +241,8 @@ class BookshelfPluginLoader {
         const pluginsDir = await this.app.obsidianDirHandle.getDirectoryHandle('plugins');
         await pluginsDir.removeEntry(pluginId, { recursive: true });
         const settings = this.app.userData?.settings || {};
-        if (Array.isArray(settings.enabledPlugins)) {
-            settings.enabledPlugins = settings.enabledPlugins.filter(id => id !== pluginId);
+        if (Array.isArray(settings.disabledPlugins)) {
+            settings.disabledPlugins = settings.disabledPlugins.filter(id => id !== pluginId);
         }
         const main = this.app.userData?._storage?.main || {};
         if (Array.isArray(main.appliedPlugins)) {
