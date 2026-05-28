@@ -1217,31 +1217,32 @@ class VirtualBookshelf {
                                 <label for="bookshelf-select-${book.asin}">📚 本棚に追加:</label>
                                 <select id="bookshelf-select-${book.asin}" class="bookshelf-select">
                                     <option value="">本棚を選択...</option>
-                                    ${this.userData.bookshelves ? this.userData.bookshelves.map(bs => 
-                                        `<option value="${bs.id}">${bs.emoji || '📚'} ${bs.name}</option>`
-                                    ).join('') : ''}
+                                    ${this.userData.bookshelves ? this.userData.bookshelves
+                                        .filter(bs => !bs.isSpecial)
+                                        .map(bs => `<option value="${bs.id}">${bs.emoji || '📚'} ${bs.name}</option>`)
+                                        .join('') : ''}
                                 </select>
                                 <button class="btn btn-secondary add-to-bookshelf" data-asin="${book.asin}">追加</button>
                             </div>
-                            
+
                             <div class="current-bookshelves">
                                 <label>📚 現在の本棚:</label>
                                 <div id="current-bookshelves-${book.asin}">
                                     ${this.userData.bookshelves ? this.userData.bookshelves
-                                        .filter(bs => bs.books && bs.books.includes(book.asin))
+                                        .filter(bs => !bs.isSpecial && bs.books && bs.books.includes(book.asin))
                                         .map(bs => `
                                             <div class="bookshelf-item" style="display: inline-flex; align-items: center; margin: 0.25rem; padding: 0.25rem 0.5rem; background-color: #f0f0f0; border-radius: 4px;">
                                                 <span>${bs.emoji || '📚'} ${bs.name}</span>
-                                                <button class="btn btn-small btn-danger remove-from-bookshelf" 
-                                                        data-asin="${book.asin}" 
-                                                        data-bookshelf-id="${bs.id}" 
+                                                <button class="btn btn-small btn-danger remove-from-bookshelf"
+                                                        data-asin="${book.asin}"
+                                                        data-bookshelf-id="${bs.id}"
                                                         style="margin-left: 0.5rem; padding: 0.125rem 0.25rem; font-size: 0.75rem;">
                                                     ❌
                                                 </button>
                                             </div>
                                         `).join('') : ''}
                                 </div>
-                                ${this.userData.bookshelves && this.userData.bookshelves.filter(bs => bs.books && bs.books.includes(book.asin)).length === 0 ? 
+                                ${this.userData.bookshelves && this.userData.bookshelves.filter(bs => !bs.isSpecial && bs.books && bs.books.includes(book.asin)).length === 0 ?
                                     '<p style="color: #888; font-style: italic; margin: 0.5rem 0;">この本はまだどの本棚にも追加されていません</p>' : ''}
                             </div>
                         </div>
@@ -3397,6 +3398,11 @@ class VirtualBookshelf {
         const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf || !bookshelf.books) {
             alert('❌ 本棚が見つかりません');
+            return;
+        }
+        // 特殊本棚（all）からの削除は permanent でないため excludeBook を案内
+        if (bookshelf.isSpecial) {
+            alert('🚫 「全ての本」から本を外すには「all から除外」ボタンを使ってください');
             return;
         }
 
