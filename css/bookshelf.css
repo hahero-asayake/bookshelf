@@ -845,28 +845,6 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     border-color: var(--secondary-color);
 }
 
-/* Footer */
-.footer {
-    background-color: var(--primary-color);
-    color: white;
-    text-align: center;
-    padding: 1.5rem 0;
-    margin-top: 3rem;
-}
-
-.footer p {
-    margin-bottom: 0.5rem;
-}
-
-.footer a {
-    color: var(--secondary-color);
-    text-decoration: none;
-}
-
-.footer a:hover {
-    text-decoration: underline;
-}
-
 /* Responsive Design */
 @media (max-width: 768px) {
     :root {
@@ -1214,20 +1192,81 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     width: min(720px, 92vw);
 }
 
+/* Collapsible settings sections (details/summary) */
 .settings-section {
-    margin-bottom: 2rem;
+    margin-bottom: 0.6rem;
+    border: 1px solid #e6e8eb;
+    border-radius: 8px;
+    background: #fcfcfd;
+    overflow: hidden;
 }
-
 .settings-section:last-child {
     margin-bottom: 0;
 }
-
-.settings-section-title {
-    font-size: 1rem;
+.settings-section > summary.settings-section-title {
+    list-style: none;
+    cursor: pointer;
+    margin: 0;
+    padding: 0.7rem 1rem;
+    background: #f4f5f7;
     color: #2c3e50;
-    margin: 0 0 0.8rem 0;
-    padding-bottom: 0.4rem;
-    border-bottom: 2px solid #e0e0e0;
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    user-select: none;
+    transition: background 0.12s;
+}
+.settings-section > summary.settings-section-title::-webkit-details-marker { display: none; }
+.settings-section > summary.settings-section-title::marker { content: ''; }
+.settings-section > summary.settings-section-title::before {
+    content: '▶';
+    font-size: 0.65rem;
+    color: #888;
+    transition: transform 0.18s;
+    width: 0.9rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+.settings-section[open] > summary.settings-section-title::before {
+    transform: rotate(90deg);
+}
+.settings-section > summary.settings-section-title:hover {
+    background: #e9ecef;
+}
+.settings-section[open] > summary.settings-section-title {
+    border-bottom: 1px solid #e0e0e0;
+}
+.settings-section-body {
+    padding: 1rem;
+}
+
+/* About section (footer 内容を移動) */
+.about-credit,
+.about-links {
+    margin: 0.4rem 0;
+    color: #4a4a4a;
+    font-size: 0.9rem;
+}
+.about-affiliate {
+    background: #fff8e1;
+    color: #6b5400;
+    padding: 0.7rem 0.9rem;
+    border-radius: 6px;
+    border-left: 3px solid #ffd34d;
+    font-size: 0.85rem;
+    margin: 0.6rem 0;
+    line-height: 1.5;
+}
+.about-credit a,
+.about-links a {
+    color: var(--secondary-color, #4a90e2);
+    text-decoration: none;
+}
+.about-credit a:hover,
+.about-links a:hover {
+    text-decoration: underline;
 }
 
 /* path card: パス + 変更ボタン + ステータスを 1 つのカードにまとめる */

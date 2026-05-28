@@ -167,20 +167,6 @@
         </div>
     </main>
 
-    <footer class="footer">
-        <div class="container">
-            <p>📚 bookshelf — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
-            <p class="affiliate-disclosure">
-                ⚠️ <strong>アフィリエイト開示:</strong> このサイトはAmazon.co.jpアソシエイトプログラムに参加しており、
-                適格販売により収入を得る場合があります。
-            </p>
-            <p>
-                <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
-                ｜ Forked from <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">karaage0703/karaage-virtual-bookshelf</a>
-            </p>
-        </div>
-    </footer>
-
     <!-- Book detail modal -->
     <div class="modal" id="book-modal">
         <div class="modal-content">
@@ -200,8 +186,9 @@
             </div>
             <div class="modal-body">
 
-                <section class="settings-section">
-                    <h3 class="settings-section-title">📁 同期 / 公開</h3>
+                <details class="settings-section" open>
+                    <summary class="settings-section-title">📁 同期 / 公開</summary>
+                    <div class="settings-section-body">
 
                     <div class="path-card">
                         <div class="path-card-header">
@@ -236,25 +223,31 @@
                         <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
                         <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
                     </div>
-                </section>
+                    </div>
+                </details>
 
-                <section class="settings-section">
-                    <h3 class="settings-section-title">📚 蔵書</h3>
+                <details class="settings-section" open>
+                    <summary class="settings-section-title">📚 蔵書</summary>
+                    <div class="settings-section-body">
                     <div class="settings-action-list">
                         <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
                         <button id="import-kindle" class="btn btn-secondary">📥 Kindle インポート</button>
                         <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
                     </div>
-                </section>
+                    </div>
+                </details>
 
-                <section class="settings-section">
-                    <h3 class="settings-section-title">🎛️ ヘッダー</h3>
+                <details class="settings-section">
+                    <summary class="settings-section-title">🎛️ ヘッダー</summary>
+                    <div class="settings-section-body">
                     <p class="settings-section-hint">ヘッダーに表示するボタンを「配置中 / 未配置」エリア間でドラッグ&ドロップで移動。⚙️ 設定 と ← 一覧 は必ず1つ残ります。</p>
                     <div id="header-customizer" class="header-customizer"></div>
-                </section>
+                    </div>
+                </details>
 
-                <section class="settings-section">
-                    <h3 class="settings-section-title">🧩 プラグイン</h3>
+                <details class="settings-section">
+                    <summary class="settings-section-title">🧩 プラグイン</summary>
+                    <div class="settings-section-body">
 
                     <h4 class="settings-subsection-title">GitHub からインストール</h4>
                     <div class="plugin-install-card">
@@ -277,7 +270,22 @@
                     <div id="plugin-buttons" class="plugin-buttons-host" hidden></div>
                     <!-- 旧プラグイン管理 UI コンテナ (互換: 一部 legacy 呼び出しが #plugins-list を参照) -->
                     <div id="plugins-list" class="plugins-list-host" hidden></div>
-                </section>
+                    </div>
+                </details>
+
+                <details class="settings-section">
+                    <summary class="settings-section-title">ℹ️ このアプリについて</summary>
+                    <div class="settings-section-body">
+                    <p class="about-credit">📚 <strong>bookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
+                    <p class="about-affiliate">
+                        ⚠️ <strong>アフィリエイト開示:</strong> このサイトは Amazon.co.jp アソシエイトプログラムに参加しており、適格販売により収入を得る場合があります。
+                    </p>
+                    <p class="about-links">
+                        <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
+                        ｜ Forked from <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">karaage0703/karaage-virtual-bookshelf</a>
+                    </p>
+                    </div>
+                </details>
 
             </div>
         </div>
