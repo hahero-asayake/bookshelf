@@ -422,6 +422,9 @@ class VirtualBookshelf {
                     case 'manage-bookshelves':
                         this.showBookshelfManager();
                         break;
+                    case 'overview-display':
+                        this.toggleBookshelfDisplay();
+                        break;
                     case 'open-settings':
                         this._openSettingsModal();
                         break;
@@ -487,13 +490,7 @@ class VirtualBookshelf {
             openAmazonBtn.addEventListener('click', () => this.openAmazonForBookmarklet());
         }
 
-        // Bookshelf display toggle
-        const toggleBtn = document.getElementById('toggle-bookshelf-display');
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                this.toggleBookshelfDisplay();
-            });
-        }
+        // 画像表示切替は overview-display ヘッダー項目に統合済み (delegation で処理)
 
         // Modal close - individual handlers for each modal
         const bookModalClose = document.getElementById('modal-close');
@@ -2270,6 +2267,7 @@ class VirtualBookshelf {
         'back-to-main':        { label: '← 一覧',       emoji: '←',  duplicatable: false, needsBookshelf: true,  required: true },
         'bookshelf-selector':  { label: '本棚切替',     emoji: '📚', duplicatable: false },
         'manage-bookshelves':  { label: '本棚管理',     emoji: '📝', duplicatable: false },
+        'overview-display':    { label: '一覧画像表示', emoji: '🖼️', duplicatable: false },
         'view-toggle':         { label: '表紙/リスト',  emoji: '🖼️', duplicatable: false, needsBookshelf: true  },
         'search-box':          { label: '検索',         emoji: '🔍', duplicatable: false, needsBookshelf: true  },
         'filter':              { label: 'フィルター',   emoji: '🔧', duplicatable: false, needsBookshelf: true  },
@@ -2283,6 +2281,7 @@ class VirtualBookshelf {
                 { id: this._newPlacementId(), key: 'back-to-main' },
                 { id: this._newPlacementId(), key: 'bookshelf-selector' },
                 { id: this._newPlacementId(), key: 'manage-bookshelves' },
+                { id: this._newPlacementId(), key: 'overview-display' },
                 { id: this._newPlacementId(), key: 'view-toggle' },
                 { id: this._newPlacementId(), key: 'search-box' },
                 { id: this._newPlacementId(), key: 'filter' },
@@ -2453,8 +2452,9 @@ class VirtualBookshelf {
             if (el) header.appendChild(el);
         }
 
-        // view-toggle ボタンのアイコンを現在の view 状態で更新
+        // 状態依存のアイコン表示を反映 (clone 含む)
         this._updateViewToggleButton();
+        this._updateOverviewDisplayButton();
     }
 
     // ===== ヘッダー編集 UI (V6: 縦リスト 2 ゾーン + プラグイン統合) =====
@@ -4763,90 +4763,15 @@ class VirtualBookshelf {
     renderBookshelfOverview() {
         const overviewSection = document.getElementById('bookshelves-overview');
         const grid = document.getElementById('bookshelves-grid');
-
-        // 「すべての本」を常に先頭カードに追加し、ユーザ作成本棚を後ろに並べる
-        const allBookCount = (this.books || []).length;
-        const allPreviewBooks = (this.books || []).slice(0, 8);
-        const allCard = `
-            <div class="bookshelf-preview" data-bookshelf-id="all">
-                <div class="bookshelf-preview-header">
-                    <h3>📚 すべての本</h3>
-                    <div class="bookshelf-preview-actions">
-                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="all">📚 表示</button>
-                    </div>
-                </div>
-                <p>除外していない全ての蔵書</p>
-                <p class="book-count">${allBookCount}冊</p>
-                <div class="bookshelf-preview-books">
-                    ${allPreviewBooks.map(book => {
-                        if (book && book.productImage) {
-                            return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
-                        }
-                        return '<div class="bookshelf-preview-book bookshelf-preview-placeholder">📖</div>';
-                    }).join('')}
-                </div>
-            </div>
-        `;
-
+        if (!grid) return;
         overviewSection.style.display = 'block';
 
-        let html = allCard;
-        (this.userData.bookshelves || []).filter(b => b.id !== 'all').forEach(bookshelf => {
-            const bookCount = bookshelf.books ? bookshelf.books.length : 0;
-            
-            // Apply custom book order for preview if it exists
-            let previewBooks = [];
-            if (bookshelf.books && bookshelf.books.length > 0) {
-                let orderedBooks = [...bookshelf.books];
-                
-                // Apply custom order if exists
-                if (this.userData.bookOrder && this.userData.bookOrder[bookshelf.id]) {
-                    const customOrder = this.userData.bookOrder[bookshelf.id];
-                    orderedBooks.sort((a, b) => {
-                        const aIndex = customOrder.indexOf(a);
-                        const bIndex = customOrder.indexOf(b);
-                        
-                        if (aIndex === -1 && bIndex === -1) return 0;
-                        if (aIndex === -1) return 1;
-                        if (bIndex === -1) return -1;
-                        return aIndex - bIndex;
-                    });
-                }
-                
-                previewBooks = orderedBooks.slice(0, 8);
-            }
-            
-            const textOnlyClass = this.showImagesInOverview ? '' : 'text-only';
-            const isPublic = bookshelf.isPublic || false;
-            const publicBadge = isPublic ? '<span class="public-badge">📤 公開中</span>' : '';
+        const textOnlyClass = this.showImagesInOverview ? '' : 'text-only';
+        const bookshelves = (this.userData.bookshelves || []).slice();
+        // 'all' は常に先頭に
+        bookshelves.sort((a, b) => (a.id === 'all' ? -1 : b.id === 'all' ? 1 : 0));
 
-
-
-            html += `
-                <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
-                    <div class="bookshelf-preview-header">
-                        <h3>${bookshelf.emoji || '📚'} ${bookshelf.name} ${publicBadge}</h3>
-                        <div class="bookshelf-preview-actions">
-                            <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="${bookshelf.id}">📚 表示</button>
-                        </div>
-                    </div>
-                    <p>${bookshelf.description || ''}</p>
-
-                    <p class="book-count">${bookCount}冊</p>
-                    <div class="bookshelf-preview-books">
-                        ${previewBooks.map(asin => {
-                            const book = this.books.find(b => b.asin === asin);
-                            if (book && book.productImage) {
-                                return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
-                            } else {
-                                return '<div class="bookshelf-preview-book bookshelf-preview-placeholder">📖</div>';
-                            }
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        });
-
+        const html = bookshelves.map(bs => this._renderBookshelfCard(bs, textOnlyClass)).join('');
         grid.innerHTML = html;
 
         // ハンドラは1回だけ登録（再 render 時の累積を防ぐ）
@@ -4896,11 +4821,79 @@ class VirtualBookshelf {
         this.showImagesInOverview = !this.showImagesInOverview;
         this.userData.settings.showImagesInOverview = this.showImagesInOverview;
         this.saveUserData();
-        
-        const button = document.getElementById('toggle-bookshelf-display');
-        button.textContent = this.showImagesInOverview ? '🖼️ 画像表示切替' : '📝 テキストのみ';
-        
+        this._updateOverviewDisplayButton();
         this.renderBookshelfOverview();
+    }
+
+    _updateOverviewDisplayButton() {
+        // ヘッダーに展開された clone 含む全 overview-display ボタンを更新
+        const buttons = document.querySelectorAll('[data-header-item="overview-display"] button, #overview-display-toggle');
+        buttons.forEach(btn => {
+            if (this.showImagesInOverview) {
+                btn.textContent = '📃';
+                btn.title = 'テキストのみ表示に切替';
+            } else {
+                btn.textContent = '🖼️';
+                btn.title = '画像表示に切替';
+            }
+        });
+    }
+
+    /**
+     * 本棚プレビューカード 1 枚を生成 (all / ユーザ作成本棚 統一)
+     */
+    _renderBookshelfCard(bookshelf, textOnlyClass) {
+        const isAll = bookshelf.id === 'all';
+        const emoji = bookshelf.emoji || '📚';
+        const name = bookshelf.name || (isAll ? 'すべての本' : bookshelf.id);
+        const description = bookshelf.description || (isAll ? '除外していない全ての蔵書' : '');
+        const isPublic = bookshelf.isPublic || false;
+        const publicBadge = isPublic ? '<span class="public-badge">📤 公開中</span>' : '';
+
+        // プレビュー対象の本のリスト
+        let previewAsins = [];
+        if (isAll) {
+            previewAsins = (this.books || []).map(b => b.asin);
+        } else if (Array.isArray(bookshelf.books)) {
+            previewAsins = bookshelf.books.slice();
+        }
+        const bookCount = previewAsins.length;
+
+        // カスタム順を適用
+        if (this.userData.bookOrder && this.userData.bookOrder[bookshelf.id]) {
+            const customOrder = this.userData.bookOrder[bookshelf.id];
+            previewAsins.sort((a, b) => {
+                const ai = customOrder.indexOf(a);
+                const bi = customOrder.indexOf(b);
+                if (ai === -1 && bi === -1) return 0;
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+            });
+        }
+
+        const previewBooks = previewAsins.slice(0, 8);
+        const previewHtml = previewBooks.map(asin => {
+            const book = (this.books || []).find(b => b.asin === asin);
+            if (book && book.productImage) {
+                return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
+            }
+            return '<div class="bookshelf-preview-book bookshelf-preview-placeholder">📖</div>';
+        }).join('');
+
+        return `
+            <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
+                <div class="bookshelf-preview-header">
+                    <h3>${emoji} ${name} ${publicBadge}</h3>
+                    <div class="bookshelf-preview-actions">
+                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="${bookshelf.id}">📚 表示</button>
+                    </div>
+                </div>
+                ${description ? `<p>${description}</p>` : ''}
+                <p class="book-count">${bookCount}冊</p>
+                <div class="bookshelf-preview-books">${previewHtml}</div>
+            </div>
+        `;
     }
 
     showError(message) {

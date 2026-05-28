@@ -1142,23 +1142,6 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     border-bottom: 2px solid var(--border-color);
 }
 
-.bookshelf-overview-controls {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 1rem;
-}
-
-.bookshelf-overview-controls .btn {
-    background-color: var(--secondary-color);
-    color: white;
-    border: 1px solid var(--secondary-color);
-}
-
-.bookshelf-overview-controls .btn:hover {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-}
-
 .bookshelves-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
