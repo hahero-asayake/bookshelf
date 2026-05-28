@@ -319,14 +319,14 @@ class BookshelfManager {
 
     // ===== 短文メモ・評価の編集 =====
     // setMemo(asin, memo, { scope, propagateToDescendants })
-    //   scope: 'all' | internalId
+    //   scope: internalId（未指定または all 本棚の internalId なら notes.json に保存）
     //   propagateToDescendants: true なら子孫本棚の notes[asin].memo も上書き
     //   （子→親の伝播はしない。継承は読み取り時の resolveMemo で実現）
-    setMemo(asin, memo, { scope = 'all', propagateToDescendants = false } = {}) {
+    setMemo(asin, memo, { scope, propagateToDescendants = false } = {}) {
         const allId = this.getAllInternalId();
         if (!this.app.userData.notes) this.app.userData.notes = {};
 
-        if (scope === 'all' || scope === allId || !scope) {
+        if (!scope || scope === allId) {
             if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
             this.app.userData.notes[asin].memo = memo;
             if (propagateToDescendants) {

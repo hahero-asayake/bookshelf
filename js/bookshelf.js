@@ -234,7 +234,8 @@ class VirtualBookshelf {
 
         const bookshelfFiles = {};
         for (const meta of (bookshelvesMeta.bookshelves || [])) {
-            if (meta.slug === 'all') continue;
+            // 特殊本棚（all）は別途 allBookshelf として取得済み
+            if (meta.isSpecial) continue;
             try {
                 const data = await fetchJSON(`data/bookshelves/${meta.slug}.json`);
                 bookshelfFiles[meta.internalId] = data;
@@ -689,14 +690,13 @@ class VirtualBookshelf {
     _renderBookshelfPopover() {
         const host = document.getElementById('bookshelf-popover-list');
         if (!host) return;
-        const allBookshelf = (this.userData.bookshelves || []).find(bs => bs.id === 'all');
-        const allEmoji = (allBookshelf && allBookshelf.emoji) || '📚';
-        const allName = (allBookshelf && allBookshelf.name) || '全ての本';
-        const current = this.currentBookshelf || 'all';
+        const all = (this.userData.bookshelves || []).find(bs => bs.isSpecial);
+        const current = this.currentBookshelf || (all && all.id) || 'all';
 
-        const items = [{ id: 'all', emoji: allEmoji, name: allName }];
+        const items = [];
+        if (all) items.push({ id: all.id, emoji: all.emoji || '📚', name: all.name || '全ての本' });
         for (const bs of (this.userData.bookshelves || [])) {
-            if (bs.id === 'all') continue;
+            if (bs.isSpecial) continue;
             items.push({ id: bs.id, emoji: bs.emoji || '📚', name: bs.name });
         }
 
@@ -728,10 +728,10 @@ class VirtualBookshelf {
             return;
         }
         this.filteredBooks = this.books.filter(book => {
-            // Bookshelf filter
-            if (this.currentBookshelf && this.currentBookshelf !== 'all') {
+            // Bookshelf filter: 特殊本棚 (all) は全件、それ以外は books 配列で絞り込み
+            if (this.currentBookshelf) {
                 const bookshelf = this.userData.bookshelves?.find(b => b.id === this.currentBookshelf);
-                if (bookshelf && bookshelf.books && !bookshelf.books.includes(book.asin)) {
+                if (bookshelf && !bookshelf.isSpecial && bookshelf.books && !bookshelf.books.includes(book.asin)) {
                     return false;
                 }
             }
@@ -1113,9 +1113,11 @@ class VirtualBookshelf {
     }
 
     _currentBookshelfInternalId() {
-        if (!this.currentBookshelf || this.currentBookshelf === 'all') return null;
+        if (!this.currentBookshelf) return null;
         const bs = this.bookshelfManager.getBySlug(this.currentBookshelf);
-        return bs ? bs.internalId : null;
+        // 特殊本棚（all）は notes.json スコープを指すので null を返す
+        if (!bs || bs.isSpecial) return null;
+        return bs.internalId;
     }
 
     showBookDetail(book, isEditMode = false) {
@@ -1509,7 +1511,7 @@ class VirtualBookshelf {
         const propagateToDescendants = propagateEl ? propagateEl.checked : false;
 
         this.bookshelfManager.setMemo(asin, memo, {
-            scope: contextInternalId || 'all',
+            scope: contextInternalId,
             propagateToDescendants
         });
 
@@ -2050,8 +2052,8 @@ class VirtualBookshelf {
             for (const b of (this.userData.bookshelves || [])) {
                 if (!b.internalId) b.internalId = generateInternalId();
             }
-            // all 本棚が無ければ自動追加（マイグレーション後・初期化後の保険）
-            if (!this.userData.bookshelves.some(b => b.id === 'all')) {
+            // 特殊本棚（all）が無ければ自動追加（マイグレーション後・初期化後の保険）
+            if (!this.userData.bookshelves.some(b => b.isSpecial)) {
                 this.userData.bookshelves.unshift({
                     id: 'all',
                     internalId: allInternalId,
@@ -2068,17 +2070,17 @@ class VirtualBookshelf {
                 internalId: b.internalId,
                 slug: b.id,
                 name: b.name,
-                parent: b.id === 'all' ? null : (b.parent || allInternalId),
+                parent: b.isSpecial ? null : (b.parent || allInternalId),
                 ...(b.color ? { color: b.color } : {}),
                 appliedPlugins: b.appliedPlugins || [],
                 isPublic: b.isPublic || false,
                 ...(b.isSpecial ? { isSpecial: true } : {})
             }));
             await this.storage.writeBookshelvesMeta({ bookshelves: bookshelvesMetaEntries });
-            // all 以外の slug ファイル書き込み（all は writeAllBookshelf で別途）
+            // 特殊本棚（all）は writeAllBookshelf で別途書き込み済みなのでスキップ
             for (let i = 0; i < (this.userData.bookshelves || []).length; i++) {
                 const b = this.userData.bookshelves[i];
-                if (b.id === 'all') continue;
+                if (b.isSpecial) continue;
                 const meta = bookshelvesMetaEntries[i];
                 await this.storage.writeBookshelfFile(meta.slug, {
                     internalId: meta.internalId,
@@ -2230,7 +2232,7 @@ class VirtualBookshelf {
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
-            const slug = bs?.slug || (bookshelfId === 'all' ? 'all' : bookshelfId);
+            const slug = bs?.slug || bookshelfId;
             this.router.navigateBookshelf(slug);
         }
     }
@@ -4768,8 +4770,8 @@ class VirtualBookshelf {
 
         const textOnlyClass = this.showImagesInOverview ? '' : 'text-only';
         const bookshelves = (this.userData.bookshelves || []).slice();
-        // 'all' は常に先頭に
-        bookshelves.sort((a, b) => (a.id === 'all' ? -1 : b.id === 'all' ? 1 : 0));
+        // 特殊本棚（all）は常に先頭に
+        bookshelves.sort((a, b) => (b.isSpecial ? 1 : 0) - (a.isSpecial ? 1 : 0));
 
         const html = bookshelves.map(bs => this._renderBookshelfCard(bs, textOnlyClass)).join('');
         grid.innerHTML = html;
@@ -4843,16 +4845,16 @@ class VirtualBookshelf {
      * 本棚プレビューカード 1 枚を生成 (all / ユーザ作成本棚 統一)
      */
     _renderBookshelfCard(bookshelf, textOnlyClass) {
-        const isAll = bookshelf.id === 'all';
+        const isSpecial = !!bookshelf.isSpecial;
         const emoji = bookshelf.emoji || '📚';
-        const name = bookshelf.name || (isAll ? 'すべての本' : bookshelf.id);
-        const description = bookshelf.description || (isAll ? '除外していない全ての蔵書' : '');
+        const name = bookshelf.name || (isSpecial ? 'すべての本' : bookshelf.id);
+        const description = bookshelf.description || (isSpecial ? '除外していない全ての蔵書' : '');
         const isPublic = bookshelf.isPublic || false;
         const publicBadge = isPublic ? '<span class="public-badge">📤 公開中</span>' : '';
 
-        // プレビュー対象の本のリスト
+        // プレビュー対象の本のリスト（特殊本棚 = all は全蔵書）
         let previewAsins = [];
-        if (isAll) {
+        if (isSpecial) {
             previewAsins = (this.books || []).map(b => b.asin);
         } else if (Array.isArray(bookshelf.books)) {
             previewAsins = bookshelf.books.slice();

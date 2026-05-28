@@ -377,8 +377,8 @@ class BookshelfStorage {
 
         const bookshelfFiles = {};
         for (const meta of bookshelvesMeta.bookshelves) {
-            // all は別途 allBookshelf として返すので bookshelfFiles には入れない
-            if (meta.slug === 'all') continue;
+            // 特殊本棚（all）は別途 allBookshelf として返すので bookshelfFiles には入れない
+            if (meta.isSpecial) continue;
             const data = await this._readJSON('bookshelves', `${meta.slug}.json`);
             if (data) bookshelfFiles[meta.internalId] = data;
         }
