@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060114">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060115">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -740,20 +740,38 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060114"></script>
-    <script src="js/storage-adapter.js?v=2026060114"></script>
-    <script src="js/local-fs-adapter.js?v=2026060114"></script>
-    <script src="js/github-adapter.js?v=2026060114"></script>
-    <script src="js/github-auth.js?v=2026060114"></script>
-    <script src="js/sync-config.js?v=2026060114"></script>
-    <script src="js/storage.js?v=2026060114"></script>
-    <script src="js/book-manager.js?v=2026060114"></script>
-    <script src="js/bookshelf-manager.js?v=2026060114"></script>
-    <script src="js/exporter.js?v=2026060114"></script>
-    <script src="js/plugin-api.js?v=2026060114"></script>
-    <script src="js/plugin-loader.js?v=2026060114"></script>
-    <script src="js/router.js?v=2026060114"></script>
-    <script src="js/dashboard.js?v=2026060114"></script>
-    <script src="js/bookshelf.js?v=2026060114"></script>
+    <!-- ⌘K コマンドパレット -->
+    <div id="command-palette" class="cmdk" hidden>
+        <div class="cmdk-backdrop" id="cmdk-backdrop"></div>
+        <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="コマンドパレット">
+            <div class="cmdk-input-row">
+                <span class="cmdk-input-icon" data-icon="search" data-icon-size="16"></span>
+                <input type="text" id="cmdk-input" class="cmdk-input" placeholder="本・本棚を検索、またはコマンド…" autocomplete="off" spellcheck="false" />
+                <kbd class="cmdk-esc-kbd">Esc</kbd>
+            </div>
+            <div class="cmdk-results" id="cmdk-results"></div>
+            <div class="cmdk-footer">
+                <span><kbd>↑</kbd><kbd>↓</kbd> 移動</span>
+                <span><kbd>↵</kbd> 決定</span>
+                <span><kbd>Esc</kbd> 閉じる</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/icons.js?v=2026060115"></script>
+    <script src="js/storage-adapter.js?v=2026060115"></script>
+    <script src="js/local-fs-adapter.js?v=2026060115"></script>
+    <script src="js/github-adapter.js?v=2026060115"></script>
+    <script src="js/github-auth.js?v=2026060115"></script>
+    <script src="js/sync-config.js?v=2026060115"></script>
+    <script src="js/storage.js?v=2026060115"></script>
+    <script src="js/book-manager.js?v=2026060115"></script>
+    <script src="js/bookshelf-manager.js?v=2026060115"></script>
+    <script src="js/exporter.js?v=2026060115"></script>
+    <script src="js/plugin-api.js?v=2026060115"></script>
+    <script src="js/plugin-loader.js?v=2026060115"></script>
+    <script src="js/router.js?v=2026060115"></script>
+    <script src="js/dashboard.js?v=2026060115"></script>
+    <script src="js/bookshelf.js?v=2026060115"></script>
 </body>
 </html>

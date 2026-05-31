@@ -450,6 +450,9 @@ class VirtualBookshelf {
         // 全 popover の共通制御 (toggle ボタン押下 / 外側クリック / Esc)
         this._setupPopovers();
 
+        // ⌘K コマンドパレット (Phase D)
+        this._setupCommandPalette();
+
         const closeSettings = document.getElementById('settings-modal-close');
         if (closeSettings) {
             closeSettings.addEventListener('click', () => this._closeSettingsModal());
@@ -761,6 +764,184 @@ class VirtualBookshelf {
                 if (pop) pop.hidden = true;
             });
         });
+    }
+
+    // ===== ⌘K コマンドパレット (Phase D) =====
+
+    /**
+     * パレットの初期化: トリガーボタン + ⌘K + 入力/キーボード操作を bind。
+     */
+    _setupCommandPalette() {
+        if (this._paletteBound) return;
+        this._paletteBound = true;
+
+        const trigger = document.getElementById('palette-trigger');
+        if (trigger) trigger.addEventListener('click', () => this._openPalette());
+
+        // ⌘K / Ctrl+K でトグル
+        document.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                const pal = document.getElementById('command-palette');
+                if (pal && !pal.hidden) this._closePalette();
+                else this._openPalette();
+            }
+        });
+
+        const backdrop = document.getElementById('cmdk-backdrop');
+        if (backdrop) backdrop.addEventListener('click', () => this._closePalette());
+
+        const input = document.getElementById('cmdk-input');
+        if (input) {
+            input.addEventListener('input', () => this._renderPaletteResults(input.value));
+            input.addEventListener('keydown', (e) => this._onPaletteKeydown(e));
+        }
+
+        const results = document.getElementById('cmdk-results');
+        if (results) {
+            results.addEventListener('click', (e) => {
+                const item = e.target.closest('.cmdk-item');
+                if (item) this._runPaletteIndex(parseInt(item.dataset.idx));
+            });
+            results.addEventListener('mousemove', (e) => {
+                const item = e.target.closest('.cmdk-item');
+                if (item) this._setPaletteActive(parseInt(item.dataset.idx), false);
+            });
+        }
+    }
+
+    _openPalette() {
+        const pal = document.getElementById('command-palette');
+        const input = document.getElementById('cmdk-input');
+        if (!pal || !input) return;
+        pal.hidden = false;
+        document.body.classList.add('cmdk-open');
+        input.value = '';
+        this._renderPaletteResults('');
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+    }
+
+    _closePalette() {
+        const pal = document.getElementById('command-palette');
+        if (!pal) return;
+        pal.hidden = true;
+        document.body.classList.remove('cmdk-open');
+        this._paletteItems = null;
+    }
+
+    /**
+     * パレットで実行できるコマンド一覧 (ヘッダーから移設した操作を含む)。
+     */
+    _paletteCommands() {
+        const navMain = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
+        return [
+            { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
+            { icon: 'list',              title: '表紙 / リスト表示を切替',        keywords: 'view 表示 表紙 リスト cover list ひょうじ', run: () => this.setView(this.currentView === 'covers' ? 'list' : 'covers') },
+            { icon: 'image',             title: '本棚一覧の画像 / テキスト表示を切替', keywords: 'overview 一覧 画像 テキスト display', run: () => this.toggleBookshelfDisplay() },
+            { icon: 'pen-line',          title: '本棚を管理',                     keywords: '本棚 管理 manage bookshelf へんしゅう', run: () => this.showBookshelfManager() },
+            { icon: 'plus',              title: '本棚を新規作成',                 keywords: '本棚 新規 作成 add new create', run: () => this.showBookshelfForm() },
+            { icon: 'download',          title: 'Kindle インポート',             keywords: 'import kindle 取込 取り込み インポート', run: () => this.showImportModal() },
+            { icon: 'plus',              title: '本を手動追加',                   keywords: '手動 追加 add book マニュアル', run: () => this.showAddBookModal() },
+            { icon: 'ban',               title: '除外一覧を開く',                 keywords: '除外 exclusion じょがい', run: () => this.showExclusionsModal() },
+            { icon: 'settings',          title: '設定を開く',                     keywords: 'settings 設定 config せってい', run: () => this._openSettingsModal() },
+            { icon: 'panel-left',        title: '左サイドバーを開閉',             keywords: 'sidebar pane left ペイン 折りたたみ', run: () => this._togglePane('left') },
+            { icon: 'panel-right',       title: '右の本詳細ペインを開閉',         keywords: 'detail pane right ペイン 折りたたみ', run: () => this._togglePane('right') },
+        ];
+    }
+
+    _renderPaletteResults(query) {
+        const results = document.getElementById('cmdk-results');
+        if (!results) return;
+        const q = (query || '').trim().toLowerCase();
+        const items = [];
+
+        const matches = (text) => !q || (text || '').toLowerCase().includes(q);
+
+        // 1) コマンド
+        for (const cmd of this._paletteCommands()) {
+            if (matches(cmd.title) || matches(cmd.keywords)) {
+                items.push({ group: 'コマンド', icon: cmd.icon, title: cmd.title, sub: '', run: cmd.run });
+            }
+        }
+
+        // 2) 本棚
+        for (const bs of (this.userData.bookshelves || [])) {
+            if (matches(bs.name) || matches(bs.id)) {
+                items.push({
+                    group: '本棚', icon: bs.iconName || 'library', iconValue: bs.iconName,
+                    title: bs.name || bs.id, sub: bs.isSpecial ? '特殊本棚' : '本棚',
+                    run: () => this.switchBookshelf(bs.id)
+                });
+            }
+        }
+
+        // 3) 本 (query があるときのみ、上位 30 件)
+        if (q) {
+            let count = 0;
+            for (const book of (this.books || [])) {
+                if (count >= 30) break;
+                if (matches(book.title) || matches(book.authors) || matches(book.asin)) {
+                    const b = book;
+                    items.push({ group: '本', icon: 'book-open', title: b.title, sub: b.authors || '', run: () => { this._closePalette(); this.showBookDetail(b); } });
+                    count++;
+                }
+            }
+        }
+
+        this._paletteItems = items;
+        this._paletteActive = 0;
+
+        if (items.length === 0) {
+            results.innerHTML = `<div class="cmdk-empty">該当なし</div>`;
+            return;
+        }
+
+        let html = '';
+        let lastGroup = null;
+        items.forEach((it, idx) => {
+            if (it.group !== lastGroup) {
+                html += `<div class="cmdk-group">${it.group}</div>`;
+                lastGroup = it.group;
+            }
+            const iconHtml = it.iconValue
+                ? `<span class="cmdk-item-icon" data-icon-value="${(it.iconValue || '').replace(/"/g, '&quot;')}">${window.renderIcon(it.icon, { size: 16 })}</span>`
+                : `<span class="cmdk-item-icon">${window.renderIcon(it.icon, { size: 16 })}</span>`;
+            html += `
+                <div class="cmdk-item${idx === 0 ? ' is-active' : ''}" data-idx="${idx}">
+                    ${iconHtml}
+                    <span class="cmdk-item-title">${this.escapeHtml(it.title)}</span>
+                    ${it.sub ? `<span class="cmdk-item-sub">${this.escapeHtml(it.sub)}</span>` : ''}
+                </div>`;
+        });
+        results.innerHTML = html;
+    }
+
+    _setPaletteActive(idx, scroll = true) {
+        const results = document.getElementById('cmdk-results');
+        if (!results || !this._paletteItems) return;
+        const items = results.querySelectorAll('.cmdk-item');
+        if (!items.length) return;
+        idx = Math.max(0, Math.min(idx, items.length - 1));
+        this._paletteActive = idx;
+        items.forEach((el, i) => el.classList.toggle('is-active', i === idx));
+        if (scroll) items[idx].scrollIntoView({ block: 'nearest' });
+    }
+
+    _onPaletteKeydown(e) {
+        if (e.key === 'Escape') { e.preventDefault(); this._closePalette(); return; }
+        if (!this._paletteItems || !this._paletteItems.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); this._setPaletteActive((this._paletteActive ?? 0) + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); this._setPaletteActive((this._paletteActive ?? 0) - 1); }
+        else if (e.key === 'Enter') { e.preventDefault(); this._runPaletteIndex(this._paletteActive ?? 0); }
+    }
+
+    _runPaletteIndex(idx) {
+        const it = this._paletteItems && this._paletteItems[idx];
+        if (!it) return;
+        // 本は run 内で自前 close するが、他はここで閉じる
+        const isBook = it.group === '本';
+        if (!isBook) this._closePalette();
+        try { it.run(); } catch (err) { console.warn('palette command failed', err); }
     }
 
     search(query) {
