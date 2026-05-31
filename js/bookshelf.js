@@ -3993,28 +3993,22 @@ class VirtualBookshelf {
     // - プラグインボタン (plugin:<id>) は duplicatable: false 扱い (1配置のみ)
     // - needsBookshelf: メインビューでは disabled 表示
     // - required: 取り外せない (open-settings のみ)
+    // Phase C: ヘッダーは brand + ⌘K + 設定 に最小化。view-toggle/search/filter は
+    // 本棚ツールバー(Phase E)へ、back-to-main/bookshelf-selector/manage/overview は ⌘K へ移設。
+    // 下記はカスタマイザで「任意に再配置できる」候補。required は open-settings のみ。
     static HEADER_ITEMS_META = {
-        'back-to-main':        { label: '← 一覧',       defaultIcon: 'arrow-left',        emoji: '←',  duplicatable: false, needsBookshelf: true,  required: true },
+        'back-to-main':        { label: '← 一覧',       defaultIcon: 'arrow-left',        emoji: '←',  duplicatable: false, needsBookshelf: true },
         'bookshelf-selector':  { label: '本棚切替',     defaultIcon: 'library',           emoji: '📚', duplicatable: false },
         'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '📝', duplicatable: false },
         'overview-display':    { label: '一覧画像表示', defaultIcon: 'image',             emoji: '🖼️', duplicatable: false, stateful: true },
-        'view-toggle':         { label: '表紙/リスト',  defaultIcon: 'list',              emoji: '🖼️', duplicatable: false, needsBookshelf: true, stateful: true },
-        'search-box':          { label: '検索',         defaultIcon: 'search',            emoji: '🔍', duplicatable: false, needsBookshelf: true  },
-        'filter':              { label: 'フィルター',   defaultIcon: 'sliders-horizontal',emoji: '🔧', duplicatable: false, needsBookshelf: true  },
         'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
     };
-    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV6';
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV7';
 
     _defaultHeaderLayout() {
+        // Phase C: 既定は設定のみ (brand + ⌘K はヘッダー固定要素)。他はカスタマイザで任意追加可。
         return {
             items: [
-                { id: this._newPlacementId(), key: 'back-to-main' },
-                { id: this._newPlacementId(), key: 'bookshelf-selector' },
-                { id: this._newPlacementId(), key: 'manage-bookshelves' },
-                { id: this._newPlacementId(), key: 'overview-display' },
-                { id: this._newPlacementId(), key: 'view-toggle' },
-                { id: this._newPlacementId(), key: 'search-box' },
-                { id: this._newPlacementId(), key: 'filter' },
                 { id: this._newPlacementId(), key: 'open-settings' }
             ]
         };
