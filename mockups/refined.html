@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>bookshelf — 普段使いPC向け案 (refined v2)</title>
+<style>
+  /* ============== グローバル ============== */
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --side: #fbfbfd;
+    --fg: #1c1f24;
+    --fg2: #4b5460;
+    --muted: #6b7280;
+    --line: #e4e7eb;
+    --line2: #eef0f3;
+    --accent: #5b6cff;
+    --accent-bg: #eef0ff;
+    --shadow: 0 8px 24px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  .page-wrap { max-width: 1320px; margin: 0 auto; padding: 1.4rem 1.2rem 4rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.4rem; letter-spacing: 0.02em; }
+  h2 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+  h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
+  .lead { color: var(--muted); margin: 0 0 1.4rem; }
+  code { background: var(--line2); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
+  small { color: var(--muted); }
+
+  .intro {
+    background: linear-gradient(180deg, #fff, #f7f9fc);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 1.4rem;
+  }
+  .intro ul { margin: 0.3rem 0 0 1.2rem; }
+  .intro li { margin: 0.15rem 0; font-size: 0.92rem; }
+
+  /* タブ */
+  .tabs {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.7rem;
+    margin-bottom: 1.2rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding-top: 0.5rem;
+    z-index: 100;
+  }
+  .tabs button {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--fg);
+    padding: 0.5rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.88rem;
+  }
+  .tabs button:hover { background: #eef0f3; }
+  .tabs button.is-active { background: var(--fg); color: #fff; border-color: var(--fg); }
+
+  .pane { display: none; }
+  .pane.is-active { display: block; }
+
+  .pane-caption {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
+    padding: 0.5rem 1rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  .mock-frame {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    margin-bottom: 1.2rem;
+  }
+
+  /* ============== アプリ枠 ============== */
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 48px 1fr;
+    min-height: 620px;
+    background: var(--bg);
+  }
+  .app.has-detail { grid-template-columns: 220px 1fr 320px; }
+  .app.left-collapsed.has-detail { grid-template-columns: 44px 1fr 320px; }
+  .app.right-collapsed.has-detail { grid-template-columns: 220px 1fr 44px; }
+  .app.left-collapsed.right-collapsed.has-detail { grid-template-columns: 44px 1fr 44px; }
+  .app.left-collapsed { grid-template-columns: 44px 1fr; }
+
+  /* グローバルヘッダ */
+  .gh {
+    grid-column: 1 / -1;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0 0.9rem;
+  }
+  .gh .brand { font-weight: 700; letter-spacing: 0.02em; font-size: 0.95rem; color: var(--fg); }
+  .gh .palette {
+    flex: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.35rem 0.7rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .gh .palette kbd {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 0.35rem;
+    font-size: 0.72rem;
+    color: var(--fg2);
+    margin-left: auto;
+  }
+  .gh .icons { display: flex; gap: 0.3rem; }
+  .gh .icon {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .gh .icon.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+
+  /* 左サイド (展開) */
+  .side {
+    background: var(--side);
+    border-right: 1px solid var(--line);
+    overflow: auto;
+    font-size: 0.88rem;
+    position: relative;
+  }
+  .side-head {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.7rem 0.3rem;
+  }
+  .side-head .label {
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .side-head .add {
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+  .side-head .pane-collapse {
+    margin-left: auto;
+    color: var(--muted);
+    cursor: pointer;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .side-head .pane-collapse:hover { background: var(--line2); }
+  .side-list { padding: 0.1rem 0.4rem 0.7rem; }
+
+  /* 階層ツリーのナビ — emoji を縦に揃え、▼/▸ は末尾 */
+  .nav {
+    display: grid;
+    grid-template-columns: var(--indent, 0px) 1.4em 1fr auto auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--fg2);
+    font-size: 0.88rem;
+  }
+  .nav:hover { background: #f0f2f5; }
+  .nav.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .nav .indent { /* 空のスペーサ */ }
+  .nav .icon { text-align: center; }
+  .nav .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav .count {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .nav.active .count { color: var(--accent); }
+  .nav .toggle {
+    width: 12px;
+    color: var(--muted);
+    font-size: 0.65rem;
+    text-align: center;
+  }
+  .nav.lv0 { --indent: 0px; }
+  .nav.lv1 { --indent: 14px; }
+  .nav.lv2 { --indent: 28px; }
+  .nav.section-label {
+    cursor: default;
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.7rem 0.5rem 0.2rem;
+  }
+  .nav.section-label:hover { background: transparent; }
+
+  /* 左サイド (折りたたみ済み・最小化ストリップ) */
+  .side-strip {
+    background: var(--side);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 0;
+    gap: 0.4rem;
+  }
+  .side-strip .s-btn {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--fg2);
+  }
+  .side-strip .s-btn:hover { background: var(--line2); }
+  .side-strip .s-btn.active { background: var(--accent-bg); color: var(--accent); }
+  .side-strip .divider { width: 60%; height: 1px; background: var(--line); margin: 0.3rem 0; }
+
+  /* ============== ホーム ============== */
+  .home {
+    padding: 1rem 1.2rem 1.4rem;
+    overflow: auto;
+  }
+  .home-head {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .home-head h2 { margin: 0; font-size: 1.4rem; }
+  .home-head .actions { margin-left: auto; display: flex; gap: 0.4rem; }
+  .home-head .btn {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: var(--fg2);
+  }
+  .home-head .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .home-head .btn.editing { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 0.8rem;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    position: relative;
+  }
+  .card.span3 { grid-column: span 3; }
+  .card.span4 { grid-column: span 4; }
+  .card.span6 { grid-column: span 6; }
+  .card.span8 { grid-column: span 8; }
+  .card.span12 { grid-column: span 12; }
+  .card-head {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .card-head h4 { margin: 0; font-size: 0.92rem; font-weight: 600; }
+  .card-head .more { margin-left: auto; color: var(--accent); font-size: 0.78rem; text-decoration: none; }
+  .stat .v { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .stat .l { color: var(--muted); font-size: 0.78rem; margin-top: 0.2rem; }
+  .stat.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .stat.accent .l { color: rgba(255,255,255,0.85); }
+
+  .row-books {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.5rem;
+  }
+  .row-books .b {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #5b6cff), var(--c2, #2a3aff));
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .heatmap {
+    display: grid;
+    grid-template-columns: repeat(26, 1fr);
+    gap: 2px;
+  }
+  .heatmap .c { aspect-ratio: 1; background: #e8eaef; border-radius: 2px; }
+  .heatmap .c.l1 { background: #c9d2ff; }
+  .heatmap .c.l2 { background: #8b9aff; }
+  .heatmap .c.l3 { background: #5b6cff; }
+  .heatmap .c.l4 { background: #3a4ad9; }
+
+  /* 編集モードのウィジェット装飾 */
+  .editing .card {
+    cursor: grab;
+    box-shadow: 0 0 0 1px var(--accent-bg);
+  }
+  .editing .card::before {
+    content: '⋮⋮';
+    position: absolute;
+    top: 0.5rem;
+    left: -0.7rem;
+    color: var(--accent);
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+  .editing .card::after {
+    content: '×';
+    position: absolute;
+    top: 0.3rem;
+    right: 0.5rem;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .add-widget-card {
+    grid-column: span 12;
+    background: transparent;
+    border: 2px dashed var(--line);
+    border-radius: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.2rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .add-widget-card:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+
+  /* ============== ワークベンチ ============== */
+  .wb-toolbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 0.55rem 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-size: 0.85rem;
+  }
+  .wb-toolbar .crumb { color: var(--fg2); }
+  .wb-toolbar .crumb strong { color: var(--fg); }
+  .wb-toolbar .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+    margin-left: auto;
+  }
+  .wb-toolbar .seg button {
+    background: #fff;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: var(--fg2);
+  }
+  .wb-toolbar .seg button.on { background: var(--accent-bg); color: var(--accent); }
+  .wb-toolbar select {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+  }
+  .wb-main {
+    overflow: auto;
+    padding: 0.7rem 0.9rem;
+    background: var(--bg);
+  }
+  .wb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.6rem;
+  }
+  .wb-grid .b {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #4a5260), var(--c2, #2a3340));
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    cursor: pointer;
+    position: relative;
+  }
+  .wb-grid .b.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* 右ペイン: 本詳細 (展開) */
+  .detail {
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow: auto;
+    padding: 0.5rem 0.9rem 0.9rem;
+    position: relative;
+  }
+  .detail-head {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.4rem;
+  }
+  .detail-head .label {
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .detail-head .pane-collapse {
+    margin-left: auto;
+    color: var(--muted);
+    cursor: pointer;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .detail-head .pane-collapse:hover { background: var(--line2); }
+  .detail .cover-big {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #4a5260), var(--c2, #2a3340));
+    border-radius: 4px;
+    margin: 0 auto 0.7rem;
+    max-width: 160px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  .detail h3 { margin: 0.2rem 0 0.1rem; font-size: 1rem; line-height: 1.3; }
+  .detail .author { color: var(--fg2); font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .detail .stars { color: #ffa500; font-size: 1.1rem; margin: 0.2rem 0 0.5rem; }
+  .detail .meta-row {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.25rem 0;
+    font-size: 0.82rem;
+    color: var(--fg2);
+  }
+  .detail .meta-row .k { color: var(--muted); min-width: 70px; }
+  .detail .chips { display: flex; gap: 0.3rem; flex-wrap: wrap; margin: 0.4rem 0; }
+  .detail .chip {
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+  }
+  .detail h5 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0.8rem 0 0.3rem;
+  }
+  .detail textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--fg);
+    min-height: 90px;
+    resize: vertical;
+    background: #fafbfc;
+    font-family: inherit;
+  }
+  .detail .md-link {
+    display: block;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 0.82rem;
+    text-decoration: none;
+    background: #fafbfc;
+    margin-top: 0.4rem;
+  }
+  .detail .actions {
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+  }
+  .detail .actions button {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    color: var(--fg2);
+  }
+
+  /* 右ペイン: 本詳細 (折りたたみ済みストリップ) */
+  .detail-strip {
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 0;
+    gap: 0.4rem;
+  }
+  .detail-strip .s-btn {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--fg2);
+  }
+  .detail-strip .s-btn.active { background: var(--accent-bg); color: var(--accent); }
+  .detail-strip .s-btn:hover { background: var(--line2); }
+  /* 縦書きラベル */
+  .detail-strip .v-label {
+    writing-mode: vertical-rl;
+    color: var(--muted);
+    font-size: 0.72rem;
+    margin-top: 0.4rem;
+    letter-spacing: 0.1em;
+  }
+
+  /* コマンドパレット overlay */
+  .palette-overlay {
+    position: absolute;
+    inset: 48px 0 0 0;
+    background: rgba(28,31,36,0.4);
+    backdrop-filter: blur(2px);
+    display: flex;
+    justify-content: center;
+    padding-top: 80px;
+    z-index: 50;
+  }
+  .palette-box {
+    width: min(560px, 90%);
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    overflow: hidden;
+    font-size: 0.9rem;
+  }
+  .palette-box .input {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    color: var(--fg);
+  }
+  .palette-box .cat {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--line2);
+  }
+  .palette-box .item {
+    padding: 0.5rem 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+  .palette-box .item:hover, .palette-box .item.sel { background: var(--accent-bg); }
+  .palette-box .item kbd {
+    margin-left: auto;
+    background: var(--line2);
+    border-radius: 4px;
+    padding: 0 0.35rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  /* 解説 */
+  .notes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+    margin-bottom: 1.6rem;
+  }
+  .notes > div {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    font-size: 0.88rem;
+  }
+  .notes h4 { margin: 0 0 0.4rem; font-size: 0.85rem; letter-spacing: 0.04em; color: var(--fg); }
+  .notes ul { margin: 0; padding-left: 1.1rem; }
+  .notes ul li { margin: 0.15rem 0; }
+
+  /* 色バリ */
+  .v1 { --c1: #5b6cff; --c2: #2a3aff; }
+  .v2 { --c1: #ff7a59; --c2: #c43d1a; }
+  .v3 { --c1: #4ec97a; --c2: #1d7d44; }
+  .v4 { --c1: #ffb86b; --c2: #c47a1a; }
+  .v5 { --c1: #a05cff; --c2: #6020a8; }
+  .v6 { --c1: #5cc1ff; --c2: #1170c4; }
+  .v7 { --c1: #ff5c93; --c2: #c41060; }
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+<h1>bookshelf — 普段使い PC 向け案 (refined v2)</h1>
+<p class="lead">前回フィードバック反映 — ラウンジ廃止 / 左右ペイン折りたたみ可 / 階層の頭揃え＋▼末尾 / ツール群を設定モーダルへ。</p>
+
+<div class="intro">
+  <strong>v2 で変えた点</strong>
+  <ul>
+    <li>📖 <strong>ラウンジモードを廃止</strong>。ワークベンチ一本に統一。</li>
+    <li>📐 <strong>左ツリーと右本詳細を独立して折りたたみ可能</strong>に。閉じると 44px 幅のアイコンストリップに。</li>
+    <li>🌳 <strong>本棚階層の表現を再設計</strong>: 同階層は emoji が縦に揃う / 展開マーカー <code>▼ ▸</code> は末尾に。</li>
+    <li>⚙️ <strong>「取込 / 公開 / 除外一覧」など管理ツールはサイドから外し、設定モーダルに集約</strong>（デフォルト）。⌘K からは到達可能。</li>
+  </ul>
+</div>
+
+<nav class="tabs">
+  <button data-tab="home" class="is-active">🏠 ホーム（ダッシュボード）</button>
+  <button data-tab="wb">🛠️ ワークベンチ（標準）</button>
+  <button data-tab="collapse">📐 ペイン折りたたみ 3パターン</button>
+  <button data-tab="palette">⌘ コマンドパレット</button>
+  <button data-tab="home-edit">✏️ ホーム編集モード</button>
+</nav>
+
+<!-- ============================ ホーム ============================ -->
+<section class="pane is-active" data-pane="home">
+  <h2>🏠 ホーム — カスタマイズ可能なダッシュボード</h2>
+  <p class="lead">読書活動を見渡すホーム。ウィジェットは追加・並べ替え・削除できる（次タブ「ホーム編集」参照）。</p>
+
+  <div class="pane-caption">アプリ枠 — グローバルヘッダ / 左: 本棚階層 / 中央: ウィジェットグリッド</div>
+  <div class="mock-frame">
+    <div class="app">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette">
+          <span>⌘K</span>
+          <span style="color:var(--muted);">検索 / コマンド…</span>
+          <kbd>⌘K</kbd>
+        </div>
+        <div class="icons">
+          <div class="icon" title="設定">⚙️</div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-head">
+          <span class="label">ナビゲーション</span>
+          <span class="pane-collapse" title="サイドを最小化">‹</span>
+        </div>
+        <div class="side-list">
+          <div class="nav lv0 active">
+            <span class="indent"></span><span class="icon">🏠</span><span class="label">ホーム</span><span class="count"></span><span class="toggle"></span>
+          </div>
+          <div class="nav section-label">本棚</div>
+          <div class="nav lv0">
+            <span class="indent"></span><span class="icon">📚</span><span class="label">すべて</span><span class="count">2341</span><span class="toggle">▼</span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">⭐</span><span class="label">お気に入り</span><span class="count">87</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">💼</span><span class="label">ビジネス</span><span class="count">412</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">📖</span><span class="label">小説</span><span class="count">689</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">🔬</span><span class="label">技術書</span><span class="count">234</span><span class="toggle">▼</span>
+          </div>
+          <div class="nav lv2">
+            <span class="indent"></span><span class="icon">💻</span><span class="label">プログラミング</span><span class="count">142</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv2">
+            <span class="indent"></span><span class="icon">🔧</span><span class="label">インフラ</span><span class="count">52</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">📕</span><span class="label">漫画</span><span class="count">901</span><span class="toggle"></span>
+          </div>
+        </div>
+      </div>
+      <div class="home">
+        <div class="home-head">
+          <h2>おかえりなさい</h2>
+          <div class="actions">
+            <button class="btn">＋ ウィジェット追加</button>
+            <button class="btn">✏️ レイアウト編集</button>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="card stat accent span3"><div class="v">2,341</div><div class="l">蔵書数</div></div>
+          <div class="card stat span3"><div class="v">12</div><div class="l">本棚</div></div>
+          <div class="card stat span3"><div class="v">+42</div><div class="l">今月追加</div></div>
+          <div class="card stat span3"><div class="v">87</div><div class="l">未評価</div></div>
+
+          <div class="card span8">
+            <div class="card-head"><h4>📕 最近追加した本</h4><a class="more" href="#">すべて見る →</a></div>
+            <div class="row-books">
+              <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+              <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v2"></div>
+            </div>
+          </div>
+          <div class="card span4">
+            <div class="card-head"><h4>🎲 今日の一冊</h4></div>
+            <div style="display:flex; gap:0.6rem; align-items:flex-start;">
+              <div style="aspect-ratio:2/3; width:60px; background:linear-gradient(135deg,#ff7a59,#c43d1a); border-radius:3px; flex-shrink:0;"></div>
+              <div style="font-size:0.85rem;">
+                <strong>達人プログラマー</strong><br>
+                <span style="color:var(--muted);">D. Thomas</span><br>
+                <span style="color:#ffa500;">★★★★☆</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card span8">
+            <div class="card-head"><h4>📅 取得アクティビティ</h4><small style="color:var(--muted);">過去 26 週</small></div>
+            <div class="heatmap">
+              <div class="c"></div><div class="c l1"></div><div class="c"></div><div class="c l2"></div><div class="c l3"></div><div class="c l2"></div><div class="c l1"></div>
+              <div class="c l3"></div><div class="c l4"></div><div class="c l2"></div><div class="c l1"></div><div class="c"></div><div class="c l3"></div><div class="c l4"></div>
+              <div class="c l1"></div><div class="c"></div><div class="c l2"></div><div class="c l3"></div><div class="c l4"></div><div class="c l2"></div><div class="c l1"></div>
+              <div class="c l3"></div><div class="c l1"></div><div class="c l2"></div><div class="c"></div><div class="c l3"></div>
+            </div>
+          </div>
+          <div class="card span4">
+            <div class="card-head"><h4>📊 評価分布</h4></div>
+            <div style="font-size:0.82rem;">
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">★★★★★ <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:62%; height:100%; background:#ffa500; border-radius:3px;"></div></div> <span style="color:var(--muted); font-variant-numeric:tabular-nums;">512</span></div>
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">★★★★ <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:80%; height:100%; background:#ffa500; border-radius:3px;"></div></div> <span style="color:var(--muted);">722</span></div>
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">★★★ <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:50%; height:100%; background:#ffa500; border-radius:3px;"></div></div> <span style="color:var(--muted);">410</span></div>
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">★★ <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:18%; height:100%; background:#ffa500; border-radius:3px;"></div></div> <span style="color:var(--muted);">88</span></div>
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">★ <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:5%; height:100%; background:#ffa500; border-radius:3px;"></div></div> <span style="color:var(--muted);">22</span></div>
+              <div style="display:flex; align-items:center; gap:0.4rem; margin:0.2rem 0;">未 <div style="flex:1; height:6px; background:var(--line2); border-radius:3px;"><div style="width:17%; height:100%; background:#888; border-radius:3px;"></div></div> <span style="color:var(--muted);">87</span></div>
+            </div>
+          </div>
+
+          <div class="card span12">
+            <div class="card-head"><h4>📚 本棚別ハイライト</h4></div>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem;">
+              <div>
+                <div style="font-size:0.85rem; color:var(--fg2); margin-bottom:0.4rem;">💼 ビジネス <small>412 冊</small></div>
+                <div class="row-books" style="grid-template-columns:repeat(4,1fr);">
+                  <div class="b v1"></div><div class="b v4"></div><div class="b v3"></div><div class="b v6"></div>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:0.85rem; color:var(--fg2); margin-bottom:0.4rem;">📖 小説 <small>689 冊</small></div>
+                <div class="row-books" style="grid-template-columns:repeat(4,1fr);">
+                  <div class="b v2"></div><div class="b v5"></div><div class="b v7"></div><div class="b v3"></div>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:0.85rem; color:var(--fg2); margin-bottom:0.4rem;">🔬 技術書 <small>234 冊</small></div>
+                <div class="row-books" style="grid-template-columns:repeat(4,1fr);">
+                  <div class="b v6"></div><div class="b v1"></div><div class="b v4"></div><div class="b v3"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h4>階層ツリーの設計</h4>
+      <ul>
+        <li>同階層は emoji 列が縦に揃う（インデントは emoji の左側に空きスペースを置くだけ）</li>
+        <li>子を持つ本棚は末尾に <code>▼</code>（展開時）/ <code>▸</code>（折りたたみ時）</li>
+        <li>子を持たない本棚は末尾マーカーなし</li>
+        <li>クリックで本棚選択、末尾▼クリックで展開トグル</li>
+      </ul>
+    </div>
+    <div>
+      <h4>サイドから外したもの</h4>
+      <ul>
+        <li><code>📥 取込</code>, <code>📤 公開</code>, <code>🚫 除外一覧</code> は ⚙️ 設定モーダル内へ移動（既存方針と一致）</li>
+        <li>サイドはナビゲーション専用に: <code>🏠 ホーム</code> + 本棚階層のみ</li>
+        <li>これらは ⌘K からも到達可能なので操作性は損なわない</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ワークベンチ標準 ============================ -->
+<section class="pane" data-pane="wb">
+  <h2>🛠️ ワークベンチ — 標準（両ペイン展開）</h2>
+  <p class="lead">左ツリー / 中央本棚 / 右本詳細。各ペイン上部の <code>‹</code> / <code>›</code> で個別に最小化可能。</p>
+
+  <div class="pane-caption">3ペイン展開 — 左 220px / 中央可変 / 右 320px</div>
+  <div class="mock-frame">
+    <div class="app has-detail">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette"><span>⌘K</span><span style="color:var(--muted);">検索 / コマンド…</span><kbd>⌘K</kbd></div>
+        <div class="icons"><div class="icon" title="設定">⚙️</div></div>
+      </div>
+      <div class="side">
+        <div class="side-head">
+          <span class="label">ナビゲーション</span>
+          <span class="pane-collapse" title="最小化">‹</span>
+        </div>
+        <div class="side-list">
+          <div class="nav lv0">
+            <span class="indent"></span><span class="icon">🏠</span><span class="label">ホーム</span><span class="count"></span><span class="toggle"></span>
+          </div>
+          <div class="nav section-label">本棚</div>
+          <div class="nav lv0">
+            <span class="indent"></span><span class="icon">📚</span><span class="label">すべて</span><span class="count">2341</span><span class="toggle">▼</span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">⭐</span><span class="label">お気に入り</span><span class="count">87</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1 active">
+            <span class="indent"></span><span class="icon">💼</span><span class="label">ビジネス</span><span class="count">412</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">📖</span><span class="label">小説</span><span class="count">689</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">🔬</span><span class="label">技術書</span><span class="count">234</span><span class="toggle">▼</span>
+          </div>
+          <div class="nav lv2">
+            <span class="indent"></span><span class="icon">💻</span><span class="label">プログラミング</span><span class="count">142</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv2">
+            <span class="indent"></span><span class="icon">🔧</span><span class="label">インフラ</span><span class="count">52</span><span class="toggle"></span>
+          </div>
+          <div class="nav lv1">
+            <span class="indent"></span><span class="icon">📕</span><span class="label">漫画</span><span class="count">901</span><span class="toggle"></span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; overflow:hidden;">
+        <div class="wb-toolbar">
+          <span class="crumb">📚 すべて / <strong>💼 ビジネス</strong></span>
+          <span style="color:var(--muted); font-size:0.78rem;">412 冊 / 選択: 1</span>
+          <select style="margin-left:1rem;">
+            <option>追加日 ↓</option>
+            <option>タイトル</option>
+            <option>評価</option>
+          </select>
+          <div class="seg">
+            <button class="on" title="グリッド">⊞</button>
+            <button title="リスト">≡</button>
+          </div>
+        </div>
+        <div class="wb-main">
+          <div class="wb-grid">
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3 sel"></div><div class="b v4"></div>
+            <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v1"></div>
+            <div class="b v2"></div><div class="b v3"></div><div class="b v4"></div><div class="b v5"></div>
+            <div class="b v6"></div><div class="b v7"></div><div class="b v1"></div><div class="b v2"></div>
+            <div class="b v3"></div><div class="b v4"></div><div class="b v5"></div><div class="b v6"></div>
+            <div class="b v7"></div><div class="b v1"></div><div class="b v2"></div><div class="b v3"></div>
+            <div class="b v4"></div><div class="b v5"></div><div class="b v6"></div><div class="b v7"></div>
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail">
+        <div class="detail-head">
+          <span class="label">本詳細</span>
+          <span class="pane-collapse" title="最小化">›</span>
+        </div>
+        <div class="cover-big v3"></div>
+        <h3>達人プログラマー —<br>熟達に向けたあなたの旅</h3>
+        <div class="author">David Thomas, Andrew Hunt</div>
+        <div class="stars">★★★★☆</div>
+        <div class="chips">
+          <span class="chip">💼 ビジネス</span>
+          <span class="chip">⭐ お気に入り</span>
+        </div>
+        <div class="meta-row"><span class="k">取得</span><span>2023-04-12</span></div>
+        <div class="meta-row"><span class="k">ASIN</span><code>B07PNGRSDJ</code></div>
+        <div class="meta-row"><span class="k">出版</span><span>オーム社</span></div>
+
+        <h5>短文メモ</h5>
+        <textarea placeholder="ここに書き留め…">第二版で「ETC原則」「直交性」のあたりが特に良かった。</textarea>
+
+        <h5>長文ノート</h5>
+        <a class="md-link" href="#">📄 books/B07PNGRSDJ__達人プログラマー.md を開く</a>
+
+        <div class="actions">
+          <button>📚 Amazon</button>
+          <button>📁 本棚を追加</button>
+          <button>🚫 all から除外</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h4>ツールバー</h4>
+      <ul>
+        <li>パンくず: 親本棚 / <strong>選択中</strong></li>
+        <li>並び順 select</li>
+        <li>右端に表示モード切替 (グリッド / リスト)</li>
+        <li>選択数の表示 (複数選択時の一括操作の入り口)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>右本詳細のインライン編集</h4>
+      <ul>
+        <li>評価・短文メモはその場で編集（保存はデバウンス）</li>
+        <li>長文ノート (Markdown) は外部エディタへリンクのみ</li>
+        <li>所属本棚は chip 表示、追加/解除はその場で</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 折りたたみ 3パターン ============================ -->
+<section class="pane" data-pane="collapse">
+  <h2>📐 ペイン折りたたみ — 3パターン</h2>
+  <p class="lead">左ツリー / 右本詳細を独立して最小化できる。閉じたペインは 44px 幅のアイコンストリップになり、いつでも復帰できる。</p>
+
+  <div class="pane-caption">パターン1 — 左を最小化（広い中央 + 詳細）</div>
+  <div class="mock-frame">
+    <div class="app has-detail left-collapsed">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette"><span>⌘K</span><span style="color:var(--muted);">検索 / コマンド…</span><kbd>⌘K</kbd></div>
+        <div class="icons"><div class="icon">⚙️</div></div>
+      </div>
+      <div class="side-strip">
+        <div class="s-btn active" title="開く">›</div>
+        <div class="divider"></div>
+        <div class="s-btn" title="ホーム">🏠</div>
+        <div class="s-btn active" title="ビジネス（選択中）">💼</div>
+        <div class="s-btn" title="お気に入り">⭐</div>
+        <div class="s-btn" title="技術書">🔬</div>
+        <div class="s-btn" title="漫画">📕</div>
+      </div>
+      <div style="display:flex; flex-direction:column; overflow:hidden;">
+        <div class="wb-toolbar">
+          <span class="crumb">📚 すべて / <strong>💼 ビジネス</strong></span>
+          <span style="color:var(--muted); font-size:0.78rem;">412 冊</span>
+          <select style="margin-left:1rem;"><option>追加日 ↓</option></select>
+          <div class="seg"><button class="on">⊞</button><button>≡</button></div>
+        </div>
+        <div class="wb-main">
+          <div class="wb-grid">
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3 sel"></div><div class="b v4"></div>
+            <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v1"></div>
+            <div class="b v2"></div><div class="b v3"></div><div class="b v4"></div><div class="b v5"></div>
+            <div class="b v6"></div><div class="b v7"></div><div class="b v1"></div><div class="b v2"></div>
+            <div class="b v3"></div><div class="b v4"></div><div class="b v5"></div><div class="b v6"></div>
+            <div class="b v7"></div><div class="b v1"></div><div class="b v2"></div><div class="b v3"></div>
+            <div class="b v4"></div><div class="b v5"></div><div class="b v6"></div><div class="b v7"></div>
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+          </div>
+        </div>
+      </div>
+      <div class="detail">
+        <div class="detail-head"><span class="label">本詳細</span><span class="pane-collapse">›</span></div>
+        <div class="cover-big v3"></div>
+        <h3>達人プログラマー</h3>
+        <div class="author">David Thomas</div>
+        <div class="stars">★★★★☆</div>
+        <h5>短文メモ</h5>
+        <textarea>第二版で「ETC原則」「直交性」のあたりが特に良かった。</textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane-caption">パターン2 — 右を最小化（眺めるとき、表紙だけ広く見たい）</div>
+  <div class="mock-frame">
+    <div class="app has-detail right-collapsed">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette"><span>⌘K</span><span style="color:var(--muted);">検索 / コマンド…</span><kbd>⌘K</kbd></div>
+        <div class="icons"><div class="icon">⚙️</div></div>
+      </div>
+      <div class="side">
+        <div class="side-head"><span class="label">ナビゲーション</span><span class="pane-collapse">‹</span></div>
+        <div class="side-list">
+          <div class="nav lv0"><span class="indent"></span><span class="icon">🏠</span><span class="label">ホーム</span><span class="count"></span><span class="toggle"></span></div>
+          <div class="nav section-label">本棚</div>
+          <div class="nav lv0"><span class="indent"></span><span class="icon">📚</span><span class="label">すべて</span><span class="count">2341</span><span class="toggle">▼</span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">⭐</span><span class="label">お気に入り</span><span class="count">87</span><span class="toggle"></span></div>
+          <div class="nav lv1 active"><span class="indent"></span><span class="icon">💼</span><span class="label">ビジネス</span><span class="count">412</span><span class="toggle"></span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">📖</span><span class="label">小説</span><span class="count">689</span><span class="toggle"></span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">🔬</span><span class="label">技術書</span><span class="count">234</span><span class="toggle">▸</span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">📕</span><span class="label">漫画</span><span class="count">901</span><span class="toggle"></span></div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; overflow:hidden;">
+        <div class="wb-toolbar">
+          <span class="crumb">📚 すべて / <strong>💼 ビジネス</strong></span>
+          <span style="color:var(--muted); font-size:0.78rem;">412 冊</span>
+          <select style="margin-left:1rem;"><option>追加日 ↓</option></select>
+          <div class="seg"><button class="on">⊞</button><button>≡</button></div>
+        </div>
+        <div class="wb-main">
+          <div class="wb-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+            <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v1"></div>
+            <div class="b v2"></div><div class="b v3"></div><div class="b v4"></div><div class="b v5"></div>
+            <div class="b v6"></div><div class="b v7"></div><div class="b v1"></div><div class="b v2"></div>
+            <div class="b v3"></div><div class="b v4"></div><div class="b v5"></div><div class="b v6"></div>
+            <div class="b v7"></div><div class="b v1"></div><div class="b v2"></div><div class="b v3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-strip">
+        <div class="s-btn active" title="展開">‹</div>
+        <div class="divider"></div>
+        <div class="v-label">本詳細</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane-caption">パターン3 — 両方最小化（中央を最大化、フォーカスモード）</div>
+  <div class="mock-frame">
+    <div class="app has-detail left-collapsed right-collapsed">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette"><span>⌘K</span><span style="color:var(--muted);">検索 / コマンド…</span><kbd>⌘K</kbd></div>
+        <div class="icons"><div class="icon">⚙️</div></div>
+      </div>
+      <div class="side-strip">
+        <div class="s-btn active" title="開く">›</div>
+        <div class="divider"></div>
+        <div class="s-btn">🏠</div>
+        <div class="s-btn active">💼</div>
+        <div class="s-btn">⭐</div>
+        <div class="s-btn">🔬</div>
+        <div class="s-btn">📕</div>
+      </div>
+      <div style="display:flex; flex-direction:column; overflow:hidden;">
+        <div class="wb-toolbar">
+          <span class="crumb">📚 すべて / <strong>💼 ビジネス</strong></span>
+          <span style="color:var(--muted); font-size:0.78rem;">412 冊</span>
+          <select style="margin-left:1rem;"><option>追加日 ↓</option></select>
+          <div class="seg"><button class="on">⊞</button><button>≡</button></div>
+        </div>
+        <div class="wb-main">
+          <div class="wb-grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));">
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+            <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v1"></div>
+            <div class="b v2"></div><div class="b v3"></div><div class="b v4"></div><div class="b v5"></div>
+            <div class="b v6"></div><div class="b v7"></div><div class="b v1"></div><div class="b v2"></div>
+            <div class="b v3"></div><div class="b v4"></div><div class="b v5"></div><div class="b v6"></div>
+            <div class="b v7"></div><div class="b v1"></div><div class="b v2"></div><div class="b v3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-strip">
+        <div class="s-btn active" title="展開">‹</div>
+        <div class="divider"></div>
+        <div class="v-label">本詳細</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h4>折りたたみの操作</h4>
+      <ul>
+        <li>左ペイン上部の <code>‹</code> をクリックで最小化、最小化ストリップの <code>›</code> で復帰</li>
+        <li>右ペインも同じく <code>›</code> / <code>‹</code></li>
+        <li>キー: <code>⌘[</code> 左トグル / <code>⌘]</code> 右トグル / <code>⌘\</code> 両方トグル</li>
+        <li>状態は <code>settings.paneState</code>: <code>{ left, right }</code> に保存（永続化）</li>
+      </ul>
+    </div>
+    <div>
+      <h4>最小化ストリップの中身</h4>
+      <ul>
+        <li>左: 復帰ボタン + よく開く本棚アイコン（最大 6 個）= 1クリックジャンプ</li>
+        <li>右: 復帰ボタン + 縦書きラベル「本詳細」</li>
+        <li>本棚アイコンはピン留め可、または「最近開いた本棚」自動表示</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ コマンドパレット ============================ -->
+<section class="pane" data-pane="palette">
+  <h2>⌘ コマンドパレット</h2>
+  <p class="lead">⌘K で起動。本・本棚・コマンド（取込・公開・除外一覧・ビュー切替等）を横断検索。サイドから外したツールはここからも到達可能。</p>
+
+  <div class="pane-caption">パレットがオーバーレイで表示される様子</div>
+  <div class="mock-frame">
+    <div class="app" style="position:relative;">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette" style="background:var(--accent-bg); border-color:var(--accent); color:var(--accent);">
+          <span>⌘K</span>
+          <span style="color:var(--accent);"><strong>取込</strong>|</span>
+          <kbd style="background:#fff;">esc</kbd>
+        </div>
+        <div class="icons"><div class="icon">⚙️</div></div>
+      </div>
+      <div class="side">
+        <div class="side-head"><span class="label">ナビゲーション</span><span class="pane-collapse">‹</span></div>
+        <div class="side-list">
+          <div class="nav lv0 active"><span class="indent"></span><span class="icon">🏠</span><span class="label">ホーム</span><span class="count"></span><span class="toggle"></span></div>
+          <div class="nav section-label">本棚</div>
+          <div class="nav lv0"><span class="indent"></span><span class="icon">📚</span><span class="label">すべて</span><span class="count">2341</span><span class="toggle">▼</span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">💼</span><span class="label">ビジネス</span><span class="count">412</span><span class="toggle"></span></div>
+        </div>
+      </div>
+      <div class="home" style="opacity:0.4; pointer-events:none;">
+        <div class="home-head"><h2>おかえりなさい</h2></div>
+        <div class="grid">
+          <div class="card stat span3"><div class="v">2,341</div><div class="l">蔵書数</div></div>
+          <div class="card stat span3"><div class="v">12</div><div class="l">本棚</div></div>
+          <div class="card stat span3"><div class="v">+42</div><div class="l">今月追加</div></div>
+          <div class="card stat span3"><div class="v">87</div><div class="l">未評価</div></div>
+        </div>
+      </div>
+
+      <div class="palette-overlay">
+        <div class="palette-box">
+          <div class="input"><strong>取込</strong><span style="color:var(--muted);">|</span></div>
+          <div class="cat">コマンド (3)</div>
+          <div class="item sel">📥 Kindle 取込を実行 <kbd>↵</kbd></div>
+          <div class="item">📥 手動で本を追加…</div>
+          <div class="item">📥 設定 → 取込履歴を開く</div>
+          <div class="cat">関連</div>
+          <div class="item">🚫 除外一覧を開く</div>
+          <div class="item">📤 公開エクスポート…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h4>検索対象</h4>
+      <ul>
+        <li><strong>本</strong>: タイトル / 著者 / メモ全文 → 詳細を右ペインに</li>
+        <li><strong>本棚</strong>: 名前 → 切替</li>
+        <li><strong>コマンド</strong>: 取込 / 公開 / 除外 / ビュー切替 / 設定 / プラグイン操作</li>
+        <li><strong>最近</strong>: 直近開いた本・本棚</li>
+      </ul>
+    </div>
+    <div>
+      <h4>キー操作</h4>
+      <ul>
+        <li><code>⌘K</code> / <code>Ctrl+K</code> — 起動</li>
+        <li><code>↑↓</code> 移動 / <code>↵</code> 決定 / <code>esc</code> 閉じる</li>
+        <li><code>&gt;</code> プレフィックス: コマンドのみ</li>
+        <li><code>#</code> プレフィックス: 本棚のみ</li>
+        <li><code>@</code> プレフィックス: 本のみ</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ホーム編集 ============================ -->
+<section class="pane" data-pane="home-edit">
+  <h2>✏️ ホーム編集モード</h2>
+  <p class="lead">「✏️ レイアウト編集」を押すと、ウィジェットを並べ替え・削除・追加できる編集モードに入る。</p>
+
+  <div class="pane-caption">編集モード — 各カードに ⋮⋮ ハンドル + × 削除 / 末尾に「+ ウィジェット追加」枠</div>
+  <div class="mock-frame">
+    <div class="app">
+      <div class="gh">
+        <div class="brand">📚 bookshelf</div>
+        <div class="palette"><span>⌘K</span><span style="color:var(--muted);">検索 / コマンド…</span><kbd>⌘K</kbd></div>
+        <div class="icons"><div class="icon">⚙️</div></div>
+      </div>
+      <div class="side">
+        <div class="side-head"><span class="label">ナビゲーション</span><span class="pane-collapse">‹</span></div>
+        <div class="side-list">
+          <div class="nav lv0 active"><span class="indent"></span><span class="icon">🏠</span><span class="label">ホーム</span><span class="count"></span><span class="toggle"></span></div>
+          <div class="nav section-label">本棚</div>
+          <div class="nav lv0"><span class="indent"></span><span class="icon">📚</span><span class="label">すべて</span><span class="count">2341</span><span class="toggle">▼</span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">⭐</span><span class="label">お気に入り</span><span class="count">87</span><span class="toggle"></span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">💼</span><span class="label">ビジネス</span><span class="count">412</span><span class="toggle"></span></div>
+          <div class="nav lv1"><span class="indent"></span><span class="icon">📖</span><span class="label">小説</span><span class="count">689</span><span class="toggle"></span></div>
+        </div>
+      </div>
+      <div class="home editing">
+        <div class="home-head">
+          <h2>✏️ レイアウト編集中</h2>
+          <div class="actions">
+            <button class="btn">＋ ウィジェット追加</button>
+            <button class="btn editing">✅ 完了</button>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="card stat accent span3"><div class="v">2,341</div><div class="l">蔵書数</div></div>
+          <div class="card stat span3"><div class="v">12</div><div class="l">本棚</div></div>
+          <div class="card stat span3"><div class="v">+42</div><div class="l">今月追加</div></div>
+          <div class="card stat span3"><div class="v">87</div><div class="l">未評価</div></div>
+
+          <div class="card span8">
+            <div class="card-head"><h4>📕 最近追加した本</h4></div>
+            <div class="row-books">
+              <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+              <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v2"></div>
+            </div>
+          </div>
+          <div class="card span4">
+            <div class="card-head"><h4>🎲 今日の一冊</h4></div>
+            <div style="height:80px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:0.85rem;">— ウィジェット内容 —</div>
+          </div>
+
+          <div class="card span8">
+            <div class="card-head"><h4>📅 取得アクティビティ</h4></div>
+            <div class="heatmap">
+              <div class="c"></div><div class="c l1"></div><div class="c"></div><div class="c l2"></div><div class="c l3"></div><div class="c l2"></div><div class="c l1"></div>
+              <div class="c l3"></div><div class="c l4"></div><div class="c l2"></div><div class="c l1"></div><div class="c"></div><div class="c l3"></div><div class="c l4"></div>
+              <div class="c l1"></div><div class="c"></div><div class="c l2"></div><div class="c l3"></div><div class="c l4"></div><div class="c l2"></div><div class="c l1"></div>
+              <div class="c l3"></div><div class="c l1"></div><div class="c l2"></div><div class="c"></div><div class="c l3"></div>
+            </div>
+          </div>
+          <div class="card span4">
+            <div class="card-head"><h4>📊 評価分布</h4></div>
+            <div style="height:80px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:0.85rem;">— ウィジェット内容 —</div>
+          </div>
+
+          <div class="add-widget-card">＋ ここにウィジェットを追加（カウンター / グラフ / 本棚ハイライト / メモ ほか）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h4>編集モードの所作</h4>
+      <ul>
+        <li>各ウィジェット左上の <code>⋮⋮</code> ハンドルでドラッグ並べ替え</li>
+        <li>右上 <code>×</code> で外す（追加リストに戻る、削除ではない）</li>
+        <li>末尾 <code>＋</code> から候補をピック</li>
+      </ul>
+    </div>
+    <div>
+      <h4>レイアウトデータ</h4>
+      <ul>
+        <li><code>private/main.json</code> の <code>home.widgets[]</code> に保存
+          <pre style="background:var(--line2); padding:0.5rem; border-radius:6px; font-size:0.78rem; overflow:auto; margin-top:0.3rem;">{
+  "home": {
+    "widgets": [
+      { "id": "stat-total",   "span": 3 },
+      { "id": "stat-shelves", "span": 3 },
+      { "id": "recent-books", "span": 8, "config": { "limit": 8 } },
+      { "id": "today-pick",   "span": 4 },
+      { "id": "heatmap",      "span": 8, "config": { "weeks": 26 } }
+    ]
+  }
+}</pre>
+        </li>
+        <li>同期フォルダ経由で複数端末共有可</li>
+        <li>プラグインがウィジェットを追加することも可能（拡張余地）</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 総括 ============================ -->
+<div class="intro" style="margin-top:1.5rem;">
+  <h2>標準体験の流れ</h2>
+  <ul>
+    <li><strong>起動 →</strong> 🏠 ホーム（前回開いていた画面を復元）</li>
+    <li><strong>本棚を開く →</strong> 左ツリーから選択、または ⌘K で名前検索</li>
+    <li><strong>整理する →</strong> 中央で本を選び、右ペインでメモ・評価をその場で編集</li>
+    <li><strong>集中する →</strong> 左右どちらも、または両方を最小化して中央に集中</li>
+    <li><strong>取込・公開・除外等 →</strong> ⚙️ 設定モーダル または ⌘K から</li>
+    <li><strong>振り返る →</strong> 🏠 ホームに戻り、ウィジェットで自分の関心に最適化</li>
+  </ul>
+  <p style="margin-top:0.8rem; color:var(--muted); font-size:0.88rem;">
+    ※ スマホ向け / 公開モードは別途。
+  </p>
+</div>
+
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.tabs button');
+  const panes = document.querySelectorAll('.pane');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.tab;
+      buttons.forEach(b => b.classList.toggle('is-active', b === btn));
+      panes.forEach(p => p.classList.toggle('is-active', p.dataset.pane === id));
+    });
+  });
+</script>
+</body>
+</html>

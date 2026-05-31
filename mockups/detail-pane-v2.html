@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>bookshelf — 本詳細ペイン v2</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --side: #fbfbfd;
+    --fg: #1c1f24;
+    --fg2: #4b5460;
+    --muted: #6b7280;
+    --line: #e4e7eb;
+    --line2: #eef0f3;
+    --accent: #5b6cff;
+    --accent-bg: #eef0ff;
+    --accent-strong: #2a3aff;
+    --danger: #e25555;
+    --warning: #d49100;
+    --shadow: 0 8px 24px rgba(0,0,0,0.06);
+    --btn-h: 32px;
+    --btn-h-sm: 26px;
+    --r: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+    padding: 1.5rem;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 0.4rem; }
+  .lead { color: var(--muted); margin: 0 0 1.5rem; }
+
+  /* デモ用 grid: display と edit を横並びで比較 */
+  .demo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1rem;
+    align-items: start;
+    max-width: 1400px;
+  }
+  .demo-col h2 { font-size: 0.9rem; color: var(--muted); margin: 0 0 0.5rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* Lucide 共通 */
+  [data-lucide] {
+    width: 1em;
+    height: 1em;
+    stroke-width: 2;
+    flex-shrink: 0;
+    vertical-align: -0.15em;
+  }
+
+  /* ===== Detail pane shell ===== */
+  .detail {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    width: 340px;
+    max-width: 100%;
+    padding: 0.9rem;
+    box-shadow: var(--shadow);
+  }
+
+  /* ===== Header (top bar with edit toggle + section reorder hint) ===== */
+  .d-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.7rem;
+  }
+  .d-topbar .d-pane-label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex: 1;
+  }
+  .d-icon-btn {
+    width: 28px;
+    height: 28px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--fg2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .d-icon-btn:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .d-icon-btn.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .d-icon-btn [data-lucide] { width: 14px; height: 14px; }
+
+  /* ===== Cover ===== */
+  .d-cover {
+    aspect-ratio: 2/3;
+    width: 140px;
+    margin: 0 auto 0.7rem;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #4a5260, #2a3340);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  .d-cover-text {
+    color: rgba(255,255,255,0.6);
+    font-size: 0.75rem;
+    padding: 0.5rem;
+    text-align: center;
+  }
+
+  /* ===== Title & basic info ===== */
+  .d-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--fg);
+    text-align: center;
+  }
+  .d-author {
+    color: var(--fg2);
+    font-size: 0.85rem;
+    text-align: center;
+    margin: 0.15rem 0 0.5rem;
+  }
+  .d-stars {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.1rem;
+    color: #ffa500;
+    margin-bottom: 0.7rem;
+  }
+  .d-stars [data-lucide] { width: 16px; height: 16px; fill: #ffa500; stroke: #ffa500; }
+  .d-stars [data-lucide].off { fill: none; stroke: #d4d6da; }
+
+  /* ===== Section card (the building block) =====
+     全セクションが共通の card 見た目 → 並び替えも視覚的に統一感 */
+  .d-section {
+    background: var(--bg);
+    border: 1px solid var(--line2);
+    border-radius: var(--r);
+    margin-bottom: 0.6rem;
+    padding: 0.55rem 0.7rem;
+  }
+  .d-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .d-grip {
+    display: none;
+    cursor: grab;
+    color: var(--muted);
+    padding: 0 0.1rem;
+  }
+  .d-grip [data-lucide] { width: 12px; height: 12px; }
+  .editing .d-grip { display: inline-flex; }
+  .d-section-title {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex: 1;
+  }
+  .d-section-title [data-lucide] { width: 12px; height: 12px; }
+  .d-section-action {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+  }
+  .d-section-action:hover { background: var(--line2); color: var(--fg); }
+
+  .editing .d-section { background: var(--panel); border-style: solid; }
+
+  /* ===== Meta table ===== */
+  .d-meta {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    row-gap: 0.18rem;
+    font-size: 0.8rem;
+  }
+  .d-meta .k { color: var(--muted); }
+  .d-meta .v { color: var(--fg2); }
+
+  /* ===== Bookshelf chips ===== */
+  .d-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .d-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 0.18rem 0.55rem 0.18rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+  }
+  .d-chip [data-lucide] { width: 12px; height: 12px; }
+  .d-chip-x {
+    background: rgba(91,108,255,0.16);
+    border: none;
+    color: var(--accent);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    padding: 0;
+    margin-left: 0.15rem;
+    cursor: pointer;
+    font-size: 0.65rem;
+    line-height: 1;
+    display: none;
+  }
+  .editing .d-chip-x { display: inline-flex; align-items: center; justify-content: center; }
+  .d-chip-add {
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    color: var(--muted);
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    cursor: pointer;
+    display: none;
+  }
+  .editing .d-chip-add { display: inline-flex; align-items: center; gap: 0.2rem; }
+  .d-chip-add [data-lucide] { width: 12px; height: 12px; }
+  .d-empty {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-style: italic;
+  }
+
+  /* ===== Memo blocks (ALL + 各本棚 override) ===== */
+  .d-memo-block {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    margin-bottom: 0.4rem;
+    background: var(--panel);
+  }
+  .d-memo-block:last-child { margin-bottom: 0; }
+  .d-memo-block-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+  }
+  .d-memo-scope {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  .d-memo-scope.is-all {
+    background: var(--line2);
+    color: var(--fg2);
+  }
+  .d-memo-scope.is-bs {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+  .d-memo-scope [data-lucide] { width: 11px; height: 11px; }
+  .d-memo-status {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .d-memo-block-remove {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+  .editing .d-memo-block-remove { display: inline-flex; }
+  .d-memo-block-remove:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .d-memo-text {
+    font-size: 0.83rem;
+    color: var(--fg);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .d-memo-text.is-empty {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ===== Form controls — global styled ===== */
+  .d-textarea, .d-input, .d-select {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.83rem;
+    color: var(--fg);
+    background: var(--panel);
+    font-family: inherit;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .d-textarea {
+    min-height: 64px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+  .d-textarea:focus, .d-input:focus, .d-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+  }
+
+  .d-add-override {
+    display: none;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+  }
+  .editing .d-add-override { display: flex; }
+  .d-add-override .d-select { flex: 1; height: var(--btn-h-sm); padding-top: 0; padding-bottom: 0; }
+
+  /* ===== Custom checkbox ===== */
+  .d-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.76rem;
+    color: var(--fg2);
+    cursor: pointer;
+    user-select: none;
+    margin-top: 0.35rem;
+  }
+  .d-flag input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--panel);
+    border: 1.5px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    margin: 0;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .d-flag input[type="checkbox"]:hover { border-color: var(--accent); }
+  .d-flag input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .d-flag input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 0;
+    width: 4px; height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* ===== Memo link (長文) ===== */
+  .d-memo-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: var(--btn-h);
+    padding: 0 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    background: var(--panel);
+    cursor: pointer;
+    font-family: inherit;
+    text-decoration: none;
+  }
+  .d-memo-link:hover { background: var(--accent-bg); border-color: var(--accent); }
+  .d-memo-link [data-lucide] { width: 14px; height: 14px; }
+
+  /* ===== Actions (bottom) — uniform button size ===== */
+  .d-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--line);
+  }
+  .d-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    height: var(--btn-h);
+    padding: 0 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--fg2);
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: inherit;
+    text-decoration: none;
+  }
+  .d-btn [data-lucide] { width: 14px; height: 14px; }
+  .d-btn:hover { background: var(--line2); color: var(--fg); }
+  .d-btn.is-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .d-btn.is-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .d-btn.is-amazon { color: var(--accent); }
+  .d-btn.is-amazon:hover { background: var(--accent-bg); border-color: var(--accent); }
+  .d-btn.is-warning { color: var(--warning); }
+  .d-btn.is-warning:hover { background: #fff7e0; border-color: var(--warning); }
+  .d-btn.is-danger { color: var(--danger); }
+  .d-btn.is-danger:hover { background: #fce8e8; border-color: var(--danger); }
+
+  /* ===== Meta edit (collapsible) ===== */
+  .d-meta-edit {
+    display: none;
+    margin-top: 0.5rem;
+  }
+  .editing .d-meta-edit { display: block; }
+  .d-meta-edit summary {
+    cursor: pointer;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 0.76rem;
+    color: var(--fg2);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .d-meta-edit[open] summary { border-radius: 6px 6px 0 0; border-bottom: none; }
+  .d-meta-edit summary::-webkit-details-marker { display: none; }
+  .d-meta-edit-body {
+    border: 1px solid var(--line);
+    border-radius: 0 0 6px 6px;
+    padding: 0.55rem 0.7rem;
+  }
+  .d-meta-edit-field { margin-bottom: 0.4rem; }
+  .d-meta-edit-field label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-bottom: 0.15rem;
+  }
+  .d-meta-edit-field .d-input { height: var(--btn-h-sm); padding: 0 0.5rem; }
+
+  /* ===== Helpers ===== */
+  .notes-card {
+    background: #fffbef;
+    border: 1px solid #fde7a5;
+    border-radius: 6px;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    color: #5d4937;
+    margin-top: 1rem;
+    max-width: 800px;
+  }
+  .notes-card strong { color: var(--accent); }
+  .notes-card ul { margin: 0.3rem 0 0 1.1rem; padding: 0; }
+  .notes-card li { margin: 0.15rem 0; }
+</style>
+</head>
+<body>
+
+<h1>本詳細ペイン v2 (Phase B-8 提案)</h1>
+<p class="lead">監査指摘事項 → セクション並び替え対応・均一ボタン・スタイリッシュなフォーム要素・スキャン可能な階層</p>
+
+<div class="demo-grid">
+
+  <div class="demo-col">
+    <h2>表示モード</h2>
+    <div class="detail">
+
+      <div class="d-topbar">
+        <span class="d-pane-label">本詳細</span>
+        <button class="d-icon-btn" title="編集モード"><i data-lucide="pencil"></i></button>
+      </div>
+
+      <div class="d-cover">
+        <span class="d-cover-text">表紙画像<br>(140×210 固定)</span>
+      </div>
+
+      <h3 class="d-title">瑠璃宮夢幻古物店 ：1<br>(アクションコミックス)</h3>
+      <p class="d-author">逆坂八代</p>
+
+      <div class="d-stars">
+        <i data-lucide="star"></i><i data-lucide="star"></i><i data-lucide="star"></i><i data-lucide="star" class="off"></i><i data-lucide="star" class="off"></i>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-section-title"><i data-lucide="info"></i> 基本情報</span>
+        </div>
+        <div class="d-meta">
+          <span class="k">購入</span><span class="v">2025/11/16</span>
+          <span class="k">ASIN</span><span class="v">B00LE2OPZY</span>
+        </div>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-section-title"><i data-lucide="library"></i> 所属本棚</span>
+        </div>
+        <div class="d-chips">
+          <span class="d-chip"><i data-lucide="book-heart"></i>からあげの著書</span>
+          <span class="d-chip"><i data-lucide="library"></i>お気に入り100冊</span>
+        </div>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-section-title"><i data-lucide="notebook-pen"></i> 短文メモ</span>
+        </div>
+        <div class="d-memo-block">
+          <div class="d-memo-block-head">
+            <span class="d-memo-scope is-all"><i data-lucide="library"></i>ALL</span>
+          </div>
+          <p class="d-memo-text">古物店を舞台にした不思議系オムニバス。1巻は導入として完璧。</p>
+        </div>
+        <div class="d-memo-block">
+          <div class="d-memo-block-head">
+            <span class="d-memo-scope is-bs"><i data-lucide="book-heart"></i>からあげの著書</span>
+          </div>
+          <p class="d-memo-text">この本棚専用: 著者買いした最初の作品。</p>
+        </div>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-section-title"><i data-lucide="file-text"></i> 長文メモ</span>
+        </div>
+        <button type="button" class="d-memo-link"><i data-lucide="file-text"></i>長文メモを開く</button>
+      </div>
+
+      <div class="d-actions">
+        <a class="d-btn is-amazon" href="#"><i data-lucide="external-link"></i>Amazon</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="demo-col">
+    <h2>編集モード (セクション並び替え可能)</h2>
+    <div class="detail editing">
+
+      <div class="d-topbar">
+        <span class="d-pane-label">本詳細 — 編集中</span>
+        <button class="d-icon-btn is-active" title="編集を終える"><i data-lucide="check"></i></button>
+      </div>
+
+      <div class="d-cover">
+        <span class="d-cover-text">表紙画像</span>
+      </div>
+
+      <h3 class="d-title">瑠璃宮夢幻古物店 ：1</h3>
+      <p class="d-author">逆坂八代</p>
+
+      <div class="d-stars">
+        <i data-lucide="star"></i><i data-lucide="star"></i><i data-lucide="star"></i><i data-lucide="star" class="off"></i><i data-lucide="star" class="off"></i>
+        <button class="d-section-action" style="margin-left: 0.4rem;">リセット</button>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-grip"><i data-lucide="grip-vertical"></i></span>
+          <span class="d-section-title"><i data-lucide="info"></i> 基本情報</span>
+        </div>
+        <div class="d-meta">
+          <span class="k">購入</span><span class="v">2025/11/16</span>
+          <span class="k">ASIN</span><span class="v">B00LE2OPZY</span>
+        </div>
+        <details class="d-meta-edit">
+          <summary><i data-lucide="settings-2"></i>メタ情報を編集</summary>
+          <div class="d-meta-edit-body">
+            <div class="d-meta-edit-field">
+              <label>タイトル</label>
+              <input type="text" class="d-input" value="瑠璃宮夢幻古物店 ：1">
+            </div>
+            <div class="d-meta-edit-field">
+              <label>著者</label>
+              <input type="text" class="d-input" value="逆坂八代">
+            </div>
+            <div class="d-meta-edit-field">
+              <label>購入日</label>
+              <input type="date" class="d-input" value="2025-11-16">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-grip"><i data-lucide="grip-vertical"></i></span>
+          <span class="d-section-title"><i data-lucide="library"></i> 所属本棚</span>
+        </div>
+        <div class="d-chips">
+          <span class="d-chip"><i data-lucide="book-heart"></i>からあげの著書<button class="d-chip-x">×</button></span>
+          <span class="d-chip"><i data-lucide="library"></i>お気に入り100冊<button class="d-chip-x">×</button></span>
+          <button class="d-chip-add"><i data-lucide="plus"></i>追加</button>
+        </div>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-grip"><i data-lucide="grip-vertical"></i></span>
+          <span class="d-section-title"><i data-lucide="notebook-pen"></i> 短文メモ</span>
+        </div>
+
+        <div class="d-memo-block">
+          <div class="d-memo-block-head">
+            <span class="d-memo-scope is-all"><i data-lucide="library"></i>ALL</span>
+            <span class="d-memo-status">保存しました</span>
+          </div>
+          <textarea class="d-textarea" rows="3">古物店を舞台にした不思議系オムニバス。1巻は導入として完璧。</textarea>
+          <label class="d-flag">
+            <input type="checkbox">公開時にこの ALL メモを非公開
+          </label>
+        </div>
+
+        <div class="d-memo-block">
+          <div class="d-memo-block-head">
+            <span class="d-memo-scope is-bs"><i data-lucide="book-heart"></i>からあげの著書</span>
+            <span class="d-memo-status"></span>
+            <button class="d-memo-block-remove" title="この本棚専用メモを削除">×</button>
+          </div>
+          <textarea class="d-textarea" rows="2">この本棚専用: 著者買いした最初の作品。</textarea>
+          <label class="d-flag">
+            <input type="checkbox">公開時にこの本棚から除外
+          </label>
+        </div>
+
+        <div class="d-add-override">
+          <select class="d-select">
+            <option>本棚専用メモを追加...</option>
+            <option>お気に入り100冊</option>
+          </select>
+          <button class="d-btn" style="height: 26px;"><i data-lucide="plus"></i>追加</button>
+        </div>
+      </div>
+
+      <div class="d-section">
+        <div class="d-section-head">
+          <span class="d-grip"><i data-lucide="grip-vertical"></i></span>
+          <span class="d-section-title"><i data-lucide="file-text"></i> 長文メモ</span>
+        </div>
+        <button type="button" class="d-memo-link"><i data-lucide="file-text"></i>長文メモを開く</button>
+        <label class="d-flag">
+          <input type="checkbox">公開時に長文メモを非公開
+        </label>
+      </div>
+
+      <div class="d-actions">
+        <a class="d-btn is-amazon" href="#"><i data-lucide="external-link"></i>Amazon</a>
+        <button class="d-btn is-warning"><i data-lucide="ban"></i>all から除外</button>
+        <button class="d-btn is-danger"><i data-lucide="trash-2"></i>削除</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes-card">
+  <strong>変更点 (v1 → v2):</strong>
+  <ul>
+    <li><strong>並び替え対応</strong>: 各セクションが共通の <code>d-section</code> カードに統一、編集モード時に左に <code>grip-vertical</code> ハンドルが出る → 縦ドラッグで並び替え</li>
+    <li><strong>均一ボタンサイズ</strong>: 全 <code>d-btn</code> が <code>height: 32px</code> (small は 26px) で統一、Amazon/編集アクション/Edit toggle 全て同じ規格</li>
+    <li><strong>スタイリッシュなフォーム</strong>: <code>d-textarea</code> / <code>d-input</code> / <code>d-select</code> の border + focus 状態 (accent-bg 3px ring) + 角丸 6px で統一</li>
+    <li><strong>セクション階層</strong>: 各セクションが薄いカード (<code>--bg</code> 背景) として分離、編集時は <code>--panel</code> 白に切替 → 操作対象が一目で分かる</li>
+    <li><strong>「基本情報」セクション化</strong>: 旧フローティング meta-row → カード内に grid-table 化、メタ編集の <code>&lt;details&gt;</code> も同セクション内に</li>
+    <li><strong>並び順サンプル</strong>: 基本情報 → 所属本棚 → 短文メモ → 長文メモ (ユーザは並び替え可能)</li>
+    <li><strong>edit toggle</strong>: 上部 topbar の右端、ラベルと同じ行に置いて title 行の混雑を解消</li>
+    <li><strong>cover 固定</strong>: 140px 幅 (旧 160px から少し縮小)、aspect-ratio 2/3 で aligned</li>
+  </ul>
+  <strong>判断保留:</strong> セクション並び替えの永続化 (本ごと / 全本共通 / どちらも) は要確認
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>lucide.createIcons();</script>
+</body>
+</html>

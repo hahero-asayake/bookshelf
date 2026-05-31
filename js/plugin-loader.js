@@ -17,38 +17,59 @@
 class BookshelfPluginLoader {
     constructor(app) {
         this.app = app;
-        this.loaded = new Map();        // id → manifest
+        this.loaded = new Map();        // id → { manifest, deactivate, module }
         this.failedToLoad = new Map();  // id → error message
         this._installed = null;         // キャッシュ（listInstalledPlugins）
+    }
+
+    /**
+     * プラグイン ID から manifest を取り出す helper (plugin-api からアクセスされる)
+     * @returns {object|null} manifest or null
+     */
+    getManifest(id) {
+        const rec = this.loaded.get(id);
+        return rec ? rec.manifest : null;
+    }
+
+    /**
+     * Proxy-like: loader.manifests[id] で manifest を取得できるようにする
+     * (plugin-api 側が `this.pluginLoader.manifests[pluginId]` を期待しているため)
+     */
+    get manifests() {
+        const map = {};
+        for (const [id, rec] of this.loaded) {
+            if (rec && rec.manifest) map[id] = rec.manifest;
+        }
+        return map;
     }
 
     // ===== インストール済みプラグインを列挙 =====
     async listInstalledPlugins({ refresh = false } = {}) {
         if (!refresh && this._installed) return this._installed;
-        if (!this.app.obsidianDirHandle) return [];
-        const handle = this.app.obsidianDirHandle;
-        let pluginsDir;
+        if (!this._isReady()) return [];
+        let pluginIds;
         try {
-            pluginsDir = await handle.getDirectoryHandle('plugins', { create: false });
+            pluginIds = await this.app.storage.listDirs('plugins');
         } catch (e) {
-            if (e.name === 'NotFoundError') return (this._installed = []);
-            throw e;
+            console.warn('[pluginLoader] plugins ディレクトリ列挙失敗:', e);
+            return (this._installed = []);
         }
         const plugins = [];
-        for await (const entry of pluginsDir.values()) {
-            if (entry.kind !== 'directory') continue;
+        for (const id of pluginIds) {
             try {
-                const dir = await pluginsDir.getDirectoryHandle(entry.name);
-                const mh = await dir.getFileHandle('manifest.json');
-                const file = await mh.getFile();
-                const manifest = JSON.parse(await file.text());
-                plugins.push({ id: entry.name, manifest });
+                const manifest = await this.app.storage.readJSON(`plugins/${id}/manifest.json`);
+                if (!manifest) continue;
+                plugins.push({ id, manifest });
             } catch (e) {
-                console.warn(`[pluginLoader] "${entry.name}" の manifest.json 読み込み失敗:`, e);
+                console.warn(`[pluginLoader] "${id}" の manifest.json 読み込み失敗:`, e);
             }
         }
         this._installed = plugins;
         return plugins;
+    }
+
+    _isReady() {
+        return typeof this.app._isSyncReady === 'function' && this.app._isSyncReady();
     }
 
     // ===== 有効なプラグインを起動（オプトアウト: disabledPlugins に無いものを全部有効化） =====
@@ -140,14 +161,9 @@ class BookshelfPluginLoader {
     }
 
     async _readPluginFile(id, filename) {
-        const handle = this.app.obsidianDirHandle;
-        if (!handle) return null;
+        if (!this._isReady()) return null;
         try {
-            const pluginsDir = await handle.getDirectoryHandle('plugins');
-            const dir = await pluginsDir.getDirectoryHandle(id);
-            const fh = await dir.getFileHandle(filename);
-            const file = await fh.getFile();
-            return await file.text();
+            return await this.app.storage.readText(`plugins/${id}/${filename}`);
         } catch {
             return null;
         }
@@ -181,20 +197,20 @@ class BookshelfPluginLoader {
             `${manifest.description || ''}`;
         if (!confirm(confirmMsg)) return null;
 
-        if (!this.app.obsidianDirHandle) throw new Error('同期フォルダが未接続です');
-        const pluginsDir = await this.app.obsidianDirHandle.getDirectoryHandle('plugins', { create: true });
-        const pluginDir = await pluginsDir.getDirectoryHandle(manifest.id, { create: true });
+        if (!this._isReady()) throw new Error('同期先が未接続です');
 
+        // GitHub からファイル取得 → entries に集める → batch で 1 commit 書き込み
         const files = ['manifest.json', ...(manifest.files || ['index.js'])];
+        const entries = [];
         for (const f of files) {
             const r = await fetch(raw + f);
             if (!r.ok) throw new Error(`${f} 取得失敗: HTTP ${r.status}`);
             const text = await r.text();
-            const fh = await pluginDir.getFileHandle(f, { create: true });
-            const w = await fh.createWritable();
-            await w.write(text);
-            await w.close();
+            entries.push({ op: 'put', path: `plugins/${manifest.id}/${f}`, data: text, kind: 'text' });
         }
+        await this.app.storage.syncBatch(entries, {
+            message: `feat(plugin): install ${manifest.id}${manifest.version ? ' v' + manifest.version : ''}`
+        });
 
         // オプトアウト方式: 新規インストール時に disabledPlugins から除外して即時有効化
         if (!this.app.userData.settings) this.app.userData.settings = {};
@@ -233,13 +249,36 @@ class BookshelfPluginLoader {
 
     // ===== アンインストール =====
     async uninstall(pluginId) {
-        if (!this.app.obsidianDirHandle) throw new Error('同期フォルダ未接続');
+        if (!this._isReady()) throw new Error('同期先未接続');
         // 先に即時アンロードして UI / イベントハンドラを解除
         if (this.loaded.has(pluginId)) {
             await this.unloadPlugin(pluginId);
         }
-        const pluginsDir = await this.app.obsidianDirHandle.getDirectoryHandle('plugins');
-        await pluginsDir.removeEntry(pluginId, { recursive: true });
+
+        // plugins/<id>/ 配下の全ファイルを batch delete でまとめて消す (GitHub なら 1 commit)
+        const pluginDir = `plugins/${pluginId}`;
+        const filesToDelete = [];
+        try {
+            const files = await this.app.storage.listFiles(pluginDir);
+            for (const f of files) filesToDelete.push(`${pluginDir}/${f}`);
+        } catch (_) {}
+        try {
+            const subDirs = await this.app.storage.listDirs(pluginDir);
+            for (const sub of subDirs) {
+                try {
+                    const subFiles = await this.app.storage.listFiles(`${pluginDir}/${sub}`);
+                    for (const f of subFiles) filesToDelete.push(`${pluginDir}/${sub}/${f}`);
+                } catch (_) {}
+            }
+        } catch (_) {}
+
+        if (filesToDelete.length > 0) {
+            const entries = filesToDelete.map(p => ({ op: 'delete', path: p }));
+            await this.app.storage.syncBatch(entries, {
+                message: `chore(plugin): uninstall ${pluginId}`
+            });
+        }
+
         const settings = this.app.userData?.settings || {};
         if (Array.isArray(settings.disabledPlugins)) {
             settings.disabledPlugins = settings.disabledPlugins.filter(id => id !== pluginId);

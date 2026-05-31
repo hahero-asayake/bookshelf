@@ -195,15 +195,28 @@ class BookshelfPluginAPI {
     // ===== UI 拡張ポイント =====
     // V6 以降、ボタンの可視 DOM はヘッダーカスタマイザ側で都度生成する。
     // ここでは entry の登録 + 内部 pool への参照 wrapper 生成のみを行う。
+    //
+    // iconName: Lucide アイコン名 (例: 'puzzle', 'rocket')。manifest の icon フィールドから渡される
+    //           ことを想定。ユーザは設定モーダルのプラグイン一覧で override 可能 (localStorage)。
+    // emoji   : 後方互換用フォールバック (iconName 未指定かつ override 無しの時に使う)
     // `where` パラメータは過去互換で受け取るが利用しない。
-    addUIButton({ id, label, title, onClick, emoji }) {
+    addUIButton({ id, label, title, onClick, iconName, emoji }) {
         if (!id || !label || typeof onClick !== 'function') {
             console.warn('[pluginAPI] addUIButton: id, label, onClick are required');
             return null;
         }
         const existing = this._uiButtons.find(b => b.id === id);
         if (existing) return existing;
-        const entry = { id, label, title: title || '', onClick, emoji: emoji || '🧩', element: null };
+        const entry = {
+            id,
+            label,
+            title: title || '',
+            onClick,
+            iconName: iconName || this._pluginIconNameFromManifest(),
+            emoji: emoji || '',
+            pluginId: this._pluginId,
+            element: null
+        };
         this._uiButtons.push(entry);
         this._renderUIButton(entry);
         return entry;
@@ -219,6 +232,20 @@ class BookshelfPluginAPI {
         }
     }
 
+    // manifest の icon フィールドを取得 (plugin-loader が _manifest を entry につけている前提)
+    _pluginIconNameFromManifest() {
+        const manifests = (window.bookshelf && window.bookshelf.pluginLoader && window.bookshelf.pluginLoader.manifests) || {};
+        const m = manifests[this._pluginId];
+        return (m && typeof m.icon === 'string') ? m.icon : '';
+    }
+
+    // ユーザ override (localStorage) — bookshelf 側 _getPluginIconOverride を呼ぶ
+    _getEffectiveIconName(entry) {
+        const override = (window.bookshelf && typeof window.bookshelf._getPluginIconOverride === 'function')
+            ? window.bookshelf._getPluginIconOverride(entry.pluginId) : '';
+        return override || entry.iconName || '';
+    }
+
     _renderUIButton(entry) {
         // 内部 pool (#plugin-buttons, hidden) に登録だけする。
         // ヘッダーへの配置とアイコンボタン化はカスタマイザ + _buildPlacementElement 側で行う。
@@ -232,7 +259,7 @@ class BookshelfPluginAPI {
         wrapper.dataset.headerItem = `plugin:${entry.id}`;
         const btn = document.createElement('button');
         btn.className = 'btn-icon-square plugin-ui-button';
-        btn.textContent = entry.emoji || '🧩';
+        this._applyIconToButton(btn, entry);
         if (entry.title) btn.title = entry.title;
         btn.addEventListener('click', () => {
             try { entry.onClick(); }
@@ -246,6 +273,17 @@ class BookshelfPluginAPI {
         if (window.bookshelf && typeof window.bookshelf._applyHeaderLayout === 'function') {
             window.bookshelf._applyHeaderLayout();
         }
+    }
+
+    _applyIconToButton(btn, entry) {
+        const iconValue = this._getEffectiveIconName(entry);
+        if (iconValue && window.renderIcon) {
+            // 任意文字 (Lucide 名 / 絵文字 / 漢字 / 任意文字列) を統一的に描画
+            btn.innerHTML = window.renderIcon(iconValue, { size: 20 });
+            btn.dataset.iconValue = iconValue; // CDN 後追い差し替え用
+            return;
+        }
+        btn.textContent = entry.emoji || '🧩';
     }
 
     // ===== エクスポート変換フック =====

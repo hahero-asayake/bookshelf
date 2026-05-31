@@ -1,167 +1,76 @@
-// BookshelfStorage - 同期フォルダの新ファイル構造の読み書きを担当
-// 設計: 設計.md（obsidian vault 内）参照
+// BookshelfStorage - 同期フォルダの bookshelf ファイル構造を読み書きする
 //
-// ディレクトリ構造:
-//   同期先/
-//     library.json              # Kindle生データ（書誌のみ）
-//     exclusions.json           # all本棚から除外するASIN
-//     bookshelves.json          # 本棚一覧メタ
-//     books/<ASIN>__<title>.md  # 長文メモ
-//     bookshelves/
-//       all.json                # 本データ正本（books+notes全保持）
-//       <slug>.json             # ユーザ作成本棚
-//     private/
+// I/O は StorageAdapter に委譲する。デフォルトでは LocalFSAdapter
+// (File System Access API) を使用するが、コンストラクタで他の adapter
+// (GitHub / Google Drive / Dropbox) を注入することで切替可能。
+//
+// ディレクトリ構造 (2026-05-31〜):
+//   <同期フォルダ root>/
+//     private/                 # アプリ編集データの正本
+//       library.json
+//       exclusions.json
+//       notes.json
+//       bookshelves.json
+//       bookshelves/all.json
+//       bookshelves/<slug>.json
+//       books/<ASIN>__<title>.md   # 長文メモ
 //       settings.json
 //       main.json
-//     public/
-//       settings.json
-//       main.json
-//     plugins/<id>/
+//     public/                  # 公開エクスポート出力
+//       (アプリが書き出す)
+//     plugins/<id>/            # プラグイン (private/public 両方が参照)
 
 class BookshelfStorage {
-    constructor() {
-        this.dirHandle = null;
+    constructor(adapter) {
+        this.adapter = adapter || new LocalFSAdapter();
     }
 
+    // ===== 接続管理 (LocalFSAdapter 互換) =====
+
     setDirHandle(handle) {
-        this.dirHandle = handle;
+        if (typeof this.adapter.setDirHandle === 'function') {
+            this.adapter.setDirHandle(handle);
+        }
     }
 
     hasDirHandle() {
-        return !!this.dirHandle;
-    }
-
-    // ===== 内部ユーティリティ =====
-
-    async _resolveDir(pathParts, { create = false } = {}) {
-        let dir = this.dirHandle;
-        for (const name of pathParts) {
-            dir = await dir.getDirectoryHandle(name, { create });
+        if (typeof this.adapter.hasDirHandle === 'function') {
+            return this.adapter.hasDirHandle();
         }
-        return dir;
-    }
-
-    async _readJSON(...pathParts) {
-        const fileName = pathParts[pathParts.length - 1];
-        const dirParts = pathParts.slice(0, -1);
-        try {
-            const dir = await this._resolveDir(dirParts);
-            const fileHandle = await dir.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
-            const text = await file.text();
-            return text.trim() ? JSON.parse(text) : null;
-        } catch (e) {
-            if (e.name === 'NotFoundError') return null;
-            throw e;
-        }
-    }
-
-    async _writeJSON(data, ...pathParts) {
-        const fileName = pathParts[pathParts.length - 1];
-        const dirParts = pathParts.slice(0, -1);
-        const dir = await this._resolveDir(dirParts, { create: true });
-        const fileHandle = await dir.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(JSON.stringify(data, null, 2));
-        await writable.close();
-    }
-
-    async _writeText(text, ...pathParts) {
-        const fileName = pathParts[pathParts.length - 1];
-        const dirParts = pathParts.slice(0, -1);
-        const dir = await this._resolveDir(dirParts, { create: true });
-        const fileHandle = await dir.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(text);
-        await writable.close();
-    }
-
-    async _readText(...pathParts) {
-        const fileName = pathParts[pathParts.length - 1];
-        const dirParts = pathParts.slice(0, -1);
-        try {
-            const dir = await this._resolveDir(dirParts);
-            const fileHandle = await dir.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
-            return await file.text();
-        } catch (e) {
-            if (e.name === 'NotFoundError') return null;
-            throw e;
-        }
-    }
-
-    async _fileExists(...pathParts) {
-        const fileName = pathParts[pathParts.length - 1];
-        const dirParts = pathParts.slice(0, -1);
-        try {
-            const dir = await this._resolveDir(dirParts);
-            await dir.getFileHandle(fileName);
-            return true;
-        } catch (e) {
-            return false;
-        }
+        return this.adapter.isConnected();
     }
 
     // ===== 形式判定 =====
-    // 'new'    : bookshelves/all.json + notes.json が存在 → 新構造（notes 分離済）
-    // 'pre-notes-split': bookshelves/all.json はあるが notes.json 無し（all.json に notes が混在）
-    // 'legacy' : 旧 library.json（books が object 形式）のみ → マイグレーション要
-    // 'empty'  : どちらも無し → 初回
+    // 'new'        : private/bookshelves/all.json が存在 → 新構造 (private 配下に集約)
+    // 'flat'       : root に bookshelves/all.json が存在 → 旧フラット構造 (要マイグレーション)
+    // 'pre-notes-split': flat 構造で notes.json が無い (all.json 内 notes 混在)
+    // 'legacy'     : 旧 library.json (books が object 形式) のみ
+    // 'empty'      : どれも無し → 初回
     async detectFormat() {
-        const hasAll = await this._fileExists('bookshelves', 'all.json');
-        const hasNotes = await this._fileExists('notes.json');
-        if (hasAll && hasNotes) return 'new';
-        if (hasAll && !hasNotes) return 'pre-notes-split';
-        const legacy = await this._readJSON('library.json');
+        const hasNewAll = await this.adapter.fileExists('private/bookshelves/all.json');
+        if (hasNewAll) return 'new';
+        const hasFlatAll = await this.adapter.fileExists('bookshelves/all.json');
+        const hasFlatNotes = await this.adapter.fileExists('notes.json');
+        if (hasFlatAll && hasFlatNotes) return 'flat';
+        if (hasFlatAll && !hasFlatNotes) return 'pre-notes-split';
+        const legacy = await this.adapter.readJSON('library.json');
         if (legacy && legacy.books && !Array.isArray(legacy.books) && typeof legacy.books === 'object') {
             return 'legacy';
         }
         return 'empty';
     }
 
-    // notes.json への分離マイグレーション
-    // 旧 all.json の notes を notes.json に移動 + all.json は notes 抜きで書き直し
-    // + bookshelves.json に all 本棚エントリを追加（isSpecial=true）
+    // 旧 flat 構造の notes 分離マイグレーションは廃止。
+    // 新構造 (private/ 配下) では最初から notes.json が分離している前提。
+    // 旧データを移行する場合は migrateFlatToNew() を使う (未公開のため最小限実装)。
     async migrateNotesSplit() {
-        const allBookshelf = await this._readJSON('bookshelves', 'all.json');
-        if (!allBookshelf) return;
-        const notes = allBookshelf.notes || {};
-        await this.writeNotes({ notes });
-
-        const cleanedAll = {
-            internalId: allBookshelf.internalId,
-            slug: 'all',
-            name: allBookshelf.name || 'すべての本',
-            isSpecial: true,
-            isPublic: allBookshelf.isPublic || false,
-            parent: null,
-            appliedPlugins: allBookshelf.appliedPlugins || [],
-            defaultBookOrder: allBookshelf.defaultBookOrder || 'addedDate-desc',
-            books: allBookshelf.books || []
-        };
-        await this._writeJSON(cleanedAll, 'bookshelves', 'all.json');
-
-        // bookshelves.json に all 本棚を含める（既に含まれていれば追加しない）
-        const meta = (await this._readJSON('bookshelves.json')) || { bookshelves: [] };
-        const hasAllEntry = meta.bookshelves.some(b => b.slug === 'all');
-        if (!hasAllEntry) {
-            meta.bookshelves.unshift({
-                internalId: allBookshelf.internalId,
-                slug: 'all',
-                name: allBookshelf.name || 'すべての本',
-                isSpecial: true,
-                parent: null,
-                appliedPlugins: allBookshelf.appliedPlugins || [],
-                isPublic: allBookshelf.isPublic || false
-            });
-            await this._writeJSON(meta, 'bookshelves.json');
-        }
+        console.warn('migrateNotesSplit() は旧 flat 構造用、新構造では未使用');
     }
 
     // ===== マイグレーション =====
     // 旧 library.json（単一ファイル統合形式）→ 新構造へ分解
     async migrateFromLegacy() {
-        const legacy = await this._readJSON('library.json');
+        const legacy = await this.adapter.readJSON('library.json');
         if (!legacy || !legacy.books || Array.isArray(legacy.books)) {
             throw new Error('旧形式の library.json が見つかりません');
         }
@@ -298,50 +207,52 @@ class BookshelfStorage {
             defaultSort: 'addedDate-desc'
         };
 
-        // 一斉書き込み
-        await this._writeJSON(newLibrary, 'library.json');
-        await this._writeJSON({ excludedASINs: [] }, 'exclusions.json');
-        await this._writeJSON(notesFile, 'notes.json');
-        await this._writeJSON(bookshelvesMeta, 'bookshelves.json');
-        await this._writeJSON(allBookshelf, 'bookshelves', 'all.json');
+        // 一斉書き込み (新構造: 全部 private/ 配下)
+        await this.adapter.writeJSON('private/library.json', newLibrary);
+        await this.adapter.writeJSON('private/exclusions.json', { excludedASINs: [] });
+        await this.adapter.writeJSON('private/notes.json', notesFile);
+        await this.adapter.writeJSON('private/bookshelves.json', bookshelvesMeta);
+        await this.adapter.writeJSON('private/bookshelves/all.json', allBookshelf);
         for (const { slug, data } of bookshelfFilesToWrite) {
-            await this._writeJSON(data, 'bookshelves', `${slug}.json`);
+            await this.adapter.writeJSON(`private/bookshelves/${slug}.json`, data);
         }
-        await this._writeJSON(privateSettings, 'private', 'settings.json');
-        await this._writeJSON(privateMain, 'private', 'main.json');
+        await this.adapter.writeJSON('private/settings.json', privateSettings);
+        await this.adapter.writeJSON('private/main.json', privateMain);
 
         return { migrated: true, allInternalId };
     }
 
-    // ===== 空状態の初期化 =====
+    // ===== 空状態の初期化 (新構造: 全部 private/ 配下) =====
     async initEmpty() {
         const allInternalId = generateInternalId();
-        await this._writeJSON({ exportDate: new Date().toISOString(), books: [] }, 'library.json');
-        await this._writeJSON({ excludedASINs: [] }, 'exclusions.json');
-        await this._writeJSON({ notes: {} }, 'notes.json');
-        await this._writeJSON({
+        await this.adapter.writeJSON('private/library.json', { exportDate: new Date().toISOString(), books: [] });
+        await this.adapter.writeJSON('private/exclusions.json', { excludedASINs: [] });
+        await this.adapter.writeJSON('private/notes.json', { notes: {} });
+        await this.adapter.writeJSON('private/bookshelves.json', {
             bookshelves: [{
                 internalId: allInternalId,
                 slug: 'all',
                 name: 'すべての本',
+                iconName: 'library',
                 isSpecial: true,
                 parent: null,
                 appliedPlugins: [],
                 isPublic: false
             }]
-        }, 'bookshelves.json');
-        await this._writeJSON({
+        });
+        await this.adapter.writeJSON('private/bookshelves/all.json', {
             internalId: allInternalId,
             slug: 'all',
             name: 'すべての本',
+            iconName: 'library',
             isSpecial: true,
             isPublic: false,
             parent: null,
             defaultBookOrder: 'addedDate-desc',
             appliedPlugins: [],
             books: []
-        }, 'bookshelves', 'all.json');
-        await this._writeJSON({
+        });
+        await this.adapter.writeJSON('private/settings.json', {
             version: '2.0',
             affiliateId: '',
             theme: 'light',
@@ -353,33 +264,32 @@ class BookshelfStorage {
             showImagesInOverview: true,
             enabledPlugins: [],
             memoOverrideDefault: 'this-bookshelf-only',
-            publishExportPath: null,
+            bookMemoOpenWith: 'app-editor',
             extensionImportOrigins: ['http://localhost:*', 'https://hahero-asayake.github.io']
-        }, 'private', 'settings.json');
-        await this._writeJSON({
+        });
+        await this.adapter.writeJSON('private/main.json', {
             enabledPlugins: [],
             appliedPlugins: [],
             bookshelves: [allInternalId],
             defaultSort: 'addedDate-desc'
-        }, 'private', 'main.json');
+        });
         return { allInternalId };
     }
 
-    // ===== 一括読み込み =====
+    // ===== 一括読み込み (新構造: 全部 private/ 配下) =====
     async loadAll() {
-        const library = await this._readJSON('library.json');
-        const exclusions = (await this._readJSON('exclusions.json')) || { excludedASINs: [] };
-        const notesFile = (await this._readJSON('notes.json')) || { notes: {} };
-        const bookshelvesMeta = (await this._readJSON('bookshelves.json')) || { bookshelves: [] };
-        const allBookshelf = await this._readJSON('bookshelves', 'all.json');
-        const privateSettings = (await this._readJSON('private', 'settings.json')) || {};
-        const privateMain = (await this._readJSON('private', 'main.json')) || {};
+        const library = await this.adapter.readJSON('private/library.json');
+        const exclusions = (await this.adapter.readJSON('private/exclusions.json')) || { excludedASINs: [] };
+        const notesFile = (await this.adapter.readJSON('private/notes.json')) || { notes: {} };
+        const bookshelvesMeta = (await this.adapter.readJSON('private/bookshelves.json')) || { bookshelves: [] };
+        const allBookshelf = await this.adapter.readJSON('private/bookshelves/all.json');
+        const privateSettings = (await this.adapter.readJSON('private/settings.json')) || {};
+        const privateMain = (await this.adapter.readJSON('private/main.json')) || {};
 
         const bookshelfFiles = {};
         for (const meta of bookshelvesMeta.bookshelves) {
-            // 特殊本棚（all）は別途 allBookshelf として返すので bookshelfFiles には入れない
             if (meta.isSpecial) continue;
-            const data = await this._readJSON('bookshelves', `${meta.slug}.json`);
+            const data = await this.adapter.readJSON(`private/bookshelves/${meta.slug}.json`);
             if (data) bookshelfFiles[meta.internalId] = data;
         }
 
@@ -395,30 +305,74 @@ class BookshelfStorage {
         };
     }
 
-    // ===== 個別書き出し =====
-    writeLibrary(data) { return this._writeJSON(data, 'library.json'); }
-    writeExclusions(data) { return this._writeJSON(data, 'exclusions.json'); }
-    writeBookshelvesMeta(data) { return this._writeJSON(data, 'bookshelves.json'); }
-    writeAllBookshelf(data) { return this._writeJSON(data, 'bookshelves', 'all.json'); }
-    writeBookshelfFile(slug, data) { return this._writeJSON(data, 'bookshelves', `${slug}.json`); }
-    writePrivateSettings(data) { return this._writeJSON(data, 'private', 'settings.json'); }
-    writePrivateMain(data) { return this._writeJSON(data, 'private', 'main.json'); }
+    // ===== 個別書き出し (新構造: 全部 private/ 配下) =====
+    writeLibrary(data) { return this.adapter.writeJSON('private/library.json', data); }
+    writeExclusions(data) { return this.adapter.writeJSON('private/exclusions.json', data); }
+    writeBookshelvesMeta(data) { return this.adapter.writeJSON('private/bookshelves.json', data); }
+    writeAllBookshelf(data) { return this.adapter.writeJSON('private/bookshelves/all.json', data); }
+    writeBookshelfFile(slug, data) { return this.adapter.writeJSON(`private/bookshelves/${slug}.json`, data); }
+    writePrivateSettings(data) { return this.adapter.writeJSON('private/settings.json', data); }
+    writePrivateMain(data) { return this.adapter.writeJSON('private/main.json', data); }
 
-    readPublicMain() { return this._readJSON('public', 'main.json'); }
-    readPublicSettings() { return this._readJSON('public', 'settings.json'); }
-    writePublicMain(data) { return this._writeJSON(data, 'public', 'main.json'); }
-    writePublicSettings(data) { return this._writeJSON(data, 'public', 'settings.json'); }
+    readPublicMain() { return this.adapter.readJSON('public/main.json'); }
+    readPublicSettings() { return this.adapter.readJSON('public/settings.json'); }
+    writePublicMain(data) { return this.adapter.writeJSON('public/main.json', data); }
+    writePublicSettings(data) { return this.adapter.writeJSON('public/settings.json', data); }
 
-    readNotes() { return this._readJSON('notes.json'); }
-    writeNotes(data) { return this._writeJSON(data, 'notes.json'); }
+    readNotes() { return this.adapter.readJSON('private/notes.json'); }
+    writeNotes(data) { return this.adapter.writeJSON('private/notes.json', data); }
 
-    async deleteBookshelfFile(slug) {
-        try {
-            const dir = await this._resolveDir(['bookshelves']);
-            await dir.removeEntry(`${slug}.json`);
-        } catch (e) {
-            if (e.name !== 'NotFoundError') throw e;
+    deleteBookshelfFile(slug) {
+        return this.adapter.deleteFile(`private/bookshelves/${slug}.json`);
+    }
+
+    // ===== 汎用 (プラグインスキャン等の二次利用向け) =====
+    listDirs(dirPath) { return this.adapter.listDirs(dirPath); }
+    listFiles(dirPath) { return this.adapter.listFiles(dirPath); }
+    readText(path) { return this.adapter.readText(path); }
+    readJSON(path) { return this.adapter.readJSON(path); }
+
+    // ===== バッチ書き込み =====
+    //
+    // entries: [
+    //   { op: 'put',    path: '...', data: object,        kind: 'json' },  // JSON.stringify される
+    //   { op: 'put',    path: '...', data: 'raw text',    kind: 'text' },
+    //   { op: 'delete', path: '...' }
+    // ]
+    // GitHubAdapter なら Trees API で 1 commit にまとめる。LocalFS では順次書く。
+    async syncBatch(entries, { message } = {}) {
+        if (!Array.isArray(entries) || entries.length === 0) return;
+        const a = this.adapter;
+        if (typeof a.beginBatch === 'function' && typeof a.commitBatch === 'function') {
+            a.beginBatch();
+            try {
+                for (const e of entries) {
+                    if (e.op === 'delete') {
+                        a.addBatchDelete(e.path);
+                    } else {
+                        const content = e.kind === 'text'
+                            ? String(e.data == null ? '' : e.data)
+                            : JSON.stringify(e.data, null, 2);
+                        a.addBatchEntry(e.path, content);
+                    }
+                }
+                return await a.commitBatch(message);
+            } catch (err) {
+                if (typeof a.discardBatch === 'function') a.discardBatch();
+                throw err;
+            }
         }
+        // バッチ未対応 adapter: 順次書く
+        for (const e of entries) {
+            if (e.op === 'delete') {
+                await a.deleteFile(e.path);
+            } else if (e.kind === 'text') {
+                await a.writeText(e.path, String(e.data == null ? '' : e.data));
+            } else {
+                await a.writeJSON(e.path, e.data);
+            }
+        }
+        return null;
     }
 
     // ===== 長文メモ.md =====
@@ -435,18 +389,22 @@ class BookshelfStorage {
         return `${asin}__${this.sanitizeFileName(title)}.md`;
     }
 
-    async readBookMemo(asin, title) {
-        return await this._readText('books', this.bookMemoFileName(asin, title));
+    readBookMemo(asin, title) {
+        return this.adapter.readText(`private/books/${this.bookMemoFileName(asin, title)}`);
     }
 
     async writeBookMemo(asin, title, content) {
         const fileName = this.bookMemoFileName(asin, title);
-        await this._writeText(content, 'books', fileName);
+        await this.adapter.writeText(`private/books/${fileName}`, content);
         return fileName;
     }
 
-    async bookMemoExists(asin, title) {
-        return await this._fileExists('books', this.bookMemoFileName(asin, title));
+    bookMemoExists(asin, title) {
+        return this.adapter.fileExists(`private/books/${this.bookMemoFileName(asin, title)}`);
+    }
+
+    bookMemoFullPath(asin, title) {
+        return `private/books/${this.bookMemoFileName(asin, title)}`;
     }
 
     buildBookMemoTemplate(book) {

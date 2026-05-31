@@ -55,7 +55,16 @@ class VirtualBookshelf {
         this.booksPerPage = 50;
         this.sortOrder = 'custom';
         this.sortDirection = 'desc';
-        this.storage = new BookshelfStorage();
+        // 同期方式に応じた storage 構築 (LocalFS / GitHub / ...)
+        this.syncConfig = SyncConfigManager.load();
+        let initialAdapter = SyncConfigManager.buildAdapter(this.syncConfig);
+        if (!initialAdapter) {
+            // GitHub 設定が不完全等のフォールバック
+            this.syncConfig = { ...this.syncConfig, method: 'local' };
+            initialAdapter = new LocalFSAdapter();
+        }
+        this.syncMethod = this.syncConfig.method;
+        this.storage = new BookshelfStorage(initialAdapter);
         this.bookshelfManager = new BookshelfManager(this);
         this.exporter = new BookshelfExporter(this);
         // プラグインAPI とローダを早期に生成（plugins から window.bookshelfAPI を参照可能に）
@@ -148,16 +157,25 @@ class VirtualBookshelf {
             this.setupEventListeners();
             this._initHeaderTemplates();
             this._applyHeaderLayout();
+            if (typeof window.applyIcons === 'function') window.applyIcons();
+            this._renderStarFilterStars();
             this.updateBookshelfSelector();
             this.updateSortDirectionButton();
-            this.renderBookshelfOverview();
+            // ホームをダッシュボードに置換 (renderBookshelfOverview は本棚ハイライトウィジェット内で呼ばれる)
+            if (typeof window.BookshelfDashboard === 'function') {
+                this.dashboard = new window.BookshelfDashboard(this);
+                this.dashboard.render();
+            }
             this.updateDisplay();
             this.updateStats();
+            // ===== PC v2 レイアウト初期化 =====
+            this._initPaneControls();
+            this._renderSidebarTree();
 
 
-            // Obsidian folder sync は private モードのみ
+            // 同期は private モードのみ (LocalFS / GitHub / 将来 Drive・Dropbox)
             if (!this.isPublicMode) {
-                await this.initObsidianSync();
+                await this.initSync();
                 // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
                 // 重要な同期は flushSync() を明示的に呼ぶ運用とする
                 window.addEventListener('beforeunload', () => {
@@ -180,15 +198,7 @@ class VirtualBookshelf {
                 });
             }
 
-            // 公開エクスポート先 handle を IDB から復元 → サイドバーに表示
-            try {
-                if (this.exporter && typeof this.exporter.loadStoredHandle === 'function') {
-                    await this.exporter.loadStoredHandle();
-                }
-            } catch (e) {
-                console.warn('exportDirHandle 復元失敗:', e);
-            }
-            this._updateExportDirDisplay();
+            // 公開エクスポート先 handle の復元は廃止 (出力先は同期先 public/ に統合)
 
             // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
             if (this.pluginLoader) {
@@ -223,21 +233,22 @@ class VirtualBookshelf {
             return r.json();
         };
 
+        // 公開モードのアプリは public/ 配下に index.html とデータが配置される想定。
+        // fetch は同階層の相対パス (data/ プレフィックスは廃止)。
         const [main, settings, library, bookshelvesMeta, allBookshelf, notesFile] = await Promise.all([
-            fetchJSON('data/main.json').catch(() => ({})),
-            fetchJSON('data/settings.json').catch(() => ({})),
-            fetchJSON('data/library.json').catch(() => ({ books: [] })),
-            fetchJSON('data/bookshelves.json').catch(() => ({ bookshelves: [] })),
-            fetchJSON('data/bookshelves/all.json').catch(() => null),
-            fetchJSON('data/notes.json').catch(() => ({ notes: {} }))
+            fetchJSON('main.json').catch(() => ({})),
+            fetchJSON('settings.json').catch(() => ({})),
+            fetchJSON('library.json').catch(() => ({ books: [] })),
+            fetchJSON('bookshelves.json').catch(() => ({ bookshelves: [] })),
+            fetchJSON('bookshelves/all.json').catch(() => null),
+            fetchJSON('notes.json').catch(() => ({ notes: {} }))
         ]);
 
         const bookshelfFiles = {};
         for (const meta of (bookshelvesMeta.bookshelves || [])) {
-            // 特殊本棚（all）は別途 allBookshelf として取得済み
             if (meta.isSpecial) continue;
             try {
-                const data = await fetchJSON(`data/bookshelves/${meta.slug}.json`);
+                const data = await fetchJSON(`bookshelves/${meta.slug}.json`);
                 bookshelfFiles[meta.internalId] = data;
             } catch (e) {
                 console.warn(`本棚ファイル取得失敗: ${meta.slug}`, e);
@@ -406,6 +417,9 @@ class VirtualBookshelf {
             obsidianSyncBtn.addEventListener('click', () => this.selectObsidianFolder());
         }
 
+        // 同期方式選択 UI (LocalFS / GitHub / ...)
+        this._setupSyncMethodUI();
+
         // ヘッダー: 静的ボタン全部を event delegation で処理 (clone でも動くように)
         const headerEl = document.getElementById('header-controls');
         if (headerEl) {
@@ -572,40 +586,71 @@ class VirtualBookshelf {
             exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
         }
 
-        // Copy to public
-        const copyToPublicBtn = document.getElementById('copy-to-public');
-        if (copyToPublicBtn) {
-            copyToPublicBtn.addEventListener('click', () => this.copyToPublic());
+        // 公開する (旧 copyToPublic + runPublicExport の統合版)
+        const publishBtn = document.getElementById('publish-to-public');
+        if (publishBtn) {
+            publishBtn.addEventListener('click', () => this.publishToPublic());
         }
-        // Run export
-        const runExportBtn = document.getElementById('run-export');
-        if (runExportBtn) {
-            runExportBtn.addEventListener('click', () => this.runPublicExport());
+
+        // 長文メモ モーダル
+        const memoSaveBtn = document.getElementById('book-memo-save-btn');
+        if (memoSaveBtn) memoSaveBtn.addEventListener('click', () => this.saveBookMemoFromModal());
+        const memoCloseBtn = document.getElementById('book-memo-close-btn');
+        if (memoCloseBtn) memoCloseBtn.addEventListener('click', () => this.closeBookMemoModal());
+        const memoModalCloseBtn = document.getElementById('book-memo-modal-close');
+        if (memoModalCloseBtn) memoModalCloseBtn.addEventListener('click', () => this.closeBookMemoModal());
+
+        // 長文メモ: 開き方セレクタ (settings.bookMemoOpenWith)
+        const openWithSel = document.getElementById('book-memo-open-with');
+        if (openWithSel) {
+            const current = (this.userData?.settings?.bookMemoOpenWith) || 'app-editor';
+            openWithSel.value = current;
+            openWithSel.addEventListener('change', () => {
+                if (!this.userData.settings) this.userData.settings = {};
+                this.userData.settings.bookMemoOpenWith = openWithSel.value;
+                this.saveUserData();
+            });
         }
-        // Pick export dir
-        const pickExportDirBtn = document.getElementById('pick-export-dir');
-        if (pickExportDirBtn) {
-            pickExportDirBtn.addEventListener('click', () => this.pickExportDir());
+
+        // 一覧カードの表示設定: 星 visibility + 星 overlay + メモ visibility (全て全体設定)
+        const reRenderForDisplay = () => {
+            this.updateDisplay();
+            if (this._lastDetailBook && document.body.classList.contains('book-detail-pinned')) {
+                this.showBookDetail(this._lastDetailBook, !!this._lastDetailEditMode);
+            }
+        };
+        const starVisSel = document.getElementById('setting-star-visibility');
+        if (starVisSel) {
+            starVisSel.value = this._getStarVisibility();
+            starVisSel.addEventListener('change', () => { this._setDisplaySetting('starVisibility', starVisSel.value); reRenderForDisplay(); });
+        }
+        const starOverlayCb = document.getElementById('setting-star-overlay');
+        if (starOverlayCb) {
+            starOverlayCb.checked = this._getStarOverlay();
+            starOverlayCb.addEventListener('change', () => { this._setDisplaySetting('starOverlay', starOverlayCb.checked); reRenderForDisplay(); });
+        }
+        const memoVisSel = document.getElementById('setting-memo-visibility');
+        if (memoVisSel) {
+            memoVisSel.value = this._getMemoVisibility();
+            memoVisSel.addEventListener('change', () => { this._setDisplaySetting('memoVisibility', memoVisSel.value); reRenderForDisplay(); });
         }
 
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
-            // 編集モード切り替え
-            if (e.target.classList.contains('edit-mode-btn')) {
-                const asin = e.target.dataset.asin;
+            // 編集モード切り替え (SVG 子要素クリック対応)
+            const editBtn = e.target.closest('.edit-mode-btn');
+            if (editBtn) {
+                const asin = editBtn.dataset.asin;
                 const book = this.books.find(b => b.asin === asin);
-                if (book) {
-                    this.showBookDetail(book, true);
-                }
+                if (book) this.showBookDetail(book, true);
+                return;
             }
-
-            // 編集キャンセル
-            if (e.target.classList.contains('cancel-edit-btn')) {
-                const asin = e.target.dataset.asin;
+            const cancelBtn = e.target.closest('.cancel-edit-btn');
+            if (cancelBtn) {
+                const asin = cancelBtn.dataset.asin;
                 const book = this.books.find(b => b.asin === asin);
-                if (book) {
-                    this.showBookDetail(book, false);
-                }
+                if (book) this.showBookDetail(book, false);
+                return;
             }
         });
     }
@@ -618,16 +663,17 @@ class VirtualBookshelf {
     }
 
     _updateViewToggleButton() {
-        // ヘッダーに展開された clone も含めて全 view-toggle ボタンを更新
+        // 状態切替アイコン: covers/list それぞれを override 可能
         const buttons = document.querySelectorAll('[data-header-item="view-toggle"] button, #view-toggle');
         buttons.forEach(btn => {
-            if (this.currentView === 'covers') {
-                btn.textContent = '🖼️';
-                btn.title = 'リスト表示に切替';
-            } else {
-                btn.textContent = '📃';
-                btn.title = '表紙表示に切替';
-            }
+            const stateKey = this.currentView === 'covers' ? 'view-toggle:covers' : 'view-toggle:list';
+            const fallback = this.currentView === 'covers' ? 'image' : 'list';
+            const override = this.getHeaderIconOverride(stateKey);
+            const effectiveIcon = override || fallback;
+            btn.innerHTML = window.renderIcon(effectiveIcon, { size: 20 });
+            btn.dataset.iconValue = effectiveIcon;
+            btn.removeAttribute('data-icon'); // 二重 inject 防止
+            btn.title = this.currentView === 'covers' ? 'リスト表示に切替' : '表紙表示に切替';
         });
     }
 
@@ -694,15 +740,15 @@ class VirtualBookshelf {
         const current = this.currentBookshelf || (all && all.id) || 'all';
 
         const items = [];
-        if (all) items.push({ id: all.id, emoji: all.emoji || '📚', name: all.name || '全ての本' });
+        if (all) items.push({ id: all.id, iconName: all.iconName || 'library', name: all.name || '全ての本' });
         for (const bs of (this.userData.bookshelves || [])) {
             if (bs.isSpecial) continue;
-            items.push({ id: bs.id, emoji: bs.emoji || '📚', name: bs.name });
+            items.push({ id: bs.id, iconName: bs.iconName || 'library', name: bs.name });
         }
 
         host.innerHTML = items.map(it => `
             <button type="button" class="bookshelf-popover-item ${it.id === current ? 'is-current' : ''}" data-bs-id="${it.id}">
-                <span>${it.emoji}</span>
+                <span class="bs-popover-icon" data-icon-value="${(it.iconName || '').replace(/"/g,'&quot;')}">${window.renderIcon(it.iconName || 'library', { size: 16 })}</span>
                 <span>${it.name}</span>
             </button>
         `).join('');
@@ -842,32 +888,41 @@ class VirtualBookshelf {
         this.saveUserData();
     }
     
+    // フィルター popover の星評価チェックボックス: 星アイコンを Lucide で描画
+    _renderStarFilterStars() {
+        document.querySelectorAll('.star-filter-stars').forEach(el => {
+            const count = Number(el.dataset.count) || 0;
+            if (count === 0) {
+                el.innerHTML = `${window.renderIcon('star', { size: 14, class: 'lucide-star is-empty' })}<span class="star-filter-label">未評価</span>`;
+                return;
+            }
+            let html = '';
+            for (let i = 0; i < count; i++) {
+                html += window.renderIcon('star', { size: 14, class: 'lucide-star is-filled' });
+            }
+            for (let i = count; i < 5; i++) {
+                html += window.renderIcon('star', { size: 14, class: 'lucide-star is-empty' });
+            }
+            el.innerHTML = html;
+        });
+    }
+
     updateSortDirectionButton() {
         const button = document.getElementById('sort-direction');
-        
+        const renderArrow = (dir) => window.renderIcon(dir === 'asc' ? 'arrow-up' : 'arrow-down', { size: 14 });
+
         if (this.sortOrder === 'custom') {
-            button.textContent = '📝 カスタム順';
+            button.innerHTML = `<span class="h-icon">${window.renderIcon('list-ordered', { size: 14 })}</span>カスタム順`;
             button.disabled = true;
             button.style.opacity = '0.5';
         } else {
             button.disabled = false;
             button.style.opacity = '1';
-            
-            // 並び順の種類に応じてテキストを変更
+            const arrow = `<span class="h-icon">${renderArrow(this.sortDirection)}</span>`;
             if (this.sortOrder === 'acquiredTime') {
-                // 時系列・状態の場合
-                if (this.sortDirection === 'asc') {
-                    button.textContent = '↑ 古い順';
-                } else {
-                    button.textContent = '↓ 新しい順';
-                }
+                button.innerHTML = `${arrow}${this.sortDirection === 'asc' ? '古い順' : '新しい順'}`;
             } else {
-                // 文字列（タイトル・著者）の場合
-                if (this.sortDirection === 'asc') {
-                    button.textContent = '↑ 昇順（A→Z）';
-                } else {
-                    button.textContent = '↓ 降順（Z→A）';
-                }
+                button.innerHTML = `${arrow}${this.sortDirection === 'asc' ? '昇順（A→Z）' : '降順（Z→A）'}`;
             }
         }
     }
@@ -943,45 +998,65 @@ class VirtualBookshelf {
         bookElement.setAttribute('data-book-asin', book.asin);
         
         const userNote = this.userData.notes[book.asin];
-        
+        // 一覧表示用メモ: 本棚 override → ALL の解決値を使う (Phase B-2)
+        const listMemo = this.bookshelfManager.resolveMemo(book.asin, this._currentBookshelfInternalId());
+        const listRating = userNote?.rating || 0;
+
+        // 一覧カードの星・メモ表示は全体設定で制御。
+        //  星: visibility (always/hover/hidden) + overlay (表紙に重ねる) boolean
+        //  メモ: visibility (always/hover/hidden)
+        //  hover は「表紙に重なるポップアップ」で表示し、行のスペースを取らず位置もずらさない。
+        // リスト表示は表紙が小さいので overlay でも below 配置にフォールバック。
+        const isCoverView = (displayType === 'cover' || displayType === 'covers');
+        const starVis = this._getStarVisibility();
+        const overlayOn = this._getStarOverlay() && isCoverView;
+        let starSize;
+        if (starVis === 'hover') starSize = 16;             // ホバーポップアップ
+        else if (overlayOn) starSize = 18;                  // 常に表示 + 表紙に重ねる (大きめ)
+        else starSize = isCoverView ? 15 : 16;              // 常に表示 + 独立
+        const starWidget = (starVis === 'hidden') ? '' : this._starWidgetHtml(book.asin, listRating, starSize);
+        const memoVis = this._getMemoVisibility();
+
+        // 常時表示 (in-flow)
+        const overlayAlwaysStars = (starVis === 'always' && overlayOn && starWidget)
+            ? `<div class="cover-stars-layer stars-overlay">${starWidget}</div>` : '';
+        const belowAlwaysStars = (starVis === 'always' && !overlayOn && starWidget)
+            ? `<div class="book-rating">${starWidget}</div>` : '';
+        const alwaysMemo = (memoVis === 'always' && listMemo)
+            ? `<div class="book-memo">${this.formatMemoForDisplay(listMemo, isCoverView ? 90 : 140)}</div>` : '';
+
+        // ホバーポップアップ (表紙に重ねる absolute、レイアウトに影響しない)
+        const popStars = (starVis === 'hover' && starWidget)
+            ? `<div class="pop-stars stars-overlay">${starWidget}</div>` : '';
+        const popMemo = (memoVis === 'hover' && listMemo)
+            ? `<div class="book-memo pop-memo">${this.formatMemoForDisplay(listMemo, 160)}</div>` : '';
+        const hoverPop = (popStars || popMemo)
+            ? `<div class="card-hover-pop">${popStars}${popMemo}</div>` : '';
+
+        const placeholderHtml = isCoverView
+            ? `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
+            : `<div class="book-cover-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`;
+
         bookElement.classList.add('clickable');
-        if (displayType === 'cover' || displayType === 'covers') {
-            bookElement.innerHTML = `
+        bookElement.innerHTML = `
                 <div class="book-cover-container">
-                    <div class="drag-handle">⋮⋮</div>
+                    <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
                     <div class="book-cover-link">
                         ${book.productImage ?
                             `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
-                            `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
+                            placeholderHtml
                         }
                     </div>
+                    ${overlayAlwaysStars}
+                    ${hoverPop}
                 </div>
                 <div class="book-info">
                     <div class="book-title">${this.escapeHtml(book.title)}</div>
                     <div class="book-author">${this.escapeHtml(book.authors)}</div>
-                    ${userNote && userNote.memo ? `<div class="book-memo">📝 ${this.formatMemoForDisplay(userNote.memo, 300)}</div>` : ''}
-                    ${this.displayStarRating(userNote?.rating)}
+                    ${belowAlwaysStars}
+                    ${alwaysMemo}
                 </div>
             `;
-        } else {
-            bookElement.innerHTML = `
-                <div class="book-cover-container">
-                    <div class="drag-handle">⋮⋮</div>
-                    <div class="book-cover-link">
-                        ${book.productImage ?
-                            `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
-                            '<div class="book-cover-placeholder">📖</div>'
-                        }
-                    </div>
-                </div>
-                <div class="book-info">
-                    <div class="book-title">${book.title}</div>
-                    <div class="book-author">${book.authors}</div>
-                    ${userNote && userNote.memo ? `<div class="book-memo">📝 ${this.formatMemoForDisplay(userNote.memo, 400)}</div>` : ''}
-                    ${this.displayStarRating(userNote?.rating)}
-                </div>
-            `;
-        }
         
         // Add drag event listeners
         bookElement.addEventListener('dragstart', (e) => this.handleDragStart(e));
@@ -993,6 +1068,18 @@ class VirtualBookshelf {
             if (e.target.closest('.drag-handle') || bookElement.classList.contains('dragging')) {
                 e.preventDefault();
                 e.stopPropagation();
+                return;
+            }
+            // 星クリックは評価変更 (詳細は開かない)。同じ星を再クリックで解除。
+            const starEl = e.target.closest('.star-rating .star');
+            if (starEl) {
+                e.preventDefault();
+                e.stopPropagation();
+                const clicked = parseInt(starEl.dataset.rating) || 0;
+                const cur = this.userData.notes[book.asin]?.rating || 0;
+                const next = (clicked === cur) ? 0 : clicked;
+                this.saveRating(book.asin, next);
+                this._applyRatingEverywhere(book.asin, next);
                 return;
             }
             // 本のどこをクリックしても詳細モーダル
@@ -1112,12 +1199,69 @@ class VirtualBookshelf {
         this.updateDisplay();
     }
 
+    // 本詳細ペインのセクション順序 (全本共通、settings 永続化)
+    // デフォルト: 所属本棚 → 短文メモ → 長文メモ → 基本情報
+    _getDetailSectionOrder() {
+        const DEFAULT = ['bookshelves', 'short-memo', 'long-memo', 'basic-info'];
+        const saved = this.userData?.settings?.detailSectionOrder;
+        if (Array.isArray(saved) && saved.length === DEFAULT.length
+            && DEFAULT.every(id => saved.includes(id))) {
+            return saved.slice();
+        }
+        return DEFAULT.slice();
+    }
+
+    async _saveDetailSectionOrder(order) {
+        if (!this.userData.settings) this.userData.settings = {};
+        this.userData.settings.detailSectionOrder = order;
+        if (this.storage && typeof this.storage.saveSettings === 'function') {
+            try { await this.storage.saveSettings(this.userData.settings); }
+            catch (e) { console.warn('detailSectionOrder 保存失敗', e); }
+        }
+    }
+
+    // 編集モード時のセクション drag&drop 並び替え
+    _bindDetailSectionReorder(root, book) {
+        const container = root.querySelector('#bd-sections');
+        if (!container) return;
+        let dragEl = null;
+        container.querySelectorAll('.bd-section[draggable="true"]').forEach(sec => {
+            sec.addEventListener('dragstart', (e) => {
+                dragEl = sec;
+                sec.classList.add('is-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            sec.addEventListener('dragend', () => {
+                sec.classList.remove('is-dragging');
+                dragEl = null;
+            });
+            sec.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!dragEl || dragEl === sec) return;
+                const rect = sec.getBoundingClientRect();
+                const after = (e.clientY - rect.top) > rect.height / 2;
+                if (after) sec.after(dragEl);
+                else sec.before(dragEl);
+            });
+        });
+        container.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const newOrder = Array.from(container.querySelectorAll('.bd-section'))
+                .map(s => s.dataset.section)
+                .filter(Boolean);
+            await this._saveDetailSectionOrder(newOrder);
+        });
+    }
+
     _currentBookshelfInternalId() {
+        // ホームビューでは「from 文脈」は無い（本棚を開いていない）
+        if (document.body.classList.contains('app-view-main')) return null;
         if (!this.currentBookshelf) return null;
         const bs = this.bookshelfManager.getBySlug(this.currentBookshelf);
         // 特殊本棚（all）は notes.json スコープを指すので null を返す
         if (!bs || bs.isSpecial) return null;
-        return bs.internalId;
+        // internalId 欠落データは id (slug) を識別子として使う (getById が id フォールバック対応済み)
+        return bs.internalId || bs.id;
     }
 
     showBookDetail(book, isEditMode = false) {
@@ -1126,207 +1270,334 @@ class VirtualBookshelf {
             const fromInternalId = this._currentBookshelfInternalId();
             this.router.navigateBook(book.asin, fromInternalId);
         }
+        // PC v2: 本詳細は右ペインに表示する。modal は使わず、右ペインの #book-detail-pane に inject。
+        // ホームビューでは右ペインを表示するため book-detail-pinned を付ける。
         const modal = document.getElementById('book-modal');
-        const modalBody = document.getElementById('modal-body');
+        if (modal) modal.classList.remove('show'); // 念のため閉じる
+        document.body.classList.add('book-detail-pinned');
+        // 右ペインが折りたたまれていたら展開
+        if (document.body.classList.contains('right-collapsed')) {
+            document.body.classList.remove('right-collapsed');
+            this._savePaneState();
+        }
+        const modalBody = document.getElementById('book-detail-pane');
+        if (!modalBody) return;
+        this._lastDetailBook = book;
+        this._lastDetailEditMode = isEditMode;
 
         const isHidden = this.userData.hiddenBooks && this.userData.hiddenBooks.includes(book.asin);
         const contextInternalId = this._currentBookshelfInternalId();
         const allRecord = this.userData.notes[book.asin] || {};
         const resolvedMemo = this.bookshelfManager.resolveMemo(book.asin, contextInternalId);
+        const hasBookshelfOverride = this.bookshelfManager.hasMemoOverride(book.asin, contextInternalId);
         const userNote = {
             memo: resolvedMemo,
             rating: this.bookshelfManager.resolveRating(book.asin),
-            hasDetailMemo: allRecord.hasDetailMemo || false
+            hasDetailMemo: allRecord.hasDetailMemo || false,
+            hideMemo: !!allRecord.hideMemo,
+            hideDetailMemo: !!allRecord.hideDetailMemo
         };
-        const memoIsInherited = contextInternalId && resolvedMemo && (() => {
-            const bs = this.bookshelfManager.getById(contextInternalId);
-            return !(bs && bs.notes && bs.notes[book.asin] && bs.notes[book.asin].memo);
-        })();
-        const contextLabel = (() => {
-            if (!contextInternalId) return null;
-            const bs = this.bookshelfManager.getById(contextInternalId);
-            return bs ? `${bs.emoji || '📚'} ${bs.name}` : null;
-        })();
+        // 公開時 publishHide フラグは本棚 override 側にあり (本棚スコープ)
+        const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
+        const contextNote = (contextBookshelf && contextBookshelf.notes && contextBookshelf.notes[book.asin]) || {};
         const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
+        const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
+
+        // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
+        const contextSlug = contextBookshelf ? contextBookshelf.id : null;
+        const memberBookshelves = (this.userData.bookshelves || [])
+            .filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(book.asin));
+        const candidateBookshelves = (this.userData.bookshelves || [])
+            .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
+
+        const chipsHtml = memberBookshelves.map(bs => {
+            const isCtx = contextSlug && bs.id === contextSlug;
+            return `
+            <span class="bd-chip${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bs.id)}"${isCtx ? ' title="いま開いている本棚"' : ''}>
+                <span class="bd-chip-icon" data-icon-value="${(bs.iconName || 'library').replace(/"/g,'&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 12 })}</span>
+                <span>${esc(bs.name)}</span>
+                ${isEditMode ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bs.id)}" title="この本棚から外す">×</button>` : ''}
+            </span>`;
+        }).join('');
+
+        const addBookshelfHtml = (isEditMode && candidateBookshelves.length > 0) ? `
+            <div class="bd-add-bookshelf">
+                <select class="bookshelf-select" data-asin="${esc(book.asin)}">
+                    <option value="">本棚を追加...</option>
+                    ${candidateBookshelves.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
+                </select>
+                <button class="btn btn-secondary btn-small add-to-bookshelf" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
+            </div>
+        ` : '';
+
+        // 短文メモ section (Phase B-7: ALL + 全本棚 override をどこからでも表示・編集)
+        // - ALL.notes[asin].memo = デフォルト (常に表示・編集可)
+        // - 各本棚の notes[asin].memo = 任意の override (該当本棚に override があれば一覧)
+        // - 編集モード: 全項目を個別 textarea で編集、本棚ごと × で override 削除、
+        //              member 本棚から override を新規追加可
+        const allMemoValue = (allRecord && allRecord.memo) || '';
+        const overrides = this.bookshelfManager.getAllMemoOverrides(book.asin);
+        const overrideBookshelfIds = new Set(overrides.map(o => o.bookshelf.id));
+        const memberBookshelvesNoOverride = memberBookshelves.filter(bs => !overrideBookshelfIds.has(bs.id));
+
+        const memoSectionHeader = `<div class="bd-h5">${ico('notebook-pen')}短文メモ</div>`;
+
+        // ALL メモ
+        const allMemoBlock = (() => {
+            if (isEditMode) {
+                return `
+                    <div class="bd-memo-block">
+                        <div class="bd-memo-block-head">
+                            <span class="bd-memo-scope bd-memo-scope-all">${ico('library', 12)}ALL (デフォルト)</span>
+                            <span class="save-note-status bd-save-status" data-asin="${esc(book.asin)}" data-scope="all"></span>
+                        </div>
+                        <textarea class="note-textarea bd-textarea" data-asin="${esc(book.asin)}" data-scope="all" rows="4" placeholder="どこから開いても表示される基本メモ">${esc(allMemoValue)}</textarea>
+                        <label class="bd-flag-label">
+                            <input type="checkbox" class="hide-memo-check" data-asin="${esc(book.asin)}" ${userNote.hideMemo ? 'checked' : ''}>
+                            公開時にこの ALL メモを非公開
+                        </label>
+                    </div>
+                `;
+            }
+            if (!allMemoValue) {
+                return '<p class="bd-empty-note">ALL メモはまだありません</p>';
+            }
+            return `
+                <div class="bd-memo-block">
+                    <div class="bd-memo-block-head"><span class="bd-memo-scope bd-memo-scope-all">${ico('library', 12)}ALL</span></div>
+                    <div class="bd-note-display">${this.convertMarkdownLinksToHtml(allMemoValue)}</div>
+                </div>
+            `;
+        })();
+
+        // 各本棚 override — 開いている本棚 (context) の override は色を強調
+        const overrideBlocks = overrides.map(({ bookshelf, memo }) => {
+            const bsIcon = bookshelf.iconName || 'library';
+            const bsNote = (bookshelf.notes && bookshelf.notes[book.asin]) || {};
+            const isCtx = contextSlug && bookshelf.id === contextSlug;
+            const chip = `<span class="bd-memo-scope bd-memo-scope-bs"><span class="bd-chip-icon">${window.renderIcon(bsIcon, { size: 12 })}</span>${esc(bookshelf.name)}</span>`;
+            if (isEditMode) {
+                return `
+                    <div class="bd-memo-block${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bookshelf.id)}">
+                        <div class="bd-memo-block-head">
+                            ${chip}
+                            <span class="save-note-status bd-save-status" data-asin="${esc(book.asin)}" data-scope="${esc(bookshelf.id)}"></span>
+                            <button class="bd-memo-block-remove memo-override-remove" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bookshelf.id)}" title="この本棚専用メモを削除 (ALL に戻る)">×</button>
+                        </div>
+                        <textarea class="note-textarea bd-textarea" data-asin="${esc(book.asin)}" data-scope="${esc(bookshelf.id)}" rows="3" placeholder="この本棚専用メモ">${esc(memo)}</textarea>
+                        <label class="bd-flag-label">
+                            <input type="checkbox" class="publish-hide-check" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bookshelf.id)}" ${bsNote.publishHide ? 'checked' : ''}>
+                            公開時にこの本棚から除外
+                        </label>
+                    </div>
+                `;
+            }
+            return `
+                <div class="bd-memo-block${isCtx ? ' is-context' : ''}">
+                    <div class="bd-memo-block-head">${chip}</div>
+                    <div class="bd-note-display">${this.convertMarkdownLinksToHtml(memo)}</div>
+                </div>
+            `;
+        }).join('');
+
+        // override 追加 (member 本棚から、まだ override がないもの)
+        const addOverrideHtml = (isEditMode && memberBookshelvesNoOverride.length > 0) ? `
+            <div class="bd-add-override">
+                <select class="bd-add-override-select" data-asin="${esc(book.asin)}">
+                    <option value="">本棚専用メモを追加...</option>
+                    ${memberBookshelvesNoOverride.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
+                </select>
+                <button class="btn btn-secondary btn-small bd-add-override-btn" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
+            </div>
+        ` : '';
+
+        // ===== セクション本体 (順序は設定で並び替え可、デフォルト: 本棚→短文→長文→基本情報) =====
+        const grip = window.renderIcon('grip-vertical', { size: 12 });
+
+        // 本棚セクション body
+        const bookshelvesBody = `
+            <div class="bd-chips-row" id="current-bookshelves-${esc(book.asin)}">
+                ${chipsHtml || '<span class="bd-empty-note">どの本棚にも追加されていません</span>'}
+            </div>
+            ${addBookshelfHtml}
+        `;
+
+        // 短文メモセクション body
+        const shortMemoBody = `
+            ${allMemoBlock}
+            ${overrideBlocks}
+            ${addOverrideHtml}
+        `;
+
+        // 長文メモセクション body
+        const longMemoBody = `
+            <button class="bd-memo-link memo-file-btn" data-asin="${esc(book.asin)}" type="button">
+                ${ico('file-text')}${userNote.hasDetailMemo ? '長文メモを開く' : '長文メモを書く'}
+            </button>
+            ${isEditMode ? `
+                <label class="bd-flag-label">
+                    <input type="checkbox" class="hide-detail-memo-check" data-asin="${esc(book.asin)}" ${userNote.hideDetailMemo ? 'checked' : ''}>
+                    公開時に長文メモを非公開
+                </label>
+            ` : ''}
+        `;
+
+        // 基本情報セクション body (meta-row + メタ編集折りたたみ)
+        const basicInfoBody = `
+            <div class="bd-meta">
+                <div class="bd-meta-row"><span class="k">購入</span><span>${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</span></div>
+                <div class="bd-meta-row"><span class="k">ASIN</span><span>${esc(book.asin)}${book.updatedAsin ? ` → ${esc(book.updatedAsin)}` : ''}</span></div>
+            </div>
+            ${isEditMode ? `
+                <details class="bd-meta-edit">
+                    <summary>${ico('settings-2', 14)}メタ情報を編集</summary>
+                    <div class="bd-meta-edit-body">
+                        <div class="edit-field"><label>タイトル</label>
+                            <input type="text" class="edit-title" data-asin="${esc(book.asin)}" value="${esc(book.title)}"></div>
+                        <div class="edit-field"><label>著者</label>
+                            <input type="text" class="edit-authors" data-asin="${esc(book.asin)}" value="${esc(book.authors)}"></div>
+                        <div class="edit-field"><label>購入日</label>
+                            <input type="date" class="edit-acquired-time" data-asin="${esc(book.asin)}" value="${new Date(book.acquiredTime).toISOString().split('T')[0]}"></div>
+                        <div class="edit-field"><label>オリジナル ASIN</label>
+                            <input type="text" class="edit-original-asin" data-asin="${esc(book.asin)}" value="${esc(book.asin)}" maxlength="10" pattern="[A-Z0-9]{10}"></div>
+                        <div class="edit-field"><label>変更後 ASIN (オプション)</label>
+                            <input type="text" class="edit-updated-asin" data-asin="${esc(book.asin)}" value="${esc(book.updatedAsin || '')}" placeholder="新しい ASIN" maxlength="10" pattern="[A-Z0-9]{10}"></div>
+                        <div class="bd-meta-edit-actions">
+                            <button class="btn btn-primary btn-small save-book-changes" data-asin="${esc(book.asin)}" type="button">${ico('save')}保存</button>
+                            <button class="btn btn-secondary btn-small cancel-edit-btn" data-asin="${esc(book.asin)}" type="button">キャンセル</button>
+                        </div>
+                    </div>
+                </details>
+            ` : ''}
+        `;
+
+        const sectionDefs = {
+            'bookshelves': { icon: 'library',      title: '所属本棚', body: bookshelvesBody, context: !!contextBookshelf },
+            'short-memo':  { icon: 'notebook-pen', title: '短文メモ', body: shortMemoBody },
+            'long-memo':   { icon: 'file-text',    title: '長文メモ', body: longMemoBody },
+            'basic-info':  { icon: 'info',         title: '基本情報', body: basicInfoBody }
+        };
+        const order = this._getDetailSectionOrder();
+        const sectionsHtml = order.map(id => {
+            const def = sectionDefs[id];
+            if (!def) return '';
+            return `
+                <div class="bd-section${def.context ? ' has-context' : ''}" data-section="${id}" ${isEditMode ? 'draggable="true"' : ''}>
+                    <div class="bd-section-head">
+                        ${isEditMode ? `<span class="bd-grip" title="ドラッグで並び替え">${grip}</span>` : ''}
+                        <span class="bd-section-title">${ico(def.icon, 12)}${def.title}</span>
+                    </div>
+                    <div class="bd-section-body">${def.body}</div>
+                </div>
+            `;
+        }).join('');
+
+        // 星 widget。本詳細は編集面なので常に表示・常に編集可。配置のみ全体設定の
+        // 「表紙に重ねる」(starOverlay) に従う。表示/非表示の visibility 設定は一覧カード専用。
+        const overlayOnDetail = this._getStarOverlay();
+        const starWidget = this._starWidgetHtml(book.asin, userNote.rating || 0, 18);
+        const resetBtn = (isEditMode && userNote.rating)
+            ? `<button class="bd-stars-reset rating-reset" type="button" data-asin="${esc(book.asin)}">リセット</button>`
+            : '';
+        const showOverlay = overlayOnDetail;
+        const showBelow = !overlayOnDetail;
 
         modalBody.innerHTML = `
-            <div class="book-detail">
-                <div class="book-detail-header">
-                    ${book.productImage ?
-                        `<img class="book-detail-cover" src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}">` :
-                        '<div class="book-detail-cover-placeholder">📖</div>'
-                    }
-                    <div class="book-detail-info">
-                        <div class="book-info-section" ${isEditMode ? 'style="display: none;"' : ''}>
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
-                                <h2 style="margin: 0; color: #2c3e50; flex: 1;">${book.title}</h2>
-                                <button class="btn btn-primary edit-mode-btn" data-asin="${book.asin}" style="margin-left: 1rem; padding: 0.5rem 1rem; font-size: 0.9rem;">✏️ 編集</button>
-                            </div>
-                            <p style="margin: 0 0 0.5rem 0; color: #7f8c8d;"><strong>著者:</strong> ${book.authors}</p>
-                            <p style="margin: 0 0 0.5rem 0; color: #7f8c8d;"><strong>購入日:</strong> ${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</p>
-                            <p style="margin: 0 0 0.5rem 0; color: #7f8c8d;"><strong>ASIN:</strong> ${book.asin}</p>
-                            ${book.updatedAsin ? `<p style="margin: 0 0 0.5rem 0; color: #7f8c8d;"><strong>変更後ASIN:</strong> ${book.updatedAsin}</p>` : ''}
-                        </div>
-                        <div class="book-edit-section" ${!isEditMode ? 'style="display: none;"' : ''}>
-                            <div class="edit-field">
-                                <label>📖 タイトル</label>
-                                <input type="text" class="edit-title" data-asin="${book.asin}" value="${book.title}" />
-                            </div>
-                            <div class="edit-field">
-                                <label>✍️ 著者</label>
-                                <input type="text" class="edit-authors" data-asin="${book.asin}" value="${book.authors}" />
-                            </div>
-                            <div class="edit-field">
-                                <label>📅 購入日</label>
-                                <input type="date" class="edit-acquired-time" data-asin="${book.asin}" value="${new Date(book.acquiredTime).toISOString().split('T')[0]}" />
-                            </div>
-                            <div class="edit-field">
-                                <label>🔖 オリジナルASIN</label>
-                                <input type="text" class="edit-original-asin" data-asin="${book.asin}" value="${book.asin}" maxlength="10" pattern="[A-Z0-9]{10}" />
-                                <small class="field-help">※ 元のASIN（通常は変更不要）</small>
-                            </div>
-                            <div class="edit-field">
-                                <label>🔗 変更後ASIN（オプション）</label>
-                                <input type="text" class="edit-updated-asin" data-asin="${book.asin}" value="${book.updatedAsin || ''}" placeholder="新しいASINがある場合のみ入力" maxlength="10" pattern="[A-Z0-9]{10}" />
-                                <small class="field-help">※ Amazonで商品のASINが変更された場合の新しいASINを入力</small>
-                            </div>
-                            <div class="edit-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                                <button class="btn btn-small save-book-changes" data-asin="${book.asin}">💾 変更を保存</button>
-                                <button class="btn btn-small btn-secondary cancel-edit-btn" data-asin="${book.asin}">❌ キャンセル</button>
-                            </div>
-                        </div>
+            <div class="bd${isEditMode ? ' editing' : ''}">
+                <div class="bd-topbar">
+                    <button class="bd-edit-toggle${isEditMode ? ' is-active' : ''} ${isEditMode ? 'cancel-edit-btn' : 'edit-mode-btn'}" data-asin="${esc(book.asin)}" title="${isEditMode ? '編集を終える' : '編集モードに切替'}" type="button">
+                        ${window.renderIcon(isEditMode ? 'check' : 'pencil', { size: 14 })}
+                    </button>
+                </div>
 
-                        
-                        <div class="book-actions">
-                            <a class="amazon-link" href="${amazonUrl}" target="_blank" rel="noopener">
-                                📚 Amazonで見る
-                            </a>
-                            <button class="btn btn-secondary memo-file-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
-                                📝 ${userNote.hasDetailMemo ? '詳細メモを開く' : '詳細メモを書く'}
-                            </button>
-                            <button class="btn btn-warning exclude-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
-                                🚫 all から除外
-                            </button>
-                            <button class="btn btn-danger delete-btn" data-asin="${book.asin}" style="${isEditMode ? '' : 'display: none;'}">
-                                🗑️ 本を削除
-                            </button>
-                        </div>
-                        
-                        <div class="bookshelf-actions" style="margin-top: 1rem; ${isEditMode ? '' : 'display: none;'}">
-                            <div style="margin-bottom: 1rem;">
-                                <label for="bookshelf-select-${book.asin}">📚 本棚に追加:</label>
-                                <select id="bookshelf-select-${book.asin}" class="bookshelf-select">
-                                    <option value="">本棚を選択...</option>
-                                    ${this.userData.bookshelves ? this.userData.bookshelves
-                                        .filter(bs => !bs.isSpecial)
-                                        .map(bs => `<option value="${bs.id}">${bs.emoji || '📚'} ${bs.name}</option>`)
-                                        .join('') : ''}
-                                </select>
-                                <button class="btn btn-secondary add-to-bookshelf" data-asin="${book.asin}">追加</button>
-                            </div>
-
-                            <div class="current-bookshelves">
-                                <label>📚 現在の本棚:</label>
-                                <div id="current-bookshelves-${book.asin}">
-                                    ${this.userData.bookshelves ? this.userData.bookshelves
-                                        .filter(bs => !bs.isSpecial && bs.books && bs.books.includes(book.asin))
-                                        .map(bs => `
-                                            <div class="bookshelf-item" style="display: inline-flex; align-items: center; margin: 0.25rem; padding: 0.25rem 0.5rem; background-color: #f0f0f0; border-radius: 4px;">
-                                                <span>${bs.emoji || '📚'} ${bs.name}</span>
-                                                <button class="btn btn-small btn-danger remove-from-bookshelf"
-                                                        data-asin="${book.asin}"
-                                                        data-bookshelf-id="${bs.id}"
-                                                        style="margin-left: 0.5rem; padding: 0.125rem 0.25rem; font-size: 0.75rem;">
-                                                    ❌
-                                                </button>
-                                            </div>
-                                        `).join('') : ''}
-                                </div>
-                                ${this.userData.bookshelves && this.userData.bookshelves.filter(bs => !bs.isSpecial && bs.books && bs.books.includes(book.asin)).length === 0 ?
-                                    '<p style="color: #888; font-style: italic; margin: 0.5rem 0;">この本はまだどの本棚にも追加されていません</p>' : ''}
-                            </div>
-                        </div>
+                <div class="bd-cover-wrap">
+                    <div class="bd-cover">
+                        ${book.productImage
+                            ? `<img src="${esc(this.bookManager.getProductImageUrl(book))}" alt="${esc(book.title)}">`
+                            : `<span class="bd-cover-placeholder">${window.renderIcon('book-open', { size: 40 })}</span>`}
+                        ${showOverlay ? `<div class="bd-cover-stars stars-overlay">${starWidget}</div>` : ''}
                     </div>
                 </div>
-                
-                <div class="book-notes-section" style="${!isEditMode && !userNote.memo ? 'display: none;' : ''}">
-                    <h3>📝 個人メモ${contextLabel ? ` <span style="font-size: 0.8rem; color: #888;">（コンテキスト: ${contextLabel}）</span>` : ''}</h3>
-                    ${memoIsInherited ? `<p style="margin: 0 0 0.5rem; color: #888; font-size: 0.85rem;">💡 親または all から継承中。編集するとこの本棚専用のメモになります（親には影響しません）。</p>` : ''}
-                    ${!isEditMode && userNote.memo ? `
-                        <div class="note-display" style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #007bff;">${this.convertMarkdownLinksToHtml(userNote.memo)}</div>
-                    ` : ''}
-                    <textarea class="note-textarea large-textarea" data-asin="${book.asin}" rows="6" placeholder="この本についてのメモやおすすめポイントを記入...&#10;&#10;改行も使えます。" style="${isEditMode ? '' : 'display: none;'}">${userNote.memo || ''}</textarea>
-                    <div class="note-preview" style="${isEditMode ? (userNote.memo ? 'display: block;' : 'display: none;') : 'display: none;'}">
-                        <h4>📄 プレビュー</h4>
-                        <div class="note-preview-content">${isEditMode && userNote.memo ? this.convertMarkdownLinksToHtml(userNote.memo) : ''}</div>
-                    </div>
-                    ${isEditMode && (() => {
-                        // 子孫がいる本棚 or all コンテキストなら「子孫にも反映」チェック表示
-                        if (!contextInternalId) {
-                            return this.bookshelfManager.getBookshelves().length > 0;
-                        }
-                        return this.bookshelfManager.getDescendants(contextInternalId).length > 0;
-                    })() ? `
-                        <label style="display: block; margin-top: 0.5rem; color: #555;">
-                            <input type="checkbox" class="propagate-to-descendants" data-asin="${book.asin}">
-                            子孫本棚にも反映する（全子孫の短文メモを上書き）
-                        </label>
-                    ` : ''}
-                    ${isEditMode ? `
-                        <span class="save-note-status" data-asin="${book.asin}" style="margin-left: 0.25rem; color: #888; font-size: 0.85rem;"></span>
-                    ` : ''}
-                    ${isEditMode && contextInternalId ? (() => {
-                        const bs = this.bookshelfManager.getById(contextInternalId);
-                        const note = (bs && bs.notes && bs.notes[book.asin]) || {};
-                        return `
-                            <div class="publish-flags" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: #fff8e1; border-radius: 4px;">
-                                <p style="margin: 0 0 0.4rem; font-size: 0.85rem; color: #5d4037;">📤 公開時の挙動（この本棚での設定）</p>
-                                <label style="display: block; padding: 0.15rem 0;">
-                                    <input type="checkbox" class="publish-hide-check" data-asin="${book.asin}" ${note.publishHide ? 'checked' : ''}>
-                                    公開時にこの本棚から除外する
-                                </label>
-                                <label style="display: block; padding: 0.15rem 0;">
-                                    <input type="checkbox" class="hide-detail-memo-check" data-asin="${book.asin}" ${note.hideDetailMemo ? 'checked' : ''}>
-                                    公開時に長文メモを非公開
-                                </label>
-                            </div>
-                        `;
-                    })() : ''}
-                    <p class="note-help" style="${isEditMode ? '' : 'display: none;'}">💡 入力を止めると自動保存されます（同期は背景で実行）</p>
 
-                    <div class="rating-section" style="${isEditMode ? '' : 'display: none;'}">
-                        <h4>⭐ 星評価</h4>
-                        <div class="star-rating" data-asin="${book.asin}" data-current-rating="${userNote.rating || 0}">
-                            ${this.generateStarRating(userNote.rating || 0)}
-                        </div>
-                        <button class="btn btn-small rating-reset" data-asin="${book.asin}">評価をリセット</button>
-                    </div>
+                <h3 class="bd-title">${esc(book.title)}</h3>
+                <div class="bd-author">${esc(book.authors)}</div>
+
+                ${showBelow ? `<div class="bd-stars">${starWidget}${resetBtn}</div>` : (resetBtn ? `<div class="bd-stars-reset-row">${resetBtn}</div>` : '')}
+
+                <div class="bd-sections" id="bd-sections">
+                    ${sectionsHtml}
+                </div>
+
+                <div class="bd-actions">
+                    <a class="amazon-link" href="${esc(amazonUrl)}" target="_blank" rel="noopener">${ico('external-link')}Amazon</a>
+                    ${isEditMode ? `<button class="btn btn-warning exclude-btn" data-asin="${esc(book.asin)}" type="button" title="「全ての本」から除外">${ico('ban')}除外</button>` : ''}
                 </div>
             </div>
         `;
+        if (isEditMode) this._bindDetailSectionReorder(modalBody, book);
         
         // Setup modal event listeners
-        const noteTextarea = modalBody.querySelector('.note-textarea');
-        // 自動保存: 入力停止 300ms 後に保存。Obsidian 同期側でも debounce されるので連続入力負荷は低い
+        // 全 textarea (ALL + 各本棚 override) に自動保存ハンドラを bind
         if (isEditMode) {
-            noteTextarea.addEventListener('input', (e) => {
-                this.updateMemoPreview(e.target);
-                this._scheduleNoteAutoSave(e.target.dataset.asin, e.target.value, modalBody);
+            modalBody.querySelectorAll('.note-textarea').forEach(ta => {
+                ta.addEventListener('input', (e) => {
+                    this._scheduleNoteAutoSave(e.target.dataset.asin, e.target.value, modalBody, e.target.dataset.scope || 'all');
+                });
             });
         }
 
-        const publishHideCheck = modalBody.querySelector('.publish-hide-check');
-        if (publishHideCheck) {
-            publishHideCheck.addEventListener('change', async (e) => {
-                await this._togglePublishFlag(e.currentTarget.dataset.asin, 'publishHide', e.currentTarget.checked);
+        // 本棚 publishHide (本棚 override に紐づく)
+        modalBody.querySelectorAll('.publish-hide-check').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+                const asin = e.currentTarget.dataset.asin;
+                const bookshelfId = e.currentTarget.dataset.bookshelfId;
+                await this._toggleBookshelfNoteFlag(asin, bookshelfId, 'publishHide', e.currentTarget.checked);
             });
-        }
+        });
         const hideDetailMemoCheck = modalBody.querySelector('.hide-detail-memo-check');
         if (hideDetailMemoCheck) {
             hideDetailMemoCheck.addEventListener('change', async (e) => {
-                await this._togglePublishFlag(e.currentTarget.dataset.asin, 'hideDetailMemo', e.currentTarget.checked);
+                await this._toggleAllNoteFlag(e.currentTarget.dataset.asin, 'hideDetailMemo', e.currentTarget.checked);
             });
         }
+        const hideMemoCheck = modalBody.querySelector('.hide-memo-check');
+        if (hideMemoCheck) {
+            hideMemoCheck.addEventListener('change', async (e) => {
+                await this._toggleAllNoteFlag(e.currentTarget.dataset.asin, 'hideMemo', e.currentTarget.checked);
+            });
+        }
+        // 本棚専用メモを追加
+        const addOverrideBtn = modalBody.querySelector('.bd-add-override-btn');
+        if (addOverrideBtn) {
+            addOverrideBtn.addEventListener('click', async (e) => {
+                const asin = e.currentTarget.dataset.asin;
+                const select = modalBody.querySelector('.bd-add-override-select');
+                const bookshelfId = select?.value;
+                if (!bookshelfId) return;
+                const bs = this.bookshelfManager.getBySlug(bookshelfId);
+                if (!bs) return;
+                // 空 override エントリを作って再描画 (textarea が出る)
+                if (!bs.notes) bs.notes = {};
+                if (!bs.notes[asin]) bs.notes[asin] = {};
+                bs.notes[asin].memo = ' '; // 1 文字 placeholder で override 成立 (即削除可能)
+                await this.saveUserData();
+                this.showBookDetail(book, true);
+            });
+        }
+        // 本棚専用メモを削除 (override 撤去 → ALL に戻る)
+        modalBody.querySelectorAll('.memo-override-remove').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const asin = e.currentTarget.dataset.asin;
+                const bookshelfId = e.currentTarget.dataset.bookshelfId;
+                const bs = this.bookshelfManager.getBySlug(bookshelfId);
+                if (!bs || !bs.notes || !bs.notes[asin]) return;
+                delete bs.notes[asin].memo;
+                if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
+                await this.saveUserData();
+                this.showBookDetail(book, true);
+            });
+        });
 
         // 旧「💾 メモを保存」ボタンは廃止。自動保存に切り替わったため不要。
         
@@ -1350,21 +1621,9 @@ class VirtualBookshelf {
         const ratingResetBtn = modalBody.querySelector('.rating-reset');
         if (ratingResetBtn) {
             ratingResetBtn.addEventListener('click', (e) => {
-                const asin = e.target.dataset.asin;
-                console.log(`🔄 評価リセット: ASIN: ${asin}`);
+                const asin = e.currentTarget.dataset.asin;
                 this.saveRating(asin, 0);
-
-                // Update star display in modal
-                const starRating = modalBody.querySelector('.star-rating');
-                starRating.dataset.currentRating = 0;
-                const stars = starRating.querySelectorAll('.star');
-                stars.forEach(star => {
-                    star.classList.remove('active');
-                });
-
-                // Update display in main bookshelf
-                this.updateDisplay();
-                this.updateStats();
+                this._applyRatingEverywhere(asin, 0);
             });
         }
 
@@ -1398,73 +1657,39 @@ class VirtualBookshelf {
         }
         
         
-        // Add star rating functionality
+        // 星評価 (クリックで編集 / hover プレビュー)。SVG 子要素クリックにも closest で対応。
         const starRating = modalBody.querySelector('.star-rating');
         if (starRating) {
-            // Initialize star display based on current rating
-            const currentRating = parseInt(starRating.dataset.currentRating) || 0;
-            const stars = starRating.querySelectorAll('.star');
-            stars.forEach((star, index) => {
-                if (index + 1 <= currentRating) {
-                    star.classList.add('active');
-                    star.style.color = '#ffa500';
-                } else {
-                    star.classList.remove('active');
-                    star.style.color = '#ddd';
-                }
-            });
-            
-            // Add hover effects for better UX
-            starRating.addEventListener('mouseover', (e) => {
-                if (e.target.classList.contains('star')) {
-                    const hoverRating = parseInt(e.target.dataset.rating);
-                    const stars = starRating.querySelectorAll('.star');
-                    stars.forEach((star, index) => {
-                        if (index + 1 <= hoverRating) {
-                            star.style.color = '#ffa500';
-                        } else {
-                            star.style.color = '#ddd';
-                        }
-                    });
-                }
-            });
-            
-            starRating.addEventListener('mouseleave', () => {
-                const currentRating = parseInt(starRating.dataset.currentRating) || 0;
-                const stars = starRating.querySelectorAll('.star');
-                stars.forEach((star, index) => {
-                    if (index + 1 <= currentRating) {
-                        star.style.color = '#ffa500';
-                    } else {
-                        star.style.color = '#ddd';
-                    }
+            const previewFill = (n) => {
+                starRating.querySelectorAll('.star').forEach((star, index) => {
+                    const ic = star.querySelector('.lucide-star');
+                    if (!ic) return;
+                    const on = (index + 1) <= n;
+                    ic.classList.toggle('is-filled', on);
+                    ic.classList.toggle('is-empty', !on);
                 });
+            };
+
+            starRating.addEventListener('mousemove', (e) => {
+                const st = e.target.closest('.star');
+                if (st) previewFill(parseInt(st.dataset.rating) || 0);
             });
-            
+            starRating.addEventListener('mouseleave', () => {
+                previewFill(parseInt(starRating.dataset.currentRating) || 0);
+            });
             starRating.addEventListener('click', (e) => {
-                if (e.target.classList.contains('star')) {
-                    const rating = parseInt(e.target.dataset.rating);
-                    const asin = starRating.dataset.asin;
-                    console.log(`⭐ 星評価: ${rating}星, ASIN: ${asin}`);
-                    this.saveRating(asin, rating);
-                    
-                    // Update current rating data
-                    starRating.dataset.currentRating = rating;
-                    
-                    // Update star display in modal
-                    const stars = starRating.querySelectorAll('.star');
-                    stars.forEach((star, index) => {
-                        star.classList.toggle('active', (index + 1) <= rating);
-                    });
-                    
-                    // Update display in main bookshelf
-                    this.updateDisplay();
-                    this.updateStats();
-                }
+                const st = e.target.closest('.star');
+                if (!st) return;
+                const asin = starRating.dataset.asin;
+                let rating = parseInt(st.dataset.rating) || 0;
+                const cur = parseInt(starRating.dataset.currentRating) || 0;
+                if (rating === cur) rating = 0; // 同じ星を再クリックで解除
+                this.saveRating(asin, rating);
+                this._applyRatingEverywhere(asin, rating);
             });
         }
         
-        modal.classList.add('show');
+        // modal は使わず右ペインに表示する (PC v2)
         if (this.pluginAPI) this.pluginAPI._emit('ui:book-modal-opened', { asin: book.asin });
     }
 
@@ -1490,6 +1715,7 @@ class VirtualBookshelf {
 
 
 
+    // 本棚スコープのフラグ (publishHide のみ)
     async _togglePublishFlag(asin, flag, value) {
         const internalId = this._currentBookshelfInternalId();
         if (!internalId) return;
@@ -1506,16 +1732,49 @@ class VirtualBookshelf {
         await this.saveUserData();
     }
 
-    async saveNote(asin, memo) {
-        const contextInternalId = this._currentBookshelfInternalId();
-        const propagateEl = document.querySelector(`.propagate-to-descendants[data-asin="${asin}"]`);
-        const propagateToDescendants = propagateEl ? propagateEl.checked : false;
+    // 任意の本棚 (slug 指定) のフラグ
+    async _toggleBookshelfNoteFlag(asin, bookshelfId, flag, value) {
+        if (!bookshelfId) return;
+        const bs = this.bookshelfManager.getBySlug(bookshelfId);
+        if (!bs || bs.isSpecial) return;
+        if (!bs.notes) bs.notes = {};
+        if (!bs.notes[asin]) bs.notes[asin] = {};
+        if (value) {
+            bs.notes[asin][flag] = true;
+        } else {
+            delete bs.notes[asin][flag];
+            if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
+        }
+        await this.saveUserData();
+    }
 
-        this.bookshelfManager.setMemo(asin, memo, {
-            scope: contextInternalId,
-            propagateToDescendants
-        });
+    // ALL スコープのフラグ (hideMemo / hideDetailMemo / hasDetailMemo)
+    async _toggleAllNoteFlag(asin, flag, value) {
+        if (!this.userData.notes) this.userData.notes = {};
+        if (!this.userData.notes[asin]) this.userData.notes[asin] = {};
+        if (value) {
+            this.userData.notes[asin][flag] = true;
+        } else {
+            delete this.userData.notes[asin][flag];
+            // memo / rating / hasDetailMemo を保持しているなら entry は消さない
+            const n = this.userData.notes[asin];
+            if (!n.memo && !n.rating && !n.hasDetailMemo && Object.keys(n).length === 0) {
+                delete this.userData.notes[asin];
+            }
+        }
+        await this.saveUserData();
+    }
 
+    // saveNote(asin, memo, scope) — scope: 'all' or bookshelf slug
+    async saveNote(asin, memo, scope = 'all') {
+        if (scope === 'all') {
+            this.bookshelfManager.setMemo(asin, memo, { scope: null });
+        } else {
+            // scope は本棚 slug — internalId に変換
+            const bs = this.bookshelfManager.getBySlug(scope);
+            if (!bs) return;
+            this.bookshelfManager.setMemo(asin, memo, { scope: bs.internalId });
+        }
         await this.saveUserData();
         if (this.pluginAPI) this.pluginAPI._emit('note:updated', { asin, note: this.userData.notes?.[asin] || { memo } });
     }
@@ -1525,26 +1784,27 @@ class VirtualBookshelf {
      * 300ms 入力停止で saveNote 実行。さらに saveUserData 側で 800ms debounce されるので
      * 連続入力時の Obsidian I/O は最小化される。
      */
-    _scheduleNoteAutoSave(asin, value, modalRoot) {
+    _scheduleNoteAutoSave(asin, value, modalRoot, scope = 'all') {
         if (!this._noteAutoSaveTimers) this._noteAutoSaveTimers = new Map();
-        const existing = this._noteAutoSaveTimers.get(asin);
+        const key = `${asin}::${scope}`;
+        const existing = this._noteAutoSaveTimers.get(key);
         if (existing) clearTimeout(existing);
-        const statusEl = (modalRoot || document).querySelector(`.save-note-status[data-asin="${asin}"]`);
-        if (statusEl) statusEl.textContent = '✏️ 入力中…';
+        const statusEl = (modalRoot || document).querySelector(`.save-note-status[data-asin="${asin}"][data-scope="${scope}"]`);
+        if (statusEl) statusEl.textContent = '入力中…';
         const timer = setTimeout(async () => {
-            this._noteAutoSaveTimers.delete(asin);
+            this._noteAutoSaveTimers.delete(key);
             try {
-                await this.saveNote(asin, value);
+                await this.saveNote(asin, value, scope);
                 if (statusEl) {
-                    statusEl.textContent = '✅ 保存しました';
-                    setTimeout(() => { if (statusEl.textContent === '✅ 保存しました') statusEl.textContent = ''; }, 1500);
+                    statusEl.textContent = '保存しました';
+                    setTimeout(() => { if (statusEl.textContent === '保存しました') statusEl.textContent = ''; }, 1500);
                 }
             } catch (e) {
                 console.error('メモ自動保存エラー:', e);
-                if (statusEl) statusEl.textContent = `❌ ${e.message || '保存失敗'}`;
+                if (statusEl) statusEl.textContent = e.message || '保存失敗';
             }
         }, 300);
-        this._noteAutoSaveTimers.set(asin, timer);
+        this._noteAutoSaveTimers.set(key, timer);
     }
 
 
@@ -1639,9 +1899,17 @@ class VirtualBookshelf {
         } catch (e) {
             console.error('localStorage 保存失敗:', e);
         }
-        if (this.obsidianDirHandle) {
+        if (this._isSyncReady()) {
             this._scheduleSync();
         }
+    }
+
+    /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub=adapter 接続済み) */
+    _isSyncReady() {
+        if (this.syncMethod === 'github') {
+            return this.storage && this.storage.adapter && this.storage.adapter.isConnected && this.storage.adapter.isConnected();
+        }
+        return !!this.obsidianDirHandle;
     }
 
     /**
@@ -1699,6 +1967,584 @@ class VirtualBookshelf {
                 await this._runPendingSync();
             }
         }
+    }
+
+    // --- Sync method dispatching (LocalFS / GitHub / ...) ---
+
+    async initSync() {
+        if (this.syncMethod === 'github') {
+            await this.initGitHubSync();
+        } else {
+            await this.initObsidianSync();
+        }
+    }
+
+    async initGitHubSync() {
+        const adapter = this.storage.adapter;
+        if (!(adapter instanceof GitHubAdapter)) {
+            console.warn('initGitHubSync: storage adapter is not GitHubAdapter');
+            return;
+        }
+        const label = `${adapter.owner}/${adapter.repo}@${adapter.branch}`;
+        this.updateSyncStatus('loading', label);
+        try {
+            const format = await this.storage.detectFormat();
+            if (format === 'empty') {
+                this.updateSyncStatus('reconnect', `${label} (空)`);
+                const ok = confirm(`GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？`);
+                if (!ok) return;
+                await this.storage.initEmpty();
+            } else if (format === 'pre-notes-split') {
+                await this.storage.migrateNotesSplit();
+            } else if (format === 'legacy') {
+                await this.storage.migrateFromLegacy();
+            }
+            const state = await this.storage.loadAll();
+            const loaded = this._applyLoadedState(state);
+            if (loaded) {
+                this.updateDisplay();
+                this.updateStats();
+                this.updateBookshelfSelector();
+                this.renderBookshelfOverview();
+            }
+            this.updateSyncStatus('synced', label);
+        } catch (e) {
+            console.error('initGitHubSync:', e);
+            this.updateSyncStatus('reconnect', label);
+            if (e instanceof GitHubAuthError) {
+                alert('❌ GitHub 認証に失敗しました。\nPAT を再確認してください。');
+            } else {
+                alert(`❌ GitHub からの読み込みに失敗しました:\n${e.message}`);
+            }
+        }
+    }
+
+    _setupSyncMethodUI() {
+        const selector = document.getElementById('sync-method-select');
+        const localPanel = document.getElementById('sync-config-local');
+        const githubPanel = document.getElementById('sync-config-github');
+        if (!selector || !localPanel || !githubPanel) return;
+
+        const showPanel = (method) => {
+            localPanel.hidden = (method !== 'local');
+            githubPanel.hidden = (method !== 'github');
+        };
+
+        const config = this.syncConfig || SyncConfigManager.load();
+        selector.value = config.method || 'local';
+        showPanel(selector.value);
+
+        this._renderGitHubAuthState();
+
+        selector.addEventListener('change', () => {
+            const newMethod = selector.value;
+            showPanel(newMethod);
+            const current = (this.syncConfig && this.syncConfig.method) || 'local';
+            if (newMethod === 'local' && current !== 'local') {
+                const ok = confirm('同期方式を「ローカルファイル」に切替えますか？\nGitHub OAuth トークン等は保持されます。\nOK でページをリロードします。');
+                if (ok) {
+                    const merged = { ...SyncConfigManager.load(), method: 'local' };
+                    SyncConfigManager.save(merged);
+                    location.reload();
+                } else {
+                    selector.value = current;
+                    showPanel(current);
+                }
+            }
+        });
+
+        const connectBtn = document.getElementById('github-connect-btn');
+        if (connectBtn) connectBtn.addEventListener('click', () => this._connectToGitHub());
+
+        const cancelBtn = document.getElementById('github-cancel-auth-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this._cancelGitHubAuth());
+
+        const copyBtn = document.getElementById('github-copy-code-btn');
+        if (copyBtn) copyBtn.addEventListener('click', () => this._copyDeviceCode());
+
+        const disconnectBtn = document.getElementById('github-disconnect-btn');
+        if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectGitHub());
+
+        const saveRepoBtn = document.getElementById('github-save-repo-btn');
+        if (saveRepoBtn) saveRepoBtn.addEventListener('click', () => this._saveGitHubRepo());
+
+        const reloadReposBtn = document.getElementById('github-reload-repos-btn');
+        if (reloadReposBtn) reloadReposBtn.addEventListener('click', () => this._loadGitHubRepos());
+
+        const reloadAfterInstallBtn = document.getElementById('github-reload-after-install-btn');
+        if (reloadAfterInstallBtn) reloadAfterInstallBtn.addEventListener('click', () => this._loadGitHubRepos());
+
+        // basePath ブラウザ
+        const browseBtn = document.getElementById('github-basepath-browse-btn');
+        if (browseBtn) browseBtn.addEventListener('click', () => this._openBasepathBrowser());
+
+        const upBtn = document.getElementById('basepath-up-btn');
+        if (upBtn) upBtn.addEventListener('click', () => {
+            const cur = this._basepathCurrentPath || '';
+            const parts = cur.split('/').filter(Boolean);
+            parts.pop();
+            this._loadBasepathBrowser(parts.join('/'));
+        });
+
+        const applyBtn = document.getElementById('basepath-apply-btn');
+        if (applyBtn) applyBtn.addEventListener('click', () => {
+            const input = document.getElementById('github-base-path');
+            if (input) input.value = this._basepathCurrentPath || '';
+            const browser = document.getElementById('github-basepath-browser');
+            if (browser) {
+                browser.open = false;
+                browser.hidden = true;
+            }
+        });
+
+        // GitHub App インストールリンク
+        const installLink = document.getElementById('github-install-link');
+        if (installLink) {
+            const appUrl = GitHubDeviceAuth.getAppPublicUrl();
+            if (appUrl) installLink.href = appUrl;
+            else installLink.removeAttribute('href');
+
+            // install link クリック後にこのタブへ戻ってきたら自動で再取得
+            // (反映ラグ対策: GitHub 側の install 反映に少しラグがあるので focus から少し待って実行)
+            installLink.addEventListener('click', () => {
+                this._pendingInstallReloadAt = Date.now();
+                const status = document.getElementById('github-status');
+                if (status) status.textContent = '⏳ インストール完了後、このタブに戻ると自動で再取得します';
+            });
+        }
+
+        // window focus 検知: 直近 10 分以内に install link を押していたら自動再取得
+        if (!this._githubFocusBound) {
+            this._githubFocusBound = true;
+            window.addEventListener('focus', () => {
+                const pendingAt = this._pendingInstallReloadAt || 0;
+                if (!pendingAt) return;
+                if (Date.now() - pendingAt > 10 * 60 * 1000) {
+                    this._pendingInstallReloadAt = 0;
+                    return;
+                }
+                const settingsModal = document.getElementById('settings-modal');
+                if (!settingsModal || !settingsModal.classList.contains('show')) return;
+                this._pendingInstallReloadAt = 0;
+                const status = document.getElementById('github-status');
+                if (status) status.textContent = '🔄 戻りました、3秒後に再取得します...';
+                setTimeout(() => {
+                    if (status) status.textContent = '🔄 再取得中...';
+                    this._loadGitHubRepos();
+                }, 3000);
+            });
+        }
+    }
+
+    _openBasepathBrowser() {
+        const browser = document.getElementById('github-basepath-browser');
+        if (!browser) return;
+        browser.hidden = false;
+        browser.open = true;
+        const startPath = (document.getElementById('github-base-path')?.value || '').trim();
+        this._loadBasepathBrowser(startPath);
+    }
+
+    async _loadBasepathBrowser(path) {
+        this._basepathCurrentPath = path || '';
+        const curEl = document.getElementById('basepath-current');
+        const listEl = document.getElementById('basepath-browser-list');
+        if (curEl) curEl.textContent = '/' + (this._basepathCurrentPath || '');
+        if (!listEl) return;
+        listEl.innerHTML = '<li>(取得中...)</li>';
+
+        const config = SyncConfigManager.load();
+        const token = config.github && config.github.token;
+        const fullSel = document.getElementById('github-repo-select');
+        const fullName = fullSel ? fullSel.value : '';
+        if (!fullName || !token) {
+            listEl.innerHTML = '<li>(まず repo を選択してください)</li>';
+            return;
+        }
+        const [owner, repo] = fullName.split('/');
+        const branchSel = document.getElementById('github-branch-select');
+        const branch = (branchSel && branchSel.value) || 'main';
+        const segments = (this._basepathCurrentPath || '').split('/').filter(Boolean);
+        const encodedPath = segments.map(encodeURIComponent).join('/');
+        const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
+        try {
+            const res = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            if (res.status === 404) {
+                listEl.innerHTML = '<li>(空)</li>';
+                return;
+            }
+            if (!res.ok) throw new Error(await this._ghErrorDetail(res));
+            const items = await res.json();
+            if (!Array.isArray(items)) {
+                listEl.innerHTML = '<li>(これはディレクトリではなくファイルです)</li>';
+                return;
+            }
+            items.sort((a, b) => {
+                if (a.type === b.type) return a.name.localeCompare(b.name);
+                return a.type === 'dir' ? -1 : 1;
+            });
+            listEl.innerHTML = '';
+            if (items.length === 0) {
+                listEl.innerHTML = '<li>(空)</li>';
+                return;
+            }
+            for (const item of items) {
+                const li = document.createElement('li');
+                if (item.type === 'dir') {
+                    li.classList.add('basepath-dir');
+                    const a = document.createElement('a');
+                    a.href = '#';
+                    a.textContent = `📁 ${item.name}`;
+                    a.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this._loadBasepathBrowser(item.path);
+                    });
+                    li.appendChild(a);
+                } else {
+                    li.classList.add('basepath-file');
+                    const span = document.createElement('span');
+                    span.textContent = `📄 ${item.name}`;
+                    li.appendChild(span);
+                }
+                listEl.appendChild(li);
+            }
+        } catch (e) {
+            listEl.innerHTML = `<li>(取得失敗: ${this._escapeHtml(e.message)})</li>`;
+        }
+    }
+
+    _escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    _renderGitHubAuthState() {
+        const disc = document.getElementById('github-auth-disconnected');
+        const pend = document.getElementById('github-auth-pending');
+        const conn = document.getElementById('github-auth-connected');
+        if (!disc || !pend || !conn) return;
+
+        const config = SyncConfigManager.load();
+        const token = config.github && config.github.token;
+        const login = config.github && config.github.login;
+
+        if (token) {
+            disc.hidden = true;
+            pend.hidden = true;
+            conn.hidden = false;
+            const loginEl = document.getElementById('github-connected-login');
+            if (loginEl) loginEl.textContent = login || '(ユーザ取得中)';
+            const g = config.github || {};
+            const basePathEl = document.getElementById('github-base-path');
+            if (basePathEl) basePathEl.value = g.basePath || '';
+            // repo / branch select はリストを GitHub から取得して詰める
+            this._loadGitHubRepos();
+        } else {
+            disc.hidden = false;
+            pend.hidden = true;
+            conn.hidden = true;
+        }
+    }
+
+    async _loadGitHubRepos() {
+        const sel = document.getElementById('github-repo-select');
+        const branchSel = document.getElementById('github-branch-select');
+        const installPrompt = document.getElementById('github-install-prompt');
+        if (!sel) return;
+        const token = (SyncConfigManager.load().github || {}).token;
+        if (!token) return;
+        sel.innerHTML = '<option value="">(取得中...)</option>';
+        if (branchSel) branchSel.innerHTML = '<option value="">(repo 選択後に取得)</option>';
+        try {
+            const { installations, repos } = await this._fetchAccessibleRepos(token);
+            if (installations.length === 0) {
+                sel.innerHTML = '<option value="">(GitHub App 未インストール)</option>';
+                if (installPrompt) installPrompt.hidden = false;
+                return;
+            }
+            if (installPrompt) installPrompt.hidden = true;
+            repos.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+            const current = SyncConfigManager.load().github || {};
+            const currentFull = current.owner && current.repo ? `${current.owner}/${current.repo}` : '';
+            sel.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = repos.length === 0
+                ? '— インストール済みだが、選択可能な repo がありません —'
+                : '— リポジトリを選択 —';
+            sel.appendChild(placeholder);
+            for (const r of repos) {
+                const opt = document.createElement('option');
+                opt.value = r.full_name;
+                opt.textContent = `${r.full_name}${r.private ? ' 🔒' : ''}`;
+                opt.dataset.defaultBranch = r.default_branch;
+                if (r.full_name === currentFull) opt.selected = true;
+                sel.appendChild(opt);
+            }
+            sel.onchange = () => this._onGitHubRepoSelected();
+            if (currentFull && repos.some(r => r.full_name === currentFull)) {
+                await this._loadGitHubBranches(currentFull, current.branch);
+            }
+        } catch (e) {
+            const msg = e.message || String(e);
+            sel.innerHTML = `<option value="">(取得失敗: ${msg})</option>`;
+            // 権限系エラーは GitHub の反映ラグの可能性が高い
+            if (/not accessible|forbidden|permission/i.test(msg) && installPrompt) {
+                installPrompt.hidden = false;
+            }
+        }
+    }
+
+    async _onGitHubRepoSelected() {
+        const sel = document.getElementById('github-repo-select');
+        if (!sel || !sel.value) return;
+        await this._loadGitHubBranches(sel.value);
+    }
+
+    async _loadGitHubBranches(fullName, preferBranch) {
+        const branchSel = document.getElementById('github-branch-select');
+        if (!branchSel) return;
+        const token = (SyncConfigManager.load().github || {}).token;
+        if (!token) return;
+        branchSel.innerHTML = '<option value="">(取得中...)</option>';
+        try {
+            const [owner, repo] = fullName.split('/');
+            const res = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?per_page=100`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            if (!res.ok) throw new Error(await this._ghErrorDetail(res));
+            const branches = await res.json();
+            const repoSel = document.getElementById('github-repo-select');
+            const opt = repoSel ? repoSel.selectedOptions[0] : null;
+            const defaultBranch = opt ? (opt.dataset.defaultBranch || null) : null;
+            branches.sort((a, b) => {
+                if (a.name === defaultBranch) return -1;
+                if (b.name === defaultBranch) return 1;
+                return a.name.localeCompare(b.name);
+            });
+            branchSel.innerHTML = '';
+            for (const b of branches) {
+                const o = document.createElement('option');
+                o.value = b.name;
+                o.textContent = b.name === defaultBranch ? `${b.name} (default)` : b.name;
+                if (b.name === preferBranch) o.selected = true;
+                branchSel.appendChild(o);
+            }
+            if (!preferBranch && defaultBranch) branchSel.value = defaultBranch;
+        } catch (e) {
+            branchSel.innerHTML = `<option value="">(取得失敗: ${e.message})</option>`;
+        }
+    }
+
+    // GitHub App 経由でアクセス可能なリポジトリのみ取得 (installation 経由)
+    async _fetchAccessibleRepos(token) {
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        };
+        const instRes = await fetch('https://api.github.com/user/installations?per_page=100', { headers });
+        if (!instRes.ok) {
+            throw new Error(`/user/installations: ${await this._ghErrorDetail(instRes)}`);
+        }
+        const instData = await instRes.json();
+        const installations = instData.installations || [];
+        const repos = [];
+        for (const inst of installations) {
+            let page = 1;
+            while (page < 10) {
+                const url = `https://api.github.com/user/installations/${inst.id}/repositories?per_page=100&page=${page}`;
+                const res = await fetch(url, { headers });
+                if (!res.ok) {
+                    throw new Error(`/user/installations/${inst.id}/repositories: ${await this._ghErrorDetail(res)}`);
+                }
+                const data = await res.json();
+                const batch = data.repositories || [];
+                repos.push(...batch);
+                if (batch.length < 100) break;
+                page++;
+            }
+        }
+        return { installations, repos };
+    }
+
+    async _ghErrorDetail(res) {
+        let detail = `${res.status} ${res.statusText}`;
+        try {
+            const data = await res.json();
+            if (data && data.message) detail += `: ${data.message}`;
+        } catch (_) {}
+        return detail;
+    }
+
+    async _connectToGitHub() {
+        const disc = document.getElementById('github-auth-disconnected');
+        const pend = document.getElementById('github-auth-pending');
+        const codeEl = document.getElementById('github-user-code');
+        const linkEl = document.getElementById('github-verification-link');
+        const statusEl = document.getElementById('github-auth-pending-status');
+
+        if (!GitHubDeviceAuth.isClientIdConfigured()) {
+            alert('GitHub OAuth Client ID が未設定です。\nbookshelf 管理者に問い合わせるか、fork 時は自分の OAuth App を作成して js/github-auth.js の GITHUB_OAUTH_CLIENT_ID を置き換えてください。');
+            return;
+        }
+
+        try {
+            const device = await GitHubDeviceAuth.requestDeviceCode();
+            this._currentDeviceAuth = { cancelled: false, device };
+
+            if (disc) disc.hidden = true;
+            if (pend) pend.hidden = false;
+            if (codeEl) codeEl.textContent = device.user_code;
+            if (linkEl) linkEl.href = device.verification_uri;
+            if (statusEl) statusEl.textContent = '⏳ GitHub で承認されるのを待っています...';
+
+            const startedAt = Date.now();
+            const token = await GitHubDeviceAuth.pollAccessToken(device, {
+                shouldCancel: () => this._currentDeviceAuth && this._currentDeviceAuth.cancelled,
+                onTick: (state) => {
+                    if (!statusEl) return;
+                    const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+                    const base = state === 'slow'
+                        ? '⏳ GitHub が混雑中、間隔を伸ばします'
+                        : '⏳ GitHub で承認されるのを待っています';
+                    statusEl.textContent = `${base} (${elapsedSec}秒経過)`;
+                }
+            });
+
+            let user = null;
+            try {
+                user = await GitHubDeviceAuth.fetchUser(token.access_token);
+            } catch (_) {
+                // ユーザ取得失敗は致命的ではないので続行
+            }
+
+            const merged = SyncConfigManager.load();
+            merged.method = 'github';
+            merged.github = {
+                ...(merged.github || {}),
+                token: token.access_token,
+                login: user ? user.login : null
+            };
+            SyncConfigManager.save(merged);
+            this._currentDeviceAuth = null;
+            this._renderGitHubAuthState();
+            alert(`✅ GitHub に接続しました${user ? ` (${user.login})` : ''}。\n下のリストからリポジトリを選んで「この設定で使う」を押してください。`);
+        } catch (e) {
+            this._currentDeviceAuth = null;
+            if (e.message === 'AUTH_CANCELLED') {
+                this._renderGitHubAuthState();
+                return;
+            }
+            if (e.message === 'AUTH_DENIED') {
+                alert('❌ GitHub での承認が拒否されました。');
+            } else if (e.message === 'AUTH_EXPIRED') {
+                alert('❌ コードの有効期限が切れました。もう一度「接続」を押してください。');
+            } else {
+                alert(`❌ GitHub 接続エラー:\n${e.message}`);
+            }
+            this._renderGitHubAuthState();
+        }
+    }
+
+    _cancelGitHubAuth() {
+        if (this._currentDeviceAuth) {
+            this._currentDeviceAuth.cancelled = true;
+        }
+        this._renderGitHubAuthState();
+    }
+
+    async _copyDeviceCode() {
+        const codeEl = document.getElementById('github-user-code');
+        if (!codeEl) return;
+        const text = codeEl.textContent.trim();
+        try {
+            await navigator.clipboard.writeText(text);
+            const copyBtn = document.getElementById('github-copy-code-btn');
+            if (copyBtn) {
+                const orig = copyBtn.textContent;
+                copyBtn.textContent = '✅ コピー済';
+                setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+            }
+        } catch (e) {
+            console.warn('clipboard write failed:', e);
+        }
+    }
+
+    _disconnectGitHub() {
+        const ok = confirm('GitHub 接続を切断しますか?\nOAuth トークンを削除し、同期方式をローカルファイルに戻します。');
+        if (!ok) return;
+        const merged = SyncConfigManager.load();
+        merged.method = 'local';
+        if (merged.github) {
+            merged.github = { ...merged.github, token: '', login: null };
+        }
+        SyncConfigManager.save(merged);
+        location.reload();
+    }
+
+    _collectGitHubRepoForm() {
+        const sel = document.getElementById('github-repo-select');
+        const fullName = sel ? sel.value : '';
+        let owner = '', repo = '';
+        if (fullName && fullName.includes('/')) {
+            const parts = fullName.split('/');
+            owner = parts[0];
+            repo = parts.slice(1).join('/');
+        }
+        const branchSel = document.getElementById('github-branch-select');
+        const branch = (branchSel && branchSel.value) || 'main';
+        const val = (id) => (document.getElementById(id)?.value || '').trim();
+        return {
+            owner,
+            repo,
+            branch,
+            basePath: val('github-base-path')
+        };
+    }
+
+    async _saveGitHubRepo() {
+        const status = document.getElementById('github-status');
+        const repo = this._collectGitHubRepoForm();
+        const config = SyncConfigManager.load();
+        const token = config.github && config.github.token;
+        if (!token) {
+            if (status) status.textContent = '⚠️ 先に「GitHub に接続」を押してください';
+            return;
+        }
+        if (!repo.owner || !repo.repo) {
+            if (status) status.textContent = '⚠️ owner / repo は必須';
+            return;
+        }
+        if (status) status.textContent = '⏳ 接続確認中...';
+        try {
+            const adapter = new GitHubAdapter({ ...repo, token });
+            await adapter.testConnection();
+        } catch (e) {
+            if (status) status.textContent = `❌ 接続失敗: ${e.message}`;
+            return;
+        }
+        const merged = SyncConfigManager.load();
+        merged.method = 'github';
+        merged.github = {
+            ...(merged.github || {}),
+            owner: repo.owner,
+            repo: repo.repo,
+            branch: repo.branch,
+            basePath: repo.basePath
+        };
+        SyncConfigManager.save(merged);
+        if (status) status.textContent = '✅ 保存しました。ページをリロードします...';
+        setTimeout(() => location.reload(), 800);
     }
 
     // --- Obsidian Folder Sync methods ---
@@ -1855,11 +2701,13 @@ class VirtualBookshelf {
                 id: meta.slug,
                 internalId: meta.internalId,
                 name: meta.name,
+                iconName: meta.iconName || (fileData && fileData.iconName) || 'library',
                 ...(meta.color ? { color: meta.color } : {}),
                 parent: meta.parent || null,
                 appliedPlugins: meta.appliedPlugins || [],
                 isPublic: meta.isPublic || false,
                 isSpecial: meta.isSpecial || isAll,
+                description: meta.description || (fileData && fileData.description) || '',
                 books,
                 notes: (fileData && fileData.notes) || {}
             };
@@ -1950,20 +2798,23 @@ class VirtualBookshelf {
         return exportData;
     }
 
-    // 同期フォルダへの書き出し（新ファイル構造、分散保存）
+    // 同期先への書き出し (LocalFS / GitHub Adapter 等、storage の adapter に委譲)
     async syncToObsidianFolder() {
-        if (!this.obsidianDirHandle) return;
+        if (!this._isSyncReady()) return;
         try {
-            let perm = await this.obsidianDirHandle.queryPermission({ mode: 'readwrite' });
-            if (perm !== 'granted') {
-                perm = await this.obsidianDirHandle.requestPermission({ mode: 'readwrite' });
+            // LocalFS 時のみ FS permission を確認 (GitHub Adapter は token ベースなので不要)
+            if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
+                let perm = await this.obsidianDirHandle.queryPermission({ mode: 'readwrite' });
+                if (perm !== 'granted') {
+                    perm = await this.obsidianDirHandle.requestPermission({ mode: 'readwrite' });
+                }
+                if (perm !== 'granted') {
+                    this.obsidianDirHandle = null;
+                    this.updateSyncStatus('disconnected');
+                    return;
+                }
+                this.storage.setDirHandle(this.obsidianDirHandle);
             }
-            if (perm !== 'granted') {
-                this.obsidianDirHandle = null;
-                this.updateSyncStatus('disconnected');
-                return;
-            }
-            this.storage.setDirHandle(this.obsidianDirHandle);
 
             const format = await this.storage.detectFormat();
             if (format === 'empty') {
@@ -1977,8 +2828,11 @@ class VirtualBookshelf {
             if (!this.userData._storage) this.userData._storage = {};
             this.userData._storage.allInternalId = allInternalId;
 
+            // entries 配列に集めて、最後に syncBatch で一括書き込み (GitHub は 1 commit)
+            // 新構造 (2026-05-31〜): 全部 private/ 配下に集約
+            const entries = [];
+
             // library.json: 全書誌（除外含む全本）を毎回再構築
-            // 表示中の本（this.books）+ 除外で this.books に無い本（_storage.libraryBooks から取り出す）
             const exclusionsSet = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
             const currentBooksByAsin = new Map((this.books || []).map(b => [b.asin, b]));
             const excludedCache = ((this.userData._storage && this.userData._storage.libraryBooks) || [])
@@ -1999,15 +2853,15 @@ class VirtualBookshelf {
                 ...excludedCache.map(normalize)
             ];
             this.userData._storage.libraryBooks = libraryBooks;
-            await this.storage.writeLibrary({
+            entries.push({ op: 'put', path: 'private/library.json', data: {
                 exportDate: new Date().toISOString(),
                 books: libraryBooks
-            });
+            }});
 
             // exclusions.json
-            await this.storage.writeExclusions({
+            entries.push({ op: 'put', path: 'private/exclusions.json', data: {
                 excludedASINs: (this.userData._storage && this.userData._storage.exclusions) || []
-            });
+            }});
 
             // notes.json: 全本の rating/memo/hasDetailMemo（all.json には持たせない）
             const notesPayload = {};
@@ -2019,7 +2873,7 @@ class VirtualBookshelf {
                 if (n.hasDetailMemo) e.hasDetailMemo = true;
                 if (Object.keys(e).length > 0) notesPayload[asin] = e;
             });
-            await this.storage.writeNotes({ notes: notesPayload });
+            entries.push({ op: 'put', path: 'private/notes.json', data: { notes: notesPayload } });
 
             // bookshelves/all.json: 本棚メタ + books のみ
             const orderedAll = (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all))
@@ -2034,9 +2888,8 @@ class VirtualBookshelf {
             this.userData.bookOrder = this.userData.bookOrder || {};
             this.userData.bookOrder.all = allBooksList;
 
-            // all 本棚の表示メタ（bookshelves 配列にあればそれを優先）
             const allMeta = this.bookshelfManager.getBySlug('all');
-            await this.storage.writeAllBookshelf({
+            entries.push({ op: 'put', path: 'private/bookshelves/all.json', data: {
                 internalId: allInternalId,
                 slug: 'all',
                 name: (allMeta && allMeta.name) || 'すべての本',
@@ -2046,14 +2899,12 @@ class VirtualBookshelf {
                 defaultBookOrder: this.userData.settings?.defaultBookOrder || 'addedDate-desc',
                 appliedPlugins: (allMeta && allMeta.appliedPlugins) || [],
                 books: allBooksList
-            });
+            }});
 
             // bookshelves.json + 各 slug ファイル
-            // internalId 未設定なら発行して this.userData.bookshelves[i] に書き戻す（永続化）
             for (const b of (this.userData.bookshelves || [])) {
                 if (!b.internalId) b.internalId = generateInternalId();
             }
-            // 特殊本棚（all）が無ければ自動追加（マイグレーション後・初期化後の保険）
             if (!this.userData.bookshelves.some(b => b.isSpecial)) {
                 this.userData.bookshelves.unshift({
                     id: 'all',
@@ -2071,48 +2922,100 @@ class VirtualBookshelf {
                 internalId: b.internalId,
                 slug: b.id,
                 name: b.name,
+                iconName: b.iconName || 'library',
                 parent: b.isSpecial ? null : (b.parent || allInternalId),
                 ...(b.color ? { color: b.color } : {}),
                 appliedPlugins: b.appliedPlugins || [],
                 isPublic: b.isPublic || false,
-                ...(b.isSpecial ? { isSpecial: true } : {})
+                ...(b.isSpecial ? { isSpecial: true } : {}),
+                ...(b.description ? { description: b.description } : {})
             }));
-            await this.storage.writeBookshelvesMeta({ bookshelves: bookshelvesMetaEntries });
-            // 特殊本棚（all）は writeAllBookshelf で別途書き込み済みなのでスキップ
+            entries.push({ op: 'put', path: 'private/bookshelves.json', data: { bookshelves: bookshelvesMetaEntries } });
             for (let i = 0; i < (this.userData.bookshelves || []).length; i++) {
                 const b = this.userData.bookshelves[i];
                 if (b.isSpecial) continue;
                 const meta = bookshelvesMetaEntries[i];
-                await this.storage.writeBookshelfFile(meta.slug, {
+                entries.push({ op: 'put', path: `private/bookshelves/${meta.slug}.json`, data: {
                     internalId: meta.internalId,
                     slug: meta.slug,
                     name: meta.name,
+                    iconName: meta.iconName,
                     parent: meta.parent,
                     books: b.books || [],
                     notes: b.notes || {}
-                });
+                }});
             }
 
             // private/settings.json
-            await this.storage.writePrivateSettings({
+            entries.push({ op: 'put', path: 'private/settings.json', data: {
                 version: '2.0',
                 ...(this.userData.settings || {})
-            });
+            }});
 
             // private/main.json
-            // bookshelvesMetaEntries には all が含まれているのでそのまま使う
             const existingMain = (this.userData._storage && this.userData._storage.main) || {};
-            await this.storage.writePrivateMain({
+            entries.push({ op: 'put', path: 'private/main.json', data: {
                 enabledPlugins: existingMain.enabledPlugins || [],
                 appliedPlugins: existingMain.appliedPlugins || [],
                 bookshelves: bookshelvesMetaEntries.map(b => b.internalId),
-                defaultSort: existingMain.defaultSort || 'addedDate-desc'
-            });
+                defaultSort: existingMain.defaultSort || 'addedDate-desc',
+                ...(existingMain.home ? { home: existingMain.home } : {})
+            }});
 
-            this.updateSyncStatus('synced', this.obsidianDirHandle.name);
+            // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
+            try {
+                await this.storage.syncBatch(entries, {
+                    message: `chore(bookshelf): sync ${entries.length} file(s)`
+                });
+            } catch (err) {
+                if (err && err.name === 'GitHubConflictError') {
+                    this.updateSyncStatus('reconnect', this._syncLabel());
+                    this._handleSyncConflict();
+                    return;
+                }
+                throw err;
+            }
+
+            this.updateSyncStatus('synced', this._syncLabel());
         } catch (e) {
-            console.error('Obsidian同期エラー:', e);
+            console.error('同期エラー:', e);
+            this.updateSyncStatus('reconnect', this._syncLabel());
+            // dirHandle が dangling (フォルダ削除/リネーム) なら明示的に再選択を促す
+            const isHandleStale = e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError');
+            if (isHandleStale && this.syncMethod === 'local' && !this._syncReconnectNotified) {
+                this._syncReconnectNotified = true;
+                alert('同期フォルダが見つかりません (削除/リネームされた可能性)。\n設定 → 同期 → 「📁 変更」で再選択してください。\n別方式 (GitHub) に切替える場合は 同期方式 select から行ってください。');
+                if (this.storage && this.storage.adapter && typeof this.storage.adapter.setDirHandle === 'function') {
+                    this.storage.adapter.setDirHandle(null);
+                }
+            }
         }
+    }
+
+    _handleSyncConflict() {
+        if (this._conflictNotified) return;
+        this._conflictNotified = true;
+        const ok = confirm(
+            '⚠️ 同期先 (GitHub) のデータが他の場所から更新されています。\n\n' +
+            'このセッションでの直近の編集はまだ GitHub に反映されていません。\n\n' +
+            'OK : 最新版を取得するためにページを再読込 (未反映の編集は失われます)\n' +
+            'キャンセル: 何もしない (次回保存時にまた衝突する可能性)'
+        );
+        if (ok) {
+            location.reload();
+        } else {
+            // ユーザがキャンセルしたら一定時間後にもう一度知らせる余地を残す
+            setTimeout(() => { this._conflictNotified = false; }, 60000);
+        }
+    }
+
+    _syncLabel() {
+        if (this.syncMethod === 'github') {
+            const a = this.storage && this.storage.adapter;
+            if (a && a.owner && a.repo) return `${a.owner}/${a.repo}@${a.branch}`;
+            return 'GitHub';
+        }
+        return this.obsidianDirHandle ? this.obsidianDirHandle.name : '';
     }
 
     updateSyncStatus(state, folderName = '') {
@@ -2145,23 +3048,7 @@ class VirtualBookshelf {
         }
     }
 
-    /**
-     * 公開エクスポート先のパス表示を更新
-     */
-    _updateExportDirDisplay() {
-        const pathEl = document.getElementById('export-dir-path');
-        if (!pathEl) return;
-        const handle = this.exporter?.exportDirHandle;
-        if (handle && handle.name) {
-            pathEl.textContent = handle.name;
-            pathEl.title = handle.name;
-            pathEl.style.color = '';
-        } else {
-            pathEl.textContent = '(未設定)';
-            pathEl.title = '';
-            pathEl.style.color = '#888';
-        }
-    }
+    // 旧 _updateExportDirDisplay は R-2 で廃止 (公開出力先は同期先の public/ に統合)
 
     // --- end Obsidian Folder Sync methods ---
 
@@ -2222,6 +3109,12 @@ class VirtualBookshelf {
         // 開いていない場合でも、開いている時の中身を最新化しておく。
         const pop = document.getElementById('bookshelf-popover');
         if (pop && !pop.hidden) this._renderBookshelfPopover();
+        // PC v2: 左サイドバーツリーも更新
+        this._renderSidebarTree();
+        // ダッシュボードも再描画 (本棚ハイライトウィジェットや、カウンターが本棚数に依存するため)
+        if (this.dashboard && document.body.classList.contains('app-view-main')) {
+            this.dashboard.render();
+        }
     }
 
     switchBookshelf(bookshelfId) {
@@ -2230,6 +3123,8 @@ class VirtualBookshelf {
         // 本棚ビューに切替
         this._setBodyView('bookshelf');
         this._updateBookshelfViewTitle();
+        // PC v2: 左サイドバーツリーのハイライト更新
+        this._updateSidebarActive();
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
@@ -2244,12 +3139,527 @@ class VirtualBookshelf {
     _setBodyView(view) {
         document.body.classList.remove('app-view-main', 'app-view-bookshelf');
         document.body.classList.add(`app-view-${view}`);
+        // ホームに戻ったら右ペインのピン留めも解除
+        if (view === 'main') {
+            document.body.classList.remove('book-detail-pinned');
+        }
+        // 左サイドバーの選択ハイライトを更新
+        this._updateSidebarActive();
+    }
+
+    // ===== PC v2: ペイン制御 (UI-4) =====
+    _initPaneControls() {
+        // 永続化された折りたたみ状態を復元
+        const paneState = (this.userData?.settings?.paneState) || {};
+        if (paneState.left)  document.body.classList.add('left-collapsed');
+        if (paneState.right) document.body.classList.add('right-collapsed');
+
+        // 折りたたみボタン
+        const sidebarToggle = document.getElementById('sidebar-toggle-btn');
+        const sidebarRestore = document.getElementById('sidebar-restore-btn');
+        const detailToggle = document.getElementById('detail-toggle-btn');
+        const detailRestore = document.getElementById('detail-restore-btn');
+
+        if (sidebarToggle && !sidebarToggle._bound) {
+            sidebarToggle._bound = true;
+            sidebarToggle.addEventListener('click', () => this._togglePane('left'));
+        }
+        if (sidebarRestore && !sidebarRestore._bound) {
+            sidebarRestore._bound = true;
+            sidebarRestore.addEventListener('click', () => this._togglePane('left'));
+        }
+        if (detailToggle && !detailToggle._bound) {
+            detailToggle._bound = true;
+            detailToggle.addEventListener('click', () => this._togglePane('right'));
+        }
+        if (detailRestore && !detailRestore._bound) {
+            detailRestore._bound = true;
+            detailRestore.addEventListener('click', () => this._togglePane('right'));
+        }
+
+        // キーバインド: ⌘[ / ⌘] / ⌘\ (mac は metaKey, win/linux は ctrlKey)
+        if (!this._paneKeysBound) {
+            this._paneKeysBound = true;
+            document.addEventListener('keydown', (e) => {
+                if (!(e.metaKey || e.ctrlKey)) return;
+                if (e.key === '[') { e.preventDefault(); this._togglePane('left'); }
+                else if (e.key === ']') { e.preventDefault(); this._togglePane('right'); }
+                else if (e.key === '\\') { e.preventDefault(); this._togglePane('both'); }
+            });
+        }
+
+        // ホームナビボタン
+        const homeBtn = document.querySelector('.sidebar-nav-item[data-nav="home"]');
+        if (homeBtn && !homeBtn._bound) {
+            homeBtn._bound = true;
+            homeBtn.addEventListener('click', () => {
+                if (this.router) this.router.navigateMain();
+                else { this._setBodyView('main'); }
+            });
+        }
+    }
+
+    _togglePane(which) {
+        const body = document.body;
+        if (which === 'left') {
+            body.classList.toggle('left-collapsed');
+        } else if (which === 'right') {
+            body.classList.toggle('right-collapsed');
+        } else if (which === 'both') {
+            const anyCollapsed = body.classList.contains('left-collapsed') || body.classList.contains('right-collapsed');
+            if (anyCollapsed) {
+                body.classList.remove('left-collapsed', 'right-collapsed');
+            } else {
+                body.classList.add('left-collapsed', 'right-collapsed');
+            }
+        }
+        this._savePaneState();
+    }
+
+    _savePaneState() {
+        if (!this.userData) return;
+        if (!this.userData.settings) this.userData.settings = {};
+        this.userData.settings.paneState = {
+            left:  document.body.classList.contains('left-collapsed'),
+            right: document.body.classList.contains('right-collapsed')
+        };
+        if (this.storage && typeof this.storage.saveSettings === 'function') {
+            this.storage.saveSettings(this.userData.settings).catch(err => console.warn('paneState 保存失敗', err));
+        }
+    }
+
+    // ===== PC v2: 本棚ツリー (UI-1 + UI-2) =====
+    _renderSidebarTree() {
+        const container = document.getElementById('sidebar-bookshelf-tree');
+        if (!container) return;
+        const bookshelves = this.bookshelfManager?.getBookshelves?.() || [];
+        if (bookshelves.length === 0) {
+            container.innerHTML = '<p class="tree-empty" style="padding:0.5rem 0.6rem;color:#9ca3af;font-size:0.8rem;">本棚がありません</p>';
+            return;
+        }
+        // 展開状態を localStorage から復元
+        const expandedKey = 'bookshelf_treeExpanded_v1';
+        let expanded;
+        try {
+            expanded = new Set(JSON.parse(localStorage.getItem(expandedKey) || '[]'));
+        } catch { expanded = new Set(); }
+        this._treeExpanded = expanded;
+
+        const byParent = new Map(); // parent internalId -> [bookshelf]
+        bookshelves.forEach(bs => {
+            const key = bs.parent || null;
+            if (!byParent.has(key)) byParent.set(key, []);
+            byParent.get(key).push(bs);
+        });
+
+        const renderNode = (bs, depth) => {
+            const children = byParent.get(bs.internalId) || [];
+            const hasChildren = children.length > 0;
+            const isExpanded = expanded.has(bs.internalId);
+            const bookCount = (bs.books && bs.books.length) || 0;
+            const effectiveIcon = bs.iconName || 'library';
+            const iconSvg = window.renderIcon(effectiveIcon, { size: 16 });
+            const isActive = this.currentBookshelf && (bs.id === this.currentBookshelf || bs.internalId === this.currentBookshelf);
+
+            const node = document.createElement('div');
+            node.className = `tree-node lv${Math.min(depth, 4)}${isActive ? ' is-active' : ''}`;
+            node.dataset.bookshelfId = bs.id;
+            node.dataset.internalId = bs.internalId;
+            const toggleIconName = isExpanded ? 'chevron-down' : 'chevron-right';
+            node.innerHTML = `
+                <span class="tree-indent"></span>
+                <span class="tree-icon" data-icon-value="${effectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>
+                <span class="tree-label" title="${bs.name}">${bs.name}</span>
+                <span class="tree-count">${bookCount}</span>
+                ${hasChildren
+                    ? `<button class="tree-toggle" type="button" title="${isExpanded ? '折りたたむ' : '展開'}">${window.renderIcon(toggleIconName, { size: 12 })}</button>`
+                    : '<span class="tree-toggle-placeholder"></span>'}
+            `;
+            // 本棚選択
+            node.addEventListener('click', (e) => {
+                if (e.target.closest('.tree-toggle')) return;
+                this.switchBookshelf(bs.id);
+            });
+            // 展開トグル
+            const toggleBtn = node.querySelector('.tree-toggle');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (expanded.has(bs.internalId)) expanded.delete(bs.internalId);
+                    else expanded.add(bs.internalId);
+                    try { localStorage.setItem(expandedKey, JSON.stringify([...expanded])); } catch {}
+                    this._renderSidebarTree();
+                });
+            }
+            container.appendChild(node);
+            if (hasChildren && isExpanded) {
+                children.forEach(child => renderNode(child, depth + 1));
+            }
+        };
+
+        container.innerHTML = '';
+        // ルート (parent なし)
+        const roots = byParent.get(null) || [];
+        // all 本棚を先頭に
+        roots.sort((a, b) => {
+            if (a.isSpecial && !b.isSpecial) return -1;
+            if (!a.isSpecial && b.isSpecial) return 1;
+            return 0;
+        });
+        roots.forEach(bs => renderNode(bs, 0));
+        this._renderSidebarPinned();
+    }
+
+    // 折りたたみ strip にホーム + ピン留め本棚アイコンを描画
+    _renderSidebarPinned() {
+        const host = document.getElementById('sidebar-pinned');
+        if (!host) return;
+        const bookshelves = this.bookshelfManager?.getBookshelves?.() || [];
+        const pinned = bookshelves.filter(b => b.pinned && !b.isSpecial);
+        const isMain = document.body.classList.contains('app-view-main');
+
+        const escapeAttr = (s) => String(s || '').replace(/"/g, '&quot;');
+        const homeBtn = `
+            <button class="strip-pin-item strip-pin-home${isMain ? ' is-active' : ''}" type="button" data-nav="home" title="ホーム">
+                ${window.renderIcon('library', { size: 18 })}
+            </button>
+        `;
+        const pinnedHtml = pinned.map(bs => {
+            const icon = bs.iconName || 'library';
+            const isActive = !isMain && (this.currentBookshelf === bs.id || this.currentBookshelf === bs.internalId);
+            return `
+                <button class="strip-pin-item${isActive ? ' is-active' : ''}" type="button"
+                        data-bookshelf-id="${escapeAttr(bs.id)}"
+                        title="${escapeAttr(bs.name)}">
+                    ${window.renderIcon(icon, { size: 18 })}
+                </button>
+            `;
+        }).join('');
+        host.innerHTML = homeBtn + (pinned.length > 0 ? '<div class="strip-divider"></div>' : '') + pinnedHtml;
+
+        host.querySelectorAll('.strip-pin-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.nav === 'home') {
+                    if (this.router) this.router.navigateMain();
+                    else this._setBodyView('main');
+                    return;
+                }
+                const id = btn.dataset.bookshelfId;
+                if (id) this.switchBookshelf(id);
+            });
+        });
+    }
+
+    _updateSidebarActive() {
+        const tree = document.getElementById('sidebar-bookshelf-tree');
+        if (!tree) return;
+        tree.querySelectorAll('.tree-node').forEach(node => {
+            const id = node.dataset.bookshelfId;
+            const internalId = node.dataset.internalId;
+            const isMain = document.body.classList.contains('app-view-main');
+            const matches = !isMain && (this.currentBookshelf === id || this.currentBookshelf === internalId);
+            node.classList.toggle('is-active', !!matches);
+        });
+        // ホームナビのハイライト
+        const homeBtn = document.querySelector('.sidebar-nav-item[data-nav="home"]');
+        if (homeBtn) {
+            homeBtn.classList.toggle('is-active', document.body.classList.contains('app-view-main'));
+        }
+        // 折りたたみ strip のハイライト同期
+        this._renderSidebarPinned();
+    }
+
+    // ===== Header Icon Override (localStorage、全ヘッダーアイテム共通) =====
+    //
+    // ヘッダーボタンのアイコンをユーザが自由に変更できる。プラグインも静的アイテムも全て同じ
+    // 体系で扱う。
+    //
+    // key 体系:
+    //   - 静的: 'back-to-main', 'bookshelf-selector', 'manage-bookshelves', ...
+    //   - 状態切替: 'view-toggle:covers', 'view-toggle:list',
+    //               'overview-display:images', 'overview-display:text'
+    //   - プラグイン: 'plugin:<id>'
+    static HEADER_ICON_OVERRIDES_KEY = 'bookshelf_headerIconOverrides_v1';
+
+    _loadHeaderIconOverrides() {
+        try {
+            const raw = localStorage.getItem(VirtualBookshelf.HEADER_ICON_OVERRIDES_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch { return {}; }
+    }
+
+    _saveHeaderIconOverrides(map) {
+        try {
+            localStorage.setItem(VirtualBookshelf.HEADER_ICON_OVERRIDES_KEY, JSON.stringify(map));
+        } catch (e) { console.warn('header icon overrides 保存失敗', e); }
+    }
+
+    /**
+     * ヘッダーアイテムに紐づく override を取得 ('' なら未設定)
+     * @param {string} key  'back-to-main', 'view-toggle:covers', 'plugin:foo' など
+     */
+    getHeaderIconOverride(key) {
+        if (!key) return '';
+        const map = this._loadHeaderIconOverrides();
+        return map[key] || '';
+    }
+
+    /**
+     * ヘッダーアイテムの override を設定。null/'' でクリア。即時にヘッダー再描画。
+     */
+    setHeaderIconOverride(key, name) {
+        const map = this._loadHeaderIconOverrides();
+        if (name === null || name === '') {
+            delete map[key];
+        } else {
+            map[key] = name;
+        }
+        this._saveHeaderIconOverrides(map);
+        // ヘッダー全体を再構築 → state-切替も _updateView*Button から override を読むので反映される
+        if (typeof this._applyHeaderLayout === 'function') this._applyHeaderLayout();
+        // 設定モーダルのヘッダーカスタマイザも再描画 (プレビュー更新)
+        if (typeof this._renderHeaderCustomizer === 'function') {
+            this._renderHeaderCustomizer().catch(e => console.warn('header customizer re-render failed', e));
+        }
+        // プラグインカードのプレビューも更新 (plugin:<id> の場合)
+        if (key.startsWith('plugin:') && typeof this._renderPluginListSection === 'function') {
+            this._renderPluginListSection().catch(e => console.warn('plugin list re-render failed', e));
+        }
+    }
+
+    // ===== 後方互換: plugin-api.js が _getPluginIconOverride を呼ぶので残す =====
+    _getPluginIconOverride(pluginId) {
+        return this.getHeaderIconOverride(`plugin:${pluginId}`);
+    }
+
+    // ===== Icon Picker (Lucide 共通) =====
+    /**
+     * IconPicker を開く。選択結果は Promise<string|null> で返す (キャンセル/クリア時は null)。
+     * @param {object} opts - { title, current, candidates }
+     */
+    openIconPicker(opts = {}) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('icon-picker-modal');
+            const titleEl = document.getElementById('icon-picker-title');
+            // 共通
+            const cancelBtn = document.getElementById('icon-picker-cancel');
+            const closeBtn = document.getElementById('icon-picker-modal-close');
+            const clearBtn = document.getElementById('icon-picker-clear');
+            const tabs = Array.from(document.querySelectorAll('.icon-picker-tab'));
+            const tabContents = Array.from(document.querySelectorAll('.icon-picker-tab-content'));
+            // Lucide tab
+            const lucideGrid = document.getElementById('icon-picker-grid');
+            const lucideInput = document.getElementById('icon-picker-lucide-input');
+            const lucidePreview = document.getElementById('icon-picker-lucide-preview');
+            const lucideUseBtn = document.getElementById('icon-picker-lucide-use');
+            // Text tab
+            const textGrid = document.getElementById('icon-picker-text-grid');
+            const textInput = document.getElementById('icon-picker-text-input');
+            const textPreview = document.getElementById('icon-picker-text-preview');
+            const textUseBtn = document.getElementById('icon-picker-text-use');
+            if (!modal || !lucideGrid) { resolve(null); return; }
+
+            const title = opts.title || 'アイコンを選択';
+            const current = opts.current || null;
+            const candidates = opts.candidates || (window.BOOKSHELF_PICKER_DEFAULTS || Object.keys(window.LUCIDE_ICONS || {}));
+            titleEl.textContent = title;
+
+            // 初期化
+            lucideInput.value = '';
+            lucidePreview.innerHTML = '';
+            lucideUseBtn.disabled = true;
+            lucideUseBtn.dataset.pendingValue = '';
+            textInput.value = '';
+            textPreview.innerHTML = '';
+            textUseBtn.disabled = true;
+            textUseBtn.dataset.pendingValue = '';
+
+            // タブ切替
+            const activateTab = (name) => {
+                tabs.forEach(t => t.classList.toggle('is-active', t.dataset.tab === name));
+                tabContents.forEach(c => {
+                    if (c.dataset.tabContent === name) c.removeAttribute('hidden');
+                    else c.setAttribute('hidden', '');
+                });
+                setTimeout(() => {
+                    if (name === 'lucide') lucideInput.focus();
+                    else textInput.focus();
+                }, 30);
+            };
+            // 初期タブは「文字アイコン」が current か判定して切替
+            const isCurrentLucide = current && /^[a-z][a-z0-9-]*$/.test(current);
+            activateTab(isCurrentLucide || !current ? 'lucide' : 'text');
+
+            // セル生成
+            const cellHtml = (value, isSel) => `
+                <button type="button" class="icon-picker-cell${isSel ? ' is-selected' : ''}" data-icon-value="${this._escapeAttr(value)}" title="${this._escapeAttr(value)}">
+                    ${window.renderIcon(value, { size: 22 })}
+                    <span class="icon-picker-cell-name">${this._escapeAttr(value)}</span>
+                </button>
+            `;
+
+            // ===== Lucide tab: 履歴 (Lucide 名のみ) + おすすめ =====
+            const renderLucideGrid = (filter) => {
+                const q = (filter || '').trim().toLowerCase();
+                const recents = (window.getIconRecents ? window.getIconRecents() : [])
+                    .filter(v => /^[a-z][a-z0-9-]*$/.test(v)); // Lucide 名のみ
+                const filterFn = (v) => !q || v.toLowerCase().includes(q);
+                const recentList = recents.filter(filterFn);
+                const candList = candidates.filter(filterFn).filter(v => !recents.includes(v));
+                let html = '';
+                if (recentList.length > 0) {
+                    html += `<div class="icon-picker-section-label">🕐 履歴</div>`;
+                    html += `<div class="icon-picker-section">${recentList.map(v => cellHtml(v, v === current)).join('')}</div>`;
+                }
+                if (candList.length > 0) {
+                    html += `<div class="icon-picker-section-label">★ おすすめ</div>`;
+                    html += `<div class="icon-picker-section">${candList.map(v => cellHtml(v, v === current)).join('')}</div>`;
+                }
+                if (!html) html = '<p style="color:#9ca3af;padding:0.5rem;">該当なし</p>';
+                lucideGrid.innerHTML = html;
+            };
+            renderLucideGrid('');
+
+            // Lucide 直接入力プレビュー
+            let lucideTimer = null;
+            let lucideSeq = 0;
+            const updateLucidePreview = () => {
+                clearTimeout(lucideTimer);
+                const raw = lucideInput.value.trim().toLowerCase();
+                if (!raw) {
+                    lucidePreview.innerHTML = '';
+                    lucideUseBtn.disabled = true;
+                    lucideUseBtn.dataset.pendingValue = '';
+                    renderLucideGrid('');
+                    return;
+                }
+                // 検索フィルタはリアルタイム
+                renderLucideGrid(raw);
+                // Lucide 名パターンで CDN チェック
+                if (!/^[a-z][a-z0-9-]*$/.test(raw)) {
+                    lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">英小文字/数字/ハイフンのみ。文字アイコンタブへ →</span>`;
+                    lucideUseBtn.disabled = true;
+                    lucideUseBtn.dataset.pendingValue = '';
+                    return;
+                }
+                lucidePreview.innerHTML = '<span style="color:#9ca3af;font-size:0.75rem;">CDN 確認中…</span>';
+                lucideUseBtn.disabled = true;
+                const mySeq = ++lucideSeq;
+                lucideTimer = setTimeout(async () => {
+                    const inner = await window.resolveIcon(raw);
+                    if (mySeq !== lucideSeq) return;
+                    if (inner) {
+                        lucidePreview.innerHTML = window.icon(raw, { size: 24 }) + `<span style="color:#374151;font-size:0.8rem;">${raw}</span>`;
+                        lucideUseBtn.disabled = false;
+                        lucideUseBtn.dataset.pendingValue = raw;
+                    } else {
+                        lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">"${raw}" は Lucide に見つかりません</span>`;
+                        lucideUseBtn.disabled = true;
+                        lucideUseBtn.dataset.pendingValue = '';
+                    }
+                }, 250);
+            };
+
+            // ===== Text tab: 履歴 (任意文字のみ) =====
+            const renderTextGrid = () => {
+                const recents = (window.getIconRecents ? window.getIconRecents() : [])
+                    .filter(v => !/^[a-z][a-z0-9-]*$/.test(v)); // Lucide 以外
+                if (recents.length === 0) {
+                    textGrid.innerHTML = '<p style="color:#9ca3af;padding:0.5rem;font-size:0.85rem;">履歴はまだありません。上の入力欄から文字を指定してください。</p>';
+                    return;
+                }
+                let html = '<div class="icon-picker-section-label">🕐 履歴</div>';
+                html += `<div class="icon-picker-section">${recents.map(v => cellHtml(v, v === current)).join('')}</div>`;
+                textGrid.innerHTML = html;
+            };
+            renderTextGrid();
+
+            // Text 直接入力プレビュー (即時、CDN 不要)
+            const updateTextPreview = () => {
+                const raw = textInput.value;
+                if (!raw || !raw.trim()) {
+                    textPreview.innerHTML = '';
+                    textUseBtn.disabled = true;
+                    textUseBtn.dataset.pendingValue = '';
+                    return;
+                }
+                const v = raw.trim();
+                textPreview.innerHTML = window.renderTextIcon(v, { size: 28 }) + `<span style="color:#374151;font-size:0.8rem;">${this._escapeAttr(v)}</span>`;
+                textUseBtn.disabled = false;
+                textUseBtn.dataset.pendingValue = v;
+            };
+
+            // ===== イベントハンドラ =====
+            const cleanup = () => {
+                modal.classList.remove('show');
+                lucideGrid.removeEventListener('click', onLucideGridClick);
+                textGrid.removeEventListener('click', onTextGridClick);
+                lucideInput.removeEventListener('input', updateLucidePreview);
+                lucideInput.removeEventListener('keydown', onLucideKey);
+                lucideUseBtn.removeEventListener('click', onLucideUse);
+                textInput.removeEventListener('input', updateTextPreview);
+                textInput.removeEventListener('keydown', onTextKey);
+                textUseBtn.removeEventListener('click', onTextUse);
+                tabs.forEach(t => t.removeEventListener('click', onTabClick));
+                cancelBtn.removeEventListener('click', onCancel);
+                closeBtn.removeEventListener('click', onCancel);
+                clearBtn.removeEventListener('click', onClear);
+                if (lucideTimer) clearTimeout(lucideTimer);
+            };
+            const finish = (value) => {
+                cleanup();
+                if (value && window.pushIconRecent) window.pushIconRecent(value);
+                resolve(value);
+            };
+            const onLucideGridClick = (e) => {
+                const cell = e.target.closest('.icon-picker-cell');
+                if (cell) finish(cell.dataset.iconValue);
+            };
+            const onTextGridClick = (e) => {
+                const cell = e.target.closest('.icon-picker-cell');
+                if (cell) finish(cell.dataset.iconValue);
+            };
+            const onLucideUse = () => {
+                const v = lucideUseBtn.dataset.pendingValue;
+                if (v) finish(v);
+            };
+            const onTextUse = () => {
+                const v = textUseBtn.dataset.pendingValue;
+                if (v) finish(v);
+            };
+            const onLucideKey = (e) => { if (e.key === 'Enter' && !lucideUseBtn.disabled) { e.preventDefault(); onLucideUse(); } };
+            const onTextKey   = (e) => { if (e.key === 'Enter' && !textUseBtn.disabled)   { e.preventDefault(); onTextUse();   } };
+            const onTabClick = (e) => {
+                const t = e.currentTarget;
+                activateTab(t.dataset.tab);
+            };
+            const onCancel = () => { cleanup(); resolve(null); };
+            const onClear = () => { cleanup(); resolve(''); };
+
+            lucideGrid.addEventListener('click', onLucideGridClick);
+            textGrid.addEventListener('click', onTextGridClick);
+            lucideInput.addEventListener('input', updateLucidePreview);
+            lucideInput.addEventListener('keydown', onLucideKey);
+            lucideUseBtn.addEventListener('click', onLucideUse);
+            textInput.addEventListener('input', updateTextPreview);
+            textInput.addEventListener('keydown', onTextKey);
+            textUseBtn.addEventListener('click', onTextUse);
+            tabs.forEach(t => t.addEventListener('click', onTabClick));
+            cancelBtn.addEventListener('click', onCancel);
+            closeBtn.addEventListener('click', onCancel);
+            clearBtn.addEventListener('click', onClear);
+
+            modal.classList.add('show');
+        });
+    }
+
+    _escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     async _openSettingsModal() {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        this._updateExportDirDisplay();
         modal.classList.add('show');
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
@@ -2267,14 +3677,14 @@ class VirtualBookshelf {
     // - needsBookshelf: メインビューでは disabled 表示
     // - required: 取り外せない (open-settings のみ)
     static HEADER_ITEMS_META = {
-        'back-to-main':        { label: '← 一覧',       emoji: '←',  duplicatable: false, needsBookshelf: true,  required: true },
-        'bookshelf-selector':  { label: '本棚切替',     emoji: '📚', duplicatable: false },
-        'manage-bookshelves':  { label: '本棚管理',     emoji: '📝', duplicatable: false },
-        'overview-display':    { label: '一覧画像表示', emoji: '🖼️', duplicatable: false },
-        'view-toggle':         { label: '表紙/リスト',  emoji: '🖼️', duplicatable: false, needsBookshelf: true  },
-        'search-box':          { label: '検索',         emoji: '🔍', duplicatable: false, needsBookshelf: true  },
-        'filter':              { label: 'フィルター',   emoji: '🔧', duplicatable: false, needsBookshelf: true  },
-        'open-settings':       { label: '設定',         emoji: '⚙️', duplicatable: false, required: true }
+        'back-to-main':        { label: '← 一覧',       defaultIcon: 'arrow-left',        emoji: '←',  duplicatable: false, needsBookshelf: true,  required: true },
+        'bookshelf-selector':  { label: '本棚切替',     defaultIcon: 'library',           emoji: '📚', duplicatable: false },
+        'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '📝', duplicatable: false },
+        'overview-display':    { label: '一覧画像表示', defaultIcon: 'image',             emoji: '🖼️', duplicatable: false, stateful: true },
+        'view-toggle':         { label: '表紙/リスト',  defaultIcon: 'list',              emoji: '🖼️', duplicatable: false, needsBookshelf: true, stateful: true },
+        'search-box':          { label: '検索',         defaultIcon: 'search',            emoji: '🔍', duplicatable: false, needsBookshelf: true  },
+        'filter':              { label: 'フィルター',   defaultIcon: 'sliders-horizontal',emoji: '🔧', duplicatable: false, needsBookshelf: true  },
+        'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
     };
     static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV6';
 
@@ -2407,6 +3817,7 @@ class VirtualBookshelf {
 
     /**
      * placement の DOM 要素を取得 (全アイテム non-duplicatable のためテンプレート実体を返す)。
+     * 静的アイテム / プラグイン共通で、override があれば適用する。
      */
     _buildPlacementElement(item) {
         const { key, id: placementId } = item;
@@ -2420,7 +3831,12 @@ class VirtualBookshelf {
             span.dataset.placementId = placementId;
             const btn = document.createElement('button');
             btn.className = 'btn-icon-square plugin-ui-button';
-            btn.textContent = entry.emoji || '🧩';
+            // pluginAPI 側に icon 適用を委譲 (override 優先, manifest.icon, emoji の順)
+            if (typeof this.pluginAPI?._applyIconToButton === 'function') {
+                this.pluginAPI._applyIconToButton(btn, entry);
+            } else {
+                btn.textContent = entry.emoji || '🧩';
+            }
             btn.title = entry.title || entry.label;
             btn.addEventListener('click', () => {
                 try { entry.onClick(); }
@@ -2434,6 +3850,30 @@ class VirtualBookshelf {
         const tpl = this._headerTemplates?.get(key);
         if (!tpl) return null;
         tpl.dataset.placementId = placementId;
+        // 静的アイテムにも override を適用 (view-toggle / overview-display は除く: 状態切替なので別関数で扱う)
+        if (key !== 'view-toggle' && key !== 'overview-display') {
+            const override = this.getHeaderIconOverride(key);
+            const btn = tpl.querySelector('button');
+            if (btn) {
+                if (override) {
+                    btn.innerHTML = window.renderIcon(override, { size: 20 });
+                    btn.dataset.iconValue = override;
+                    // 後で applyIcons が data-icon を再 inject しないように属性を一旦消す
+                    btn.removeAttribute('data-icon');
+                } else {
+                    // override 解除時: 元の data-icon を復元する必要がある (テンプレ DOM は同一実体なので)
+                    if (btn.dataset.iconValue) {
+                        delete btn.dataset.iconValue;
+                    }
+                    // 静的なデフォルトアイコンを HEADER_ITEMS_META から取り戻す
+                    const defaultIcon = VirtualBookshelf.HEADER_ITEMS_META[key]?.defaultIcon;
+                    if (defaultIcon) {
+                        btn.setAttribute('data-icon', defaultIcon);
+                        btn.innerHTML = '';
+                    }
+                }
+            }
+        }
         return tpl;
     }
 
@@ -2454,6 +3894,9 @@ class VirtualBookshelf {
             const el = this._buildPlacementElement(item);
             if (el) header.appendChild(el);
         }
+
+        // clone された data-icon 要素に SVG を inject
+        if (typeof window.applyIcons === 'function') window.applyIcons(header);
 
         // 状態依存のアイコン表示を反映 (clone 含む)
         this._updateViewToggleButton();
@@ -2477,6 +3920,7 @@ class VirtualBookshelf {
             const { source, placementId } = opts;
             const required = !!VirtualBookshelf.HEADER_ITEMS_META[item.key]?.required;
             const isPlugin = item.isPlugin;
+            const isStateful = !!VirtualBookshelf.HEADER_ITEMS_META[item.key]?.stateful;
             const badge = isPlugin
                 ? '<span class="hdr-row-badge plugin">🧩 プラグイン</span>'
                 : required ? '<span class="hdr-row-badge muted">必須</span>' : '';
@@ -2497,16 +3941,46 @@ class VirtualBookshelf {
                     invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-key="${item.key}" title="このボタンを実行">▶ 操作</button>`;
                 }
             }
+            // 🎨 アイコン変更ボタン (全アイテム共通)
+            // state-持ち (view-toggle / overview-display) は 2 state 分の選択肢が出る
+            let iconBtnHtml = '';
+            if (isStateful) {
+                // 2 つの状態を別々に変更可能
+                const stateLabels = item.key === 'view-toggle'
+                    ? [['view-toggle:covers', '表紙時'], ['view-toggle:list', 'リスト時']]
+                    : [['overview-display:images', '画像時'], ['overview-display:text', 'テキスト時']];
+                iconBtnHtml = stateLabels.map(([k, lbl]) => {
+                    const cur = this.getHeaderIconOverride(k);
+                    const preview = window.renderIcon(cur || VirtualBookshelf.HEADER_ITEMS_META[item.key].defaultIcon, { size: 14 });
+                    return `<button type="button" class="hdr-row-icon-btn" data-icon-key="${k}" title="${lbl}のアイコンを変更">${preview}<span style="font-size:0.7rem;color:#6b7280;">${lbl}</span></button>`;
+                }).join('');
+            } else {
+                const stateKey = isPlugin && item.buttonId ? `plugin:${item.buttonId}` : item.key;
+                const cur = this.getHeaderIconOverride(stateKey);
+                const defaultIcon = isPlugin
+                    ? (this.pluginLoader?.getManifest?.(item.buttonId)?.icon || '')
+                    : VirtualBookshelf.HEADER_ITEMS_META[item.key]?.defaultIcon || '';
+                const previewIcon = cur || defaultIcon;
+                const preview = previewIcon ? window.renderIcon(previewIcon, { size: 14 }) : window.renderIcon('palette', { size: 14 });
+                iconBtnHtml = `<button type="button" class="hdr-row-icon-btn" data-icon-key="${stateKey}" title="アイコンを変更">${preview}<span style="font-size:0.7rem;color:#6b7280;">アイコン</span></button>`;
+            }
+            // プレビュー (row 内のアイコン): 現在の override or default を表示
+            const rowPreviewIcon = isPlugin
+                ? (this.getHeaderIconOverride(`plugin:${item.buttonId}`) || this.pluginLoader?.getManifest?.(item.buttonId)?.icon || 'puzzle')
+                : (isStateful
+                    ? VirtualBookshelf.HEADER_ITEMS_META[item.key].defaultIcon
+                    : (this.getHeaderIconOverride(item.key) || VirtualBookshelf.HEADER_ITEMS_META[item.key]?.defaultIcon || 'puzzle'));
+            const rowPreviewHtml = window.renderIcon(rowPreviewIcon, { size: 18 });
             return `
                 <div class="hdr-row" draggable="true"
                      data-source="${source}"
                      data-key="${item.key}"
                      ${placementId ? `data-placement-id="${placementId}"` : ''}>
                     <span class="hdr-row-grip" aria-hidden="true">≡</span>
-                    <span class="hdr-row-icon">${item.emoji || ''}</span>
+                    <span class="hdr-row-icon" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;color:#4338ca;">${rowPreviewHtml}</span>
                     <span class="hdr-row-label">${item.label}</span>
                     <span class="hdr-row-badges">${badge}${needsBs}</span>
-                    <span class="hdr-row-actions">${moveBtn}${invokeBtn}</span>
+                    <span class="hdr-row-actions">${iconBtnHtml}${moveBtn}${invokeBtn}</span>
                 </div>`;
         };
 
@@ -2581,7 +4055,7 @@ class VirtualBookshelf {
         if (!host) return;
 
         let installedPlugins = [];
-        if (this.pluginLoader && this.obsidianDirHandle) {
+        if (this.pluginLoader && this._isSyncReady()) {
             try {
                 installedPlugins = await this.pluginLoader.listInstalledPlugins({ refresh: true });
             } catch (e) {
@@ -2591,8 +4065,8 @@ class VirtualBookshelf {
         const disabledSet = new Set(this.userData?.settings?.disabledPlugins || []);
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
-        if (!this.obsidianDirHandle) {
-            host.innerHTML = '<p style="color:#888;">同期フォルダを先に接続してください。</p>';
+        if (!this._isSyncReady()) {
+            host.innerHTML = '<p style="color:#888;">同期先 (ローカルフォルダ or GitHub) を先に接続してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -2607,31 +4081,40 @@ class VirtualBookshelf {
             const m = manifest || {};
             const enabled = !disabledSet.has(id);
             const loaded = loadedSet.has(id);
+            const icoBtn = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+            const iconChangeBtn = `<button type="button" class="btn btn-small plugin-card-icon" data-icon-plugin="${id}" title="ボタンアイコンを変更">${icoBtn('palette')}アイコン</button>`;
+            const uninstallBtn = `<button type="button" class="btn btn-small btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}削除</button>`;
+            const disableBtn = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">${icoBtn('pause')}無効化</button>`;
             let stateLabel, actionBtns;
             if (enabled && loaded) {
-                stateLabel = '<span class="plugin-state ok">● 有効</span>';
-                actionBtns = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">⏸ 無効化</button>
-                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
+                stateLabel = `<span class="plugin-state ok">${icoBtn('circle-check', 12)}有効</span>`;
+                actionBtns = `${iconChangeBtn}${disableBtn}${uninstallBtn}`;
             } else if (enabled && !loaded) {
-                stateLabel = '<span class="plugin-state warn">⚠ 読み込み失敗</span>';
-                actionBtns = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">⏸ 無効化</button>
-                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
+                stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
+                actionBtns = `${disableBtn}${uninstallBtn}`;
             } else {
-                stateLabel = '<span class="plugin-state muted">○ 無効</span>';
-                actionBtns = `<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">▶ 有効化</button>
-                              <button type="button" class="btn btn-small plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">🗑️ 削除</button>`;
+                stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
+                actionBtns = `<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">${icoBtn('play')}有効化</button>${uninstallBtn}`;
             }
             const nameForSearch = (m.name || id || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_NAME_LIMIT);
             const descForSearch = (m.description || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_DESC_LIMIT);
             const searchText = `${nameForSearch}${descForSearch}`.toLowerCase();
             // 検索文字列の HTML 属性用エスケープ
             const searchAttr = searchText.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // 現在使用中のアイコン (override 優先, fallback は manifest.icon)
+            const currentIcon = this._getPluginIconOverride(id) || m.icon || '';
+            const iconPreviewHtml = currentIcon
+                ? `<span class="plugin-card-icon-preview" data-icon-value="${currentIcon.replace(/"/g,'&quot;')}" title="現在のアイコン: ${currentIcon}">${window.renderIcon(currentIcon, { size: 16 })}</span>`
+                : '';
+            const publishableBadge = m.publishable
+                ? `<span class="plugin-publishable-badge" title="公開エクスポート対象">${window.renderIcon('globe', { size: 12 })}</span>`
+                : '';
             return `
                 <div class="plugin-card-v2" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
                     <div class="plugin-card-info">
                         <div class="plugin-card-title">
-                            <strong>${m.name || id}</strong>
-                            <small>v${m.version || '?'}${m.publishable ? ' 🌐' : ''}</small>
+                            ${iconPreviewHtml}<strong>${m.name || id}</strong>
+                            <small>v${m.version || '?'} ${publishableBadge}</small>
                         </div>
                         <div class="plugin-card-desc">${m.description || ''}</div>
                         ${stateLabel}
@@ -2790,6 +4273,23 @@ class VirtualBookshelf {
                 })();
                 return;
             }
+            const iconBtn = e.target.closest('[data-icon-plugin]');
+            if (iconBtn) {
+                e.stopPropagation();
+                const id = iconBtn.dataset.iconPlugin;
+                const manifest = this.pluginLoader?.getManifest?.(id) || {};
+                const overrideKey = `plugin:${id}`;
+                const current = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
+                (async () => {
+                    const picked = await this.openIconPicker({
+                        title: `プラグイン「${manifest.name || id}」のアイコン`,
+                        current
+                    });
+                    if (picked === null) return; // キャンセル
+                    this.setHeaderIconOverride(overrideKey, picked || null);
+                })();
+                return;
+            }
         }, { signal });
     }
 
@@ -2843,6 +4343,23 @@ class VirtualBookshelf {
                         catch (err) { console.error(`[static "${key}"] click`, err); }
                     }
                 }
+                return;
+            }
+            // 🎨 アイコン変更ボタン (全アイテム共通)
+            const iconChange = e.target.closest('[data-icon-key]');
+            if (iconChange) {
+                e.stopPropagation();
+                const key = iconChange.dataset.iconKey;
+                const current = this.getHeaderIconOverride(key) || '';
+                (async () => {
+                    const picked = await this.openIconPicker({
+                        title: `アイコンを選択 (${key})`,
+                        current
+                    });
+                    if (picked === null) return; // キャンセル
+                    // 空文字 → デフォルトに戻す
+                    this.setHeaderIconOverride(key, picked || null);
+                })();
                 return;
             }
         }, { signal });
@@ -2986,17 +4503,25 @@ class VirtualBookshelf {
         const descEl = document.getElementById('current-bookshelf-desc');
         if (!titleEl) return;
         const id = this.currentBookshelf;
-        const bs = id ? this.bookshelfManager?.getById?.(id) : null;
+        // currentBookshelf は slug が入る場合と internalId が入る場合の両方がある (router 経由など)
+        const bs = id
+            ? (this.bookshelfManager?.getBySlug?.(id) || this.bookshelfManager?.getById?.(id))
+            : null;
         let title = '';
         let desc = '';
         if (bs) {
-            title = `${bs.emoji || '📚'} ${bs.name}`;
+            title = bs.name || '';
             desc = bs.description || '';
         } else if (id === 'all') {
-            title = '📚 全ての本';
+            title = '全ての本';
             desc = '除外していない全ての蔵書';
         }
-        titleEl.textContent = title;
+        const effectiveTitleIcon = (bs && bs.iconName) || 'library';
+        const iconSvg = window.renderIcon(effectiveTitleIcon, { size: 22 });
+        const safeTitle = this._escapeAttr(title);
+        const safeIconAttr = this._escapeAttr(effectiveTitleIcon);
+        // section-title 内に icon + text。span ではなく flex 親で揃える
+        titleEl.innerHTML = `<span class="bs-title-icon" data-icon-value="${safeIconAttr}" style="display:inline-flex;align-items:center;vertical-align:middle;margin-right:0.5rem;color:#4338ca;">${iconSvg}</span><span class="bs-title-text">${safeTitle}</span>`;
         if (descEl) {
             descEl.textContent = desc;
             descEl.style.display = desc ? '' : 'none';
@@ -3055,13 +4580,26 @@ class VirtualBookshelf {
     }
 
     /**
-     * 本詳細モーダルの DOM をクリア（router の都合でナビゲーション無し）
+     * 本詳細ペインの DOM をクリア（router の都合でナビゲーション無し）
+     * PC v2: モーダルではなく右ペイン (#book-detail-pane) を placeholder に戻す
      */
     _closeBookModalDom() {
         const modal = document.getElementById('book-modal');
         if (modal) modal.classList.remove('show');
-        const modalBody = document.getElementById('modal-body');
-        if (modalBody) modalBody.innerHTML = '';
+        const pane = document.getElementById('book-detail-pane');
+        if (pane) {
+            pane.innerHTML = `
+                <div class="detail-placeholder">
+                    <p>📖</p>
+                    <p>本を選択すると詳細が表示されます</p>
+                </div>
+            `;
+        }
+        // 詳細ピン留め解除 (ホームでは右ペインが消える)
+        document.body.classList.remove('book-detail-pinned');
+        // 旧 modal-body も互換のためクリア
+        const oldBody = document.getElementById('modal-body');
+        if (oldBody) oldBody.innerHTML = '';
     }
 
     showBookshelfManager() {
@@ -3086,17 +4624,24 @@ class VirtualBookshelf {
             const bookCount = bookshelf.books ? bookshelf.books.length : 0;
             const isPublic = bookshelf.isPublic || false;
             const isSpecial = bookshelf.isSpecial || false;
-            const publicBadge = isPublic ? '<span class="public-badge">📤 公開中</span>' : '';
-            const specialBadge = isSpecial ? '<span class="special-badge" style="background:#fff3cd;color:#856404;padding:0.1rem 0.4rem;border-radius:3px;font-size:0.75rem;margin-left:0.4rem;">特殊</span>' : '';
-
+            const publicBadge = isPublic
+                ? `<span class="public-badge"><span class="h-icon">${window.renderIcon('upload-cloud', { size: 12 })}</span>公開中</span>`
+                : '';
+            const specialBadge = isSpecial
+                ? `<span class="special-badge"><span class="h-icon">${window.renderIcon('lock', { size: 12 })}</span>特殊</span>`
+                : '';
+            const dragHandle = isSpecial
+                ? window.renderIcon('lock', { size: 14 })
+                : window.renderIcon('grip-vertical', { size: 14 });
+            const bsEffectiveIcon = bookshelf.iconName || 'library';
+            const bsIconSvg = window.renderIcon(bsEffectiveIcon, { size: 16 });
             html += `
                 <div class="bookshelf-item" data-id="${bookshelf.id}" draggable="${!isSpecial}">
-                    <div class="bookshelf-drag-handle">${isSpecial ? '🔒' : '⋮⋮'}</div>
+                    <div class="bookshelf-drag-handle">${dragHandle}</div>
                     <div class="bookshelf-info">
-                        <h4>${bookshelf.emoji || '📚'} ${bookshelf.name} ${specialBadge}${publicBadge}</h4>
+                        <h4><span class="bookshelf-list-icon" data-icon-value="${bsEffectiveIcon.replace(/"/g,'&quot;')}">${bsIconSvg}</span>${bookshelf.name} ${specialBadge}${publicBadge}</h4>
                         <p>${bookshelf.description || ''}</p>
                         <span class="book-count">${bookCount}冊</span>
-
                     </div>
                     <div class="bookshelf-actions">
                         <button class="btn btn-secondary edit-bookshelf" data-id="${bookshelf.id}">編集</button>
@@ -3135,9 +4680,13 @@ class VirtualBookshelf {
         const nameInput = document.getElementById('bookshelf-name');
         const slugInput = document.getElementById('bookshelf-slug');
         const parentSelect = document.getElementById('bookshelf-parent');
-        const emojiInput = document.getElementById('bookshelf-emoji');
+        const iconNameInput = document.getElementById('bookshelf-icon-name');
+        const iconLabel = document.getElementById('bookshelf-icon-label');
+        const iconPreview = document.getElementById('bookshelf-icon-preview');
+        const iconTrigger = document.getElementById('bookshelf-icon-trigger');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
+        const pinnedInput = document.getElementById('bookshelf-pinned');
 
         // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）
         // bookshelves[] には all 本棚も含まれているのでハードコードしない
@@ -3147,17 +4696,28 @@ class VirtualBookshelf {
             : new Set();
         const candidates = this.bookshelfManager.getBookshelves().filter(b => !excludedIds.has(b.internalId));
         parentSelect.innerHTML = candidates
-            .map(b => `<option value="${b.internalId}">${b.emoji || '📚'} ${b.name}</option>`)
+            .map(b => `<option value="${b.internalId}">${b.name}</option>`)
             .join('');
 
+        const setIcon = (name) => {
+            const effective = name || 'library';
+            iconNameInput.value = effective;
+            iconLabel.textContent = effective;
+            iconPreview.dataset.iconValue = effective;
+            iconPreview.innerHTML = window.renderIcon(effective, { size: 18 });
+        };
+
+        const titleIcon = `<span class="h-icon" data-icon="library" data-icon-size="20"></span>`;
         if (bookshelfToEdit) {
-            title.textContent = '📚 本棚を編集';
+            title.innerHTML = `${titleIcon}本棚を編集`;
+            if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = bookshelfToEdit.name;
             slugInput.value = bookshelfToEdit.id || '';
             parentSelect.value = bookshelfToEdit.parent || allId || '';
-            emojiInput.value = bookshelfToEdit.emoji || '📚';
+            setIcon(bookshelfToEdit.iconName);
             descriptionInput.value = bookshelfToEdit.description || '';
             isPublicInput.checked = bookshelfToEdit.isPublic || false;
+            if (pinnedInput) pinnedInput.checked = bookshelfToEdit.pinned || false;
             // 特殊本棚（all）は slug / 親変更不可
             if (bookshelfToEdit.isSpecial) {
                 slugInput.readOnly = true;
@@ -3171,13 +4731,28 @@ class VirtualBookshelf {
                 parentSelect.title = '';
             }
         } else {
-            title.textContent = '📚 新しい本棚';
+            title.innerHTML = `${titleIcon}新しい本棚`;
+            if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = '';
             slugInput.value = '';
             parentSelect.value = allId || '';
-            emojiInput.value = '📚';
+            setIcon('library');
             descriptionInput.value = '';
             isPublicInput.checked = false;
+            if (pinnedInput) pinnedInput.checked = false;
+        }
+
+        // IconPicker トリガ (1 回だけ bind)
+        if (iconTrigger && !iconTrigger._bound) {
+            iconTrigger._bound = true;
+            iconTrigger.addEventListener('click', async () => {
+                const picked = await this.openIconPicker({
+                    title: '本棚のアイコンを選択',
+                    current: iconNameInput.value || 'library'
+                });
+                if (picked === null) return; // キャンセル
+                setIcon(picked || 'library'); // 空文字 (クリア) なら library
+            });
         }
 
         this.currentEditingBookshelf = bookshelfToEdit;
@@ -3196,9 +4771,10 @@ class VirtualBookshelf {
         const nameInput = document.getElementById('bookshelf-name');
         const slugInput = document.getElementById('bookshelf-slug');
         const parentSelect = document.getElementById('bookshelf-parent');
-        const emojiInput = document.getElementById('bookshelf-emoji');
+        const iconNameInput = document.getElementById('bookshelf-icon-name');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
+        const pinnedInput = document.getElementById('bookshelf-pinned');
 
         const name = nameInput.value.trim();
         if (!name) {
@@ -3220,9 +4796,10 @@ class VirtualBookshelf {
             name,
             slug,
             parent: parentId,
-            emoji: emojiInput.value.trim() || '📚',
+            iconName: iconNameInput.value.trim() || 'library',
             description: descriptionInput.value.trim(),
-            isPublic: isPublicInput.checked
+            isPublic: isPublicInput.checked,
+            pinned: pinnedInput ? pinnedInput.checked : false
         };
 
         try {
@@ -3241,8 +4818,10 @@ class VirtualBookshelf {
         }
 
         await this.saveUserData();
-        this.updateBookshelfSelector();
-        this.renderBookshelfList();
+        this.updateBookshelfSelector();    // popover + サイドバーツリー再描画
+        this.renderBookshelfList();        // 本棚管理モーダル
+        this.renderBookshelfOverview();    // ホーム本棚カード
+        this._updateBookshelfViewTitle();  // 現在開いている本棚のタイトル
         this.closeBookshelfForm();
     }
 
@@ -3359,7 +4938,7 @@ class VirtualBookshelf {
             ` + descendants.map(d => `
                 <label style="display: block; padding: 0.25rem 0;">
                     <input type="checkbox" class="descendants-pick-item" value="${d.internalId}">
-                    ${d.emoji || '📚'} ${d.name}
+                    <span data-icon-value="${(d.iconName || 'library').replace(/"/g,'&quot;')}" style="display:inline-flex;vertical-align:-3px;color:#4338ca;margin-right:0.25rem;">${window.renderIcon(d.iconName || 'library', { size: 14 })}</span>${d.name}
                 </label>
             `).join('');
 
@@ -3525,111 +5104,43 @@ class VirtualBookshelf {
      * private/main.json + bookshelves.json の isPublic を元に public/main.json と public/settings.json を生成
      * 公開対象本棚のリストだけが含まれた main.json になる。手動で編集していた場合は上書き確認。
      */
-    async copyToPublic() {
-        if (!this.obsidianDirHandle) {
-            alert('⚠️ 同期フォルダを選択してから操作してください。');
+    /**
+     * 公開する: private/ のスナップショットを加工して同期先の public/ に書き出す。
+     * 旧 copyToPublic + runPublicExport を統合した新仕様 (2026-05-31〜)。
+     * - 別 picker での出力先選択は不要 (同期先内に書く)
+     * - GitHub Adapter なら storage.syncBatch で 1 commit にまとまる
+     */
+    async publishToPublic() {
+        if (!this._isSyncReady()) {
+            alert('⚠️ 同期先 (ローカルフォルダ or GitHub) を選択してから操作してください');
             return;
         }
-        this.storage.setDirHandle(this.obsidianDirHandle);
-        // 編集中の変更を確実に書き出してから公開コピー
+        if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
+            this.storage.setDirHandle(this.obsidianDirHandle);
+        }
+
+        // 公開対象本棚が 1 つ以上あるか軽くチェック
+        const publicBookshelves = this.bookshelfManager.getBookshelves()
+            .filter(b => b.isSpecial || b.isPublic);
+        if (publicBookshelves.length === 0) {
+            alert('⚠️ 公開対象の本棚が1つもありません。\n本棚編集で「📤 この本棚を公開する」をチェックしてください');
+            return;
+        }
+        if (!confirm(`同期先の public/ 配下にスナップショットを書き出します。\n\n公開対象本棚: ${publicBookshelves.length} 個\n\nOK で実行 (GitHub モードなら 1 commit にまとまります)`)) {
+            return;
+        }
+
+        // 編集中の変更を確実に書き出してから export
         await this.flushSync();
-
-        const main = (this.userData._storage && this.userData._storage.main) || {};
-
-        // isPublic=true の本棚を集める（all 含む、all も isPublic で制御）
-        const publicSet = new Set(
-            this.bookshelfManager.getBookshelves()
-                .filter(b => b.isPublic)
-                .map(b => b.internalId)
-        );
-
-        if (publicSet.size === 0) {
-            alert('⚠️ 公開対象の本棚が1つもありません。\n本棚編集で「📤 この本棚を公開する」をチェックしてください（all 本棚も含めて選択可能）');
-            return;
-        }
-
-        const baseOrder = Array.isArray(main.bookshelves)
-            ? main.bookshelves
-            : this.bookshelfManager.getBookshelves().map(b => b.internalId);
-        const filteredBookshelves = baseOrder.filter(id => publicSet.has(id));
-
-        // appliedPlugins / enabledPlugins から publishable=false のものを除外
-        const publishableIds = await this._collectPublishablePluginIds();
-        const filterPlugins = (arr) => (arr || []).filter(id => publishableIds.has(id));
-        const publicMain = {
-            enabledPlugins: filterPlugins(main.enabledPlugins),
-            appliedPlugins: filterPlugins(main.appliedPlugins),
-            bookshelves: filteredBookshelves,
-            defaultSort: main.defaultSort || 'addedDate-desc'
-        };
-
-        // 既存確認
-        const existing = await this.storage.readPublicMain();
-        if (existing) {
-            if (!confirm('既に public/main.json があります。\n上書きしますか？\n（手動で編集していた場合、変更が失われます）')) {
-                return;
-            }
-        }
-
-        // 公開 settings は private から affiliateId 等の個人情報を除いてコピー
-        const privateSettings = this.userData.settings || {};
-        const { affiliateId, obsidianVaultName, obsidianSubPath, extensionImportOrigins, ...publicSafe } = privateSettings;
-        const publicSettings = {
-            version: '2.0',
-            ...publicSafe
-        };
-
-        try {
-            await this.storage.writePublicMain(publicMain);
-            await this.storage.writePublicSettings(publicSettings);
-            alert(`✅ public/main.json と public/settings.json を更新しました\n\n公開対象本棚: ${filteredBookshelves.length}個\n（all を含む）`);
-        } catch (e) {
-            console.error('公開にコピーエラー:', e);
-            alert(`❌ 失敗しました: ${e.message}`);
-        }
-    }
-
-    async pickExportDir() {
-        try {
-            const handle = await this.exporter.pickExportDir();
-            this._updateExportDirDisplay();
-            alert(`✅ 出力先を「${handle.name}」に設定しました`);
-        } catch (e) {
-            if (e.name === 'AbortError') return;
-            console.error('出力先選択エラー:', e);
-            alert(`❌ ${e.message}`);
-        }
-    }
-
-    async runPublicExport() {
-        if (!this.obsidianDirHandle) {
-            alert('⚠️ 同期フォルダを選択してから操作してください');
-            return;
-        }
-        // 編集中の変更を確実に同期フォルダに反映してからエクスポート
-        await this.flushSync();
-        if (!this.exporter.exportDirHandle) {
-            await this.exporter.loadStoredHandle();
-        }
-        if (!this.exporter.exportDirHandle) {
-            if (!confirm('📦 出力先フォルダが未選択です。\n選択しますか？\n（推奨: 同期フォルダの隣に bookshelf-export/）')) return;
-            try {
-                await this.exporter.pickExportDir();
-            } catch (e) {
-                if (e.name === 'AbortError') return;
-                alert(`❌ ${e.message}`);
-                return;
-            }
-        }
 
         try {
             const result = await this.exporter.export();
-            const errorMsg = result.errors.length > 0
+            const errSummary = result.errors.length > 0
                 ? `\n\n⚠️ エラー ${result.errors.length} 件:\n${result.errors.slice(0, 3).join('\n')}${result.errors.length > 3 ? '\n...' : ''}`
                 : '';
-            alert(`✅ エクスポート完了\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個${errorMsg}\n\n※ index.html / css / js のコピーは Phase 3-C で対応予定`);
+            alert(`✅ 公開スナップショット書き出し完了\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個\n長文メモ: ${result.longMemos}件\nプラグイン: ${result.plugins.length}個\nファイル合計: ${result.entries}${errSummary}`);
         } catch (e) {
-            console.error('エクスポートエラー:', e);
+            console.error('公開エクスポートエラー:', e);
             alert(`❌ ${e.message}`);
         }
     }
@@ -3639,15 +5150,29 @@ class VirtualBookshelf {
      * 同期フォルダが vault 外の場合があるため、初回に vault 名・サブパスを設定で持つ
      */
     async openOrCreateBookMemo(asin) {
-        if (!this.obsidianDirHandle) {
-            alert('⚠️ 同期フォルダを選択してから操作してください。');
+        if (!this._isSyncReady()) {
+            alert('⚠️ 同期先 (ローカルフォルダ or GitHub) を選択してから操作してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
         if (!book) return;
 
-        this.storage.setDirHandle(this.obsidianDirHandle);
+        if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
+            this.storage.setDirHandle(this.obsidianDirHandle);
+        }
 
+        const settings = this.userData.settings || (this.userData.settings = {});
+        const requestedOpenWith = settings.bookMemoOpenWith || 'app-editor';
+        // GitHub モードでは外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
+        const openWith = (this.syncMethod === 'github') ? 'app-editor' : requestedOpenWith;
+
+        // アプリ内エディタ: モーダルを開き、雛形は EasyMDE 側で扱う (空時は buildBookMemoTemplate)
+        if (openWith === 'app-editor') {
+            await this._openBookMemoInAppEditor(asin, book);
+            return;
+        }
+
+        // 外部エディタ向け: 雛形をまず書き込む (ファイルが存在しないと obsidian:// が無効になるため)
         let created = false;
         try {
             const exists = await this.storage.bookMemoExists(asin, book.title);
@@ -3665,60 +5190,132 @@ class VirtualBookshelf {
             return;
         }
 
-        const fileName = this.storage.bookMemoFileName(asin, book.title);
-        const relativePath = `books/${fileName}`;
-        const folderName = this.obsidianDirHandle.name;
+        const fullPath = this.storage.bookMemoFullPath(asin, book.title); // private/books/...
+        const folderName = (this.obsidianDirHandle && this.obsidianDirHandle.name) || '(同期先)';
+        try { await navigator.clipboard.writeText(fullPath); } catch (_) {}
 
-        // ファイルパスをクリップボードへコピー（失敗しても続行）
-        try {
-            await navigator.clipboard.writeText(relativePath);
-        } catch (e) { /* permission/non-secure context は無視 */ }
-
-        if (!this.userData.settings) this.userData.settings = {};
-        const settings = this.userData.settings;
-
-        // vault 名未設定 → 初回プロンプトで設定
-        if (typeof settings.obsidianVaultName === 'undefined') {
-            const vaultInput = prompt(
-                '📝 Obsidian で開くために vault 名を設定します\n\n' +
-                '同期フォルダが vault 自体: vault 名を入力\n' +
-                '同期フォルダが vault 外: 空欄でキャンセル（毎回パス表示のみ）\n' +
-                '同期フォルダが vault のサブフォルダ: vault 名を入力（後でサブパスも聞きます）',
-                folderName
-            );
-            if (vaultInput && vaultInput.trim()) {
-                settings.obsidianVaultName = vaultInput.trim();
-                const subInput = prompt(
-                    'vault 内のサブパス（同期フォルダが vault のサブフォルダの場合のみ）\n\n例: project/bookshelf\n空欄で vault 直下',
-                    ''
+        if (openWith === 'obsidian') {
+            // vault 名未設定なら初回プロンプト
+            if (typeof settings.obsidianVaultName === 'undefined') {
+                const vaultInput = prompt(
+                    '📝 Obsidian で開くために vault 名を設定します\n\n同期フォルダが vault 自体: vault 名を入力\n同期フォルダが vault のサブフォルダ: vault 名を入力 (後でサブパスも聞きます)',
+                    folderName
                 );
-                settings.obsidianSubPath = (subInput || '').trim();
+                if (vaultInput && vaultInput.trim()) {
+                    settings.obsidianVaultName = vaultInput.trim();
+                    const subInput = prompt('vault 内のサブパス (例: 40_📖reading)\n空欄で vault 直下', '');
+                    settings.obsidianSubPath = (subInput || '').trim();
+                } else {
+                    settings.obsidianVaultName = '';
+                    settings.obsidianSubPath = '';
+                }
+                this.saveUserData();
+            }
+            const vaultName = settings.obsidianVaultName;
+            if (vaultName) {
+                const subPath = (settings.obsidianSubPath || '').replace(/^\/+|\/+$/g, '');
+                const filePath = subPath ? `${subPath}/${fullPath}` : fullPath;
+                const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
+                if (confirm(`${created ? '✅ 詳細メモを作成しました' : '📝 詳細メモ'}\n\n📁 ${fullPath}\n（パスをクリップボードにコピー済）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
+                    window.location.href = obsidianUrl;
+                }
             } else {
-                settings.obsidianVaultName = '';
-                settings.obsidianSubPath = '';
+                alert(`📁 ${folderName}/${fullPath}\n（パスをクリップボードにコピー済）\n\nvault 名が未設定です。設定 → 長文メモ から「アプリ内エディタ」に切り替えるか、再度この操作で設定してください。`);
             }
-            this.saveUserData();
+        } else if (openWith === 'system') {
+            alert(`📂 同期フォルダの ${fullPath} を OS のエクスプローラ等で開いてください。\n（パスはクリップボードにコピー済み）`);
         }
 
-        const vaultName = settings.obsidianVaultName;
-        const action = created ? '✅ 詳細メモを作成しました' : '📝 詳細メモ';
-
-        if (vaultName) {
-            const subPath = (settings.obsidianSubPath || '').replace(/^\/+|\/+$/g, '');
-            const filePath = subPath ? `${subPath}/${relativePath}` : relativePath;
-            const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
-
-            if (confirm(`${action}\n\n📁 ${folderName}/${relativePath}\n（クリップボードにコピー済み）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
-                window.location.href = obsidianUrl;
-            }
-        } else {
-            alert(`${action}\n\n📁 ${folderName}/${relativePath}\n（クリップボードにコピー済み）\n\nファイルパスをコピーしてエディタで開いてください。\n（Obsidian で直接開きたい場合は vault 名を設定）`);
-        }
-
-        const modal = document.getElementById('book-modal');
-        if (modal && modal.classList.contains('show')) {
+        // PC v2: 右ペインで表示中なら再描画 (modal の互換用に旧 #book-modal もチェック)
+        const isOpen = document.body.classList.contains('book-detail-pinned')
+            || (document.getElementById('book-modal')?.classList.contains('show'));
+        if (isOpen) {
             this.showBookDetail(book, true);
         }
+    }
+
+    // アプリ内 Markdown エディタ (EasyMDE) でメモを開く
+    async _openBookMemoInAppEditor(asin, book) {
+        const modal = document.getElementById('book-memo-modal');
+        const titleEl = document.getElementById('book-memo-modal-title');
+        const textareaEl = document.getElementById('book-memo-textarea');
+        const statusEl = document.getElementById('book-memo-status');
+        if (!modal || !textareaEl) return;
+
+        titleEl.textContent = book.title || asin;
+        if (statusEl) statusEl.textContent = '読み込み中...';
+
+        // 旧 EasyMDE インスタンスがあれば破棄
+        if (this._bookMemoEditor) {
+            try { this._bookMemoEditor.toTextArea(); } catch (_) {}
+            this._bookMemoEditor = null;
+        }
+
+        let existing = null;
+        try {
+            existing = await this.storage.readBookMemo(asin, book.title);
+        } catch (e) {
+            console.warn('長文メモ読み込み失敗:', e);
+        }
+        if (existing == null) {
+            existing = this.storage.buildBookMemoTemplate(book);
+        }
+        textareaEl.value = existing;
+
+        modal.classList.add('show');
+
+        if (typeof EasyMDE === 'undefined') {
+            if (statusEl) statusEl.textContent = '❌ エディタライブラリが読み込まれていません (CDN 接続を確認)';
+            return;
+        }
+        this._bookMemoEditor = new EasyMDE({
+            element: textareaEl,
+            autoDownloadFontAwesome: true,
+            spellChecker: false,
+            autosave: { enabled: false },
+            status: ['lines', 'words'],
+            toolbar: [
+                'bold', 'italic', 'heading', '|',
+                'unordered-list', 'ordered-list', 'quote', '|',
+                'link', 'image', 'table', 'horizontal-rule', '|',
+                'preview', 'side-by-side', 'fullscreen', '|',
+                'guide'
+            ]
+        });
+        this._bookMemoEditorContext = { asin, title: book.title };
+        if (statusEl) statusEl.textContent = '';
+    }
+
+    async saveBookMemoFromModal() {
+        const ctx = this._bookMemoEditorContext;
+        const editor = this._bookMemoEditor;
+        const statusEl = document.getElementById('book-memo-status');
+        if (!ctx || !editor) return;
+        if (statusEl) statusEl.textContent = '💾 保存中...';
+        try {
+            const content = editor.value();
+            await this.storage.writeBookMemo(ctx.asin, ctx.title, content);
+            if (!this.userData.notes[ctx.asin]) this.userData.notes[ctx.asin] = { memo: '', rating: 0 };
+            this.userData.notes[ctx.asin].hasDetailMemo = true;
+            await this.saveUserData();
+            if (statusEl) {
+                statusEl.textContent = '✅ 保存しました';
+                setTimeout(() => { if (statusEl.textContent.startsWith('✅')) statusEl.textContent = ''; }, 2500);
+            }
+        } catch (e) {
+            console.error('長文メモ保存失敗:', e);
+            if (statusEl) statusEl.textContent = `❌ ${e.message}`;
+        }
+    }
+
+    closeBookMemoModal() {
+        const modal = document.getElementById('book-memo-modal');
+        if (modal) modal.classList.remove('show');
+        if (this._bookMemoEditor) {
+            try { this._bookMemoEditor.toTextArea(); } catch (_) {}
+            this._bookMemoEditor = null;
+        }
+        this._bookMemoEditorContext = null;
     }
 
     showExclusionsModal() {
@@ -3737,8 +5334,8 @@ class VirtualBookshelf {
         const listDiv = document.getElementById('exclusions-list');
         if (!listDiv) return;
 
-        if (!this.obsidianDirHandle) {
-            listDiv.innerHTML = '<p style="color: #888;">同期フォルダを選択すると除外一覧を管理できます。</p>';
+        if (!this._isSyncReady()) {
+            listDiv.innerHTML = '<p style="color: #888;">同期先 (ローカルフォルダ or GitHub) を接続すると除外一覧を管理できます。</p>';
             return;
         }
 
@@ -4240,7 +5837,7 @@ class VirtualBookshelf {
     // インストール済みプラグインのうち manifest.publishable=true の id 集合を返す
     async _collectPublishablePluginIds() {
         const ids = new Set();
-        if (!this.pluginLoader || !this.obsidianDirHandle) return ids;
+        if (!this.pluginLoader || !this._isSyncReady()) return ids;
         try {
             const installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
             for (const { id, manifest } of installed) {
@@ -4273,8 +5870,8 @@ class VirtualBookshelf {
         }
         container.innerHTML = '<p style="color:#888;">読み込み中...</p>';
 
-        if (!this.obsidianDirHandle) {
-            container.innerHTML = '<p style="color:#888;">同期フォルダを先に接続してください。</p>';
+        if (!this._isSyncReady()) {
+            container.innerHTML = '<p style="color:#888;">同期先 (ローカルフォルダ or GitHub) を先に接続してください。</p>';
             return;
         }
 
@@ -4348,8 +5945,8 @@ class VirtualBookshelf {
             alert('GitHub の repo URL を入力してください');
             return;
         }
-        if (!this.obsidianDirHandle) {
-            alert('同期フォルダを先に接続してください');
+        if (!this._isSyncReady()) {
+            alert('同期先 (ローカルフォルダ or GitHub) を先に接続してください');
             return;
         }
         try {
@@ -4427,7 +6024,10 @@ class VirtualBookshelf {
             alert('⏳ 既に取込中です。新しいタブの完了を待ってください。');
             return;
         }
-        const url = 'https://www.amazon.co.jp/hz/mycd/digital-console/contentlist/booksAll/';
+        // URL に ?bookshelfImport=1 を付けると拡張 (kindle_bookshelf_exporter v0.9.5+) が
+        // 自動 collect → postMessage → close を行う。拡張未インストールでも Amazon ページは
+        // 普通に開かれるので、ユーザはブックマークレットを手動でクリックすればフォールバックできる。
+        const url = 'https://www.amazon.co.jp/hz/mycd/digital-console/contentlist/booksAll/?bookshelfImport=1';
         const win = window.open(url, '_blank');
         if (!win) {
             alert('🚫 ポップアップがブロックされました。\nブラウザのポップアップを許可してから再試行してください。');
@@ -4470,10 +6070,10 @@ class VirtualBookshelf {
 
         window.addEventListener('message', handler);
 
-        // ユーザがブックマークレットをクリックするまでの待機なので長め (15分)
+        // 拡張なら数秒〜数十秒で完了、ブックマークレット手動なら長め必要 → 15 分待機
         timer = setTimeout(() => {
             cleanup();
-            alert('⏱️ Kindle 取込タイムアウト（15分）。\nAmazon ページでブックマークレットをクリックしましたか？\nブックマークレット登録は「📋 ブックマークレットをコピー」から行ってください。');
+            alert('⏱️ Kindle 取込タイムアウト（15分）。\n\n拡張 (kindle_bookshelf_exporter) インストール済みなら自動取込されるはずです。\nインストールしていない場合は Amazon ページでブックマークレットを手動クリックしてください。\nブックマークレット登録は「📋 ブックマークレットをコピー」から行えます。');
         }, 15 * 60 * 1000);
     }
 
@@ -4652,7 +6252,7 @@ class VirtualBookshelf {
         } finally {
             // ボタンを元に戻す
             fetchBtn.disabled = false;
-            fetchBtn.textContent = '📥 自動取得';
+            fetchBtn.innerHTML = `<span class="h-icon">${window.renderIcon('download', { size: 14 })}</span>自動取得`;
         }
     }
 
@@ -4773,56 +6373,44 @@ class VirtualBookshelf {
     }
 
     renderBookshelfOverview() {
-        const overviewSection = document.getElementById('bookshelves-overview');
+        // ホーム = ダッシュボードに置換されたため、旧 #bookshelves-grid は使わない。
+        // 本棚カードはダッシュボードの「本棚ハイライト」ウィジェット (_renderBookshelfHighlights) が描画する。
+        // 互換のため呼出は受け付けるが何もしない (DOM が無いので no-op)。
         const grid = document.getElementById('bookshelves-grid');
         if (!grid) return;
-        overviewSection.style.display = 'block';
-
+        const overviewSection = document.getElementById('bookshelves-overview');
+        if (overviewSection) overviewSection.style.display = 'block';
         const textOnlyClass = this.showImagesInOverview ? '' : 'text-only';
         const bookshelves = (this.userData.bookshelves || []).slice();
-        // 特殊本棚（all）は常に先頭に
         bookshelves.sort((a, b) => (b.isSpecial ? 1 : 0) - (a.isSpecial ? 1 : 0));
+        grid.innerHTML = bookshelves.map(bs => this._renderBookshelfCard(bs, textOnlyClass)).join('');
+        this._bindBookshelfOverviewEvents(grid);
+    }
 
-        const html = bookshelves.map(bs => this._renderBookshelfCard(bs, textOnlyClass)).join('');
-        grid.innerHTML = html;
-
-        // ハンドラは1回だけ登録（再 render 時の累積を防ぐ）
-        if (this._bookshelfGridClickBound) return;
-        this._bookshelfGridClickBound = true;
-
-        // Add click handlers for bookshelf actions
+    /**
+     * 本棚カード grid (renderBookshelfOverview / dashboard 本棚ハイライトウィジェット 共通) の
+     * クリックハンドラをバインド。複数 host で呼ばれるため signal は使わず、各 host で 1 回だけ bind。
+     */
+    _bindBookshelfOverviewEvents(grid) {
+        if (!grid) return;
+        if (grid._bookshelfClickBound) return;
+        grid._bookshelfClickBound = true;
         grid.addEventListener('click', (e) => {
             if (e.target.classList.contains('select-bookshelf')) {
-                // 本棚選択ボタン
                 const bookshelfId = e.target.dataset.bookshelfId;
                 this.switchBookshelf(bookshelfId);
-
-                // 本が表示されているエリアにスムーズスクロール
                 setTimeout(() => {
-                    const bookshelf = document.getElementById('bookshelf');
-                    if (bookshelf) {
-                        bookshelf.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                    }
+                    const bs = document.getElementById('bookshelf');
+                    if (bs) bs.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }, 100);
             } else {
-                // 本棚プレビューエリアをクリックした場合は本棚選択
                 const bookshelfPreview = e.target.closest('.bookshelf-preview');
                 if (bookshelfPreview && !e.target.closest('.bookshelf-preview-actions')) {
                     const bookshelfId = bookshelfPreview.dataset.bookshelfId;
                     this.switchBookshelf(bookshelfId);
-
-                    // 本が表示されているエリアにスムーズスクロール
                     setTimeout(() => {
-                        const bookshelf = document.getElementById('bookshelf');
-                        if (bookshelf) {
-                            bookshelf.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'start'
-                            });
-                        }
+                        const bs = document.getElementById('bookshelf');
+                        if (bs) bs.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 100);
                 }
             }
@@ -4838,16 +6426,16 @@ class VirtualBookshelf {
     }
 
     _updateOverviewDisplayButton() {
-        // ヘッダーに展開された clone 含む全 overview-display ボタンを更新
         const buttons = document.querySelectorAll('[data-header-item="overview-display"] button, #overview-display-toggle');
         buttons.forEach(btn => {
-            if (this.showImagesInOverview) {
-                btn.textContent = '📃';
-                btn.title = 'テキストのみ表示に切替';
-            } else {
-                btn.textContent = '🖼️';
-                btn.title = '画像表示に切替';
-            }
+            const stateKey = this.showImagesInOverview ? 'overview-display:images' : 'overview-display:text';
+            const fallback = this.showImagesInOverview ? 'list' : 'image';
+            const override = this.getHeaderIconOverride(stateKey);
+            const effectiveIcon = override || fallback;
+            btn.innerHTML = window.renderIcon(effectiveIcon, { size: 20 });
+            btn.dataset.iconValue = effectiveIcon;
+            btn.removeAttribute('data-icon');
+            btn.title = this.showImagesInOverview ? 'テキストのみ表示に切替' : '画像表示に切替';
         });
     }
 
@@ -4856,11 +6444,14 @@ class VirtualBookshelf {
      */
     _renderBookshelfCard(bookshelf, textOnlyClass) {
         const isSpecial = !!bookshelf.isSpecial;
-        const emoji = bookshelf.emoji || '📚';
+        const cardEffectiveIcon = bookshelf.iconName || 'library';
+        const iconSvg = window.renderIcon(cardEffectiveIcon, { size: 18 });
         const name = bookshelf.name || (isSpecial ? 'すべての本' : bookshelf.id);
         const description = bookshelf.description || (isSpecial ? '除外していない全ての蔵書' : '');
         const isPublic = bookshelf.isPublic || false;
-        const publicBadge = isPublic ? '<span class="public-badge">📤 公開中</span>' : '';
+        const publicBadge = isPublic
+            ? `<span class="public-badge"><span class="h-icon">${window.renderIcon('upload-cloud', { size: 12 })}</span>公開中</span>`
+            : '';
 
         // プレビュー対象の本のリスト（特殊本棚 = all は全蔵書）
         let previewAsins = [];
@@ -4890,15 +6481,15 @@ class VirtualBookshelf {
             if (book && book.productImage) {
                 return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
             }
-            return '<div class="bookshelf-preview-book bookshelf-preview-placeholder">📖</div>';
+            return `<div class="bookshelf-preview-book bookshelf-preview-placeholder">${window.renderIcon('book-open', { size: 20 })}</div>`;
         }).join('');
 
         return `
             <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
                 <div class="bookshelf-preview-header">
-                    <h3>${emoji} ${name} ${publicBadge}</h3>
+                    <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${name} ${publicBadge}</h3>
                     <div class="bookshelf-preview-actions">
-                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="${bookshelf.id}">📚 表示</button>
+                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="${bookshelf.id}"><span class="h-icon">${window.renderIcon('arrow-right', { size: 14 })}</span>表示</button>
                     </div>
                 </div>
                 ${description ? `<p>${description}</p>` : ''}
@@ -4913,23 +6504,66 @@ class VirtualBookshelf {
         bookshelf.innerHTML = `<div class="error-message">❌ ${message}</div>`;
     }
     
-    generateStarRating(rating) {
+    generateStarRating(rating, size = 18) {
         let stars = '';
         for (let i = 1; i <= 5; i++) {
-            const isActive = i <= rating ? 'active' : '';
-            const color = i <= rating ? '#ffa500' : '#ddd';
-            stars += `<span class="star ${isActive}" data-rating="${i}" style="color: ${color};">⭐</span>`;
+            const filled = i <= rating;
+            const cls = `lucide-star${filled ? ' is-filled' : ' is-empty'}`;
+            stars += `<span class="star ${filled ? 'active' : ''}" data-rating="${i}">${window.renderIcon('star', { size, class: cls })}</span>`;
         }
         return stars;
     }
-    
-    displayStarRating(rating) {
-        if (!rating || rating === 0) return '';
-        let stars = '';
-        for (let i = 1; i <= rating; i++) {
-            stars += '⭐';
-        }
-        return `<div class="book-rating"><span class="stars">${stars}</span></div>`;
+
+    /**
+     * 一覧カードの表示制御 (全体設定)。星評価・短文メモとも visibility は
+     * 'always' (常に表示) / 'hover' (ホバー時のみ) / 'hidden' (非表示) の 3 値。
+     * 星は加えて「表紙に重ねる」(overlay) の boolean を別に持つ。
+     * 旧 starDisplay (overlay/below/hidden) / 旧 boolean starOverlay からも移行する。
+     */
+    _getStarVisibility() {
+        const s = (this.userData && this.userData.settings) || {};
+        if (s.starVisibility === 'always' || s.starVisibility === 'hover' || s.starVisibility === 'hidden') return s.starVisibility;
+        if (s.starDisplay === 'hidden') return 'hidden';
+        return 'always';
+    }
+    _getStarOverlay() {
+        const s = (this.userData && this.userData.settings) || {};
+        if (typeof s.starOverlay === 'boolean') return s.starOverlay;
+        if (s.starDisplay === 'below') return false;
+        return true; // default: 表紙に重ねる
+    }
+    _getMemoVisibility() {
+        const s = (this.userData && this.userData.settings) || {};
+        if (s.memoVisibility === 'always' || s.memoVisibility === 'hover' || s.memoVisibility === 'hidden') return s.memoVisibility;
+        return 'always';
+    }
+    _setDisplaySetting(key, value) {
+        if (!this.userData.settings) this.userData.settings = {};
+        this.userData.settings[key] = value;
+        delete this.userData.settings.starDisplay; // 旧キーは破棄
+        this.saveUserData();
+    }
+
+    /**
+     * 評価の星ウィジェット (クリックで編集) を返す。一覧カード・本詳細で共用。
+     */
+    _starWidgetHtml(asin, rating, size = 18) {
+        return `<div class="star-rating" data-asin="${this.escapeHtml(asin)}" data-current-rating="${rating || 0}" data-star-size="${size}" title="クリックで評価">${this.generateStarRating(rating || 0, size)}</div>`;
+    }
+
+    /**
+     * 評価変更を画面内の全ウィジェット (一覧カード + 本詳細) に即時反映する。
+     */
+    _applyRatingEverywhere(asin, rating) {
+        let sel;
+        try { sel = `.star-rating[data-asin="${(window.CSS && CSS.escape) ? CSS.escape(asin) : asin}"]`; }
+        catch (_) { sel = `.star-rating[data-asin="${asin}"]`; }
+        document.querySelectorAll(sel).forEach(w => {
+            w.dataset.currentRating = rating;
+            const size = parseInt(w.dataset.starSize) || 18;
+            w.innerHTML = this.generateStarRating(rating, size);
+        });
+        this.updateStats();
     }
     
     saveRating(asin, rating) {

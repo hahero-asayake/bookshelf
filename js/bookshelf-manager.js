@@ -19,7 +19,12 @@ class BookshelfManager {
     }
 
     getById(internalId) {
-        return this.getBookshelves().find(b => b.internalId === internalId);
+        if (internalId == null) return undefined;
+        const shelves = this.getBookshelves();
+        // 第一に internalId、無ければ id (slug) でフォールバック
+        // (旧データ/手動作成データで internalId 欠落しているケースに堅牢)
+        return shelves.find(b => b.internalId === internalId)
+            || shelves.find(b => b.id === internalId);
     }
 
     getBySlug(slug) {
@@ -100,23 +105,44 @@ class BookshelfManager {
         return Array.from(ids).map(id => this.getById(id)).filter(Boolean);
     }
 
-    // ===== 短文メモ継承 =====
-    // 優先順: 本棚自身の notes[asin].memo → 親 → all.notes[asin].memo
+    // ===== 短文メモ解決 (2026-06-01 Phase B-2: 親継承廃止) =====
+    // 優先順: 本棚自身の notes[asin].memo (override) → all.notes[asin].memo (default)
+    // 親継承チェーンは廃止。ALL = デフォルト、本棚は任意で override 可。
     resolveMemo(asin, bookshelfInternalId) {
-        // all コンテキスト
+        const allMemo = (this.app.userData.notes && this.app.userData.notes[asin] && this.app.userData.notes[asin].memo) || '';
         const allId = this.getAllInternalId();
-        if (!bookshelfInternalId || bookshelfInternalId === allId) {
-            return (this.app.userData.notes && this.app.userData.notes[asin] && this.app.userData.notes[asin].memo) || '';
+        if (!bookshelfInternalId || bookshelfInternalId === allId) return allMemo;
+        const bs = this.getById(bookshelfInternalId);
+        if (bs && !bs.isSpecial) {
+            const override = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
+            if (override && override.length > 0) return override;
         }
-        // 本棚自身 → 祖先 → all
-        let current = this.getById(bookshelfInternalId);
-        while (current) {
-            if (current.notes && current.notes[asin] && current.notes[asin].memo) {
-                return current.notes[asin].memo;
+        return allMemo;
+    }
+
+    // この本に対する全ての本棚 override (空文字以外) を返す
+    // 本詳細ペインで「どこからでも全 override を編集」できるようにするため
+    getAllMemoOverrides(asin) {
+        const result = [];
+        for (const bs of this.getBookshelves()) {
+            if (bs.isSpecial) continue;
+            const m = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
+            if (m && m.length > 0) {
+                result.push({ bookshelf: bs, memo: m });
             }
-            current = current.parent ? this.getById(current.parent) : null;
         }
-        return (this.app.userData.notes && this.app.userData.notes[asin] && this.app.userData.notes[asin].memo) || '';
+        return result;
+    }
+
+    // 本棚 override が存在するか (boolean)
+    hasMemoOverride(asin, bookshelfInternalId) {
+        if (!bookshelfInternalId) return false;
+        const allId = this.getAllInternalId();
+        if (bookshelfInternalId === allId) return false;
+        const bs = this.getById(bookshelfInternalId);
+        if (!bs || bs.isSpecial) return false;
+        const m = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
+        return !!(m && m.length > 0);
     }
 
     // 評価は本棚スコープを持たない（all.notes が唯一の正本）
@@ -139,11 +165,12 @@ class BookshelfManager {
             id: slug,
             internalId,
             name: meta.name || slug,
-            emoji: meta.emoji || '📚',
+            iconName: meta.iconName || 'library',
             description: meta.description || '',
             parent: parentId,
             color: meta.color,
             isPublic: !!meta.isPublic,
+            pinned: !!meta.pinned,
             appliedPlugins: meta.appliedPlugins || [],
             books: [],
             notes: {},
@@ -174,9 +201,10 @@ class BookshelfManager {
         const bs = this.getById(internalId);
         if (!bs) throw new Error('本棚が見つかりません');
         if (typeof meta.name === 'string') bs.name = meta.name;
-        if (typeof meta.emoji === 'string') bs.emoji = meta.emoji;
+        if (typeof meta.iconName === 'string') bs.iconName = meta.iconName;
         if (typeof meta.description === 'string') bs.description = meta.description;
         if (typeof meta.isPublic === 'boolean') bs.isPublic = meta.isPublic;
+        if (typeof meta.pinned === 'boolean') bs.pinned = meta.pinned;
         if (typeof meta.color === 'string') bs.color = meta.color;
         if (Array.isArray(meta.appliedPlugins)) bs.appliedPlugins = meta.appliedPlugins;
         if (typeof meta.parent === 'string') {
@@ -317,39 +345,39 @@ class BookshelfManager {
         return removed;
     }
 
-    // ===== 短文メモ・評価の編集 =====
-    // setMemo(asin, memo, { scope, propagateToDescendants })
-    //   scope: internalId（未指定または all 本棚の internalId なら notes.json に保存）
-    //   propagateToDescendants: true なら子孫本棚の notes[asin].memo も上書き
-    //   （子→親の伝播はしない。継承は読み取り時の resolveMemo で実現）
-    setMemo(asin, memo, { scope, propagateToDescendants = false } = {}) {
+    // ===== 短文メモ・評価の編集 (Phase B-2 簡素化: 親継承廃止、override 仕様) =====
+    // setMemo(asin, memo, { scope })
+    //   scope: internalId
+    //     - 未指定 or all → ALL.notes (デフォルト) に保存
+    //     - 通常本棚 → bookshelf.notes に override として保存
+    //   空文字 ('') を本棚スコープに保存すると override 削除 (ALL にフォールバック)
+    setMemo(asin, memo, { scope } = {}) {
         const allId = this.getAllInternalId();
         if (!this.app.userData.notes) this.app.userData.notes = {};
 
         if (!scope || scope === allId) {
             if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
             this.app.userData.notes[asin].memo = memo;
-            if (propagateToDescendants) {
-                for (const bs of this.getBookshelves()) {
-                    if (!bs.notes) bs.notes = {};
-                    if (!bs.notes[asin]) bs.notes[asin] = {};
-                    bs.notes[asin].memo = memo;
-                }
+            // memo が空かつ他フィールドも空ならエントリ自体削除
+            const n = this.app.userData.notes[asin];
+            if (!n.memo && !n.rating && !n.hasDetailMemo && !n.hideMemo && !n.hideDetailMemo) {
+                delete this.app.userData.notes[asin];
             }
             return;
         }
 
         const bs = this.getById(scope);
-        if (!bs) return;
+        if (!bs || bs.isSpecial) return;
         if (!bs.notes) bs.notes = {};
         if (!bs.notes[asin]) bs.notes[asin] = {};
-        bs.notes[asin].memo = memo;
 
-        if (propagateToDescendants) {
-            for (const d of this.getDescendants(scope)) {
-                if (!d.notes) d.notes = {};
-                if (!d.notes[asin]) d.notes[asin] = {};
-                d.notes[asin].memo = memo;
+        if (memo && memo.length > 0) {
+            bs.notes[asin].memo = memo;
+        } else {
+            // 空文字なら override 削除
+            delete bs.notes[asin].memo;
+            if (Object.keys(bs.notes[asin]).length === 0) {
+                delete bs.notes[asin];
             }
         }
     }

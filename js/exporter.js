@@ -1,136 +1,55 @@
-// BookshelfExporter - 同期フォルダから出力先（../bookshelf-export/ 等）への公開ビルド
+// BookshelfExporter - 同期先の `public/` 配下に公開スナップショットを書き出す
 //
-// 設計:
-//   出力先は showDirectoryPicker で指定、IndexedDB に永続化
+// 設計 (2026-05-31〜):
+//   出力先は同期先の `public/` フォルダ。別途 picker は不要。
+//   GitHub Adapter なら `storage.syncBatch` で **1 commit にまとめて push**。
+//   LocalFS Adapter なら順次書く。
+//
 //   出力構造:
-//     <出力先>/
-//       data/
-//         library.json        # 公開対象 ASIN のみ
-//         bookshelves.json    # 公開対象本棚メタのみ
-//         bookshelves/
-//           all.json          # all（公開対象 ASIN のみ）
-//           <slug>.json       # 各公開本棚（publishHide=true 除外済）
-//         books/
-//           <ASIN>__*.md      # 長文メモ（hideDetailMemo=true は除外）
-//         main.json           # = public/main.json
-//         settings.json       # = public/settings.json
-//     ※ index.html / css / js のコピーは Phase 3-C で IS_PUBLIC 対応後に実装
+//     <同期先>/public/
+//       index.html              # body に class="public-mode" を注入
+//       css/bookshelf.css
+//       js/*.js
+//       library.json            # publishable な書誌のみ
+//       bookshelves.json        # isPublic=true (+ all) のみ
+//       bookshelves/all.json    # all (filtered)
+//       bookshelves/<slug>.json # publishable bookshelves
+//       notes.json              # 公開対象 ASIN のみ (hideDetailMemo の hasDetailMemo は除去)
+//       books/<ASIN>__*.md      # hideDetailMemo=false の長文メモ
+//       main.json               # 公開アプリの起動設定
+//       settings.json           # 個人情報除外済 settings
+//       plugins/<id>/           # manifest.publishable=true のみ
 
 class BookshelfExporter {
     constructor(app) {
         this.app = app;
-        this.exportDirHandle = null;
-    }
-
-    async loadStoredHandle() {
-        try {
-            const handle = await getStoredExportDirHandle();
-            if (!handle) return null;
-            const perm = await handle.queryPermission({ mode: 'readwrite' });
-            if (perm === 'granted') {
-                this.exportDirHandle = handle;
-                return handle;
-            }
-            // 権限あれば再リクエストはしない（ユーザー操作で改めて pick）
-            this.exportDirHandle = handle;
-            return handle;
-        } catch (e) {
-            console.warn('exportDirHandle 復元失敗:', e);
-            return null;
-        }
-    }
-
-    async pickExportDir() {
-        if (!('showDirectoryPicker' in window)) {
-            throw new Error('このブラウザは showDirectoryPicker に対応していません');
-        }
-        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        this.exportDirHandle = handle;
-        await storeExportDirHandle(handle);
-        return handle;
-    }
-
-    async ensurePermission() {
-        if (!this.exportDirHandle) return false;
-        let perm = await this.exportDirHandle.queryPermission({ mode: 'readwrite' });
-        if (perm !== 'granted') {
-            perm = await this.exportDirHandle.requestPermission({ mode: 'readwrite' });
-        }
-        return perm === 'granted';
-    }
-
-    async _getDir(root, ...parts) {
-        let dir = root;
-        for (const p of parts) {
-            dir = await dir.getDirectoryHandle(p, { create: true });
-        }
-        return dir;
-    }
-
-    async _writeJSON(data, ...path) {
-        const fileName = path.pop();
-        const dir = await this._getDir(this.exportDirHandle, ...path);
-        const fileHandle = await dir.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(JSON.stringify(data, null, 2));
-        await writable.close();
-    }
-
-    async _writeText(text, ...path) {
-        const fileName = path.pop();
-        const dir = await this._getDir(this.exportDirHandle, ...path);
-        const fileHandle = await dir.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(text);
-        await writable.close();
     }
 
     async export() {
-        if (!this.app.obsidianDirHandle) {
-            throw new Error('同期フォルダが未接続です');
+        if (!this.app._isSyncReady()) {
+            throw new Error('同期先が未接続です');
         }
-        if (!this.exportDirHandle) {
-            throw new Error('出力先フォルダが未選択です');
-        }
-        if (!await this.ensurePermission()) {
-            throw new Error('出力先フォルダへの書き込み権限がありません');
-        }
-
         const storage = this.app.storage;
-        storage.setDirHandle(this.app.obsidianDirHandle);
-
-        const publicMain = await storage.readPublicMain();
-        const publicSettings = await storage.readPublicSettings();
-        if (!publicMain) {
-            throw new Error('public/main.json が見つかりません。先に「📤 公開にコピー」を実行してください');
-        }
-        if (!publicSettings) {
-            throw new Error('public/settings.json が見つかりません。先に「📤 公開にコピー」を実行してください');
-        }
-
         const state = await storage.loadAll();
-        const publishBookshelfIds = new Set(publicMain.bookshelves || []);
+
+        // 公開対象本棚: all (特殊) + isPublic=true のユーザ本棚
+        const publishableMetas = (state.bookshelvesMeta.bookshelves || [])
+            .filter(meta => meta.isSpecial || meta.isPublic);
 
         const publishAsins = new Set();
         const hideDetailAsins = new Set();
-        const filteredBookshelfFiles = []; // [{ slug, data }]
+        const filteredBookshelfFiles = [];
         const filteredMetas = [];
 
-        // 全本棚（all 含む）を統一的に扱う
-        for (const meta of (state.bookshelvesMeta.bookshelves || [])) {
-            if (!publishBookshelfIds.has(meta.internalId)) continue;
+        for (const meta of publishableMetas) {
             const isAll = meta.slug === 'all';
             const data = isAll ? state.allBookshelf : state.bookshelfFiles[meta.internalId];
             if (!data) continue;
-            // publishHide フラグでフィルタ（all は通常 notes 持たない）
             const filteredBooks = (data.books || []).filter(asin => {
                 const note = data.notes && data.notes[asin];
                 return !(note && note.publishHide);
             });
-            const filteredData = {
-                ...data,
-                books: filteredBooks
-            };
+            const filteredData = { ...data, books: filteredBooks };
             filteredBookshelfFiles.push({ slug: meta.slug, data: filteredData });
             filteredMetas.push(meta);
             for (const asin of filteredBooks) {
@@ -140,130 +59,121 @@ class BookshelfExporter {
             }
         }
 
-        // 全本の hideDetailMemo は notes.json (= state.notes) も参照
+        // notes.json の hideDetailMemo も統合
         for (const [asin, note] of Object.entries(state.notes || {})) {
             if (note && note.hideDetailMemo && publishAsins.has(asin)) {
                 hideDetailAsins.add(asin);
             }
         }
 
-        // library.json サブセット
-        const libraryBooks = ((state.library && state.library.books) || []).filter(b => publishAsins.has(b.asin));
-        await this._writeJSON({
+        const libraryBooks = ((state.library && state.library.books) || [])
+            .filter(b => publishAsins.has(b.asin));
+
+        // entries 配列に集めて 1 commit (GitHub) / 順次 (LocalFS) で書き出し
+        const entries = [];
+        const errors = [];
+
+        entries.push({ op: 'put', path: 'public/library.json', data: {
             exportDate: new Date().toISOString(),
             books: libraryBooks
-        }, 'data', 'library.json');
-
-        // bookshelves.json
-        await this._writeJSON({ bookshelves: filteredMetas }, 'data', 'bookshelves.json');
-
-        // bookshelves/<slug>.json
+        }});
+        entries.push({ op: 'put', path: 'public/bookshelves.json', data: {
+            bookshelves: filteredMetas
+        }});
         for (const f of filteredBookshelfFiles) {
-            await this._writeJSON(f.data, 'data', 'bookshelves', `${f.slug}.json`);
+            entries.push({ op: 'put', path: `public/bookshelves/${f.slug}.json`, data: f.data });
         }
 
-        // notes.json（公開対象 ASIN のみ、hideDetailMemo の hasDetailMemo は除く）
+        // notes.json
+        // Phase B-4: ALL.notes[asin].hideMemo=true なら memo を除去 (opt-out)
+        //           hideDetailMemo=true なら hasDetailMemo を除去 (公開アプリが長文メモ存在判定で使う)
+        //           hideMemo / hideDetailMemo フラグ自体は公開側には漏らさない
         const filteredNotes = {};
         for (const asin of publishAsins) {
             const n = state.notes[asin];
             if (!n) continue;
-            if (hideDetailAsins.has(asin)) {
-                const { hasDetailMemo, ...rest } = n;
-                if (Object.keys(rest).length > 0) filteredNotes[asin] = rest;
-            } else {
-                filteredNotes[asin] = n;
+            const { hideMemo, hideDetailMemo, hasDetailMemo, memo, ...rest } = n;
+            const out = { ...rest };
+            if (memo && !hideMemo) out.memo = memo;
+            if (hasDetailMemo && !hideDetailMemo && !hideDetailAsins.has(asin)) {
+                out.hasDetailMemo = true;
             }
+            if (Object.keys(out).length > 0) filteredNotes[asin] = out;
         }
-        await this._writeJSON({ notes: filteredNotes }, 'data', 'notes.json');
+        entries.push({ op: 'put', path: 'public/notes.json', data: { notes: filteredNotes }});
 
-        // main.json / settings.json
-        await this._writeJSON(publicMain, 'data', 'main.json');
-        await this._writeJSON(publicSettings, 'data', 'settings.json');
+        // main.json (公開アプリの起動設定 — bookshelvesMetaEntries には all 含む)
+        entries.push({ op: 'put', path: 'public/main.json', data: {
+            bookshelves: filteredMetas.map(m => m.internalId),
+            appliedPlugins: [],
+            defaultSort: 'addedDate-desc'
+        }});
 
-        // 長文メモ
-        const errors = [];
-        const notesSource = state.notes || {};
+        // settings.json (個人情報除外)
+        const publicSettings = { ...(state.privateSettings || {}) };
+        delete publicSettings.affiliateId;
+        delete publicSettings.obsidianVaultName;
+        delete publicSettings.obsidianSubPath;
+        delete publicSettings.extensionImportOrigins;
+        delete publicSettings.bookMemoOpenWith;
+        entries.push({ op: 'put', path: 'public/settings.json', data: publicSettings });
+
+        // 長文メモ (.md)
         for (const asin of publishAsins) {
             if (hideDetailAsins.has(asin)) continue;
             const book = libraryBooks.find(b => b.asin === asin);
             if (!book) continue;
-            const note = notesSource[asin];
+            const note = state.notes[asin];
             if (!note || !note.hasDetailMemo) continue;
             try {
                 const text = await storage.readBookMemo(asin, book.title);
                 if (text !== null) {
-                    await this._writeText(text, 'data', 'books', storage.bookMemoFileName(asin, book.title));
+                    entries.push({
+                        op: 'put',
+                        path: `public/books/${storage.bookMemoFileName(asin, book.title)}`,
+                        data: text,
+                        kind: 'text'
+                    });
                 }
             } catch (e) {
                 errors.push(`books/${asin}: ${e.message}`);
             }
         }
 
-        // app shell（index.html / css / js）をコピー
-        const shellErrors = await this._copyAppShell();
-        errors.push(...shellErrors);
+        // app shell (index.html / css / js)
+        const shell = await this._collectAppShell();
+        entries.push(...shell.entries);
+        errors.push(...shell.errors);
 
-        // publishable=true のプラグインを同期フォルダから出力先 plugins/ にコピー
-        const pluginResult = await this._copyPublishablePlugins();
-        errors.push(...pluginResult.errors);
+        // publishable プラグイン
+        const plugins = await this._collectPublishablePlugins();
+        entries.push(...plugins.entries);
+        errors.push(...plugins.errors);
+
+        // バッチ書き込み (GitHub なら 1 commit)
+        try {
+            await storage.syncBatch(entries, {
+                message: `chore(bookshelf): publish ${publishAsins.size} books / ${filteredMetas.length} bookshelves`
+            });
+        } catch (err) {
+            if (err && err.name === 'GitHubConflictError') {
+                throw new Error('公開エクスポート中に同期先データが更新されました。リロードしてやり直してください。');
+            }
+            throw err;
+        }
 
         return {
             exported: publishAsins.size,
-            bookshelves: filteredBookshelfFiles.length,
+            bookshelves: filteredMetas.length,
             longMemos: publishAsins.size - hideDetailAsins.size,
-            plugins: pluginResult.copied,
+            plugins: plugins.pluginIds,
+            entries: entries.length,
             errors
         };
     }
 
-    // 同期フォルダの plugins/<id>/ のうち manifest.publishable=true のものを出力先へコピー
-    async _copyPublishablePlugins() {
-        const errors = [];
-        const copied = [];
-        const storage = this.app.storage;
-        if (!storage.dirHandle) return { copied, errors };
-
-        let srcPluginsDir;
-        try {
-            srcPluginsDir = await storage.dirHandle.getDirectoryHandle('plugins', { create: false });
-        } catch (e) {
-            if (e.name === 'NotFoundError') return { copied, errors };
-            errors.push(`plugins/: ${e.message}`);
-            return { copied, errors };
-        }
-
-        for await (const entry of srcPluginsDir.values()) {
-            if (entry.kind !== 'directory') continue;
-            const id = entry.name;
-            try {
-                const srcDir = await srcPluginsDir.getDirectoryHandle(id);
-                const mh = await srcDir.getFileHandle('manifest.json');
-                const mfile = await mh.getFile();
-                const manifest = JSON.parse(await mfile.text());
-                if (!manifest.publishable) continue;
-
-                const files = ['manifest.json', ...(manifest.files || ['index.js'])];
-                for (const f of files) {
-                    try {
-                        const sh = await srcDir.getFileHandle(f);
-                        const sfile = await sh.getFile();
-                        const text = await sfile.text();
-                        await this._writeText(text, 'plugins', id, f);
-                    } catch (e) {
-                        errors.push(`plugins/${id}/${f}: ${e.message}`);
-                    }
-                }
-                copied.push(id);
-            } catch (e) {
-                errors.push(`plugins/${id}/manifest.json: ${e.message}`);
-            }
-        }
-        return { copied, errors };
-    }
-
-    // 公開サイトを動かすための index.html / css / js を出力先にコピー
-    // 失敗は配列で返す（呼び出し側でエクスポート結果に集約）
-    async _copyAppShell() {
+    async _collectAppShell() {
+        const entries = [];
         const errors = [];
         const fetchText = async (path) => {
             const r = await fetch(path);
@@ -274,18 +184,28 @@ class BookshelfExporter {
         try {
             const indexHtml = await fetchText('index.html');
             const publicIndex = indexHtml.replace('<body>', '<body class="public-mode" data-public-mode="true">');
-            await this._writeText(publicIndex, 'index.html');
+            entries.push({ op: 'put', path: 'public/index.html', data: publicIndex, kind: 'text' });
         } catch (e) {
             errors.push(`index.html: ${e.message}`);
         }
 
         try {
-            await this._writeText(await fetchText('css/bookshelf.css'), 'css', 'bookshelf.css');
+            entries.push({
+                op: 'put',
+                path: 'public/css/bookshelf.css',
+                data: await fetchText('css/bookshelf.css'),
+                kind: 'text'
+            });
         } catch (e) {
             errors.push(`css/bookshelf.css: ${e.message}`);
         }
 
         const jsFiles = [
+            'storage-adapter.js',
+            'local-fs-adapter.js',
+            'github-adapter.js',
+            'github-auth.js',
+            'sync-config.js',
             'storage.js',
             'book-manager.js',
             'bookshelf-manager.js',
@@ -297,53 +217,63 @@ class BookshelfExporter {
         ];
         for (const f of jsFiles) {
             try {
-                await this._writeText(await fetchText(`js/${f}`), 'js', f);
+                entries.push({
+                    op: 'put',
+                    path: `public/js/${f}`,
+                    data: await fetchText(`js/${f}`),
+                    kind: 'text'
+                });
             } catch (e) {
                 errors.push(`js/${f}: ${e.message}`);
             }
         }
-
-        return errors;
+        return { entries, errors };
     }
-}
 
-// ===== IndexedDB ヘルパー (exportDirHandle 用) =====
-async function getStoredExportDirHandle() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('bookshelf-sync', 1);
-        req.onupgradeneeded = e => e.target.result.createObjectStore('config');
-        req.onsuccess = e => {
-            const db = e.target.result;
-            try {
-                const tx = db.transaction('config', 'readonly');
-                const r = tx.objectStore('config').get('exportDirHandle');
-                r.onsuccess = ev => resolve(ev.target.result || null);
-                r.onerror = ev => reject(ev.target.error);
-            } catch (err) {
-                reject(err);
-            }
-        };
-        req.onerror = e => reject(e.target.error);
-    });
-}
+    async _collectPublishablePlugins() {
+        const entries = [];
+        const errors = [];
+        const pluginIds = [];
+        const storage = this.app.storage;
 
-async function storeExportDirHandle(handle) {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('bookshelf-sync', 1);
-        req.onupgradeneeded = e => e.target.result.createObjectStore('config');
-        req.onsuccess = e => {
-            const db = e.target.result;
+        let ids;
+        try {
+            ids = await storage.listDirs('plugins');
+        } catch (e) {
+            errors.push(`plugins/: ${e.message}`);
+            return { entries, errors, pluginIds };
+        }
+
+        for (const id of ids) {
             try {
-                const tx = db.transaction('config', 'readwrite');
-                tx.objectStore('config').put(handle, 'exportDirHandle');
-                tx.oncomplete = resolve;
-                tx.onerror = ev => reject(ev.target.error);
-            } catch (err) {
-                reject(err);
+                const manifest = await storage.readJSON(`plugins/${id}/manifest.json`);
+                if (!manifest || !manifest.publishable) continue;
+
+                const files = ['manifest.json', ...(manifest.files || ['index.js'])];
+                for (const f of files) {
+                    try {
+                        const text = await storage.readText(`plugins/${id}/${f}`);
+                        if (text == null) {
+                            errors.push(`plugins/${id}/${f}: not found`);
+                            continue;
+                        }
+                        entries.push({
+                            op: 'put',
+                            path: `public/plugins/${id}/${f}`,
+                            data: text,
+                            kind: 'text'
+                        });
+                    } catch (e) {
+                        errors.push(`plugins/${id}/${f}: ${e.message}`);
+                    }
+                }
+                pluginIds.push(id);
+            } catch (e) {
+                errors.push(`plugins/${id}/manifest.json: ${e.message}`);
             }
-        };
-        req.onerror = e => reject(e.target.error);
-    });
+        }
+        return { entries, errors, pluginIds };
+    }
 }
 
 window.BookshelfExporter = BookshelfExporter;

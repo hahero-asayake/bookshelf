@@ -12,8 +12,11 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060114">
 
+    <!-- EasyMDE (アプリ内 Markdown エディタ) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
 </head>
 <body class="app-view-main">
     <!-- モバイル案内バナー (JS で UA 判定後に表示制御) -->
@@ -26,14 +29,23 @@
     </div>
 
     <header class="header">
-        <div class="container">
+        <div class="container header-shell">
+            <div class="brand">
+                <span class="brand-icon" data-icon="library" data-icon-size="20"></span>
+                <span class="brand-text">bookshelf</span>
+            </div>
+            <button type="button" id="palette-trigger" class="palette-trigger" title="検索 / コマンド (⌘K)">
+                <span class="palette-icon" data-icon="search" data-icon-size="14"></span>
+                <span class="palette-placeholder">検索 / コマンド…</span>
+                <kbd class="palette-kbd">⌘K</kbd>
+            </button>
             <div class="header-controls" id="header-controls">
                 <span class="header-item needs-bookshelf" data-header-item="back-to-main">
-                    <button id="back-to-main" class="btn-icon-square" title="本棚一覧に戻る">←</button>
+                    <button id="back-to-main" class="btn-icon-square" title="本棚一覧に戻る" data-icon="arrow-left"></button>
                 </span>
                 <span class="header-item" data-header-item="bookshelf-selector">
                     <span class="popover-host">
-                        <button id="bookshelf-selector-btn" class="btn-icon-square" title="本棚を切替">📚</button>
+                        <button id="bookshelf-selector-btn" class="btn-icon-square" title="本棚を切替" data-icon="library"></button>
                         <div class="popover popover-bookshelf" id="bookshelf-popover" hidden>
                             <div class="popover-title">本棚を切替</div>
                             <div id="bookshelf-popover-list" class="bookshelf-popover-list"></div>
@@ -41,17 +53,17 @@
                     </span>
                 </span>
                 <span class="header-item" data-header-item="manage-bookshelves">
-                    <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理">📝</button>
+                    <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理" data-icon="pen-line"></button>
                 </span>
                 <span class="header-item" data-header-item="overview-display">
-                    <button id="overview-display-toggle" class="btn-icon-square" title="本棚一覧の画像/テキスト切替">🖼️</button>
+                    <button id="overview-display-toggle" class="btn-icon-square" title="本棚一覧の画像/テキスト切替" data-icon="image"></button>
                 </span>
                 <span class="header-item needs-bookshelf" data-header-item="view-toggle">
-                    <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替">🖼️</button>
+                    <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替" data-icon="list"></button>
                 </span>
                 <span class="header-item needs-bookshelf" data-header-item="search-box">
                     <span class="popover-host">
-                        <button id="toggle-search" class="btn-icon-square" title="検索">🔍</button>
+                        <button id="toggle-search" class="btn-icon-square" title="検索" data-icon="search"></button>
                         <div class="popover popover-search" id="search-popover" hidden>
                             <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
                         </div>
@@ -59,34 +71,34 @@
                 </span>
                 <span class="header-item needs-bookshelf" data-header-item="filter">
                     <span class="popover-host">
-                        <button id="toggle-filter" class="btn-icon-square" title="フィルター / 表示設定">🔧</button>
+                        <button id="toggle-filter" class="btn-icon-square" title="フィルター / 表示設定" data-icon="sliders-horizontal"></button>
                         <div class="popover popover-filter" id="filter-popover" hidden>
                             <div class="filter-group">
                                 <label>星評価フィルター</label>
                                 <div class="star-filter-checkboxes">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="star-1" value="1" checked>
-                                        ⭐ 星1
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="star-2" value="2" checked>
-                                        ⭐⭐ 星2
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="star-3" value="3" checked>
-                                        ⭐⭐⭐ 星3
-                                    </label>
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="star-4" value="4" checked>
-                                        ⭐⭐⭐⭐ 星4
-                                    </label>
-                                    <label class="checkbox-label">
+                                    <label class="checkbox-label star-filter-row">
                                         <input type="checkbox" id="star-5" value="5" checked>
-                                        ⭐⭐⭐⭐⭐ 星5
+                                        <span class="star-filter-stars" data-count="5"></span>
                                     </label>
-                                    <label class="checkbox-label">
+                                    <label class="checkbox-label star-filter-row">
+                                        <input type="checkbox" id="star-4" value="4" checked>
+                                        <span class="star-filter-stars" data-count="4"></span>
+                                    </label>
+                                    <label class="checkbox-label star-filter-row">
+                                        <input type="checkbox" id="star-3" value="3" checked>
+                                        <span class="star-filter-stars" data-count="3"></span>
+                                    </label>
+                                    <label class="checkbox-label star-filter-row">
+                                        <input type="checkbox" id="star-2" value="2" checked>
+                                        <span class="star-filter-stars" data-count="2"></span>
+                                    </label>
+                                    <label class="checkbox-label star-filter-row">
+                                        <input type="checkbox" id="star-1" value="1" checked>
+                                        <span class="star-filter-stars" data-count="1"></span>
+                                    </label>
+                                    <label class="checkbox-label star-filter-row">
                                         <input type="checkbox" id="star-0" value="0" checked>
-                                        ☆ 未評価
+                                        <span class="star-filter-stars" data-count="0"></span>
                                     </label>
                                 </div>
                             </div>
@@ -99,7 +111,7 @@
                                     <option value="title">タイトル</option>
                                     <option value="authors">著者</option>
                                 </select>
-                                <button id="sort-direction" class="btn btn-small">↓ 新しい順</button>
+                                <button id="sort-direction" class="btn btn-small"></button>
                             </div>
 
                             <div class="filter-group">
@@ -126,26 +138,50 @@
                 </span>
 
                 <span class="header-item" data-header-item="open-settings">
-                    <button id="open-settings" class="btn-icon-square" title="設定">⚙️</button>
+                    <button id="open-settings" class="btn-icon-square" title="設定" data-icon="settings"></button>
                 </span>
             </div>
         </div>
     </header>
 
     <main class="main">
-        <div class="container">
-            <section class="bookshelf-container full-width">
+        <div class="container app-shell">
+            <!-- ===== 左ペイン (ナビ + 本棚階層) ===== -->
+            <aside class="app-sidebar" id="app-sidebar">
+                <div class="pane-toolbar">
+                    <span class="pane-title">ナビゲーション</span>
+                    <button class="pane-toggle-btn" id="sidebar-toggle-btn" title="左ペイン折りたたみ (⌘[)" type="button" data-icon="chevron-left" data-icon-size="16"></button>
+                </div>
+                <nav class="sidebar-nav" id="sidebar-nav">
+                    <div class="sidebar-section">
+                        <button class="sidebar-nav-item" data-nav="home" type="button">
+                            <span class="nav-icon" data-icon="library" data-icon-size="16"></span>
+                            <span class="nav-label">ホーム</span>
+                        </button>
+                    </div>
+                    <div class="sidebar-section">
+                        <div class="sidebar-section-title">本棚</div>
+                        <div id="sidebar-bookshelf-tree" class="sidebar-bookshelf-tree">
+                            <!-- ツリーは JS でレンダリング -->
+                        </div>
+                    </div>
+                </nav>
+                <div class="sidebar-strip" id="sidebar-strip">
+                    <button class="strip-restore-btn" id="sidebar-restore-btn" title="左ペインを展開 (⌘[)" type="button" data-icon="chevron-right" data-icon-size="16"></button>
+                    <div class="strip-pinned" id="sidebar-pinned"></div>
+                </div>
+            </aside>
+
+            <!-- ===== 中央ペイン (本棚 or ホーム) ===== -->
+            <section class="bookshelf-container app-main-pane">
                 <div class="loading" id="loading">
-                    📚 本棚を準備中...
+                    <span class="h-icon" data-icon="library" data-icon-size="18"></span>本棚を準備中...
                 </div>
 
-                <!-- View: Main (本棚一覧) -->
+                <!-- View: Main (ホーム = ダッシュボード) -->
                 <section class="view view-main" id="view-main">
-                    <div class="bookshelves-overview" id="bookshelves-overview">
-                        <h2 class="section-title">📚 本棚一覧</h2>
-                        <div class="bookshelves-grid" id="bookshelves-grid">
-                            <!-- Bookshelves overview will be loaded here -->
-                        </div>
+                    <div id="dashboard" class="dashboard">
+                        <!-- ダッシュボードは BookshelfDashboard が描画 -->
                     </div>
                 </section>
 
@@ -164,103 +200,192 @@
                     </div>
                 </section>
             </section>
+
+            <!-- ===== 右ペイン (本詳細) ===== -->
+            <aside class="app-detail" id="app-detail">
+                <div class="pane-toolbar">
+                    <button class="pane-toggle-btn detail-toggle" id="detail-toggle-btn" title="右ペイン折りたたみ (⌘])" type="button" data-icon="chevron-right" data-icon-size="16"></button>
+                    <span class="pane-title pane-title-right">本詳細</span>
+                </div>
+                <div class="detail-body" id="book-detail-pane">
+                    <div class="detail-placeholder">
+                        <p class="detail-placeholder-icon" data-icon="book-open" data-icon-size="36"></p>
+                        <p>本を選択すると詳細が表示されます</p>
+                    </div>
+                </div>
+                <div class="detail-strip" id="detail-strip">
+                    <button class="strip-restore-btn" id="detail-restore-btn" title="右ペインを展開 (⌘])" type="button" data-icon="chevron-left" data-icon-size="16"></button>
+                    <span class="strip-label">本詳細</span>
+                </div>
+            </aside>
         </div>
     </main>
-
-    <!-- Book detail modal -->
-    <div class="modal" id="book-modal">
-        <div class="modal-content">
-            <button class="modal-close" id="modal-close">×</button>
-            <div class="modal-body" id="modal-body">
-                <!-- Book details will be loaded here -->
-            </div>
-        </div>
-    </div>
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal">
         <div class="modal-content settings-modal-content">
             <button class="modal-close" id="settings-modal-close">×</button>
             <div class="modal-header">
-                <h2>⚙️ 設定</h2>
+                <h2><span class="h-icon" data-icon="settings" data-icon-size="20"></span>設定</h2>
             </div>
             <div class="modal-body">
 
                 <details class="settings-section" open>
-                    <summary class="settings-section-title">📁 同期 / 公開</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期 / 公開</summary>
                     <div class="settings-section-body">
 
-                    <div class="path-card">
-                        <div class="path-card-header">
-                            <span class="path-card-icon">📁</span>
-                            <span class="path-card-label">Obsidian 同期フォルダ</span>
-                        </div>
-                        <div class="path-card-body">
-                            <code class="path-display" id="obsidian-sync-path" title="">(未接続)</code>
-                        </div>
-                        <div class="path-card-footer">
-                            <button id="obsidian-sync-btn" class="btn btn-primary btn-small">📁 変更</button>
-                            <span id="obsidian-sync-status" class="path-status"></span>
-                        </div>
+                    <div class="sync-method-row">
+                        <label for="sync-method-select">同期方式:</label>
+                        <select id="sync-method-select">
+                            <option value="local">ローカルファイル (File System Access)</option>
+                            <option value="github">GitHub リポジトリ</option>
+                            <option value="google-drive" disabled>Google Drive (段階3 予定)</option>
+                            <option value="dropbox" disabled>Dropbox (段階3 予定)</option>
+                        </select>
+                        <span class="sync-method-hint">GitHub に切替えるときは下のフォームで「接続して使う」を、LocalFS に戻すときは方式 select を切替えてください</span>
                     </div>
 
-                    <div class="path-card">
-                        <div class="path-card-header">
-                            <span class="path-card-icon">📦</span>
-                            <span class="path-card-label">公開エクスポート先</span>
-                            <span class="path-card-hint">推奨: 同期フォルダの隣に <code>bookshelf-export/</code></span>
+                    <div id="sync-config-local" class="sync-config-panel">
+                        <div class="path-card">
+                            <div class="path-card-header">
+                                <span class="path-card-icon" data-icon="folder" data-icon-size="16"></span>
+                                <span class="path-card-label">Obsidian 同期フォルダ</span>
+                            </div>
+                            <div class="path-card-body">
+                                <code class="path-display" id="obsidian-sync-path" title="">(未接続)</code>
+                            </div>
+                            <div class="path-card-footer">
+                                <button id="obsidian-sync-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>変更</button>
+                                <span id="obsidian-sync-status" class="path-status"></span>
+                            </div>
                         </div>
-                        <div class="path-card-body">
-                            <code class="path-display" id="export-dir-path" title="">(未設定)</code>
-                        </div>
-                        <div class="path-card-footer">
-                            <button id="pick-export-dir" class="btn btn-primary btn-small">📁 変更</button>
+
+                    </div>
+
+                    <div id="sync-config-github" class="sync-config-panel" hidden>
+                        <div class="path-card">
+                            <div class="path-card-header">
+                                <span class="path-card-icon" data-icon="github" data-icon-size="16"></span>
+                                <span class="path-card-label">GitHub リポジトリ</span>
+                                <span class="path-card-hint">OAuth Device Flow で接続 (PAT 入力不要)</span>
+                            </div>
+
+                            <div id="github-auth-disconnected" class="path-card-body">
+                                <p class="github-auth-msg">GitHub アカウントと接続します。<br>「接続」を押すと github.com で 8 桁コードを入力する画面が開きます。</p>
+                                <button id="github-connect-btn" class="btn btn-primary"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>GitHub に接続</button>
+                            </div>
+
+                            <div id="github-auth-pending" class="path-card-body" hidden>
+                                <p class="github-auth-msg">下のコードを GitHub の認証ページで入力してください:</p>
+                                <div class="github-device-code-box">
+                                    <code id="github-user-code">────────</code>
+                                    <button id="github-copy-code-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コピー</button>
+                                </div>
+                                <p class="github-auth-msg">
+                                    <a id="github-verification-link" href="#" target="_blank" rel="noopener noreferrer"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>GitHub 認証ページを開く</a>
+                                </p>
+                                <p class="github-auth-status" id="github-auth-pending-status"><span class="h-icon" data-icon="loader" data-icon-size="14"></span>認証待ち...</p>
+                                <button id="github-cancel-auth-btn" class="btn btn-secondary btn-small">キャンセル</button>
+                            </div>
+
+                            <div id="github-auth-connected" class="path-card-body" hidden>
+                                <p class="github-auth-connected-msg">
+                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="github-connected-login">(unknown)</strong> として接続中
+                                    <button id="github-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
+                                </p>
+
+                                <div id="github-install-prompt" class="github-install-prompt" hidden>
+                                    <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span>bookshelf-sync (GitHub App) がまだインストールされていない、または対象リポジトリが選ばれていません。<br>
+                                    <a id="github-install-link" href="#" target="_blank" rel="noopener noreferrer"><span class="h-icon" data-icon="package" data-icon-size="14"></span>GitHub で App をインストール / 設定</a>
+                                    し、対象リポジトリを選んでから
+                                    <button id="github-reload-after-install-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>再取得</button>
+                                    を押してください。
+                                    <br>
+                                    <span class="github-install-hint"><span class="h-icon" data-icon="clock" data-icon-size="14"></span>インストール / 権限変更直後は GitHub 側の反映に <strong>数十秒〜数分</strong> かかる場合があります。すぐに出ないときは少し待ってから再取得を押してください。権限変更後は <strong>切断 → 再接続</strong> も試してください。</span>
+                                </div>
+
+                                <div class="github-form">
+                                    <label><span class="form-label">repo</span>
+                                        <select id="github-repo-select">
+                                            <option value="">(リロード後に取得)</option>
+                                        </select>
+                                    </label>
+                                    <label><span class="form-label">branch</span>
+                                        <select id="github-branch-select">
+                                            <option value="">(repo 選択後に取得)</option>
+                                        </select>
+                                    </label>
+                                    <label><span class="form-label">basePath</span>
+                                        <span class="basepath-row">
+                                            <input id="github-base-path" placeholder="(repo ルートに置く場合は空欄)">
+                                            <button id="github-basepath-browse-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>選択</button>
+                                        </span>
+                                    </label>
+                                </div>
+
+                                <details id="github-basepath-browser" class="github-basepath-browser" hidden>
+                                    <summary><span class="h-icon" data-icon="folder-tree" data-icon-size="14"></span>リポジトリ内ブラウザ</summary>
+                                    <div class="basepath-browser-body">
+                                        <div class="basepath-browser-current"><span class="h-icon" data-icon="map-pin" data-icon-size="14"></span><code id="basepath-current">/</code></div>
+                                        <div class="basepath-browser-controls">
+                                            <button id="basepath-up-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="arrow-up" data-icon-size="14"></span>親へ</button>
+                                            <button id="basepath-apply-btn" class="btn btn-primary btn-small" type="button"><span class="h-icon" data-icon="check" data-icon-size="14"></span>このパスを basePath にする</button>
+                                        </div>
+                                        <ul id="basepath-browser-list" class="basepath-browser-list"></ul>
+                                    </div>
+                                </details>
+
+                                <div class="path-card-footer">
+                                    <button id="github-reload-repos-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>リポジトリ再取得</button>
+                                    <button id="github-save-repo-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
+                                    <span id="github-status" class="path-status"></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="settings-action-row">
-                        <button id="copy-to-public" class="btn btn-secondary">📤 公開にコピー</button>
-                        <button id="run-export" class="btn btn-secondary">📦 エクスポート実行</button>
-                        <button id="export-unified" class="btn btn-secondary">💾 設定をダウンロード</button>
+                        <button id="publish-to-public" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する (private → public)</button>
+                        <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>設定をダウンロード</button>
                     </div>
                     </div>
                 </details>
 
                 <details class="settings-section" open>
-                    <summary class="settings-section-title">📚 蔵書</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="library" data-icon-size="16"></span>蔵書</summary>
                     <div class="settings-section-body">
                     <div class="settings-action-list">
-                        <button id="add-book-manually" class="btn btn-secondary">➕ 手動追加</button>
-                        <button id="import-kindle" class="btn btn-secondary">📥 Kindle インポート</button>
-                        <button id="show-exclusions" class="btn btn-secondary">🚫 除外一覧</button>
+                        <button id="add-book-manually" class="btn btn-secondary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>手動追加</button>
+                        <button id="import-kindle" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>Kindle インポート</button>
+                        <button id="show-exclusions" class="btn btn-secondary"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>除外一覧</button>
                     </div>
                     </div>
                 </details>
 
                 <details class="settings-section">
-                    <summary class="settings-section-title">🎛️ ヘッダー</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="layout-dashboard" data-icon-size="16"></span>ヘッダー</summary>
                     <div class="settings-section-body">
-                    <p class="settings-section-hint">ヘッダーに表示するボタンを「配置中 / 未配置」エリア間でドラッグ&ドロップで移動。⚙️ 設定 と ← 一覧 は必ず1つ残ります。</p>
+                    <p class="settings-section-hint">ヘッダーに表示するボタンを「配置中 / 未配置」エリア間でドラッグ&ドロップで移動。設定 と 一覧 ボタンは必ず1つ残ります。</p>
                     <div id="header-customizer" class="header-customizer"></div>
                     </div>
                 </details>
 
                 <details class="settings-section">
-                    <summary class="settings-section-title">🧩 プラグイン</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="puzzle" data-icon-size="16"></span>プラグイン</summary>
                     <div class="settings-section-body">
 
                     <h4 class="settings-subsection-title">GitHub からインストール</h4>
                     <div class="plugin-install-card">
                         <div class="plugin-install-input-group">
                             <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
-                            <button id="install-plugin-btn" class="btn btn-primary btn-small">📥 インストール</button>
+                            <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
                         </div>
                         <small class="plugin-install-hint">manifest.json と index.js を含む repo を指定。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
                     </div>
 
                     <h4 class="settings-subsection-title">インストール済みプラグイン</h4>
                     <div class="plugin-search-row">
-                        <input type="text" id="plugin-search" placeholder="🔍 名前 / 説明で絞り込み..." />
+                        <input type="text" id="plugin-search" placeholder="名前 / 説明で絞り込み..." />
                     </div>
                     <div id="plugin-list-section" class="plugin-grid">
                         <p style="color:#888;">設定を開くと一覧が表示されます…</p>
@@ -274,11 +399,54 @@
                 </details>
 
                 <details class="settings-section">
-                    <summary class="settings-section-title">ℹ️ このアプリについて</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="notebook-pen" data-icon-size="16"></span>長文メモ</summary>
                     <div class="settings-section-body">
-                    <p class="about-credit">📚 <strong>bookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
+                        <div class="memo-config-row">
+                            <label for="book-memo-open-with">「詳細メモを書く」で開くエディタ:</label>
+                            <select id="book-memo-open-with">
+                                <option value="app-editor">アプリ内エディタ (推奨)</option>
+                                <option value="obsidian">Obsidian (LocalFS のみ)</option>
+                                <option value="system">同期フォルダで手動 (LocalFS のみ)</option>
+                            </select>
+                            <p class="memo-config-hint">アプリ内エディタは Markdown ツールバー + プレビュー付き。GitHub モードではアプリ内エディタが必須 (外部リンクは動きません)。</p>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="settings-section">
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="layout-dashboard" data-icon-size="16"></span>表示</summary>
+                    <div class="settings-section-body">
+                        <div class="memo-config-row">
+                            <label for="setting-star-visibility">星評価の表示</label>
+                            <select id="setting-star-visibility">
+                                <option value="always">常に表示</option>
+                                <option value="hover">ホバー時のみ</option>
+                                <option value="hidden">非表示</option>
+                            </select>
+                            <label class="checkbox-label" style="margin-top:0.5rem;">
+                                <input type="checkbox" id="setting-star-overlay" checked>
+                                <span>星を表紙に重ねる</span>
+                            </label>
+                            <p class="memo-config-hint">一覧カードの星の出し方。星はクリックで評価でき、一覧からも付けられます。本詳細では常に表示・編集できます。</p>
+                        </div>
+                        <div class="memo-config-row" style="margin-top:0.9rem;">
+                            <label for="setting-memo-visibility">短文メモの表示</label>
+                            <select id="setting-memo-visibility">
+                                <option value="always">常に表示</option>
+                                <option value="hover">ホバー時のみ</option>
+                                <option value="hidden">非表示</option>
+                            </select>
+                            <p class="memo-config-hint">一覧カードに短文メモを出すか。本詳細では常に表示されます。</p>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="settings-section">
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="info" data-icon-size="16"></span>このアプリについて</summary>
+                    <div class="settings-section-body">
+                    <p class="about-credit"><span class="h-icon" data-icon="library" data-icon-size="14"></span><strong>bookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
                     <p class="about-affiliate">
-                        ⚠️ <strong>アフィリエイト開示:</strong> このサイトは Amazon.co.jp アソシエイトプログラムに参加しており、適格販売により収入を得る場合があります。
+                        <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span><strong>アフィリエイト開示:</strong> このサイトは Amazon.co.jp アソシエイトプログラムに参加しており、適格販売により収入を得る場合があります。
                     </p>
                     <p class="about-links">
                         <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
@@ -291,13 +459,65 @@
         </div>
     </div>
 
+    <!-- Icon Picker Modal (Lucide + 任意文字) -->
+    <div id="icon-picker-modal" class="modal icon-picker-modal">
+        <div class="modal-content icon-picker-modal-content">
+            <button class="modal-close" id="icon-picker-modal-close" type="button">×</button>
+            <div class="modal-header">
+                <h2 id="icon-picker-title">アイコンを選択</h2>
+            </div>
+            <div class="modal-body">
+
+                <div class="icon-picker-tabs" role="tablist">
+                    <button type="button" class="icon-picker-tab is-active" data-tab="lucide" role="tab"><span class="h-icon" data-icon="search" data-icon-size="14"></span>Lucide アイコン</button>
+                    <button type="button" class="icon-picker-tab" data-tab="text" role="tab"><span class="h-icon" data-icon="pencil" data-icon-size="14"></span>文字アイコン</button>
+                </div>
+
+                <!-- Tab: Lucide -->
+                <section class="icon-picker-tab-content" data-tab-content="lucide">
+                    <div class="icon-picker-direct-row">
+                        <input type="text" id="icon-picker-lucide-input" placeholder="Lucide 名で検索 (例: rocket, calendar-days)" autocomplete="off" />
+                        <span class="icon-picker-direct-preview" id="icon-picker-lucide-preview"></span>
+                        <button class="btn btn-primary btn-small" id="icon-picker-lucide-use" type="button" disabled>使う</button>
+                    </div>
+                    <p class="icon-picker-direct-hint">
+                        1500+ の <a href="https://lucide.dev/icons/" target="_blank" rel="noopener">Lucide</a> から選択。入力 → Enter or 「使う」で確定 (初回は CDN 取得)。
+                    </p>
+                    <div class="icon-picker-grid" id="icon-picker-grid">
+                        <!-- 履歴 + おすすめは JS で描画 -->
+                    </div>
+                </section>
+
+                <!-- Tab: 任意文字 -->
+                <section class="icon-picker-tab-content" data-tab-content="text" hidden>
+                    <div class="icon-picker-direct-row">
+                        <input type="text" id="icon-picker-text-input" placeholder="例: ★  📕  A  漢" autocomplete="off" maxlength="6" />
+                        <span class="icon-picker-direct-preview" id="icon-picker-text-preview"></span>
+                        <button class="btn btn-primary btn-small" id="icon-picker-text-use" type="button" disabled>使う</button>
+                    </div>
+                    <p class="icon-picker-direct-hint">
+                        絵文字 / 漢字 / 任意 1〜4 文字。フォントサイズは文字数に応じて自動調整されます。
+                    </p>
+                    <div class="icon-picker-grid" id="icon-picker-text-grid">
+                        <!-- 文字履歴 (任意文字のみ) は JS で描画 -->
+                    </div>
+                </section>
+
+                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button id="icon-picker-clear" class="btn btn-secondary btn-small" type="button">クリア (デフォルト)</button>
+                    <button id="icon-picker-cancel" class="btn btn-secondary" type="button">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bookshelf Management Modal -->
     <div id="bookshelf-modal" class="modal">
         <div class="modal-content">
             <button class="modal-close" id="bookshelf-modal-close">×</button>
             <div class="modal-header">
-                <h2>📚 本棚管理</h2>
-                <button id="add-bookshelf" class="btn btn-primary">+ 新しい本棚</button>
+                <h2><span class="h-icon" data-icon="library" data-icon-size="20"></span>本棚管理</h2>
+                <button id="add-bookshelf" class="btn btn-primary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新しい本棚</button>
             </div>
             <div id="bookshelves-list">
                 <!-- Bookshelves will be inserted here -->
@@ -310,7 +530,7 @@
         <div class="modal-content">
             <button class="modal-close" id="bookshelf-form-modal-close">×</button>
             <div class="modal-header">
-                <h2 id="bookshelf-form-title">📚 新しい本棚</h2>
+                <h2 id="bookshelf-form-title"><span class="h-icon" data-icon="library" data-icon-size="20"></span>新しい本棚</h2>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -328,8 +548,15 @@
                     <small style="color: #888;">子は親のサブセットになります（親に無い本は追加できません）</small>
                 </div>
                 <div class="form-group">
-                    <label for="bookshelf-emoji">絵文字</label>
-                    <input type="text" id="bookshelf-emoji" placeholder="📚" value="📚" maxlength="2">
+                    <label>アイコン</label>
+                    <div>
+                        <button type="button" id="bookshelf-icon-trigger" class="icon-picker-trigger">
+                            <span class="icon-picker-trigger-preview" id="bookshelf-icon-preview"></span>
+                            <span id="bookshelf-icon-label">library</span>
+                            <span style="color:#9ca3af;font-size:0.8rem;">クリックで変更</span>
+                        </button>
+                        <input type="hidden" id="bookshelf-icon-name" value="library">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="bookshelf-description">説明</label>
@@ -338,7 +565,13 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="bookshelf-is-public">
-                        📤 この本棚を公開する（公開エクスポート対象）
+                        <span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>この本棚を公開する（公開エクスポート対象）
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="bookshelf-pinned">
+                        <span class="h-icon" data-icon="pin" data-icon-size="14"></span>左サイドのストリップにピン留めする（折りたたみ時に表示）
                     </label>
                 </div>
                 <div class="form-actions" style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
@@ -355,27 +588,25 @@
         <div class="modal-content">
             <button class="modal-close" id="import-modal-close">×</button>
             <div class="modal-header">
-                <h2>📥 Kindleデータインポート</h2>
+                <h2><span class="h-icon" data-icon="download" data-icon-size="20"></span>Kindle データインポート</h2>
             </div>
             <div class="modal-body">
                 <div class="import-options">
                     <div class="import-option">
-                        <h3>🚀 ブックマークレット取込（拡張不要）</h3>
-                        <p style="font-size: 0.9rem; color: #666; margin: 0.5rem 0;">
-                            初回のみブックマークレットの登録が必要です：
+                        <h3><span class="h-icon" data-icon="zap" data-icon-size="16"></span>ワンクリック取込</h3>
+                        <p class="import-option-desc">
+                            「Amazon ライブラリページを開く」を押すと、Amazon タブが開いて自動取込されます。
                         </p>
-                        <ol style="font-size: 0.85rem; color: #555; margin: 0.5rem 0 0.8rem 1.2rem;">
-                            <li>「📋 ブックマークレットをコピー」を押す</li>
-                            <li>ブラウザのブックマークバーに新規ブックマークを作成 → 名前「Kindle取込」、URL 欄にコピー内容を貼り付け</li>
-                            <li>「📥 Amazon ライブラリページを開く」を押す</li>
-                            <li>開いた Amazon ページでブックマークレットをクリック → 自動で取り込まれる</li>
-                        </ol>
-                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                            <button id="copy-bookmarklet" class="btn btn-secondary">📋 ブックマークレットをコピー</button>
-                            <button id="open-amazon-for-import" class="btn btn-primary">📥 Amazon ライブラリページを開く</button>
+                        <ul class="import-option-list">
+                            <li><strong>拡張 (kindle_bookshelf_exporter) インストール済み</strong>: 数秒〜数十秒で自動取込 → タブ自動 close</li>
+                            <li><strong>拡張未インストール</strong>: 一度だけブックマークレットを登録 (「ブックマークレットをコピー」) → 以後は Amazon タブで手動クリック</li>
+                        </ul>
+                        <div class="import-option-actions">
+                            <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazon ライブラリページを開く</button>
+                            <button id="copy-bookmarklet" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>ブックマークレットをコピー (フォールバック)</button>
                         </div>
                     </div>
-                    <hr style="margin: 1.5rem 0; opacity: 0.3;">
+                    <hr class="settings-divider">
                     <div class="import-option">
                         <h3>ファイルからインポート（手動）</h3>
                         <input type="file" id="kindle-file-input" accept=".json" />
@@ -384,12 +615,12 @@
 
                 </div>
                 <div id="book-selection" class="book-selection" style="display: none;">
-                    <h3>📚 インポートする本を選択</h3>
+                    <h3><span class="h-icon" data-icon="list-checks" data-icon-size="16"></span>インポートする本を選択</h3>
                     <div class="selection-controls">
-                        <div class="filter-options" style="margin-bottom: 1rem;">
-                            <label style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div class="filter-options">
+                            <label class="inline-check-label">
                                 <input type="checkbox" id="hide-existing-books" checked>
-                                <span>📚 インポート済みの本を非表示にする</span>
+                                <span><span class="h-icon" data-icon="eye-off" data-icon-size="14"></span>インポート済みの本を非表示にする</span>
                             </label>
                         </div>
                         <button id="select-all-books" class="btn btn-small">全て選択</button>
@@ -411,17 +642,35 @@
         </div>
     </div>
 
+    <!-- Book Memo Modal (アプリ内 Markdown エディタ) -->
+    <div id="book-memo-modal" class="modal book-memo-modal">
+        <div class="modal-content book-memo-modal-content">
+            <button class="modal-close" id="book-memo-modal-close" type="button">×</button>
+            <div class="modal-header">
+                <h2><span class="h-icon" data-icon="notebook-pen" data-icon-size="20"></span>長文メモ: <span id="book-memo-modal-title">(未選択)</span></h2>
+            </div>
+            <div class="modal-body book-memo-modal-body">
+                <textarea id="book-memo-textarea"></textarea>
+            </div>
+            <div class="book-memo-modal-footer">
+                <span id="book-memo-status" class="book-memo-status"></span>
+                <button id="book-memo-save-btn" class="btn btn-primary" type="button"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
+                <button id="book-memo-close-btn" class="btn btn-secondary" type="button">閉じる</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Descendants Pick Modal -->
     <div id="descendants-pick-modal" class="modal">
         <div class="modal-content">
             <button class="modal-close" id="descendants-pick-modal-close">×</button>
             <div class="modal-header">
-                <h2>👇 子孫本棚にも追加</h2>
+                <h2><span class="h-icon" data-icon="corner-down-right" data-icon-size="20"></span>子孫本棚にも追加</h2>
             </div>
             <div class="modal-body">
-                <p style="color: #888; font-size: 0.9rem;">親本棚への追加と同時に、以下の子孫本棚にも追加できます。</p>
-                <div id="descendants-pick-list" style="margin: 1rem 0;"></div>
-                <div class="form-actions" style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1rem;">
+                <p class="muted-hint">親本棚への追加と同時に、以下の子孫本棚にも追加できます。</p>
+                <div id="descendants-pick-list" class="descendants-pick-list"></div>
+                <div class="form-actions">
                     <button id="descendants-pick-skip" class="btn btn-secondary">親のみに追加</button>
                     <button id="descendants-pick-confirm" class="btn btn-primary">選択した本棚にも追加</button>
                 </div>
@@ -434,10 +683,10 @@
         <div class="modal-content">
             <button class="modal-close" id="exclusions-modal-close">×</button>
             <div class="modal-header">
-                <h2>🚫 除外中の本</h2>
+                <h2><span class="h-icon" data-icon="ban" data-icon-size="20"></span>除外中の本</h2>
             </div>
             <div class="modal-body">
-                <p style="color: #7f8c8d; font-size: 0.9rem;">「全ての本」から除外している本の一覧。Kindle 再取込時もここにある本はスキップされます。</p>
+                <p class="muted-hint">「全ての本」から除外している本の一覧。Kindle 再取込時もここにある本はスキップされます。</p>
                 <div id="exclusions-list">
                     <!-- 除外中の本がここに -->
                 </div>
@@ -450,7 +699,7 @@
         <div class="modal-content">
             <button class="modal-close" id="add-book-modal-close">×</button>
             <div class="modal-header">
-                <h2>➕ 手動で本を追加</h2>
+                <h2><span class="h-icon" data-icon="plus" data-icon-size="20"></span>手動で本を追加</h2>
             </div>
             <div class="modal-body">
                 <div class="add-book-options">
@@ -460,7 +709,7 @@
                             <label for="manual-asin">ASIN</label>
                             <div class="asin-input-container">
                                 <input type="text" id="manual-asin" placeholder="B012345678" maxlength="10" />
-                                <button type="button" id="fetch-book-info" class="btn btn-small btn-secondary">📥 自動取得</button>
+                                <button type="button" id="fetch-book-info" class="btn btn-small btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>自動取得</button>
                             </div>
                             <div class="asin-status" id="asin-status" style="display: none;"></div>
                         </div>
@@ -491,13 +740,20 @@
         </div>
     </div>
 
-    <script src="js/storage.js"></script>
-    <script src="js/book-manager.js"></script>
-    <script src="js/bookshelf-manager.js"></script>
-    <script src="js/exporter.js"></script>
-    <script src="js/plugin-api.js"></script>
-    <script src="js/plugin-loader.js"></script>
-    <script src="js/router.js"></script>
-    <script src="js/bookshelf.js"></script>
+    <script src="js/icons.js?v=2026060114"></script>
+    <script src="js/storage-adapter.js?v=2026060114"></script>
+    <script src="js/local-fs-adapter.js?v=2026060114"></script>
+    <script src="js/github-adapter.js?v=2026060114"></script>
+    <script src="js/github-auth.js?v=2026060114"></script>
+    <script src="js/sync-config.js?v=2026060114"></script>
+    <script src="js/storage.js?v=2026060114"></script>
+    <script src="js/book-manager.js?v=2026060114"></script>
+    <script src="js/bookshelf-manager.js?v=2026060114"></script>
+    <script src="js/exporter.js?v=2026060114"></script>
+    <script src="js/plugin-api.js?v=2026060114"></script>
+    <script src="js/plugin-loader.js?v=2026060114"></script>
+    <script src="js/router.js?v=2026060114"></script>
+    <script src="js/dashboard.js?v=2026060114"></script>
+    <script src="js/bookshelf.js?v=2026060114"></script>
 </body>
 </html>

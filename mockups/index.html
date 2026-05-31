@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>bookshelf — デザイン提案 5案</title>
+<style>
+  /* ============== グローバル ============== */
+  :root {
+    --bg: #fafbfc;
+    --fg: #1c1f24;
+    --muted: #6b7280;
+    --line: #e4e7eb;
+    --accent: #5b6cff;
+    --accent2: #ffb86b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  .page-wrap { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  .lead { color: var(--muted); margin-bottom: 2rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.4rem; letter-spacing: 0.02em; }
+  h2 { font-size: 1.3rem; margin: 0 0 0.4rem; }
+  h3 { font-size: 1rem; margin: 1.2rem 0 0.5rem; }
+  code { background: #eef0f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
+  small { color: var(--muted); }
+
+  /* 共通: アプリの本質 */
+  .essence {
+    background: linear-gradient(180deg, #fff, #f7f9fc);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 2rem;
+  }
+  .essence ul { margin: 0.4rem 0 0 1.2rem; }
+  .essence li { margin: 0.2rem 0; }
+
+  /* ============== タブ ============== */
+  .tabs {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.7rem;
+    margin-bottom: 1.5rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding-top: 1rem;
+    z-index: 100;
+  }
+  .tabs button {
+    background: #fff;
+    border: 1px solid var(--line);
+    color: var(--fg);
+    padding: 0.55rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    transition: all 0.15s;
+  }
+  .tabs button:hover { background: #f0f3f8; }
+  .tabs button.is-active {
+    background: var(--fg);
+    color: #fff;
+    border-color: var(--fg);
+  }
+
+  /* ============== 提案カード共通 ============== */
+  .proposal { display: none; }
+  .proposal.is-active { display: block; }
+  .proposal-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.6rem;
+    margin: 1rem 0 1.5rem;
+  }
+  .proposal-meta > div {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+  }
+  .proposal-meta strong { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.2rem; }
+  .proposal-meta p { margin: 0; font-size: 0.9rem; }
+  .mock-frame {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    margin-bottom: 1.5rem;
+  }
+  .mock-caption {
+    background: #f4f5f7;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  .pros-cons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+  .pros-cons > div {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+  }
+  .pros-cons h4 { margin: 0 0 0.4rem; font-size: 0.85rem; letter-spacing: 0.04em; }
+  .pros-cons ul { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; }
+  .pros { color: #1e7a39; }
+  .cons { color: #a02f2f; }
+
+  /* ====================================================
+     案1: コマンドパレット中心 (Power user)
+     ==================================================== */
+  .mock-p1 {
+    background: #0e1116;
+    color: #e4e7eb;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    grid-template-rows: 44px 1fr 24px;
+  }
+  .mock-p1 .p1-header {
+    grid-column: 1 / -1;
+    background: #161a21;
+    border-bottom: 1px solid #232830;
+    display: flex;
+    align-items: center;
+    padding: 0 0.8rem;
+    gap: 0.8rem;
+  }
+  .mock-p1 .p1-search {
+    flex: 1;
+    background: #0e1116;
+    border: 1px solid #2a2f38;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    color: #9ba3ad;
+  }
+  .mock-p1 .p1-search kbd { background: #1f2530; border-radius: 3px; padding: 0 0.3rem; font-size: 0.75rem; margin-left: 0.5rem; }
+  .mock-p1 .p1-sidebar {
+    background: #11151b;
+    border-right: 1px solid #232830;
+    padding: 0.7rem 0.5rem;
+    font-size: 0.82rem;
+  }
+  .mock-p1 .p1-sidebar .sec { color: #6b7280; text-transform: uppercase; font-size: 0.7rem; margin: 0.8rem 0 0.3rem; padding-left: 0.4rem; }
+  .mock-p1 .p1-sidebar .item { padding: 0.3rem 0.5rem; border-radius: 4px; cursor: pointer; }
+  .mock-p1 .p1-sidebar .item.current { background: #1e2530; color: #fff; }
+  .mock-p1 .p1-main {
+    padding: 0.8rem 1rem;
+    overflow: auto;
+  }
+  .mock-p1 .p1-list-row {
+    display: grid;
+    grid-template-columns: 22px 28px 1fr 200px 70px;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.35rem 0.4rem;
+    border-bottom: 1px solid #1c2128;
+    font-size: 0.82rem;
+  }
+  .mock-p1 .p1-list-row:hover { background: #161a21; }
+  .mock-p1 .p1-list-row .cover { width: 22px; height: 30px; background: #2a3340; border-radius: 2px; }
+  .mock-p1 .p1-list-row .num { color: #4a5260; font-variant-numeric: tabular-nums; text-align: right; }
+  .mock-p1 .p1-list-row .author { color: #9ba3ad; }
+  .mock-p1 .p1-list-row .rating { color: #ffb86b; }
+  .mock-p1 .p1-status {
+    grid-column: 1 / -1;
+    background: #11151b;
+    border-top: 1px solid #232830;
+    padding: 0 0.8rem;
+    font-size: 0.75rem;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .mock-p1 .p1-status .ok { color: #4ec97a; }
+
+  /* ====================================================
+     案2: ライブラリーラウンジ (Beautiful / Public)
+     ==================================================== */
+  .mock-p2 {
+    background: linear-gradient(180deg, #faf6ef 0%, #f5ede0 100%);
+    color: #2c2723;
+    min-height: 520px;
+    padding: 0;
+    position: relative;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  }
+  .mock-p2 .p2-top {
+    padding: 1.2rem 1.6rem 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .mock-p2 .p2-logo { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.05em; }
+  .mock-p2 .p2-search {
+    flex: 1;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid #d8cab0;
+    border-radius: 999px;
+    padding: 0.5rem 1rem;
+    color: #7a6f5e;
+    font-size: 0.9rem;
+  }
+  .mock-p2 .p2-icons { display: flex; gap: 0.4rem; }
+  .mock-p2 .p2-icon {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid #d8cab0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: sans-serif; font-size: 0.95rem;
+  }
+  .mock-p2 .p2-hero {
+    padding: 1.5rem 1.6rem 0.5rem;
+    font-family: sans-serif;
+  }
+  .mock-p2 .p2-hero .label { font-size: 0.75rem; color: #8a7a64; letter-spacing: 0.1em; text-transform: uppercase; }
+  .mock-p2 .p2-hero h3 { font-size: 1.4rem; font-family: "Hiragino Mincho ProN", serif; margin: 0.2rem 0 0; }
+  .mock-p2 .p2-shelves {
+    display: flex;
+    gap: 0.6rem;
+    overflow-x: auto;
+    padding: 0.8rem 1.6rem 0.3rem;
+    font-family: sans-serif;
+  }
+  .mock-p2 .p2-shelf-chip {
+    flex: 0 0 auto;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid #d8cab0;
+    border-radius: 999px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    color: #4a3f30;
+  }
+  .mock-p2 .p2-shelf-chip.active { background: #2c2723; color: #faf6ef; border-color: #2c2723; }
+  .mock-p2 .p2-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1.2rem 0.8rem;
+    padding: 1rem 1.6rem 1.6rem;
+  }
+  .mock-p2 .p2-book {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #8a7a64), var(--c2, #5e4d39));
+    border-radius: 3px 5px 5px 3px;
+    box-shadow:
+      -1px 0 0 rgba(0,0,0,0.15),
+      2px 4px 10px rgba(60,40,20,0.18),
+      inset 4px 0 8px rgba(0,0,0,0.18);
+    position: relative;
+  }
+  .mock-p2 .p2-book::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    border-radius: 3px 5px 5px 3px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent 30%, transparent 70%, rgba(0,0,0,0.2));
+  }
+
+  /* ====================================================
+     案3: 読書ダッシュボード (Activity-centered)
+     ==================================================== */
+  .mock-p3 {
+    background: #f4f5f7;
+    color: var(--fg);
+    min-height: 520px;
+    padding: 1.2rem;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1rem;
+  }
+  .mock-p3 .p3-side {
+    background: #fff;
+    border-radius: 10px;
+    padding: 0.9rem;
+    font-size: 0.85rem;
+  }
+  .mock-p3 .p3-side h4 { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin: 0.8rem 0 0.3rem; }
+  .mock-p3 .p3-side .nav-item {
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    margin: 0.1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+  }
+  .mock-p3 .p3-side .nav-item.active { background: var(--accent); color: #fff; }
+  .mock-p3 .p3-main { display: grid; grid-template-columns: 1fr; gap: 1rem; align-content: start; }
+  .mock-p3 .p3-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.8rem;
+  }
+  .mock-p3 .p3-stat {
+    background: #fff;
+    padding: 0.8rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+  }
+  .mock-p3 .p3-stat .num { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
+  .mock-p3 .p3-stat .lab { font-size: 0.78rem; color: var(--muted); }
+  .mock-p3 .p3-stat.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .mock-p3 .p3-stat.accent .lab { color: rgba(255,255,255,0.85); }
+  .mock-p3 .p3-block {
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    padding: 0.9rem 1rem;
+  }
+  .mock-p3 .p3-block h4 { font-size: 0.95rem; margin: 0 0 0.7rem; display: flex; justify-content: space-between; align-items: center; }
+  .mock-p3 .p3-block h4 a { color: var(--accent); font-size: 0.78rem; font-weight: 400; text-decoration: none; }
+  .mock-p3 .p3-recent {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.5rem;
+  }
+  .mock-p3 .p3-recent .b {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #5b6cff), var(--c2, #2a3aff));
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .mock-p3 .p3-heatmap {
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    gap: 2px;
+  }
+  .mock-p3 .p3-heatmap .c { aspect-ratio: 1; background: #e8eaef; border-radius: 2px; }
+  .mock-p3 .p3-heatmap .c.l1 { background: #c9d2ff; }
+  .mock-p3 .p3-heatmap .c.l2 { background: #8b9aff; }
+  .mock-p3 .p3-heatmap .c.l3 { background: #5b6cff; }
+  .mock-p3 .p3-heatmap .c.l4 { background: #3a4ad9; }
+
+  /* ====================================================
+     案4: タブ式ワークスペース (Multi-window)
+     ==================================================== */
+  .mock-p4 {
+    background: #232830;
+    color: #d8dce3;
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 240px 1fr 280px;
+    grid-template-rows: 36px 1fr 22px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.82rem;
+  }
+  .mock-p4 .p4-titlebar {
+    grid-column: 1 / -1;
+    background: #1c2128;
+    border-bottom: 1px solid #11151b;
+    display: flex;
+    align-items: center;
+    padding: 0 0.6rem;
+    gap: 0.3rem;
+  }
+  .mock-p4 .p4-tab {
+    background: #2a2f38;
+    padding: 0.25rem 0.7rem;
+    border-radius: 4px 4px 0 0;
+    color: #9ba3ad;
+    border: 1px solid transparent;
+    border-bottom: none;
+  }
+  .mock-p4 .p4-tab.active { background: #2f343d; color: #fff; border-color: #11151b; }
+  .mock-p4 .p4-tab .x { color: #6b7280; margin-left: 0.4rem; }
+  .mock-p4 .p4-left {
+    background: #1c2128;
+    padding: 0.6rem 0.4rem;
+    border-right: 1px solid #11151b;
+    overflow: auto;
+  }
+  .mock-p4 .p4-left h5 { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; margin: 0.6rem 0.3rem 0.2rem; }
+  .mock-p4 .p4-tree { font-size: 0.8rem; }
+  .mock-p4 .p4-tree .node { padding: 0.18rem 0.4rem; border-radius: 3px; cursor: pointer; }
+  .mock-p4 .p4-tree .node.sel { background: #2a3340; color: #fff; }
+  .mock-p4 .p4-tree .child { padding-left: 1rem; color: #9ba3ad; }
+  .mock-p4 .p4-center {
+    background: #2f343d;
+    padding: 0.7rem;
+    overflow: auto;
+  }
+  .mock-p4 .p4-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 0.5rem;
+  }
+  .mock-p4 .p4-grid .b {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, #4a5260, #2a3340);
+    border-radius: 2px;
+    border: 1px solid #11151b;
+  }
+  .mock-p4 .p4-right {
+    background: #1c2128;
+    padding: 0.8rem;
+    border-left: 1px solid #11151b;
+    overflow: auto;
+  }
+  .mock-p4 .p4-right h5 { font-size: 0.95rem; color: #fff; margin: 0 0 0.5rem; font-family: sans-serif; }
+  .mock-p4 .p4-right .meta { color: #9ba3ad; font-size: 0.75rem; margin: 0.2rem 0; }
+  .mock-p4 .p4-right .memo {
+    background: #11151b;
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: #d8dce3;
+    min-height: 80px;
+  }
+  .mock-p4 .p4-status {
+    grid-column: 1 / -1;
+    background: #11151b;
+    padding: 0 0.6rem;
+    color: #6b7280;
+    font-size: 0.72rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .mock-p4 .p4-status .ok { color: #4ec97a; }
+
+  /* ====================================================
+     案5: 雑誌・キュレーション (Read-it-yourself)
+     ==================================================== */
+  .mock-p5 {
+    background: #fff;
+    color: #1a1a1a;
+    min-height: 520px;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    padding: 0;
+  }
+  .mock-p5 .p5-mast {
+    border-bottom: 1px solid #1a1a1a;
+    padding: 1.2rem 1.6rem 1rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .mock-p5 .p5-mast-title { font-size: 1.8rem; letter-spacing: 0.06em; font-weight: 800; }
+  .mock-p5 .p5-mast-meta { color: #6b7280; font-size: 0.82rem; font-family: sans-serif; }
+  .mock-p5 .p5-nav {
+    display: flex;
+    gap: 1.2rem;
+    padding: 0.6rem 1.6rem;
+    border-bottom: 1px solid #d4d6da;
+    font-family: sans-serif;
+    font-size: 0.84rem;
+    color: #6b7280;
+  }
+  .mock-p5 .p5-nav .active { color: #1a1a1a; font-weight: 600; border-bottom: 2px solid #1a1a1a; padding-bottom: 0.4rem; }
+  .mock-p5 .p5-hero {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem 1.6rem 1rem;
+    border-bottom: 1px solid #e4e7eb;
+  }
+  .mock-p5 .p5-feature .kicker { font-family: sans-serif; font-size: 0.72rem; letter-spacing: 0.15em; color: #6b7280; text-transform: uppercase; }
+  .mock-p5 .p5-feature h2 { font-size: 1.7rem; line-height: 1.3; margin: 0.3rem 0 0.5rem; }
+  .mock-p5 .p5-feature p { color: #4b5460; font-size: 0.92rem; line-height: 1.65; }
+  .mock-p5 .p5-feature-cover {
+    aspect-ratio: 4/5;
+    background: linear-gradient(140deg, #2a3340, #5b6cff);
+    border-radius: 2px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+  }
+  .mock-p5 .p5-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.2rem;
+    padding: 1.5rem 1.6rem;
+  }
+  .mock-p5 .p5-card .c {
+    aspect-ratio: 2/3;
+    background: linear-gradient(135deg, var(--c1, #8a7a64), var(--c2, #4a3f30));
+    border-radius: 2px;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .mock-p5 .p5-card .t { font-size: 0.85rem; font-weight: 600; margin: 0.3rem 0 0.1rem; line-height: 1.3; }
+  .mock-p5 .p5-card .a { font-family: sans-serif; font-size: 0.72rem; color: #6b7280; }
+  .mock-p5 .p5-edit-bar {
+    position: relative;
+    background: #fafbfc;
+    border-top: 1px solid #e4e7eb;
+    padding: 0.6rem 1.6rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-family: sans-serif;
+    font-size: 0.82rem;
+    color: #6b7280;
+  }
+  .mock-p5 .p5-edit-bar button {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  /* 共通 dim な book color の差別化 */
+  .v1 { --c1: #5b6cff; --c2: #2a3aff; }
+  .v2 { --c1: #ff7a59; --c2: #c43d1a; }
+  .v3 { --c1: #4ec97a; --c2: #1d7d44; }
+  .v4 { --c1: #ffb86b; --c2: #c47a1a; }
+  .v5 { --c1: #a05cff; --c2: #6020a8; }
+  .v6 { --c1: #5cc1ff; --c2: #1170c4; }
+  .v7 { --c1: #ff5c93; --c2: #c41060; }
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+<h1>bookshelf — ゼロベースのデザイン提案 5案</h1>
+<p class="lead">現行UIに縛られず、アプリの機能と目的から最適な体験を5方向で。実際の適用は別途。</p>
+
+<div class="essence">
+  <h2>このアプリの本質（提案の前提）</h2>
+  <ul>
+    <li><strong>目的</strong>: 数百〜数千冊の蔵書を「自分との関係」として眺め・整理し、必要なら世界へ公開する。</li>
+    <li><strong>データ</strong>: Kindle 等の蔵書、複数の本棚（カテゴリ）、本ごとのメモ・評価、除外、長文ノート（外部MD）。</li>
+    <li><strong>操作の主軸</strong>: ① 一覧の眺め、② 本棚の切替・編集、③ 個別の本の詳細・メモ、④ 同期/公開、⑤ プラグイン拡張。</li>
+    <li><strong>双対性</strong>: <em>編集モード</em>（自分用の管理）と<em>公開モード</em>（読者に見せる）は同じデータの異なる顔。</li>
+    <li><strong>永続化</strong>: Obsidian vault と同期。外部エディタで MD を編集する習慣に組み込まれる。</li>
+  </ul>
+</div>
+
+<nav class="tabs">
+  <button data-tab="1" class="is-active">案1 ⌨️ コマンドパレット</button>
+  <button data-tab="2">案2 📖 ライブラリーラウンジ</button>
+  <button data-tab="3">案3 📊 読書ダッシュボード</button>
+  <button data-tab="4">案4 🪟 タブ式ワークスペース</button>
+  <button data-tab="5">案5 📰 雑誌キュレーション</button>
+</nav>
+
+<!-- ============ 案1 ============ -->
+<section class="proposal is-active" data-pane="1">
+  <h2>案1 — ⌨️ コマンドパレット中心 <small>(Power user / 高密度)</small></h2>
+  <p>大量蔵書を高速に操作する「データツール」としての bookshelf。Linear / Raycast / Obsidian Command Palette の系譜。</p>
+
+  <div class="proposal-meta">
+    <div><strong>主役の操作</strong><p>キーボード（⌘K で何でも到達）</p></div>
+    <div><strong>主役の画面</strong><p>高密度リスト</p></div>
+    <div><strong>得意なシーン</strong><p>ヘビーユーザの一括整理</p></div>
+  </div>
+
+  <div class="mock-frame">
+    <div class="mock-caption">案1 — 左 = 本棚ツリー / 中央上 = ⌘K パレット / 中央 = 高密度リスト / 下 = ステータスバー</div>
+    <div class="mock-p1">
+      <div class="p1-header">
+        <span style="color:#9ba3ad;">📚 bookshelf</span>
+        <div class="p1-search">⌘K  本棚・本・コマンドを検索… <kbd>⌘K</kbd></div>
+        <span style="color:#6b7280; font-size:0.78rem;">2,341 冊</span>
+      </div>
+      <div class="p1-sidebar">
+        <div class="sec">本棚</div>
+        <div class="item current">📚 すべて (2341)</div>
+        <div class="item">⭐ お気に入り (87)</div>
+        <div class="item">💼 ビジネス (412)</div>
+        <div class="item">📖 小説 (689)</div>
+        <div class="item">🔬 技術書 (234)</div>
+        <div class="item">— 漫画 (901)</div>
+        <div class="sec">ビュー</div>
+        <div class="item">📋 リスト</div>
+        <div class="item">🖼️ グリッド</div>
+        <div class="item">📅 タイムライン</div>
+      </div>
+      <div class="p1-main">
+        <div class="p1-list-row"><span class="num">1.</span><div class="cover"></div><span>SOFT SKILLS ソフトウェア開発者の人生マニュアル</span><span class="author">John Sonmez</span><span class="rating">★★★★★</span></div>
+        <div class="p1-list-row"><span class="num">2.</span><div class="cover"></div><span>達人プログラマー 熟達に向けたあなたの旅</span><span class="author">D. Thomas</span><span class="rating">★★★★☆</span></div>
+        <div class="p1-list-row"><span class="num">3.</span><div class="cover"></div><span>リーダブルコード より良いコードを書くためのシンプルで実践的なテクニック</span><span class="author">D. Boswell</span><span class="rating">★★★★★</span></div>
+        <div class="p1-list-row"><span class="num">4.</span><div class="cover"></div><span>ハッカーと画家</span><span class="author">Paul Graham</span><span class="rating">★★★★☆</span></div>
+        <div class="p1-list-row"><span class="num">5.</span><div class="cover"></div><span>SCRUM BOOT CAMP THE BOOK</span><span class="author">西村 直人</span><span class="rating">★★★☆☆</span></div>
+        <div class="p1-list-row"><span class="num">6.</span><div class="cover"></div><span>ドメイン駆動設計入門</span><span class="author">成瀬 允宣</span><span class="rating">★★★★★</span></div>
+        <div class="p1-list-row"><span class="num">7.</span><div class="cover"></div><span>エンジニアリング組織論への招待</span><span class="author">広木 大地</span><span class="rating">★★★★★</span></div>
+        <div class="p1-list-row"><span class="num">8.</span><div class="cover"></div><span>SOFT SKILLS 続編 — キャリアの作り方</span><span class="author">John Sonmez</span><span class="rating">★★★☆☆</span></div>
+      </div>
+      <div class="p1-status">
+        <span class="ok">● 同期済</span>
+        <span>vault: 40_📖reading/41_📖private</span>
+        <span style="margin-left:auto;">⌘K コマンド | ⌘/ 検索 | ⌘E 編集モード</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>強み</h4>
+      <ul>
+        <li>大量蔵書に強い（一画面に 30+ 冊）</li>
+        <li>⌘K で「本棚作成」「同期」「特定の本ジャンプ」を全て同じ場所から</li>
+        <li>キーボードで完結 → 慣れたユーザに最強</li>
+        <li>編集モードとの相性が良い（一括選択・操作）</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>弱み</h4>
+      <ul>
+        <li>初見はとっつきにくい（学習コスト）</li>
+        <li>公開モード（読者向け）には冷たすぎる</li>
+        <li>表紙の魅力が伝わらない</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 案2 ============ -->
+<section class="proposal" data-pane="2">
+  <h2>案2 — 📖 ライブラリーラウンジ <small>(Beautiful / 所有感)</small></h2>
+  <p>表紙の美しさと所有の喜びを最大化。Apple Books / Goodreads の上品な系譜。明朝体 + 紙の質感。</p>
+
+  <div class="proposal-meta">
+    <div><strong>主役の操作</strong><p>マウス / タップで眺める</p></div>
+    <div><strong>主役の画面</strong><p>大きな表紙グリッド</p></div>
+    <div><strong>得意なシーン</strong><p>ふと開いて愛でる、公開閲覧</p></div>
+  </div>
+
+  <div class="mock-frame">
+    <div class="mock-caption">案2 — 上 = タイトル + 検索 / 中 = 本棚チップ横スクロール / 下 = 大判表紙グリッド</div>
+    <div class="mock-p2">
+      <div class="p2-top">
+        <div class="p2-logo">📖 my library</div>
+        <div class="p2-search">🔍 タイトル・著者で検索</div>
+        <div class="p2-icons">
+          <div class="p2-icon">⚙</div>
+          <div class="p2-icon">＋</div>
+        </div>
+      </div>
+      <div class="p2-hero">
+        <div class="label">今日のライブラリー</div>
+        <h3>2,341 冊 ・ 12 の本棚</h3>
+      </div>
+      <div class="p2-shelves">
+        <div class="p2-shelf-chip active">📚 すべて</div>
+        <div class="p2-shelf-chip">⭐ お気に入り</div>
+        <div class="p2-shelf-chip">💼 ビジネス</div>
+        <div class="p2-shelf-chip">📖 小説</div>
+        <div class="p2-shelf-chip">🔬 技術書</div>
+        <div class="p2-shelf-chip">— 漫画</div>
+        <div class="p2-shelf-chip">🎨 アート</div>
+      </div>
+      <div class="p2-grid">
+        <div class="p2-book v1"></div>
+        <div class="p2-book v2"></div>
+        <div class="p2-book v3"></div>
+        <div class="p2-book v4"></div>
+        <div class="p2-book v5"></div>
+        <div class="p2-book v6"></div>
+        <div class="p2-book v7"></div>
+        <div class="p2-book v2"></div>
+        <div class="p2-book v3"></div>
+        <div class="p2-book v1"></div>
+        <div class="p2-book v5"></div>
+        <div class="p2-book v4"></div>
+        <div class="p2-book v6"></div>
+        <div class="p2-book v7"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>強み</h4>
+      <ul>
+        <li>表紙が主役、見ているだけで楽しい</li>
+        <li>公開モードがそのまま映える</li>
+        <li>初見でも何をするか直感的に分かる</li>
+        <li>iPad で使いたくなる質感</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>弱み</h4>
+      <ul>
+        <li>大量操作に弱い（1画面 20-30 冊）</li>
+        <li>編集機能の入る隙が少なく、別画面に逃がす設計が必要</li>
+        <li>明朝のロマンが好みを分ける</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 案3 ============ -->
+<section class="proposal" data-pane="3">
+  <h2>案3 — 📊 読書ダッシュボード <small>(Activity-centered)</small></h2>
+  <p>「本を眺める」ではなく「自分の読書を眺める」場所。統計・最近の活動・未評価・本棚別ハイライトを並べる。Notion ホーム / Strava / GitHub に近い。</p>
+
+  <div class="proposal-meta">
+    <div><strong>主役の操作</strong><p>ホームから飛ぶ</p></div>
+    <div><strong>主役の画面</strong><p>サマリー + ヒートマップ</p></div>
+    <div><strong>得意なシーン</strong><p>振り返り、自分の傾向把握</p></div>
+  </div>
+
+  <div class="mock-frame">
+    <div class="mock-caption">案3 — 左 = ナビ / 右 = 数値カード + 最近 + 取得ヒートマップ + 本棚別ハイライト</div>
+    <div class="mock-p3">
+      <div class="p3-side">
+        <h4>ホーム</h4>
+        <div class="nav-item active">📊 ダッシュボード</div>
+        <div class="nav-item">📚 すべての本</div>
+        <div class="nav-item">⭐ お気に入り</div>
+        <h4>本棚</h4>
+        <div class="nav-item">💼 ビジネス</div>
+        <div class="nav-item">📖 小説</div>
+        <div class="nav-item">🔬 技術書</div>
+        <div class="nav-item">— 漫画</div>
+        <h4>ツール</h4>
+        <div class="nav-item">📥 取込</div>
+        <div class="nav-item">📤 公開</div>
+        <div class="nav-item">⚙️ 設定</div>
+      </div>
+      <div class="p3-main">
+        <div class="p3-stats">
+          <div class="p3-stat accent"><div class="num">2,341</div><div class="lab">蔵書数</div></div>
+          <div class="p3-stat"><div class="num">12</div><div class="lab">本棚</div></div>
+          <div class="p3-stat"><div class="num">+42</div><div class="lab">今月追加</div></div>
+          <div class="p3-stat"><div class="num">87</div><div class="lab">未評価</div></div>
+        </div>
+        <div class="p3-block">
+          <h4>最近追加した本 <a href="#">すべて見る →</a></h4>
+          <div class="p3-recent">
+            <div class="b v1"></div><div class="b v2"></div><div class="b v3"></div><div class="b v4"></div>
+            <div class="b v5"></div><div class="b v6"></div><div class="b v7"></div><div class="b v2"></div>
+          </div>
+        </div>
+        <div class="p3-block">
+          <h4>取得アクティビティ <small style="color:var(--muted); font-weight:400;">過去 20 週</small></h4>
+          <div class="p3-heatmap">
+            <div class="c"></div><div class="c l1"></div><div class="c"></div><div class="c l2"></div><div class="c l3"></div>
+            <div class="c l1"></div><div class="c"></div><div class="c l4"></div><div class="c l3"></div><div class="c l2"></div>
+            <div class="c"></div><div class="c l1"></div><div class="c l2"></div><div class="c l4"></div><div class="c l3"></div>
+            <div class="c l2"></div><div class="c l3"></div><div class="c"></div><div class="c l1"></div><div class="c l2"></div>
+          </div>
+        </div>
+        <div class="p3-block">
+          <h4>未評価の本 (★なし) <a href="#">87 冊あります →</a></h4>
+          <div class="p3-recent">
+            <div class="b v4"></div><div class="b v5"></div><div class="b v3"></div><div class="b v1"></div>
+            <div class="b v6"></div><div class="b v7"></div><div class="b v2"></div><div class="b v3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>強み</h4>
+      <ul>
+        <li>「読書ログ」としての価値を可視化</li>
+        <li>放置されがちな本（未評価・古い本）が浮き上がる</li>
+        <li>プラグインがウィジェットとして自然に居場所を持つ</li>
+        <li>毎日開きたくなる「ホーム」感</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>弱み</h4>
+      <ul>
+        <li>「本を探す」操作までは1ホップ遠い</li>
+        <li>公開モードには合わない（読者は他人の統計に興味なし）</li>
+        <li>蔵書が少ない初期はスカスカ</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 案4 ============ -->
+<section class="proposal" data-pane="4">
+  <h2>案4 — 🪟 タブ式ワークスペース <small>(Multi-window / 開発者向け)</small></h2>
+  <p>複数の本棚を同時に開いて比較・移動。VSCode / Obsidian の哲学を蔵書管理に持ち込む。本棚整理が「作業」になるパワーユーザ向け。</p>
+
+  <div class="proposal-meta">
+    <div><strong>主役の操作</strong><p>タブで開く、左右で比較</p></div>
+    <div><strong>主役の画面</strong><p>3ペイン (ツリー / 本棚 / 詳細)</p></div>
+    <div><strong>得意なシーン</strong><p>本棚再編成、本の移動</p></div>
+  </div>
+
+  <div class="mock-frame">
+    <div class="mock-caption">案4 — 左 = ツリー / 中央 = 開いている本棚タブ / 右 = 選択中の本の詳細・メモ / 下 = ステータス</div>
+    <div class="mock-p4">
+      <div class="p4-titlebar">
+        <span class="p4-tab">📚 すべて<span class="x">×</span></span>
+        <span class="p4-tab active">💼 ビジネス<span class="x">×</span></span>
+        <span class="p4-tab">🔬 技術書<span class="x">×</span></span>
+        <span class="p4-tab" style="color:#5b6cff;">🔍 "ドメイン" 検索結果<span class="x">×</span></span>
+        <span style="color:#6b7280; margin-left:0.5rem;">+</span>
+      </div>
+      <div class="p4-left">
+        <h5>BOOKSHELVES</h5>
+        <div class="p4-tree">
+          <div class="node">▾ 📚 すべて (2341)</div>
+          <div class="node child">⭐ お気に入り</div>
+          <div class="node child sel">💼 ビジネス (412)</div>
+          <div class="node child">📖 小説</div>
+          <div class="node child">▾ 🔬 技術書</div>
+          <div class="node child" style="padding-left:2rem;">└ プログラミング</div>
+          <div class="node child" style="padding-left:2rem;">└ インフラ</div>
+          <div class="node child">— 漫画</div>
+        </div>
+        <h5>RECENT</h5>
+        <div class="p4-tree">
+          <div class="node">📄 リーダブルコード</div>
+          <div class="node">📄 ハッカーと画家</div>
+        </div>
+      </div>
+      <div class="p4-center">
+        <div style="color:#9ba3ad; margin-bottom:0.5rem; font-size:0.78rem;">💼 ビジネス · 412 冊 · 並び順: 追加日 desc</div>
+        <div class="p4-grid">
+          <div class="b"></div><div class="b"></div><div class="b" style="outline:2px solid #5b6cff;"></div>
+          <div class="b"></div><div class="b"></div><div class="b"></div><div class="b"></div>
+          <div class="b"></div><div class="b"></div><div class="b"></div><div class="b"></div>
+          <div class="b"></div><div class="b"></div><div class="b"></div><div class="b"></div>
+          <div class="b"></div><div class="b"></div><div class="b"></div><div class="b"></div>
+          <div class="b"></div><div class="b"></div><div class="b"></div><div class="b"></div>
+          <div class="b"></div>
+        </div>
+      </div>
+      <div class="p4-right">
+        <h5>SOFT SKILLS</h5>
+        <div class="meta">John Z. Sonmez</div>
+        <div class="meta">取得: 2023-04-12</div>
+        <div class="meta">評価: ★★★★★</div>
+        <div class="meta">所属: ビジネス, ⭐ お気に入り</div>
+        <div style="color:#6b7280; font-size:0.7rem; margin-top:0.8rem; text-transform:uppercase;">短文メモ</div>
+        <div class="memo">エンジニアキャリアの教科書。第2部の「キャリアプランニング」は何度も読み返している。</div>
+        <div style="color:#6b7280; font-size:0.7rem; margin-top:0.8rem; text-transform:uppercase;">長文ノート</div>
+        <div style="font-size:0.78rem; margin-top:0.3rem;">📝 <a href="#" style="color:#5b6cff;">vault/books/B00H3QVZE6.md</a></div>
+      </div>
+      <div class="p4-status">
+        <span class="ok">● 同期済 12秒前</span>
+        <span>変更: 0</span>
+        <span style="margin-left:auto;">Ctrl+P 本棚切替 | Ctrl+B 本検索 | Ctrl+Shift+P コマンド</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>強み</h4>
+      <ul>
+        <li>本棚の再編成・本の移動が爆速（左右で比較しながらドラッグ）</li>
+        <li>「現在編集中の本棚」の文脈が常に見える</li>
+        <li>右側パネルで詳細・メモを開いたまま一覧を回せる</li>
+        <li>プラグインがツール扱いで自然</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>弱み</h4>
+      <ul>
+        <li>初見で完全に開発者向けに見える</li>
+        <li>モバイルで成立しない（割り切り必要）</li>
+        <li>公開モードには重すぎる UI</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 案5 ============ -->
+<section class="proposal" data-pane="5">
+  <h2>案5 — 📰 雑誌キュレーション <small>(Public-first / 読み物)</small></h2>
+  <p>「他人に見せる/自分に見せる」雑誌のような立て付け。フィーチャー本 + 本棚別ハイライト + 編集バーを下部に隠す。読書ブログ × ライブラリー。</p>
+
+  <div class="proposal-meta">
+    <div><strong>主役の操作</strong><p>スクロールして読む</p></div>
+    <div><strong>主役の画面</strong><p>マガジンレイアウト</p></div>
+    <div><strong>得意なシーン</strong><p>公開閲覧、来訪者への提示</p></div>
+  </div>
+
+  <div class="mock-frame">
+    <div class="mock-caption">案5 — 上 = マスト + ナビ / 中 = フィーチャー特集 / 下 = グリッド + 下部に隠れた編集バー</div>
+    <div class="mock-p5">
+      <div class="p5-mast">
+        <div class="p5-mast-title">MY · LIBRARY</div>
+        <div class="p5-mast-meta">Vol. 12 · 2026.05 · 2,341 volumes</div>
+      </div>
+      <div class="p5-nav">
+        <span class="active">FEATURED</span>
+        <span>RECENT</span>
+        <span>BUSINESS</span>
+        <span>FICTION</span>
+        <span>TECH</span>
+        <span>COMICS</span>
+        <span style="margin-left:auto;">🔍</span>
+      </div>
+      <div class="p5-hero">
+        <div class="p5-feature">
+          <div class="kicker">EDITOR'S PICK · 今月の一冊</div>
+          <h2>『ドメイン駆動設計入門』</h2>
+          <p>ボトムアップで DDD の戦術的設計を学ぶ。サンプルコードが豊富で、概念から手が動くところまでが短い。今月、最も付箋を貼った本。</p>
+          <div style="font-family:sans-serif; font-size:0.78rem; color:#6b7280; margin-top:0.5rem;">成瀬 允宣 · ★★★★★ · 2024-08-12 取得</div>
+        </div>
+        <div class="p5-feature-cover"></div>
+      </div>
+      <div style="padding:0 1.6rem; border-bottom:1px solid #e4e7eb;">
+        <div style="font-family:sans-serif; font-size:0.72rem; color:#6b7280; text-transform:uppercase; letter-spacing:0.15em;">技術書 · ハイライト</div>
+        <h3 style="margin:0.4rem 0 0; font-size:1.25rem;">「コードと向き合う」7冊</h3>
+      </div>
+      <div class="p5-grid">
+        <div class="p5-card"><div class="c v1"></div><div class="t">リーダブルコード</div><div class="a">Dustin Boswell</div></div>
+        <div class="p5-card"><div class="c v2"></div><div class="t">達人プログラマー</div><div class="a">David Thomas</div></div>
+        <div class="p5-card"><div class="c v3"></div><div class="t">ハッカーと画家</div><div class="a">Paul Graham</div></div>
+        <div class="p5-card"><div class="c v4"></div><div class="t">SOFT SKILLS</div><div class="a">John Sonmez</div></div>
+      </div>
+      <div class="p5-edit-bar">
+        ✏️ 編集モード
+        <button>本棚を編集</button>
+        <button>本を追加</button>
+        <button>📤 公開更新</button>
+        <span style="margin-left:auto;">最終同期 12秒前 ・ ⚙️</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>強み</h4>
+      <ul>
+        <li>公開モードがそのまま「メディア」として成立</li>
+        <li>来訪者に「読み物」として消費させられる</li>
+        <li>編集機能が下部に隠れているので読書時の没入が高い</li>
+        <li>本棚 = 特集回として個性が出せる</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>弱み</h4>
+      <ul>
+        <li>キュレーション編集（フィーチャー指定）の手間が増える</li>
+        <li>大量蔵書を素早く操作するのには不向き</li>
+        <li>スマホ縦長で間延びしやすい</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 総括 ============ -->
+<div class="essence" style="margin-top:2rem;">
+  <h2>提案の総括 — どれを採るか</h2>
+  <ul>
+    <li><strong>個人運用が主軸なら</strong>: <code>案3 ダッシュボード</code> をホームに置き、本棚を開くと <code>案2 ラウンジ</code> に切り替わるハイブリッドが現実解。</li>
+    <li><strong>公開を本気でやるなら</strong>: <code>案5 雑誌</code> を公開モード専用、<code>案1 / 案4</code> のいずれかを編集モード専用に。同じデータで2つの顔を持たせる。</li>
+    <li><strong>少数精鋭で速く整理したいなら</strong>: <code>案4 タブ式</code>。ただし学習コストが高い前提で。</li>
+    <li><strong>1案だけ選ぶなら</strong>: <code>案2 ラウンジ</code> が最大公約数 — 美しく、編集も最小限こなせ、公開にも転用可。</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.tabs button');
+  const panes = document.querySelectorAll('.proposal');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.tab;
+      buttons.forEach(b => b.classList.toggle('is-active', b === btn));
+      panes.forEach(p => p.classList.toggle('is-active', p.dataset.pane === id));
+    });
+  });
+</script>
+</body>
+</html>
