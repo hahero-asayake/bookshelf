@@ -4100,9 +4100,17 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     padding: 0.55rem 0.9rem;
     margin-bottom: 0.8rem;
     display: flex;
-    align-items: center;
-    gap: 0.7rem;
+    flex-direction: column;
+    gap: 0.35rem;
     font-size: 0.85rem;
+}
+/* タイトル + ツールバーの行 (Phase E) */
+.bvh-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+    flex-wrap: wrap;
 }
 
 #current-bookshelf-title {
@@ -5030,4 +5038,87 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     padding: 0 4px;
     background: var(--bg, #f7f8fa);
     margin-right: 2px;
+}
+
+/* ===== 本棚ツールバー + 複数選択 (Phase E) ===== */
+.bookshelf-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-shrink: 0;
+}
+.bstb-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--line);
+    margin: 0 0.15rem;
+}
+.bookshelf-toolbar .popover-host { position: relative; }
+#toggle-select-mode.is-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* カードの選択チェック */
+.book-select-check {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    background: rgba(0, 0, 0, 0.32);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    z-index: 4;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+body.select-mode .book-select-check { display: inline-flex; }
+body.select-mode .book-select-check svg { opacity: 0; transition: opacity 0.1s; }
+.book-item.selected .book-select-check { background: var(--accent); border-color: #fff; }
+.book-item.selected .book-select-check svg { opacity: 1; }
+body.select-mode .book-item { cursor: pointer; }
+body.select-mode .book-item.selected {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+/* select mode 中は drag-handle を隠し誤操作を防ぐ */
+body.select-mode .drag-handle { display: none; }
+
+/* 一括操作バー */
+.bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 0 0 0.7rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    flex-wrap: wrap;
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-count {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+.bulk-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.bulk-actions .popover-host { position: relative; }
+.popover-bulk-shelf {
+    min-width: 210px;
+    max-height: 320px;
+    overflow-y: auto;
+    text-align: left;
 }

@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060115">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060116">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -58,85 +58,6 @@
                 <span class="header-item" data-header-item="overview-display">
                     <button id="overview-display-toggle" class="btn-icon-square" title="本棚一覧の画像/テキスト切替" data-icon="image"></button>
                 </span>
-                <span class="header-item needs-bookshelf" data-header-item="view-toggle">
-                    <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替" data-icon="list"></button>
-                </span>
-                <span class="header-item needs-bookshelf" data-header-item="search-box">
-                    <span class="popover-host">
-                        <button id="toggle-search" class="btn-icon-square" title="検索" data-icon="search"></button>
-                        <div class="popover popover-search" id="search-popover" hidden>
-                            <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
-                        </div>
-                    </span>
-                </span>
-                <span class="header-item needs-bookshelf" data-header-item="filter">
-                    <span class="popover-host">
-                        <button id="toggle-filter" class="btn-icon-square" title="フィルター / 表示設定" data-icon="sliders-horizontal"></button>
-                        <div class="popover popover-filter" id="filter-popover" hidden>
-                            <div class="filter-group">
-                                <label>星評価フィルター</label>
-                                <div class="star-filter-checkboxes">
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-5" value="5" checked>
-                                        <span class="star-filter-stars" data-count="5"></span>
-                                    </label>
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-4" value="4" checked>
-                                        <span class="star-filter-stars" data-count="4"></span>
-                                    </label>
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-3" value="3" checked>
-                                        <span class="star-filter-stars" data-count="3"></span>
-                                    </label>
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-2" value="2" checked>
-                                        <span class="star-filter-stars" data-count="2"></span>
-                                    </label>
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-1" value="1" checked>
-                                        <span class="star-filter-stars" data-count="1"></span>
-                                    </label>
-                                    <label class="checkbox-label star-filter-row">
-                                        <input type="checkbox" id="star-0" value="0" checked>
-                                        <span class="star-filter-stars" data-count="0"></span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div class="filter-group">
-                                <label>並び順</label>
-                                <select id="sort-order">
-                                    <option value="custom" selected>カスタム順</option>
-                                    <option value="acquiredTime">購入日</option>
-                                    <option value="title">タイトル</option>
-                                    <option value="authors">著者</option>
-                                </select>
-                                <button id="sort-direction" class="btn btn-small"></button>
-                            </div>
-
-                            <div class="filter-group">
-                                <label>表示数</label>
-                                <select id="books-per-page">
-                                    <option value="25">25冊</option>
-                                    <option value="50" selected>50冊</option>
-                                    <option value="100">100冊</option>
-                                    <option value="200">200冊</option>
-                                    <option value="all">全て表示</option>
-                                </select>
-                            </div>
-
-                            <div class="filter-group">
-                                <label>カバーサイズ</label>
-                                <select id="cover-size">
-                                    <option value="small">小 (120×180px)</option>
-                                    <option value="medium" selected>中 (160×240px)</option>
-                                    <option value="large">大 (200×300px)</option>
-                                </select>
-                            </div>
-                        </div>
-                    </span>
-                </span>
-
                 <span class="header-item" data-header-item="open-settings">
                     <button id="open-settings" class="btn-icon-square" title="設定" data-icon="settings"></button>
                 </span>
@@ -188,9 +109,102 @@
                 <!-- View: Bookshelf (本一覧) -->
                 <section class="view view-bookshelf" id="view-bookshelf" >
                     <header class="bookshelf-view-header">
-                        <h2 class="section-title" id="current-bookshelf-title"></h2>
+                        <div class="bvh-main">
+                            <h2 class="section-title" id="current-bookshelf-title"></h2>
+                            <!-- 本棚ツールバー (Phase E): 検索 / 表示切替 / 並び替え・フィルタ / 複数選択 -->
+                            <div class="bookshelf-toolbar" id="bookshelf-toolbar">
+                                <span class="popover-host">
+                                    <button id="toggle-search" class="btn-icon-square" title="この本棚を検索" data-icon="search"></button>
+                                    <div class="popover popover-search" id="search-popover" hidden>
+                                        <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
+                                    </div>
+                                </span>
+                                <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替" data-icon="list"></button>
+                                <span class="popover-host">
+                                    <button id="toggle-filter" class="btn-icon-square" title="並び替え / フィルター / 表示" data-icon="sliders-horizontal"></button>
+                                    <div class="popover popover-filter" id="filter-popover" hidden>
+                                        <div class="filter-group">
+                                            <label>星評価フィルター</label>
+                                            <div class="star-filter-checkboxes">
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-5" value="5" checked>
+                                                    <span class="star-filter-stars" data-count="5"></span>
+                                                </label>
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-4" value="4" checked>
+                                                    <span class="star-filter-stars" data-count="4"></span>
+                                                </label>
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-3" value="3" checked>
+                                                    <span class="star-filter-stars" data-count="3"></span>
+                                                </label>
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-2" value="2" checked>
+                                                    <span class="star-filter-stars" data-count="2"></span>
+                                                </label>
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-1" value="1" checked>
+                                                    <span class="star-filter-stars" data-count="1"></span>
+                                                </label>
+                                                <label class="checkbox-label star-filter-row">
+                                                    <input type="checkbox" id="star-0" value="0" checked>
+                                                    <span class="star-filter-stars" data-count="0"></span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="filter-group">
+                                            <label>並び順</label>
+                                            <select id="sort-order">
+                                                <option value="custom" selected>カスタム順</option>
+                                                <option value="acquiredTime">購入日</option>
+                                                <option value="title">タイトル</option>
+                                                <option value="authors">著者</option>
+                                            </select>
+                                            <button id="sort-direction" class="btn btn-small"></button>
+                                        </div>
+                                        <div class="filter-group">
+                                            <label>表示数</label>
+                                            <select id="books-per-page">
+                                                <option value="25">25冊</option>
+                                                <option value="50" selected>50冊</option>
+                                                <option value="100">100冊</option>
+                                                <option value="200">200冊</option>
+                                                <option value="all">全て表示</option>
+                                            </select>
+                                        </div>
+                                        <div class="filter-group">
+                                            <label>カバーサイズ</label>
+                                            <select id="cover-size">
+                                                <option value="small">小 (120×180px)</option>
+                                                <option value="medium" selected>中 (160×240px)</option>
+                                                <option value="large">大 (200×300px)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </span>
+                                <span class="bstb-divider"></span>
+                                <button id="toggle-select-mode" class="btn-icon-square" title="複数選択" data-icon="check-square"></button>
+                            </div>
+                        </div>
                         <p class="bookshelf-view-description" id="current-bookshelf-desc"></p>
                     </header>
+
+                    <!-- 複数選択時の一括操作バー (Phase E) -->
+                    <div class="bulk-bar" id="bulk-bar" hidden>
+                        <span class="bulk-count" id="bulk-count">0 冊選択中</span>
+                        <div class="bulk-actions">
+                            <span class="popover-host">
+                                <button class="btn btn-small btn-secondary" id="bulk-add-shelf"><span class="h-icon" data-icon="library" data-icon-size="14"></span>本棚に追加</button>
+                                <div class="popover popover-bulk-shelf" id="bulk-shelf-popover" hidden>
+                                    <div class="popover-title">追加先の本棚</div>
+                                    <div id="bulk-shelf-list" class="bookshelf-popover-list"></div>
+                                </div>
+                            </span>
+                            <button class="btn btn-small btn-warning" id="bulk-exclude"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>all から除外</button>
+                            <button class="btn btn-small btn-secondary" id="bulk-clear">選択解除</button>
+                        </div>
+                    </div>
+
                     <div class="bookshelf" id="bookshelf">
                         <!-- Books will be dynamically loaded here -->
                     </div>
@@ -758,20 +772,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060115"></script>
-    <script src="js/storage-adapter.js?v=2026060115"></script>
-    <script src="js/local-fs-adapter.js?v=2026060115"></script>
-    <script src="js/github-adapter.js?v=2026060115"></script>
-    <script src="js/github-auth.js?v=2026060115"></script>
-    <script src="js/sync-config.js?v=2026060115"></script>
-    <script src="js/storage.js?v=2026060115"></script>
-    <script src="js/book-manager.js?v=2026060115"></script>
-    <script src="js/bookshelf-manager.js?v=2026060115"></script>
-    <script src="js/exporter.js?v=2026060115"></script>
-    <script src="js/plugin-api.js?v=2026060115"></script>
-    <script src="js/plugin-loader.js?v=2026060115"></script>
-    <script src="js/router.js?v=2026060115"></script>
-    <script src="js/dashboard.js?v=2026060115"></script>
-    <script src="js/bookshelf.js?v=2026060115"></script>
+    <script src="js/icons.js?v=2026060116"></script>
+    <script src="js/storage-adapter.js?v=2026060116"></script>
+    <script src="js/local-fs-adapter.js?v=2026060116"></script>
+    <script src="js/github-adapter.js?v=2026060116"></script>
+    <script src="js/github-auth.js?v=2026060116"></script>
+    <script src="js/sync-config.js?v=2026060116"></script>
+    <script src="js/storage.js?v=2026060116"></script>
+    <script src="js/book-manager.js?v=2026060116"></script>
+    <script src="js/bookshelf-manager.js?v=2026060116"></script>
+    <script src="js/exporter.js?v=2026060116"></script>
+    <script src="js/plugin-api.js?v=2026060116"></script>
+    <script src="js/plugin-loader.js?v=2026060116"></script>
+    <script src="js/router.js?v=2026060116"></script>
+    <script src="js/dashboard.js?v=2026060116"></script>
+    <script src="js/bookshelf.js?v=2026060116"></script>
 </body>
 </html>

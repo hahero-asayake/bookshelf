@@ -201,6 +201,10 @@ const LUCIDE_ICONS = {
         '<circle cx="12" cy="12" r="10"/>',
     'circle-check':
         '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    'check-square':
+        '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/>',
+    'square':
+        '<rect width="18" height="18" x="3" y="3" rx="2"/>',
     'check-circle':
         '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
     'play':

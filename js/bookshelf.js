@@ -453,6 +453,9 @@ class VirtualBookshelf {
         // ⌘K コマンドパレット (Phase D)
         this._setupCommandPalette();
 
+        // 複数選択モード + 一括操作 (Phase E)
+        this._setupSelectMode();
+
         const closeSettings = document.getElementById('settings-modal-close');
         if (closeSettings) {
             closeSettings.addEventListener('click', () => this._closeSettingsModal());
@@ -944,6 +947,127 @@ class VirtualBookshelf {
         try { it.run(); } catch (err) { console.warn('palette command failed', err); }
     }
 
+    // ===== 複数選択モード + 一括操作 (Phase E) =====
+
+    _setupSelectMode() {
+        if (this._selectModeBound) return;
+        this._selectModeBound = true;
+        this.selectMode = false;
+        this.selectedAsins = new Set();
+
+        const toggleBtn = document.getElementById('toggle-select-mode');
+        if (toggleBtn) toggleBtn.addEventListener('click', () => this._toggleSelectMode());
+
+        const clearBtn = document.getElementById('bulk-clear');
+        if (clearBtn) clearBtn.addEventListener('click', () => this._clearSelection());
+
+        const exclBtn = document.getElementById('bulk-exclude');
+        if (exclBtn) exclBtn.addEventListener('click', () => this._bulkExclude());
+
+        const addBtn = document.getElementById('bulk-add-shelf');
+        const addPop = document.getElementById('bulk-shelf-popover');
+        if (addBtn && addPop) {
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const willShow = addPop.hidden;
+                addPop.hidden = !willShow;
+                if (willShow) this._renderBulkShelfList();
+            });
+            document.addEventListener('click', (e) => {
+                if (!addPop.hidden && !addPop.contains(e.target) && !addBtn.contains(e.target)) addPop.hidden = true;
+            });
+        }
+    }
+
+    _toggleSelectMode() {
+        this.selectMode = !this.selectMode;
+        document.body.classList.toggle('select-mode', this.selectMode);
+        const btn = document.getElementById('toggle-select-mode');
+        if (btn) btn.classList.toggle('is-active', this.selectMode);
+        if (!this.selectMode) {
+            this._clearSelection();
+        } else {
+            this._updateBulkBar();
+        }
+    }
+
+    _clearSelection() {
+        if (this.selectedAsins) this.selectedAsins.clear();
+        document.querySelectorAll('.book-item.selected').forEach(el => el.classList.remove('selected'));
+        const pop = document.getElementById('bulk-shelf-popover');
+        if (pop) pop.hidden = true;
+        this._updateBulkBar();
+    }
+
+    _toggleBookSelected(asin, el) {
+        if (!this.selectedAsins) this.selectedAsins = new Set();
+        if (this.selectedAsins.has(asin)) { this.selectedAsins.delete(asin); el && el.classList.remove('selected'); }
+        else { this.selectedAsins.add(asin); el && el.classList.add('selected'); }
+        this._updateBulkBar();
+    }
+
+    _updateBulkBar() {
+        const bar = document.getElementById('bulk-bar');
+        const count = document.getElementById('bulk-count');
+        const n = this.selectedAsins ? this.selectedAsins.size : 0;
+        if (count) count.textContent = `${n} 冊選択中`;
+        if (bar) bar.hidden = !this.selectMode;
+    }
+
+    _renderBulkShelfList() {
+        const host = document.getElementById('bulk-shelf-list');
+        if (!host) return;
+        const shelves = (this.userData.bookshelves || []).filter(b => !b.isSpecial);
+        if (!shelves.length) { host.innerHTML = `<div class="cmdk-empty">本棚がありません</div>`; return; }
+        host.innerHTML = shelves.map(bs => `
+            <button type="button" class="bookshelf-popover-item" data-bs-internal="${bs.internalId || bs.id}">
+                <span class="bs-popover-icon" data-icon-value="${(bs.iconName || '').replace(/"/g, '&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 16 })}</span>
+                <span>${this.escapeHtml(bs.name)}</span>
+            </button>`).join('');
+        host.querySelectorAll('[data-bs-internal]').forEach(btn => {
+            btn.addEventListener('click', () => this._bulkAddToShelf(btn.dataset.bsInternal));
+        });
+    }
+
+    async _bulkAddToShelf(internalId) {
+        const asins = [...(this.selectedAsins || [])];
+        if (!asins.length) { alert('📚 本を選択してください'); return; }
+        const shelf = this.bookshelfManager.getById(internalId);
+        if (!shelf) return;
+        const ancestors = this.bookshelfManager.getAncestors(internalId) || [];
+        const targetIds = [...ancestors.map(a => a.internalId || a.id), internalId];
+        let added = 0;
+        for (const asin of asins) {
+            for (const id of targetIds) {
+                const bs = this.bookshelfManager.getById(id);
+                if (bs && !(bs.books || []).includes(asin)) this.bookshelfManager.addBookToBookshelf(id, asin);
+            }
+            added++;
+        }
+        await this.saveUserData();
+        const pop = document.getElementById('bulk-shelf-popover');
+        if (pop) pop.hidden = true;
+        if (typeof this.renderBookshelfList === 'function') this.renderBookshelfList();
+        if (typeof this._renderSidebarTree === 'function') this._renderSidebarTree();
+        const ancMsg = ancestors.length ? `\n（祖先にも自動追加: ${ancestors.map(a => a.name).join('、')}）` : '';
+        alert(`✅ ${added} 冊を「${shelf.name}」に追加しました${ancMsg}`);
+    }
+
+    async _bulkExclude() {
+        const asins = [...(this.selectedAsins || [])];
+        if (!asins.length) { alert('📚 本を選択してください'); return; }
+        if (!confirm(`🚫 選択した ${asins.length} 冊を all から除外しますか？\n\n再Kindle取込でも復活しません。除外一覧から解除できます。`)) return;
+        asins.forEach(a => this._excludeAsinCore(a));
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        this.books = this.bookManager.getAllBooks();
+        await this.saveUserData();
+        this._clearSelection();
+        this.applyFilters();
+        this.updateDisplay();
+        this.updateStats();
+        alert(`✅ ${asins.length} 冊を除外しました`);
+    }
+
     search(query) {
         this.searchQuery = query.toLowerCase();
         this.applyFilters();
@@ -1219,9 +1343,14 @@ class VirtualBookshelf {
             : `<div class="book-cover-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`;
 
         bookElement.classList.add('clickable');
+        // 複数選択モード中は選択状態を維持
+        if (this.selectMode && this.selectedAsins && this.selectedAsins.has(book.asin)) {
+            bookElement.classList.add('selected');
+        }
         bookElement.innerHTML = `
                 <div class="book-cover-container">
                     <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
+                    <div class="book-select-check" aria-hidden="true">${window.renderIcon('check', { size: 13 })}</div>
                     <div class="book-cover-link">
                         ${book.productImage ?
                             `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
@@ -1249,6 +1378,13 @@ class VirtualBookshelf {
             if (e.target.closest('.drag-handle') || bookElement.classList.contains('dragging')) {
                 e.preventDefault();
                 e.stopPropagation();
+                return;
+            }
+            // 複数選択モード: クリックで選択トグル (詳細は開かない)
+            if (this.selectMode) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._toggleBookSelected(book.asin, bookElement);
                 return;
             }
             // 星クリックは評価変更 (詳細は開かない)。同じ星を再クリックで解除。
@@ -5203,15 +5339,11 @@ class VirtualBookshelf {
     /**
      * all本棚から除外（library.json には残るが表示・操作対象から外れる）
      */
-    async excludeBook(asin) {
-        const book = this.books.find(b => b.asin === asin);
-        if (!book) {
-            alert('❌ 指定された書籍が見つかりません');
-            return;
-        }
-        if (!confirm(`🚫 「${book.title}」を all から除外しますか？\n\n再Kindle取込でも復活しません。\n除外一覧から解除できます。`)) {
-            return;
-        }
+    /**
+     * 除外のコア処理 (確認・保存・再描画なし)。単体/一括の両方から呼ぶ。
+     * library.books からの除去と exclusions/_storage の更新まで行う。
+     */
+    _excludeAsinCore(asin) {
         if (!this.userData._storage) this.userData._storage = {};
         if (!Array.isArray(this.userData._storage.exclusions)) this.userData._storage.exclusions = [];
         if (!Array.isArray(this.userData._storage.libraryBooks)) {
@@ -5230,15 +5362,25 @@ class VirtualBookshelf {
         if (!this.userData._storage.exclusions.includes(asin)) {
             this.userData._storage.exclusions.push(asin);
         }
-
         this.bookManager.library.books = this.bookManager.library.books.filter(b => b.asin !== asin);
         this.bookManager.library.metadata.totalBooks = this.bookManager.library.books.length;
-        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
-        this.books = this.bookManager.getAllBooks();
-
         if (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all)) {
             this.userData.bookOrder.all = this.userData.bookOrder.all.filter(a => a !== asin);
         }
+    }
+
+    async excludeBook(asin) {
+        const book = this.books.find(b => b.asin === asin);
+        if (!book) {
+            alert('❌ 指定された書籍が見つかりません');
+            return;
+        }
+        if (!confirm(`🚫 「${book.title}」を all から除外しますか？\n\n再Kindle取込でも復活しません。\n除外一覧から解除できます。`)) {
+            return;
+        }
+        this._excludeAsinCore(asin);
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        this.books = this.bookManager.getAllBooks();
 
         await this.saveUserData();
         this.applyFilters();
