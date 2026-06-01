@@ -375,6 +375,12 @@ class VirtualBookshelf {
             });
         }
 
+        // サイドバー「本棚を追加」(Phase G)
+        const sidebarAddBtn = document.getElementById('sidebar-add-bookshelf');
+        if (sidebarAddBtn) {
+            sidebarAddBtn.addEventListener('click', () => this.showBookshelfForm());
+        }
+
         // Search (popover 内の input)
         document.getElementById('search-input').addEventListener('input', (e) => {
             this.search(e.target.value);
@@ -3588,15 +3594,24 @@ class VirtualBookshelf {
                 <span class="tree-icon" data-icon-value="${effectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>
                 <span class="tree-label" title="${bs.name}">${bs.name}</span>
                 <span class="tree-count">${bookCount}</span>
+                ${!bs.isSpecial ? `<button class="tree-more" type="button" title="本棚の操作 (編集 / 子追加 / 削除)">${window.renderIcon('more-horizontal', { size: 14 })}</button>` : ''}
                 ${hasChildren
                     ? `<button class="tree-toggle" type="button" title="${isExpanded ? '折りたたむ' : '展開'}">${window.renderIcon(toggleIconName, { size: 12 })}</button>`
                     : '<span class="tree-toggle-placeholder"></span>'}
             `;
             // 本棚選択
             node.addEventListener('click', (e) => {
-                if (e.target.closest('.tree-toggle')) return;
+                if (e.target.closest('.tree-toggle') || e.target.closest('.tree-more')) return;
                 this.switchBookshelf(bs.id);
             });
+            // 本棚操作メニュー (Phase G: ツリーから直接編集)
+            const moreBtn = node.querySelector('.tree-more');
+            if (moreBtn) {
+                moreBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this._openTreeNodeMenu(bs, moreBtn);
+                });
+            }
             // 展開トグル
             const toggleBtn = node.querySelector('.tree-toggle');
             if (toggleBtn) {
@@ -3625,6 +3640,42 @@ class VirtualBookshelf {
         });
         roots.forEach(bs => renderNode(bs, 0));
         this._renderSidebarPinned();
+    }
+
+    /**
+     * ツリーノードの操作メニュー (Phase G): 編集 / 子本棚を追加 / 削除。
+     */
+    _openTreeNodeMenu(bs, anchorEl) {
+        document.getElementById('tree-node-menu')?.remove();
+        const ico = (n) => window.renderIcon(n, { size: 14 });
+        const menu = document.createElement('div');
+        menu.id = 'tree-node-menu';
+        menu.className = 'tree-node-menu';
+        menu.innerHTML = `
+            <button type="button" data-act="edit">${ico('pencil')}<span>編集</span></button>
+            <button type="button" data-act="add-child">${ico('plus')}<span>子本棚を追加</span></button>
+            <button type="button" data-act="delete" class="is-danger">${ico('trash-2')}<span>削除</span></button>
+        `;
+        document.body.appendChild(menu);
+        const r = anchorEl.getBoundingClientRect();
+        const menuW = 180;
+        menu.style.top = `${r.bottom + 4}px`;
+        menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menuW - 8))}px`;
+
+        const cleanup = () => {
+            menu.remove();
+            document.removeEventListener('click', onOutside, true);
+            document.removeEventListener('keydown', onKey, true);
+        };
+        const onOutside = (e) => { if (!menu.contains(e.target)) cleanup(); };
+        const onKey = (e) => { if (e.key === 'Escape') cleanup(); };
+        menu.querySelector('[data-act="edit"]').addEventListener('click', () => { cleanup(); this.editBookshelf(bs.id); });
+        menu.querySelector('[data-act="add-child"]').addEventListener('click', () => { cleanup(); this.showBookshelfForm(null, bs.internalId); });
+        menu.querySelector('[data-act="delete"]').addEventListener('click', () => { cleanup(); this.deleteBookshelf(bs.id); });
+        setTimeout(() => {
+            document.addEventListener('click', onOutside, true);
+            document.addEventListener('keydown', onKey, true);
+        }, 0);
     }
 
     // 折りたたみ strip にホーム + ピン留め本棚アイコンを描画
@@ -4985,7 +5036,7 @@ class VirtualBookshelf {
         this.showBookshelfForm();
     }
 
-    showBookshelfForm(bookshelfToEdit = null) {
+    showBookshelfForm(bookshelfToEdit = null, presetParentInternalId = null) {
         const modal = document.getElementById('bookshelf-form-modal');
         const title = document.getElementById('bookshelf-form-title');
         const nameInput = document.getElementById('bookshelf-name');
@@ -5046,7 +5097,8 @@ class VirtualBookshelf {
             if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = '';
             slugInput.value = '';
-            parentSelect.value = allId || '';
+            // Phase G: ツリーから「子本棚を追加」した場合は親を事前選択
+            parentSelect.value = presetParentInternalId || allId || '';
             setIcon('library');
             descriptionInput.value = '';
             isPublicInput.checked = false;

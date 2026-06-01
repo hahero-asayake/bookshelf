@@ -580,7 +580,22 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     color: #9ca3af;
     padding: 0.25rem 0.6rem;
     margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
+.sidebar-add-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 4px;
+}
+.sidebar-add-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--accent); }
 
 .sidebar-nav-item {
     display: flex;
@@ -624,7 +639,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 .tree-node {
     display: grid;
-    grid-template-columns: var(--indent, 0px) 28px minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--indent, 0px) 28px minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 0.3rem;
     padding: 0.3rem 0.5rem;
@@ -674,7 +689,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 }
 
 .tree-toggle {
-    grid-column: 5;
+    grid-column: 6;
     width: 18px;
     height: 18px;
     background: transparent;
@@ -695,10 +710,59 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 }
 
 .tree-toggle-placeholder {
-    grid-column: 5;
+    grid-column: 6;
     width: 18px;
     height: 18px;
 }
+
+/* 本棚操作メニュー起動ボタン (Phase G) — ホバー時のみ表示 */
+.tree-more {
+    grid-column: 5;
+    width: 20px;
+    height: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    border-radius: 4px;
+}
+.tree-node:hover .tree-more,
+.tree-node.is-active .tree-more { display: inline-flex; }
+.tree-more:hover { background: #e5e7eb; color: var(--accent); }
+
+.tree-node-menu {
+    position: fixed;
+    z-index: 1200;
+    min-width: 170px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+}
+.tree-node-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: var(--fg);
+    border-radius: 6px;
+    text-align: left;
+}
+.tree-node-menu button:hover { background: var(--line2); }
+.tree-node-menu button.is-danger { color: var(--danger); }
+.tree-node-menu button.is-danger:hover { background: #fce8e8; }
 
 /* ===== サイドバー折りたたみ (44px ストリップ) ===== */
 .sidebar-strip,
