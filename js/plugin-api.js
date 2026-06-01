@@ -96,7 +96,9 @@ class BookshelfPluginAPI {
             updateNote: (asin, partial) => self.updateNote(asin, partial),
             refreshUI: () => self.refreshUI(),
             addUIButton: (opts) => {
-                const entry = self.addUIButton(opts);
+                // pluginId を明示的に渡す (base の this._pluginId は未設定のため、
+                // 渡さないと entry.pluginId=undefined となり icon override が plugin:undefined で迷子になる)
+                const entry = self.addUIButton(opts, pluginId);
                 if (entry) reg.uiButtonIds.add(entry.id);
                 return entry;
             },
@@ -200,7 +202,7 @@ class BookshelfPluginAPI {
     //           ことを想定。ユーザは設定モーダルのプラグイン一覧で override 可能 (localStorage)。
     // emoji   : 後方互換用フォールバック (iconName 未指定かつ override 無しの時に使う)
     // `where` パラメータは過去互換で受け取るが利用しない。
-    addUIButton({ id, label, title, onClick, iconName, emoji }) {
+    addUIButton({ id, label, title, onClick, iconName, emoji }, pluginId = this._pluginId) {
         if (!id || !label || typeof onClick !== 'function') {
             console.warn('[pluginAPI] addUIButton: id, label, onClick are required');
             return null;
@@ -212,9 +214,9 @@ class BookshelfPluginAPI {
             label,
             title: title || '',
             onClick,
-            iconName: iconName || this._pluginIconNameFromManifest(),
+            iconName: iconName || this._pluginIconNameFromManifest(pluginId),
             emoji: emoji || '',
-            pluginId: this._pluginId,
+            pluginId: pluginId,
             element: null
         };
         this._uiButtons.push(entry);
@@ -233,9 +235,9 @@ class BookshelfPluginAPI {
     }
 
     // manifest の icon フィールドを取得 (plugin-loader が _manifest を entry につけている前提)
-    _pluginIconNameFromManifest() {
+    _pluginIconNameFromManifest(pluginId = this._pluginId) {
         const manifests = (window.bookshelf && window.bookshelf.pluginLoader && window.bookshelf.pluginLoader.manifests) || {};
-        const m = manifests[this._pluginId];
+        const m = manifests[pluginId];
         return (m && typeof m.icon === 'string') ? m.icon : '';
     }
 
