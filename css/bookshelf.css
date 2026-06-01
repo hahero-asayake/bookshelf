@@ -435,15 +435,14 @@ body {
     height: 100%;
     align-items: stretch;
     padding: 0;
+    /* Phase C2: floating な開閉タブ (.pane-tab) の絶対配置基準 */
+    position: relative;
 }
 
-body.left-collapsed   { --left-col: 44px; }
-body.right-collapsed  { --right-col: 44px; }
-/* ホームでもピン留めなしの初期状態では 44px strip だけ表示 (画面設計書通り、mockup 準拠) */
-body.app-view-main:not(.book-detail-pinned) { --right-col: 44px; }
-body.app-view-main:not(.book-detail-pinned) .app-detail .detail-body,
-body.app-view-main:not(.book-detail-pinned) .app-detail .pane-toolbar { display: none; }
-body.app-view-main:not(.book-detail-pinned) .app-detail .detail-strip { display: flex; }
+/* Phase C2: 折りたたみ時は strip を出さず幅 0 (本一覧を全幅に)。開閉は .pane-tab で行う */
+body.left-collapsed   { --left-col: 0px; }
+body.right-collapsed  { --right-col: 0px; }
+/* ホームでも右ペイン (本詳細) は初期表示 (320px)。不要ならタブで折りたためる */
 
 /* bookshelf-container がフル幅に (中央ペイン: 縦は内部スクロール) */
 .bookshelf-container.full-width,
@@ -471,9 +470,9 @@ body.app-view-main:not(.book-detail-pinned) .app-detail .detail-strip { display:
     padding: 1rem 1.2rem 1.4rem;
 }
 
-/* 本棚ビュー内側余白 */
+/* 本棚ビュー内側余白 (上は 0: sticky ヘッダーを天面に密着させる) */
 .bookshelf-container.app-main-pane .view-bookshelf {
-    padding: 0.7rem 0.9rem 1.4rem;
+    padding: 0 0.9rem 1.4rem;
 }
 
 /* ===== View 切替 (router 経由で body.app-view-* を切り替える) ===== */
@@ -2430,6 +2429,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     height: 100%;
     /* Phase B-8: 縦横比保持 + 余白で位置揃え (cover → contain)、画像がタイトルに被らない */
     object-fit: contain;
+    /* 全表紙を枠の下端に揃える (棚に立てて並ぶ配置)。縦横比でばらつく余白を
+       上側に寄せ、表紙下端〜タイトルの間隔を全カードで一定にする。 */
+    object-position: center bottom;
     background: var(--line2);
     border-radius: 6px;
     box-shadow: 0 2px 8px var(--shadow-color);
@@ -2794,6 +2796,10 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .book-cover-link {
     display: block;
     text-decoration: none;
+    /* 表紙画像が枠 (--book-height) を満たすよう高さを通す。
+       これが無いと img height:100% が auto 親に対して効かず、画像が幅基準の
+       バラバラな高さで上揃えになり、表紙下端〜タイトル間隔が本ごとにずれる。 */
+    height: 100%;
 }
 
 /* ASIN Input Container */
@@ -3060,9 +3066,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.85rem;
-    padding-right: 52px;
+    /* タイトルを角に密着させない: 上・左右に十分な余白を取る (左は本文の 2rem と揃える / 右は閉じるボタン分を確保) */
+    padding: 1.4rem 56px 0.85rem 2rem;
+    margin-bottom: 1.25rem;
     border-bottom: 1px solid var(--line);
     gap: 1rem;
 }
@@ -3779,6 +3785,95 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     border-color: var(--accent);
 }
 
+/* ===== Phase C2: ヘッダー撤去に伴う再配置 ===== */
+/* サイドバー上部の brand (専用行。pane-toolbar は廃止) */
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    padding: 0.6rem 0.75rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+    color: var(--fg);
+    border-bottom: 1px solid var(--line);
+}
+.sidebar-brand .brand-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ペイン開閉タブ: ペイン端から少しだけ飛び出す小さなつまみ。
+   .app-shell 基準で絶対配置し、ペインの overflow:hidden にクリップされない。 */
+.pane-tab {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 60;
+    width: 20px;
+    height: 60px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 2px 6px var(--shadow-color);
+    transition: color 0.12s, border-color 0.12s, background 0.12s, left 0.18s, right 0.18s;
+}
+.pane-tab:hover {
+    color: #fff;
+    border-color: var(--accent);
+    background: var(--accent);
+}
+.pane-tab svg { display: block; }
+/* 折りたたみ時はアイコンを反転 (内向き chevron → 外向き) */
+body.left-collapsed  .pane-tab-left svg,
+body.right-collapsed .pane-tab-right svg {
+    transform: rotate(180deg);
+}
+
+.pane-tab-left {
+    left: calc(var(--left-col, 220px) - 10px);
+    border-radius: 0 8px 8px 0;
+    border-left: none;
+}
+body.left-collapsed .pane-tab-left { left: 0; }
+
+.pane-tab-right {
+    right: calc(var(--right-col, 320px) - 10px);
+    border-radius: 8px 0 0 8px;
+    border-right: none;
+}
+body.right-collapsed .pane-tab-right { right: 0; }
+
+/* 折りたたみ時はペイン境界の 1px 線を消す (幅 0 でも border が残るため) */
+body.left-collapsed .app-sidebar { border-right: none; }
+body.right-collapsed .app-detail { border-left: none; }
+
+/* サイドバー下部ユーティリティ (設定 / 本棚管理 / 一覧表示切替 / プラグインボタン) */
+.sidebar-utility {
+    flex-shrink: 0;
+    padding: 0.45rem 0.5rem;
+    border-top: 1px solid var(--line);
+}
+.sidebar-utility .header-controls {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+body.left-collapsed .app-sidebar .sidebar-utility {
+    display: none;
+}
+
+/* ホームは検索バーを置かず ⌘K のみ (全画面共通)。.home-header / .palette-trigger は撤去 */
+
 /* メインビューで本棚を必要とするボタンは disabled 表示 */
 body.app-view-main .needs-bookshelf .btn-icon-square {
     opacity: 0.35;
@@ -4258,11 +4353,17 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 
 /* ===== Bookshelf view header (mockup: wb-toolbar) ===== */
 .bookshelf-view-header {
+    /* Phase C2: 本棚ビューのヘッダー。スクロールしても天面に固定 (sticky)。
+       view の左右パディングを相殺して全幅バーにする。 */
+    position: sticky;
+    top: 0;
+    z-index: 20;
     background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0.55rem 0.9rem;
-    margin-bottom: 0.8rem;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    padding: 0.6rem 0.9rem;
+    margin: 0 -0.9rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -5039,11 +5140,11 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 
 /* 本棚プレビューカードのヘッダー */
 .bookshelf-preview-header {
-    margin-bottom: 1rem;
+    margin: 0;
 }
 
 .bookshelf-preview-header h3 {
-    margin: 0 0 0.75rem 0;
+    margin: 0;
     line-height: 1.3;
     width: 100%;
 }

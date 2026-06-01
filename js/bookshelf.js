@@ -4054,12 +4054,16 @@ class VirtualBookshelf {
         'overview-display':    { label: '一覧画像表示', defaultIcon: 'image',             emoji: '🖼️', duplicatable: false, stateful: true },
         'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
     };
-    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV7';
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV8';
 
     _defaultHeaderLayout() {
-        // Phase C: 既定は設定のみ (brand + ⌘K はヘッダー固定要素)。他はカスタマイザで任意追加可。
+        // Phase C2: コンテナはサイドバー下部ユーティリティへ移設。
+        // 既定は 本棚管理 / 一覧表示切替 / 設定。back-to-main / bookshelf-selector は
+        // サイドバーツリーと重複するため既定では出さない (カスタマイザで任意追加可)。
         return {
             items: [
+                { id: this._newPlacementId(), key: 'manage-bookshelves' },
+                { id: this._newPlacementId(), key: 'overview-display' },
                 { id: this._newPlacementId(), key: 'open-settings' }
             ]
         };
@@ -6857,11 +6861,8 @@ class VirtualBookshelf {
             <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
                 <div class="bookshelf-preview-header">
                     <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${name} ${publicBadge}</h3>
-                    <div class="bookshelf-preview-actions">
-                        <button class="btn btn-small btn-secondary select-bookshelf" data-bookshelf-id="${bookshelf.id}"><span class="h-icon">${window.renderIcon('arrow-right', { size: 14 })}</span>表示</button>
-                    </div>
                 </div>
-                ${description ? `<p>${description}</p>` : ''}
+                <p class="bs-card-desc">${description}</p>
                 <p class="book-count">${bookCount}冊</p>
                 <div class="bookshelf-preview-books">${previewHtml}</div>
             </div>

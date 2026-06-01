@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060120">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060127">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -28,50 +28,18 @@
         </div>
     </div>
 
-    <header class="header">
-        <div class="container header-shell">
-            <div class="brand">
-                <span class="brand-icon" data-icon="library" data-icon-size="20"></span>
-                <span class="brand-text">bookshelf</span>
-            </div>
-            <button type="button" id="palette-trigger" class="palette-trigger" title="検索 / コマンド (⌘K)">
-                <span class="palette-icon" data-icon="search" data-icon-size="14"></span>
-                <span class="palette-placeholder">検索 / コマンド…</span>
-                <kbd class="palette-kbd">⌘K</kbd>
-            </button>
-            <div class="header-controls" id="header-controls">
-                <span class="header-item needs-bookshelf" data-header-item="back-to-main">
-                    <button id="back-to-main" class="btn-icon-square" title="本棚一覧に戻る" data-icon="arrow-left"></button>
-                </span>
-                <span class="header-item" data-header-item="bookshelf-selector">
-                    <span class="popover-host">
-                        <button id="bookshelf-selector-btn" class="btn-icon-square" title="本棚を切替" data-icon="library"></button>
-                        <div class="popover popover-bookshelf" id="bookshelf-popover" hidden>
-                            <div class="popover-title">本棚を切替</div>
-                            <div id="bookshelf-popover-list" class="bookshelf-popover-list"></div>
-                        </div>
-                    </span>
-                </span>
-                <span class="header-item" data-header-item="manage-bookshelves">
-                    <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理" data-icon="pen-line"></button>
-                </span>
-                <span class="header-item" data-header-item="overview-display">
-                    <button id="overview-display-toggle" class="btn-icon-square" title="本棚一覧の画像/テキスト切替" data-icon="image"></button>
-                </span>
-                <span class="header-item" data-header-item="open-settings">
-                    <button id="open-settings" class="btn-icon-square" title="設定" data-icon="settings"></button>
-                </span>
-            </div>
-        </div>
-    </header>
+    <!-- Phase C2: グローバル上部ヘッダーは撤去。ヘッダーはビュー文脈で変わる。
+         brand → サイドバー上部 / 設定・本棚管理等 → サイドバー下部ユーティリティ /
+         検索 → ⌘K のみ (全画面共通、ホームにもバーは置かない) /
+         本棚ビューは .bookshelf-view-header (タイトル+ツールバー) が sticky ヘッダー。 -->
 
     <main class="main">
         <div class="container app-shell">
-            <!-- ===== 左ペイン (ナビ + 本棚階層) ===== -->
+            <!-- ===== 左ペイン (ナビ + 本棚階層 + ユーティリティ) ===== -->
             <aside class="app-sidebar" id="app-sidebar">
-                <div class="pane-toolbar">
-                    <span class="pane-title">ナビゲーション</span>
-                    <button class="pane-toggle-btn" id="sidebar-toggle-btn" title="左ペイン折りたたみ (⌘[)" type="button" data-icon="chevron-left" data-icon-size="16"></button>
+                <div class="sidebar-brand">
+                    <span class="brand-icon" data-icon="library" data-icon-size="18"></span>
+                    <span class="brand-text">bookshelf</span>
                 </div>
                 <nav class="sidebar-nav" id="sidebar-nav">
                     <div class="sidebar-section">
@@ -90,11 +58,36 @@
                         </div>
                     </div>
                 </nav>
-                <div class="sidebar-strip" id="sidebar-strip">
-                    <button class="strip-restore-btn" id="sidebar-restore-btn" title="左ペインを展開 (⌘[)" type="button" data-icon="chevron-right" data-icon-size="16"></button>
-                    <div class="strip-pinned" id="sidebar-pinned"></div>
+                <!-- ユーティリティ: 設定 / 本棚管理 / 一覧表示切替 / プラグインボタン (ヘッダーカスタマイザが描画) -->
+                <div class="sidebar-utility">
+                    <div class="header-controls" id="header-controls">
+                        <span class="header-item needs-bookshelf" data-header-item="back-to-main">
+                            <button id="back-to-main" class="btn-icon-square" title="本棚一覧に戻る" data-icon="arrow-left"></button>
+                        </span>
+                        <span class="header-item" data-header-item="bookshelf-selector">
+                            <span class="popover-host">
+                                <button id="bookshelf-selector-btn" class="btn-icon-square" title="本棚を切替" data-icon="library"></button>
+                                <div class="popover popover-bookshelf" id="bookshelf-popover" hidden>
+                                    <div class="popover-title">本棚を切替</div>
+                                    <div id="bookshelf-popover-list" class="bookshelf-popover-list"></div>
+                                </div>
+                            </span>
+                        </span>
+                        <span class="header-item" data-header-item="manage-bookshelves">
+                            <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理" data-icon="pen-line"></button>
+                        </span>
+                        <span class="header-item" data-header-item="overview-display">
+                            <button id="overview-display-toggle" class="btn-icon-square" title="本棚一覧の画像/テキスト切替" data-icon="image"></button>
+                        </span>
+                        <span class="header-item" data-header-item="open-settings">
+                            <button id="open-settings" class="btn-icon-square" title="設定" data-icon="settings"></button>
+                        </span>
+                    </div>
                 </div>
             </aside>
+
+            <!-- 左ペイン折りたたみタブ (ペイン端から少しだけ飛び出す) -->
+            <button class="pane-tab pane-tab-left" id="sidebar-toggle-btn" type="button" title="左ペインの開閉 (⌘[)" data-icon="chevron-left" data-icon-size="16"></button>
 
             <!-- ===== 中央ペイン (本棚 or ホーム) ===== -->
             <section class="bookshelf-container app-main-pane">
@@ -102,7 +95,7 @@
                     <span class="h-icon" data-icon="library" data-icon-size="18"></span>本棚を準備中...
                 </div>
 
-                <!-- View: Main (ホーム = ダッシュボード) -->
+                <!-- View: Main (ホーム = ダッシュボード)。検索バーは置かず ⌘K のみ (全画面共通) -->
                 <section class="view view-main" id="view-main">
                     <div id="dashboard" class="dashboard">
                         <!-- ダッシュボードは BookshelfDashboard が描画 -->
@@ -218,21 +211,16 @@
                 </section>
             </section>
 
+            <!-- 右ペイン折りたたみタブ (ペイン端から少しだけ飛び出す) -->
+            <button class="pane-tab pane-tab-right" id="detail-toggle-btn" type="button" title="右ペインの開閉 (⌘])" data-icon="chevron-right" data-icon-size="16"></button>
+
             <!-- ===== 右ペイン (本詳細) ===== -->
             <aside class="app-detail" id="app-detail">
-                <div class="pane-toolbar">
-                    <button class="pane-toggle-btn detail-toggle" id="detail-toggle-btn" title="右ペイン折りたたみ (⌘])" type="button" data-icon="chevron-right" data-icon-size="16"></button>
-                    <span class="pane-title pane-title-right">本詳細</span>
-                </div>
                 <div class="detail-body" id="book-detail-pane">
                     <div class="detail-placeholder">
                         <p class="detail-placeholder-icon" data-icon="book-open" data-icon-size="36"></p>
                         <p>本を選択すると詳細が表示されます</p>
                     </div>
-                </div>
-                <div class="detail-strip" id="detail-strip">
-                    <button class="strip-restore-btn" id="detail-restore-btn" title="右ペインを展開 (⌘])" type="button" data-icon="chevron-left" data-icon-size="16"></button>
-                    <span class="strip-label">本詳細</span>
                 </div>
             </aside>
         </div>
@@ -775,20 +763,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060120"></script>
-    <script src="js/storage-adapter.js?v=2026060120"></script>
-    <script src="js/local-fs-adapter.js?v=2026060120"></script>
-    <script src="js/github-adapter.js?v=2026060120"></script>
-    <script src="js/github-auth.js?v=2026060120"></script>
-    <script src="js/sync-config.js?v=2026060120"></script>
-    <script src="js/storage.js?v=2026060120"></script>
-    <script src="js/book-manager.js?v=2026060120"></script>
-    <script src="js/bookshelf-manager.js?v=2026060120"></script>
-    <script src="js/exporter.js?v=2026060120"></script>
-    <script src="js/plugin-api.js?v=2026060120"></script>
-    <script src="js/plugin-loader.js?v=2026060120"></script>
-    <script src="js/router.js?v=2026060120"></script>
-    <script src="js/dashboard.js?v=2026060120"></script>
-    <script src="js/bookshelf.js?v=2026060120"></script>
+    <script src="js/icons.js?v=2026060127"></script>
+    <script src="js/storage-adapter.js?v=2026060127"></script>
+    <script src="js/local-fs-adapter.js?v=2026060127"></script>
+    <script src="js/github-adapter.js?v=2026060127"></script>
+    <script src="js/github-auth.js?v=2026060127"></script>
+    <script src="js/sync-config.js?v=2026060127"></script>
+    <script src="js/storage.js?v=2026060127"></script>
+    <script src="js/book-manager.js?v=2026060127"></script>
+    <script src="js/bookshelf-manager.js?v=2026060127"></script>
+    <script src="js/exporter.js?v=2026060127"></script>
+    <script src="js/plugin-api.js?v=2026060127"></script>
+    <script src="js/plugin-loader.js?v=2026060127"></script>
+    <script src="js/router.js?v=2026060127"></script>
+    <script src="js/dashboard.js?v=2026060127"></script>
+    <script src="js/bookshelf.js?v=2026060127"></script>
 </body>
 </html>
