@@ -32,16 +32,17 @@ class BookshelfDashboard {
      */
     _buildRegistry() {
         return {
-            'counter-total':       { label: '蔵書数',     defaultSpan: 3, allowedSpans: [3, 4, 6], render: this._renderCounterTotal },
-            'counter-shelves':     { label: '本棚数',     defaultSpan: 3, allowedSpans: [3, 4, 6], render: this._renderCounterShelves },
-            'counter-this-month':  { label: '今月追加',   defaultSpan: 3, allowedSpans: [3, 4, 6], render: this._renderCounterThisMonth },
-            'counter-unrated':     { label: '未評価',     defaultSpan: 3, allowedSpans: [3, 4, 6], render: this._renderCounterUnrated },
-            'recent-books':        { label: '最近追加した本', defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderRecentBooks },
-            'today-pick':          { label: '今日の一冊', defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderTodayPick },
-            'bookshelf-highlights':{ label: '本棚ハイライト', defaultSpan: 12, allowedSpans: [6, 8, 12], render: this._renderBookshelfHighlights },
-            'heatmap':             { label: '取得アクティビティ', defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderHeatmap },
-            'rating-dist':         { label: '評価分布',   defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderRatingDist },
-            'pinned-memo':         { label: 'ピン留めメモ', defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderPinnedMemo }
+            'heading':             { label: '見出し',     icon: 'heading',          defaultSpan: 12, allowedSpans: [12], heading: true, render: this._renderHeading },
+            'counter-total':       { label: '蔵書数',     icon: 'book-open',        defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterTotal },
+            'counter-shelves':     { label: '本棚数',     icon: 'library',          defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterShelves },
+            'counter-this-month':  { label: '今月追加',   icon: 'calendar',         defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterThisMonth },
+            'counter-unrated':     { label: '未評価',     icon: 'star',             defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterUnrated },
+            'recent-books':        { label: '最近追加した本', icon: 'clock',         defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderRecentBooks },
+            'today-pick':          { label: '今日の一冊', icon: 'sparkles',         defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderTodayPick },
+            'bookshelf-highlights':{ label: '本棚ハイライト', icon: 'layout-dashboard', defaultSpan: 12, allowedSpans: [6, 8, 12], render: this._renderBookshelfHighlights },
+            'heatmap':             { label: '取得アクティビティ', icon: 'activity',  defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderHeatmap },
+            'rating-dist':         { label: '評価分布',   icon: 'bar-chart-3',      defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderRatingDist },
+            'pinned-memo':         { label: 'ピン留めメモ', icon: 'pin',            defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderPinnedMemo }
         };
     }
 
@@ -114,9 +115,9 @@ class BookshelfDashboard {
             const entry = this._registry[w.id];
             if (!entry) continue;
             const card = document.createElement('div');
-            // counter-total は accent 反転表示で目立たせる (モックアップ準拠)
-            const accentClass = w.id === 'counter-total' ? ' is-stat-accent' : '';
-            card.className = `dashboard-widget span-${w.span}${accentClass}`;
+            // #4: 常時 accent 反転はやめ、カウンターは hover/focus 時のみ accent (CSS 側)
+            const markerClass = entry.counter ? ' is-counter' : (entry.heading || w.id === 'heading' ? ' is-heading' : '');
+            card.className = `dashboard-widget span-${w.span}${markerClass}`;
             card.dataset.widgetId = w.id;
             card.dataset.widgetIndex = String(i);
             card.draggable = this.editMode;
@@ -275,16 +276,47 @@ class BookshelfDashboard {
             alert('全てのウィジェットが既に配置済みです');
             return;
         }
-        // シンプルな prompt で十分。複数選択は不要。
-        const choices = candidates.map((id, i) => `${i + 1}. ${this._registry[id].label}`).join('\n');
-        const input = prompt(`追加するウィジェット番号を入力:\n\n${choices}`);
-        const idx = parseInt(input, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= candidates.length) return;
-        const newId = candidates[idx];
-        const entry = this._registry[newId];
-        const layout = this.getLayout();
-        layout.push({ id: newId, span: entry.defaultSpan });
-        this.saveLayout(layout).then(() => this.render());
+
+        // 既存があれば撤去
+        document.getElementById('widget-picker-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'widget-picker-overlay';
+        overlay.className = 'widget-picker-overlay';
+        const ico = (n) => window.renderIcon(this._registry[n].icon || 'layout-dashboard', { size: 20 });
+        overlay.innerHTML = `
+            <div class="widget-picker-backdrop"></div>
+            <div class="widget-picker-panel" role="dialog" aria-modal="true" aria-label="ウィジェットを追加">
+                <div class="widget-picker-head">
+                    <span>ウィジェットを追加</span>
+                    <button type="button" class="widget-picker-close" title="閉じる">${window.renderIcon('x', { size: 16 })}</button>
+                </div>
+                <div class="widget-picker-grid">
+                    ${candidates.map(id => `
+                        <button type="button" class="widget-picker-item" data-wid="${id}">
+                            <span class="wpi-icon">${ico(id)}</span>
+                            <span class="wpi-label">${this._escape(this._registry[id].label)}</span>
+                        </button>`).join('')}
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('.widget-picker-backdrop').addEventListener('click', close);
+        overlay.querySelector('.widget-picker-close').addEventListener('click', close);
+        overlay.querySelectorAll('.widget-picker-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const newId = btn.dataset.wid;
+                const entry = this._registry[newId];
+                if (!entry) return;
+                const layout = this.getLayout();
+                layout.push({ id: newId, span: entry.defaultSpan });
+                close();
+                this.saveLayout(layout).then(() => this.render());
+            });
+        });
     }
 
     // ==================== ウィジェット実装 ====================
@@ -300,6 +332,38 @@ class BookshelfDashboard {
                 ${sub ? `<span class="bn-sub">${this._escape(sub)}</span>` : ''}
             </div>
         `;
+    }
+
+    /**
+     * 見出しウィジェット。編集モードではテキスト入力、表示モードでは大きな見出し。
+     */
+    _renderHeading(host, app, config) {
+        const text = (config && config.text) || '見出し';
+        if (this.editMode) {
+            host.innerHTML = `<input class="widget-heading-input" type="text" placeholder="見出しテキスト">`;
+            const input = host.querySelector('.widget-heading-input');
+            input.value = text;
+            input.addEventListener('change', () => {
+                const card = host.closest('.dashboard-widget');
+                this._setWidgetConfig(card, { text: input.value });
+            });
+            // クリックで詳細遷移などを防ぐ
+            input.addEventListener('click', (e) => e.stopPropagation());
+        } else {
+            host.innerHTML = `<div class="widget-heading-text">${this._escape(text)}</div>`;
+        }
+    }
+
+    /**
+     * カードに対応する layout エントリの config を更新して保存 (再描画はしない)。
+     */
+    _setWidgetConfig(card, partial) {
+        if (!card) return;
+        const idx = Number(card.dataset.widgetIndex);
+        const layout = this.getLayout();
+        if (!layout[idx]) return;
+        layout[idx].config = { ...(layout[idx].config || {}), ...partial };
+        this.saveLayout(layout);
     }
 
     _renderCounterTotal(host, app) {

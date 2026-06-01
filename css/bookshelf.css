@@ -1830,25 +1830,125 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     color: var(--muted);
 }
 
-/* stat アクセント反転 (1 枚目 = 蔵書数 のみ) */
-.dashboard-widget.is-stat-accent {
+/* #4: カウンターは常時色違いをやめ、hover/focus 時のみ accent 反転 */
+.dashboard-widget.is-counter {
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.dashboard-widget.is-counter:hover,
+.dashboard-widget.is-counter:focus-within {
     background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    color: #fff;
 }
-
-.dashboard-widget.is-stat-accent .widget-header {
+.dashboard-widget.is-counter:hover .widget-header,
+.dashboard-widget.is-counter:focus-within .widget-header {
     color: rgba(255, 255, 255, 0.85);
     border-bottom-color: rgba(255, 255, 255, 0.15);
 }
+.dashboard-widget.is-counter:hover .bn-value,
+.dashboard-widget.is-counter:focus-within .bn-value { color: #fff; }
+.dashboard-widget.is-counter:hover .bn-sub,
+.dashboard-widget.is-counter:focus-within .bn-sub { color: rgba(255, 255, 255, 0.85); }
 
-.dashboard-widget.is-stat-accent .bn-value {
-    color: white;
+/* 見出しウィジェット (Phase H) */
+.dashboard-widget.is-heading {
+    background: none;
+    border: none;
+    box-shadow: none;
+    min-height: 0;
+    padding: 0.3rem 0.2rem;
+}
+.dashboard-grid:not(.is-edit-mode) .dashboard-widget.is-heading .widget-header { display: none; }
+.widget-heading-text {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--fg);
+    padding: 0.3rem 0;
+    border-bottom: 2px solid var(--line);
+}
+.widget-heading-input {
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    color: var(--fg);
 }
 
-.dashboard-widget.is-stat-accent .bn-sub {
-    color: rgba(255, 255, 255, 0.85);
+/* ウィジェット追加モーダル (Phase H) */
+.widget-picker-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
 }
+.widget-picker-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 17, 24, 0.45);
+    backdrop-filter: blur(2px);
+}
+.widget-picker-panel {
+    position: relative;
+    margin-top: 12vh;
+    width: min(540px, 92vw);
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: cmdk-in 0.12s ease;
+}
+.widget-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--line2);
+    font-weight: 600;
+    color: var(--fg);
+}
+.widget-picker-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    display: inline-flex;
+    padding: 4px;
+    border-radius: 6px;
+}
+.widget-picker-close:hover { background: var(--line2); color: var(--fg); }
+.widget-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.6rem;
+    padding: 1rem;
+    overflow-y: auto;
+}
+.widget-picker-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.9rem 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    color: var(--fg2);
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.widget-picker-item:hover { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.wpi-icon { display: inline-flex; }
+.wpi-label { font-size: 0.8rem; }
 
 /* 最近追加した本: 横スクロール */
 .widget-book-row {
