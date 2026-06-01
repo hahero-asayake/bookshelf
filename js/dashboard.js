@@ -444,7 +444,11 @@ class BookshelfDashboard {
 
     _renderBookshelfHighlights(host, app) {
         const shelves = (app.userData?.bookshelves || []).filter(b => !b.isSpecial);
-        if (shelves.length === 0) {
+        // ALL(全ての本) を必ず先頭に。実データに特殊本棚が無い場合は擬似本棚を合成し、
+        // 本棚ヘッダーと同じく ALL を一覧にも出して表示を揃える (Phase H2-4)。
+        const all = (app.userData?.bookshelves || []).find(b => b.isSpecial)
+            || { id: 'all', name: '全ての本', isSpecial: true, iconName: 'library', description: '', books: [] };
+        if (shelves.length === 0 && !all) {
             host.innerHTML = '<p style="color:#9ca3af;">本棚がありません。本棚管理から作成してください。</p>';
             return;
         }
@@ -453,7 +457,6 @@ class BookshelfDashboard {
         // 既存 _renderBookshelfCard を使い回す
         const showImages = !!app.showImagesInOverview;
         const textOnlyClass = showImages ? '' : 'text-only';
-        const all = (app.userData?.bookshelves || []).find(b => b.isSpecial);
         const cards = [];
         if (all) cards.push(app._renderBookshelfCard(all, textOnlyClass));
         for (const bs of shelves) cards.push(app._renderBookshelfCard(bs, textOnlyClass));

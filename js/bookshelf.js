@@ -4994,6 +4994,15 @@ class VirtualBookshelf {
     }
 
     /**
+     * 本棚の説明文を解決 (ホームカード / 本棚ヘッダー 共通)。
+     * ALL(特殊)は既定文を返し、表示をどこでも一致させる (Phase H2-4)。
+     */
+    _bookshelfDescription(bs) {
+        if (!bs) return '';
+        return bs.description || (bs.isSpecial ? '除外していない全ての蔵書' : '');
+    }
+
+    /**
      * 本棚ビューのタイトル・説明を更新
      */
     _updateBookshelfViewTitle() {
@@ -5009,7 +5018,7 @@ class VirtualBookshelf {
         let desc = '';
         if (bs) {
             title = bs.name || '';
-            desc = bs.description || '';
+            desc = this._bookshelfDescription(bs);
         } else if (id === 'all') {
             title = '全ての本';
             desc = '除外していない全ての蔵書';
@@ -5186,15 +5195,17 @@ class VirtualBookshelf {
         const isPublicInput = document.getElementById('bookshelf-is-public');
         const pinnedInput = document.getElementById('bookshelf-pinned');
 
-        // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）
-        // bookshelves[] には all 本棚も含まれているのでハードコードしない
-        const allId = this.bookshelfManager.getAllInternalId();
+        // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）。
+        // 実データは internalId 欠落のため _keyOf(=internalId||id) をキーに使う。
+        // 先頭に「トップ階層」(=ルート直下, value="") を置く。ALL(特殊)は候補に出さない。
+        const bm = this.bookshelfManager;
+        const editKey = bookshelfToEdit ? bm._keyOf(bookshelfToEdit) : null;
         const excludedIds = bookshelfToEdit
-            ? new Set([bookshelfToEdit.internalId, ...this.bookshelfManager.getDescendants(bookshelfToEdit.internalId).map(b => b.internalId)])
+            ? new Set([editKey, ...bm.getDescendants(editKey).map(b => bm._keyOf(b))])
             : new Set();
-        const candidates = this.bookshelfManager.getBookshelves().filter(b => !excludedIds.has(b.internalId));
-        parentSelect.innerHTML = candidates
-            .map(b => `<option value="${b.internalId}">${b.name}</option>`)
+        const candidates = bm.getBookshelves().filter(b => !b.isSpecial && !excludedIds.has(bm._keyOf(b)));
+        parentSelect.innerHTML = '<option value="">（トップ階層）</option>' + candidates
+            .map(b => `<option value="${bm._keyOf(b)}">${this._escapeAttr ? this._escapeAttr(b.name) : b.name}</option>`)
             .join('');
 
         const setIcon = (name) => {
@@ -5211,7 +5222,7 @@ class VirtualBookshelf {
             if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = bookshelfToEdit.name;
             slugInput.value = bookshelfToEdit.id || '';
-            parentSelect.value = bookshelfToEdit.parent || allId || '';
+            parentSelect.value = bookshelfToEdit.parent || '';
             setIcon(bookshelfToEdit.iconName);
             descriptionInput.value = bookshelfToEdit.description || '';
             isPublicInput.checked = bookshelfToEdit.isPublic || false;
@@ -5234,7 +5245,7 @@ class VirtualBookshelf {
             nameInput.value = '';
             slugInput.value = '';
             // Phase G: ツリーから「子本棚を追加」した場合は親を事前選択
-            parentSelect.value = presetParentInternalId || allId || '';
+            parentSelect.value = presetParentInternalId || '';
             setIcon('library');
             descriptionInput.value = '';
             isPublicInput.checked = false;
@@ -5290,11 +5301,10 @@ class VirtualBookshelf {
             return;
         }
 
-        const parentId = parentSelect.value || this.bookshelfManager.getAllInternalId();
+        const parentId = parentSelect.value || null;   // "" = トップ階層(ルート)
         const meta = {
             name,
             slug,
-            parent: parentId,
             iconName: iconNameInput.value.trim() || 'library',
             description: descriptionInput.value.trim(),
             isPublic: isPublicInput.checked,
@@ -5303,13 +5313,22 @@ class VirtualBookshelf {
 
         try {
             if (this.currentEditingBookshelf) {
-                this.bookshelfManager.update(this.currentEditingBookshelf.internalId, meta);
+                const editing = this.currentEditingBookshelf;
+                const editKey = this.bookshelfManager._keyOf(editing);
+                // 親以外のフィールドを更新 (parent は meta に含めず update では触らない)
+                this.bookshelfManager.update(editKey, meta);
+                // 親変更は確認ダイアログ + 本の補充フロー経由 (H2-2 と共用)
+                const curParent = editing.parent || null;
+                if ((parentId || null) !== curParent) {
+                    this._applyReparentWithConfirm(editKey, parentId || null);
+                    // キャンセル時は親のみ据え置き (他フィールドは保存済み)
+                }
                 // slug 変更があれば rename（ファイル削除も走る）
-                if (slug !== this.currentEditingBookshelf.id) {
-                    await this.bookshelfManager.rename(this.currentEditingBookshelf.internalId, slug);
+                if (slug !== editing.id) {
+                    await this.bookshelfManager.rename(editKey, slug);
                 }
             } else {
-                this.bookshelfManager.create(meta);
+                this.bookshelfManager.create({ ...meta, parent: parentId || undefined });
             }
         } catch (e) {
             alert(`❌ ${e.message}`);
@@ -6952,7 +6971,7 @@ class VirtualBookshelf {
         const cardEffectiveIcon = bookshelf.iconName || 'library';
         const iconSvg = window.renderIcon(cardEffectiveIcon, { size: 18 });
         const name = bookshelf.name || (isSpecial ? 'すべての本' : bookshelf.id);
-        const description = bookshelf.description || (isSpecial ? '除外していない全ての蔵書' : '');
+        const description = this._bookshelfDescription(bookshelf);
         const isPublic = bookshelf.isPublic || false;
         const publicBadge = isPublic
             ? `<span class="public-badge"><span class="h-icon">${window.renderIcon('upload-cloud', { size: 12 })}</span>公開中</span>`
