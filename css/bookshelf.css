@@ -648,7 +648,28 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     color: #374151;
     border: 1px solid transparent;
     line-height: 1.2;
+    position: relative;
 }
+
+/* ===== ツリー D&D (Phase H2-2): 並び替え + 親変更 ===== */
+.tree-node.tree-dragging { opacity: 0.4; }
+.tree-node.tree-drop-inside {
+    background: var(--accent-bg);
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+.tree-node.tree-drop-before::before,
+.tree-node.tree-drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0.4rem;
+    right: 0.4rem;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+    pointer-events: none;
+}
+.tree-node.tree-drop-before::before { top: -1px; }
+.tree-node.tree-drop-after::after { bottom: -1px; }
 
 .tree-node:hover {
     background: #f3f4f6;

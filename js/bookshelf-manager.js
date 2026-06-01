@@ -36,17 +36,27 @@ class BookshelfManager {
     }
 
     // ===== 親子関係 =====
+    // 本棚の安定キー。internalId があればそれ、無ければ id(slug)。
+    // 実データは internalId 欠落 (parent も slug 参照) なので両対応にする。
+    _keyOf(bs) {
+        return bs && (bs.internalId || bs.id);
+    }
+
     getChildren(internalId) {
         return this.getBookshelves().filter(b => b.parent === internalId);
     }
 
     getDescendants(internalId) {
         const result = [];
+        const seen = new Set();
         const stack = [...this.getChildren(internalId)];
         while (stack.length > 0) {
             const node = stack.shift();
+            const key = this._keyOf(node);
+            if (seen.has(key)) continue;        // 循環ガード
+            seen.add(key);
             result.push(node);
-            stack.push(...this.getChildren(node.internalId));
+            stack.push(...this.getChildren(key)); // internalId 欠落でも key で辿る
         }
         return result;
     }
@@ -68,7 +78,7 @@ class BookshelfManager {
         if (internalId === candidateParentId) return false;
         if (!candidateParentId) return true;
         const descendants = this.getDescendants(internalId);
-        return !descendants.some(d => d.internalId === candidateParentId);
+        return !descendants.some(d => this._keyOf(d) === candidateParentId);
     }
 
     // ===== 逆引きマップ =====
@@ -261,7 +271,7 @@ class BookshelfManager {
             let addCount = 0;
             for (const asin of subtree) if (!have.has(asin)) addCount++;
             if (addCount > 0) targetShelves.push({ name: shelf.name, addCount });
-            if (shelf.internalId === targetParent) addedToNewParent = addCount;
+            if (this._keyOf(shelf) === targetParent) addedToNewParent = addCount;
         }
         return { valid: true, addedToNewParent, targetShelves };
     }
@@ -283,7 +293,7 @@ class BookshelfManager {
         for (const shelf of chain) {
             for (const asin of subtree) {
                 if (!(shelf.books || []).includes(asin)) {
-                    this.addBookToBookshelf(shelf.internalId, asin);
+                    this.addBookToBookshelf(this._keyOf(shelf), asin);
                 }
             }
         }
@@ -295,14 +305,14 @@ class BookshelfManager {
     // internalId を beforeInternalId の直前へ移動 (beforeInternalId が null なら末尾)。
     reorderSibling(internalId, beforeInternalId = null) {
         const arr = this.getBookshelves();
-        const fromIdx = arr.findIndex(b => b.internalId === internalId);
+        const fromIdx = arr.findIndex(b => this._keyOf(b) === internalId);
         if (fromIdx < 0) return false;
         const moving = arr.splice(fromIdx, 1)[0];
         let toIdx;
         if (beforeInternalId == null) {
             toIdx = arr.length;
         } else {
-            toIdx = arr.findIndex(b => b.internalId === beforeInternalId);
+            toIdx = arr.findIndex(b => this._keyOf(b) === beforeInternalId);
             if (toIdx < 0) toIdx = arr.length;
         }
         arr.splice(toIdx, 0, moving);
@@ -320,6 +330,11 @@ class BookshelfManager {
         }
         const oldSlug = bs.id;
         bs.id = newSlug;
+
+        // 子の parent 参照が slug の場合は付け替え (internalId 参照は不変なので影響なし)
+        for (const child of this.getBookshelves()) {
+            if (child.parent === oldSlug) child.parent = newSlug;
+        }
 
         // 表示順序の bookOrder キーも置き換え
         if (this.app.userData.bookOrder && this.app.userData.bookOrder[oldSlug]) {

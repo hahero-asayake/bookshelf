@@ -3576,9 +3576,10 @@ class VirtualBookshelf {
         });
 
         const renderNode = (bs, depth) => {
-            const children = byParent.get(bs.internalId) || [];
+            const nodeKey = this.bookshelfManager._keyOf(bs);  // internalId||id (実データは slug)
+            const children = byParent.get(nodeKey) || [];
             const hasChildren = children.length > 0;
-            const isExpanded = expanded.has(bs.internalId);
+            const isExpanded = expanded.has(nodeKey);
             const bookCount = (bs.books && bs.books.length) || 0;
             const effectiveIcon = bs.iconName || 'library';
             const iconSvg = window.renderIcon(effectiveIcon, { size: 16 });
@@ -3617,12 +3618,55 @@ class VirtualBookshelf {
             if (toggleBtn) {
                 toggleBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    if (expanded.has(bs.internalId)) expanded.delete(bs.internalId);
-                    else expanded.add(bs.internalId);
+                    if (expanded.has(nodeKey)) expanded.delete(nodeKey);
+                    else expanded.add(nodeKey);
                     try { localStorage.setItem(expandedKey, JSON.stringify([...expanded])); } catch {}
                     this._renderSidebarTree();
                 });
             }
+            // ===== D&D: 並び替え (同階層) + 親変更 (Phase H2-2) =====
+            if (!bs.isSpecial) {
+                node.draggable = true;
+                node.addEventListener('dragstart', (e) => {
+                    this._treeDragId = nodeKey;
+                    node.classList.add('tree-dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', nodeKey); } catch (_) {}
+                });
+                node.addEventListener('dragend', () => {
+                    node.classList.remove('tree-dragging');
+                    this._treeDragId = null;
+                    this._clearTreeDropIndicators();
+                });
+            }
+            // どのノードもドロップ先になれる (ALL は「中に入れる」= ルート直下 用)
+            node.addEventListener('dragover', (e) => {
+                if (!this._treeDragId || this._treeDragId === nodeKey) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = node.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const zone = bs.isSpecial ? 'inside'
+                    : (y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside'));
+                this._clearTreeDropIndicators();
+                node.classList.add(`tree-drop-${zone}`);
+                node.dataset.dropZone = zone;
+            });
+            node.addEventListener('dragleave', (e) => {
+                if (!node.contains(e.relatedTarget)) {
+                    node.classList.remove('tree-drop-before', 'tree-drop-inside', 'tree-drop-after');
+                }
+            });
+            node.addEventListener('drop', (e) => {
+                if (!this._treeDragId) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const draggedId = this._treeDragId;
+                const zone = node.dataset.dropZone || 'inside';
+                this._clearTreeDropIndicators();
+                this._onTreeDrop(draggedId, nodeKey, zone);
+            });
+
             container.appendChild(node);
             if (hasChildren && isExpanded) {
                 children.forEach(child => renderNode(child, depth + 1));
@@ -3640,6 +3684,94 @@ class VirtualBookshelf {
         });
         roots.forEach(bs => renderNode(bs, 0));
         this._renderSidebarPinned();
+    }
+
+    _clearTreeDropIndicators() {
+        document.querySelectorAll('#sidebar-bookshelf-tree .tree-node').forEach(n => {
+            n.classList.remove('tree-drop-before', 'tree-drop-inside', 'tree-drop-after');
+            delete n.dataset.dropZone;
+        });
+    }
+
+    // ツリー D&D のドロップ処理 (Phase H2-2)
+    //   zone: 'before' | 'after' (= target の兄弟として並び替え) / 'inside' (= target の子にする)
+    _onTreeDrop(draggedId, targetId, zone) {
+        const bm = this.bookshelfManager;
+        if (!bm || draggedId === targetId) return;
+        const dragged = bm.getById(draggedId);
+        const target = bm.getById(targetId);
+        if (!dragged || !target || dragged.isSpecial) return;
+        const allId = bm.getAllInternalId();
+
+        let newParent, beforeId = null;
+        if (zone === 'inside') {
+            newParent = bm._keyOf(target);                 // target の子にする
+        } else {
+            newParent = target.isSpecial ? allId : (target.parent || allId);
+            if (zone === 'before') {
+                beforeId = target.internalId;
+            } else { // after
+                const sibs = bm.getBookshelves().filter(b => (b.parent || allId) === newParent && b.internalId !== draggedId);
+                const idx = sibs.findIndex(b => b.internalId === targetId);
+                beforeId = (idx >= 0 && idx + 1 < sibs.length) ? sibs[idx + 1].internalId : null;
+            }
+        }
+        if (!newParent) newParent = allId;
+
+        if (!bm.canSetParent(draggedId, newParent)) {
+            alert('❌ 循環参照になるため移動できません');
+            return;
+        }
+
+        const sameParent = (dragged.parent || allId) === newParent;
+        if (sameParent) {
+            if (beforeId === draggedId) return;            // 変化なし
+            bm.reorderSibling(draggedId, beforeId);
+        } else {
+            if (!this._applyReparentWithConfirm(draggedId, newParent)) return;
+            bm.reorderSibling(draggedId, beforeId);
+            // 親に入れたら展開して結果を見せる
+            if (zone === 'inside') {
+                try {
+                    const key = 'bookshelf_treeExpanded_v1';
+                    const set = new Set(JSON.parse(localStorage.getItem(key) || '[]'));
+                    set.add(newParent);
+                    localStorage.setItem(key, JSON.stringify([...set]));
+                } catch (_) {}
+            }
+        }
+
+        this.saveUserData();
+        if (typeof this.updateBookshelfSelector === 'function') this.updateBookshelfSelector();
+        else this._renderSidebarTree();
+        if (typeof this.renderBookshelfOverview === 'function') this.renderBookshelfOverview();
+        if (typeof this._updateBookshelfViewTitle === 'function') this._updateBookshelfViewTitle();
+    }
+
+    // 親変更を確認ダイアログ付きで適用 (ツリー D&D / 編集フォーム 共用)。成功で true。
+    _applyReparentWithConfirm(internalId, newParentId) {
+        const bm = this.bookshelfManager;
+        const prev = bm.previewReparent(internalId, newParentId);
+        if (!prev.valid) { alert('❌ ' + (prev.reason || '移動できません')); return false; }
+        const bs = bm.getById(internalId);
+        const parent = bm.getById(newParentId);
+        const parentName = parent ? parent.name : '(ルート)';
+        let msg = `📦「${bs.name}」を「${parentName}」の下へ移動します。\n`;
+        if (prev.targetShelves && prev.targetShelves.length > 0) {
+            const lines = prev.targetShelves.map(t => `　・${t.name}: +${t.addCount} 冊`).join('\n');
+            msg += `\n⚠️「子は親の本の中から持つ」制約を保つため、` +
+                   `「${bs.name}」と子本棚の本が移動先の親本棚にも追加されます:\n${lines}\n\n続けますか？`;
+        } else {
+            msg += `\n続けますか？`;
+        }
+        if (!confirm(msg)) return false;
+        try {
+            bm.reparent(internalId, newParentId);
+        } catch (e) {
+            alert('❌ ' + e.message);
+            return false;
+        }
+        return true;
     }
 
     /**
