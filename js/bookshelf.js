@@ -352,15 +352,7 @@ class VirtualBookshelf {
             this.currentView = 'covers';
         }
         
-        // Load books per page setting
-        if (this.userData.settings.booksPerPage) {
-            if (this.userData.settings.booksPerPage === 'all') {
-                this.booksPerPage = 999999;
-            } else {
-                this.booksPerPage = this.userData.settings.booksPerPage;
-            }
-            document.getElementById('books-per-page').value = this.userData.settings.booksPerPage;
-        }
+        // Phase H2-5: ページネーション廃止につき booksPerPage 設定は読み込まない (全件表示)
         this.showImagesInOverview = this.userData.settings.showImagesInOverview !== false; // Default true
 
         this.applyFilters();
@@ -402,10 +394,7 @@ class VirtualBookshelf {
             this.toggleSortDirection();
         });
 
-        // Books per page
-        document.getElementById('books-per-page').addEventListener('change', (e) => {
-            this.setBooksPerPage(e.target.value);
-        });
+        // Phase H2-5: 「表示数」は廃止 (全件表示)
 
         // Cover size
         document.getElementById('cover-size').addEventListener('change', (e) => {
@@ -1279,24 +1268,14 @@ class VirtualBookshelf {
             });
         }
         
-        // Handle pagination - 値を一度に取得して固定
-        const booksPerPage = parseInt(this.booksPerPage) || 50;  // 安全な値として取得
-        const currentPage = parseInt(this.currentPage) || 1;
-        
-        let booksToShow;
-        if (booksPerPage >= this.filteredBooks.length) {
-            // Show all books
-            booksToShow = booksToRender;
-        } else {
-            // Show paginated books
-            const startIndex = (currentPage - 1) * booksPerPage;
-            const endIndex = startIndex + booksPerPage;
-            booksToShow = booksToRender.slice(startIndex, endIndex);
-        }
-        
-        booksToShow.forEach(book => {
-            container.appendChild(this.createBookElement(book, this.currentView));
+        // Phase H2-5: ページネーション廃止。全件を 1 リストで描画し、D&D 並び替えで
+        // ページを跨げない問題を解消する (画像は lazy ローダで遅延読込)。
+        // 大量描画を 1 フレームに固める: DocumentFragment にまとめて append。
+        const frag = document.createDocumentFragment();
+        booksToRender.forEach(book => {
+            frag.appendChild(this.createBookElement(book, this.currentView));
         });
+        container.appendChild(frag);
     }
 
     createBookElement(book, displayType) {
@@ -1422,7 +1401,9 @@ class VirtualBookshelf {
         bookItem.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', this.draggedASIN);
-        console.log('🎯 Drag started:', this.draggedASIN, bookItem);
+        // Phase H2-5: ドラッグ中の端オートスクロール開始
+        this._dragPointerY = e.clientY;
+        this._startBookDragAutoScroll();
     }
 
     handleDragOver(e) {
@@ -1430,13 +1411,17 @@ class VirtualBookshelf {
             e.preventDefault();
         }
         e.dataTransfer.dropEffect = 'move';
-        
-        // Visual feedback
+        this._dragPointerY = e.clientY;   // オートスクロール用
+
+        // Visual feedback (直前のインジケータは消してから付ける)
         const target = e.target.closest('.book-item');
         if (target && target !== this.draggedElement) {
-            target.style.borderLeft = '3px solid #3498db';
+            if (this._lastDragOverTarget && this._lastDragOverTarget !== target) {
+                this._lastDragOverTarget.style.borderLeft = '';
+            }
+            target.style.borderLeft = '3px solid var(--accent)';
+            this._lastDragOverTarget = target;
         }
-        
         return false;
     }
 
@@ -1466,12 +1451,45 @@ class VirtualBookshelf {
         }
         this.draggedElement = null;
         this.draggedASIN = null;
-        
+        this._stopBookDragAutoScroll();
+
         // Clear all visual feedback
         document.querySelectorAll('.book-item').forEach(item => {
             item.style.borderLeft = '';
         });
-        console.log('🎯 Drag ended');
+    }
+
+    // ===== Phase H2-5: 本D&Dの端オートスクロール =====
+    // .view-bookshelf (スクロール容器) の上下端付近にポインタが来たら自動スクロール。
+    _bookScrollContainer() {
+        return document.querySelector('.view-bookshelf');
+    }
+
+    _startBookDragAutoScroll() {
+        const scroller = this._bookScrollContainer();
+        if (!scroller) return;
+        // ポインタ位置追跡 (容器全体で dragover を拾う。1度だけ bind)
+        if (!scroller._dragTrackBound) {
+            scroller._dragTrackBound = true;
+            scroller.addEventListener('dragover', (e) => { this._dragPointerY = e.clientY; });
+        }
+        if (this._dragRAF) return; // 二重起動防止
+        const EDGE = 90, MAX = 20;
+        const step = () => {
+            if (!this.draggedElement) { this._dragRAF = null; return; }
+            const r = scroller.getBoundingClientRect();
+            const y = this._dragPointerY || 0;
+            let dy = 0;
+            if (y < r.top + EDGE)      dy = -Math.ceil(MAX * Math.min(1, (r.top + EDGE - y) / EDGE));
+            else if (y > r.bottom - EDGE) dy = Math.ceil(MAX * Math.min(1, (y - (r.bottom - EDGE)) / EDGE));
+            if (dy) scroller.scrollTop += dy;
+            this._dragRAF = requestAnimationFrame(step);
+        };
+        this._dragRAF = requestAnimationFrame(step);
+    }
+
+    _stopBookDragAutoScroll() {
+        if (this._dragRAF) { cancelAnimationFrame(this._dragRAF); this._dragRAF = null; }
     }
 
     reorderBooks(draggedASIN, targetASIN) {
@@ -2139,41 +2157,15 @@ class VirtualBookshelf {
 
 
     setupPagination() {
+        // Phase H2-5: ページネーション廃止 (全件 1 リスト)。互換のため呼出は受けるが常に空。
         const pagination = document.getElementById('pagination');
-        const totalPages = Math.ceil(this.filteredBooks.length / this.booksPerPage);
-        
-        // Hide pagination if showing all books or only one page
-        if (totalPages <= 1 || this.booksPerPage >= this.filteredBooks.length) {
-            pagination.innerHTML = '';
-            return;
-        }
-        
-        let paginationHTML = `
-            <button ${this.currentPage === 1 ? 'disabled' : ''} onclick="bookshelf.goToPage(${this.currentPage - 1})">前へ</button>
-        `;
-        
-        for (let i = Math.max(1, this.currentPage - 2); i <= Math.min(totalPages, this.currentPage + 2); i++) {
-            paginationHTML += `
-                <button class="${i === this.currentPage ? 'current-page' : ''}" onclick="bookshelf.goToPage(${i})">${i}</button>
-            `;
-        }
-        
-        paginationHTML += `
-            <button ${this.currentPage === totalPages ? 'disabled' : ''} onclick="bookshelf.goToPage(${this.currentPage + 1})">次へ</button>
-        `;
-        
-        pagination.innerHTML = paginationHTML;
+        if (pagination) pagination.innerHTML = '';
     }
 
     goToPage(page) {
-        this.currentPage = page;
+        // Phase H2-5: ページ概念を廃止 (互換 no-op)。
+        this.currentPage = 1;
         this.updateDisplay();
-        
-        // 本棚エリアまでスクロール
-        const bookshelf = document.getElementById('bookshelf');
-        if (bookshelf) {
-            bookshelf.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
     }
 
     createDefaultUserData() {
