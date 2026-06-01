@@ -221,6 +221,94 @@ class BookshelfManager {
         return bs;
     }
 
+    // ===== 親変更 (reparent) — サブセット制約を維持 =====
+    // 部分木 (bs + 子孫) が持つ本を、新しい親とその祖先へ補充して「子 ⊆ 親」を保つ。
+    // 既存の一括追加 (_bulkAddToShelf) の「祖先へ自動追加」と同じ思想。
+
+    // 部分木が持つ本の和集合 (子孫 ⊆ bs なので実質 bs.books だが堅牢に union)
+    _subtreeBookSet(internalId) {
+        const set = new Set();
+        const targets = [this.getById(internalId), ...this.getDescendants(internalId)];
+        for (const bs of targets) {
+            for (const asin of (bs?.books || [])) set.add(asin);
+        }
+        return set;
+    }
+
+    // 新しい親チェーン (新親 + その祖先) の非特殊本棚
+    _parentChainShelves(parentInternalId) {
+        const parent = this.getById(parentInternalId);
+        if (!parent) return [];
+        return [parent, ...this.getAncestors(parentInternalId)].filter(p => p && !p.isSpecial);
+    }
+
+    // reparent 適用前のプレビュー (mutate しない)。確認ダイアログ用。
+    // { valid, reason, addedToNewParent, targetShelves:[{name, addCount}] }
+    previewReparent(internalId, newParentId) {
+        const bs = this.getById(internalId);
+        if (!bs) return { valid: false, reason: '本棚が見つかりません' };
+        if (bs.isSpecial) return { valid: false, reason: '特殊本棚は移動できません' };
+        const targetParent = newParentId || this.getAllInternalId();
+        if (!this.canSetParent(internalId, targetParent)) {
+            return { valid: false, reason: '循環参照になるため移動できません' };
+        }
+        const subtree = this._subtreeBookSet(internalId);
+        const chain = this._parentChainShelves(targetParent);
+        const targetShelves = [];
+        let addedToNewParent = 0;
+        for (const shelf of chain) {
+            const have = new Set(shelf.books || []);
+            let addCount = 0;
+            for (const asin of subtree) if (!have.has(asin)) addCount++;
+            if (addCount > 0) targetShelves.push({ name: shelf.name, addCount });
+            if (shelf.internalId === targetParent) addedToNewParent = addCount;
+        }
+        return { valid: true, addedToNewParent, targetShelves };
+    }
+
+    // reparent 適用。親を差し替え、部分木の本を新親チェーンへ補充。
+    reparent(internalId, newParentId) {
+        const bs = this.getById(internalId);
+        if (!bs) throw new Error('本棚が見つかりません');
+        if (bs.isSpecial) throw new Error('特殊本棚は移動できません');
+        const targetParent = newParentId || this.getAllInternalId();
+        if (!this.canSetParent(internalId, targetParent)) {
+            throw new Error('循環参照になるため移動できません');
+        }
+        bs.parent = targetParent;
+        bs.lastUpdated = new Date().toISOString();
+
+        const subtree = this._subtreeBookSet(internalId);
+        const chain = this._parentChainShelves(targetParent);
+        for (const shelf of chain) {
+            for (const asin of subtree) {
+                if (!(shelf.books || []).includes(asin)) {
+                    this.addBookToBookshelf(shelf.internalId, asin);
+                }
+            }
+        }
+        return bs;
+    }
+
+    // ===== 同階層の並び替え =====
+    // userData.bookshelves 配列の順序が表示順 (byParent が配列順を保持)。
+    // internalId を beforeInternalId の直前へ移動 (beforeInternalId が null なら末尾)。
+    reorderSibling(internalId, beforeInternalId = null) {
+        const arr = this.getBookshelves();
+        const fromIdx = arr.findIndex(b => b.internalId === internalId);
+        if (fromIdx < 0) return false;
+        const moving = arr.splice(fromIdx, 1)[0];
+        let toIdx;
+        if (beforeInternalId == null) {
+            toIdx = arr.length;
+        } else {
+            toIdx = arr.findIndex(b => b.internalId === beforeInternalId);
+            if (toIdx < 0) toIdx = arr.length;
+        }
+        arr.splice(toIdx, 0, moving);
+        return true;
+    }
+
     // slug リネーム: ファイル名変更（旧ファイル削除 + 新ファイル書込）。internalId は不変。
     async rename(internalId, newSlug) {
         const bs = this.getById(internalId);
