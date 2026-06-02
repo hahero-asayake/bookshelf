@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060210">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060211">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -106,7 +106,13 @@
                 <section class="view view-bookshelf" id="view-bookshelf" >
                     <header class="bookshelf-view-header">
                         <div class="bvh-main">
-                            <h2 class="section-title" id="current-bookshelf-title"></h2>
+                            <div class="bvh-title">
+                                <span class="bvh-icon" id="current-bookshelf-icon" aria-hidden="true"></span>
+                                <div class="bvh-text">
+                                    <h2 class="section-title" id="current-bookshelf-title"></h2>
+                                    <p class="bookshelf-view-description" id="current-bookshelf-desc"></p>
+                                </div>
+                            </div>
                             <!-- 本棚ツールバー (Phase E): 検索 / 表示切替 / 並び替え・フィルタ / 複数選択 -->
                             <div class="bookshelf-toolbar" id="bookshelf-toolbar">
                                 <span class="popover-host">
@@ -172,7 +178,6 @@
                                 <button id="toggle-select-mode" class="btn-icon-square" title="複数選択" data-icon="check-square"></button>
                             </div>
                         </div>
-                        <p class="bookshelf-view-description" id="current-bookshelf-desc"></p>
                     </header>
 
                     <!-- 複数選択時の一括操作バー (Phase E) -->
@@ -753,20 +758,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060210"></script>
-    <script src="js/storage-adapter.js?v=2026060210"></script>
-    <script src="js/local-fs-adapter.js?v=2026060210"></script>
-    <script src="js/github-adapter.js?v=2026060210"></script>
-    <script src="js/github-auth.js?v=2026060210"></script>
-    <script src="js/sync-config.js?v=2026060210"></script>
-    <script src="js/storage.js?v=2026060210"></script>
-    <script src="js/book-manager.js?v=2026060210"></script>
-    <script src="js/bookshelf-manager.js?v=2026060210"></script>
-    <script src="js/exporter.js?v=2026060210"></script>
-    <script src="js/plugin-api.js?v=2026060210"></script>
-    <script src="js/plugin-loader.js?v=2026060210"></script>
-    <script src="js/router.js?v=2026060210"></script>
-    <script src="js/dashboard.js?v=2026060210"></script>
-    <script src="js/bookshelf.js?v=2026060210"></script>
+    <script src="js/icons.js?v=2026060211"></script>
+    <script src="js/storage-adapter.js?v=2026060211"></script>
+    <script src="js/local-fs-adapter.js?v=2026060211"></script>
+    <script src="js/github-adapter.js?v=2026060211"></script>
+    <script src="js/github-auth.js?v=2026060211"></script>
+    <script src="js/sync-config.js?v=2026060211"></script>
+    <script src="js/storage.js?v=2026060211"></script>
+    <script src="js/book-manager.js?v=2026060211"></script>
+    <script src="js/bookshelf-manager.js?v=2026060211"></script>
+    <script src="js/exporter.js?v=2026060211"></script>
+    <script src="js/plugin-api.js?v=2026060211"></script>
+    <script src="js/plugin-loader.js?v=2026060211"></script>
+    <script src="js/router.js?v=2026060211"></script>
+    <script src="js/dashboard.js?v=2026060211"></script>
+    <script src="js/bookshelf.js?v=2026060211"></script>
 </body>
 </html>

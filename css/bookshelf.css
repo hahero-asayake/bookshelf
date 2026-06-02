@@ -1442,7 +1442,6 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .tree-icon,
 .bs-popover-icon,
 .bs-chip-icon,
-.bs-title-icon,
 .bs-card-icon {
     display: inline-flex;
     align-items: center;
@@ -1480,13 +1479,6 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     height: 30px;
     margin-right: 0.4rem;
     vertical-align: -3px;
-}
-
-.bs-title-icon {
-    /* 中央ペインタイトル (22px icon) */
-    width: 36px;
-    height: 36px;
-    margin-right: 0.5rem !important;
 }
 
 /* ホバー (interactive な箇所のみ) */
@@ -4392,7 +4384,9 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 /* ===== Bookshelf view header (mockup: wb-toolbar) ===== */
 .bookshelf-view-header {
     /* Phase C2: 本棚ビューのヘッダー。スクロールしても天面に固定 (sticky)。
-       view の左右パディングを相殺して全幅バーにする。 */
+       view の左右パディングを相殺して全幅バーにする。
+       Phase H2-8: アイコンを名前(上)＋説明(下)の左に立てる構成。説明は小さな下段に
+       収め、ヘッダーが太くなりすぎないようにする (padding も圧縮)。 */
     position: sticky;
     top: 0;
     z-index: 20;
@@ -4400,39 +4394,60 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     border: none;
     border-bottom: 1px solid var(--line);
     border-radius: 0;
-    padding: 0.6rem 0.9rem;
+    padding: 0.4rem 0.9rem;
     margin: 0 -0.9rem 0.8rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
     font-size: 0.85rem;
 }
-/* タイトル + ツールバーの行 (Phase E) */
+/* タイトル(アイコン+名前/説明) + ツールバーの行 */
 .bvh-main {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.7rem;
-    flex-wrap: wrap;
+}
+
+/* アイコン + テキスト(名前/説明) を横並び。アイコンが両行の高さに渡って左に立つ */
+.bvh-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.bvh-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #4338ca;
+}
+.bvh-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    line-height: 1.15;
 }
 
 #current-bookshelf-title {
     margin: 0 !important;
-    font-size: 0.95rem !important;
+    /* 上段=本棚名 (ヘッダーの主役。約7割の視覚比重) */
+    font-size: 0.98rem !important;
+    font-weight: 600;
     color: var(--fg) !important;
     padding-bottom: 0 !important;
     border-bottom: none !important;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .bookshelf-view-description {
+    /* 下段=説明 (名前より小さい従属的な行。約3割) */
     color: var(--muted);
-    font-size: 0.78rem;
-    margin: 0;
-    flex: 1;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    margin: 0.05rem 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5060,6 +5075,20 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     -webkit-line-clamp: 6;
     overflow: hidden;
 }
+
+/* リスト表示: ホバーポップは小さな表紙ではなく行 (.book-item) 全体に重ねる。
+   .book-item は position:relative なので、行の直下に置いた .card-hover-pop が行を覆う。 */
+.bookshelf.view-list .card-hover-pop {
+    inset: 0;
+    max-height: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding: 0.5rem 0.9rem;
+    border-radius: 8px;
+}
+.bookshelf.view-list .card-hover-pop .pop-stars { justify-content: flex-start; flex: 0 0 auto; }
+.bookshelf.view-list .card-hover-pop .pop-memo { -webkit-line-clamp: 2; flex: 1 1 auto; text-align: left; }
 /* ポップアップ内の星は暗背景用 (overlay と同じ白縁取り。stars-overlay クラスで適用済) */
 
 .rating-reset {

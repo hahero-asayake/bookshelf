@@ -1326,6 +1326,10 @@ class VirtualBookshelf {
             ? `<div class="book-memo pop-memo">${this.formatMemoForDisplay(listMemo, 160)}</div>` : '';
         const hoverPop = (popStars || popMemo)
             ? `<div class="card-hover-pop">${popStars}${popMemo}</div>` : '';
+        // 表紙表示: ポップは表紙 (.book-cover-container) に重ねる。
+        // リスト表示: 表紙が小さいので行 (.book-item) 全体に重ねる (CSS で位置を分岐)。
+        const coverHoverPop = isCoverView ? hoverPop : '';
+        const rowHoverPop = isCoverView ? '' : hoverPop;
 
         const placeholderHtml = isCoverView
             ? `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
@@ -1347,7 +1351,7 @@ class VirtualBookshelf {
                         }
                     </div>
                     ${overlayAlwaysStars}
-                    ${hoverPop}
+                    ${coverHoverPop}
                 </div>
                 <div class="book-info">
                     <div class="book-title">${this.escapeHtml(book.title)}</div>
@@ -1355,6 +1359,7 @@ class VirtualBookshelf {
                     ${belowAlwaysStars}
                     ${alwaysMemo}
                 </div>
+                ${rowHoverPop}
             `;
         
         // Add drag event listeners
@@ -5004,6 +5009,7 @@ class VirtualBookshelf {
     _updateBookshelfViewTitle() {
         const titleEl = document.getElementById('current-bookshelf-title');
         const descEl = document.getElementById('current-bookshelf-desc');
+        const iconEl = document.getElementById('current-bookshelf-icon');
         if (!titleEl) return;
         const id = this.currentBookshelf;
         // currentBookshelf は slug が入る場合と internalId が入る場合の両方がある (router 経由など)
@@ -5019,12 +5025,13 @@ class VirtualBookshelf {
             title = '全ての本';
             desc = '除外していない全ての蔵書';
         }
+        // アイコンは名前(上)＋説明(下)の左に立ててヘッダー高さに渡す (icon 左 / text 右の縦積み)
         const effectiveTitleIcon = (bs && bs.iconName) || 'library';
-        const iconSvg = window.renderIcon(effectiveTitleIcon, { size: 22 });
-        const safeTitle = this._escapeAttr(title);
-        const safeIconAttr = this._escapeAttr(effectiveTitleIcon);
-        // section-title 内に icon + text。span ではなく flex 親で揃える
-        titleEl.innerHTML = `<span class="bs-title-icon" data-icon-value="${safeIconAttr}" style="display:inline-flex;align-items:center;vertical-align:middle;margin-right:0.5rem;color:#4338ca;">${iconSvg}</span><span class="bs-title-text">${safeTitle}</span>`;
+        if (iconEl) {
+            iconEl.dataset.iconValue = effectiveTitleIcon;
+            iconEl.innerHTML = window.renderIcon(effectiveTitleIcon, { size: 26 });
+        }
+        titleEl.textContent = title;
         if (descEl) {
             descEl.textContent = desc;
             descEl.style.display = desc ? '' : 'none';
