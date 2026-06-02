@@ -3374,6 +3374,7 @@ class VirtualBookshelf {
 
             this._lastSyncOk = true;
             this.updateSyncStatus('synced', this._syncLabel());
+            if (this.pluginAPI) this.pluginAPI._emit('sync:completed', {});
         } catch (e) {
             console.error('同期エラー:', e);
             this.updateSyncStatus('reconnect', this._syncLabel());
@@ -5356,12 +5357,15 @@ class VirtualBookshelf {
             isPublic: isPublicInput.checked
         };
 
+        let _emitCreated = null, _emitUpdated = null;
         try {
             if (this.currentEditingBookshelf) {
                 const editing = this.currentEditingBookshelf;
                 const editKey = this.bookshelfManager._keyOf(editing);
+                const _prevMeta = { ...editing };
                 // 親以外のフィールドを更新 (parent は meta に含めず update では触らない)
                 this.bookshelfManager.update(editKey, meta);
+                _emitUpdated = { prev: _prevMeta, key: editKey };
                 // 親変更は確認ダイアログ + 本の補充フロー経由 (H2-2 と共用)。
                 // ルートを表す値 (null/''/allInternalId/'all') は正規化して比較し、
                 // 親が実際に変わった時だけ確認を出す (無変更編集で警告が出るのを防ぐ)。
@@ -5376,7 +5380,8 @@ class VirtualBookshelf {
                     await this.bookshelfManager.rename(editKey, slug);
                 }
             } else {
-                this.bookshelfManager.create({ ...meta, parent: parentId || undefined });
+                const created = this.bookshelfManager.create({ ...meta, parent: parentId || undefined });
+                _emitCreated = created || { ...meta, id: slug };
             }
         } catch (e) {
             alert(`❌ ${e.message}`);
@@ -5384,6 +5389,14 @@ class VirtualBookshelf {
         }
 
         await this.saveUserData();
+        // プラグイン通知 (保存確定後)
+        if (this.pluginAPI) {
+            if (_emitCreated) this.pluginAPI._emit('bookshelf:created', { meta: _emitCreated });
+            if (_emitUpdated) {
+                const cur = this.bookshelfManager.getBySlug(slug) || this.bookshelfManager.getByInternalId(_emitUpdated.key);
+                this.pluginAPI._emit('bookshelf:updated', { meta: cur ? { ...cur } : { ...meta }, prev: _emitUpdated.prev });
+            }
+        }
         this.updateBookshelfSelector();    // popover + サイドバーツリー再描画
         this.renderBookshelfList();        // 本棚管理モーダル
         this.renderBookshelfOverview();    // ホーム本棚カード
@@ -5409,8 +5422,10 @@ class VirtualBookshelf {
         const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf) return;
 
+        let _removedTargets = [];
         const result = await this.bookshelfManager.remove(bookshelf.internalId, {
             confirmCallback: async (targets) => {
+                _removedTargets = targets.slice();
                 if (targets.length === 1) {
                     return confirm(`📚 本棚「${bookshelf.name}」を削除しますか？\n\n⚠️ この操作は取り消せません。`);
                 }
@@ -5422,6 +5437,13 @@ class VirtualBookshelf {
         if (!result) return;
 
         await this.saveUserData();
+        // プラグイン通知: 削除された本棚 (カスケード分も含む)
+        if (this.pluginAPI) {
+            const removed = _removedTargets.length ? _removedTargets : [bookshelf];
+            for (const t of removed) {
+                this.pluginAPI._emit('bookshelf:removed', { internalId: t.internalId, meta: { ...t } });
+            }
+        }
         this.updateBookshelfSelector();
         this.renderBookshelfList();
 
@@ -5632,6 +5654,7 @@ class VirtualBookshelf {
         this.books = this.bookManager.getAllBooks();
 
         await this.saveUserData();
+        if (this.pluginAPI) this.pluginAPI._emit('book:removed', { asin, reason: 'excluded' });
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
@@ -5666,6 +5689,7 @@ class VirtualBookshelf {
         }
 
         await this.saveUserData();
+        if (book && this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...book }, reason: 'unexcluded' });
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
@@ -5996,6 +6020,7 @@ class VirtualBookshelf {
             }
 
             await this.saveUserData();
+            if (this.pluginAPI) this.pluginAPI._emit('book:removed', { asin, reason: 'deleted' });
 
             // 表示を更新
             this.books = this.bookManager.getAllBooks();
@@ -6900,6 +6925,7 @@ class VirtualBookshelf {
             // 表示を更新
             this.books = this.bookManager.getAllBooks();
             this.saveUserData();
+            if (this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...newBook } });
             this.applyFilters();
             this.updateStats();
 
@@ -6931,7 +6957,12 @@ class VirtualBookshelf {
      * 蔵書データをエクスポート
      */
     exportUnifiedData() {
-        const exportData = this.buildExportData();
+        let exportData = this.buildExportData();
+        // プラグインのエクスポート変換フック (export:before → transforms → export:after)
+        if (this.pluginAPI) {
+            this.pluginAPI._emit('export:before', { state: exportData });
+            exportData = this.pluginAPI._runExportTransforms(exportData) || exportData;
+        }
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -6941,6 +6972,7 @@ class VirtualBookshelf {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        if (this.pluginAPI) this.pluginAPI._emit('export:after', { result: exportData });
         alert('📦 library.json をエクスポートしました！');
     }
 
