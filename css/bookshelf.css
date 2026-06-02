@@ -463,6 +463,10 @@ body.right-collapsed  { --right-col: 0px; }
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* Phase H2-7: 仮想化の行実測で可視行高が変わるとブラウザのスクロール
+       アンカリングが scrollTop を補正し、再描画→再計測→再補正のカスケードで
+       スクロールが暴走する。位置は仮想化側で管理するのでアンカリングは切る。 */
+    overflow-anchor: none;
 }
 
 /* Dashboard 内側余白 */
@@ -2424,6 +2428,22 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: flex;
     flex-direction: column;
     gap: 2rem;
+}
+
+/* Phase H2-7: 仮想化モード — host は grid を解いて block にし、可視行 (.v-row) と
+   上下スペーサー (.v-spacer) だけを置く。size-/view- クラスは host に残すので
+   --book-width 等の変数と view-list の本アイテム装飾はそのまま継承される。 */
+.bookshelf.virtual-host {
+    display: block !important;
+    gap: 0;
+}
+.bookshelf.virtual-host .v-spacer {
+    width: 100%;
+    flex: none;
+}
+.bookshelf.virtual-host .v-row {
+    display: grid;
+    align-items: start;
 }
 
 /* Book Item Styles */
