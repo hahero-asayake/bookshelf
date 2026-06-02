@@ -11,6 +11,7 @@
 //   book:added       { book }
 //   book:updated     { book, prev }
 //   book:removed     { asin }
+//   books:changed    {}                       同期完了などで蔵書配列が差し替わった
 //   bookshelf:created { meta }
 //   bookshelf:updated { meta, prev }
 //   bookshelf:removed { internalId }
@@ -18,8 +19,16 @@
 //   export:before    { state }
 //   export:after     { result }
 //   sync:completed   {}
-//   ui:bookshelf-rendered { internalId }
-//   ui:book-modal-opened  { asin }
+//   ui:books-rendered      { view }           本一覧の描画完了 (view 系プラグイン用)
+//   ui:book-detail-rendered { asin, book, container }  本詳細ペイン描画完了 (推奨)
+//   ui:book-modal-opened   { asin }           [非推奨] ui:book-detail-rendered の別名
+//
+// 拡張レジストリ (forPlugin スコープ API):
+//   registerCommand({ id, title, icon, keywords, run })  ⌘K パレットにコマンド追加
+//   registerWidget({ id, label, icon, defaultSpan, allowedSpans, render })  ダッシュボードに widget 追加
+//   registerDetailSection({ id, render })  本詳細ペインにセクション追加 (render(host, book, ctx))
+//   injectCSS(id, css) / removeCSS(id)     スコープ付き <style> 注入 (unload で自動除去)
+//   registerBookFilter(fn) / registerExportTransform(fn)  蔵書フィルタ / エクスポート変換
 
 class PluginEventBus {
     constructor() {
@@ -57,7 +66,9 @@ class BookshelfPluginAPI {
         this._uiButtons = []; // { id, where, label, onClick, element, _pluginId }
         this._exportTransforms = []; // { fn, _pluginId }
         this._bookFilters = []; // fn(books) => filteredBooks。applyFilters 内で順次適用
-        // pluginId → { eventHandlers: [{ event, handler }], uiButtonIds: Set, exportTransforms: [fn], bookFilters: [fn] }
+        this._commands = [];      // { id, title, icon, keywords, run, pluginId } ⌘K パレット
+        this._detailSections = []; // { id, render, pluginId } 本詳細ペインのセクション
+        // pluginId → 登録トラッキング (unregister で一括解除)
         this._pluginRegistrations = new Map();
     }
 
@@ -73,7 +84,11 @@ class BookshelfPluginAPI {
                 eventHandlers: [],
                 uiButtonIds: new Set(),
                 exportTransforms: [],
-                bookFilters: []
+                bookFilters: [],
+                commandIds: new Set(),
+                widgetIds: new Set(),
+                detailSectionIds: new Set(),
+                styleIds: new Set()
             });
         }
         const reg = this._pluginRegistrations.get(pluginId);
@@ -114,6 +129,33 @@ class BookshelfPluginAPI {
                 self.registerBookFilter(fn);
                 reg.bookFilters.push(fn);
             },
+            registerCommand: (opts) => {
+                const entry = self.registerCommand(opts, pluginId);
+                if (entry) reg.commandIds.add(entry.id);
+                return entry;
+            },
+            removeCommand: (id) => { self.removeCommand(id); reg.commandIds.delete(id); },
+            registerWidget: (opts) => {
+                const id = self.registerWidget(opts, pluginId);
+                if (id) reg.widgetIds.add(id);
+                return id;
+            },
+            removeWidget: (id) => { self.removeWidget(id); reg.widgetIds.delete(id); },
+            registerDetailSection: (opts) => {
+                const entry = self.registerDetailSection(opts, pluginId);
+                if (entry) reg.detailSectionIds.add(entry.id);
+                return entry;
+            },
+            removeDetailSection: (id) => { self.removeDetailSection(id); reg.detailSectionIds.delete(id); },
+            injectCSS: (id, css) => {
+                const styleId = self.injectCSS(id, css, pluginId);
+                if (styleId) reg.styleIds.add(styleId);
+                return styleId;
+            },
+            removeCSS: (id) => {
+                const styleId = self.removeCSS(id, pluginId);
+                if (styleId) reg.styleIds.delete(styleId);
+            },
             writePluginFile: (rel, text) => self.writePluginFile(pluginId, rel, text),
             readPluginFile: (rel) => self.readPluginFile(pluginId, rel)
         };
@@ -137,6 +179,21 @@ class BookshelfPluginAPI {
         }
         if (reg.bookFilters && reg.bookFilters.length > 0) {
             this._bookFilters = this._bookFilters.filter(fn => !reg.bookFilters.includes(fn));
+        }
+        if (reg.commandIds) {
+            for (const id of reg.commandIds) this.removeCommand(id);
+        }
+        if (reg.widgetIds) {
+            for (const id of reg.widgetIds) this.removeWidget(id);
+        }
+        if (reg.detailSectionIds) {
+            for (const id of reg.detailSectionIds) this.removeDetailSection(id);
+        }
+        if (reg.styleIds) {
+            for (const styleId of reg.styleIds) {
+                const el = document.getElementById(styleId);
+                if (el) el.remove();
+            }
         }
         this._pluginRegistrations.delete(pluginId);
     }
@@ -288,6 +345,124 @@ class BookshelfPluginAPI {
         btn.textContent = entry.emoji || '🧩';
     }
 
+    // ===== コマンド登録 (⌘K パレット) =====
+    // { id, title, icon?, keywords?, run } — run() 実行時はパレットを閉じてから呼ばれる
+    registerCommand({ id, title, icon, keywords, run } = {}, pluginId = this._pluginId) {
+        if (!id || !title || typeof run !== 'function') {
+            console.warn('[pluginAPI] registerCommand: id, title, run are required');
+            return null;
+        }
+        if (this._commands.find(c => c.id === id)) return null;
+        const entry = { id, title, icon: icon || 'puzzle', keywords: keywords || '', run, pluginId };
+        this._commands.push(entry);
+        return entry;
+    }
+    removeCommand(id) {
+        this._commands = this._commands.filter(c => c.id !== id);
+    }
+    /** bookshelf 側パレットが読む: プラグイン登録コマンド一覧 */
+    getPluginCommands() {
+        return this._commands.slice();
+    }
+
+    // ===== ダッシュボード widget 登録 =====
+    // { id, label, icon?, defaultSpan?, allowedSpans?, render(host, app, config) }
+    // dashboard._registry に live で差し込み、ホーム表示中なら再描画する。
+    registerWidget({ id, label, icon, defaultSpan, allowedSpans, render } = {}, pluginId = this._pluginId) {
+        if (!id || typeof render !== 'function') {
+            console.warn('[pluginAPI] registerWidget: id, render(host, app, config) are required');
+            return null;
+        }
+        const dash = this._app.dashboard;
+        if (!dash || !dash._registry) {
+            console.warn('[pluginAPI] registerWidget: dashboard 未初期化');
+            return null;
+        }
+        // プラグイン widget であることを示すフラグ付きで登録
+        dash._registry[id] = {
+            label: label || id,
+            icon: icon || 'puzzle',
+            defaultSpan: defaultSpan || 6,
+            allowedSpans: Array.isArray(allowedSpans) ? allowedSpans : [3, 4, 6, 8, 12],
+            plugin: true,
+            pluginId,
+            render(host, app, config) {
+                try { render(host, app, config); }
+                catch (e) { console.error(`[plugin widget "${id}"]`, e); host.textContent = 'widget エラー'; }
+            }
+        };
+        this._rerenderDashboardIfHome();
+        return id;
+    }
+    removeWidget(id) {
+        const dash = this._app.dashboard;
+        if (dash && dash._registry && dash._registry[id]) {
+            delete dash._registry[id];
+            this._rerenderDashboardIfHome();
+        }
+    }
+    _rerenderDashboardIfHome() {
+        const dash = this._app.dashboard;
+        if (dash && typeof dash.render === 'function' && document.getElementById('dashboard')) {
+            try { dash.render(); } catch (_) {}
+        }
+    }
+
+    // ===== 本詳細ペインのセクション登録 =====
+    // { id, render(host, book, ctx) } — showBookDetail のたびに呼ばれる。host は本棚ごとに再生成。
+    registerDetailSection({ id, render } = {}, pluginId = this._pluginId) {
+        if (!id || typeof render !== 'function') {
+            console.warn('[pluginAPI] registerDetailSection: id, render(host, book, ctx) are required');
+            return null;
+        }
+        if (this._detailSections.find(s => s.id === id)) return null;
+        const entry = { id, render, pluginId };
+        this._detailSections.push(entry);
+        return entry;
+    }
+    removeDetailSection(id) {
+        this._detailSections = this._detailSections.filter(s => s.id !== id);
+        // 既に描画済みの DOM があれば除去
+        document.querySelectorAll(`.plugin-detail-section[data-plugin-section="${id}"]`).forEach(el => el.remove());
+    }
+    /** bookshelf 側 showBookDetail から呼ばれる: 登録セクションを container に描画 */
+    _runDetailSections(container, book) {
+        if (!container || !this._detailSections.length) return;
+        for (const s of this._detailSections) {
+            let host = container.querySelector(`.plugin-detail-section[data-plugin-section="${s.id}"]`);
+            if (!host) {
+                host = document.createElement('div');
+                host.className = 'plugin-detail-section';
+                host.dataset.pluginSection = s.id;
+                container.appendChild(host);
+            }
+            host.innerHTML = '';
+            try { s.render(host, book, { app: this._app, asin: book && book.asin }); }
+            catch (e) { console.error(`[plugin detailSection "${s.id}"]`, e); }
+        }
+    }
+
+    // ===== スコープ付き CSS 注入 =====
+    // id はプラグイン内で一意。<style id="plugin-style-<pluginId>-<id>"> を head に注入/更新。
+    injectCSS(id, css, pluginId = this._pluginId) {
+        if (!id) { console.warn('[pluginAPI] injectCSS: id required'); return null; }
+        const styleId = `plugin-style-${pluginId}-${id}`;
+        let el = document.getElementById(styleId);
+        if (!el) {
+            el = document.createElement('style');
+            el.id = styleId;
+            document.head.appendChild(el);
+        }
+        el.textContent = css || '';
+        return styleId;
+    }
+    removeCSS(id, pluginId = this._pluginId) {
+        const styleId = `plugin-style-${pluginId}-${id}`;
+        const el = document.getElementById(styleId);
+        if (el) el.remove();
+        return styleId;
+    }
+
     // ===== エクスポート変換フック =====
     // fn: (state) => state  ※ state は exporter が組み立て中の構造
     registerExportTransform(fn) {
@@ -322,22 +497,32 @@ class BookshelfPluginAPI {
     }
 
     // ===== ストレージ補助 =====
-    // プラグインが同期フォルダに任意ファイルを書きたい場合のヘルパー
+    // プラグインが同期先に任意ファイルを書きたい場合のヘルパー。
+    // storage adapter 経由なので LocalFS / GitHub どちらでも動く。
     // 制限: plugins/<pluginId>/data/ 配下のみ許可
+    _isStorageReady() {
+        return typeof this._app._isSyncReady === 'function' && this._app._isSyncReady();
+    }
     async writePluginFile(pluginId, relPath, text) {
         if (!pluginId || !relPath) throw new Error('pluginId と relPath が必要です');
         if (relPath.includes('..')) throw new Error('相対パスに .. は不可');
-        if (!this._app.obsidianDirHandle) throw new Error('同期フォルダ未接続');
-        const storage = this._app.storage;
-        await storage._writeText(text, 'plugins', pluginId, 'data', ...relPath.split('/'));
+        if (!this._isStorageReady()) throw new Error('同期先が未接続です');
+        const path = `plugins/${pluginId}/data/${relPath}`;
+        await this._app.storage.syncBatch(
+            [{ op: 'put', path, data: String(text == null ? '' : text), kind: 'text' }],
+            { message: `chore(plugin): ${pluginId} data write` }
+        );
     }
 
     async readPluginFile(pluginId, relPath) {
         if (!pluginId || !relPath) throw new Error('pluginId と relPath が必要です');
         if (relPath.includes('..')) throw new Error('相対パスに .. は不可');
-        if (!this._app.obsidianDirHandle) return null;
-        const storage = this._app.storage;
-        return await storage._readText('plugins', pluginId, 'data', ...relPath.split('/'));
+        if (!this._isStorageReady()) return null;
+        try {
+            return await this._app.storage.readText(`plugins/${pluginId}/data/${relPath}`);
+        } catch (_) {
+            return null;
+        }
     }
 }
 

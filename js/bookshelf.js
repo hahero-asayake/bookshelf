@@ -855,10 +855,23 @@ class VirtualBookshelf {
 
         const matches = (text) => !q || (text || '').toLowerCase().includes(q);
 
-        // 1) コマンド
+        // 1) コマンド (組み込み)
         for (const cmd of this._paletteCommands()) {
             if (matches(cmd.title) || matches(cmd.keywords)) {
                 items.push({ group: 'コマンド', icon: cmd.icon, title: cmd.title, sub: '', run: cmd.run });
+            }
+        }
+
+        // 1b) プラグイン登録コマンド
+        if (this.pluginAPI && typeof this.pluginAPI.getPluginCommands === 'function') {
+            for (const cmd of this.pluginAPI.getPluginCommands()) {
+                if (matches(cmd.title) || matches(cmd.keywords)) {
+                    items.push({
+                        group: 'プラグイン', icon: cmd.icon || 'puzzle', iconValue: cmd.icon,
+                        title: cmd.title, sub: '',
+                        run: () => { this._closePalette(); try { cmd.run(); } catch (e) { console.error(`[plugin command "${cmd.id}"]`, e); } }
+                    });
+                }
             }
         }
 
@@ -1280,6 +1293,8 @@ class VirtualBookshelf {
             frag.appendChild(this.createBookElement(book, this.currentView));
         }
         container.appendChild(frag);
+        // view 系プラグイン用: 一覧描画完了を通知
+        if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView });
     }
 
     createBookElement(book, displayType) {
@@ -2040,7 +2055,13 @@ class VirtualBookshelf {
         }
         
         // modal は使わず右ペインに表示する (PC v2)
-        if (this.pluginAPI) this.pluginAPI._emit('ui:book-modal-opened', { asin: book.asin });
+        // プラグインの本詳細セクションを描画 + イベント発火
+        if (this.pluginAPI) {
+            this.pluginAPI._runDetailSections(modalBody, book);
+            this.pluginAPI._emit('ui:book-detail-rendered', { asin: book.asin, book, container: modalBody });
+            // [非推奨] 旧名 (互換用): #book-modal を前提とした旧プラグインは動かないが名前は残す
+            this.pluginAPI._emit('ui:book-modal-opened', { asin: book.asin });
+        }
     }
 
     closeModal() {

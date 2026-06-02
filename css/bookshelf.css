@@ -3722,6 +3722,16 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: none !important;
 }
 
+/* プラグインが本詳細ペインに差し込むセクション (registerDetailSection) */
+.plugin-detail-section {
+    margin-top: 0.9rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--line, #e5e7eb);
+}
+.plugin-detail-section:empty {
+    display: none;
+}
+
 /* ===== Header (V6: square icon buttons, popovers) ===== */
 .header-controls {
     display: flex;
