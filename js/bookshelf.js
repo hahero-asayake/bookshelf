@@ -1268,194 +1268,18 @@ class VirtualBookshelf {
             });
         }
         
-        // Phase H2-5: ページネーション廃止。全件を 1 リストで描画し、D&D 並び替えで
-        // ページを跨げない問題を解消する (画像は lazy ローダで遅延読込)。
-        // Phase H2-7 (仮想化): 大量本棚 (ALL 等) は行ウィンドウ仮想化で可視行＋前後
-        // バッファのみ DOM 化する。閾値以下や非グリッド表示は従来通り全件描画。
-        const VIRTUAL_THRESHOLD = 250;
-        const isGridView = (this.currentView === 'covers' || this.currentView === 'list');
-        if (booksToRender.length <= VIRTUAL_THRESHOLD || !isGridView) {
-            this._teardownVirtual();
-            const frag = document.createDocumentFragment();
-            booksToRender.forEach(book => {
-                frag.appendChild(this.createBookElement(book, this.currentView));
-            });
-            container.appendChild(frag);
-            return;
-        }
-        this._renderVirtualized(container, booksToRender);
-    }
-
-    // ===== Phase H2-7: 本一覧の行ウィンドウ仮想化 =====
-    // メモ有無で行高が変わる (可変高さ) ため、行ごとに実測した高さを蓄えて
-    // prefix-sum でスクロール位置 ↔ 行を対応付ける。各「行」は cols 個の本を
-    // 持つ独立した grid 要素にして、行高の実測を offsetHeight 1 発で済ませる。
-    _renderVirtualized(host, items) {
-        this._teardownVirtual();
-        host.classList.add('virtual-host');
-
-        const scroller = this._bookScrollContainer();
-        if (!scroller) {
-            // スクロール容器が取れない異常時は全件描画にフォールバック
-            const frag = document.createDocumentFragment();
-            items.forEach(b => frag.appendChild(this.createBookElement(b, this.currentView)));
-            host.appendChild(frag);
-            return;
-        }
-
-        const isList = (this.currentView === 'list');
-        const gapPx = isList ? 8 : 24; // .bookshelf gap: list 0.5rem / covers 1.5rem
-
-        const top = document.createElement('div'); top.className = 'v-spacer';
-        const rowsWrap = document.createElement('div'); rowsWrap.className = 'v-rows';
-        const bottom = document.createElement('div'); bottom.className = 'v-spacer';
-        host.appendChild(top); host.appendChild(rowsWrap); host.appendChild(bottom);
-
-        const cols = this._computeCols(host, isList);
-        const rowCount = Math.ceil(items.length / cols);
-
-        // 行高の初期推定 (実測で順次補正)
-        const sizeKey = this.userData.settings?.coverSize || 'medium';
-        const coverH = isList ? 80 : ({ small: 180, medium: 240, large: 300 }[sizeKey] || 240);
-        const estRow = (isList ? Math.max(coverH, 96) + 24 : coverH + 96) + gapPx;
-
-        const rowH = new Float64Array(rowCount); rowH.fill(estRow);
-
-        this._v = {
-            host, scroller, top, rowsWrap, bottom, items, cols, rowCount,
-            rowH, estRow, gapPx, isList,
-            prefix: null, total: 0,
-            range: { start: -1, end: -1 },
-            raf: 0, _lastW: host.clientWidth,
-        };
-        this._rebuildPrefix();
-
-        const onScroll = () => this._scheduleVirtualUpdate();
-        scroller.addEventListener('scroll', onScroll, { passive: true });
-        this._v.onScroll = onScroll;
-
-        if (window.ResizeObserver) {
-            const ro = new ResizeObserver(() => this._onVirtualResize());
-            ro.observe(scroller);
-            this._v.ro = ro;
-        }
-
-        this._renderVirtualWindow(true);
-    }
-
-    _computeCols(host, isList) {
-        if (isList) return 1;
-        const cs = getComputedStyle(host);
-        const width = host.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
-        const sizeKey = this.userData.settings?.coverSize || 'medium';
-        const minW = ({ small: 120, medium: 160, large: 200 }[sizeKey]) || 160;
-        const gap = 24;
-        return Math.max(1, Math.floor((width + gap) / (minW + gap)));
-    }
-
-    _rebuildPrefix() {
-        const v = this._v; if (!v) return;
-        const n = v.rowCount;
-        const p = new Float64Array(n + 1);
-        for (let i = 0; i < n; i++) p[i + 1] = p[i] + v.rowH[i];
-        v.prefix = p;
-        v.total = p[n];
-    }
-
-    // prefix[r] <= y を満たす最大の r (= オフセット y を含む行)。
-    _rowAt(y) {
-        const v = this._v; const p = v.prefix;
-        if (y <= 0) return 0;
-        let lo = 0, hi = v.rowCount;
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (p[mid] <= y) lo = mid + 1; else hi = mid; }
-        return Math.max(0, lo - 1);
-    }
-
-    _scheduleVirtualUpdate() {
-        const v = this._v; if (!v || v.raf) return;
-        v.raf = requestAnimationFrame(() => { v.raf = 0; this._renderVirtualWindow(false); });
-    }
-
-    _renderVirtualWindow(force) {
-        const v = this._v; if (!v) return;
-        const sRect = v.scroller.getBoundingClientRect();
-        const hRect = v.host.getBoundingClientRect();
-        const viewTop = sRect.top - hRect.top;          // host ローカル座標でのビューポート上端
-        const viewH = v.scroller.clientHeight;
-        const over = Math.max(400, viewH);              // 前後バッファ
-        let start = this._rowAt(viewTop - over);
-        let end = this._rowAt(viewTop + viewH + over) + 1;
-        start = Math.max(0, Math.min(start, v.rowCount - 1));
-        end = Math.max(start + 1, Math.min(end, v.rowCount));
-        if (!force && start === v.range.start && end === v.range.end) return;
-        v.range = { start, end };
-
+        // Phase H2-5: ページネーション廃止。全件を 1 リストで描画 (D&D がページを跨げる)。
+        // Phase H2-7 改 (仮想化撤去 + content-visibility): JS 仮想化はスクロール時の再描画で
+        // カクつくため廃止。画面外カードを CSS の content-visibility:auto (css: .book-item) で
+        // ブラウザがレイアウト/描画を自動スキップ → ALL 約2400冊でも初期レイアウトが激減し、
+        // スクロールも JS を介さずネイティブで滑らか。一括描画のままで OK。
+        // ※ ソフトウェアレンダリング環境 (CI のヘッドレス等) では cv+大量要素でレンダラが
+        //   詰まることがあるが、GPU 有効の実ブラウザでは問題なし。
         const frag = document.createDocumentFragment();
-        for (let r = start; r < end; r++) frag.appendChild(this._buildVRow(r));
-        v.rowsWrap.textContent = '';
-        v.rowsWrap.appendChild(frag);
-
-        v.top.style.height = v.prefix[start] + 'px';
-        v.bottom.style.height = Math.max(0, v.total - v.prefix[end]) + 'px';
-
-        this._measureVRows(start, end);
-    }
-
-    _buildVRow(r) {
-        const v = this._v;
-        const row = document.createElement('div');
-        row.className = 'v-row' + (v.isList ? ' v-row-list' : '');
-        row.style.gridTemplateColumns = v.isList ? '1fr' : `repeat(${v.cols}, minmax(0, 1fr))`;
-        row.style.columnGap = v.gapPx + 'px';
-        row.style.marginBottom = v.gapPx + 'px';
-        const s = r * v.cols;
-        const e = Math.min(v.items.length, s + v.cols);
-        for (let i = s; i < e; i++) row.appendChild(this.createBookElement(v.items[i], this.currentView));
-        return row;
-    }
-
-    // レンダ済み行の実高を計測し、推定とずれていれば prefix を作り直す。
-    // (start より前の行は計測済みで不変なので top スペーサーは動かない=最上部のジャンプ無し)
-    _measureVRows(start, end) {
-        const v = this._v; if (!v) return;
-        const children = v.rowsWrap.children;
-        let changed = false;
-        for (let k = 0; k < children.length; k++) {
-            const r = start + k;
-            if (r >= v.rowCount) break;
-            const h = children[k].offsetHeight + v.gapPx; // marginBottom(=gap) を行送りに加算
-            if (Math.abs(h - v.rowH[r]) > 0.5) { v.rowH[r] = h; changed = true; }
+        for (const book of booksToRender) {
+            frag.appendChild(this.createBookElement(book, this.currentView));
         }
-        if (changed) {
-            this._rebuildPrefix();
-            v.top.style.height = v.prefix[start] + 'px';
-            v.bottom.style.height = Math.max(0, v.total - v.prefix[end]) + 'px';
-        }
-    }
-
-    _onVirtualResize() {
-        const v = this._v; if (!v) return;
-        const w = v.host.clientWidth;
-        if (w === v._lastW) return;   // 高さ変化のみは無視 (cols は幅で決まる)
-        v._lastW = w;
-        const newCols = this._computeCols(v.host, v.isList);
-        if (newCols !== v.cols) {
-            v.cols = newCols;
-            v.rowCount = Math.ceil(v.items.length / newCols);
-            v.rowH = new Float64Array(v.rowCount); v.rowH.fill(v.estRow);
-            this._rebuildPrefix();
-        }
-        v.range = { start: -1, end: -1 };
-        this._renderVirtualWindow(true);
-    }
-
-    _teardownVirtual() {
-        const v = this._v; if (!v) return;
-        if (v.onScroll && v.scroller) v.scroller.removeEventListener('scroll', v.onScroll);
-        if (v.ro) v.ro.disconnect();
-        if (v.raf) cancelAnimationFrame(v.raf);
-        if (v.host) v.host.classList.remove('virtual-host');
-        this._v = null;
+        container.appendChild(frag);
     }
 
     createBookElement(book, displayType) {
@@ -7367,6 +7191,10 @@ class VirtualBookshelf {
 // Lazy Loading for Images
 class LazyLoader {
     constructor() {
+        // 既に observe 済みの img を覚えておき、再スキャン時の二重 observe を避ける。
+        // content-visibility:auto の画面外カードは交差しないので .lazy のまま残り、
+        // observe() が呼ばれるたびに querySelectorAll に再ヒットするため必須。
+        this._observed = new WeakSet();
         this.observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach(entry => {
@@ -7375,17 +7203,21 @@ class LazyLoader {
                         img.src = img.dataset.src;
                         img.classList.remove('lazy');
                         this.observer.unobserve(img);
+                        this._observed.delete(img);
                     }
                 });
             },
-            { rootMargin: '50px' }
+            { rootMargin: '200px' }   // 画面手前で先読みしてスクロール時の表紙ポップインを抑える
         );
     }
 
     observe() {
-        document.querySelectorAll('.lazy').forEach(img => {
+        const imgs = document.querySelectorAll('img.lazy');
+        for (const img of imgs) {
+            if (this._observed.has(img)) continue;   // 二重 observe を防ぐ
+            this._observed.add(img);
             this.observer.observe(img);
-        });
+        }
     }
 }
 
@@ -7428,9 +7260,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Bookshelf management event listeners are handled in setupEventListeners
 
-    // Set up mutation observer to handle dynamically added images
+    // Set up mutation observer to handle dynamically added images.
+    // 分割追記 (チャンクレンダ) で大量の childList mutation が連発するので、
+    // rAF で 1 フレーム 1 回に束ねる (毎 mutation で全 DOM 再スキャンすると重い)。
+    let lazyScanScheduled = false;
     const mutationObserver = new MutationObserver(() => {
-        window.lazyLoader.observe();
+        if (lazyScanScheduled) return;
+        lazyScanScheduled = true;
+        requestAnimationFrame(() => {
+            lazyScanScheduled = false;
+            window.lazyLoader.observe();
+        });
     });
 
     mutationObserver.observe(document.getElementById('bookshelf'), {
