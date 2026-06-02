@@ -5058,7 +5058,15 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     backdrop-filter: none;
 }
 .bookshelf.view-list .card-hover-pop .pop-stars { justify-content: flex-start; flex: 0 0 auto; align-self: flex-end; }
-.bookshelf.view-list .card-hover-pop .pop-memo { -webkit-line-clamp: 2; flex: 1 1 auto; text-align: left; }
+/* height:auto で上書き。view-list .book-memo の固定高さ(2行分)が効くと 1 行メモでも
+   ブロックが 2 行ぶんになりテキストが上端に残って下詰めにならないため。 */
+.bookshelf.view-list .card-hover-pop .pop-memo {
+    -webkit-line-clamp: 2;
+    flex: 1 1 auto;
+    text-align: left;
+    height: auto;
+    align-self: flex-end;
+}
 /* ポップアップ内の星は暗背景用 (overlay と同じ白縁取り。stars-overlay クラスで適用済) */
 
 .rating-reset {
