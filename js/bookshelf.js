@@ -1540,10 +1540,24 @@ class VirtualBookshelf {
             bookOrder.push(draggedASIN);
         }
 
+        // 同期(GitHub/ローカルFS)の正本は各本棚の books 配列 (<slug>.json / all.json)。
+        // 読込時は bookOrder[slug] = books 配列から復元されるため、並び替えを books 配列へも
+        // 反映しないと同期往復で順序が失われる (bookOrder[slug] は localStorage にしか残らない)。
+        const shelf = this.userData.bookshelves?.find(b => b.id === currentBookshelfId);
+        if (shelf && Array.isArray(shelf.books) && !shelf.isSpecial) {
+            const rank = new Map(bookOrder.map((a, i) => [a, i]));
+            shelf.books = [...shelf.books].sort((a, b) => {
+                const ra = rank.has(a) ? rank.get(a) : Infinity;
+                const rb = rank.has(b) ? rank.get(b) : Infinity;
+                return ra - rb;
+            });
+        }
+        // ALL は bookOrder.all が同期時に all.json.books へ書かれる (syncToObsidianFolder)。
+
         // Switch to custom order automatically when manually reordering
         this.sortOrder = 'custom';
         document.getElementById('sort-order').value = 'custom';
-        
+
         // Save and refresh display
         this.saveUserData();
         this.updateDisplay();
@@ -3596,7 +3610,7 @@ class VirtualBookshelf {
                 <span class="tree-icon" data-icon-value="${effectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>
                 <span class="tree-label" title="${bs.name}">${bs.name}</span>
                 <span class="tree-count">${bookCount}</span>
-                ${!bs.isSpecial ? `<button class="tree-more" type="button" title="本棚の操作 (編集 / 子追加 / 削除)">${window.renderIcon('more-horizontal', { size: 14 })}</button>` : ''}
+                <button class="tree-more" type="button" title="${bs.isSpecial ? '本棚の操作 (編集)' : '本棚の操作 (編集 / 子追加 / 削除)'}">${window.renderIcon('more-horizontal', { size: 14 })}</button>
                 ${hasChildren
                     ? `<button class="tree-toggle" type="button" title="${isExpanded ? '折りたたむ' : '展開'}">${window.renderIcon(toggleIconName, { size: 12 })}</button>`
                     : '<span class="tree-toggle-placeholder"></span>'}
@@ -3749,6 +3763,20 @@ class VirtualBookshelf {
         if (typeof this._updateBookshelfViewTitle === 'function') this._updateBookshelfViewTitle();
     }
 
+    // 親キーの正規化: 「ルート(ALL 直下)」を表す値 (null/''/undefined/'all'/ALL の internalId・slug)
+    // を全て null に畳む。同期時にルート本棚の parent が allInternalId で書かれるため、編集フォームの
+    // 親比較で null と allInternalId が食い違い、毎回 reparent 確認が出るのを防ぐ。
+    _normalizeParentKey(p) {
+        if (!p || p === 'all') return null;
+        const bm = this.bookshelfManager;
+        const allInternalId = (bm && bm.getAllInternalId && bm.getAllInternalId())
+            || this.userData?._storage?.allInternalId;
+        if (allInternalId && p === allInternalId) return null;
+        const all = bm && bm.getBySlug && bm.getBySlug('all');
+        if (all && (p === all.internalId || p === all.id)) return null;
+        return p;
+    }
+
     // 親変更を確認ダイアログ付きで適用 (ツリー D&D / 編集フォーム 共用)。成功で true。
     _applyReparentWithConfirm(internalId, newParentId) {
         const bm = this.bookshelfManager;
@@ -3784,7 +3812,10 @@ class VirtualBookshelf {
         const menu = document.createElement('div');
         menu.id = 'tree-node-menu';
         menu.className = 'tree-node-menu';
-        menu.innerHTML = `
+        // 特殊本棚(ALL)は編集のみ (slug/親はフォーム側でロック、削除・子追加は不可)
+        menu.innerHTML = bs.isSpecial
+            ? `<button type="button" data-act="edit">${ico('pencil')}<span>編集</span></button>`
+            : `
             <button type="button" data-act="edit">${ico('pencil')}<span>編集</span></button>
             <button type="button" data-act="add-child">${ico('plus')}<span>子本棚を追加</span></button>
             <button type="button" data-act="delete" class="is-danger">${ico('trash-2')}<span>削除</span></button>
@@ -3802,9 +3833,9 @@ class VirtualBookshelf {
         };
         const onOutside = (e) => { if (!menu.contains(e.target)) cleanup(); };
         const onKey = (e) => { if (e.key === 'Escape') cleanup(); };
-        menu.querySelector('[data-act="edit"]').addEventListener('click', () => { cleanup(); this.editBookshelf(bs.id); });
-        menu.querySelector('[data-act="add-child"]').addEventListener('click', () => { cleanup(); this.showBookshelfForm(null, bs.internalId); });
-        menu.querySelector('[data-act="delete"]').addEventListener('click', () => { cleanup(); this.deleteBookshelf(bs.id); });
+        menu.querySelector('[data-act="edit"]')?.addEventListener('click', () => { cleanup(); this.editBookshelf(bs.id); });
+        menu.querySelector('[data-act="add-child"]')?.addEventListener('click', () => { cleanup(); this.showBookshelfForm(null, bs.internalId); });
+        menu.querySelector('[data-act="delete"]')?.addEventListener('click', () => { cleanup(); this.deleteBookshelf(bs.id); });
         setTimeout(() => {
             document.addEventListener('click', onOutside, true);
             document.addEventListener('keydown', onKey, true);
@@ -5320,10 +5351,13 @@ class VirtualBookshelf {
                 const editKey = this.bookshelfManager._keyOf(editing);
                 // 親以外のフィールドを更新 (parent は meta に含めず update では触らない)
                 this.bookshelfManager.update(editKey, meta);
-                // 親変更は確認ダイアログ + 本の補充フロー経由 (H2-2 と共用)
-                const curParent = editing.parent || null;
-                if ((parentId || null) !== curParent) {
-                    this._applyReparentWithConfirm(editKey, parentId || null);
+                // 親変更は確認ダイアログ + 本の補充フロー経由 (H2-2 と共用)。
+                // ルートを表す値 (null/''/allInternalId/'all') は正規化して比較し、
+                // 親が実際に変わった時だけ確認を出す (無変更編集で警告が出るのを防ぐ)。
+                const curParent = this._normalizeParentKey(editing.parent);
+                const newParent = this._normalizeParentKey(parentId);
+                if (newParent !== curParent) {
+                    this._applyReparentWithConfirm(editKey, newParent);
                     // キャンセル時は親のみ据え置き (他フィールドは保存済み)
                 }
                 // slug 変更があれば rename（ファイル削除も走る）

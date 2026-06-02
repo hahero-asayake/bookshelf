@@ -5076,18 +5076,18 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     overflow: hidden;
 }
 
-/* リスト表示: ホバーポップは小さな表紙ではなく行 (.book-item) 全体に重ねる。
-   .book-item は position:relative なので、行の直下に置いた .card-hover-pop が行を覆う。 */
+/* リスト表示: ホバーポップは小さな表紙ではなく行 (.book-item) の「下のほう」に重ねる。
+   .book-item は position:relative。行下端に貼り付く帯にし、中身は下詰めにする。 */
 .bookshelf.view-list .card-hover-pop {
-    inset: 0;
-    max-height: none;
+    inset: auto 0 0 0;          /* 上 auto / 下端に貼り付く帯 (高さは中身ぶん) */
+    max-height: calc(100% - 4px);
     flex-direction: row;
-    align-items: center;
+    align-items: flex-end;      /* 文字下詰め */
     gap: 14px;
-    padding: 0.5rem 0.9rem;
-    border-radius: 8px;
+    padding: 0.35rem 0.9rem 0.4rem;
+    border-radius: 0 0 8px 8px; /* 行の下角に合わせる */
 }
-.bookshelf.view-list .card-hover-pop .pop-stars { justify-content: flex-start; flex: 0 0 auto; }
+.bookshelf.view-list .card-hover-pop .pop-stars { justify-content: flex-start; flex: 0 0 auto; align-self: flex-end; }
 .bookshelf.view-list .card-hover-pop .pop-memo { -webkit-line-clamp: 2; flex: 1 1 auto; text-align: left; }
 /* ポップアップ内の星は暗背景用 (overlay と同じ白縁取り。stars-overlay クラスで適用済) */
 
