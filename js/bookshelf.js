@@ -1503,60 +1503,46 @@ class VirtualBookshelf {
 
     reorderBooks(draggedASIN, targetASIN) {
         const currentBookshelfId = this.currentBookshelf || 'all';
-        
-        // Initialize bookOrder if it doesn't exist
-        if (!this.userData.bookOrder) {
-            this.userData.bookOrder = {};
-        }
-        if (!this.userData.bookOrder[currentBookshelfId]) {
-            this.userData.bookOrder[currentBookshelfId] = [];
-        }
+        if (!this.userData.bookOrder) this.userData.bookOrder = {};
 
-        let bookOrder = this.userData.bookOrder[currentBookshelfId];
-        
-        // If this is the first time ordering for this bookshelf, initialize with current filtered order
-        if (bookOrder.length === 0) {
-            bookOrder = this.filteredBooks.map(book => book.asin);
-            this.userData.bookOrder[currentBookshelfId] = bookOrder;
-        }
-
-        // Add dragged item if not in order yet
-        if (!bookOrder.includes(draggedASIN)) {
-            bookOrder.push(draggedASIN);
-        }
-
-        // Remove dragged item from current position
-        const draggedIndex = bookOrder.indexOf(draggedASIN);
-        if (draggedIndex !== -1) {
-            bookOrder.splice(draggedIndex, 1);
-        }
-
-        // Insert at new position (before target)
-        const targetIndex = bookOrder.indexOf(targetASIN);
-        if (targetIndex !== -1) {
-            bookOrder.splice(targetIndex, 0, draggedASIN);
-        } else {
-            // If target not found, add to end
-            bookOrder.push(draggedASIN);
-        }
-
-        // 同期(GitHub/ローカルFS)の正本は各本棚の books 配列 (<slug>.json / all.json)。
-        // 読込時は bookOrder[slug] = books 配列から復元されるため、並び替えを books 配列へも
-        // 反映しないと同期往復で順序が失われる (bookOrder[slug] は localStorage にしか残らない)。
+        // 二重管理の解消 (Phase H2-8 再): 並び順の「正本」を 1 つに統一する。
+        //   非ALL本棚 → shelf.books が正本 (同期 <slug>.json に書かれ、読込時 bookOrder[slug]=books に復元)
+        //   ALL       → bookOrder.all が正本 (同期 all.json.books に書かれる)
+        // 旧実装は描画用 bookOrder[slug] だけ更新し shelf.books を放置 → GitHub/ローカルFS の
+        // 読込で bookOrder[slug] が shelf.books に上書きされ並び替えが消えていた。
+        // ここでは「現在の表示順」を起点に移動を適用し、shelf.books と bookOrder[slug] の
+        // 両方へ同じ配列を書き戻して齟齬をゼロにする (初回の表示ジャンプも防ぐ)。
         const shelf = this.userData.bookshelves?.find(b => b.id === currentBookshelfId);
-        if (shelf && Array.isArray(shelf.books) && !shelf.isSpecial) {
-            const rank = new Map(bookOrder.map((a, i) => [a, i]));
-            shelf.books = [...shelf.books].sort((a, b) => {
-                const ra = rank.has(a) ? rank.get(a) : Infinity;
-                const rb = rank.has(b) ? rank.get(b) : Infinity;
-                return ra - rb;
-            });
+        const useShelfBooks = !!(shelf && !shelf.isSpecial);
+
+        // 起点 = 現在の表示順 (bookOrder[slug] があればそれ、無ければ filteredBooks)
+        const prev = this.userData.bookOrder[currentBookshelfId];
+        let order = (Array.isArray(prev) && prev.length)
+            ? [...prev]
+            : this.filteredBooks.map(b => b.asin);
+
+        // 非ALLは shelf.books のメンバーに正規化 (表示順を保ちつつ非メンバー除去・漏れ補完)
+        if (useShelfBooks && Array.isArray(shelf.books) && shelf.books.length) {
+            const memberSet = new Set(shelf.books);
+            order = order.filter(a => memberSet.has(a));
+            for (const a of shelf.books) if (!order.includes(a)) order.push(a);
         }
-        // ALL は bookOrder.all が同期時に all.json.books へ書かれる (syncToObsidianFolder)。
+
+        // draggedASIN を targetASIN の直前へ移動
+        if (!order.includes(draggedASIN)) order.push(draggedASIN);
+        order.splice(order.indexOf(draggedASIN), 1);
+        const ti = order.indexOf(targetASIN);
+        if (ti !== -1) order.splice(ti, 0, draggedASIN);
+        else order.push(draggedASIN);
+
+        // 正本へ書き戻し + 描画用を完全一致 (齟齬ゼロ)
+        if (useShelfBooks) shelf.books = [...order];
+        this.userData.bookOrder[currentBookshelfId] = [...order];
 
         // Switch to custom order automatically when manually reordering
         this.sortOrder = 'custom';
-        document.getElementById('sort-order').value = 'custom';
+        const sortSel = document.getElementById('sort-order');
+        if (sortSel) sortSel.value = 'custom';
 
         // Save and refresh display
         this.saveUserData();
@@ -3698,7 +3684,6 @@ class VirtualBookshelf {
             return 0;
         });
         roots.forEach(bs => renderNode(bs, 0));
-        this._renderSidebarPinned();
     }
 
     _clearTreeDropIndicators() {
@@ -3842,46 +3827,6 @@ class VirtualBookshelf {
         }, 0);
     }
 
-    // 折りたたみ strip にホーム + ピン留め本棚アイコンを描画
-    _renderSidebarPinned() {
-        const host = document.getElementById('sidebar-pinned');
-        if (!host) return;
-        const bookshelves = this.bookshelfManager?.getBookshelves?.() || [];
-        const pinned = bookshelves.filter(b => b.pinned && !b.isSpecial);
-        const isMain = document.body.classList.contains('app-view-main');
-
-        const escapeAttr = (s) => String(s || '').replace(/"/g, '&quot;');
-        const homeBtn = `
-            <button class="strip-pin-item strip-pin-home${isMain ? ' is-active' : ''}" type="button" data-nav="home" title="ホーム">
-                ${window.renderIcon('library', { size: 18 })}
-            </button>
-        `;
-        const pinnedHtml = pinned.map(bs => {
-            const icon = bs.iconName || 'library';
-            const isActive = !isMain && (this.currentBookshelf === bs.id || this.currentBookshelf === bs.internalId);
-            return `
-                <button class="strip-pin-item${isActive ? ' is-active' : ''}" type="button"
-                        data-bookshelf-id="${escapeAttr(bs.id)}"
-                        title="${escapeAttr(bs.name)}">
-                    ${window.renderIcon(icon, { size: 18 })}
-                </button>
-            `;
-        }).join('');
-        host.innerHTML = homeBtn + (pinned.length > 0 ? '<div class="strip-divider"></div>' : '') + pinnedHtml;
-
-        host.querySelectorAll('.strip-pin-item').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.dataset.nav === 'home') {
-                    if (this.router) this.router.navigateMain();
-                    else this._setBodyView('main');
-                    return;
-                }
-                const id = btn.dataset.bookshelfId;
-                if (id) this.switchBookshelf(id);
-            });
-        });
-    }
-
     _updateSidebarActive() {
         const tree = document.getElementById('sidebar-bookshelf-tree');
         if (!tree) return;
@@ -3897,8 +3842,6 @@ class VirtualBookshelf {
         if (homeBtn) {
             homeBtn.classList.toggle('is-active', document.body.classList.contains('app-view-main'));
         }
-        // 折りたたみ strip のハイライト同期
-        this._renderSidebarPinned();
     }
 
     // ===== Header Icon Override (localStorage、全ヘッダーアイテム共通) =====
@@ -5227,7 +5170,6 @@ class VirtualBookshelf {
         const iconTrigger = document.getElementById('bookshelf-icon-trigger');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
-        const pinnedInput = document.getElementById('bookshelf-pinned');
 
         // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）。
         // 実データは internalId 欠落のため _keyOf(=internalId||id) をキーに使う。
@@ -5260,7 +5202,6 @@ class VirtualBookshelf {
             setIcon(bookshelfToEdit.iconName);
             descriptionInput.value = bookshelfToEdit.description || '';
             isPublicInput.checked = bookshelfToEdit.isPublic || false;
-            if (pinnedInput) pinnedInput.checked = bookshelfToEdit.pinned || false;
             // 特殊本棚（all）は slug / 親変更不可
             if (bookshelfToEdit.isSpecial) {
                 slugInput.readOnly = true;
@@ -5283,7 +5224,6 @@ class VirtualBookshelf {
             setIcon('library');
             descriptionInput.value = '';
             isPublicInput.checked = false;
-            if (pinnedInput) pinnedInput.checked = false;
         }
 
         // IconPicker トリガ (1 回だけ bind)
@@ -5318,7 +5258,6 @@ class VirtualBookshelf {
         const iconNameInput = document.getElementById('bookshelf-icon-name');
         const descriptionInput = document.getElementById('bookshelf-description');
         const isPublicInput = document.getElementById('bookshelf-is-public');
-        const pinnedInput = document.getElementById('bookshelf-pinned');
 
         const name = nameInput.value.trim();
         if (!name) {
@@ -5341,8 +5280,7 @@ class VirtualBookshelf {
             slug,
             iconName: iconNameInput.value.trim() || 'library',
             description: descriptionInput.value.trim(),
-            isPublic: isPublicInput.checked,
-            pinned: pinnedInput ? pinnedInput.checked : false
+            isPublic: isPublicInput.checked
         };
 
         try {

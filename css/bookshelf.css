@@ -830,48 +830,6 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     margin-top: 0.5rem;
 }
 
-.strip-pinned {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    align-items: center;
-    width: 100%;
-}
-
-.strip-pinned .pin-item,
-.strip-pinned .strip-pin-item {
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid transparent;
-    background: transparent;
-    border-radius: 6px;
-    cursor: pointer;
-    color: var(--fg2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-.strip-pinned .pin-item:hover,
-.strip-pinned .strip-pin-item:hover {
-    background: var(--line2);
-    color: var(--fg);
-}
-
-.strip-pinned .strip-pin-item.is-active {
-    background: var(--accent-bg);
-    color: var(--accent);
-}
-
-.strip-pinned .strip-divider {
-    width: 60%;
-    height: 1px;
-    background: var(--line);
-    margin: 0.2rem 0;
-}
-
 /* ===== 右ペイン: 本詳細 ===== */
 .detail-body {
     flex: 1;
@@ -4415,11 +4373,17 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     flex: 1 1 auto;
 }
 .bvh-icon {
+    /* Phase H2-8: 以前の本棚アイコンのように四角い枠で囲う */
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: #4338ca;
+    width: 38px;
+    height: 38px;
+    background: #f9fafb;
+    border: 1px solid var(--line, #e5e7eb);
+    border-radius: 9px;
+    color: var(--accent);
 }
 .bvh-text {
     display: flex;
@@ -5076,16 +5040,22 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     overflow: hidden;
 }
 
-/* リスト表示: ホバーポップは小さな表紙ではなく行 (.book-item) の「下のほう」に重ねる。
-   .book-item は position:relative。行下端に貼り付く帯にし、中身は下詰めにする。 */
+/* リスト表示: ホバーポップは小さな表紙ではなく行 (.book-item) に重ねる。
+   .book-item は position:relative。行全体を覆うが、背景は「上が透明→下が濃い」
+   グラデーションにして上側を薄くし、中身(星/メモ)は下詰めで表示する。 */
 .bookshelf.view-list .card-hover-pop {
-    inset: auto 0 0 0;          /* 上 auto / 下端に貼り付く帯 (高さは中身ぶん) */
-    max-height: calc(100% - 4px);
+    inset: 0;
+    max-height: none;
     flex-direction: row;
     align-items: flex-end;      /* 文字下詰め */
     gap: 14px;
-    padding: 0.35rem 0.9rem 0.4rem;
-    border-radius: 0 0 8px 8px; /* 行の下角に合わせる */
+    padding: 0.5rem 0.9rem 0.45rem;
+    border-radius: 8px;
+    background: linear-gradient(to top,
+        rgba(18, 20, 28, 0.95) 0%,
+        rgba(18, 20, 28, 0.82) 34%,
+        rgba(18, 20, 28, 0) 80%);
+    backdrop-filter: none;
 }
 .bookshelf.view-list .card-hover-pop .pop-stars { justify-content: flex-start; flex: 0 0 auto; align-self: flex-end; }
 .bookshelf.view-list .card-hover-pop .pop-memo { -webkit-line-clamp: 2; flex: 1 1 auto; text-align: left; }

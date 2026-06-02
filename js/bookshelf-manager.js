@@ -180,7 +180,6 @@ class BookshelfManager {
             parent: parentId,
             color: meta.color,
             isPublic: !!meta.isPublic,
-            pinned: !!meta.pinned,
             appliedPlugins: meta.appliedPlugins || [],
             books: [],
             notes: {},
@@ -214,7 +213,6 @@ class BookshelfManager {
         if (typeof meta.iconName === 'string') bs.iconName = meta.iconName;
         if (typeof meta.description === 'string') bs.description = meta.description;
         if (typeof meta.isPublic === 'boolean') bs.isPublic = meta.isPublic;
-        if (typeof meta.pinned === 'boolean') bs.pinned = meta.pinned;
         if (typeof meta.color === 'string') bs.color = meta.color;
         if (Array.isArray(meta.appliedPlugins)) bs.appliedPlugins = meta.appliedPlugins;
         if (typeof meta.parent === 'string') {
