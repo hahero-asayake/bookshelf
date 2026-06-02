@@ -2241,6 +2241,9 @@ class VirtualBookshelf {
      */
     _scheduleSync() {
         this._pendingSync = true;
+        // 未同期のローカル編集があることを永続化（リロード/crash を跨いで残す）。
+        // 同期が成功するまで消さない → 次回読込時にローカル優先で復元できる。
+        try { localStorage.setItem('virtualBookshelf_pendingSync', '1'); } catch (e) {}
         if (this._syncDebounceTimer) clearTimeout(this._syncDebounceTimer);
         const delay = this._syncDebounceMs || 800;
         this._syncDebounceTimer = setTimeout(() => {
@@ -2267,6 +2270,9 @@ class VirtualBookshelf {
             // 進行中に再要求されていれば再度実行
             if (this._pendingSync) {
                 this._scheduleSync();
+            } else if (this._lastSyncOk) {
+                // 同期が成功し、保留も無くなったので未同期フラグを解除
+                try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
             }
         }
     }
@@ -2972,6 +2978,18 @@ class VirtualBookshelf {
 
     _applyLoadedState(state) {
         if (!state.allBookshelf) return false;
+        // 未同期ローカル編集の保護:
+        // 直近の編集 (並び替え等) が同期先 (GitHub) に未反映のまま再読込されると、
+        // 古いリモート断面で localStorage が上書きされ巻き戻ってしまう。
+        // pendingSync フラグが立っていれば、本棚の順序/所属とメモはローカルを優先採用し、
+        // 読込後に再 push して確定させる。
+        const _priorLocal = this.userData;
+        let _hasPendingLocal = false;
+        try {
+            _hasPendingLocal = !this.isPublicMode
+                && localStorage.getItem('virtualBookshelf_pendingSync') === '1'
+                && !!(_priorLocal && Array.isArray(_priorLocal.bookshelves) && _priorLocal.bookshelves.length);
+        } catch (e) { _hasPendingLocal = false; }
         // library.json が無くても allBookshelf があれば空 library として続行
         const libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
         const excluded = new Set(state.exclusions.excludedASINs || []);
@@ -3042,6 +3060,33 @@ class VirtualBookshelf {
         // 既存コードとの互換のため 'all' キーも維持（本棚 slug='all' と一致）
         if (!bookOrder.all) bookOrder.all = state.allBookshelf.books || [];
 
+        // 未同期ローカル編集があれば、本棚の順序/所属はローカルを優先（リモートの古い断面で潰さない）
+        if (_hasPendingLocal) {
+            const validAsin = new Set(libraryAsins);
+            bookshelves.forEach(shelf => {
+                const local = _priorLocal.bookshelves.find(b => b.id === shelf.id);
+                if (!local) return;
+                const localOrder = (_priorLocal.bookOrder && Array.isArray(_priorLocal.bookOrder[shelf.id]))
+                    ? _priorLocal.bookOrder[shelf.id]
+                    : (Array.isArray(local.books) ? local.books : null);
+                if (!localOrder) return;
+                if (shelf.isSpecial) {
+                    // ALL: メンバーは library-exclusions で確定済み。順序のみローカルを尊重
+                    const memberSet = new Set(shelf.books);
+                    shelf.books = [
+                        ...localOrder.filter(a => memberSet.has(a)),
+                        ...shelf.books.filter(a => !localOrder.includes(a))
+                    ];
+                } else {
+                    // 通常本棚: ローカルの所属+順序を採用（無効 ASIN は除外）
+                    shelf.books = localOrder.filter(a => validAsin.has(a));
+                }
+                bookOrder[shelf.id] = shelf.books;
+            });
+            // メモ/評価もローカル優先マージ
+            Object.entries(_priorLocal.notes || {}).forEach(([asin, n]) => { if (n) notes[asin] = n; });
+        }
+
         const currentSettings = this.userData?.settings || {};
         const mergedSettings = { ...currentSettings, ...state.privateSettings };
         this.userData = {
@@ -3064,6 +3109,11 @@ class VirtualBookshelf {
             localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
         } catch (e) {
             console.error('localStorage 保存失敗:', e);
+        }
+
+        // 未同期ローカル編集を採用した場合は、読込後に同期先へ再 push して確定させる
+        if (_hasPendingLocal && this._isSyncReady()) {
+            this._scheduleSync();
         }
 
         if (this.pluginAPI) this.pluginAPI._emit('books:changed', {});
@@ -3125,6 +3175,7 @@ class VirtualBookshelf {
     // 同期先への書き出し (LocalFS / GitHub Adapter 等、storage の adapter に委譲)
     async syncToObsidianFolder() {
         if (!this._isSyncReady()) return;
+        this._lastSyncOk = false;
         try {
             // LocalFS 時のみ FS permission を確認 (GitHub Adapter は token ベースなので不要)
             if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -3300,6 +3351,7 @@ class VirtualBookshelf {
                 throw err;
             }
 
+            this._lastSyncOk = true;
             this.updateSyncStatus('synced', this._syncLabel());
         } catch (e) {
             console.error('同期エラー:', e);
