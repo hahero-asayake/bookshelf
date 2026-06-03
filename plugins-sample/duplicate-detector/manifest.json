@@ -1,9 +1,0 @@
-{
-    "id": "duplicate-detector",
-    "name": "重複検出",
-    "version": "0.1.0",
-    "description": "同じタイトル / 著者の本がある場合に検出してモーダル表示。Kindle と Audible で二重登録した本などを発見。",
-    "publishable": false,
-    "files": ["index.js"],
-    "dependencies": []
-}

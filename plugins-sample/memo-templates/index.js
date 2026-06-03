@@ -1,77 +1,69 @@
 // memo-templates
 //
-// 本詳細モーダルが開いたタイミングで、メモ欄 (textarea[data-asin]) の直前に
-// テンプレ挿入ボタン群を inject する。クリックでテキストをカーソル位置に挿入し、
-// input イベントを発火させて既存の自動保存ロジックに乗せる。
-
-const HOST_CLASS = 'plugin-memo-templates-host';
+// 本詳細ペインのメモ欄にテンプレ挿入ボタンを足す。
+// 旧版は ui:book-modal-opened + #book-modal の textarea を直接触っていたが、
+// 現行は registerDetailSection でペインにボタン群を差し込み、メモ textarea
+// (.bd-textarea) のカーソル位置に挿入 → input イベントで既存の自動保存に乗せる。
 
 const TEMPLATES = [
     { label: '感想', text: '\n\n### 感想\n' },
     { label: '要点', text: '\n\n### 要点\n- ' },
     { label: '引用', text: '\n\n> ' },
     { label: 'TODO', text: '\n\n- [ ] ' },
-    { label: '日付', text: () => `\n\n[${formatDate(new Date())}] ` }
+    { label: '日付', text: () => `\n\n[${ymd(new Date())}] ` }
 ];
 
 export function activate(api, manifest) {
-    api.on('ui:book-modal-opened', onModalOpened);
-
-    function onModalOpened({ asin }) {
-        if (!asin) return;
-        const modalBody = document.querySelector('#book-modal .modal-body');
-        if (!modalBody) return;
-        const textarea = modalBody.querySelector(`textarea[data-asin="${cssEscape(asin)}"]`);
-        if (!textarea) return;
-
-        // 既存ホストを除去
-        modalBody.querySelectorAll(`.${HOST_CLASS}`).forEach(el => el.remove());
-
-        const host = document.createElement('div');
-        host.className = HOST_CLASS;
-        host.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:0.4rem 0;';
-        TEMPLATES.forEach(t => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btn btn-small';
-            btn.textContent = `+ ${t.label}`;
-            btn.style.cssText = 'padding:2px 8px;font-size:0.8rem;';
-            btn.addEventListener('click', () => {
-                const text = typeof t.text === 'function' ? t.text() : t.text;
-                insertAtCursor(textarea, text);
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                textarea.focus();
+    api.registerDetailSection({
+        id: 'memo-templates',
+        render(host, book) {
+            host.innerHTML = `<div class="mt-row"></div>`;
+            const row = host.querySelector('.mt-row');
+            TEMPLATES.forEach(t => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'mt-btn';
+                btn.textContent = `+ ${t.label}`;
+                btn.addEventListener('click', () => {
+                    const ta = pickTextarea(book && book.asin);
+                    if (!ta) return;
+                    insertAtCursor(ta, typeof t.text === 'function' ? t.text() : t.text);
+                    ta.dispatchEvent(new Event('input', { bubbles: true }));
+                    ta.focus();
+                });
+                row.appendChild(btn);
             });
-            host.appendChild(btn);
-        });
-
-        textarea.parentNode.insertBefore(host, textarea);
-    }
-
-    function insertAtCursor(textarea, text) {
-        const start = textarea.selectionStart ?? textarea.value.length;
-        const end = textarea.selectionEnd ?? textarea.value.length;
-        const before = textarea.value.slice(0, start);
-        const after = textarea.value.slice(end);
-        textarea.value = before + text + after;
-        const pos = start + text.length;
-        textarea.selectionStart = textarea.selectionEnd = pos;
-    }
-
-    function formatDate(d) {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    }
-
-    function cssEscape(s) {
-        return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/"/g, '\\"');
-    }
-
-    return {
-        deactivate() {
-            document.querySelectorAll(`.${HOST_CLASS}`).forEach(el => el.remove());
         }
-    };
+    });
+
+    // 直近フォーカスされた bd-textarea を優先。無ければ ALL スコープ。
+    function pickTextarea(asin) {
+        const pane = document.getElementById('book-detail-pane');
+        if (!pane) return null;
+        const active = document.activeElement;
+        if (active && active.classList && active.classList.contains('bd-textarea') && pane.contains(active)) return active;
+        return pane.querySelector('textarea.bd-textarea[data-scope="all"]') || pane.querySelector('textarea.bd-textarea');
+    }
+
+    function insertAtCursor(ta, text) {
+        const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? ta.value.length;
+        ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+        ta.selectionStart = ta.selectionEnd = s + text.length;
+    }
+
+    api.injectCSS('memo-templates', `
+        .plugin-detail-section .mt-row { display: flex; gap: 4px; flex-wrap: wrap; }
+        .plugin-detail-section .mt-btn {
+            font-size: 0.74rem; padding: 2px 9px; border: 1px solid var(--line, #e5e7eb);
+            border-radius: 6px; background: var(--surface, #fff); color: inherit; cursor: pointer;
+        }
+        .plugin-detail-section .mt-btn:hover { border-color: var(--accent, #5b6cff); color: var(--accent, #5b6cff); }
+    `);
+
+    return {};
+}
+
+function ymd(d) {
+    const m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
 }

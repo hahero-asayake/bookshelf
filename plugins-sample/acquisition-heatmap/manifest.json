@@ -1,9 +1,0 @@
-{
-    "id": "acquisition-heatmap",
-    "name": "取得ヒートマップ",
-    "version": "0.1.0",
-    "description": "本を取得した日付を年×月のヒートマップで表示。GitHub Contribution グラフ風。",
-    "publishable": true,
-    "files": ["index.js"],
-    "dependencies": []
-}

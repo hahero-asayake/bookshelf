@@ -1,8 +1,9 @@
 {
     "id": "author-grouping",
     "name": "同じ著者の本",
-    "version": "0.1.0",
-    "description": "本詳細モーダルに「この著者の他の蔵書」セクションを追加。クリックでその本に遷移。",
+    "version": "0.2.0",
+    "description": "本詳細ペインに「この著者の他の蔵書」セクションを追加 (registerDetailSection)。クリックでその本へ遷移。",
+    "icon": "users",
     "publishable": true,
     "files": ["index.js"],
     "dependencies": []

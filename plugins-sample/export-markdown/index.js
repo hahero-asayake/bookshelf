@@ -1,25 +1,14 @@
 // export-markdown
 //
-// 蔵書一覧を Markdown でダウンロード。
-// 出力形式:
-//   # 蔵書一覧 (YYYY-MM-DD)
-//   - 総数: N 冊
-//
-//   ## 📚 すべての本
-//   - **タイトル** — 著者 (★★★☆☆)
-//     - メモ: ...
-//
-//   ## <emoji> <本棚名>
-//   ...
+// 蔵書一覧を本棚別セクション付き Markdown でダウンロード。⌘K パレットから実行。
 
 export function activate(api, manifest) {
-    api.addUIButton({
-        id: 'export-markdown-button',
-        where: 'library-management',
-        emoji: '📝',
-        label: 'Markdown 出力',
-        title: '蔵書を Markdown としてダウンロード',
-        onClick: () => exportMd()
+    api.registerCommand({
+        id: 'export-markdown',
+        title: 'Markdown で蔵書をエクスポート',
+        icon: 'file-text',
+        keywords: 'markdown md export エクスポート 出力 ダウンロード',
+        run: () => exportMd()
     });
 
     function exportMd() {
@@ -28,73 +17,50 @@ export function activate(api, manifest) {
         const shelves = api.getBookshelves();
         const byAsin = new Map(books.map(b => [b.asin, b]));
 
-        const lines = [];
-        const today = formatDate(new Date());
-        lines.push(`# 蔵書一覧 (${today})`);
-        lines.push('');
-        lines.push(`- 総数: ${books.length} 冊`);
-        lines.push(`- 本棚: ${shelves.filter(s => !s.isSpecial).length}`);
+        const today = ymd(new Date());
+        const lines = [`# 蔵書一覧 (${today})`, '', `- 総数: ${books.length} 冊`,
+            `- 本棚: ${shelves.filter(s => !s.isSpecial).length}`, '', '## すべての本', ''];
+        for (const b of books) lines.push(bookLine(b, notes[b.asin]));
         lines.push('');
 
-        // すべての本
-        lines.push('## 📚 すべての本');
-        lines.push('');
-        for (const b of books) {
-            lines.push(formatBookLine(b, notes[b.asin]));
-        }
-        lines.push('');
-
-        // 本棚別
         for (const s of shelves) {
             if (s.isSpecial) continue;
-            lines.push(`## ${s.emoji || '📚'} ${s.name}`);
+            lines.push(`## ${s.name}`);
             if (s.description) lines.push(`> ${s.description}`);
             lines.push('');
             for (const asin of (s.books || [])) {
                 const b = byAsin.get(asin);
                 if (!b) continue;
-                const note = (s.notes && s.notes[asin]) || notes[asin] || {};
-                lines.push(formatBookLine(b, note));
+                lines.push(bookLine(b, (s.notes && s.notes[asin]) || notes[asin]));
             }
             lines.push('');
         }
 
-        const md = lines.join('\n');
-        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `bookshelf-${today}.md`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        download(lines.join('\n'), `bookshelf-${today}.md`, 'text/markdown;charset=utf-8');
     }
 
-    function formatBookLine(book, note) {
+    function bookLine(book, note) {
         const title = book.title || '(無題)';
         const authors = Array.isArray(book.authors) ? book.authors.join(', ') : (book.authors || '');
-        const rating = note?.rating;
-        const stars = Number.isInteger(rating) && rating >= 1 && rating <= 5
-            ? ' (' + '★'.repeat(rating) + '☆'.repeat(5 - rating) + ')'
-            : '';
-        let line = `- **${escape(title)}**${authors ? ' — ' + escape(authors) : ''}${stars}`;
-        if (note?.memo) {
-            line += '\n  - メモ: ' + escape(note.memo).replace(/\n/g, '\n    ');
-        }
+        const r = note?.rating;
+        const stars = Number.isInteger(r) && r >= 1 && r <= 5 ? ` (${'★'.repeat(r)}${'☆'.repeat(5 - r)})` : '';
+        let line = `- **${title}**${authors ? ' — ' + authors : ''}${stars}`;
+        if (note?.memo) line += '\n  - メモ: ' + String(note.memo).replace(/\n/g, '\n    ');
         return line;
     }
 
-    function escape(s) {
-        return String(s ?? '');
-    }
+    return {};
+}
 
-    function formatDate(d) {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    }
-
-    return { deactivate() {} };
+function download(text, filename, mime) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+}
+function ymd(d) {
+    const m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
 }

@@ -1,121 +1,71 @@
 // reading-goal
 //
-// 年間読書目標。★4以上を付けた本 (今年度) を「読了」とみなしてカウント、目標値との進捗をモーダル表示。
-// 目標値は localStorage('plugin-reading-goal:value') に保存。
+// 年間読書目標と進捗をダッシュボード widget に表示する。
+// 旧版は独自モーダルだったが、現行はホームに registerWidget で並ぶ。
+// 読了 = ★4以上 かつ 取得日が今年。目標値は localStorage 保存 (widget内で変更可)。
 
 const STORAGE_KEY = 'plugin-reading-goal:value';
-const MODAL_ID = 'plugin-reading-goal-modal';
 const DEFAULT_GOAL = 50;
 
 export function activate(api, manifest) {
-    api.addUIButton({
-        id: 'reading-goal-open',
-        where: 'library-management',
-        emoji: '🎯',
-        label: '読書目標',
-        title: '年間読書目標と進捗',
-        onClick: () => showModal()
-    });
-
-    function getGoal() {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        const n = Number(raw);
+    const getGoal = () => {
+        const n = Number(localStorage.getItem(STORAGE_KEY));
         return Number.isFinite(n) && n > 0 ? n : DEFAULT_GOAL;
-    }
-    function setGoal(n) {
-        try { localStorage.setItem(STORAGE_KEY, String(n)); } catch (_) {}
-    }
+    };
+    const setGoal = (n) => { try { localStorage.setItem(STORAGE_KEY, String(Math.floor(n))); } catch (_) {} };
 
-    function thisYearReadCount() {
+    const yearReads = () => {
         const year = new Date().getFullYear();
         const notes = api.getNotes();
-        const books = api.getBooks();
-        let count = 0;
-        for (const b of books) {
+        let c = 0;
+        for (const b of api.getBooks()) {
             const n = notes[b.asin];
             if (!n || !Number.isInteger(n.rating) || n.rating < 4) continue;
-            // 「今年に評価が付いた本」を読了とみなす。timestamp が無いので acquiredTime で代替
             const ts = Number(b.acquiredTime);
-            if (Number.isFinite(ts) && new Date(ts).getFullYear() === year) count++;
+            if (Number.isFinite(ts) && new Date(ts).getFullYear() === year) c++;
         }
-        return count;
-    }
+        return c;
+    };
 
-    function totalReadCount() {
-        const notes = api.getNotes();
-        return Object.values(notes).filter(n => Number.isInteger(n?.rating) && n.rating >= 4).length;
-    }
+    api.registerWidget({
+        id: 'reading-goal',
+        label: '年間読書目標',
+        icon: 'target',
+        defaultSpan: 4,
+        allowedSpans: [3, 4, 6],
+        render(host) {
+            const goal = getGoal();
+            const reads = yearReads();
+            const year = new Date().getFullYear();
+            const pct = Math.min(100, (reads / goal) * 100);
+            const remaining = Math.max(0, goal - reads);
+            const monthsLeft = 12 - new Date().getMonth();
+            const pace = monthsLeft > 0 ? (remaining / monthsLeft).toFixed(1) : '0';
 
-    function showModal() {
-        let modal = document.getElementById(MODAL_ID);
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = MODAL_ID;
-            modal.className = 'modal';
-            modal.innerHTML = `
-                <div class="modal-content" style="max-width: 500px;">
-                    <button class="modal-close" data-close-goal>×</button>
-                    <div class="modal-header"><h2>🎯 年間読書目標</h2></div>
-                    <div class="modal-body" id="${MODAL_ID}-body"></div>
-                </div>
+            host.innerHTML = `
+                <div class="rg-head">${year} 年 <strong>${reads}</strong> / ${goal} 冊</div>
+                <div class="rg-track"><div class="rg-fill" style="width:${pct.toFixed(1)}%"></div></div>
+                <div class="rg-sub">${remaining > 0
+                    ? `残り ${remaining} 冊・月 ${pace} 冊ペース`
+                    : '🎉 目標達成'}</div>
+                <button type="button" class="rg-edit">目標を変更</button>
             `;
-            document.body.appendChild(modal);
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal || e.target.hasAttribute('data-close-goal')) {
-                    modal.classList.remove('show');
-                }
+            host.querySelector('.rg-edit').addEventListener('click', () => {
+                const v = prompt('年間目標 (冊):', String(goal));
+                const n = Number(v);
+                if (Number.isFinite(n) && n > 0) { setGoal(n); api.refreshUI(); }
             });
         }
-        render(document.getElementById(`${MODAL_ID}-body`));
-        modal.classList.add('show');
-    }
+    });
 
-    function render(body) {
-        const goal = getGoal();
-        const yearReads = thisYearReadCount();
-        const allReads = totalReadCount();
-        const year = new Date().getFullYear();
-        const progress = Math.min(100, (yearReads / goal) * 100);
-        const remaining = Math.max(0, goal - yearReads);
-        const monthsLeft = 12 - new Date().getMonth();
-        const pace = monthsLeft > 0 ? (remaining / monthsLeft).toFixed(1) : '0';
+    api.injectCSS('reading-goal', `
+        .rg-head { font-size: 0.9rem; margin-bottom: 0.4rem; }
+        .rg-track { height: 18px; background: var(--line, #eee); border-radius: 9px; overflow: hidden; }
+        .rg-fill { height: 100%; background: linear-gradient(90deg, #5b6cff, #2ecc71); transition: width .3s; }
+        .rg-sub { font-size: 0.74rem; color: var(--muted, #888); margin-top: 0.35rem; }
+        .rg-edit { margin-top: 0.4rem; font-size: 0.72rem; background: none; border: none; padding: 0;
+            color: var(--accent, #5b6cff); cursor: pointer; }
+    `);
 
-        body.innerHTML = `
-            <p style="font-size:1.1rem;"><strong>${year} 年の進捗</strong></p>
-            <div style="background:#eee;height:24px;border-radius:12px;overflow:hidden;margin:0.8rem 0;">
-                <div style="width:${progress.toFixed(1)}%;height:100%;background:linear-gradient(90deg,#3498db,#2ecc71);transition:width 0.3s;"></div>
-            </div>
-            <p>${yearReads} / ${goal} 冊 (${progress.toFixed(1)}%)</p>
-            ${remaining > 0 ? `<p style="color:#666;">残り ${remaining} 冊。${monthsLeft} ヶ月で達成するには月 ${pace} 冊ペース。</p>` : '<p style="color:#27ae60;">🎉 目標達成！</p>'}
-
-            <hr style="opacity:0.3;margin:1.5rem 0;">
-
-            <p style="color:#666;font-size:0.85rem;">読了の判定: ★4 以上を付けた本 (取得日が今年のもの)</p>
-            <p style="color:#666;font-size:0.85rem;">累計読了 (全期間): ${allReads} 冊</p>
-
-            <div style="margin-top:1.5rem;display:flex;gap:0.5rem;align-items:center;">
-                <label>目標値:</label>
-                <input type="number" id="${MODAL_ID}-goal-input" value="${goal}" min="1" max="1000"
-                       style="width:80px;padding:0.3rem;border:1px solid #ccc;border-radius:4px;">
-                <button id="${MODAL_ID}-save-btn" class="btn btn-primary btn-small">保存</button>
-            </div>
-        `;
-
-        const input = document.getElementById(`${MODAL_ID}-goal-input`);
-        const btn = document.getElementById(`${MODAL_ID}-save-btn`);
-        btn.addEventListener('click', () => {
-            const v = Number(input.value);
-            if (Number.isFinite(v) && v > 0) {
-                setGoal(Math.floor(v));
-                render(body);
-            }
-        });
-    }
-
-    return {
-        deactivate() {
-            const m = document.getElementById(MODAL_ID);
-            if (m) m.remove();
-        }
-    };
+    return {};
 }

@@ -1,8 +1,9 @@
 {
     "id": "csv-export",
     "name": "CSV エクスポート",
-    "version": "0.1.0",
-    "description": "蔵書一覧を CSV ファイル (UTF-8 BOM 付き) としてダウンロード。Excel / Google Sheets で開ける。",
+    "version": "0.2.0",
+    "description": "蔵書一覧を CSV (UTF-8 BOM 付) でダウンロード。⌘K パレットから実行 (registerCommand)。",
+    "icon": "file-spreadsheet",
     "publishable": true,
     "files": ["index.js"],
     "dependencies": []

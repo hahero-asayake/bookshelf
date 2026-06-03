@@ -1,9 +1,10 @@
 {
     "id": "random-pick",
     "name": "ランダムピック",
-    "version": "0.1.0",
-    "description": "「今日の1冊」をランダムに選んで本詳細モーダルを開く。未読本だけに絞ることも可能。",
-    "publishable": true,
+    "version": "0.2.0",
+    "description": "ランダムに1冊選んで本詳細を開く。⌘K パレットに「ランダム」「未読のみ」を登録 (registerCommand)。",
+    "icon": "dices",
+    "publishable": false,
     "files": ["index.js"],
     "dependencies": []
 }

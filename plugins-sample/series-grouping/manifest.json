@@ -1,8 +1,9 @@
 {
     "id": "series-grouping",
     "name": "シリーズまとめ",
-    "version": "0.1.0",
-    "description": "漫画などのシリーズを検出し、第1巻だけを代表表示に折りたたむ。ボタンで ON/OFF を切替。",
+    "version": "0.2.0",
+    "description": "シリーズを検出し第1巻だけ代表表示に折りたたむ (registerBookFilter)。⌘K/ボタンで ON/OFF。",
+    "icon": "layers",
     "publishable": true,
     "files": ["index.js"],
     "dependencies": []

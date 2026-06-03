@@ -1,8 +1,0 @@
-{
-    "id": "view-timeline",
-    "name": "View: Timeline",
-    "version": "0.1.0",
-    "description": "本棚を取得月でグループ化したタイムライン表示に切り替える。月ヘッダーが挿入され、時系列の振り返りができる。",
-    "publishable": true,
-    "files": ["index.js"]
-}

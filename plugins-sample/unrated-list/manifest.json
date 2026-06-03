@@ -1,9 +1,0 @@
-{
-    "id": "unrated-list",
-    "name": "未評価リスト",
-    "version": "0.1.0",
-    "description": "★評価が未設定の本を一覧表示。各行から1〜5星をワンクリックで設定できる。",
-    "publishable": false,
-    "files": ["index.js"],
-    "dependencies": []
-}

@@ -1,8 +1,9 @@
 {
     "id": "reading-goal",
     "name": "年間読書目標",
-    "version": "0.1.0",
-    "description": "年間読了目標を設定し、★4以上を付けた本を「読了済み」とみなして進捗バーを表示する。目標は localStorage 保存。",
+    "version": "0.2.0",
+    "description": "年間読了目標と進捗バーをダッシュボード widget に表示 (registerWidget)。読了=★4以上・今年取得。",
+    "icon": "target",
     "publishable": false,
     "files": ["index.js"],
     "dependencies": []

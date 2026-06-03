@@ -1,9 +1,0 @@
-{
-    "id": "last-acquired",
-    "name": "最近追加",
-    "version": "0.1.0",
-    "description": "直近30日に取得した本を一覧表示。Kindle 取込後の振り返り用。",
-    "publishable": false,
-    "files": ["index.js"],
-    "dependencies": []
-}

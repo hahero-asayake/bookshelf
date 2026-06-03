@@ -1,9 +1,0 @@
-{
-    "id": "quick-switcher",
-    "name": "クイックスイッチャー",
-    "version": "0.1.0",
-    "description": "Ctrl/Cmd+K で本・本棚をインクリメンタル検索して即ジャンプ。VS Code 風のコマンドパレット。",
-    "publishable": true,
-    "files": ["index.js"],
-    "dependencies": []
-}

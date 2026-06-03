@@ -1,8 +1,0 @@
-{
-    "id": "view-compact",
-    "name": "View: Compact",
-    "version": "0.1.0",
-    "description": "本棚を超高密度のリスト表示に切り替える。1 行 1 冊、評価・タイトル・著者を inline 表示。実用派向け。",
-    "publishable": true,
-    "files": ["index.js"]
-}

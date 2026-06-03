@@ -1,8 +1,10 @@
 {
     "id": "hello-bookshelf",
     "name": "Hello Bookshelf",
-    "version": "0.1.0",
-    "description": "サンプルプラグイン。挨拶ボタンを蔵書管理セクションに追加し、note 更新イベントを console に出す。",
+    "version": "0.2.0",
+    "description": "新プラグインAPIの最小サンプル。registerCommand / addUIButton / injectCSS / イベント購読を一通り使う。",
+    "icon": "hand",
     "publishable": false,
-    "files": ["index.js"]
+    "files": ["index.js"],
+    "dependencies": []
 }

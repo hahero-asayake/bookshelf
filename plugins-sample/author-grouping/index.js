@@ -1,91 +1,86 @@
 // author-grouping
 //
-// ui:book-modal-opened に応じて、本詳細モーダルに「この著者の他の本」セクションを追加する。
-// 著者が複数いる場合、共通著者を1人でも持つ本を表示。
-
-const SECTION_CLASS = 'plugin-author-grouping-section';
+// 本詳細ペインに「この著者の他の蔵書」セクションを足す。
+// 旧版は ui:book-modal-opened + #book-modal を直接いじっていたが、
+// 現行は registerDetailSection で本詳細ペインに正式に差し込む。
 
 export function activate(api, manifest) {
-    api.on('ui:book-modal-opened', onModalOpened);
+    api.registerDetailSection({
+        id: 'author-grouping',
+        render(host, book) {
+            if (!book) { host.innerHTML = ''; return; }
+            const myAuthors = toAuthorSet(book.authors);
+            if (myAuthors.size === 0) { host.innerHTML = ''; return; }
 
-    function onModalOpened({ asin }) {
-        if (!asin) return;
-        const modalBody = document.querySelector('#book-modal .modal-body');
-        if (!modalBody) return;
-        const book = api.getBook(asin);
-        if (!book) return;
+            const related = api.getBooks().filter(b => {
+                if (!b.asin || b.asin === book.asin) return false;
+                const oth = toAuthorSet(b.authors);
+                for (const a of myAuthors) if (oth.has(a)) return true;
+                return false;
+            });
 
-        const myAuthors = toAuthorSet(book.authors);
-        if (myAuthors.size === 0) return;
+            if (related.length === 0) {
+                host.innerHTML = `<h3 class="pds-title">この著者の他の蔵書</h3>
+                    <p class="pds-empty">同じ著者の他の本は蔵書にありません</p>`;
+                return;
+            }
 
-        const related = api.getBooks().filter(b => {
-            if (!b.asin || b.asin === asin) return false;
-            const oth = toAuthorSet(b.authors);
-            for (const a of myAuthors) if (oth.has(a)) return true;
-            return false;
-        });
-
-        // 既存セクションがあれば置き換え
-        let section = modalBody.querySelector(`.${SECTION_CLASS}`);
-        if (!section) {
-            section = document.createElement('div');
-            section.className = SECTION_CLASS;
-            section.style.marginTop = '1.5rem';
-            modalBody.appendChild(section);
-        }
-
-        if (related.length === 0) {
-            section.innerHTML = `
-                <h3>👤 この著者の他の蔵書</h3>
-                <p style="color:#888;font-size:0.9rem;">同じ著者の他の本は蔵書にありません</p>
+            host.innerHTML = `
+                <h3 class="pds-title">この著者の他の蔵書 (${related.length})</h3>
+                <div class="ag-grid">
+                    ${related.slice(0, 12).map(b => `
+                        <button type="button" class="ag-item" data-asin="${escapeAttr(b.asin)}" title="${escapeAttr(b.title || '')}">
+                            ${b.productImage
+                                ? `<img src="${escapeAttr(b.productImage)}" alt="" loading="lazy">`
+                                : '<span class="ag-noimg"></span>'}
+                            <span class="ag-title">${escapeHtml(truncate(b.title || '', 30))}</span>
+                        </button>
+                    `).join('')}
+                </div>
+                ${related.length > 12 ? `<p class="pds-more">…他 ${related.length - 12} 冊</p>` : ''}
             `;
-            return;
+            host.querySelectorAll('.ag-item').forEach(btn => {
+                btn.addEventListener('click', () => api.openBook(btn.dataset.asin));
+            });
         }
+    });
 
-        section.innerHTML = `
-            <h3>👤 この著者の他の蔵書 (${related.length})</h3>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.6rem;margin-top:0.5rem;">
-                ${related.slice(0, 12).map(b => `
-                    <a href="#book/${encodeURIComponent(b.asin)}"
-                       style="display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:inherit;font-size:0.8rem;text-align:center;"
-                       title="${escapeAttr(b.title || '')}">
-                        ${b.productImage
-                            ? `<img src="${escapeAttr(b.productImage)}" alt="" style="width:80px;height:auto;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">`
-                            : '<div style="width:80px;height:120px;background:#eee;display:flex;align-items:center;justify-content:center;border-radius:3px;">📖</div>'}
-                        <span style="overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(truncate(b.title || '', 30))}</span>
-                    </a>
-                `).join('')}
-            </div>
-            ${related.length > 12 ? `<p style="color:#888;font-size:0.8rem;margin-top:0.5rem;">…他 ${related.length - 12} 冊</p>` : ''}
-        `;
-    }
-
-    function toAuthorSet(authors) {
-        const set = new Set();
-        if (!authors) return set;
-        const list = Array.isArray(authors) ? authors : String(authors).split(/[,、；;]/);
-        for (const a of list) {
-            const t = (a || '').trim();
-            if (t) set.add(t);
+    // セクションの体裁 (unload で自動除去)
+    api.injectCSS('author-grouping', `
+        .plugin-detail-section .ag-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+            gap: 0.5rem; margin-top: 0.5rem;
         }
-        return set;
-    }
-
-    function escapeHtml(s) {
-        const d = document.createElement('div');
-        d.textContent = s ?? '';
-        return d.innerHTML;
-    }
-    function escapeAttr(s) {
-        return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    }
-    function truncate(s, n) {
-        return s.length > n ? s.slice(0, n - 1) + '…' : s;
-    }
-
-    return {
-        deactivate() {
-            document.querySelectorAll(`.${SECTION_CLASS}`).forEach(el => el.remove());
+        .plugin-detail-section .ag-item {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            background: none; border: none; padding: 0; cursor: pointer; color: inherit;
+            font-size: 0.72rem; text-align: center;
         }
-    };
+        .plugin-detail-section .ag-item img,
+        .plugin-detail-section .ag-noimg {
+            width: 60px; height: 88px; border-radius: 3px; object-fit: cover;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2); background: #eef0f4;
+        }
+        .plugin-detail-section .ag-title {
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .plugin-detail-section .ag-item:hover .ag-title { text-decoration: underline; }
+        .plugin-detail-section .pds-title { font-size: 0.85rem; margin: 0 0 0.3rem; }
+        .plugin-detail-section .pds-empty, .plugin-detail-section .pds-more {
+            color: var(--muted, #888); font-size: 0.78rem; margin: 0.3rem 0 0;
+        }
+    `);
+
+    return { /* unregister で detailSection / CSS とも自動解除 */ };
 }
+
+function toAuthorSet(authors) {
+    const set = new Set();
+    if (!authors) return set;
+    const list = Array.isArray(authors) ? authors : String(authors).split(/[,、；;]/);
+    for (const a of list) { const t = (a || '').trim(); if (t) set.add(t); }
+    return set;
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function escapeAttr(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }

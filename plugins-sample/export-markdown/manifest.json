@@ -1,8 +1,9 @@
 {
     "id": "export-markdown",
     "name": "Markdown エクスポート",
-    "version": "0.1.0",
-    "description": "蔵書を Markdown ファイルとしてダウンロード。本棚別にセクション分け、メモ・評価も書き出す。",
+    "version": "0.2.0",
+    "description": "蔵書を本棚別セクション付き Markdown でダウンロード。⌘K パレットから実行 (registerCommand)。",
+    "icon": "file-text",
     "publishable": true,
     "files": ["index.js"],
     "dependencies": []

@@ -1,8 +1,10 @@
 {
     "id": "view-spines",
     "name": "View: Spines",
-    "version": "0.1.0",
-    "description": "本棚を物理本棚風（背表紙縦書き）に切り替える。ASIN ハッシュで色を生成、ホバーで本が前に出る。",
+    "version": "0.2.0",
+    "description": "本棚を物理本棚風 (背表紙縦書き) に切替えるビュー系プラグイン (injectCSS + ui:books-rendered)。",
+    "icon": "library-big",
     "publishable": true,
-    "files": ["index.js"]
+    "files": ["index.js"],
+    "dependencies": []
 }

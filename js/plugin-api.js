@@ -109,6 +109,8 @@ class BookshelfPluginAPI {
             getBookshelf: (id) => self.getBookshelf(id),
             getBookshelfBySlug: (slug) => self.getBookshelfBySlug(slug),
             updateNote: (asin, partial) => self.updateNote(asin, partial),
+            openBook: (asin) => self.openBook(asin),
+            openBookshelf: (slug) => self.openBookshelf(slug),
             refreshUI: () => self.refreshUI(),
             addUIButton: (opts) => {
                 // pluginId を明示的に渡す (base の this._pluginId は未設定のため、
@@ -249,6 +251,17 @@ class BookshelfPluginAPI {
         if (typeof this._app.updateDisplay === 'function') this._app.updateDisplay();
         if (typeof this._app.updateStats === 'function') this._app.updateStats();
         if (typeof this._app.renderBookshelfOverview === 'function') this._app.renderBookshelfOverview();
+    }
+
+    // ===== ナビゲーション =====
+    /** 本詳細ペインを開く */
+    openBook(asin) {
+        const b = this.getBook(asin);
+        if (b && typeof this._app.showBookDetail === 'function') this._app.showBookDetail(b);
+    }
+    /** 本棚を開く (slug 指定) */
+    openBookshelf(slug) {
+        if (typeof this._app.switchBookshelf === 'function') this._app.switchBookshelf(slug);
     }
 
     // ===== UI 拡張ポイント =====

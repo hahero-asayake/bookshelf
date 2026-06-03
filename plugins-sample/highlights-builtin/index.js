@@ -1,174 +1,108 @@
 // highlights-builtin
 //
-// 本詳細モーダルに Kindle ハイライトを表示するプラグイン。
+// 本詳細ペインに Kindle ハイライトを表示する。
+// 旧版は ui:book-modal-opened + #book-modal.modal-body を直接いじっていたが、
+// 現行は registerDetailSection で本詳細ペインに差し込む。
+// データ取得は api.readPluginFile (storage adapter 経由なので GitHub 同期でも動く)。
 //
 // データ配置:
-//   同期フォルダ/plugins/highlights-builtin/data/
-//     index.json        { "B0XXXXX": "ファイル名.txt", ... }
-//     HighlightsASCII/
-//       <filename>.txt  Obsidian Kindle Plugin 形式のハイライト Markdown
-//
-// 表示位置:
-//   - bookshelfAPI.on('ui:book-modal-opened', { asin }) でフックし、modal-body に
-//     <div class="book-highlights-section"> を append する。
+//   plugins/highlights-builtin/data/
+//     index.json                  { "B0XXXXX": "ファイル名.txt", ... }
+//     HighlightsASCII/<file>.txt   Obsidian Kindle Plugin 形式のハイライト
 
 export function activate(api, manifest) {
     const cache = new Map();
     let indexPromise = null;
 
-    async function loadIndex() {
+    function loadIndex() {
         if (!indexPromise) {
-            indexPromise = api.readPluginFile('data/index.json').then(text => {
-                if (!text) return {};
-                try { return JSON.parse(text); } catch { return {}; }
-            }).catch(() => ({}));
+            indexPromise = api.readPluginFile('index.json')
+                .then(text => { try { return text ? JSON.parse(text) : {}; } catch { return {}; } })
+                .catch(() => ({}));
         }
         return indexPromise;
     }
 
-    async function loadHighlightsForAsin(asin) {
+    async function loadHighlights(asin) {
         if (cache.has(asin)) return cache.get(asin);
         const index = await loadIndex();
         const fileName = index[asin];
-        if (!fileName) {
-            cache.set(asin, []);
-            return [];
-        }
-        const text = await api.readPluginFile(`data/HighlightsASCII/${fileName}`).catch(() => null);
-        if (!text) {
-            cache.set(asin, []);
-            return [];
-        }
-        const highlights = parseMarkdownHighlights(text);
-        cache.set(asin, highlights);
-        return highlights;
+        if (!fileName) { cache.set(asin, []); return []; }
+        const text = await api.readPluginFile(`HighlightsASCII/${fileName}`).catch(() => null);
+        const list = text ? parseHighlights(text) : [];
+        cache.set(asin, list);
+        return list;
     }
 
-    function parseMarkdownHighlights(markdownText) {
-        const highlights = [];
-        const m = markdownText.match(/## Highlights\s*\n([\s\S]*)/);
-        if (!m) return highlights;
-        const sections = m[1].split(/\n---\n/);
-        for (const raw of sections) {
+    function parseHighlights(md) {
+        const out = [];
+        const m = md.match(/## Highlights\s*\n([\s\S]*)/);
+        if (!m) return out;
+        for (const raw of m[1].split(/\n---\n/)) {
             const s = raw.trim();
             if (!s.includes('— location:')) continue;
             const loc = s.match(/(.+?)\s*—\s*location:\s*\[(\d+)\]/s);
             if (!loc) continue;
             const text = loc[1].trim();
             if (text.length <= 10) continue;
-            highlights.push({ text, location: `Kindle の位置: ${loc[2]}`, note: null });
+            out.push({ text, location: `位置: ${loc[2]}` });
         }
-        return highlights;
+        return out;
     }
 
-    function escapeHtml(text) {
-        const d = document.createElement('div');
-        d.textContent = text;
-        return d.innerHTML;
-    }
-
-    function renderInto(container, highlights) {
-        container.textContent = '';
-        const header = document.createElement('h3');
-        header.textContent = '🎯 ハイライト';
-        container.appendChild(header);
-
-        if (!highlights.length) {
-            const p = document.createElement('p');
-            p.className = 'no-highlights';
-            p.textContent = 'この本のハイライトはありません';
-            container.appendChild(p);
-            return;
-        }
-
-        const headRow = document.createElement('div');
-        headRow.className = 'highlights-header';
-        headRow.innerHTML = `<span class="highlights-count">🎯 ${highlights.length}個のハイライト</span>`;
-        const toggleBtn = document.createElement('button');
-        toggleBtn.className = 'btn btn-small toggle-highlights';
-        toggleBtn.textContent = '全て表示';
-        if (highlights.length <= 3) toggleBtn.style.display = 'none';
-        headRow.appendChild(toggleBtn);
-        container.appendChild(headRow);
-
-        const visible = document.createElement('div');
-        visible.className = 'highlights-list visible';
-        highlights.slice(0, 3).forEach(h => visible.appendChild(buildItem(h)));
-        container.appendChild(visible);
-
-        if (highlights.length > 3) {
-            const hidden = document.createElement('div');
-            hidden.className = 'highlights-list hidden';
-            hidden.style.display = 'none';
-            highlights.slice(3).forEach(h => hidden.appendChild(buildItem(h)));
-            container.appendChild(hidden);
-            toggleBtn.addEventListener('click', () => {
-                const isVisible = hidden.style.display !== 'none';
-                hidden.style.display = isVisible ? 'none' : 'block';
-                toggleBtn.textContent = isVisible ? '全て表示' : '一部のみ表示';
+    api.registerDetailSection({
+        id: 'highlights',
+        render(host, book) {
+            if (!book || !book.asin) { host.innerHTML = ''; return; }
+            host.innerHTML = `<h3 class="pds-title">ハイライト</h3><p class="pds-loading">読み込み中…</p>`;
+            loadHighlights(book.asin).then(list => {
+                if (!list.length) {
+                    host.innerHTML = `<h3 class="pds-title">ハイライト</h3>
+                        <p class="pds-empty">この本のハイライトはありません</p>`;
+                    return;
+                }
+                const shown = list.slice(0, 3), rest = list.slice(3);
+                host.innerHTML = `
+                    <h3 class="pds-title">ハイライト (${list.length})</h3>
+                    <div class="hl-list">${shown.map(item).join('')}</div>
+                    ${rest.length ? `<div class="hl-list hl-rest" hidden>${rest.map(item).join('')}</div>
+                        <button type="button" class="hl-toggle">他 ${rest.length} 件を表示</button>` : ''}
+                `;
+                const toggle = host.querySelector('.hl-toggle');
+                if (toggle) toggle.addEventListener('click', () => {
+                    const r = host.querySelector('.hl-rest');
+                    const open = !r.hidden; r.hidden = open;
+                    toggle.textContent = open ? `他 ${rest.length} 件を表示` : '一部だけ表示';
+                });
+            }).catch(e => {
+                host.innerHTML = `<h3 class="pds-title">ハイライト</h3>
+                    <p class="pds-empty">読み込みに失敗しました: ${escapeHtml(e.message || String(e))}</p>`;
             });
         }
+    });
+
+    function item(h) {
+        return `<div class="hl-item"><div class="hl-text">${escapeHtml(h.text)}</div>
+            <div class="hl-loc">${escapeHtml(h.location)}</div></div>`;
     }
 
-    function buildItem(h) {
-        const wrap = document.createElement('div');
-        wrap.className = 'highlight-item';
-        const text = document.createElement('div');
-        text.className = 'highlight-text';
-        text.textContent = `"${h.text}"`;
-        wrap.appendChild(text);
-        if (h.note) {
-            const n = document.createElement('div');
-            n.className = 'highlight-note';
-            n.textContent = `📝 ${h.note}`;
-            wrap.appendChild(n);
+    api.injectCSS('highlights', `
+        .plugin-detail-section .pds-title { font-size: 0.85rem; margin: 0 0 0.4rem; }
+        .plugin-detail-section .pds-loading, .plugin-detail-section .pds-empty {
+            color: var(--muted, #888); font-size: 0.78rem; margin: 0;
         }
-        if (h.location) {
-            const l = document.createElement('div');
-            l.className = 'highlight-location';
-            l.textContent = h.location;
-            wrap.appendChild(l);
+        .plugin-detail-section .hl-item {
+            border-left: 3px solid var(--accent, #5b6cff); padding: 0.25rem 0 0.25rem 0.6rem; margin-bottom: 0.5rem;
         }
-        return wrap;
-    }
+        .plugin-detail-section .hl-text { font-size: 0.82rem; line-height: 1.5; }
+        .plugin-detail-section .hl-loc { font-size: 0.68rem; color: var(--muted, #888); margin-top: 2px; }
+        .plugin-detail-section .hl-toggle {
+            font-size: 0.72rem; background: none; border: none; color: var(--accent, #5b6cff);
+            cursor: pointer; padding: 0;
+        }
+    `);
 
-    async function onModalOpened({ asin }) {
-        if (!asin) return;
-        const modalBody = document.querySelector('#book-modal .modal-body');
-        if (!modalBody) return;
-        // 重複防止
-        let container = modalBody.querySelector('.book-highlights-section');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'book-highlights-section';
-            modalBody.appendChild(container);
-        }
-        container.textContent = '';
-        const loading = document.createElement('div');
-        loading.className = 'highlights-loading';
-        loading.textContent = 'ハイライトを読み込み中...';
-        container.appendChild(loading);
-
-        try {
-            const highlights = await loadHighlightsForAsin(asin);
-            renderInto(container, highlights);
-        } catch (e) {
-            container.textContent = '';
-            const err = document.createElement('p');
-            err.className = 'no-highlights';
-            err.textContent = 'ハイライトの読み込みに失敗しました: ' + (e.message || e);
-            container.appendChild(err);
-        }
-    }
-
-    api.on('ui:book-modal-opened', onModalOpened);
-
-    return {
-        deactivate() {
-            // モーダル内のハイライトセクションを除去
-            const sec = document.querySelector('#book-modal .book-highlights-section');
-            if (sec) sec.remove();
-            cache.clear();
-        }
-    };
+    return { deactivate() { cache.clear(); } };
 }
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
