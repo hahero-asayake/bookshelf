@@ -5239,11 +5239,29 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     pointer-events: none;
     overflow: hidden;
 }
-.book-item:hover .card-hover-pop {
+/* マウス端末のみ :hover で表示 (タッチでは sticky hover で誤表示するため除外) */
+@media (hover: hover) {
+    .book-item:hover .card-hover-pop {
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        pointer-events: auto;
+    }
+}
+/* タッチ端末: 長押しで付与する .show-pop で表示 (_initBookPopLongPress) */
+.book-item.show-pop .card-hover-pop {
     opacity: 1;
     visibility: visible;
     transform: none;
     pointer-events: auto;
+}
+/* タッチ端末では長押し時のネイティブ選択 / 画像コールアウトを抑止 */
+@media (hover: none) and (pointer: coarse) {
+    .book-item {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+    }
 }
 .card-hover-pop .pop-stars {
     position: static;
@@ -5795,4 +5813,45 @@ body.select-mode .drag-handle { display: none; }
         gap: 0.9rem;
     }
     .bookshelf.view-covers .book-item { width: 100%; min-width: 0; }
+
+    /* --- ダッシュボード: PC の 12 列 span をモバイルは 2 列リフローに --- */
+    .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+    .dashboard-widget.span-3,
+    .dashboard-widget.span-4 { grid-column: span 1; }            /* カウンター等は 2 列 */
+    .dashboard-widget.span-6,
+    .dashboard-widget.span-8,
+    .dashboard-widget.span-12 { grid-column: span 2; }           /* 大きいものは全幅 */
+    .add-widget-card { grid-column: span 2; }
+    #dashboard { padding: 0.8rem 0.8rem 1.2rem; }
+    .dashboard-toolbar { flex-wrap: wrap; gap: 0.5rem; }
+
+    /* --- モーダル: モバイルは全画面シート + 余白圧縮 (中身の横溢れ解消) --- */
+    .modal.show { padding: 0; align-items: stretch; }
+    .modal-content {
+        max-width: 100%;
+        width: 100%;
+        max-height: 100%;
+        height: 100%;
+        margin: 0;
+        border-radius: 0;
+    }
+    .modal-body { padding: 1rem; padding-top: 2.6rem; }
+    /* 横並び行をモバイルで折り返す + 入力/選択を全幅に (はみ出し防止) */
+    .sync-method-row,
+    .plugin-install-input-group,
+    .settings-action-row,
+    .settings-action-list,
+    .path-card-footer { flex-wrap: wrap; }
+    .modal-content select,
+    .modal-content input[type="text"],
+    .modal-content textarea { max-width: 100%; }
+    .sync-method-row select,
+    .plugin-install-input-group input,
+    .plugin-install-input-group select { width: 100%; min-width: 0; }
+    .plugin-install-card,
+    .plugin-cat-legend,
+    .settings-section,
+    .settings-section-body { min-width: 0; }
+    .plugin-install-hint,
+    .sync-method-hint { word-break: break-word; overflow-wrap: anywhere; }
 }

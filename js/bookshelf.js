@@ -1431,6 +1431,13 @@ class VirtualBookshelf {
         bookElement.addEventListener('dragend', (e) => this.handleDragEnd(e));
         
         bookElement.addEventListener('click', (e) => {
+            // 長押しで pop を出した直後の click は抑制 (詳細を開かない)
+            if (bookElement._suppressClick) {
+                bookElement._suppressClick = false;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (e.target.closest('.drag-handle') || bookElement.classList.contains('dragging')) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -3679,6 +3686,50 @@ class VirtualBookshelf {
                 }
             });
         }
+
+        // 一覧カードの hover ポップを長押しで表示 (タッチ端末)
+        this._initBookPopLongPress();
+    }
+
+    /**
+     * タッチ端末で一覧カードの hover ポップ (.card-hover-pop = 星 + メモ) を
+     * 「長押し」で表示する。マウスの :hover はタッチで誤動作/選択状態になるため、
+     * タッチは長押し→ .show-pop 付与に一本化 (CSS 側で :hover はマウス端末限定)。
+     */
+    _initBookPopLongPress() {
+        if (this._popLongPressBound) return;
+        this._popLongPressBound = true;
+        const container = document.querySelector('.app-main-pane') || document.body;
+        let timer = null, sx = 0, sy = 0;
+        const clearAll = () => document.querySelectorAll('.book-item.show-pop')
+            .forEach(el => el.classList.remove('show-pop'));
+        const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+        container.addEventListener('touchstart', (e) => {
+            // 既に開いている pop 内の操作 (星タップ等) は素通し
+            if (e.target.closest('.book-item.show-pop')) return;
+            clearAll();
+            const item = e.target.closest('.book-item');
+            if (!item || !item.querySelector('.card-hover-pop')) return;
+            if (document.body.classList.contains('select-mode')) return;
+            item._suppressClick = false;
+            const t = e.touches[0];
+            sx = t.clientX; sy = t.clientY;
+            timer = setTimeout(() => {
+                timer = null;
+                item.classList.add('show-pop');
+                item._suppressClick = true;   // 直後の click(詳細) を抑制
+            }, 450);
+        }, { passive: true });
+
+        container.addEventListener('touchmove', (e) => {
+            if (!timer) return;
+            const t = e.touches[0];
+            if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) cancel(); // スクロール
+        }, { passive: true });
+
+        container.addEventListener('touchend', cancel, { passive: true });
+        container.addEventListener('touchcancel', cancel, { passive: true });
     }
 
     _togglePane(which) {
