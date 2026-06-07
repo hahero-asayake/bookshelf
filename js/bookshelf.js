@@ -425,10 +425,6 @@ class VirtualBookshelf {
                 if (!item) return;
                 const key = item.dataset.headerItem;
                 switch (key) {
-                    case 'back-to-main':
-                        if (this.router) this.router.navigateMain();
-                        else this._setBodyView('main');
-                        break;
                     case 'manage-bookshelves':
                         this.showBookshelfManager();
                         break;
@@ -688,8 +684,7 @@ class VirtualBookshelf {
             { btnId: 'toggle-search',           popId: 'search-popover',     onOpen: () => {
                 const input = document.getElementById('search-input');
                 if (input) setTimeout(() => input.focus(), 0);
-            }},
-            { btnId: 'bookshelf-selector-btn',  popId: 'bookshelf-popover',  onOpen: () => this._renderBookshelfPopover() }
+            }}
         ];
 
         const closeAll = (except) => {
@@ -729,36 +724,6 @@ class VirtualBookshelf {
             if (e.key !== 'Escape') return;
             pairs.forEach(({ popId }) => {
                 const pop = document.getElementById(popId);
-                if (pop) pop.hidden = true;
-            });
-        });
-    }
-
-    _renderBookshelfPopover() {
-        const host = document.getElementById('bookshelf-popover-list');
-        if (!host) return;
-        const all = (this.userData.bookshelves || []).find(bs => bs.isSpecial);
-        const current = this.currentBookshelf || (all && all.id) || 'all';
-
-        const items = [];
-        if (all) items.push({ id: all.id, iconName: all.iconName || 'library', name: all.name || '全ての本' });
-        for (const bs of (this.userData.bookshelves || [])) {
-            if (bs.isSpecial) continue;
-            items.push({ id: bs.id, iconName: bs.iconName || 'library', name: bs.name });
-        }
-
-        host.innerHTML = items.map(it => `
-            <button type="button" class="bookshelf-popover-item ${it.id === current ? 'is-current' : ''}" data-bs-id="${it.id}">
-                <span class="bs-popover-icon" data-icon-value="${(it.iconName || '').replace(/"/g,'&quot;')}">${window.renderIcon(it.iconName || 'library', { size: 16 })}</span>
-                <span>${it.name}</span>
-            </button>
-        `).join('');
-
-        host.querySelectorAll('[data-bs-id]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.bsId;
-                this.switchBookshelf(id);
-                const pop = document.getElementById('bookshelf-popover');
                 if (pop) pop.hidden = true;
             });
         });
@@ -3491,11 +3456,8 @@ class VirtualBookshelf {
     }
 
     updateBookshelfSelector() {
-        // V6 では popover ベース。popover が開かれた時に _renderBookshelfPopover が呼ばれる。
-        // 開いていない場合でも、開いている時の中身を最新化しておく。
-        const pop = document.getElementById('bookshelf-popover');
-        if (pop && !pop.hidden) this._renderBookshelfPopover();
-        // PC v2: 左サイドバーツリーも更新
+        // 本棚切替は左サイドバーツリーに一本化 (bookshelf-selector popover は 2026-06-07 撤去)。
+        // PC v2: 左サイドバーツリーを更新
         this._renderSidebarTree();
         // ダッシュボードも再描画 (本棚ハイライトウィジェットや、カウンターが本棚数に依存するため)
         if (this.dashboard && document.body.classList.contains('app-view-main')) {
@@ -4217,8 +4179,7 @@ class VirtualBookshelf {
     // 本棚ツールバー(Phase E)へ、back-to-main/bookshelf-selector/manage/overview は ⌘K へ移設。
     // 下記はカスタマイザで「任意に再配置できる」候補。required は open-settings のみ。
     static HEADER_ITEMS_META = {
-        'back-to-main':        { label: '← 一覧',       defaultIcon: 'arrow-left',        emoji: '←',  duplicatable: false, needsBookshelf: true },
-        'bookshelf-selector':  { label: '本棚切替',     defaultIcon: 'library',           emoji: '📚', duplicatable: false },
+        // back-to-main / bookshelf-selector は 3 ペイン化でサイドバーツリーと完全重複のため撤去 (2026-06-07)。
         'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '📝', duplicatable: false },
         'overview-display':    { label: '一覧画像表示', defaultIcon: 'image',             emoji: '🖼️', duplicatable: false, stateful: true },
         'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
@@ -4325,7 +4286,7 @@ class VirtualBookshelf {
 
         for (const it of layout.items) if (!it.id) it.id = this._newPlacementId();
 
-        // required アイテム (open-settings, back-to-main) の存在保証
+        // required アイテム (open-settings) の存在保証
         for (const [key, meta] of Object.entries(VirtualBookshelf.HEADER_ITEMS_META)) {
             if (meta.required && !layout.items.some(it => it.key === key)) {
                 layout.items.push({ id: this._newPlacementId(), key });
@@ -4617,20 +4578,19 @@ class VirtualBookshelf {
             const enabled = !disabledSet.has(id);
             const loaded = loadedSet.has(id);
             const icoBtn = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+            // 有効/無効はトグルスイッチで切替 (data-toggle-plugin を change で拾う)
+            const toggle = `<label class="toggle-switch" title="${enabled ? 'クリックで無効化' : 'クリックで有効化'}">
+                <input type="checkbox" class="plugin-toggle-input" data-toggle-plugin="${id}" ${enabled ? 'checked' : ''}>
+                <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+            </label>`;
             const settingsBtn = `<button type="button" class="btn btn-small plugin-card-settings" data-settings-plugin="${id}" title="このプラグインの設定（アイコン変更等）">${icoBtn('settings')}設定</button>`;
-            const uninstallBtn = `<button type="button" class="btn btn-small btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}削除</button>`;
-            const disableBtn = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">${icoBtn('pause')}無効化</button>`;
-            let stateLabel, actionBtns;
-            if (enabled && loaded) {
-                stateLabel = `<span class="plugin-state ok">${icoBtn('circle-check', 12)}有効</span>`;
-                actionBtns = `${settingsBtn}${disableBtn}${uninstallBtn}`;
-            } else if (enabled && !loaded) {
-                stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
-                actionBtns = `${settingsBtn}${disableBtn}${uninstallBtn}`;
-            } else {
-                stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
-                actionBtns = `${settingsBtn}<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">${icoBtn('play')}有効化</button>${uninstallBtn}`;
-            }
+            const uninstallBtn = `<button type="button" class="btn btn-small btn-icon-only btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}</button>`;
+            // 状態ラベル: 読み込み失敗のみ強調。有効/無効はトグルで自明なので控えめに表示
+            let stateLabel;
+            if (enabled && loaded)       stateLabel = `<span class="plugin-state ok">${icoBtn('circle-check', 12)}有効</span>`;
+            else if (enabled && !loaded) stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
+            else                         stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
+            const actionBtns = `${toggle}${settingsBtn}${uninstallBtn}`;
             // 拡張点カテゴリ (manifest.categories 優先、無ければ有効時の登録から推定)
             const cats = (Array.isArray(m.categories) && m.categories.length)
                 ? m.categories
@@ -4650,15 +4610,15 @@ class VirtualBookshelf {
                 ? `<span class="plugin-publishable-badge" title="公開エクスポート対象">${window.renderIcon('globe', { size: 12 })}</span>`
                 : '';
             return `
-                <div class="plugin-card-v2" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
+                <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
                     <div class="plugin-card-info">
                         <div class="plugin-card-title">
                             ${iconPreviewHtml}<strong>${m.name || id}</strong>
                             <small>v${m.version || '?'} ${publishableBadge}</small>
+                            ${stateLabel}
                         </div>
                         ${catBadges}
                         <div class="plugin-card-desc">${m.description || ''}</div>
-                        ${stateLabel}
                     </div>
                     <div class="plugin-card-actions">${actionBtns}</div>
                 </div>
@@ -4719,7 +4679,11 @@ class VirtualBookshelf {
                 <div class="psm-backdrop"></div>
                 <div class="psm-panel" role="dialog" aria-modal="true">
                     <div class="psm-head">
-                        <h3 class="psm-title"></h3>
+                        <span class="psm-head-icon"></span>
+                        <div class="psm-head-text">
+                            <h3 class="psm-title"></h3>
+                            <div class="psm-head-sub"></div>
+                        </div>
                         <button type="button" class="psm-close" title="閉じる"></button>
                     </div>
                     <div class="psm-body"></div>
@@ -4730,41 +4694,52 @@ class VirtualBookshelf {
             modal.querySelector('.psm-close').addEventListener('click', close);
             this._pluginSettingsModalClose = close;
         }
-        modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 16 });
+        modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 18 });
 
         const cats = (Array.isArray(manifest.categories) && manifest.categories.length)
             ? manifest.categories
             : (loaded ? this.pluginAPI.getPluginContributions(id) : []);
 
-        modal.querySelector('.psm-title').innerHTML =
-            `${this.escapeHtml(manifest.name || id)} <small style="color:var(--muted);font-weight:400;">v${this.escapeHtml(manifest.version || '?')}</small>`;
-
         const currentIcon = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
-        const iconPreview = currentIcon
-            ? `<span class="psm-icon-preview" data-icon-value="${currentIcon.replace(/"/g, '&quot;')}">${window.renderIcon(currentIcon, { size: 20 })}</span>`
-            : `<span class="psm-icon-preview psm-icon-none">${ico('puzzle', 20)}</span>`;
+
+        // ヘッダー: アイコン + 名前 + (version, カテゴリバッジ)
+        const headIcon = modal.querySelector('.psm-head-icon');
+        headIcon.className = `psm-head-icon ${enabled ? '' : 'is-off'}`;
+        headIcon.innerHTML = currentIcon
+            ? window.renderIcon(currentIcon, { size: 22 })
+            : window.renderIcon('puzzle', { size: 22 });
+        modal.querySelector('.psm-title').textContent = manifest.name || id;
+        modal.querySelector('.psm-head-sub').innerHTML =
+            `<span class="psm-version">v${this.escapeHtml(manifest.version || '?')}</span>${this._renderPluginCategoryBadges(cats)}`;
+
+        const stateClass = enabled ? (loaded ? 'ok' : 'warn') : 'muted';
+        const stateText  = enabled ? (loaded ? '有効' : '読み込み失敗') : '無効';
 
         const body = modal.querySelector('.psm-body');
         body.innerHTML = `
-            ${this._renderPluginCategoryBadges(cats)}
             ${manifest.description ? `<p class="psm-desc">${this.escapeHtml(manifest.description)}</p>` : ''}
 
-            <div class="psm-section">
-                <div class="psm-section-title">基本</div>
-                <div class="psm-row">
-                    <span class="psm-row-label">アイコン</span>
-                    <span class="psm-icon-wrap">${iconPreview}</span>
-                    <button type="button" class="btn btn-small psm-icon-change">${ico('palette')}変更</button>
-                    <button type="button" class="btn btn-small btn-secondary psm-icon-reset">既定に戻す</button>
+            <div class="psm-enable-card ${enabled ? 'is-on' : 'is-off'}">
+                <div class="psm-enable-text">
+                    <div class="psm-enable-title">プラグインを有効にする</div>
+                    <div class="psm-enable-state ${stateClass}">${ico(enabled ? (loaded ? 'circle-check' : 'alert-triangle') : 'circle', 12)}${stateText}</div>
                 </div>
-                <div class="psm-row">
-                    <span class="psm-row-label">状態</span>
-                    <button type="button" class="btn btn-small ${enabled ? 'btn-secondary' : 'btn-primary'} psm-toggle-enable">
-                        ${enabled ? ico('pause') + '無効化' : ico('play') + '有効化'}
-                    </button>
-                    <span class="psm-state ${enabled ? (loaded ? 'ok' : 'warn') : 'muted'}">
-                        ${enabled ? (loaded ? '有効' : '読み込み失敗') : '無効'}
-                    </span>
+                <label class="toggle-switch toggle-switch-lg" title="${enabled ? 'クリックで無効化' : 'クリックで有効化'}">
+                    <input type="checkbox" class="psm-toggle-input" ${enabled ? 'checked' : ''}>
+                    <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                </label>
+            </div>
+
+            <div class="psm-section">
+                <div class="psm-section-title">外観</div>
+                <div class="psm-field">
+                    <div class="psm-field-main">
+                        <span class="psm-field-label">アイコン</span>
+                        <span class="psm-field-hint">ヘッダーボタン・一覧で使われます</span>
+                    </div>
+                    <span class="psm-icon-preview ${currentIcon ? '' : 'psm-icon-none'}" ${currentIcon ? `data-icon-value="${currentIcon.replace(/"/g, '&quot;')}"` : ''}>${window.renderIcon(currentIcon || 'puzzle', { size: 20 })}</span>
+                    <button type="button" class="btn btn-small psm-icon-change">${ico('palette')}変更</button>
+                    <button type="button" class="btn btn-small btn-secondary psm-icon-reset">既定</button>
                 </div>
             </div>
 
@@ -4792,15 +4767,17 @@ class VirtualBookshelf {
             this._applyHeaderLayout();
         });
 
-        // 有効/無効トグル
-        body.querySelector('.psm-toggle-enable').addEventListener('click', async () => {
+        // 有効/無効トグル (スイッチ)
+        body.querySelector('.psm-toggle-input').addEventListener('change', async (e) => {
+            const next = e.target.checked;
             try {
-                await this.togglePlugin(id, !enabled);
+                await this.togglePlugin(id, next);
                 await this._renderPluginListSection();
                 this._applyHeaderLayout();
                 this._openPluginSettings(id);        // 状態を反映して再描画
             } catch (err) {
-                alert((enabled ? '無効化' : '有効化') + '失敗: ' + err.message);
+                alert((next ? '有効化' : '無効化') + '失敗: ' + err.message);
+                this._openPluginSettings(id);
             }
         });
 
@@ -4885,6 +4862,8 @@ class VirtualBookshelf {
         };
 
         host.addEventListener('dragstart', (e) => {
+            // アクション領域 (トグル/ボタン) 操作中はドラッグ開始しない
+            if (e.target.closest('.plugin-card-actions')) { e.preventDefault(); return; }
             const card = e.target.closest('.plugin-card-v2');
             if (!card) return;
             dragState.id = card.dataset.pluginId;
@@ -4916,37 +4895,25 @@ class VirtualBookshelf {
             this._reorderPluginByIndex(dragState.id, idx);
         }, { signal });
 
+        // 有効/無効トグル (checkbox の change)
+        host.addEventListener('change', (e) => {
+            const toggle = e.target.closest('[data-toggle-plugin]');
+            if (!toggle) return;
+            const id = toggle.dataset.togglePlugin;
+            const next = toggle.checked;
+            (async () => {
+                try {
+                    await this.togglePlugin(id, next);
+                    await this._renderHeaderCustomizer();
+                    this._applyHeaderLayout();
+                } catch (err) {
+                    alert((next ? '有効化' : '無効化') + '失敗: ' + err.message);
+                    await this._renderPluginListSection();
+                }
+            })();
+        }, { signal });
+
         host.addEventListener('click', (e) => {
-            const enable = e.target.closest('[data-enable-plugin]');
-            if (enable) {
-                e.stopPropagation();
-                const id = enable.dataset.enablePlugin;
-                (async () => {
-                    try {
-                        await this.togglePlugin(id, true);
-                        await this._renderHeaderCustomizer();
-                        this._applyHeaderLayout();
-                    } catch (err) {
-                        alert('有効化失敗: ' + err.message);
-                    }
-                })();
-                return;
-            }
-            const disable = e.target.closest('[data-disable-plugin]');
-            if (disable) {
-                e.stopPropagation();
-                const id = disable.dataset.disablePlugin;
-                (async () => {
-                    try {
-                        await this.togglePlugin(id, false);
-                        await this._renderHeaderCustomizer();
-                        this._applyHeaderLayout();
-                    } catch (err) {
-                        alert('無効化失敗: ' + err.message);
-                    }
-                })();
-                return;
-            }
             const uninstall = e.target.closest('[data-uninstall-plugin]');
             if (uninstall) {
                 e.stopPropagation();
