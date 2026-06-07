@@ -388,6 +388,7 @@ class VirtualBookshelf {
             this.sortOrder = e.target.value;
             this.updateSortDirectionButton();
             this.applySorting();
+            this._updateBulkBar(); // 「先頭に移動」ボタンの表示可否を更新
         });
 
         document.getElementById('sort-direction').addEventListener('click', () => {
@@ -847,11 +848,13 @@ class VirtualBookshelf {
             }
         }
 
-        // 3) 本 (query があるときのみ、上位 30 件)
+        // 3) 本 (query があるときのみ、上位 30 件)。除外済みの本は出さない。
         if (q) {
             let count = 0;
+            const excludedSet = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
             for (const book of (this.books || [])) {
                 if (count >= 30) break;
+                if (excludedSet.has(book.asin)) continue;
                 if (matches(book.title) || matches(book.authors) || matches(book.asin)) {
                     const b = book;
                     items.push({ group: '本', icon: 'book-open', title: b.title, sub: b.authors || '', run: () => { this._closePalette(); this.showBookDetail(b); } });
@@ -933,6 +936,12 @@ class VirtualBookshelf {
         const exclBtn = document.getElementById('bulk-exclude');
         if (exclBtn) exclBtn.addEventListener('click', () => this._bulkExclude());
 
+        const moveFrontBtn = document.getElementById('bulk-move-front');
+        if (moveFrontBtn) moveFrontBtn.addEventListener('click', () => this._bulkMoveToFront());
+
+        const removeShelfBtn = document.getElementById('bulk-remove-shelf');
+        if (removeShelfBtn) removeShelfBtn.addEventListener('click', () => this._bulkRemoveFromShelf());
+
         const addBtn = document.getElementById('bulk-add-shelf');
         const addPop = document.getElementById('bulk-shelf-popover');
         if (addBtn && addPop) {
@@ -981,6 +990,17 @@ class VirtualBookshelf {
         const n = this.selectedAsins ? this.selectedAsins.size : 0;
         if (count) count.textContent = `${n} 冊選択中`;
         if (bar) bar.hidden = !this.selectMode;
+
+        // 文脈に応じて表示するボタンを切り替え
+        const curShelf = (this.userData.bookshelves || []).find(b => b.id === this.currentBookshelf);
+        const isUserShelf = !!curShelf && !curShelf.isSpecial;     // ALL/ホーム以外
+        const isCustom = this.sortOrder === 'custom';
+        const moveFrontBtn = document.getElementById('bulk-move-front');
+        const removeShelfBtn = document.getElementById('bulk-remove-shelf');
+        // 先頭に移動: カスタム順のときだけ
+        if (moveFrontBtn) moveFrontBtn.hidden = !isCustom;
+        // 本棚から外す: ユーザー本棚を表示中のときだけ (ALL は「除外」を使う)
+        if (removeShelfBtn) removeShelfBtn.hidden = !isUserShelf;
     }
 
     _renderBulkShelfList() {
@@ -1035,6 +1055,62 @@ class VirtualBookshelf {
         this.updateDisplay();
         this.updateStats();
         alert(`✅ ${asins.length} 冊を除外しました`);
+    }
+
+    /** 現在の本棚の全メンバー ASIN を「表示順 (custom order を尊重)」で返す */
+    _shelfOrderedAsins(key) {
+        const bs = (this.userData.bookshelves || []).find(b => b.id === key);
+        let members;
+        if (bs && !bs.isSpecial) members = [...(bs.books || [])];
+        else members = (this.books || []).map(b => b.asin); // all / 不明時は全蔵書
+        const memberSet = new Set(members);
+        const order = (this.userData.bookOrder && this.userData.bookOrder[key]) || [];
+        const inOrder = order.filter(a => memberSet.has(a));
+        const inOrderSet = new Set(inOrder);
+        const rest = members.filter(a => !inOrderSet.has(a));
+        return [...inOrder, ...rest];
+    }
+
+    /** 選択した本を現在の本棚の先頭へ移動 (カスタム順のときのみ) */
+    async _bulkMoveToFront() {
+        if (this.sortOrder !== 'custom') {
+            alert('「並び替え」を「カスタム順」にすると、先頭に移動できます。');
+            return;
+        }
+        const asins = [...(this.selectedAsins || [])];
+        if (!asins.length) { alert('本を選択してください'); return; }
+        const key = this.currentBookshelf || 'all';
+        const ordered = this._shelfOrderedAsins(key);
+        const selSet = new Set(asins.filter(a => ordered.includes(a)));
+        if (!selSet.size) return;
+        const newOrder = [...ordered.filter(a => selSet.has(a)), ...ordered.filter(a => !selSet.has(a))];
+        if (!this.userData.bookOrder) this.userData.bookOrder = {};
+        this.userData.bookOrder[key] = newOrder;
+        await this.saveUserData();
+        this.applyFilters();
+        this.updateDisplay();
+        alert(`${selSet.size} 冊を先頭に移動しました`);
+    }
+
+    /** 選択した本を現在の (ユーザー) 本棚から外す。本自体は削除しない。子孫からもカスケード。 */
+    async _bulkRemoveFromShelf() {
+        const curShelf = (this.userData.bookshelves || []).find(b => b.id === this.currentBookshelf);
+        if (!curShelf || curShelf.isSpecial) {
+            alert('「すべての本」では使えません。蔵書から外すには「すべての本から除外」を使ってください。');
+            return;
+        }
+        const asins = [...(this.selectedAsins || [])].filter(a => (curShelf.books || []).includes(a));
+        if (!asins.length) { alert('この本棚にある本を選択してください'); return; }
+        if (!confirm(`選択した ${asins.length} 冊を「${curShelf.name}」から外しますか？\n\n本自体は削除されません（子の本棚に入っている場合はそこからも外れます）。`)) return;
+        for (const asin of asins) {
+            this.bookshelfManager.removeBookFromBookshelf(curShelf.internalId, asin);
+        }
+        await this.saveUserData();
+        this._clearSelection();
+        this.applyFilters();
+        this.updateDisplay();
+        if (typeof this._renderSidebarTree === 'function') this._renderSidebarTree();
+        alert(`${asins.length} 冊を「${curShelf.name}」から外しました`);
     }
 
     search(query) {
@@ -1183,15 +1259,18 @@ class VirtualBookshelf {
 
     updateSortDirectionButton() {
         const button = document.getElementById('sort-direction');
+        const hint = document.getElementById('fp-custom-hint');
+        if (!button) return;
         const renderArrow = (dir) => window.renderIcon(dir === 'asc' ? 'arrow-up' : 'arrow-down', { size: 14 });
 
         if (this.sortOrder === 'custom') {
-            button.innerHTML = `<span class="h-icon">${window.renderIcon('list-ordered', { size: 14 })}</span>カスタム順`;
-            button.disabled = true;
-            button.style.opacity = '0.5';
+            // カスタム順は方向の概念が無いのでボタンは隠し、ドラッグ並び替えの案内を出す
+            button.style.display = 'none';
+            if (hint) hint.style.display = '';
         } else {
+            button.style.display = '';
             button.disabled = false;
-            button.style.opacity = '1';
+            if (hint) hint.style.display = 'none';
             const arrow = `<span class="h-icon">${renderArrow(this.sortDirection)}</span>`;
             if (this.sortOrder === 'acquiredTime') {
                 button.innerHTML = `${arrow}${this.sortDirection === 'asc' ? '古い順' : '新しい順'}`;
@@ -3475,6 +3554,8 @@ class VirtualBookshelf {
             const slug = bs?.slug || bookshelfId;
             this.router.navigateBookshelf(slug);
         }
+        // 複数選択中なら一括バーのボタン表示 (本棚から外す等) を本棚に合わせて更新
+        if (this.selectMode) this._updateBulkBar();
     }
 
     /**
@@ -3766,6 +3847,11 @@ class VirtualBookshelf {
         else this._renderSidebarTree();
         if (typeof this.renderBookshelfOverview === 'function') this.renderBookshelfOverview();
         if (typeof this._updateBookshelfViewTitle === 'function') this._updateBookshelfViewTitle();
+        // 本棚管理モーダルが開いていれば同じ並びに更新 (左ペインと共通の挙動)
+        const bsModal = document.getElementById('bookshelf-modal');
+        if (bsModal && bsModal.classList.contains('show') && typeof this.renderBookshelfList === 'function') {
+            this.renderBookshelfList();
+        }
     }
 
     // 親キーの正規化: 「ルート(ALL 直下)」を表す値 (null/''/undefined/'all'/ALL の internalId・slug)
@@ -5092,9 +5178,30 @@ class VirtualBookshelf {
         if (!this.userData.bookshelves) {
             this.userData.bookshelves = [];
         }
+        const bm = this.bookshelfManager;
+
+        // 左ペインツリーと同じ階層構造で並べる (parent||null でグループ化、ALL を先頭、深さ優先)。
+        // これにより並び替え時も子は親の下にまとまって表示される。
+        const byParent = new Map();
+        this.userData.bookshelves.forEach(bs => {
+            const key = bs.parent || null;
+            if (!byParent.has(key)) byParent.set(key, []);
+            byParent.get(key).push(bs);
+        });
+        const rows = [];
+        const walk = (bs, depth) => {
+            rows.push({ bs, depth });
+            (byParent.get(bm._keyOf(bs)) || []).forEach(c => walk(c, depth + 1));
+        };
+        const roots = (byParent.get(null) || []).slice().sort((a, b) => {
+            if (a.isSpecial && !b.isSpecial) return -1;
+            if (!a.isSpecial && b.isSpecial) return 1;
+            return 0;
+        });
+        roots.forEach(r => walk(r, 0));
 
         let html = '';
-        this.userData.bookshelves.forEach(bookshelf => {
+        rows.forEach(({ bs: bookshelf, depth }) => {
             const bookCount = bookshelf.books ? bookshelf.books.length : 0;
             const isPublic = bookshelf.isPublic || false;
             const isSpecial = bookshelf.isSpecial || false;
@@ -5110,7 +5217,7 @@ class VirtualBookshelf {
             const bsEffectiveIcon = bookshelf.iconName || 'library';
             const bsIconSvg = window.renderIcon(bsEffectiveIcon, { size: 16 });
             html += `
-                <div class="bookshelf-item" data-id="${bookshelf.id}" draggable="${!isSpecial}">
+                <div class="bookshelf-item" data-id="${bookshelf.id}" data-internal-id="${bm._keyOf(bookshelf)}" data-special="${isSpecial ? '1' : '0'}" draggable="${!isSpecial}" style="margin-left:${depth * 1.5}rem;">
                     <div class="bookshelf-drag-handle">${dragHandle}</div>
                     <div class="bookshelf-info">
                         <h4><span class="bookshelf-list-icon" data-icon-value="${bsEffectiveIcon.replace(/"/g,'&quot;')}">${bsIconSvg}</span>${bookshelf.name} ${specialBadge}${publicBadge}</h4>
@@ -7102,81 +7209,61 @@ class VirtualBookshelf {
     }
 
     setupBookshelfDragAndDrop(container) {
-        let draggedBookshelf = null;
+        const clearDrop = () => container.querySelectorAll('.bookshelf-item').forEach(i => {
+            i.classList.remove('bsm-drop-before', 'bsm-drop-after', 'bsm-drop-inside');
+            delete i.dataset.dropZone;
+        });
 
         container.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('bookshelf-item')) {
-                draggedBookshelf = e.target;
-                e.target.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', e.target.dataset.id);
-            }
+            const item = e.target.closest('.bookshelf-item');
+            if (!item || item.dataset.special === '1') return;
+            this._modalDragKey = item.dataset.internalId;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', this._modalDragKey); } catch (_) {}
         });
 
         container.addEventListener('dragover', (e) => {
+            const item = e.target.closest('.bookshelf-item');
+            if (!this._modalDragKey || !item || item.dataset.internalId === this._modalDragKey) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            
-            const target = e.target.closest('.bookshelf-item');
-            if (target && target !== draggedBookshelf) {
-                target.style.borderTop = '2px solid #3498db';
-            }
+            // 左ペインツリーと同じ 3 ゾーン判定 (上=前 / 中=子にする / 下=後)
+            const rect = item.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            const isSpecial = item.dataset.special === '1';
+            const zone = isSpecial ? 'inside'
+                : (y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside'));
+            clearDrop();
+            item.classList.add(`bsm-drop-${zone}`);
+            item.dataset.dropZone = zone;
         });
 
         container.addEventListener('dragleave', (e) => {
-            const target = e.target.closest('.bookshelf-item');
-            if (target) {
-                target.style.borderTop = '';
+            const item = e.target.closest('.bookshelf-item');
+            if (item && !item.contains(e.relatedTarget)) {
+                item.classList.remove('bsm-drop-before', 'bsm-drop-after', 'bsm-drop-inside');
             }
         });
 
         container.addEventListener('drop', (e) => {
+            const item = e.target.closest('.bookshelf-item');
+            if (!this._modalDragKey || !item) { clearDrop(); return; }
             e.preventDefault();
-            
-            const target = e.target.closest('.bookshelf-item');
-            if (target && target !== draggedBookshelf) {
-                const draggedId = draggedBookshelf.dataset.id;
-                const targetId = target.dataset.id;
-                this.reorderBookshelves(draggedId, targetId);
+            const targetKey = item.dataset.internalId;
+            const zone = item.dataset.dropZone || 'inside';
+            clearDrop();
+            // 左ペインと同じ並び替え/親子整合ロジックを共用 (子は親に追従、reparent は確認ダイアログ)
+            if (targetKey && targetKey !== this._modalDragKey) {
+                this._onTreeDrop(this._modalDragKey, targetKey, zone);
             }
-
-            // Clear all visual feedback
-            container.querySelectorAll('.bookshelf-item').forEach(item => {
-                item.style.borderTop = '';
-            });
         });
 
-        container.addEventListener('dragend', (e) => {
-            if (e.target.classList.contains('bookshelf-item')) {
-                e.target.classList.remove('dragging');
-                draggedBookshelf = null;
-            }
-            
-            // Clear all visual feedback
-            container.querySelectorAll('.bookshelf-item').forEach(item => {
-                item.style.borderTop = '';
-            });
+        container.addEventListener('dragend', () => {
+            container.querySelectorAll('.dragging').forEach(i => i.classList.remove('dragging'));
+            clearDrop();
+            this._modalDragKey = null;
         });
-    }
-
-    reorderBookshelves(draggedId, targetId) {
-        const draggedIndex = this.userData.bookshelves.findIndex(b => b.id === draggedId);
-        const targetIndex = this.userData.bookshelves.findIndex(b => b.id === targetId);
-
-        if (draggedIndex !== -1 && targetIndex !== -1) {
-            // Remove the dragged bookshelf from its current position
-            const draggedBookshelf = this.userData.bookshelves.splice(draggedIndex, 1)[0];
-            
-            // Insert it at the new position
-            this.userData.bookshelves.splice(targetIndex, 0, draggedBookshelf);
-            
-            // Save the changes
-            this.saveUserData();
-            this.updateBookshelfSelector();
-            this.renderBookshelfList();
-            
-            console.log(`📚 本棚「${draggedBookshelf.name}」を移動しました`);
-        }
     }
 
 }

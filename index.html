@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060704">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060705">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -110,8 +110,21 @@
                                 <span class="popover-host">
                                     <button id="toggle-filter" class="btn-icon-square" title="並び替え / フィルター / 表示" data-icon="sliders-horizontal"></button>
                                     <div class="popover popover-filter" id="filter-popover" hidden>
-                                        <div class="filter-group">
-                                            <label>星評価フィルター</label>
+                                        <div class="fp-section">
+                                            <div class="fp-section-title">並び順</div>
+                                            <div class="fp-sort-row">
+                                                <select id="sort-order" class="fp-select">
+                                                    <option value="custom" selected>カスタム順</option>
+                                                    <option value="acquiredTime">購入日</option>
+                                                    <option value="title">タイトル</option>
+                                                    <option value="authors">著者</option>
+                                                </select>
+                                                <button id="sort-direction" class="fp-dir-btn" type="button"></button>
+                                            </div>
+                                            <p class="fp-hint" id="fp-custom-hint">本をドラッグして好きな順番に並べ替えできます。</p>
+                                        </div>
+                                        <div class="fp-section">
+                                            <div class="fp-section-title">星評価でしぼり込み</div>
                                             <div class="star-filter-checkboxes">
                                                 <label class="checkbox-label star-filter-row">
                                                     <input type="checkbox" id="star-5" value="5" checked>
@@ -139,22 +152,12 @@
                                                 </label>
                                             </div>
                                         </div>
-                                        <div class="filter-group">
-                                            <label>並び順</label>
-                                            <select id="sort-order">
-                                                <option value="custom" selected>カスタム順</option>
-                                                <option value="acquiredTime">購入日</option>
-                                                <option value="title">タイトル</option>
-                                                <option value="authors">著者</option>
-                                            </select>
-                                            <button id="sort-direction" class="btn btn-small"></button>
-                                        </div>
-                                        <div class="filter-group">
-                                            <label>カバーサイズ</label>
-                                            <select id="cover-size">
-                                                <option value="small">小 (120×180px)</option>
-                                                <option value="medium" selected>中 (160×240px)</option>
-                                                <option value="large">大 (200×300px)</option>
+                                        <div class="fp-section">
+                                            <div class="fp-section-title">表紙の大きさ</div>
+                                            <select id="cover-size" class="fp-select">
+                                                <option value="small">小</option>
+                                                <option value="medium" selected>中</option>
+                                                <option value="large">大</option>
                                             </select>
                                         </div>
                                     </div>
@@ -176,7 +179,9 @@
                                     <div id="bulk-shelf-list" class="bookshelf-popover-list"></div>
                                 </div>
                             </span>
-                            <button class="btn btn-small btn-warning" id="bulk-exclude"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>all から除外</button>
+                            <button class="btn btn-small btn-secondary" id="bulk-move-front" hidden><span class="h-icon" data-icon="arrow-up-to-line" data-icon-size="14"></span>先頭に移動</button>
+                            <button class="btn btn-small btn-secondary" id="bulk-remove-shelf" hidden><span class="h-icon" data-icon="folder-minus" data-icon-size="14"></span>本棚から外す</button>
+                            <button class="btn btn-small btn-warning" id="bulk-exclude"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>すべての本から除外</button>
                             <button class="btn btn-small btn-secondary" id="bulk-clear">選択解除</button>
                         </div>
                     </div>
@@ -733,20 +738,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060704"></script>
-    <script src="js/storage-adapter.js?v=2026060704"></script>
-    <script src="js/local-fs-adapter.js?v=2026060704"></script>
-    <script src="js/github-adapter.js?v=2026060704"></script>
-    <script src="js/github-auth.js?v=2026060704"></script>
-    <script src="js/sync-config.js?v=2026060704"></script>
-    <script src="js/storage.js?v=2026060704"></script>
-    <script src="js/book-manager.js?v=2026060704"></script>
-    <script src="js/bookshelf-manager.js?v=2026060704"></script>
-    <script src="js/exporter.js?v=2026060704"></script>
-    <script src="js/plugin-api.js?v=2026060704"></script>
-    <script src="js/plugin-loader.js?v=2026060704"></script>
-    <script src="js/router.js?v=2026060704"></script>
-    <script src="js/dashboard.js?v=2026060704"></script>
-    <script src="js/bookshelf.js?v=2026060704"></script>
+    <script src="js/icons.js?v=2026060705"></script>
+    <script src="js/storage-adapter.js?v=2026060705"></script>
+    <script src="js/local-fs-adapter.js?v=2026060705"></script>
+    <script src="js/github-adapter.js?v=2026060705"></script>
+    <script src="js/github-auth.js?v=2026060705"></script>
+    <script src="js/sync-config.js?v=2026060705"></script>
+    <script src="js/storage.js?v=2026060705"></script>
+    <script src="js/book-manager.js?v=2026060705"></script>
+    <script src="js/bookshelf-manager.js?v=2026060705"></script>
+    <script src="js/exporter.js?v=2026060705"></script>
+    <script src="js/plugin-api.js?v=2026060705"></script>
+    <script src="js/plugin-loader.js?v=2026060705"></script>
+    <script src="js/router.js?v=2026060705"></script>
+    <script src="js/dashboard.js?v=2026060705"></script>
+    <script src="js/bookshelf.js?v=2026060705"></script>
 </body>
 </html>
