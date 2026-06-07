@@ -3809,12 +3809,15 @@ class VirtualBookshelf {
             newParent = bm._keyOf(target);                 // target の子にする
         } else {
             newParent = target.isSpecial ? allId : (target.parent || allId);
+            // 位置計算は必ず _keyOf (internalId||id) で行う。
+            // 実データは internalId 欠落 (undefined) のため、.internalId 直参照だと
+            // beforeId が常に undefined → reorderSibling が末尾追加になり「並べても末尾に飛ぶ」バグになる。
             if (zone === 'before') {
-                beforeId = target.internalId;
+                beforeId = bm._keyOf(target);
             } else { // after
-                const sibs = bm.getBookshelves().filter(b => (b.parent || allId) === newParent && b.internalId !== draggedId);
-                const idx = sibs.findIndex(b => b.internalId === targetId);
-                beforeId = (idx >= 0 && idx + 1 < sibs.length) ? sibs[idx + 1].internalId : null;
+                const sibs = bm.getBookshelves().filter(b => (b.parent || allId) === newParent && bm._keyOf(b) !== draggedId);
+                const idx = sibs.findIndex(b => bm._keyOf(b) === targetId);
+                beforeId = (idx >= 0 && idx + 1 < sibs.length) ? bm._keyOf(sibs[idx + 1]) : null;
             }
         }
         if (!newParent) newParent = allId;
@@ -4381,12 +4384,8 @@ class VirtualBookshelf {
                 layout.items.push({ id: this._newPlacementId(), key });
             }
         }
-        // 「設定」は常に末尾 (見た目の安定)。ユーザが D&D で動かしても次回再構築で末尾へ。
-        const sIdx = layout.items.findIndex(it => it.key === 'open-settings');
-        if (sIdx >= 0 && sIdx !== layout.items.length - 1) {
-            const [s] = layout.items.splice(sIdx, 1);
-            layout.items.push(s);
-        }
+        // (旧仕様) 「設定」を常に末尾に強制していたが、D&D で動かしても戻ってしまい
+        // 「設定だけ並び替えできない」状態になっていたため撤廃。設定も自由に並び替え可能。
         return layout;
     }
 
@@ -4423,6 +4422,7 @@ class VirtualBookshelf {
             span.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
             const btn = document.createElement('button');
             btn.className = 'btn-icon-square plugin-ui-button';
+            if (entry.active) btn.classList.add('is-on'); // ON/OFF 型ボタンの現在状態 (再描画後も復元)
             // pluginAPI 側に icon 適用を委譲 (override 優先, manifest.icon, emoji の順)
             if (typeof this.pluginAPI?._applyIconToButton === 'function') {
                 this.pluginAPI._applyIconToButton(btn, entry);

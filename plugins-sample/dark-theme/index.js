@@ -28,6 +28,7 @@ export function activate(api, manifest) {
     const sync = () => {
         document.body.classList.toggle(BODY_CLASS, on);
         if (btn && btn.element) btn.element.title = on ? 'ダークテーマ: ON' : 'ダークテーマ: OFF';
+        api.setUIButtonActive('dark-theme-toggle-btn', on); // 背景色で ON/OFF を明示
     };
     const toggle = () => {
         on = !on;

@@ -89,7 +89,10 @@ export function activate(api, manifest) {
     api.registerBookFilter(filter);
     api.on('books:changed', () => { cache = null; });
 
-    const sync = () => { if (btn && btn.element) btn.element.title = `シリーズまとめ: ${enabled ? 'ON' : 'OFF'}`; };
+    const sync = () => {
+        if (btn && btn.element) btn.element.title = `シリーズまとめ: ${enabled ? 'ON' : 'OFF'}`;
+        api.setUIButtonActive('series-grouping-toggle-btn', enabled); // 背景色で ON/OFF を明示
+    };
     const toggle = () => {
         enabled = !enabled;
         try { localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0'); } catch (_) {}

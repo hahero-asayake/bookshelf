@@ -3812,6 +3812,20 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     border-color: var(--accent);
 }
 
+/* ON/OFF 型プラグインボタンの「現在 ON」表示。
+   accent で塗りつぶし、OFF (通常の枠線ボタン) と一目で区別できるようにする。 */
+.plugin-ui-button.is-on {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.plugin-ui-button.is-on:hover {
+    background: var(--accent-strong, var(--accent));
+    color: #fff;
+    border-color: var(--accent-strong, var(--accent));
+}
+.plugin-ui-button.is-on svg { color: #fff; }
+
 /* ===== Phase C2: ヘッダー撤去に伴う再配置 ===== */
 /* サイドバー上部の brand (専用行。pane-toolbar は廃止) */
 .sidebar-brand {

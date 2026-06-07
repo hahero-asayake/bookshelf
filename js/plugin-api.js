@@ -125,6 +125,7 @@ class BookshelfPluginAPI {
                 self.removeUIButton(id);
                 reg.uiButtonIds.delete(id);
             },
+            setUIButtonActive: (id, on) => self.setUIButtonActive(id, on),
             registerExportTransform: (fn) => {
                 self.registerExportTransform(fn);
                 reg.exportTransforms.push(fn);
@@ -254,8 +255,15 @@ class BookshelfPluginAPI {
     }
 
     async refreshUI() {
-        if (typeof this._app.updateDisplay === 'function') this._app.updateDisplay();
-        if (typeof this._app.updateStats === 'function') this._app.updateStats();
+        // applyFilters は registerBookFilter (シリーズまとめ等) を再適用してから
+        // sort → updateDisplay → updateStats まで行う。フィルタ系プラグインのトグルを
+        // 反映するため、updateDisplay 単体ではなく applyFilters を呼ぶ。
+        if (typeof this._app.applyFilters === 'function') {
+            this._app.applyFilters();
+        } else {
+            if (typeof this._app.updateDisplay === 'function') this._app.updateDisplay();
+            if (typeof this._app.updateStats === 'function') this._app.updateStats();
+        }
         if (typeof this._app.renderBookshelfOverview === 'function') this._app.renderBookshelfOverview();
     }
 
@@ -293,6 +301,7 @@ class BookshelfPluginAPI {
             iconName: iconName || this._pluginIconNameFromManifest(pluginId),
             emoji: emoji || '',
             pluginId: pluginId,
+            active: false, // ON/OFF 型ボタンの現在状態 (setUIButtonActive で更新、再描画でも保持)
             element: null
         };
         this._uiButtons.push(entry);
@@ -308,6 +317,21 @@ class BookshelfPluginAPI {
         if (node && node.parentNode) {
             node.parentNode.removeChild(node);
         }
+    }
+
+    /**
+     * ON/OFF 型ボタンの現在状態を設定 (背景色で ON を明示)。
+     * シリーズまとめ・背表紙ビュー・ダークテーマ等、トグルで効果を切り替える
+     * プラグインが sync() 内で呼ぶ。entry.active に保持し、ヘッダー再描画後も復元される。
+     */
+    setUIButtonActive(id, isActive) {
+        const entry = this._uiButtons.find(b => b.id === id);
+        if (!entry) return;
+        entry.active = !!isActive;
+        // サイドバー配置済みボタン + 内部 pool の両方に反映 (DOM が再生成される前提で都度走査)
+        document.querySelectorAll(`[data-header-item="plugin:${CSS.escape(id)}"] .plugin-ui-button`).forEach(btn => {
+            btn.classList.toggle('is-on', entry.active);
+        });
     }
 
     // manifest の icon フィールドを取得 (plugin-loader が _manifest を entry につけている前提)
@@ -338,6 +362,7 @@ class BookshelfPluginAPI {
         const btn = document.createElement('button');
         btn.className = 'btn-icon-square plugin-ui-button';
         this._applyIconToButton(btn, entry);
+        if (entry.active) btn.classList.add('is-on');
         if (entry.title) btn.title = entry.title;
         btn.addEventListener('click', () => {
             try { entry.onClick(); }

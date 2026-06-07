@@ -83,7 +83,11 @@ export function activate(api, manifest) {
         scheduled = true;
         requestAnimationFrame(() => { scheduled = false; applyColors(); });
     };
-    const sync = () => { document.body.classList.toggle(BODY_CLASS, on); if (on) schedule(); };
+    const sync = () => {
+        document.body.classList.toggle(BODY_CLASS, on);
+        api.setUIButtonActive('view-spines-toggle-btn', on); // 背景色で ON/OFF を明示
+        if (on) schedule();
+    };
     const toggle = () => {
         on = !on;
         try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (_) {}
