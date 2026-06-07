@@ -5,6 +5,7 @@
     "description": "蔵書一覧を CSV (UTF-8 BOM 付) でダウンロード。⌘K パレットから実行 (registerCommand)。",
     "icon": "file-spreadsheet",
     "publishable": true,
+    "categories": ["command"],
     "files": ["index.js"],
     "dependencies": []
 }

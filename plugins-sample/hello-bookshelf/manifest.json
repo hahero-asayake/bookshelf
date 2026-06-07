@@ -5,6 +5,7 @@
     "description": "新プラグインAPIの最小サンプル。registerCommand / addUIButton / injectCSS / イベント購読を一通り使う。",
     "icon": "hand",
     "publishable": false,
+    "categories": ["command", "button"],
     "files": ["index.js"],
     "dependencies": []
 }

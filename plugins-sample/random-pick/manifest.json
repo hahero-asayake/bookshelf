@@ -5,6 +5,7 @@
     "description": "ランダムに1冊選んで本詳細を開く。⌘K パレットに「ランダム」「未読のみ」を登録 (registerCommand)。",
     "icon": "dices",
     "publishable": false,
+    "categories": ["command"],
     "files": ["index.js"],
     "dependencies": []
 }

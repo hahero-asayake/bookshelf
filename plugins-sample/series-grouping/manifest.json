@@ -5,6 +5,7 @@
     "description": "シリーズを検出し第1巻だけ代表表示に折りたたむ (registerBookFilter)。⌘K/ボタンで ON/OFF。",
     "icon": "layers",
     "publishable": true,
+    "categories": ["filter", "command"],
     "files": ["index.js"],
     "dependencies": []
 }

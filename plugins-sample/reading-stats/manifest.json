@@ -5,6 +5,7 @@
     "description": "蔵書総数・年別取得・評価分布・本棚別 Top5 をダッシュボード widget に表示 (registerWidget)。",
     "icon": "bar-chart-3",
     "publishable": true,
+    "categories": ["widget"],
     "files": ["index.js"],
     "dependencies": []
 }

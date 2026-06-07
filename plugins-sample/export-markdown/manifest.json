@@ -5,6 +5,7 @@
     "description": "蔵書を本棚別セクション付き Markdown でダウンロード。⌘K パレットから実行 (registerCommand)。",
     "icon": "file-text",
     "publishable": true,
+    "categories": ["command"],
     "files": ["index.js"],
     "dependencies": []
 }

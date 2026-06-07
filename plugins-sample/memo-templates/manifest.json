@@ -5,6 +5,7 @@
     "description": "本詳細ペインのメモ欄にテンプレ (感想・要点・引用 …) を1クリック挿入 (registerDetailSection)。",
     "icon": "list-plus",
     "publishable": true,
+    "categories": ["detail"],
     "files": ["index.js"],
     "dependencies": []
 }

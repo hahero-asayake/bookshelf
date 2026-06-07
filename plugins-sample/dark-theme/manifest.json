@@ -5,6 +5,7 @@
     "description": "アプリの CSS 変数を上書きして暗色テーマに切替 (injectCSS)。⌘K コマンド/ヘッダーボタンでトグル。",
     "icon": "moon",
     "publishable": true,
+    "categories": ["theme", "command"],
     "files": ["index.js"],
     "dependencies": []
 }

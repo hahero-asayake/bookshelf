@@ -5,6 +5,7 @@
     "description": "本詳細ペインに Kindle ハイライトを表示 (registerDetailSection)。plugins/highlights-builtin/data/ の .txt を ASIN で読み込む (storage adapter 経由)。",
     "icon": "highlighter",
     "publishable": true,
+    "categories": ["detail"],
     "files": ["index.js"],
     "dependencies": []
 }

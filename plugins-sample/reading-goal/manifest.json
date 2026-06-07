@@ -5,6 +5,7 @@
     "description": "年間読了目標と進捗バーをダッシュボード widget に表示 (registerWidget)。読了=★4以上・今年取得。",
     "icon": "target",
     "publishable": false,
+    "categories": ["widget", "settings"],
     "files": ["index.js"],
     "dependencies": []
 }

@@ -1862,9 +1862,7 @@ class VirtualBookshelf {
         // 「表紙に重ねる」(starOverlay) に従う。表示/非表示の visibility 設定は一覧カード専用。
         const overlayOnDetail = this._getStarOverlay();
         const starWidget = this._starWidgetHtml(book.asin, userNote.rating || 0, 18);
-        const resetBtn = (isEditMode && userNote.rating)
-            ? `<button class="bd-stars-reset rating-reset" type="button" data-asin="${esc(book.asin)}">リセット</button>`
-            : '';
+        // 評価解除は「同じ星を再クリック」で行えるため専用リセットボタンは廃止
         const showOverlay = overlayOnDetail;
         const showBelow = !overlayOnDetail;
 
@@ -1888,7 +1886,7 @@ class VirtualBookshelf {
                 <h3 class="bd-title">${esc(book.title)}</h3>
                 <div class="bd-author">${esc(book.authors)}</div>
 
-                ${showBelow ? `<div class="bd-stars">${starWidget}${resetBtn}</div>` : (resetBtn ? `<div class="bd-stars-reset-row">${resetBtn}</div>` : '')}
+                ${showBelow ? `<div class="bd-stars">${starWidget}</div>` : ''}
 
                 <div class="bd-sections" id="bd-sections">
                     ${sectionsHtml}
@@ -1982,16 +1980,6 @@ class VirtualBookshelf {
             });
         });
         
-        // Rating reset button
-        const ratingResetBtn = modalBody.querySelector('.rating-reset');
-        if (ratingResetBtn) {
-            ratingResetBtn.addEventListener('click', (e) => {
-                const asin = e.currentTarget.dataset.asin;
-                this.saveRating(asin, 0);
-                this._applyRatingEverywhere(asin, 0);
-            });
-        }
-
         const deleteBtn = modalBody.querySelector('.delete-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
@@ -4629,20 +4617,25 @@ class VirtualBookshelf {
             const enabled = !disabledSet.has(id);
             const loaded = loadedSet.has(id);
             const icoBtn = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-            const iconChangeBtn = `<button type="button" class="btn btn-small plugin-card-icon" data-icon-plugin="${id}" title="ボタンアイコンを変更">${icoBtn('palette')}アイコン</button>`;
+            const settingsBtn = `<button type="button" class="btn btn-small plugin-card-settings" data-settings-plugin="${id}" title="このプラグインの設定（アイコン変更等）">${icoBtn('settings')}設定</button>`;
             const uninstallBtn = `<button type="button" class="btn btn-small btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}削除</button>`;
             const disableBtn = `<button type="button" class="btn btn-small plugin-card-disable" data-disable-plugin="${id}" title="プラグインを無効化">${icoBtn('pause')}無効化</button>`;
             let stateLabel, actionBtns;
             if (enabled && loaded) {
                 stateLabel = `<span class="plugin-state ok">${icoBtn('circle-check', 12)}有効</span>`;
-                actionBtns = `${iconChangeBtn}${disableBtn}${uninstallBtn}`;
+                actionBtns = `${settingsBtn}${disableBtn}${uninstallBtn}`;
             } else if (enabled && !loaded) {
                 stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
-                actionBtns = `${disableBtn}${uninstallBtn}`;
+                actionBtns = `${settingsBtn}${disableBtn}${uninstallBtn}`;
             } else {
                 stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
-                actionBtns = `<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">${icoBtn('play')}有効化</button>${uninstallBtn}`;
+                actionBtns = `${settingsBtn}<button type="button" class="btn btn-small btn-primary plugin-card-enable" data-enable-plugin="${id}" title="プラグインを有効化">${icoBtn('play')}有効化</button>${uninstallBtn}`;
             }
+            // 拡張点カテゴリ (manifest.categories 優先、無ければ有効時の登録から推定)
+            const cats = (Array.isArray(m.categories) && m.categories.length)
+                ? m.categories
+                : (loaded ? this.pluginAPI.getPluginContributions(id) : []);
+            const catBadges = this._renderPluginCategoryBadges(cats);
             const nameForSearch = (m.name || id || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_NAME_LIMIT);
             const descForSearch = (m.description || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_DESC_LIMIT);
             const searchText = `${nameForSearch}${descForSearch}`.toLowerCase();
@@ -4663,6 +4656,7 @@ class VirtualBookshelf {
                             ${iconPreviewHtml}<strong>${m.name || id}</strong>
                             <small>v${m.version || '?'} ${publishableBadge}</small>
                         </div>
+                        ${catBadges}
                         <div class="plugin-card-desc">${m.description || ''}</div>
                         ${stateLabel}
                     </div>
@@ -4673,6 +4667,155 @@ class VirtualBookshelf {
 
         this._bindPluginListEvents();
         this._applyPluginSearchFilter();
+    }
+
+    /** 拡張点カテゴリ → 表示メタ (バッジ) */
+    _pluginCategoryMeta() {
+        return {
+            command:  { label: 'コマンド',     icon: 'terminal' },
+            widget:   { label: 'ウィジェット', icon: 'layout-dashboard' },
+            detail:   { label: '本詳細',       icon: 'panel-right' },
+            view:     { label: 'ビュー',       icon: 'layout-grid' },
+            theme:    { label: 'テーマ',       icon: 'palette' },
+            button:   { label: 'ボタン',       icon: 'mouse-pointer-click' },
+            filter:   { label: 'フィルタ',     icon: 'filter' },
+            export:   { label: 'エクスポート', icon: 'download' },
+            settings: { label: '設定',         icon: 'sliders-horizontal' }
+        };
+    }
+
+    _renderPluginCategoryBadges(cats) {
+        if (!Array.isArray(cats) || !cats.length) return '';
+        const meta = this._pluginCategoryMeta();
+        const badges = cats.map(c => {
+            const m = meta[c] || { label: c, icon: 'puzzle' };
+            return `<span class="plugin-cat-badge" title="拡張点: ${m.label}">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>`;
+        }).join('');
+        return `<div class="plugin-card-cats">${badges}</div>`;
+    }
+
+    /** プラグインの manifest を取得 (loaded でも disabled でも) */
+    _getPluginManifest(id) {
+        const loaded = this.pluginLoader?.getManifest?.(id);
+        if (loaded) return loaded;
+        const rec = (this.pluginLoader?._installed || []).find(p => p.id === id);
+        return (rec && rec.manifest) || {};
+    }
+
+    /** プラグインごとの設定モーダルを開く (アイコン変更・有効切替・プラグイン固有設定を集約) */
+    _openPluginSettings(id) {
+        const manifest = this._getPluginManifest(id);
+        const loaded = !!this.pluginLoader?.loaded?.has(id);
+        const enabled = !new Set(this.userData?.settings?.disabledPlugins || []).has(id);
+        const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        const overrideKey = `plugin:${id}`;
+
+        let modal = document.getElementById('plugin-settings-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'plugin-settings-modal';
+            modal.className = 'plugin-settings-modal';
+            modal.innerHTML = `
+                <div class="psm-backdrop"></div>
+                <div class="psm-panel" role="dialog" aria-modal="true">
+                    <div class="psm-head">
+                        <h3 class="psm-title"></h3>
+                        <button type="button" class="psm-close" title="閉じる"></button>
+                    </div>
+                    <div class="psm-body"></div>
+                </div>`;
+            document.body.appendChild(modal);
+            const close = () => modal.classList.remove('show');
+            modal.querySelector('.psm-backdrop').addEventListener('click', close);
+            modal.querySelector('.psm-close').addEventListener('click', close);
+            this._pluginSettingsModalClose = close;
+        }
+        modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 16 });
+
+        const cats = (Array.isArray(manifest.categories) && manifest.categories.length)
+            ? manifest.categories
+            : (loaded ? this.pluginAPI.getPluginContributions(id) : []);
+
+        modal.querySelector('.psm-title').innerHTML =
+            `${this.escapeHtml(manifest.name || id)} <small style="color:var(--muted);font-weight:400;">v${this.escapeHtml(manifest.version || '?')}</small>`;
+
+        const currentIcon = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
+        const iconPreview = currentIcon
+            ? `<span class="psm-icon-preview" data-icon-value="${currentIcon.replace(/"/g, '&quot;')}">${window.renderIcon(currentIcon, { size: 20 })}</span>`
+            : `<span class="psm-icon-preview psm-icon-none">${ico('puzzle', 20)}</span>`;
+
+        const body = modal.querySelector('.psm-body');
+        body.innerHTML = `
+            ${this._renderPluginCategoryBadges(cats)}
+            ${manifest.description ? `<p class="psm-desc">${this.escapeHtml(manifest.description)}</p>` : ''}
+
+            <div class="psm-section">
+                <div class="psm-section-title">基本</div>
+                <div class="psm-row">
+                    <span class="psm-row-label">アイコン</span>
+                    <span class="psm-icon-wrap">${iconPreview}</span>
+                    <button type="button" class="btn btn-small psm-icon-change">${ico('palette')}変更</button>
+                    <button type="button" class="btn btn-small btn-secondary psm-icon-reset">既定に戻す</button>
+                </div>
+                <div class="psm-row">
+                    <span class="psm-row-label">状態</span>
+                    <button type="button" class="btn btn-small ${enabled ? 'btn-secondary' : 'btn-primary'} psm-toggle-enable">
+                        ${enabled ? ico('pause') + '無効化' : ico('play') + '有効化'}
+                    </button>
+                    <span class="psm-state ${enabled ? (loaded ? 'ok' : 'warn') : 'muted'}">
+                        ${enabled ? (loaded ? '有効' : '読み込み失敗') : '無効'}
+                    </span>
+                </div>
+            </div>
+
+            <div class="psm-section">
+                <div class="psm-section-title">プラグイン設定</div>
+                <div id="psm-plugin-custom"></div>
+            </div>`;
+
+        // アイコン変更
+        body.querySelector('.psm-icon-change').addEventListener('click', async () => {
+            const picked = await this.openIconPicker({
+                title: `プラグイン「${manifest.name || id}」のアイコン`,
+                current: this.getHeaderIconOverride(overrideKey) || manifest.icon || ''
+            });
+            if (picked === null) return;
+            this.setHeaderIconOverride(overrideKey, picked || null);
+            this._openPluginSettings(id);            // モーダル再描画
+            this._renderPluginListSection();         // 一覧のプレビューも更新
+            this._applyHeaderLayout();
+        });
+        body.querySelector('.psm-icon-reset').addEventListener('click', () => {
+            this.setHeaderIconOverride(overrideKey, null);
+            this._openPluginSettings(id);
+            this._renderPluginListSection();
+            this._applyHeaderLayout();
+        });
+
+        // 有効/無効トグル
+        body.querySelector('.psm-toggle-enable').addEventListener('click', async () => {
+            try {
+                await this.togglePlugin(id, !enabled);
+                await this._renderPluginListSection();
+                this._applyHeaderLayout();
+                this._openPluginSettings(id);        // 状態を反映して再描画
+            } catch (err) {
+                alert((enabled ? '無効化' : '有効化') + '失敗: ' + err.message);
+            }
+        });
+
+        // プラグイン固有設定 (有効 + registerSettings 済みのみ)
+        const host = body.querySelector('#psm-plugin-custom');
+        const renderer = loaded ? this.pluginAPI.getPluginSettingsRenderer(id) : null;
+        if (renderer) {
+            try { renderer(host, this.pluginAPI.forPlugin(id)); }
+            catch (e) { host.innerHTML = `<p class="psm-muted">設定の描画に失敗: ${this.escapeHtml(e.message || String(e))}</p>`; }
+        } else {
+            host.innerHTML = `<p class="psm-muted">このプラグイン固有の設定はありません${enabled ? '' : '（有効化すると表示される場合があります）'}。</p>`;
+        }
+
+        if (typeof window.applyIcons === 'function') window.applyIcons(body);
+        modal.classList.add('show');
     }
 
     _applyPluginSearchFilter() {
@@ -4820,21 +4963,10 @@ class VirtualBookshelf {
                 })();
                 return;
             }
-            const iconBtn = e.target.closest('[data-icon-plugin]');
-            if (iconBtn) {
+            const settingsBtn = e.target.closest('[data-settings-plugin]');
+            if (settingsBtn) {
                 e.stopPropagation();
-                const id = iconBtn.dataset.iconPlugin;
-                const manifest = this.pluginLoader?.getManifest?.(id) || {};
-                const overrideKey = `plugin:${id}`;
-                const current = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
-                (async () => {
-                    const picked = await this.openIconPicker({
-                        title: `プラグイン「${manifest.name || id}」のアイコン`,
-                        current
-                    });
-                    if (picked === null) return; // キャンセル
-                    this.setHeaderIconOverride(overrideKey, picked || null);
-                })();
+                this._openPluginSettings(settingsBtn.dataset.settingsPlugin);
                 return;
             }
         }, { signal });

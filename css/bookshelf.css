@@ -4283,6 +4283,27 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     vertical-align: -2px;
 }
 
+/* 拡張点カテゴリのバッジ (種別表示) */
+.plugin-card-cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.3rem 0;
+}
+.plugin-cat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    background: var(--accent-bg, #eef0ff);
+    color: var(--accent-strong, #2a3aff);
+    border: 1px solid color-mix(in srgb, var(--accent, #5b6cff) 25%, transparent);
+}
+.plugin-cat-badge .h-icon { display: inline-flex; }
+
 .plugin-card-actions {
     display: inline-flex;
     flex-wrap: wrap;
@@ -4290,6 +4311,51 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     gap: 0.4rem;
     flex-shrink: 0;
 }
+
+/* ===== プラグインごとの設定モーダル ===== */
+.plugin-settings-modal { position: fixed; inset: 0; z-index: 1200; display: none; }
+.plugin-settings-modal.show { display: block; }
+.plugin-settings-modal .psm-backdrop { position: absolute; inset: 0; background: rgba(18,20,28,0.45); }
+.plugin-settings-modal .psm-panel {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(560px, calc(100vw - 2rem)); max-height: 85vh; overflow: auto;
+    background: var(--panel, #fff); color: var(--fg, #1c1f24);
+    border: 1px solid var(--line, #e5e7eb); border-radius: 12px; box-shadow: var(--shadow, 0 8px 24px rgba(0,0,0,0.2));
+}
+.plugin-settings-modal .psm-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.8rem 1rem; border-bottom: 1px solid var(--line, #e5e7eb);
+    position: sticky; top: 0; background: var(--panel, #fff);
+}
+.plugin-settings-modal .psm-title { margin: 0; font-size: 1rem; }
+.plugin-settings-modal .psm-close {
+    background: none; border: none; cursor: pointer; color: var(--muted, #888);
+    display: inline-flex; padding: 0.2rem; border-radius: 6px;
+}
+.plugin-settings-modal .psm-close:hover { background: var(--line2, #eef0f3); color: var(--fg, #1c1f24); }
+.plugin-settings-modal .psm-body { padding: 1rem; }
+.plugin-settings-modal .psm-desc { font-size: 0.82rem; color: var(--muted, #6b7280); margin: 0.2rem 0 0.8rem; }
+.plugin-settings-modal .psm-section { margin-top: 1rem; }
+.plugin-settings-modal .psm-section:first-of-type { margin-top: 0.4rem; }
+.plugin-settings-modal .psm-section-title {
+    font-size: 0.72rem; font-weight: 700; color: var(--muted, #6b7280);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem;
+}
+.plugin-settings-modal .psm-row {
+    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;
+}
+.plugin-settings-modal .psm-row-label { width: 52px; font-size: 0.8rem; color: var(--fg2, #4b5460); flex: 0 0 auto; }
+.plugin-settings-modal .psm-icon-preview {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border: 1px solid var(--line, #e5e7eb); border-radius: 8px;
+    background: var(--side, #fbfbfd); color: var(--accent, #5b6cff);
+}
+.plugin-settings-modal .psm-icon-none { color: var(--muted, #888); }
+.plugin-settings-modal .psm-state { font-size: 0.78rem; }
+.plugin-settings-modal .psm-state.ok    { color: #15803d; }
+.plugin-settings-modal .psm-state.warn  { color: var(--warning, #d49100); }
+.plugin-settings-modal .psm-state.muted { color: var(--muted, #888); }
+.plugin-settings-modal .psm-muted { font-size: 0.8rem; color: var(--muted, #888); margin: 0; }
 
 .plugin-card-toggle {
     display: inline-flex;

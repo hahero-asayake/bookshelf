@@ -1,18 +1,17 @@
 // reading-goal
 //
-// 年間読書目標と進捗をダッシュボード widget に表示する。
-// 旧版は独自モーダルだったが、現行はホームに registerWidget で並ぶ。
-// 読了 = ★4以上 かつ 取得日が今年。目標値は localStorage 保存 (widget内で変更可)。
+// 年間読書目標と進捗バーをダッシュボード widget に表示。
+// 目標値は registerSettings によるプラグイン設定画面で変更でき、
+// api.getConfig()/setConfig() で永続化される (userData.settings.pluginConfig)。
+// 読了 = ★4以上 かつ 取得日が今年。
 
-const STORAGE_KEY = 'plugin-reading-goal:value';
 const DEFAULT_GOAL = 50;
 
 export function activate(api, manifest) {
     const getGoal = () => {
-        const n = Number(localStorage.getItem(STORAGE_KEY));
+        const n = Number(api.getConfig().goal);
         return Number.isFinite(n) && n > 0 ? n : DEFAULT_GOAL;
     };
-    const setGoal = (n) => { try { localStorage.setItem(STORAGE_KEY, String(Math.floor(n))); } catch (_) {} };
 
     const yearReads = () => {
         const year = new Date().getFullYear();
@@ -41,21 +40,30 @@ export function activate(api, manifest) {
             const remaining = Math.max(0, goal - reads);
             const monthsLeft = 12 - new Date().getMonth();
             const pace = monthsLeft > 0 ? (remaining / monthsLeft).toFixed(1) : '0';
-
             host.innerHTML = `
                 <div class="rg-head">${year} 年 <strong>${reads}</strong> / ${goal} 冊</div>
                 <div class="rg-track"><div class="rg-fill" style="width:${pct.toFixed(1)}%"></div></div>
-                <div class="rg-sub">${remaining > 0
-                    ? `残り ${remaining} 冊・月 ${pace} 冊ペース`
-                    : '🎉 目標達成'}</div>
-                <button type="button" class="rg-edit">目標を変更</button>
-            `;
-            host.querySelector('.rg-edit').addEventListener('click', () => {
-                const v = prompt('年間目標 (冊):', String(goal));
-                const n = Number(v);
-                if (Number.isFinite(n) && n > 0) { setGoal(n); api.refreshUI(); }
-            });
+                <div class="rg-sub">${remaining > 0 ? `残り ${remaining} 冊・月 ${pace} 冊ペース` : '🎉 目標達成'}</div>`;
         }
+    });
+
+    // プラグイン設定画面 (設定モーダルの「プラグイン設定」枠に描画される)
+    api.registerSettings((host) => {
+        host.innerHTML = `
+            <label class="rg-set-label">年間目標（冊）
+                <input type="number" min="1" max="1000" class="rg-set-goal" value="${getGoal()}">
+            </label>
+            <button type="button" class="btn btn-small btn-primary rg-set-save">保存</button>
+            <span class="rg-set-status"></span>`;
+        const input = host.querySelector('.rg-set-goal');
+        const status = host.querySelector('.rg-set-status');
+        host.querySelector('.rg-set-save').addEventListener('click', async () => {
+            const v = Number(input.value);
+            if (!Number.isFinite(v) || v <= 0) { status.textContent = '正の数を入力'; return; }
+            await api.setConfig({ goal: Math.floor(v) });
+            status.textContent = '保存しました';
+            api.refreshUI();
+        });
     });
 
     api.injectCSS('reading-goal', `
@@ -63,8 +71,9 @@ export function activate(api, manifest) {
         .rg-track { height: 18px; background: var(--line, #eee); border-radius: 9px; overflow: hidden; }
         .rg-fill { height: 100%; background: linear-gradient(90deg, #5b6cff, #2ecc71); transition: width .3s; }
         .rg-sub { font-size: 0.74rem; color: var(--muted, #888); margin-top: 0.35rem; }
-        .rg-edit { margin-top: 0.4rem; font-size: 0.72rem; background: none; border: none; padding: 0;
-            color: var(--accent, #5b6cff); cursor: pointer; }
+        .rg-set-label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; margin-right: 0.5rem; }
+        .rg-set-goal { width: 84px; padding: 0.25rem 0.4rem; border: 1px solid var(--line, #ccc); border-radius: 6px; }
+        .rg-set-status { font-size: 0.75rem; color: var(--muted, #888); margin-left: 0.4rem; }
     `);
 
     return {};

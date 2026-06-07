@@ -68,6 +68,7 @@ class BookshelfPluginAPI {
         this._bookFilters = []; // fn(books) => filteredBooks。applyFilters 内で順次適用
         this._commands = [];      // { id, title, icon, keywords, run, pluginId } ⌘K パレット
         this._detailSections = []; // { id, render, pluginId } 本詳細ペインのセクション
+        this._pluginSettings = new Map(); // pluginId → render(host, api) プラグインごとの設定画面
         // pluginId → 登録トラッキング (unregister で一括解除)
         this._pluginRegistrations = new Map();
     }
@@ -88,7 +89,8 @@ class BookshelfPluginAPI {
                 commandIds: new Set(),
                 widgetIds: new Set(),
                 detailSectionIds: new Set(),
-                styleIds: new Set()
+                styleIds: new Set(),
+                settingsRegistered: false
             });
         }
         const reg = this._pluginRegistrations.get(pluginId);
@@ -158,6 +160,9 @@ class BookshelfPluginAPI {
                 const styleId = self.removeCSS(id, pluginId);
                 if (styleId) reg.styleIds.delete(styleId);
             },
+            registerSettings: (render) => { self.registerSettings(render, pluginId); reg.settingsRegistered = true; },
+            getConfig: () => self.getPluginConfig(pluginId),
+            setConfig: (partial) => self.setPluginConfig(pluginId, partial),
             writePluginFile: (rel, text) => self.writePluginFile(pluginId, rel, text),
             readPluginFile: (rel) => self.readPluginFile(pluginId, rel)
         };
@@ -197,6 +202,7 @@ class BookshelfPluginAPI {
                 if (el) el.remove();
             }
         }
+        this._pluginSettings.delete(pluginId);
         this._pluginRegistrations.delete(pluginId);
     }
 
@@ -474,6 +480,49 @@ class BookshelfPluginAPI {
         const el = document.getElementById(styleId);
         if (el) el.remove();
         return styleId;
+    }
+
+    // ===== プラグインごとの設定画面 =====
+    // render(host, api) — 設定モーダルの「プラグイン設定」枠に描画される (プラグインが有効な時のみ)
+    registerSettings(render, pluginId = this._pluginId) {
+        if (typeof render !== 'function') {
+            console.warn('[pluginAPI] registerSettings: render(host, api) function required');
+            return;
+        }
+        this._pluginSettings.set(pluginId, render);
+    }
+    getPluginSettingsRenderer(pluginId) {
+        return this._pluginSettings.get(pluginId) || null;
+    }
+
+    // ===== プラグインごとの永続設定 (userData.settings.pluginConfig[id]) =====
+    getPluginConfig(pluginId) {
+        const all = this._app.userData?.settings?.pluginConfig || {};
+        return { ...(all[pluginId] || {}) };
+    }
+    async setPluginConfig(pluginId, partial) {
+        if (!this._app.userData.settings) this._app.userData.settings = {};
+        if (!this._app.userData.settings.pluginConfig) this._app.userData.settings.pluginConfig = {};
+        const cur = this._app.userData.settings.pluginConfig[pluginId] || {};
+        this._app.userData.settings.pluginConfig[pluginId] = { ...cur, ...partial };
+        await this._app.saveUserData();
+    }
+
+    // ===== プラグインの貢献カテゴリ (管理画面のバッジ用) =====
+    // 有効化されているプラグインについて、登録済みの拡張点からカテゴリを推定する。
+    getPluginContributions(pluginId) {
+        const reg = this._pluginRegistrations.get(pluginId);
+        if (!reg) return [];
+        const cats = [];
+        if (reg.commandIds && reg.commandIds.size) cats.push('command');
+        if (reg.widgetIds && reg.widgetIds.size) cats.push('widget');
+        if (reg.detailSectionIds && reg.detailSectionIds.size) cats.push('detail');
+        if (reg.uiButtonIds && reg.uiButtonIds.size) cats.push('button');
+        if (reg.styleIds && reg.styleIds.size) cats.push('theme');
+        if (reg.bookFilters && reg.bookFilters.length) cats.push('filter');
+        if (reg.exportTransforms && reg.exportTransforms.length) cats.push('export');
+        if (reg.settingsRegistered) cats.push('settings');
+        return cats;
     }
 
     // ===== エクスポート変換フック =====

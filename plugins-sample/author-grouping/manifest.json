@@ -5,6 +5,7 @@
     "description": "本詳細ペインに「この著者の他の蔵書」セクションを追加 (registerDetailSection)。クリックでその本へ遷移。",
     "icon": "users",
     "publishable": true,
+    "categories": ["detail"],
     "files": ["index.js"],
     "dependencies": []
 }

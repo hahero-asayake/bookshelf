@@ -5,6 +5,7 @@
     "description": "本棚を物理本棚風 (背表紙縦書き) に切替えるビュー系プラグイン (injectCSS + ui:books-rendered)。",
     "icon": "library-big",
     "publishable": true,
+    "categories": ["view"],
     "files": ["index.js"],
     "dependencies": []
 }
