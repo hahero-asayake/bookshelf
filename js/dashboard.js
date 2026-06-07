@@ -416,7 +416,7 @@ class BookshelfDashboard {
             .sort((a, b) => (b.acquiredTime || 0) - (a.acquiredTime || 0))
             .slice(0, limit);
         if (sorted.length === 0) {
-            host.innerHTML = '<p style="color:#9ca3af;">最近追加された本はありません</p>';
+            host.innerHTML = '<p style="color:var(--muted);">最近追加された本はありません</p>';
             return;
         }
         host.innerHTML = `
@@ -442,7 +442,7 @@ class BookshelfDashboard {
     _renderTodayPick(host, app) {
         const books = app.books || [];
         if (books.length === 0) {
-            host.innerHTML = '<p style="color:#9ca3af;">蔵書がありません</p>';
+            host.innerHTML = '<p style="color:var(--muted);">蔵書がありません</p>';
             return;
         }
         // 日付ベースの決定論的ランダム (1日同じ本)
@@ -463,23 +463,27 @@ class BookshelfDashboard {
     }
 
     _renderBookshelfHighlights(host, app) {
-        const shelves = (app.userData?.bookshelves || []).filter(b => !b.isSpecial);
-        // ALL(全ての本) を必ず先頭に。実データに特殊本棚が無い場合は擬似本棚を合成し、
-        // 本棚ヘッダーと同じく ALL を一覧にも出して表示を揃える (Phase H2-4)。
-        const all = (app.userData?.bookshelves || []).find(b => b.isSpecial)
-            || { id: 'all', name: '全ての本', isSpecial: true, iconName: 'library', description: '', books: [] };
-        if (shelves.length === 0 && !all) {
-            host.innerHTML = '<p style="color:#9ca3af;">本棚がありません。本棚管理から作成してください。</p>';
-            return;
-        }
-        host.innerHTML = `<div class="widget-bookshelves-grid" id="widget-bookshelves-grid-host"></div>`;
-        const gridHost = host.querySelector('#widget-bookshelves-grid-host');
-        // 既存 _renderBookshelfCard を使い回す
+        // 並び順は左ペインツリーと同じ (ALL 先頭 → ルート配列順 → 子孫を深さ優先)。
+        // 旧実装はフラット配列順だったため、親子のある本棚でツリーと順序が食い違っていた。
+        const ordered = (typeof app._bookshelvesInTreeOrder === 'function')
+            ? app._bookshelvesInTreeOrder()
+            : (app.userData?.bookshelves || []).slice();
+        const hasAll = ordered.some(b => b.isSpecial);
         const showImages = !!app.showImagesInOverview;
         const textOnlyClass = showImages ? '' : 'text-only';
         const cards = [];
-        if (all) cards.push(app._renderBookshelfCard(all, textOnlyClass));
-        for (const bs of shelves) cards.push(app._renderBookshelfCard(bs, textOnlyClass));
+        // 実データに特殊本棚(ALL)が無い場合は擬似 ALL を先頭に合成 (本棚ヘッダーと表示を揃える)
+        if (!hasAll) {
+            const synthAll = { id: 'all', name: '全ての本', isSpecial: true, iconName: 'library', description: '', books: [] };
+            cards.push(app._renderBookshelfCard(synthAll, textOnlyClass));
+        }
+        if (ordered.length === 0 && cards.length === 0) {
+            host.innerHTML = '<p style="color:var(--muted);">本棚がありません。本棚管理から作成してください。</p>';
+            return;
+        }
+        for (const bs of ordered) cards.push(app._renderBookshelfCard(bs, textOnlyClass));
+        host.innerHTML = `<div class="widget-bookshelves-grid" id="widget-bookshelves-grid-host"></div>`;
+        const gridHost = host.querySelector('#widget-bookshelves-grid-host');
         gridHost.innerHTML = cards.join('');
         // バインド (既存の _bindBookshelfOverviewEvents を流用)
         if (typeof app._bindBookshelfOverviewEvents === 'function') {

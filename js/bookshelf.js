@@ -3654,6 +3654,36 @@ class VirtualBookshelf {
     }
 
     // ===== PC v2: 本棚ツリー (UI-1 + UI-2) =====
+    /**
+     * 本棚を「左ペインツリーと同じ表示順」で平坦化して返す。
+     *   ALL(特殊) を先頭 → ルートを配列順 → 各本棚の子孫を深さ優先。
+     * ツリーと本棚ハイライト(ダッシュボード)で順序を揃えるための共通ヘルパ。
+     */
+    _bookshelvesInTreeOrder() {
+        const all = (this.userData?.bookshelves || []);
+        const bm = this.bookshelfManager;
+        const keyOf = (bs) => bm ? bm._keyOf(bs) : (bs.internalId || bs.id);
+        const byParent = new Map();
+        for (const bs of all) {
+            const key = bs.parent || null;
+            if (!byParent.has(key)) byParent.set(key, []);
+            byParent.get(key).push(bs);
+        }
+        const result = [];
+        const seen = new Set();
+        const walk = (bs) => {
+            const k = keyOf(bs);
+            if (seen.has(k)) return;        // 循環ガード
+            seen.add(k);
+            result.push(bs);
+            for (const child of (byParent.get(k) || [])) walk(child);
+        };
+        const roots = (byParent.get(null) || []).slice();
+        roots.sort((a, b) => (b.isSpecial ? 1 : 0) - (a.isSpecial ? 1 : 0)); // ALL 先頭
+        for (const r of roots) walk(r);
+        return result;
+    }
+
     _renderSidebarTree() {
         const container = document.getElementById('sidebar-bookshelf-tree');
         if (!container) return;
