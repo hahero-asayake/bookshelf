@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060703">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060704">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -220,27 +220,27 @@
                     <div class="settings-section-body">
 
                     <div class="sync-method-row">
-                        <label for="sync-method-select">同期方式:</label>
+                        <label for="sync-method-select">本のデータの保存先:</label>
                         <select id="sync-method-select">
-                            <option value="local">ローカルファイル (File System Access)</option>
-                            <option value="github">GitHub リポジトリ</option>
-                            <option value="google-drive" disabled>Google Drive (段階3 予定)</option>
-                            <option value="dropbox" disabled>Dropbox (段階3 予定)</option>
+                            <option value="local">このパソコンのフォルダに保存</option>
+                            <option value="github">GitHub に保存（複数の端末で同期できます）</option>
+                            <option value="google-drive" disabled>Google Drive（対応予定）</option>
+                            <option value="dropbox" disabled>Dropbox（対応予定）</option>
                         </select>
-                        <span class="sync-method-hint">GitHub に切替えるときは下のフォームで「接続して使う」を、LocalFS に戻すときは方式 select を切替えてください</span>
+                        <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。このパソコンの保存に戻すときは、上の選択を切り替えてください。</span>
                     </div>
 
                     <div id="sync-config-local" class="sync-config-panel">
                         <div class="path-card">
                             <div class="path-card-header">
                                 <span class="path-card-icon" data-icon="folder" data-icon-size="16"></span>
-                                <span class="path-card-label">Obsidian 同期フォルダ</span>
+                                <span class="path-card-label">保存フォルダ</span>
                             </div>
                             <div class="path-card-body">
-                                <code class="path-display" id="obsidian-sync-path" title="">(未接続)</code>
+                                <code class="path-display" id="obsidian-sync-path" title="">(まだ選んでいません)</code>
                             </div>
                             <div class="path-card-footer">
-                                <button id="obsidian-sync-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>変更</button>
+                                <button id="obsidian-sync-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>フォルダを選ぶ</button>
                                 <span id="obsidian-sync-status" class="path-status"></span>
                             </div>
                         </div>
@@ -251,8 +251,8 @@
                         <div class="path-card">
                             <div class="path-card-header">
                                 <span class="path-card-icon" data-icon="github" data-icon-size="16"></span>
-                                <span class="path-card-label">GitHub リポジトリ</span>
-                                <span class="path-card-hint">OAuth Device Flow で接続 (PAT 入力不要)</span>
+                                <span class="path-card-label">GitHub に保存</span>
+                                <span class="path-card-hint">GitHub の画面で承認するだけ（パスワードやトークンの入力は不要）</span>
                             </div>
 
                             <div id="github-auth-disconnected" class="path-card-body">
@@ -280,48 +280,48 @@
                                 </p>
 
                                 <div id="github-install-prompt" class="github-install-prompt" hidden>
-                                    <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span>bookshelf-sync (GitHub App) がまだインストールされていない、または対象リポジトリが選ばれていません。<br>
-                                    <a id="github-install-link" href="#" target="_blank" rel="noopener noreferrer"><span class="h-icon" data-icon="package" data-icon-size="14"></span>GitHub で App をインストール / 設定</a>
-                                    し、対象リポジトリを選んでから
-                                    <button id="github-reload-after-install-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>再取得</button>
+                                    <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span>bookshelf 用の GitHub アプリ（bookshelf-sync）がまだインストールされていないか、保存先が選ばれていません。<br>
+                                    <a id="github-install-link" href="#" target="_blank" rel="noopener noreferrer"><span class="h-icon" data-icon="package" data-icon-size="14"></span>GitHub でアプリをインストール / 設定</a>
+                                    し、保存先を選んでから
+                                    <button id="github-reload-after-install-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>もう一度読み込む</button>
                                     を押してください。
                                     <br>
-                                    <span class="github-install-hint"><span class="h-icon" data-icon="clock" data-icon-size="14"></span>インストール / 権限変更直後は GitHub 側の反映に <strong>数十秒〜数分</strong> かかる場合があります。すぐに出ないときは少し待ってから再取得を押してください。権限変更後は <strong>切断 → 再接続</strong> も試してください。</span>
+                                    <span class="github-install-hint"><span class="h-icon" data-icon="clock" data-icon-size="14"></span>インストールや権限の変更の直後は、GitHub 側に反映されるまで <strong>数十秒〜数分</strong> かかることがあります。すぐに出ないときは少し待ってからもう一度読み込んでください。うまくいかないときは <strong>切断 → 再接続</strong> もお試しください。</span>
                                 </div>
 
                                 <div class="github-form">
-                                    <label><span class="form-label">repo</span>
+                                    <label><span class="form-label">保存先 (リポジトリ)</span>
                                         <select id="github-repo-select">
-                                            <option value="">(リロード後に取得)</option>
+                                            <option value="">(接続後に選べます)</option>
                                         </select>
                                     </label>
-                                    <label><span class="form-label">branch</span>
+                                    <label><span class="form-label">ブランチ</span>
                                         <select id="github-branch-select">
-                                            <option value="">(repo 選択後に取得)</option>
+                                            <option value="">(保存先を選ぶと出ます)</option>
                                         </select>
                                     </label>
-                                    <label><span class="form-label">basePath</span>
+                                    <label><span class="form-label">フォルダ（リポジトリ内の保存場所）</span>
                                         <span class="basepath-row">
-                                            <input id="github-base-path" placeholder="(repo ルートに置く場合は空欄)">
+                                            <input id="github-base-path" placeholder="（一番上の階層に置くなら空欄でOK）">
                                             <button id="github-basepath-browse-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>選択</button>
                                         </span>
                                     </label>
                                 </div>
 
                                 <details id="github-basepath-browser" class="github-basepath-browser" hidden>
-                                    <summary><span class="h-icon" data-icon="folder-tree" data-icon-size="14"></span>リポジトリ内ブラウザ</summary>
+                                    <summary><span class="h-icon" data-icon="folder-tree" data-icon-size="14"></span>中を見てフォルダを選ぶ</summary>
                                     <div class="basepath-browser-body">
                                         <div class="basepath-browser-current"><span class="h-icon" data-icon="map-pin" data-icon-size="14"></span><code id="basepath-current">/</code></div>
                                         <div class="basepath-browser-controls">
-                                            <button id="basepath-up-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="arrow-up" data-icon-size="14"></span>親へ</button>
-                                            <button id="basepath-apply-btn" class="btn btn-primary btn-small" type="button"><span class="h-icon" data-icon="check" data-icon-size="14"></span>このパスを basePath にする</button>
+                                            <button id="basepath-up-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="arrow-up" data-icon-size="14"></span>1つ上へ</button>
+                                            <button id="basepath-apply-btn" class="btn btn-primary btn-small" type="button"><span class="h-icon" data-icon="check" data-icon-size="14"></span>このフォルダに保存する</button>
                                         </div>
                                         <ul id="basepath-browser-list" class="basepath-browser-list"></ul>
                                     </div>
                                 </details>
 
                                 <div class="path-card-footer">
-                                    <button id="github-reload-repos-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>リポジトリ再取得</button>
+                                    <button id="github-reload-repos-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>一覧を更新</button>
                                     <button id="github-save-repo-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
                                     <span id="github-status" class="path-status"></span>
                                 </div>
@@ -330,8 +330,8 @@
                     </div>
 
                     <div class="settings-action-row">
-                        <button id="publish-to-public" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する (private → public)</button>
-                        <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>設定をダウンロード</button>
+                        <button id="publish-to-public" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>Web 公開用に書き出す</button>
+                        <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>バックアップを保存</button>
                     </div>
                     </div>
                 </details>
@@ -357,10 +357,14 @@
                             <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
                             <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
                         </div>
-                        <small class="plugin-install-hint">manifest.json と index.js を含む repo を指定。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
+                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
                     </div>
 
                     <h4 class="settings-subsection-title">インストール済みプラグイン</h4>
+                    <details class="plugin-cat-help">
+                        <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>各プラグインの「分類」マークの意味</summary>
+                        <div id="plugin-cat-legend" class="plugin-cat-legend"></div>
+                    </details>
                     <div class="plugin-search-row">
                         <input type="text" id="plugin-search" placeholder="名前 / 説明で絞り込み..." />
                     </div>
@@ -381,11 +385,11 @@
                         <div class="memo-config-row">
                             <label for="book-memo-open-with">「詳細メモを書く」で開くエディタ:</label>
                             <select id="book-memo-open-with">
-                                <option value="app-editor">アプリ内エディタ (推奨)</option>
-                                <option value="obsidian">Obsidian (LocalFS のみ)</option>
-                                <option value="system">同期フォルダで手動 (LocalFS のみ)</option>
+                                <option value="app-editor">アプリ内エディタ（おすすめ）</option>
+                                <option value="obsidian">Obsidian で開く（このパソコン保存のときだけ）</option>
+                                <option value="system">保存フォルダで自分で開く（このパソコン保存のときだけ）</option>
                             </select>
-                            <p class="memo-config-hint">アプリ内エディタは Markdown ツールバー + プレビュー付き。GitHub モードではアプリ内エディタが必須 (外部リンクは動きません)。</p>
+                            <p class="memo-config-hint">アプリ内エディタは書式ボタンとプレビュー付きで書けます。GitHub 保存のときはアプリ内エディタをお使いください（外部アプリ連携は動きません）。</p>
                         </div>
                     </div>
                 </details>
@@ -397,7 +401,7 @@
                             <label for="setting-star-visibility">星評価の表示</label>
                             <select id="setting-star-visibility">
                                 <option value="always">常に表示</option>
-                                <option value="hover">ホバー時のみ</option>
+                                <option value="hover">カーソルを乗せた時だけ</option>
                                 <option value="hidden">非表示</option>
                             </select>
                             <label class="checkbox-label" style="margin-top:0.5rem;">
@@ -410,7 +414,7 @@
                             <label for="setting-memo-visibility">短文メモの表示</label>
                             <select id="setting-memo-visibility">
                                 <option value="always">常に表示</option>
-                                <option value="hover">ホバー時のみ</option>
+                                <option value="hover">カーソルを乗せた時だけ</option>
                                 <option value="hidden">非表示</option>
                             </select>
                             <p class="memo-config-hint">一覧カードに短文メモを出すか。本詳細では常に表示されます。</p>
@@ -729,20 +733,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060703"></script>
-    <script src="js/storage-adapter.js?v=2026060703"></script>
-    <script src="js/local-fs-adapter.js?v=2026060703"></script>
-    <script src="js/github-adapter.js?v=2026060703"></script>
-    <script src="js/github-auth.js?v=2026060703"></script>
-    <script src="js/sync-config.js?v=2026060703"></script>
-    <script src="js/storage.js?v=2026060703"></script>
-    <script src="js/book-manager.js?v=2026060703"></script>
-    <script src="js/bookshelf-manager.js?v=2026060703"></script>
-    <script src="js/exporter.js?v=2026060703"></script>
-    <script src="js/plugin-api.js?v=2026060703"></script>
-    <script src="js/plugin-loader.js?v=2026060703"></script>
-    <script src="js/router.js?v=2026060703"></script>
-    <script src="js/dashboard.js?v=2026060703"></script>
-    <script src="js/bookshelf.js?v=2026060703"></script>
+    <script src="js/icons.js?v=2026060704"></script>
+    <script src="js/storage-adapter.js?v=2026060704"></script>
+    <script src="js/local-fs-adapter.js?v=2026060704"></script>
+    <script src="js/github-adapter.js?v=2026060704"></script>
+    <script src="js/github-auth.js?v=2026060704"></script>
+    <script src="js/sync-config.js?v=2026060704"></script>
+    <script src="js/storage.js?v=2026060704"></script>
+    <script src="js/book-manager.js?v=2026060704"></script>
+    <script src="js/bookshelf-manager.js?v=2026060704"></script>
+    <script src="js/exporter.js?v=2026060704"></script>
+    <script src="js/plugin-api.js?v=2026060704"></script>
+    <script src="js/plugin-loader.js?v=2026060704"></script>
+    <script src="js/router.js?v=2026060704"></script>
+    <script src="js/dashboard.js?v=2026060704"></script>
+    <script src="js/bookshelf.js?v=2026060704"></script>
 </body>
 </html>

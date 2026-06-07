@@ -2312,9 +2312,9 @@ class VirtualBookshelf {
             console.error('initGitHubSync:', e);
             this.updateSyncStatus('reconnect', label);
             if (e instanceof GitHubAuthError) {
-                alert('❌ GitHub 認証に失敗しました。\nPAT を再確認してください。');
+                alert('GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。');
             } else {
-                alert(`❌ GitHub からの読み込みに失敗しました:\n${e.message}`);
+                alert(`GitHub からの読み込みに失敗しました:\n${e.message}`);
             }
         }
     }
@@ -2341,7 +2341,7 @@ class VirtualBookshelf {
             showPanel(newMethod);
             const current = (this.syncConfig && this.syncConfig.method) || 'local';
             if (newMethod === 'local' && current !== 'local') {
-                const ok = confirm('同期方式を「ローカルファイル」に切替えますか？\nGitHub OAuth トークン等は保持されます。\nOK でページをリロードします。');
+                const ok = confirm('保存先を「このパソコンのフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。');
                 if (ok) {
                     const merged = { ...SyncConfigManager.load(), method: 'local' };
                     SyncConfigManager.save(merged);
@@ -2781,7 +2781,7 @@ class VirtualBookshelf {
     }
 
     _disconnectGitHub() {
-        const ok = confirm('GitHub 接続を切断しますか?\nOAuth トークンを削除し、同期方式をローカルファイルに戻します。');
+        const ok = confirm('GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「このパソコンのフォルダ」に戻します。');
         if (!ok) return;
         const merged = SyncConfigManager.load();
         merged.method = 'local';
@@ -3331,7 +3331,7 @@ class VirtualBookshelf {
             const isHandleStale = e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError');
             if (isHandleStale && this.syncMethod === 'local' && !this._syncReconnectNotified) {
                 this._syncReconnectNotified = true;
-                alert('同期フォルダが見つかりません (削除/リネームされた可能性)。\n設定 → 同期 → 「📁 変更」で再選択してください。\n別方式 (GitHub) に切替える場合は 同期方式 select から行ってください。');
+                alert('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 → 「同期 / 公開」 → 「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
                 if (this.storage && this.storage.adapter && typeof this.storage.adapter.setDirHandle === 'function') {
                     this.storage.adapter.setDirHandle(null);
                 }
@@ -4154,6 +4154,8 @@ class VirtualBookshelf {
         modal.classList.add('show');
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
+        // 分類マークの凡例を描画
+        this._renderPluginCategoryLegend();
         // プラグイン一覧はインストール済み情報を非同期で取得して描画
         try { await this._renderPluginListSection(); } catch (e) { console.warn(e); }
     }
@@ -4515,7 +4517,7 @@ class VirtualBookshelf {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">同期先 (ローカルフォルダ or GitHub) を先に接続してください。</p>';
+            host.innerHTML = '<p style="color:#888;">先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -4544,10 +4546,8 @@ class VirtualBookshelf {
             else if (enabled && !loaded) stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
             else                         stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
             const actionBtns = `${toggle}${settingsBtn}${uninstallBtn}`;
-            // 拡張点カテゴリ (manifest.categories 優先、無ければ有効時の登録から推定)
-            const cats = (Array.isArray(m.categories) && m.categories.length)
-                ? m.categories
-                : (loaded ? this.pluginAPI.getPluginContributions(id) : []);
+            // 拡張点カテゴリ (無効でも表示: manifest 宣言 → 実行時推定 → キャッシュ)
+            const cats = this._getPluginCategories(id, m, loaded);
             const catBadges = this._renderPluginCategoryBadges(cats);
             const nameForSearch = (m.name || id || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_NAME_LIMIT);
             const descForSearch = (m.description || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_DESC_LIMIT);
@@ -4582,29 +4582,80 @@ class VirtualBookshelf {
         this._applyPluginSearchFilter();
     }
 
-    /** 拡張点カテゴリ → 表示メタ (バッジ) */
+    /** 拡張点カテゴリ → 表示メタ (バッジ + 説明)。一般ユーザ向けに「何をする種類か」を説明。 */
     _pluginCategoryMeta() {
         return {
-            command:  { label: 'コマンド',     icon: 'terminal' },
-            widget:   { label: 'ウィジェット', icon: 'layout-dashboard' },
-            detail:   { label: '本詳細',       icon: 'panel-right' },
-            view:     { label: 'ビュー',       icon: 'layout-grid' },
-            theme:    { label: 'テーマ',       icon: 'palette' },
-            button:   { label: 'ボタン',       icon: 'mouse-pointer-click' },
-            filter:   { label: 'フィルタ',     icon: 'filter' },
-            export:   { label: 'エクスポート', icon: 'download' },
-            settings: { label: '設定',         icon: 'sliders-horizontal' }
+            command:  { label: 'コマンド',     icon: 'terminal',          desc: 'コマンドパレット（⌘K / Ctrl+K）から呼び出せる操作を追加します。' },
+            widget:   { label: 'ウィジェット', icon: 'layout-dashboard',  desc: 'ホーム画面に置けるカード（パネル）を追加します。' },
+            detail:   { label: '本の詳細',     icon: 'panel-right',       desc: '本を開いたときの詳細パネルに情報や項目を追加します。' },
+            view:     { label: '表示',         icon: 'layout-grid',       desc: '本棚の見せ方（一覧の表示方法）を追加・変更します。' },
+            theme:    { label: '見た目',       icon: 'palette',           desc: 'アプリ全体の配色やデザイン（テーマ）を変えます。' },
+            button:   { label: 'ボタン',       icon: 'mouse-pointer-click', desc: 'サイドバーにワンタッチで使えるボタンを追加します。' },
+            filter:   { label: '絞り込み',     icon: 'filter',            desc: '本の並び替え・絞り込みの条件を追加します。' },
+            export:   { label: '書き出し',     icon: 'download',          desc: '蔵書データを別の形式で書き出します。' },
+            settings: { label: '設定',         icon: 'sliders-horizontal', desc: 'このプラグイン専用の設定項目を持ちます。' }
         };
+    }
+
+    /** 分類マークの凡例 (設定 → プラグインの「?」) を描画 */
+    _renderPluginCategoryLegend() {
+        const host = document.getElementById('plugin-cat-legend');
+        if (!host) return;
+        const meta = this._pluginCategoryMeta();
+        host.innerHTML = `
+            <p class="plugin-cat-legend-intro">プラグインは下のような「分類」マークでどんな機能を足すか示します。1 つのプラグインが複数の分類を持つこともあります。</p>
+            <ul class="plugin-cat-legend-list">
+            ${Object.values(meta).map(m => `
+                <li>
+                    <span class="plugin-cat-badge">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>
+                    <span class="plugin-cat-legend-desc">${this.escapeHtml(m.desc)}</span>
+                </li>`).join('')}
+            </ul>`;
     }
 
     _renderPluginCategoryBadges(cats) {
         if (!Array.isArray(cats) || !cats.length) return '';
         const meta = this._pluginCategoryMeta();
         const badges = cats.map(c => {
-            const m = meta[c] || { label: c, icon: 'puzzle' };
-            return `<span class="plugin-cat-badge" title="拡張点: ${m.label}">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>`;
+            const m = meta[c] || { label: c, icon: 'puzzle', desc: '' };
+            const tip = m.desc ? `${m.label}: ${m.desc}` : m.label;
+            return `<span class="plugin-cat-badge" title="${this.escapeHtml(tip)}">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>`;
         }).join('');
         return `<div class="plugin-card-cats">${badges}</div>`;
+    }
+
+    // ===== プラグイン分類キャッシュ (無効でも分類バッジを出すため、ロード時の推定を保存) =====
+    static PLUGIN_CONTRIB_CACHE_KEY = 'pluginContribCacheV1';
+
+    _loadPluginContribCache() {
+        try { return JSON.parse(localStorage.getItem(VirtualBookshelf.PLUGIN_CONTRIB_CACHE_KEY)) || {}; }
+        catch (_) { return {}; }
+    }
+    _setPluginContribCache(id, cats) {
+        try {
+            const cache = this._loadPluginContribCache();
+            cache[id] = cats;
+            localStorage.setItem(VirtualBookshelf.PLUGIN_CONTRIB_CACHE_KEY, JSON.stringify(cache));
+        } catch (_) {}
+    }
+
+    /**
+     * プラグインの分類 (categories) を解決。無効状態でも極力表示できるよう多段で求める。
+     *  1) manifest.categories (宣言) — 無効でも常に出せる
+     *  2) ロード中なら実行時の登録内容から推定 (+キャッシュに保存)
+     *  3) 過去にロードしたときのキャッシュ — 今は無効でも出せる
+     */
+    _getPluginCategories(id, manifest, loaded) {
+        if (Array.isArray(manifest?.categories) && manifest.categories.length) {
+            this._setPluginContribCache(id, manifest.categories);
+            return manifest.categories;
+        }
+        if (loaded) {
+            const c = this.pluginAPI.getPluginContributions(id) || [];
+            if (c.length) { this._setPluginContribCache(id, c); return c; }
+        }
+        const cached = this._loadPluginContribCache()[id];
+        return Array.isArray(cached) ? cached : [];
     }
 
     /** プラグインの manifest を取得 (loaded でも disabled でも) */
@@ -4649,9 +4700,7 @@ class VirtualBookshelf {
         }
         modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 18 });
 
-        const cats = (Array.isArray(manifest.categories) && manifest.categories.length)
-            ? manifest.categories
-            : (loaded ? this.pluginAPI.getPluginContributions(id) : []);
+        const cats = this._getPluginCategories(id, manifest, loaded);
 
         const currentIcon = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
 
@@ -5210,7 +5259,7 @@ class VirtualBookshelf {
         const slugRaw = slugInput.value.trim();
         const slug = slugRaw || this._generateDefaultSlug();
         if (!/^[a-z0-9_-]+$/.test(slug)) {
-            alert('slug は英小文字・数字・ハイフン・アンダースコアのみ使えます');
+            alert('識別子は半角の英小文字・数字・ハイフン（-）・アンダースコア（_）だけ使えます');
             slugInput.focus();
             return;
         }
@@ -5575,7 +5624,7 @@ class VirtualBookshelf {
      */
     async publishToPublic() {
         if (!this._isSyncReady()) {
-            alert('⚠️ 同期先 (ローカルフォルダ or GitHub) を選択してから操作してください');
+            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。');
             return;
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -5586,10 +5635,10 @@ class VirtualBookshelf {
         const publicBookshelves = this.bookshelfManager.getBookshelves()
             .filter(b => b.isSpecial || b.isPublic);
         if (publicBookshelves.length === 0) {
-            alert('⚠️ 公開対象の本棚が1つもありません。\n本棚編集で「📤 この本棚を公開する」をチェックしてください');
+            alert('公開する本棚が1つもありません。\n本棚の編集画面で「この本棚を公開する」にチェックを入れてください。');
             return;
         }
-        if (!confirm(`同期先の public/ 配下にスナップショットを書き出します。\n\n公開対象本棚: ${publicBookshelves.length} 個\n\nOK で実行 (GitHub モードなら 1 commit にまとまります)`)) {
+        if (!confirm(`Web 公開用のデータを書き出します。\n\n公開する本棚: ${publicBookshelves.length} 個\n\nよろしいですか？`)) {
             return;
         }
 
@@ -5601,7 +5650,7 @@ class VirtualBookshelf {
             const errSummary = result.errors.length > 0
                 ? `\n\n⚠️ エラー ${result.errors.length} 件:\n${result.errors.slice(0, 3).join('\n')}${result.errors.length > 3 ? '\n...' : ''}`
                 : '';
-            alert(`✅ 公開スナップショット書き出し完了\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個\n長文メモ: ${result.longMemos}件\nプラグイン: ${result.plugins.length}個\nファイル合計: ${result.entries}${errSummary}`);
+            alert(`Web 公開用データの書き出しが完了しました。\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個\n長文メモ: ${result.longMemos}件\nプラグイン: ${result.plugins.length}個\nファイル合計: ${result.entries}${errSummary}`);
         } catch (e) {
             console.error('公開エクスポートエラー:', e);
             alert(`❌ ${e.message}`);
@@ -5614,7 +5663,7 @@ class VirtualBookshelf {
      */
     async openOrCreateBookMemo(asin) {
         if (!this._isSyncReady()) {
-            alert('⚠️ 同期先 (ローカルフォルダ or GitHub) を選択してから操作してください。');
+            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
@@ -6422,11 +6471,11 @@ class VirtualBookshelf {
         const input = document.getElementById('plugin-repo-url');
         const url = (input.value || '').trim();
         if (!url) {
-            alert('GitHub の repo URL を入力してください');
+            alert('プラグインがある GitHub の場所（URL）を入力してください');
             return;
         }
         if (!this._isSyncReady()) {
-            alert('同期先 (ローカルフォルダ or GitHub) を先に接続してください');
+            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください');
             return;
         }
         try {
@@ -6855,7 +6904,7 @@ class VirtualBookshelf {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         if (this.pluginAPI) this.pluginAPI._emit('export:after', { result: exportData });
-        alert('📦 library.json をエクスポートしました！');
+        alert('データを library.json に書き出しました（バックアップ用）。');
     }
 
     renderBookshelfOverview() {
