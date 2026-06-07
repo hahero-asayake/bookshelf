@@ -203,9 +203,16 @@ class VirtualBookshelf {
             // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
             if (this.pluginLoader) {
                 try {
+                    this._setLoadingSub('プラグインを読み込み中…');
+                    // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
+                    this.pluginLoader.onProgress = (done, total) => {
+                        if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
+                    };
                     await this.pluginLoader.loadEnabledPlugins();
                 } catch (e) {
                     console.warn('プラグイン読み込み中にエラー:', e);
+                } finally {
+                    this.pluginLoader.onProgress = null;
                 }
             }
 
@@ -4376,6 +4383,23 @@ class VirtualBookshelf {
     /**
      * 現在のレイアウト (検証 + open-settings 自動補完)
      */
+    // ===== プラグインボタンの表示/非表示 (有効のままアイコンだけ隠す) =====
+    // settings.hiddenPluginButtons = [pluginId, ...]。プラグインは読み込んだまま (機能は有効)、
+    // サイドバーの UI ボタンだけ描画しない。
+    _isPluginButtonHidden(pluginId) {
+        const arr = this.userData?.settings?.hiddenPluginButtons;
+        return Array.isArray(arr) && arr.includes(pluginId);
+    }
+
+    async _setPluginButtonHidden(pluginId, hidden) {
+        if (!this.userData.settings) this.userData.settings = {};
+        const set = new Set(this.userData.settings.hiddenPluginButtons || []);
+        if (hidden) set.add(pluginId); else set.delete(pluginId);
+        this.userData.settings.hiddenPluginButtons = [...set];
+        await this.saveUserData();
+        this._applyHeaderLayout();
+    }
+
     _currentHeaderLayout() {
         let layout = this._loadHeaderLayout();
         if (!layout) layout = this._defaultHeaderLayout();
@@ -4404,6 +4428,7 @@ class VirtualBookshelf {
             for (const btn of this.pluginAPI._uiButtons) {
                 const key = `plugin:${btn.id}`;
                 if (placed.has(key)) continue;
+                if (this._isPluginButtonHidden(btn.pluginId)) continue; // 非表示設定のプラグインは自動追加しない
                 layout.items.push({ id: this._newPlacementId(), key });
             }
         }
@@ -4445,6 +4470,7 @@ class VirtualBookshelf {
             const btnId = key.slice('plugin:'.length);
             const entry = this.pluginAPI?._uiButtons?.find(b => b.id === btnId);
             if (!entry) return null;
+            if (this._isPluginButtonHidden(entry.pluginId)) return null; // 「アイコンを表示」OFF → 描画しない
             const span = document.createElement('span');
             span.className = 'header-item plugin-button-item';
             span.dataset.headerItem = key;
@@ -4817,6 +4843,9 @@ class VirtualBookshelf {
         modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 18 });
 
         const cats = this._getPluginCategories(id, manifest, loaded);
+        // このプラグインがサイドバーに UI ボタンを持つか (持つ場合のみ「アイコンを表示」トグルを出す)
+        const hasButton = !!this.pluginAPI?._uiButtons?.some(b => b.pluginId === id);
+        const iconShown = !this._isPluginButtonHidden(id);
 
         const currentIcon = this.getHeaderIconOverride(overrideKey) || manifest.icon || '';
 
@@ -4859,6 +4888,17 @@ class VirtualBookshelf {
                     <button type="button" class="btn btn-small psm-icon-change">${ico('palette')}変更</button>
                     <button type="button" class="btn btn-small btn-secondary psm-icon-reset">既定</button>
                 </div>
+                ${hasButton ? `
+                <div class="psm-field">
+                    <div class="psm-field-main">
+                        <span class="psm-field-label">サイドバーにアイコンを表示</span>
+                        <span class="psm-field-hint">OFF にしてもプラグインの機能は有効のままです</span>
+                    </div>
+                    <label class="toggle-switch" title="${iconShown ? 'クリックで非表示' : 'クリックで表示'}">
+                        <input type="checkbox" class="psm-show-icon-input" ${iconShown ? 'checked' : ''}>
+                        <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
+                    </label>
+                </div>` : ''}
             </div>
 
             <div class="psm-section">
@@ -4884,6 +4924,15 @@ class VirtualBookshelf {
             this._renderPluginListSection();
             this._applyHeaderLayout();
         });
+
+        // 「サイドバーにアイコンを表示」トグル (有効のままアイコンだけ隠す)
+        const showIconInput = body.querySelector('.psm-show-icon-input');
+        if (showIconInput) {
+            showIconInput.addEventListener('change', async (e) => {
+                await this._setPluginButtonHidden(id, !e.target.checked);
+                this._openPluginSettings(id);    // 状態を反映して再描画
+            });
+        }
 
         // 有効/無効トグル (スイッチ)
         body.querySelector('.psm-toggle-input').addEventListener('change', async (e) => {
@@ -7227,8 +7276,14 @@ class VirtualBookshelf {
     showLoading() {
         const loading = document.getElementById('loading');
         if (loading) {
-            loading.style.display = 'block';
+            loading.style.display = 'flex';
         }
+    }
+
+    /** ローディング中の補助テキスト (例: プラグイン読み込み進捗) を更新 */
+    _setLoadingSub(text) {
+        const el = document.getElementById('loading-sub');
+        if (el) el.textContent = text || '';
     }
 
     hideLoading() {

@@ -54,18 +54,18 @@ class BookshelfPluginLoader {
             console.warn('[pluginLoader] plugins ディレクトリ列挙失敗:', e);
             return (this._installed = []);
         }
-        const plugins = [];
-        for (const id of pluginIds) {
+        // manifest.json を並列読み込み (逐次 await だと同期先が GitHub のとき特に遅い)。
+        const results = await Promise.all(pluginIds.map(async (id) => {
             try {
                 const manifest = await this.app.storage.readJSON(`plugins/${id}/manifest.json`);
-                if (!manifest) continue;
-                plugins.push({ id, manifest });
+                return manifest ? { id, manifest } : null;
             } catch (e) {
                 console.warn(`[pluginLoader] "${id}" の manifest.json 読み込み失敗:`, e);
+                return null;
             }
-        }
-        this._installed = plugins;
-        return plugins;
+        }));
+        this._installed = results.filter(Boolean);
+        return this._installed;
     }
 
     _isReady() {
@@ -100,15 +100,35 @@ class BookshelfPluginLoader {
             ok.push(p);
         }
 
-        for (const p of ok) {
-            await this._loadPlugin(p);
+        // index.js を全プラグイン分まとめて並列読み込み (I/O を同時化 → 体感速度を改善)。
+        if (typeof this.onProgress === 'function') {
+            try { this.onProgress(0, ok.length); } catch (_) {}
+        }
+        const sources = await Promise.all(ok.map(async (p) => ({
+            p,
+            src: await this._readPluginFile(p.id, 'index.js')
+        })));
+        // activate は登録順を保つため逐次実行 (依存プラグインが先に登録される必要があるため)。
+        let done = 0;
+        for (const { p, src } of sources) {
+            await this._activatePlugin(p, src);
+            done++;
+            if (typeof this.onProgress === 'function') {
+                try { this.onProgress(done, sources.length); } catch (_) {}
+            }
         }
         return ok;
     }
 
+    // 単体読み込み (installFromGitHub から使用)。読み込み + activate。
     async _loadPlugin({ id, manifest }) {
+        const indexJs = await this._readPluginFile(id, 'index.js');
+        await this._activatePlugin({ id, manifest }, indexJs);
+    }
+
+    // 読み込み済みソースを import + activate する (読み込みは呼び出し側が並列化できる)。
+    async _activatePlugin({ id, manifest }, indexJs) {
         try {
-            const indexJs = await this._readPluginFile(id, 'index.js');
             if (indexJs === null) throw new Error('index.js が見つかりません');
             const blob = new Blob([indexJs], { type: 'application/javascript' });
             const url = URL.createObjectURL(blob);

@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060710">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060711">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -77,7 +77,9 @@
             <!-- ===== 中央ペイン (本棚 or ホーム) ===== -->
             <section class="bookshelf-container app-main-pane">
                 <div class="loading" id="loading">
-                    <span class="h-icon" data-icon="library" data-icon-size="18"></span>本棚を準備中...
+                    <div class="loading-spinner" aria-hidden="true"></div>
+                    <div class="loading-text" id="loading-text">本棚を準備中…</div>
+                    <div class="loading-sub" id="loading-sub"></div>
                 </div>
 
                 <!-- View: Main (ホーム = ダッシュボード)。検索バーは置かず ⌘K のみ (全画面共通) -->
@@ -738,20 +740,20 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060710"></script>
-    <script src="js/storage-adapter.js?v=2026060710"></script>
-    <script src="js/local-fs-adapter.js?v=2026060710"></script>
-    <script src="js/github-adapter.js?v=2026060710"></script>
-    <script src="js/github-auth.js?v=2026060710"></script>
-    <script src="js/sync-config.js?v=2026060710"></script>
-    <script src="js/storage.js?v=2026060710"></script>
-    <script src="js/book-manager.js?v=2026060710"></script>
-    <script src="js/bookshelf-manager.js?v=2026060710"></script>
-    <script src="js/exporter.js?v=2026060710"></script>
-    <script src="js/plugin-api.js?v=2026060710"></script>
-    <script src="js/plugin-loader.js?v=2026060710"></script>
-    <script src="js/router.js?v=2026060710"></script>
-    <script src="js/dashboard.js?v=2026060710"></script>
-    <script src="js/bookshelf.js?v=2026060710"></script>
+    <script src="js/icons.js?v=2026060711"></script>
+    <script src="js/storage-adapter.js?v=2026060711"></script>
+    <script src="js/local-fs-adapter.js?v=2026060711"></script>
+    <script src="js/github-adapter.js?v=2026060711"></script>
+    <script src="js/github-auth.js?v=2026060711"></script>
+    <script src="js/sync-config.js?v=2026060711"></script>
+    <script src="js/storage.js?v=2026060711"></script>
+    <script src="js/book-manager.js?v=2026060711"></script>
+    <script src="js/bookshelf-manager.js?v=2026060711"></script>
+    <script src="js/exporter.js?v=2026060711"></script>
+    <script src="js/plugin-api.js?v=2026060711"></script>
+    <script src="js/plugin-loader.js?v=2026060711"></script>
+    <script src="js/router.js?v=2026060711"></script>
+    <script src="js/dashboard.js?v=2026060711"></script>
+    <script src="js/bookshelf.js?v=2026060711"></script>
 </body>
 </html>
