@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060718">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060720">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -250,12 +250,12 @@
                     <div class="sync-method-row">
                         <label for="sync-method-select">本のデータの保存先:</label>
                         <select id="sync-method-select">
-                            <option value="local">このパソコンのフォルダに保存</option>
+                            <option value="local">この端末のフォルダに保存</option>
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
                             <option value="google-drive" disabled>Google Drive（対応予定）</option>
                             <option value="dropbox" disabled>Dropbox（対応予定）</option>
                         </select>
-                        <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。このパソコンの保存に戻すときは、上の選択を切り替えてください。</span>
+                        <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
                     </div>
 
                     <div id="sync-config-local" class="sync-config-panel">
@@ -414,8 +414,8 @@
                             <label for="book-memo-open-with">「詳細メモを書く」で開くエディタ:</label>
                             <select id="book-memo-open-with">
                                 <option value="app-editor">アプリ内エディタ（おすすめ）</option>
-                                <option value="obsidian">Obsidian で開く（このパソコン保存のときだけ）</option>
-                                <option value="system">保存フォルダで自分で開く（このパソコン保存のときだけ）</option>
+                                <option value="obsidian">Obsidian で開く（この端末保存のときだけ）</option>
+                                <option value="system">保存フォルダで自分で開く（この端末保存のときだけ）</option>
                             </select>
                             <p class="memo-config-hint">アプリ内エディタは書式ボタンとプレビュー付きで書けます。GitHub 保存のときはアプリ内エディタをお使いください（外部アプリ連携は動きません）。</p>
                         </div>
@@ -761,21 +761,21 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060718"></script>
-    <script src="js/storage-adapter.js?v=2026060718"></script>
-    <script src="js/local-fs-adapter.js?v=2026060718"></script>
-    <script src="js/github-adapter.js?v=2026060718"></script>
-    <script src="js/github-auth.js?v=2026060718"></script>
-    <script src="js/sync-config.js?v=2026060718"></script>
-    <script src="js/storage.js?v=2026060718"></script>
-    <script src="js/book-manager.js?v=2026060718"></script>
-    <script src="js/bookshelf-manager.js?v=2026060718"></script>
-    <script src="js/exporter.js?v=2026060718"></script>
-    <script src="js/plugin-api.js?v=2026060718"></script>
-    <script src="js/plugin-loader.js?v=2026060718"></script>
-    <script src="js/router.js?v=2026060718"></script>
-    <script src="js/dashboard.js?v=2026060718"></script>
-    <script src="js/bookshelf.js?v=2026060718"></script>
+    <script src="js/icons.js?v=2026060720"></script>
+    <script src="js/storage-adapter.js?v=2026060720"></script>
+    <script src="js/local-fs-adapter.js?v=2026060720"></script>
+    <script src="js/github-adapter.js?v=2026060720"></script>
+    <script src="js/github-auth.js?v=2026060720"></script>
+    <script src="js/sync-config.js?v=2026060720"></script>
+    <script src="js/storage.js?v=2026060720"></script>
+    <script src="js/book-manager.js?v=2026060720"></script>
+    <script src="js/bookshelf-manager.js?v=2026060720"></script>
+    <script src="js/exporter.js?v=2026060720"></script>
+    <script src="js/plugin-api.js?v=2026060720"></script>
+    <script src="js/plugin-loader.js?v=2026060720"></script>
+    <script src="js/router.js?v=2026060720"></script>
+    <script src="js/dashboard.js?v=2026060720"></script>
+    <script src="js/bookshelf.js?v=2026060720"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

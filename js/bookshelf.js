@@ -802,7 +802,8 @@ class VirtualBookshelf {
      */
     _paletteCommands() {
         const navMain = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
-        return [
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        const cmds = [
             { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
             { icon: 'list',              title: '表紙 / リスト表示を切替',        keywords: 'view 表示 表紙 リスト cover list ひょうじ', run: () => this.setView(this.currentView === 'covers' ? 'list' : 'covers') },
             { icon: 'pen-line',          title: '本棚を管理',                     keywords: '本棚 管理 manage bookshelf へんしゅう', run: () => this.showBookshelfManager() },
@@ -811,9 +812,15 @@ class VirtualBookshelf {
             { icon: 'plus',              title: '本を手動追加',                   keywords: '手動 追加 add book マニュアル', run: () => this.showAddBookModal() },
             { icon: 'ban',               title: '除外一覧を開く',                 keywords: '除外 exclusion じょがい', run: () => this.showExclusionsModal() },
             { icon: 'settings',          title: '設定を開く',                     keywords: 'settings 設定 config せってい', run: () => this._openSettingsModal() },
-            { icon: 'panel-left',        title: '左サイドバーを開閉',             keywords: 'sidebar pane left ペイン 折りたたみ', run: () => this._togglePane('left') },
-            { icon: 'panel-right',       title: '右の本詳細ペインを開閉',         keywords: 'detail pane right ペイン 折りたたみ', run: () => this._togglePane('right') },
         ];
+        // ペイン開閉は PC のみ (モバイルはドロワー/フルシートで概念が異なり矛盾するため出さない)
+        if (!isMobile) {
+            cmds.push(
+                { icon: 'panel-left',  title: '左サイドバーを開閉',     keywords: 'sidebar pane left ペイン 折りたたみ', run: () => this._togglePane('left') },
+                { icon: 'panel-right', title: '右の本詳細ペインを開閉', keywords: 'detail pane right ペイン 折りたたみ', run: () => this._togglePane('right') }
+            );
+        }
+        return cmds;
     }
 
     _renderPaletteResults(query) {
@@ -2434,7 +2441,7 @@ class VirtualBookshelf {
             showPanel(newMethod);
             const current = (this.syncConfig && this.syncConfig.method) || 'local';
             if (newMethod === 'local' && current !== 'local') {
-                const ok = confirm('保存先を「このパソコンのフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。');
+                const ok = confirm('保存先を「この端末のフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。');
                 if (ok) {
                     const merged = { ...SyncConfigManager.load(), method: 'local' };
                     SyncConfigManager.save(merged);
@@ -2874,7 +2881,7 @@ class VirtualBookshelf {
     }
 
     _disconnectGitHub() {
-        const ok = confirm('GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「このパソコンのフォルダ」に戻します。');
+        const ok = confirm('GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。');
         if (!ok) return;
         const merged = SyncConfigManager.load();
         merged.method = 'local';
@@ -4760,7 +4767,7 @@ class VirtualBookshelf {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。</p>';
+            host.innerHTML = '<p style="color:#888;">先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -5916,7 +5923,7 @@ class VirtualBookshelf {
             return;
         }
         if (!this._isSyncReady()) {
-            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。');
+            alert('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。');
             return;
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -5955,7 +5962,7 @@ class VirtualBookshelf {
      */
     async openOrCreateBookMemo(asin) {
         if (!this._isSyncReady()) {
-            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。');
+            alert('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
@@ -6767,7 +6774,7 @@ class VirtualBookshelf {
             return;
         }
         if (!this._isSyncReady()) {
-            alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください');
+            alert('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください');
             return;
         }
         try {

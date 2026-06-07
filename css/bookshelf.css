@@ -5836,6 +5836,22 @@ body.select-mode .drag-handle { display: none; }
         border-radius: 0;
     }
     .modal-body { padding: 1rem; padding-top: 2.6rem; }
+    /* 見出しバー (.modal-header) を持つモーダルは本文上余白を詰める (ヘッダーと二重の空き防止) */
+    .modal-content:has(.modal-header) .modal-body { padding-top: 1rem; }
+    /* 見出しバーをスクロール追従させ、× も常に届く位置に固定 (全画面シート前提) */
+    .modal-content .modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: var(--panel);
+        margin-bottom: 0;
+    }
+    .modal-content > .modal-close {
+        position: fixed;
+        top: calc(10px + env(safe-area-inset-top));
+        right: 14px;
+        z-index: 7;
+    }
     /* 横並び行をモバイルで折り返す + 入力/選択を全幅に (はみ出し防止) */
     .sync-method-row,
     .plugin-install-input-group,
@@ -5854,4 +5870,11 @@ body.select-mode .drag-handle { display: none; }
     .settings-section-body { min-width: 0; }
     .plugin-install-hint,
     .sync-method-hint { word-break: break-word; overflow-wrap: anywhere; }
+
+    /* ウィジェット幅セレクタ: モバイルは 2 列リフローで span 値が実態と矛盾するため隠す */
+    .widget-span-select { display: none; }
+
+    /* ⌘K パレット: タッチ端末ではキーボード操作ヒント (↑↓/↵/Esc) を隠す */
+    .cmdk-footer,
+    .cmdk-esc-kbd { display: none; }
 }
