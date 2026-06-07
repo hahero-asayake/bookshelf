@@ -428,9 +428,6 @@ class VirtualBookshelf {
                     case 'manage-bookshelves':
                         this.showBookshelfManager();
                         break;
-                    case 'overview-display':
-                        this.toggleBookshelfDisplay();
-                        break;
                     case 'open-settings':
                         this._openSettingsModal();
                         break;
@@ -800,7 +797,6 @@ class VirtualBookshelf {
         return [
             { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
             { icon: 'list',              title: '表紙 / リスト表示を切替',        keywords: 'view 表示 表紙 リスト cover list ひょうじ', run: () => this.setView(this.currentView === 'covers' ? 'list' : 'covers') },
-            { icon: 'image',             title: '本棚一覧の画像 / テキスト表示を切替', keywords: 'overview 一覧 画像 テキスト display', run: () => this.toggleBookshelfDisplay() },
             { icon: 'pen-line',          title: '本棚を管理',                     keywords: '本棚 管理 manage bookshelf へんしゅう', run: () => this.showBookshelfManager() },
             { icon: 'plus',              title: '本棚を新規作成',                 keywords: '本棚 新規 作成 add new create', run: () => this.showBookshelfForm() },
             { icon: 'download',          title: 'Kindle インポート',             keywords: 'import kindle 取込 取り込み インポート', run: () => this.showImportModal() },
@@ -3916,10 +3912,6 @@ class VirtualBookshelf {
         this._saveHeaderIconOverrides(map);
         // ヘッダー全体を再構築 → state-切替も _updateView*Button から override を読むので反映される
         if (typeof this._applyHeaderLayout === 'function') this._applyHeaderLayout();
-        // 設定モーダルのヘッダーカスタマイザも再描画 (プレビュー更新)
-        if (typeof this._renderHeaderCustomizer === 'function') {
-            this._renderHeaderCustomizer().catch(e => console.warn('header customizer re-render failed', e));
-        }
         // プラグインカードのプレビューも更新 (plugin:<id> の場合)
         if (key.startsWith('plugin:') && typeof this._renderPluginListSection === 'function') {
             this._renderPluginListSection().catch(e => console.warn('plugin list re-render failed', e));
@@ -4162,8 +4154,8 @@ class VirtualBookshelf {
         modal.classList.add('show');
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
-        // ヘッダーカスタマイザはインストール済みプラグイン情報を非同期で取得して描画
-        try { await this._renderHeaderCustomizer(); } catch (e) { console.warn(e); }
+        // プラグイン一覧はインストール済み情報を非同期で取得して描画
+        try { await this._renderPluginListSection(); } catch (e) { console.warn(e); }
     }
 
     // ===== Header customization (V6: square icon buttons, linear flow, vertical drag&drop editor) =====
@@ -4180,20 +4172,18 @@ class VirtualBookshelf {
     // 下記はカスタマイザで「任意に再配置できる」候補。required は open-settings のみ。
     static HEADER_ITEMS_META = {
         // back-to-main / bookshelf-selector は 3 ペイン化でサイドバーツリーと完全重複のため撤去 (2026-06-07)。
+        // overview-display は no-op の renderBookshelfOverview を呼ぶだけで機能しないため撤去 (2026-06-07)。
         'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '📝', duplicatable: false },
-        'overview-display':    { label: '一覧画像表示', defaultIcon: 'image',             emoji: '🖼️', duplicatable: false, stateful: true },
         'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
     };
     static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV8';
 
     _defaultHeaderLayout() {
         // Phase C2: コンテナはサイドバー下部ユーティリティへ移設。
-        // 既定は 本棚管理 / 一覧表示切替 / 設定。back-to-main / bookshelf-selector は
-        // サイドバーツリーと重複するため既定では出さない (カスタマイザで任意追加可)。
+        // 既定は 本棚管理 / 設定。有効プラグインの UI ボタンは _currentHeaderLayout で自動追加。
         return {
             items: [
                 { id: this._newPlacementId(), key: 'manage-bookshelves' },
-                { id: this._newPlacementId(), key: 'overview-display' },
                 { id: this._newPlacementId(), key: 'open-settings' }
             ]
         };
@@ -4286,11 +4276,28 @@ class VirtualBookshelf {
 
         for (const it of layout.items) if (!it.id) it.id = this._newPlacementId();
 
+        // 有効プラグインの UI ボタンを自動追加 (ヘッダーカスタマイザ廃止後は明示配置しないため)。
+        // 既に配置済みのものは位置を保持、新規は末尾へ追加。
+        if (this.pluginAPI && Array.isArray(this.pluginAPI._uiButtons)) {
+            const placed = new Set(layout.items.map(it => it.key));
+            for (const btn of this.pluginAPI._uiButtons) {
+                const key = `plugin:${btn.id}`;
+                if (placed.has(key)) continue;
+                layout.items.push({ id: this._newPlacementId(), key });
+            }
+        }
+
         // required アイテム (open-settings) の存在保証
         for (const [key, meta] of Object.entries(VirtualBookshelf.HEADER_ITEMS_META)) {
             if (meta.required && !layout.items.some(it => it.key === key)) {
                 layout.items.push({ id: this._newPlacementId(), key });
             }
+        }
+        // 「設定」は常に末尾 (見た目の安定)。ユーザが D&D で動かしても次回再構築で末尾へ。
+        const sIdx = layout.items.findIndex(it => it.key === 'open-settings');
+        if (sIdx >= 0 && sIdx !== layout.items.length - 1) {
+            const [s] = layout.items.splice(sIdx, 1);
+            layout.items.push(s);
         }
         return layout;
     }
@@ -4325,6 +4332,7 @@ class VirtualBookshelf {
             span.className = 'header-item plugin-button-item';
             span.dataset.headerItem = key;
             span.dataset.placementId = placementId;
+            span.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
             const btn = document.createElement('button');
             btn.className = 'btn-icon-square plugin-ui-button';
             // pluginAPI 側に icon 適用を委譲 (override 優先, manifest.icon, emoji の順)
@@ -4346,8 +4354,9 @@ class VirtualBookshelf {
         const tpl = this._headerTemplates?.get(key);
         if (!tpl) return null;
         tpl.dataset.placementId = placementId;
-        // 静的アイテムにも override を適用 (view-toggle / overview-display は除く: 状態切替なので別関数で扱う)
-        if (key !== 'view-toggle' && key !== 'overview-display') {
+        tpl.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
+        // 静的アイテムにも override を適用 (view-toggle は除く: 状態切替なので別関数で扱う)
+        if (key !== 'view-toggle') {
             const override = this.getHeaderIconOverride(key);
             const btn = tpl.querySelector('button');
             if (btn) {
@@ -4379,6 +4388,9 @@ class VirtualBookshelf {
     _applyHeaderLayout() {
         if (!this._headerTemplates) this._initHeaderTemplates();
         const layout = this._currentHeaderLayout();
+        // 正規化済みレイアウト (plugin ボタン自動追加・ID 補完済み) を永続化。
+        // これで DOM の data-placement-id が安定し、サイドバー D&D 並び替えが一致する。
+        this._saveHeaderLayout(layout);
         const header = document.getElementById('header-controls');
         if (!header) return;
 
@@ -4396,123 +4408,64 @@ class VirtualBookshelf {
 
         // 状態依存のアイコン表示を反映 (clone 含む)
         this._updateViewToggleButton();
-        this._updateOverviewDisplayButton();
+
+        // サイドバーユーティリティ上で直接 D&D 並び替え (ヘッダーカスタマイザ画面は廃止)
+        this._bindSidebarUtilityDnD(header);
     }
 
-    // ===== ヘッダー編集 UI (V6: 縦リスト 2 ゾーン + プラグイン統合) =====
+    /**
+     * サイドバー下部ユーティリティのボタンを D&D で並び替え。
+     * 各 .header-item は data-placement-id を持つ。order は headerLayoutV8 に保存。
+     */
+    _bindSidebarUtilityDnD(host) {
+        if (!host || host._utilityDnDBound) return;
+        host._utilityDnDBound = true;
+        const drag = { pid: null };
 
-    async _renderHeaderCustomizer() {
-        const host = document.getElementById('header-customizer');
-        if (!host) return;
-
-        const layout = this._currentHeaderLayout();
-        const all = this._enumerateHeaderItems();
-        const allByKey = new Map(all.map(i => [i.key, i]));
-
-        const placedKeys = new Set(layout.items.map(it => it.key));
-        const unplacedItems = all.filter(i => !placedKeys.has(i.key));
-
-        const renderRow = (item, opts = {}) => {
-            const { source, placementId } = opts;
-            const required = !!VirtualBookshelf.HEADER_ITEMS_META[item.key]?.required;
-            const isPlugin = item.isPlugin;
-            const isStateful = !!VirtualBookshelf.HEADER_ITEMS_META[item.key]?.stateful;
-            const badge = isPlugin
-                ? '<span class="hdr-row-badge plugin">🧩 プラグイン</span>'
-                : required ? '<span class="hdr-row-badge muted">必須</span>' : '';
-            const needsBs = item.needsBookshelf ? '<span class="hdr-row-badge muted">本棚画面のみ</span>' : '';
-            // 必須項目は配置中で ↓ ボタンを出さない (外せない)
-            let moveBtn = '';
-            if (source === 'placed' && !required) {
-                moveBtn = `<button type="button" class="hdr-row-move-btn" data-move-pid="${placementId}" data-direction="down" title="未配置に移す">↓</button>`;
-            } else if (source === 'unplaced') {
-                moveBtn = `<button type="button" class="hdr-row-move-btn" data-move-key="${item.key}" data-direction="up" title="配置中に移す">↑</button>`;
+        const computeInsertIndex = (clientX, clientY) => {
+            const items = Array.from(host.querySelectorAll('.header-item'));
+            for (let i = 0; i < items.length; i++) {
+                const r = items[i].getBoundingClientRect();
+                if (clientY < r.top) return i;                       // この行より上
+                if (clientY <= r.bottom && clientX < r.left + r.width / 2) return i; // 同じ行で左寄り
             }
-            // 「▶ 操作」ボタンは配置中/未配置どちらでも表示（必須項目は除く）
-            let invokeBtn = '';
-            if (!required) {
-                if (isPlugin && item.buttonId) {
-                    invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-plugin="${item.buttonId}" title="このボタンを実行">▶ 操作</button>`;
-                } else {
-                    invokeBtn = `<button type="button" class="hdr-row-invoke-btn" data-invoke-key="${item.key}" title="このボタンを実行">▶ 操作</button>`;
-                }
-            }
-            // 🎨 アイコン変更ボタン (全アイテム共通)
-            // state-持ち (view-toggle / overview-display) は 2 state 分の選択肢が出る
-            let iconBtnHtml = '';
-            if (isStateful) {
-                // 2 つの状態を別々に変更可能
-                const stateLabels = item.key === 'view-toggle'
-                    ? [['view-toggle:covers', '表紙時'], ['view-toggle:list', 'リスト時']]
-                    : [['overview-display:images', '画像時'], ['overview-display:text', 'テキスト時']];
-                iconBtnHtml = stateLabels.map(([k, lbl]) => {
-                    const cur = this.getHeaderIconOverride(k);
-                    const preview = window.renderIcon(cur || VirtualBookshelf.HEADER_ITEMS_META[item.key].defaultIcon, { size: 14 });
-                    return `<button type="button" class="hdr-row-icon-btn" data-icon-key="${k}" title="${lbl}のアイコンを変更">${preview}<span style="font-size:0.7rem;color:#6b7280;">${lbl}</span></button>`;
-                }).join('');
-            } else {
-                const stateKey = isPlugin && item.buttonId ? `plugin:${item.buttonId}` : item.key;
-                const cur = this.getHeaderIconOverride(stateKey);
-                const defaultIcon = isPlugin
-                    ? (this.pluginLoader?.getManifest?.(item.buttonId)?.icon || '')
-                    : VirtualBookshelf.HEADER_ITEMS_META[item.key]?.defaultIcon || '';
-                const previewIcon = cur || defaultIcon;
-                const preview = previewIcon ? window.renderIcon(previewIcon, { size: 14 }) : window.renderIcon('palette', { size: 14 });
-                iconBtnHtml = `<button type="button" class="hdr-row-icon-btn" data-icon-key="${stateKey}" title="アイコンを変更">${preview}<span style="font-size:0.7rem;color:#6b7280;">アイコン</span></button>`;
-            }
-            // プレビュー (row 内のアイコン): 現在の override or default を表示
-            const rowPreviewIcon = isPlugin
-                ? (this.getHeaderIconOverride(`plugin:${item.buttonId}`) || this.pluginLoader?.getManifest?.(item.buttonId)?.icon || 'puzzle')
-                : (isStateful
-                    ? VirtualBookshelf.HEADER_ITEMS_META[item.key].defaultIcon
-                    : (this.getHeaderIconOverride(item.key) || VirtualBookshelf.HEADER_ITEMS_META[item.key]?.defaultIcon || 'puzzle'));
-            const rowPreviewHtml = window.renderIcon(rowPreviewIcon, { size: 18 });
-            return `
-                <div class="hdr-row" draggable="true"
-                     data-source="${source}"
-                     data-key="${item.key}"
-                     ${placementId ? `data-placement-id="${placementId}"` : ''}>
-                    <span class="hdr-row-grip" aria-hidden="true">≡</span>
-                    <span class="hdr-row-icon" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;color:#4338ca;">${rowPreviewHtml}</span>
-                    <span class="hdr-row-label">${item.label}</span>
-                    <span class="hdr-row-badges">${badge}${needsBs}</span>
-                    <span class="hdr-row-actions">${iconBtnHtml}${moveBtn}${invokeBtn}</span>
-                </div>`;
+            return items.length;
+        };
+        const showIndicator = (index) => {
+            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
+            const items = Array.from(host.querySelectorAll('.header-item'));
+            const ind = document.createElement('span');
+            ind.className = 'hdr-utility-drop-indicator';
+            if (index >= items.length) host.appendChild(ind);
+            else host.insertBefore(ind, items[index]);
         };
 
-        const placedHtml = layout.items.length === 0
-            ? '<div class="hdr-empty">配置中の項目はありません。下から ↑ ボタンかドラッグで追加してください。</div>'
-            : layout.items.map(it => {
-                const meta = allByKey.get(it.key) || { key: it.key, label: it.key, emoji: '', isPlugin: false };
-                return renderRow(meta, {
-                    source: 'placed',
-                    placementId: it.id
-                });
-            }).join('');
-
-        const unplacedHtml = unplacedItems.length === 0
-            ? `<div class="hdr-empty">未配置のヘッダー項目はありません。</div>`
-            : unplacedItems.map(i => renderRow(i, { source: 'unplaced' })).join('');
-
-        host.innerHTML = `
-            <div class="hdr-editor-v6">
-                <div class="hdr-zone hdr-zone-placed">
-                    <div class="hdr-zone-title">配置中 <small>左→右の順にヘッダーへ表示</small></div>
-                    <div class="hdr-zone-list" id="hdr-zone-placed">${placedHtml}</div>
-                </div>
-                <div class="hdr-zone hdr-zone-unplaced">
-                    <div class="hdr-zone-title">未配置 <small>使わないボタン / 有効プラグインの未配置 UI ボタン</small></div>
-                    <div class="hdr-zone-list" id="hdr-zone-unplaced">${unplacedHtml}</div>
-                </div>
-                <div class="hdr-editor-hint">
-                    ドラッグ&ドロップ または ↑↓ ボタンで移動 / 「外す」で取り外し
-                    <button type="button" id="hdr-reset" class="btn btn-small btn-secondary">デフォルトに戻す</button>
-                </div>
-            </div>
-        `;
-
-        this._bindHeaderEditorEvents();
-        await this._renderPluginListSection();
+        host.addEventListener('dragstart', (e) => {
+            const item = e.target.closest('.header-item');
+            if (!item || !host.contains(item)) return;
+            drag.pid = item.dataset.placementId || null;
+            if (!drag.pid) return;
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', drag.pid); } catch (_) {} }
+            item.classList.add('hdr-item-dragging');
+        });
+        host.addEventListener('dragend', () => {
+            host.querySelectorAll('.hdr-item-dragging').forEach(el => el.classList.remove('hdr-item-dragging'));
+            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
+            drag.pid = null;
+        });
+        host.addEventListener('dragover', (e) => {
+            if (!drag.pid) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            showIndicator(computeInsertIndex(e.clientX, e.clientY));
+        });
+        host.addEventListener('drop', (e) => {
+            if (!drag.pid) return;
+            e.preventDefault();
+            const idx = computeInsertIndex(e.clientX, e.clientY);
+            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
+            this._reorderHeaderPlacement(drag.pid, idx);
+        });
     }
 
     /**
@@ -4904,8 +4857,8 @@ class VirtualBookshelf {
             (async () => {
                 try {
                     await this.togglePlugin(id, next);
-                    await this._renderHeaderCustomizer();
                     this._applyHeaderLayout();
+                    await this._renderPluginListSection();
                 } catch (err) {
                     alert((next ? '有効化' : '無効化') + '失敗: ' + err.message);
                     await this._renderPluginListSection();
@@ -4922,8 +4875,8 @@ class VirtualBookshelf {
                 (async () => {
                     try {
                         await this.uninstallPluginById(id);
-                        await this._renderHeaderCustomizer();
                         this._applyHeaderLayout();
+                        await this._renderPluginListSection();
                     } catch (err) {
                         alert('アンインストール失敗: ' + err.message);
                     }
@@ -4939,173 +4892,7 @@ class VirtualBookshelf {
         }, { signal });
     }
 
-    _bindHeaderEditorEvents() {
-        const host = document.getElementById('header-customizer');
-        if (!host) {
-            console.warn('[hdr-editor] host #header-customizer not found at bind time');
-            return;
-        }
-        // 前回のリスナを abort して、新規 AbortController で再バインド
-        if (this._hdrAbort) {
-            try { this._hdrAbort.abort(); } catch (_) {}
-        }
-        this._hdrAbort = new AbortController();
-        const signal = this._hdrAbort.signal;
-
-        // ===== クリック系: イベント委譲 =====
-        host.addEventListener('click', (e) => {
-            const reset = e.target.closest('#hdr-reset');
-            if (reset) { this._resetHeaderLayout(); return; }
-
-            const moveDown = e.target.closest('[data-move-pid][data-direction="down"]');
-            if (moveDown) {
-                e.stopPropagation();
-                this._removePlacementByPid(moveDown.dataset.movePid);
-                return;
-            }
-            const moveUp = e.target.closest('[data-move-key][data-direction="up"]');
-            if (moveUp) {
-                e.stopPropagation();
-                this._insertHeaderItem(moveUp.dataset.moveKey, Number.MAX_SAFE_INTEGER);
-                return;
-            }
-            const invoke = e.target.closest('[data-invoke-plugin], [data-invoke-key]');
-            if (invoke) {
-                e.stopPropagation();
-                if (invoke.dataset.invokePlugin) {
-                    const id = invoke.dataset.invokePlugin;
-                    const entry = this.pluginAPI?._uiButtons?.find(b => b.id === id);
-                    if (entry && typeof entry.onClick === 'function') {
-                        try { entry.onClick(); }
-                        catch (err) { console.error(`[plugin "${id}"] onClick`, err); }
-                    }
-                } else {
-                    // 静的ボタン: テンプレ DOM の button.click() を呼ぶ (未配置でも handler は生存)
-                    const key = invoke.dataset.invokeKey;
-                    const tpl = this._headerTemplates?.get(key);
-                    const btn = tpl?.querySelector('button');
-                    if (btn) {
-                        try { btn.click(); }
-                        catch (err) { console.error(`[static "${key}"] click`, err); }
-                    }
-                }
-                return;
-            }
-            // 🎨 アイコン変更ボタン (全アイテム共通)
-            const iconChange = e.target.closest('[data-icon-key]');
-            if (iconChange) {
-                e.stopPropagation();
-                const key = iconChange.dataset.iconKey;
-                const current = this.getHeaderIconOverride(key) || '';
-                (async () => {
-                    const picked = await this.openIconPicker({
-                        title: `アイコンを選択 (${key})`,
-                        current
-                    });
-                    if (picked === null) return; // キャンセル
-                    // 空文字 → デフォルトに戻す
-                    this.setHeaderIconOverride(key, picked || null);
-                })();
-                return;
-            }
-        }, { signal });
-
-        // ===== ドラッグ&ドロップ: イベント委譲 =====
-        const dragState = { source: null, key: null, placementId: null };
-
-        host.addEventListener('dragstart', (e) => {
-            const row = e.target.closest('.hdr-row');
-            if (!row || !host.contains(row)) return;
-            dragState.source = row.dataset.source;
-            dragState.key = row.dataset.key;
-            dragState.placementId = row.dataset.placementId || null;
-            if (e.dataTransfer) {
-                e.dataTransfer.effectAllowed = 'move';
-                try { e.dataTransfer.setData('text/plain', row.dataset.key || ''); } catch (_) {}
-            }
-            row.classList.add('hdr-row-dragging');
-        }, { signal });
-
-        host.addEventListener('dragend', (e) => {
-            const row = e.target.closest('.hdr-row');
-            if (row) row.classList.remove('hdr-row-dragging');
-            host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
-            host.querySelectorAll('.hdr-drop-target').forEach(el => el.classList.remove('hdr-drop-target'));
-            dragState.source = null;
-            dragState.key = null;
-            dragState.placementId = null;
-        }, { signal });
-
-        const computeInsertIndex = (zoneEl, clientY) => {
-            const rows = Array.from(zoneEl.querySelectorAll('.hdr-row'));
-            for (let i = 0; i < rows.length; i++) {
-                const r = rows[i].getBoundingClientRect();
-                if (clientY < r.top + r.height / 2) return i;
-            }
-            return rows.length;
-        };
-        const showInsertIndicator = (zoneEl, index) => {
-            zoneEl.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
-            const rows = Array.from(zoneEl.querySelectorAll('.hdr-row'));
-            const indicator = document.createElement('div');
-            indicator.className = 'hdr-drop-indicator';
-            if (index >= rows.length) zoneEl.appendChild(indicator);
-            else zoneEl.insertBefore(indicator, rows[index]);
-        };
-
-        host.addEventListener('dragover', (e) => {
-            if (!dragState.source) return;
-            const zone = e.target.closest('.hdr-zone-list');
-            if (!zone) return;
-            e.preventDefault();
-            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            host.querySelectorAll('.hdr-drop-target').forEach(el => {
-                if (el !== zone) el.classList.remove('hdr-drop-target');
-            });
-            zone.classList.add('hdr-drop-target');
-            if (zone.id === 'hdr-zone-placed') {
-                showInsertIndicator(zone, computeInsertIndex(zone, e.clientY));
-            } else {
-                host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
-            }
-        }, { signal });
-
-        host.addEventListener('drop', (e) => {
-            const zone = e.target.closest('.hdr-zone-list');
-            if (!zone || !dragState.source) return;
-            e.preventDefault();
-            host.querySelectorAll('.hdr-drop-target').forEach(el => el.classList.remove('hdr-drop-target'));
-            host.querySelectorAll('.hdr-drop-indicator').forEach(el => el.remove());
-
-            if (zone.id === 'hdr-zone-placed') {
-                const idx = computeInsertIndex(zone, e.clientY);
-                if (dragState.source === 'unplaced') {
-                    this._insertHeaderItem(dragState.key, idx);
-                } else if (dragState.source === 'placed' && dragState.placementId) {
-                    this._reorderHeaderPlacement(dragState.placementId, idx);
-                }
-            } else if (zone.id === 'hdr-zone-unplaced') {
-                if (dragState.source === 'placed' && dragState.placementId) {
-                    this._removePlacementByPid(dragState.placementId);
-                }
-            }
-            dragState.source = null;
-            dragState.key = null;
-            dragState.placementId = null;
-        }, { signal });
-    }
-
-    _insertHeaderItem(key, index) {
-        const layout = this._currentHeaderLayout();
-        // 全アイテム non-duplicatable: 既存があれば削除
-        layout.items = layout.items.filter(it => it.key !== key);
-        const insertAt = Math.max(0, Math.min(index, layout.items.length));
-        layout.items.splice(insertAt, 0, { id: this._newPlacementId(), key });
-        this._saveHeaderLayout(layout);
-        this._applyHeaderLayout();
-        this._renderHeaderCustomizer();
-    }
-
+    /** サイドバーユーティリティの D&D 並び替えで呼ばれる。placement を index へ移動して保存・再適用。 */
     _reorderHeaderPlacement(placementId, index) {
         const layout = this._currentHeaderLayout();
         const fromIdx = layout.items.findIndex(it => it.id === placementId);
@@ -5115,25 +4902,6 @@ class VirtualBookshelf {
         layout.items.splice(insertAt, 0, item);
         this._saveHeaderLayout(layout);
         this._applyHeaderLayout();
-        this._renderHeaderCustomizer();
-    }
-
-    _removePlacementByPid(placementId) {
-        const layout = this._currentHeaderLayout();
-        const target = layout.items.find(it => it.id === placementId);
-        if (!target) return;
-        const required = !!VirtualBookshelf.HEADER_ITEMS_META[target.key]?.required;
-        if (required && layout.items.filter(it => it.key === target.key).length <= 1) return;
-        layout.items = layout.items.filter(it => it.id !== placementId);
-        this._saveHeaderLayout(layout);
-        this._applyHeaderLayout();
-        this._renderHeaderCustomizer();
-    }
-
-    _resetHeaderLayout() {
-        localStorage.removeItem(VirtualBookshelf.HEADER_LAYOUT_STORAGE_KEY);
-        this._applyHeaderLayout();
-        this._renderHeaderCustomizer();
     }
 
     _closeSettingsModal() {
@@ -6149,16 +5917,18 @@ class VirtualBookshelf {
 
         // 既存の本を取得（重複チェック用）
         const existingASINs = new Set(this.bookManager.getAllBooks().map(book => book.asin));
+        // 除外済みの本（ユーザが意図的に除外）も取り込み対象から外す
+        const excludedASINs = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
 
         // 本のリストを生成（フィルター機能付き）
-        this.renderBookList(books, existingASINs);
+        this.renderBookList(books, existingASINs, excludedASINs);
 
         // イベントリスナーを追加
         this.setupBookSelectionListeners();
         this.updateSelectedCount();
     }
 
-    renderBookList(books, existingASINs) {
+    renderBookList(books, existingASINs, excludedASINs = new Set()) {
         const bookList = document.getElementById('book-list');
         bookList.innerHTML = '';
 
@@ -6166,22 +5936,29 @@ class VirtualBookshelf {
         const hideExisting = document.getElementById('hide-existing-books').checked;
 
         let visibleCount = 0;
+        let excludedCount = 0;
         books.forEach((book, index) => {
             const isExisting = existingASINs.has(book.asin);
+            const isExcluded = !isExisting && excludedASINs.has(book.asin);
+            if (isExcluded) excludedCount++;
+            // 既存・除外はどちらも取り込み不可 (チェックボックス無効)
+            const isBlocked = isExisting || isExcluded;
 
-            // フィルター適用: インポート済みを非表示にする場合はスキップ
-            if (hideExisting && isExisting) {
+            // フィルター適用: 取り込み済み/除外済みを非表示にする場合はスキップ
+            if (hideExisting && isBlocked) {
                 return;
             }
 
             visibleCount++;
+            const stateClass = isExisting ? 'existing-book' : (isExcluded ? 'excluded-book' : '');
+            const stateLabel = isExisting ? '(既にインポート済み)' : (isExcluded ? '(除外済み・取り込みません)' : '');
             const bookItem = document.createElement('div');
-            bookItem.className = `book-selection-item ${isExisting ? 'existing-book' : ''}`;
+            bookItem.className = `book-selection-item ${stateClass}`;
             bookItem.dataset.bookIndex = index;
             bookItem.innerHTML = `
-                <input type="checkbox" id="book-${index}" value="${index}" ${isExisting ? 'disabled' : ''}>
+                <input type="checkbox" id="book-${index}" value="${index}" ${isBlocked ? 'disabled' : ''}>
                 <div class="book-selection-info">
-                    <div class="book-selection-title">${book.title} ${isExisting ? '(既にインポート済み)' : ''}</div>
+                    <div class="book-selection-title">${book.title} ${stateLabel}</div>
                     <div class="book-selection-author">${book.authors}</div>
                     <div class="book-selection-meta">${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</div>
                 </div>
@@ -6190,10 +5967,10 @@ class VirtualBookshelf {
         });
 
         // 表示件数を更新
-        this.updateBookListStats(books.length, visibleCount, existingASINs.size);
+        this.updateBookListStats(books.length, visibleCount, existingASINs.size, excludedCount);
     }
 
-    updateBookListStats(totalBooks, visibleBooks, existingBooks) {
+    updateBookListStats(totalBooks, visibleBooks, existingBooks, excludedBooks = 0) {
         // 統計情報を表示する要素を追加/更新
         let statsElement = document.getElementById('book-list-stats');
         if (!statsElement) {
@@ -6203,9 +5980,10 @@ class VirtualBookshelf {
             document.getElementById('book-list').parentNode.insertBefore(statsElement, document.getElementById('book-list'));
         }
 
-        const newBooks = totalBooks - existingBooks;
+        const newBooks = totalBooks - existingBooks - excludedBooks;
+        const excludedPart = excludedBooks > 0 ? ` | 除外済み: ${excludedBooks}冊` : '';
         statsElement.innerHTML = `
-            📊 総数: ${totalBooks}冊 | 新規: ${newBooks}冊 | インポート済み: ${existingBooks}冊 | 表示中: ${visibleBooks}冊
+            📊 総数: ${totalBooks}冊 | 新規: ${newBooks}冊 | インポート済み: ${existingBooks}冊${excludedPart} | 表示中: ${visibleBooks}冊
         `;
     }
     
@@ -6213,7 +5991,8 @@ class VirtualBookshelf {
         // フィルター変更時にリストを再描画
         document.getElementById('hide-existing-books').addEventListener('change', () => {
             const existingASINs = new Set(this.bookManager.getAllBooks().map(book => book.asin));
-            this.renderBookList(this.pendingImportBooks, existingASINs);
+            const excludedASINs = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
+            this.renderBookList(this.pendingImportBooks, existingASINs, excludedASINs);
             this.updateSelectedCount();
         });
 
@@ -6259,13 +6038,18 @@ class VirtualBookshelf {
     async importSelectedBooks() {
         const checkboxes = document.querySelectorAll('#book-list input[type="checkbox"]:checked');
         const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.value));
-        const selectedBooks = selectedIndices.map(index => this.pendingImportBooks[index]);
-        
+        // 除外済み/既存は取り込み対象から除く (UI では disabled だが念のため二重に防ぐ)
+        const existingASINs = new Set(this.bookManager.getAllBooks().map(b => b.asin));
+        const excludedASINs = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
+        const selectedBooks = selectedIndices
+            .map(index => this.pendingImportBooks[index])
+            .filter(b => b && !existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
+
         if (selectedBooks.length === 0) {
             alert('📚 インポートする本を選択してください');
             return;
         }
-        
+
         try {
             const results = await this.bookManager.importSelectedBooks(selectedBooks);
             this.showImportResults(results);
@@ -6649,10 +6433,9 @@ class VirtualBookshelf {
             const manifest = await this.pluginLoader.installFromGitHub(url);
             if (manifest) {
                 alert(`✅ ${manifest.name || manifest.id} v${manifest.version || '?'} をインストールしました`);
-                await this._renderPluginsList();
-                // ヘッダーカスタマイザに新規プラグインを反映
-                this._renderHeaderCustomizer();
+                // 新規プラグインをサイドバー(ボタン)と一覧に反映
                 this._applyHeaderLayout();
+                await this._renderPluginListSection();
                 input.value = '';
             }
         } catch (e) {
@@ -7117,28 +6900,6 @@ class VirtualBookshelf {
                     }, 100);
                 }
             }
-        });
-    }
-
-    toggleBookshelfDisplay() {
-        this.showImagesInOverview = !this.showImagesInOverview;
-        this.userData.settings.showImagesInOverview = this.showImagesInOverview;
-        this.saveUserData();
-        this._updateOverviewDisplayButton();
-        this.renderBookshelfOverview();
-    }
-
-    _updateOverviewDisplayButton() {
-        const buttons = document.querySelectorAll('[data-header-item="overview-display"] button, #overview-display-toggle');
-        buttons.forEach(btn => {
-            const stateKey = this.showImagesInOverview ? 'overview-display:images' : 'overview-display:text';
-            const fallback = this.showImagesInOverview ? 'list' : 'image';
-            const override = this.getHeaderIconOverride(stateKey);
-            const effectiveIcon = override || fallback;
-            btn.innerHTML = window.renderIcon(effectiveIcon, { size: 20 });
-            btn.dataset.iconValue = effectiveIcon;
-            btn.removeAttribute('data-icon');
-            btn.title = this.showImagesInOverview ? 'テキストのみ表示に切替' : '画像表示に切替';
         });
     }
 

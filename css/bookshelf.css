@@ -3849,6 +3849,23 @@ body.right-collapsed .app-detail { border-left: none; }
 .sidebar-utility .header-controls {
     flex-wrap: wrap;
     justify-content: flex-start;
+    position: relative;
+}
+/* サイドバーユーティリティのボタンを D&D 並び替え (ヘッダーカスタマイザ廃止後) */
+.sidebar-utility .header-item[draggable="true"] {
+    cursor: grab;
+}
+.sidebar-utility .header-item.hdr-item-dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+}
+.hdr-utility-drop-indicator {
+    display: inline-block;
+    width: 3px;
+    align-self: stretch;
+    min-height: 28px;
+    background: var(--accent, #5b6cff);
+    border-radius: 2px;
 }
 body.left-collapsed .app-sidebar .sidebar-utility {
     display: none;
@@ -4788,6 +4805,15 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 
 .book-selection-item:last-child {
     border-bottom: none;
+}
+
+/* 取り込み不可 (既存 / 除外済み) は淡色化 */
+.book-selection-item.existing-book,
+.book-selection-item.excluded-book {
+    opacity: 0.5;
+}
+.book-selection-item.excluded-book .book-selection-title {
+    color: var(--danger, #b91c1c);
 }
 
 .book-selection-item input[type="checkbox"] {
