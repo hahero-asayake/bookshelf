@@ -5661,3 +5661,138 @@ body.select-mode .drag-handle { display: none; }
     overflow-y: auto;
     text-align: left;
 }
+
+/* =====================================================================
+   モバイル本格 UI (<=768px): 単一ペイン + 左ドロワー + 詳細フルシート + 下部ナビ
+   ファイル末尾に置き、後勝ちで 3 ペイン用ルールを上書きする。
+   ===================================================================== */
+
+/* 既定 (PC) ではモバイル専用要素は非表示 */
+.mobile-scrim,
+.mobile-bottom-nav,
+.mobile-detail-back { display: none; }
+
+@media (max-width: 768px) {
+    /* --- 単一ペイン化: 中央のみ。左右はオーバーレイで重ねる --- */
+    .container.app-shell { grid-template-columns: 1fr; }
+
+    /* デスクトップのペイン開閉タブ / 折りたたみ strip は隠す */
+    .pane-tab { display: none !important; }
+    .app-sidebar .sidebar-strip,
+    .app-detail .detail-strip { display: none !important; }
+
+    /* 折りたたみ class が付いていてもドロワー内は常にフル表示 */
+    body.left-collapsed .app-sidebar .sidebar-nav { display: block !important; }
+    body.left-collapsed .app-sidebar .pane-toolbar,
+    body.left-collapsed .app-sidebar .sidebar-utility { display: flex !important; }
+    body.right-collapsed .app-detail .detail-body,
+    body.right-collapsed .app-detail .pane-toolbar { display: block !important; }
+
+    /* --- 左ナビ = ドロワー --- */
+    .app-sidebar {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: min(82vw, 320px);
+        z-index: 960;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        border-right: 1px solid var(--line);
+        padding-top: env(safe-area-inset-top);
+    }
+    body.drawer-open .app-sidebar {
+        transform: translateX(0);
+        box-shadow: 8px 0 28px rgba(0, 0, 0, 0.18);
+    }
+
+    /* --- スクリム (ドロワー背面) --- */
+    .mobile-scrim {
+        display: block;
+        position: fixed; inset: 0;
+        background: rgba(0, 0, 0, 0.42);
+        z-index: 955;
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.25s ease;
+    }
+    body.drawer-open .mobile-scrim { opacity: 1; pointer-events: auto; }
+
+    /* --- 右詳細 = フルシート --- */
+    .app-detail {
+        position: fixed;
+        inset: 0;
+        width: auto;
+        z-index: 940;
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        border-left: none;
+        padding-top: env(safe-area-inset-top);
+    }
+    body.book-detail-pinned .app-detail { transform: translateX(0); }
+    .app-detail .detail-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    }
+
+    /* 詳細シートの戻るバー */
+    .mobile-detail-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        width: 100%;
+        flex: 0 0 auto;
+        padding: 0.7rem 0.9rem;
+        background: var(--panel);
+        border: none;
+        border-bottom: 1px solid var(--line);
+        color: var(--fg2);
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+
+    /* --- 中央ペイン: 下部ナビ分の余白 --- */
+    .bookshelf-container.app-main-pane {
+        padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    }
+
+    /* --- 下部ナビ --- */
+    .mobile-bottom-nav {
+        display: flex;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        height: calc(56px + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        z-index: 950;
+    }
+    .mobile-bottom-nav button {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.65rem;
+        cursor: pointer;
+        padding: 6px 0;
+    }
+    .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
+    .mobile-bottom-nav button.is-active { color: var(--accent); }
+
+    /* 本棚ビューヘッダーの左右余白を詰める */
+    .bookshelf-view-header { padding-left: 0.6rem; padding-right: 0.6rem; }
+
+    /* 表紙グリッド: モバイルは 2 列固定。
+       content-visibility(H2-7) の intrinsic 幅で 1fr トラックが膨張し、
+       repeat(3,1fr) が横溢れ(=実質1列に見える)していたのを防ぐ。
+       minmax(0,1fr) はトラックを 0 まで縮められるので溢れない。 */
+    .bookshelf.view-covers {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 0.9rem;
+    }
+    .bookshelf.view-covers .book-item { width: 100%; min-width: 0; }
+}

@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060713">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060715">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -212,6 +212,7 @@
 
             <!-- ===== 右ペイン (本詳細) ===== -->
             <aside class="app-detail" id="app-detail">
+                <button class="mobile-detail-back" id="mobile-detail-back" type="button"><span data-icon="arrow-left" data-icon-size="18"></span>戻る</button>
                 <div class="detail-body" id="book-detail-pane">
                     <div class="detail-placeholder">
                         <p class="detail-placeholder-icon" data-icon="book-open" data-icon-size="36"></p>
@@ -220,6 +221,17 @@
                 </div>
             </aside>
         </div>
+
+        <!-- モバイル: ドロワー背面スクリム -->
+        <div class="mobile-scrim" id="mobile-scrim" aria-hidden="true"></div>
+
+        <!-- モバイル: 下部ナビ (<=768px のみ表示) -->
+        <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="モバイルナビゲーション">
+            <button type="button" data-mobile-nav="home"><span class="mnav-icon" data-icon="home" data-icon-size="20"></span><span>ホーム</span></button>
+            <button type="button" data-mobile-nav="shelves"><span class="mnav-icon" data-icon="library" data-icon-size="20"></span><span>本棚</span></button>
+            <button type="button" data-mobile-nav="search"><span class="mnav-icon" data-icon="search" data-icon-size="20"></span><span>検索</span></button>
+            <button type="button" data-mobile-nav="settings"><span class="mnav-icon" data-icon="settings" data-icon-size="20"></span><span>設定</span></button>
+        </nav>
     </main>
 
     <!-- Settings Modal -->
@@ -749,21 +761,21 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060713"></script>
-    <script src="js/storage-adapter.js?v=2026060713"></script>
-    <script src="js/local-fs-adapter.js?v=2026060713"></script>
-    <script src="js/github-adapter.js?v=2026060713"></script>
-    <script src="js/github-auth.js?v=2026060713"></script>
-    <script src="js/sync-config.js?v=2026060713"></script>
-    <script src="js/storage.js?v=2026060713"></script>
-    <script src="js/book-manager.js?v=2026060713"></script>
-    <script src="js/bookshelf-manager.js?v=2026060713"></script>
-    <script src="js/exporter.js?v=2026060713"></script>
-    <script src="js/plugin-api.js?v=2026060713"></script>
-    <script src="js/plugin-loader.js?v=2026060713"></script>
-    <script src="js/router.js?v=2026060713"></script>
-    <script src="js/dashboard.js?v=2026060713"></script>
-    <script src="js/bookshelf.js?v=2026060713"></script>
+    <script src="js/icons.js?v=2026060715"></script>
+    <script src="js/storage-adapter.js?v=2026060715"></script>
+    <script src="js/local-fs-adapter.js?v=2026060715"></script>
+    <script src="js/github-adapter.js?v=2026060715"></script>
+    <script src="js/github-auth.js?v=2026060715"></script>
+    <script src="js/sync-config.js?v=2026060715"></script>
+    <script src="js/storage.js?v=2026060715"></script>
+    <script src="js/book-manager.js?v=2026060715"></script>
+    <script src="js/bookshelf-manager.js?v=2026060715"></script>
+    <script src="js/exporter.js?v=2026060715"></script>
+    <script src="js/plugin-api.js?v=2026060715"></script>
+    <script src="js/plugin-loader.js?v=2026060715"></script>
+    <script src="js/router.js?v=2026060715"></script>
+    <script src="js/dashboard.js?v=2026060715"></script>
+    <script src="js/bookshelf.js?v=2026060715"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

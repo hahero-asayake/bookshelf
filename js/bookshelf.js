@@ -3571,6 +3571,8 @@ class VirtualBookshelf {
     _setBodyView(view) {
         document.body.classList.remove('app-view-main', 'app-view-bookshelf');
         document.body.classList.add(`app-view-${view}`);
+        // モバイル: ビュー切替時はドロワーを閉じる
+        document.body.classList.remove('drawer-open');
         // ホームに戻ったら右ペインのピン留めも解除
         if (view === 'main') {
             document.body.classList.remove('book-detail-pinned');
@@ -3627,6 +3629,54 @@ class VirtualBookshelf {
             homeBtn.addEventListener('click', () => {
                 if (this.router) this.router.navigateMain();
                 else { this._setBodyView('main'); }
+            });
+        }
+
+        // モバイル UI (ドロワー / 下部ナビ / 詳細シート) の初期化
+        this._initMobileNav();
+    }
+
+    // ===== モバイル UI (<=768px): ドロワー + 下部ナビ + 詳細フルシート =====
+    _initMobileNav() {
+        if (this._mobileNavBound) return;
+        this._mobileNavBound = true;
+        const body = document.body;
+
+        // スクリム: タップでドロワーを閉じる
+        const scrim = document.getElementById('mobile-scrim');
+        if (scrim) scrim.addEventListener('click', () => body.classList.remove('drawer-open'));
+
+        // 下部ナビ
+        const nav = document.getElementById('mobile-bottom-nav');
+        if (nav) nav.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-mobile-nav]');
+            if (!btn) return;
+            const action = btn.dataset.mobileNav;
+            if (action === 'home') {
+                body.classList.remove('drawer-open');
+                if (this.router) this.router.navigateMain(); else this._setBodyView('main');
+            } else if (action === 'shelves') {
+                body.classList.toggle('drawer-open');
+            } else if (action === 'search') {
+                body.classList.remove('drawer-open');
+                this._openPalette();
+            } else if (action === 'settings') {
+                body.classList.remove('drawer-open');
+                this._openSettingsModal();
+            }
+        });
+
+        // 詳細シートの戻る
+        const back = document.getElementById('mobile-detail-back');
+        if (back) back.addEventListener('click', () => body.classList.remove('book-detail-pinned'));
+
+        // Esc でドロワーを閉じる
+        if (!this._mobileEscBound) {
+            this._mobileEscBound = true;
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && body.classList.contains('drawer-open')) {
+                    body.classList.remove('drawer-open');
+                }
             });
         }
     }
