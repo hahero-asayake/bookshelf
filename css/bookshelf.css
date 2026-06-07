@@ -71,7 +71,6 @@
 .public-mode .add-to-bookshelf,
 .public-mode .bookshelf-select,
 .public-mode .remove-from-bookshelf,
-.public-mode .rating-reset,
 .public-mode .propagate-to-descendants,
 .public-mode .book-edit-section,
 .public-mode .bookshelf-actions,
@@ -99,7 +98,6 @@
 .public-mode .add-to-bookshelf,
 .public-mode .bookshelf-select,
 .public-mode .remove-from-bookshelf,
-.public-mode .rating-reset,
 .public-mode .propagate-to-descendants,
 .public-mode .book-edit-section,
 .public-mode .bookshelf-actions {
@@ -956,20 +954,6 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     align-items: center;
 }
 .bd-stars .star { cursor: pointer; }
-.bd-stars-reset {
-    margin-left: 0.5rem;
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 0.75rem;
-    cursor: pointer;
-    text-decoration: underline;
-}
-.bd-stars-reset-row {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 0.5rem;
-}
 
 /* ===== セクションカード ===== */
 .bd-sections { display: block; }
@@ -5144,22 +5128,6 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     align-self: flex-end;
 }
 /* ポップアップ内の星は暗背景用 (overlay と同じ白縁取り。stars-overlay クラスで適用済) */
-
-.rating-reset {
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    padding: 4px 8px;
-    background-color: #95a5a6;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.rating-reset:hover {
-    background-color: #7f8c8d;
-}
 
 /* Bookshelf Management - Drag and Drop Styles */
 .bookshelf-item {
