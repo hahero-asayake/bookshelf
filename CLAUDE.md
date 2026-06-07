@@ -288,8 +288,11 @@ PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀developme
 | **大改修 Phase H** (ダッシュボード細部: hover accent / 見出し / ウィジェット modal) | ✅ 2026-06-01 |
 | **大改修 Phase I** (プラグイン icon override バグ修正) | ✅ 2026-06-01 |
 | **大改修 Phase F** (プラグイン仕様ゼロベース再設計) | 📝 設計のみ (05_プラグイン仕様書、コード未変更) |
+| **PWA 基盤** (manifest / service worker / アイコン / メタ) | ✅ 2026-06-08 |
+| **スマホ本格 UI** (≤768px: 単一ペイン+ドロワー+下部ナビ+詳細フルシート、表紙2列) | ✅ 2026-06-08 |
+| **公開ボタン coming soon 化** (公開モード先送り、Drive/Dropbox は対応予定表示) | ✅ 2026-06-08 |
+| iOS Safari / Android Chrome 実機での PWA・表示確認 | ❌ 未着手 (UI 基盤は実装済) |
 | Android Capacitor ビルド + SAF | ❌ 未着手 |
-| iOS PWA 動作確認 | ❌ 未着手 |
 | 公開モードデザイン | ❌ 保留 (Adapter 確定後に再設計) |
 
 詳細は [07_残検討事項](../../../obsidian/80_🚀project/81_🚀development/bookshelf/07_残検討事項.md) を参照。
