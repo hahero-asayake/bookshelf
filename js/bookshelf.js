@@ -5809,6 +5809,11 @@ class VirtualBookshelf {
      * - GitHub Adapter なら storage.syncBatch で 1 commit にまとまる
      */
     async publishToPublic() {
+        // Web 公開機能は準備中 (#2 公開モード再設計が前提)。再開時はこのガードを外す。
+        if (this.PUBLISH_COMING_SOON !== false) {
+            alert('Web 公開機能は現在準備中です（近日対応）。');
+            return;
+        }
         if (!this._isSyncReady()) {
             alert('先に「同期 / 公開」で保存先（このパソコンのフォルダ または GitHub）を設定してください。');
             return;

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>📚 bookshelf</title>
     <meta name="description" content="ローカルファイル正本＋本棚を一級概念＋プラグイン拡張可能な読書ライブラリ">
 
@@ -10,9 +10,18 @@
     <meta property="og:title" content="📚 bookshelf">
     <meta property="og:description" content="読書ライブラリ">
     <meta property="og:type" content="website">
-    
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="bookshelf">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060712">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060713">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -337,7 +346,7 @@
                     </div>
 
                     <div class="settings-action-row">
-                        <button id="publish-to-public" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>Web 公開用に書き出す</button>
+                        <button id="publish-to-public" class="btn btn-secondary" disabled title="Web 公開機能は準備中です（近日対応）"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>Web 公開<span class="coming-soon-badge">近日対応</span></button>
                         <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>バックアップを保存</button>
                     </div>
                     </div>
@@ -740,20 +749,30 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060712"></script>
-    <script src="js/storage-adapter.js?v=2026060712"></script>
-    <script src="js/local-fs-adapter.js?v=2026060712"></script>
-    <script src="js/github-adapter.js?v=2026060712"></script>
-    <script src="js/github-auth.js?v=2026060712"></script>
-    <script src="js/sync-config.js?v=2026060712"></script>
-    <script src="js/storage.js?v=2026060712"></script>
-    <script src="js/book-manager.js?v=2026060712"></script>
-    <script src="js/bookshelf-manager.js?v=2026060712"></script>
-    <script src="js/exporter.js?v=2026060712"></script>
-    <script src="js/plugin-api.js?v=2026060712"></script>
-    <script src="js/plugin-loader.js?v=2026060712"></script>
-    <script src="js/router.js?v=2026060712"></script>
-    <script src="js/dashboard.js?v=2026060712"></script>
-    <script src="js/bookshelf.js?v=2026060712"></script>
+    <script src="js/icons.js?v=2026060713"></script>
+    <script src="js/storage-adapter.js?v=2026060713"></script>
+    <script src="js/local-fs-adapter.js?v=2026060713"></script>
+    <script src="js/github-adapter.js?v=2026060713"></script>
+    <script src="js/github-auth.js?v=2026060713"></script>
+    <script src="js/sync-config.js?v=2026060713"></script>
+    <script src="js/storage.js?v=2026060713"></script>
+    <script src="js/book-manager.js?v=2026060713"></script>
+    <script src="js/bookshelf-manager.js?v=2026060713"></script>
+    <script src="js/exporter.js?v=2026060713"></script>
+    <script src="js/plugin-api.js?v=2026060713"></script>
+    <script src="js/plugin-loader.js?v=2026060713"></script>
+    <script src="js/router.js?v=2026060713"></script>
+    <script src="js/dashboard.js?v=2026060713"></script>
+    <script src="js/bookshelf.js?v=2026060713"></script>
+    <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch((err) => {
+                    console.warn('Service Worker の登録に失敗しました:', err);
+                });
+            });
+        }
+    </script>
 </body>
 </html>

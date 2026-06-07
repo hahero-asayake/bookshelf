@@ -5400,6 +5400,18 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     gap: 0.25rem;
 }
 
+/* 「近日対応」バッジ (coming soon) */
+.coming-soon-badge {
+    background: var(--line2);
+    color: var(--muted);
+    font-size: 0.65rem;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-left: 0.45rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
 /* 本棚プレビューカードのヘッダー */
 .bookshelf-preview-header {
     margin: 0;
