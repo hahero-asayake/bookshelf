@@ -9,10 +9,11 @@
  *   - ユーザ配置は userData._storage.main.home.widgets = [{ id, span, config? }, ...]
  *   - 編集モード: ⋮⋮ ドラッグ並び替え / × 外す / ＋ 追加ピッカー
  *
- * ウィジェット (MVP 10 種):
- *   counter-total, counter-shelves, counter-this-month, counter-unrated,
- *   recent-books, today-pick, bookshelf-highlights,
- *   heatmap, rating-dist, pinned-memo
+ * ウィジェット:
+ *   heading, counter-total, counter-shelves, counter-this-month, counter-unrated,
+ *   recent-books, today-pick, bookshelf-highlights, reading-stats, pinned-memo
+ *   (reading-stats は旧プラグインを既定機能化。heatmap/monthly-additions/rating-dist は
+ *    reading-stats に集約して廃止 — MIGRATE_WIDGETS で旧レイアウトを移行)
  */
 
 class BookshelfDashboard {
@@ -40,9 +41,7 @@ class BookshelfDashboard {
             'recent-books':        { label: '最近追加した本', icon: 'clock',         defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderRecentBooks },
             'today-pick':          { label: '今日の一冊', icon: 'sparkles',         defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderTodayPick },
             'bookshelf-highlights':{ label: '本棚ハイライト', icon: 'layout-dashboard', defaultSpan: 12, allowedSpans: [6, 8, 12], render: this._renderBookshelfHighlights },
-            'heatmap':             { label: '追加カレンダー', icon: 'calendar-days', defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderHeatmap },
-            'monthly-additions':   { label: '月別の追加数', icon: 'bar-chart-3',   defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderMonthlyAdditions },
-            'rating-dist':         { label: '評価分布',   icon: 'bar-chart-3',      defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderRatingDist },
+            'reading-stats':       { label: '読書統計',   icon: 'bar-chart-3',      defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderReadingStats },
             'pinned-memo':         { label: 'ピン留めメモ', icon: 'pin',            defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderPinnedMemo }
         };
     }
@@ -55,9 +54,17 @@ class BookshelfDashboard {
         { id: 'recent-books',         span: 8 },
         { id: 'today-pick',           span: 4 },
         { id: 'bookshelf-highlights', span: 12 },
-        { id: 'heatmap',              span: 8 },
-        { id: 'rating-dist',          span: 4 }
+        { id: 'reading-stats',        span: 12 }
     ];
+
+    // 廃止したウィジェット → 置換先。既存レイアウトに残っていても読み込み時に読書統計へ寄せる。
+    // (追加カレンダー heatmap / 月別の追加数 monthly-additions / 評価分布 rating-dist は廃止し
+    //  「読書統計」reading-stats に集約。reading-stats は旧プラグインを既定機能化したもの)
+    static MIGRATE_WIDGETS = {
+        'heatmap': 'reading-stats',
+        'monthly-additions': 'reading-stats',
+        'rating-dist': 'reading-stats'
+    };
 
     /**
      * userData._storage.main.home.widgets を返す (空なら DEFAULT_LAYOUT)。
@@ -68,10 +75,25 @@ class BookshelfDashboard {
      */
     getLayout() {
         const home = this.app.userData?._storage?.main?.home;
-        const raw = (home && Array.isArray(home.widgets) && home.widgets.length > 0)
-            ? home.widgets.filter(w => this._registry[w.id])   // 未知 id は除外
+        const src = (home && Array.isArray(home.widgets) && home.widgets.length > 0)
+            ? home.widgets
             : BookshelfDashboard.DEFAULT_LAYOUT;
-        return raw.map((w, i) => ({ id: w.id, span: w.span, config: w.config, uid: `${w.id}#${i}` }));
+        // 廃止ウィジェットの移行 + 未知 id 除去。移行先 (読書統計) は重複生成しないよう 1 つに寄せる。
+        const out = [];
+        let migratedStats = false;
+        for (const w of src) {
+            const repl = BookshelfDashboard.MIGRATE_WIDGETS[w.id];
+            if (repl) {
+                if (migratedStats || !this._registry[repl]) continue; // 廃止ウィジェットは出さない
+                out.push({ id: repl, span: this._registry[repl].defaultSpan });
+                migratedStats = true;
+                continue;
+            }
+            if (!this._registry[w.id]) continue;                    // 未知 id は除外
+            out.push({ id: w.id, span: w.span, config: w.config });
+        }
+        // uid (= id#index) を付与: 同一ウィジェット複数配置でも操作が正しいインスタンスに効く
+        return out.map((w, i) => ({ ...w, uid: `${w.id}#${i}` }));
     }
 
     /**
@@ -465,127 +487,60 @@ class BookshelfDashboard {
         }
     }
 
-    _renderHeatmap(host, app) {
-        // 「追加カレンダー」: GitHub の草グラフ風。列=週・行=曜日 (日→土) で、
-        // いつ本を追加したかが時系列で読めるようにする。月ラベルと説明文つき。
-        const weeks = 26;
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        // 今週の日曜まで戻り、そこから (weeks-1) 週前の日曜を開始日に (列が必ず週で揃う)
-        const endSunday = new Date(today); endSunday.setDate(today.getDate() - today.getDay());
-        const start = new Date(endSunday); start.setDate(endSunday.getDate() - (weeks - 1) * 7);
-
-        // 取得数を「その日の 0:00」キーで集計
-        const countByDay = new Map();
-        for (const b of (app.books || [])) {
-            if (!b.acquiredTime) continue;
-            const d = new Date(b.acquiredTime); d.setHours(0, 0, 0, 0);
-            countByDay.set(d.getTime(), (countByDay.get(d.getTime()) || 0) + 1);
-        }
-
-        // 各セルの (日付, 件数) を週→曜日順に用意 (grid-auto-flow:column のため列=週になる)
-        const dayCell = []; // { date, count, future }
-        const monthLabels = []; // 週ごとの月ラベル (月が変わる列だけ表示)
-        let prevMonth = -1;
-        let total = 0, maxCount = 1;
-        for (let w = 0; w < weeks; w++) {
-            const colDate = new Date(start); colDate.setDate(start.getDate() + w * 7);
-            const mo = colDate.getMonth();
-            monthLabels.push(mo !== prevMonth ? `${mo + 1}月` : '');
-            prevMonth = mo;
-            for (let d = 0; d < 7; d++) {
-                const cellDate = new Date(start); cellDate.setDate(start.getDate() + w * 7 + d);
-                const future = cellDate > today;
-                const count = future ? 0 : (countByDay.get(cellDate.getTime()) || 0);
-                if (!future) { total += count; if (count > maxCount) maxCount = count; }
-                dayCell.push({ date: cellDate, count, future });
-            }
-        }
-
-        const cells = dayCell.map(({ date, count, future }) => {
-            if (future) return `<div class="hm-cell hm-future"></div>`;
-            const intensity = count === 0 ? 0 : Math.min(4, Math.ceil((count / maxCount) * 4));
-            const label = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}: ${count}冊`;
-            return `<div class="hm-cell hm-l${intensity}" title="${label}"></div>`;
-        }).join('');
-        const months = monthLabels.map(m => `<span class="cal-month">${m}</span>`).join('');
-
-        host.innerHTML = `
-            <div class="widget-cal">
-                <div class="cal-grid-wrap">
-                    <div class="cal-weekdays">
-                        <span></span><span>月</span><span></span><span>水</span><span></span><span>金</span><span></span>
-                    </div>
-                    <div class="cal-main">
-                        <div class="cal-months">${months}</div>
-                        <div class="cal-cells">${cells}</div>
-                    </div>
-                </div>
-                <div class="cal-foot">
-                    <span class="cal-caption">色が濃い日ほど多く本を追加。過去${weeks}週間で ${total.toLocaleString()} 冊。</span>
-                    <span class="widget-heatmap-legend">
-                        <span>少</span>
-                        <span class="hm-cell hm-l0"></span>
-                        <span class="hm-cell hm-l1"></span>
-                        <span class="hm-cell hm-l2"></span>
-                        <span class="hm-cell hm-l3"></span>
-                        <span class="hm-cell hm-l4"></span>
-                        <span>多</span>
-                    </span>
-                </div>
-            </div>
-        `;
-    }
-
-    _renderMonthlyAdditions(host, app, config) {
-        // 「月別の追加数」: 直近 N か月、各月に何冊追加したかを横棒グラフで (一般ユーザ向けに直感的)
-        const months = (config && config.months) || 12;
-        const now = new Date();
-        const buckets = [];
-        for (let i = months - 1; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            buckets.push({ y: d.getFullYear(), m: d.getMonth(), count: 0 });
-        }
-        const idx = new Map(buckets.map((b, i) => [`${b.y}-${b.m}`, i]));
-        for (const b of (app.books || [])) {
-            if (!b.acquiredTime) continue;
-            const d = new Date(b.acquiredTime);
-            const i = idx.get(`${d.getFullYear()}-${d.getMonth()}`);
-            if (i !== undefined) buckets[i].count++;
-        }
-        const max = Math.max(1, ...buckets.map(b => b.count));
-        host.innerHTML = `
-            <div class="widget-month-bars">
-                ${buckets.map(b => {
-                    const label = b.m === 0 ? `${b.y}/1` : `${b.m + 1}月`;
-                    return `
-                    <div class="mb-row">
-                        <span class="mb-label">${label}</span>
-                        <div class="mb-bar-wrap"><div class="mb-bar" style="width:${(b.count / max * 100).toFixed(1)}%;"></div></div>
-                        <span class="mb-count">${b.count}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        `;
-    }
-
-    _renderRatingDist(host, app) {
+    _renderReadingStats(host, app) {
+        // 読書統計 (旧 reading-stats プラグインを既定機能化):
+        //   蔵書数 / 年別取得 / 評価分布 / 本棚別 Top5 を 1 ウィジェットに集約。
+        const books = app.books || [];
         const notes = app.userData?.notes || {};
-        const dist = [0, 0, 0, 0, 0, 0]; // index 0 = 未評価, 1-5 = 星数
-        for (const b of (app.books || [])) {
-            const r = notes[b.asin]?.rating || 0;
-            dist[Math.min(5, Math.max(0, Math.floor(r)))]++;
+        const shelves = (app.userData?.bookshelves || []);
+
+        // 年別取得
+        const yearCounts = new Map();
+        for (const b of books) {
+            const ts = Number(b.acquiredTime);
+            if (!Number.isFinite(ts)) continue;
+            const y = new Date(ts).getFullYear();
+            if (Number.isFinite(y)) yearCounts.set(y, (yearCounts.get(y) || 0) + 1);
         }
-        const max = Math.max(1, ...dist);
-        const labels = ['未評価', '★1', '★2', '★3', '★4', '★5'];
+        const years = [...yearCounts.entries()].sort((a, b) => a[0] - b[0]);
+        const maxYear = years.reduce((m, [, v]) => Math.max(m, v), 0) || 1;
+
+        // 評価分布 (0=未評価)
+        const ratings = [0, 0, 0, 0, 0, 0];
+        for (const b of books) {
+            const r = notes[b.asin]?.rating;
+            ratings[(Number.isInteger(r) && r >= 1 && r <= 5) ? r : 0]++;
+        }
+        const maxRating = Math.max(...ratings) || 1;
+
+        // 本棚別 Top5 (特殊本棚 ALL は除外)
+        const shelfTop = shelves.filter(s => !s.isSpecial)
+            .map(s => ({ name: s.name, count: (s.books || []).length }))
+            .sort((a, b) => b.count - a.count).slice(0, 5);
+
+        const esc = (s) => this._escape(s);
+        const bar = (w, cls) => `<div class="rs-track"><div class="rs-fill ${cls}" style="width:${w}%"></div></div>`;
         host.innerHTML = `
-            <div class="widget-rating-dist">
-                ${labels.map((lbl, i) => `
-                    <div class="rd-row">
-                        <span class="rd-label">${lbl}</span>
-                        <div class="rd-bar-wrap"><div class="rd-bar" style="width:${(dist[i] / max * 100).toFixed(1)}%;"></div></div>
-                        <span class="rd-count">${dist[i]}</span>
-                    </div>
-                `).join('')}
+            <div class="widget-reading-stats">
+                <div class="rs-total">蔵書 <strong>${books.length.toLocaleString()}</strong> 冊</div>
+                <div class="rs-block">
+                    <div class="rs-h">年別取得</div>
+                    ${years.length ? years.map(([y, c]) => `
+                        <div class="rs-row"><span class="rs-k">${y}</span>${bar((c / maxYear * 100).toFixed(1), 'rs-y')}<span class="rs-v">${c}</span></div>
+                    `).join('') : '<div class="rs-empty">取得日データなし</div>'}
+                </div>
+                <div class="rs-block">
+                    <div class="rs-h">評価分布</div>
+                    ${[5, 4, 3, 2, 1, 0].map(r => `
+                        <div class="rs-row"><span class="rs-k">${r === 0 ? '未評価' : '★' + r}</span>${bar((ratings[r] / maxRating * 100).toFixed(1), 'rs-r')}<span class="rs-v">${ratings[r]}</span></div>
+                    `).join('')}
+                </div>
+                <div class="rs-block">
+                    <div class="rs-h">本棚別 Top5</div>
+                    ${shelfTop.length ? `<ul class="rs-shelves">${shelfTop.map(s =>
+                        `<li><span>${esc(s.name)}</span><strong>${s.count}</strong></li>`).join('')}</ul>`
+                        : '<div class="rs-empty">ユーザ本棚なし</div>'}
+                </div>
             </div>
         `;
     }
