@@ -4244,21 +4244,20 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 
 .plugin-card-v2 {
     display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.6rem 0.85rem;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem 0.85rem;
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: 10px;
     cursor: grab;
     user-select: none;
-    transition: background 0.1s, border-color 0.1s, opacity 0.1s;
+    transition: border-color 0.12s, box-shadow 0.12s, opacity 0.12s;
 }
 
 .plugin-card-v2:hover {
-    background: var(--line2);
-    border-color: #93c5fd;
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+    box-shadow: 0 1px 4px rgba(18, 20, 28, 0.06);
 }
 
 .plugin-card-v2.is-dragging {
@@ -4276,33 +4275,68 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-.plugin-card-info {
+/* 1 行目: アイコン chip + 名前/メタ + 有効トグル */
+.pcard-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.pcard-icon {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: var(--accent-bg, #eef0ff);
+    color: var(--accent, #5b6cff);
+}
+.pcard-icon.is-off {
+    background: var(--line2);
+    color: var(--muted);
+}
+.pcard-headtext {
     flex: 1;
     min-width: 0;
 }
-
-.plugin-card-title {
+.pcard-name {
     display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    margin-bottom: 0.15rem;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
 }
-
-.plugin-card-title strong {
+.pcard-name strong {
     color: var(--fg);
     font-size: 0.95rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-
-.plugin-card-title small {
+.pcard-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.1rem;
+    min-height: 1em;
+}
+.pcard-version {
+    font-size: 0.75rem;
     color: var(--muted);
-    font-weight: normal;
-    font-size: 0.8rem;
+}
+.pcard-toggle {
+    flex: 0 0 auto;
 }
 
 .plugin-card-desc {
     font-size: 0.82rem;
-    color: var(--muted);
-    margin-bottom: 0.2rem;
+    color: var(--fg2, #4b5460);
+    margin: 0;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .plugin-state {
@@ -4338,7 +4372,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     display: flex;
     flex-wrap: wrap;
     gap: 0.3rem;
-    margin: 0.3rem 0;
+    margin: 0;
 }
 .plugin-cat-badge {
     display: inline-flex;
@@ -4406,11 +4440,13 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 
 .plugin-card-actions {
-    display: inline-flex;
-    flex-wrap: wrap;
+    display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.4rem;
-    flex-shrink: 0;
+    margin-top: 0.05rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--line2);
 }
 
 /* ===== プラグインごとの設定モーダル ===== */
@@ -4540,7 +4576,10 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .toggle-switch-lg input:checked + .toggle-switch-track .toggle-switch-thumb { transform: translateX(20px); }
 
 /* 無効プラグインカードは淡色化 (トグル OFF を視覚的に補強) */
-.plugin-card-v2.is-disabled .plugin-card-info { opacity: 0.55; }
+.plugin-card-v2.is-disabled { background: var(--side, #fbfbfd); }
+.plugin-card-v2.is-disabled .pcard-headtext,
+.plugin-card-v2.is-disabled .plugin-card-cats,
+.plugin-card-v2.is-disabled .plugin-card-desc { opacity: 0.55; }
 
 /* アイコンのみの小ボタン (削除など) */
 .btn-icon-only {
@@ -5919,15 +5958,13 @@ body.select-mode .drag-handle { display: none; }
     }
     .bookshelf.view-covers .book-item { width: 100%; min-width: 0; }
 
-    /* --- ダッシュボード: PC の 12 列 span をモバイルは 2 列リフローに --- */
+    /* --- ダッシュボード: スマホは 2 列グリッド。幅は PC の span-N ではなく
+           スマホ専用クラス m-half / m-full で決める (dashboard.js が spanMobile から付与)。
+           これで「小↔中」のように PC では違うが両方半分に丸まる…という現象を解消し、
+           カウンター等もスマホで半分↔全幅を独立に選べる。 --- */
     .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
-    /* T シャツサイズ → モバイル: 小(3)・中(6) = 半分 / 大(9)・全幅(12) = 全幅 */
-    .dashboard-widget.span-3,
-    .dashboard-widget.span-4,
-    .dashboard-widget.span-6 { grid-column: span 1; }
-    .dashboard-widget.span-8,
-    .dashboard-widget.span-9,
-    .dashboard-widget.span-12 { grid-column: span 2; }
+    .dashboard-widget.m-half { grid-column: span 1; }
+    .dashboard-widget.m-full { grid-column: span 2; }
     .add-widget-card { grid-column: span 2; }
     #dashboard { padding: 0.8rem 0.8rem 1.2rem; }
     .dashboard-toolbar { flex-wrap: wrap; gap: 0.5rem; }

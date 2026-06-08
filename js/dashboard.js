@@ -22,6 +22,22 @@ class BookshelfDashboard {
         this.editMode = false;
         this._dragState = null;
         this._registry = this._buildRegistry();
+        // ブレークポイントを跨いだら (PC↔スマホ) 大きさセレクトの中身が変わるので再描画。
+        // m-half/m-full クラスは常時付くのでレイアウト自体は再描画なしでも正しい。
+        try {
+            const mq = window.matchMedia('(max-width: 768px)');
+            this._mqMobile = mq;
+            mq.addEventListener('change', () => {
+                const host = document.getElementById('dashboard');
+                if (host && host.offsetParent !== null) this.render();
+            });
+        } catch (_) { this._mqMobile = null; }
+    }
+
+    /** 現在スマホ幅か (大きさ設定を「半分/全幅」に切替える基準)。 */
+    _isMobile() {
+        return this._mqMobile ? this._mqMobile.matches
+            : window.matchMedia('(max-width: 768px)').matches;
     }
 
     /**
@@ -84,6 +100,47 @@ class BookshelfDashboard {
         return best;
     }
 
+    // --- スマホ専用の大きさ (半分 / 全幅) ---
+    // スマホは 2 列グリッドなので意味のある幅は「半分 / 全幅」の 2 択のみ。
+    // PC の T シャツサイズとは独立に spanMobile ('half'|'full') を保存する。
+    static MOBILE_SIZE_LABEL = { half: '半分', full: '全幅' };
+
+    // PC span から既定のスマホ大きさを導出 (未設定時のフォールバック)。
+    // 小・中 (列数 ≤6) → 半分 / 大・全幅 (≥8) → 全幅。
+    static mobileSizeFromSpan(span) {
+        return (Number(span) || 6) >= 8 ? 'full' : 'half';
+    }
+
+    // レイアウトエントリの実効スマホ大きさ。spanMobile 未設定なら span から導出。
+    // 見出しは常に全幅 (区切りなので半分は不自然)。
+    _mobileSizeOf(w, entry) {
+        if (entry && entry.heading) return 'full';
+        return (w.spanMobile === 'half' || w.spanMobile === 'full')
+            ? w.spanMobile
+            : BookshelfDashboard.mobileSizeFromSpan(w.span);
+    }
+
+    /**
+     * 大きさセレクトの HTML。PC は T シャツ 4 段階 (値=列数)、スマホは半分/全幅 (値='half'|'full')。
+     * 選べる段階が 1 つ以下 (見出し) は出さない。値の型で change ハンドラが分岐する。
+     */
+    _sizeSelectHtml(w, entry) {
+        if (!entry.allowedSizes || entry.allowedSizes.length <= 1) return '';
+        if (this._isMobile()) {
+            const cur = this._mobileSizeOf(w, entry);
+            const opts = ['half', 'full'].map(k =>
+                `<option value="${k}"${k === cur ? ' selected' : ''}>${BookshelfDashboard.MOBILE_SIZE_LABEL[k]}</option>`).join('');
+            return `<select class="widget-size-select" title="大きさ (スマホ)">${opts}</select>`;
+        }
+        const curKey = BookshelfDashboard.spanToSizeKey(w.span);
+        const opts = entry.allowedSizes.map(k => {
+            const cols = BookshelfDashboard.SIZE_COLS[k];
+            const sel = (k === curKey) ? ' selected' : '';
+            return `<option value="${cols}"${sel}>${BookshelfDashboard.SIZE_LABEL[k]}</option>`;
+        }).join('');
+        return `<select class="widget-size-select" title="大きさ">${opts}</select>`;
+    }
+
     /**
      * userData._storage.main.home.widgets を返す (空なら DEFAULT_LAYOUT)。
      * 各エントリには配置インスタンスを一意に指す `uid` (= `id#index`) を付与する。
@@ -108,7 +165,7 @@ class BookshelfDashboard {
                 continue;
             }
             if (!this._registry[w.id]) continue;                    // 未知 id は除外
-            out.push({ id: w.id, span: w.span, config: w.config });
+            out.push({ id: w.id, span: w.span, spanMobile: w.spanMobile, config: w.config });
         }
         // uid (= id#index) を付与: 同一ウィジェット複数配置でも操作が正しいインスタンスに効く
         return out.map((w, i) => ({ ...w, uid: `${w.id}#${i}` }));
@@ -125,6 +182,7 @@ class BookshelfDashboard {
         this.app.userData._storage.main.home.widgets = widgets.map(w => ({
             id: w.id,
             span: w.span,
+            ...(w.spanMobile ? { spanMobile: w.spanMobile } : {}),
             ...(w.config ? { config: w.config } : {})
         }));
         await this.app.saveUserData();
@@ -162,7 +220,9 @@ class BookshelfDashboard {
             const card = document.createElement('div');
             // #4: 常時 accent 反転はやめ、カウンターは hover/focus 時のみ accent (CSS 側)
             const markerClass = entry.counter ? ' is-counter' : (entry.heading || w.id === 'heading' ? ' is-heading' : '');
-            card.className = `dashboard-widget span-${w.span}${markerClass}`;
+            // span-N = PC の列幅 / m-half・m-full = スマホの幅 (CSS のメディアクエリで切替)
+            const mSize = this._mobileSizeOf(w, entry);
+            card.className = `dashboard-widget span-${w.span} m-${mSize}${markerClass}`;
             card.dataset.widgetId = w.uid;          // インスタンス一意キー (同一ウィジェット複数配置に対応)
             card.dataset.widgetIndex = String(i);
             card.draggable = this.editMode;
@@ -172,14 +232,7 @@ class BookshelfDashboard {
                     <span class="widget-title">${this._escape(entry.label)}</span>
                     ${this.editMode ? `
                         <span class="widget-actions">
-                            ${(entry.allowedSizes && entry.allowedSizes.length > 1) ? `
-                            <select class="widget-size-select" title="大きさ">
-                                ${entry.allowedSizes.map(k => {
-                                    const cols = BookshelfDashboard.SIZE_COLS[k];
-                                    const sel = (k === BookshelfDashboard.spanToSizeKey(w.span)) ? ' selected' : '';
-                                    return `<option value="${cols}"${sel}>${BookshelfDashboard.SIZE_LABEL[k]}</option>`;
-                                }).join('')}
-                            </select>` : ''}
+                            ${this._sizeSelectHtml(w, entry)}
                             <button class="widget-remove-btn" type="button" title="外す">${window.renderIcon('x', { size: 14 })}</button>
                         </span>
                     ` : ''}
@@ -251,7 +304,13 @@ class BookshelfDashboard {
             const sizeSelect = e.target.closest('.widget-size-select');
             if (sizeSelect) {
                 const card = sizeSelect.closest('.dashboard-widget');
-                this._changeSpan(card?.dataset.widgetId, Number(sizeSelect.value));
+                const val = sizeSelect.value;
+                // 値が 'half'/'full' ならスマホ大きさ、数値なら PC 列幅
+                if (val === 'half' || val === 'full') {
+                    this._changeMobileSize(card?.dataset.widgetId, val);
+                } else {
+                    this._changeSpan(card?.dataset.widgetId, Number(val));
+                }
             }
         }, { signal });
 
@@ -310,6 +369,16 @@ class BookshelfDashboard {
         const layout = this.getLayout();
         const target = layout.find(w => w.uid === uid);
         if (target) target.span = span;
+        await this.saveLayout(layout);
+        this.render();
+    }
+
+    // スマホ専用の大きさ ('half'|'full') を変更。PC の span には影響しない。
+    async _changeMobileSize(uid, size) {
+        if (!uid || (size !== 'half' && size !== 'full')) return;
+        const layout = this.getLayout();
+        const target = layout.find(w => w.uid === uid);
+        if (target) target.spanMobile = size;
         await this.saveLayout(layout);
         this.render();
     }

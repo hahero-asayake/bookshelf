@@ -4830,12 +4830,10 @@ class VirtualBookshelf {
             </label>`;
             const settingsBtn = `<button type="button" class="btn btn-small plugin-card-settings" data-settings-plugin="${id}" title="このプラグインの設定（アイコン変更等）">${icoBtn('settings')}設定</button>`;
             const uninstallBtn = `<button type="button" class="btn btn-small btn-icon-only btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}</button>`;
-            // 状態ラベル: 読み込み失敗のみ強調。有効/無効はトグルで自明なので控えめに表示
-            let stateLabel;
-            if (enabled && loaded)       stateLabel = `<span class="plugin-state ok">${icoBtn('circle-check', 12)}有効</span>`;
-            else if (enabled && !loaded) stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
-            else                         stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
-            const actionBtns = `${toggle}${settingsBtn}${uninstallBtn}`;
+            // 状態ラベル: 読み込み失敗 / 無効のみ表示。有効はトグル ON で自明なので出さない (情報量を減らす)
+            let stateLabel = '';
+            if (enabled && !loaded)  stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
+            else if (!enabled)       stateLabel = `<span class="plugin-state muted">${icoBtn('circle', 12)}無効</span>`;
             // 拡張点カテゴリ (無効でも表示: manifest 宣言 → 実行時推定 → キャッシュ)
             const cats = this._getPluginCategories(id, m, loaded);
             const catBadges = this._renderPluginCategoryBadges(cats);
@@ -4844,26 +4842,26 @@ class VirtualBookshelf {
             const searchText = `${nameForSearch}${descForSearch}`.toLowerCase();
             // 検索文字列の HTML 属性用エスケープ
             const searchAttr = searchText.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            // 現在使用中のアイコン (override 優先, fallback は manifest.icon)
+            // アイコン (override 優先 → manifest.icon → 既定 puzzle)。常に chip 表示にして一覧を走査しやすく
             const currentIcon = this._getPluginIconOverride(id) || m.icon || '';
-            const iconPreviewHtml = currentIcon
-                ? `<span class="plugin-card-icon-preview" data-icon-value="${currentIcon.replace(/"/g,'&quot;')}" title="現在のアイコン: ${currentIcon}">${window.renderIcon(currentIcon, { size: 16 })}</span>`
-                : '';
+            const iconChip = `<span class="pcard-icon${enabled ? '' : ' is-off'}" data-icon-value="${(currentIcon || '').replace(/"/g, '&quot;')}"${currentIcon ? ` title="現在のアイコン: ${currentIcon}"` : ''}>${window.renderIcon(currentIcon || 'puzzle', { size: 18 })}</span>`;
             const publishableBadge = m.publishable
                 ? `<span class="plugin-publishable-badge" title="公開エクスポート対象">${window.renderIcon('globe', { size: 12 })}</span>`
                 : '';
+            // 縦型カード: 1行目=アイコン+名前+メタ+トグル / 分類バッジ / 説明(2行省略) / 設定・削除
             return `
                 <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
-                    <div class="plugin-card-info">
-                        <div class="plugin-card-title">
-                            ${iconPreviewHtml}<strong>${m.name || id}</strong>
-                            <small>v${m.version || '?'} ${publishableBadge}</small>
-                            ${stateLabel}
+                    <div class="pcard-head">
+                        ${iconChip}
+                        <div class="pcard-headtext">
+                            <div class="pcard-name"><strong>${m.name || id}</strong>${publishableBadge}</div>
+                            <div class="pcard-meta"><span class="pcard-version">v${m.version || '?'}</span>${stateLabel}</div>
                         </div>
-                        ${catBadges}
-                        <div class="plugin-card-desc">${m.description || ''}</div>
+                        <div class="pcard-toggle">${toggle}</div>
                     </div>
-                    <div class="plugin-card-actions">${actionBtns}</div>
+                    ${catBadges}
+                    ${m.description ? `<div class="plugin-card-desc">${m.description}</div>` : ''}
+                    <div class="plugin-card-actions">${settingsBtn}${uninstallBtn}</div>
                 </div>
             `;
         }).join('');
@@ -5177,8 +5175,8 @@ class VirtualBookshelf {
         };
 
         host.addEventListener('dragstart', (e) => {
-            // アクション領域 (トグル/ボタン) 操作中はドラッグ開始しない
-            if (e.target.closest('.plugin-card-actions')) { e.preventDefault(); return; }
+            // 操作系 (トグル/ボタン/入力) の上ではドラッグ開始しない (誤操作防止)
+            if (e.target.closest('.plugin-card-actions, .pcard-toggle, label, button, input, select')) { e.preventDefault(); return; }
             const card = e.target.closest('.plugin-card-v2');
             if (!card) return;
             dragState.id = card.dataset.pluginId;
