@@ -2333,8 +2333,16 @@ class VirtualBookshelf {
         this._syncInProgress = true;
         try {
             await this.syncToObsidianFolder();
+            // 保存成功 → 同期エラー解消
+            if (this._syncError) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
         } catch (e) {
             console.error('Obsidian同期エラー:', e);
+            // 保存失敗 (トークン失効・ハンドル喪失等) を上部バーに出す
+            this._syncError = true;
+            this._syncErrorMsg = (this.syncMethod === 'github')
+                ? 'GitHub への保存に失敗しました。再接続が必要かもしれません。'
+                : '保存先への書き込みに失敗しました。同期設定を確認してください。';
+            this._updateStatusBar();
         } finally {
             this._syncInProgress = false;
             // 進行中に再要求されていれば再度実行
@@ -2665,6 +2673,11 @@ class VirtualBookshelf {
             if (installations.length === 0) {
                 sel.innerHTML = '<option value="">(GitHub App 未インストール)</option>';
                 if (installPrompt) installPrompt.hidden = false;
+                if (this.syncMethod === 'github') {   // GitHub が現在の同期先のときだけ上部バーに反映
+                    this._syncError = true;
+                    this._syncErrorMsg = 'GitHub App が未インストールです。アプリをインストールしてください。';
+                    this._updateStatusBar();
+                }
                 return;
             }
             if (installPrompt) installPrompt.hidden = true;
@@ -2690,12 +2703,25 @@ class VirtualBookshelf {
             if (currentFull && repos.some(r => r.full_name === currentFull)) {
                 await this._loadGitHubBranches(currentFull, current.branch);
             }
+            if (this.syncMethod === 'github') {       // 取得成功 → 同期エラー解消 (GitHub が同期先のとき)
+                this._syncError = false;
+                this._syncErrorMsg = '';
+                this._updateStatusBar();
+            }
         } catch (e) {
             const msg = e.message || String(e);
             sel.innerHTML = `<option value="">(取得失敗: ${msg})</option>`;
             // 権限系エラーは GitHub の反映ラグの可能性が高い
             if (/not accessible|forbidden|permission/i.test(msg) && installPrompt) {
                 installPrompt.hidden = false;
+            }
+            // 取得失敗 (401 Bad credentials 等) は同期エラーとして上部バーに出す (GitHub が同期先のとき)
+            if (this.syncMethod === 'github') {
+                this._syncError = true;
+                this._syncErrorMsg = /401|bad credential|invalid|token|unauthor/i.test(msg)
+                    ? 'GitHub のトークンが無効です。再接続してください。'
+                    : 'GitHub の保存先を取得できません。';
+                this._updateStatusBar();
             }
         }
     }
@@ -5359,7 +5385,8 @@ class VirtualBookshelf {
         if (!this._isSyncReady()) {
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">同期先が未設定です。変更が保存されません。</span><button class="status-btn" data-status-action="open-sync" type="button">設定</button></div>`);
         } else if (this._syncError) {
-            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">同期でエラーが発生しました。</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
+            const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${this._escapeHtml ? this._escapeHtml(msg) : msg}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
         }
         if (rows.length === 0) { bar.hidden = true; bar.innerHTML = ''; return; }
         bar.innerHTML = rows.join('');
