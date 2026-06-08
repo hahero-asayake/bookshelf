@@ -1745,7 +1745,7 @@ class VirtualBookshelf {
         // 紙書籍 (ISBN ASIN) では出さない。app スキームは別タブ不要 (現タブのまま外部アプリ起動)。
         const kindleMethod = (this.userData?.settings?.kindleOpenWith === 'app') ? 'app' : 'web';
         const kindleReadHtml = this.bookManager.isKindleBook(book)
-            ? `<div class="bd-read"><a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book, kindleMethod))}"${kindleMethod === 'web' ? ' target="_blank" rel="noopener"' : ''} title="${kindleMethod === 'app' ? 'Kindle アプリで開く (端末にアプリが必要)' : 'Kindle Cloud Reader で開く (所有していれば本が開きます)'}">${ico('book-open')}Kindleで読む</a></div>`
+            ? `<div class="bd-read"><a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book, kindleMethod))}"${kindleMethod === 'web' ? ' target="_blank" rel="noopener"' : ''} title="${kindleMethod === 'app' ? 'Kindle アプリを起動（Amazon 仕様で本までは開けずライブラリ止まり。本を直接開くには設定でブラウザを選択）' : 'Kindle Cloud Reader で開く（所有していればその本が開きます）'}">${ico('book-open')}Kindleで読む</a></div>`
             : '';
 
         // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
