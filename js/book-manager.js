@@ -412,6 +412,25 @@ class BookManager {
     }
 
     /**
+     * Kindle 電子書籍か (ASIN が B 始まりの 10 桁)。ISBN ベース (紙書籍) は false。
+     * 取込元が Kindle ライブラリなのでほぼ true だが、手動追加の紙書籍を除外する。
+     */
+    isKindleBook(book) {
+        const asin = this.getEffectiveASIN(book) || '';
+        return /^B[0-9A-Z]{9}$/.test(asin);
+    }
+
+    /**
+     * Kindle Cloud Reader (ブラウザ) で本を開く URL。Amazon ログイン済みかつ所有していれば
+     * その本のリーダーが開き、未所有/未ログインならライブラリ or ログインに着地する。
+     * read.amazon.co.jp はモバイルでも動作し、端末に Kindle アプリがあれば誘導されることもある。
+     */
+    getKindleReadUrl(book) {
+        const effectiveAsin = this.getEffectiveASIN(book);
+        return `https://read.amazon.co.jp/?asin=${effectiveAsin}`;
+    }
+
+    /**
      * 手動で書籍を追加
      */
     async addBookManually(bookData) {

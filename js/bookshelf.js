@@ -1954,6 +1954,9 @@ class VirtualBookshelf {
                 </div>
 
                 <div class="bd-actions">
+                    ${this.bookManager.isKindleBook(book)
+                        ? `<a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book))}" target="_blank" rel="noopener" title="Kindle Cloud Reader で開く (所有していれば本が開きます)">${ico('book-open')}Kindleで読む</a>`
+                        : ''}
                     <a class="amazon-link" href="${esc(amazonUrl)}" target="_blank" rel="noopener">${ico('external-link')}Amazon</a>
                     ${isEditMode ? `<button class="btn btn-warning exclude-btn" data-asin="${esc(book.asin)}" type="button" title="「全ての本」から除外">${ico('ban')}除外</button>` : ''}
                 </div>

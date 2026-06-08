@@ -1142,6 +1142,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding-top: 0.7rem;
     border-top: 1px solid var(--line2);
 }
+.bd-actions .kindle-link,
 .bd-actions .amazon-link,
 .bd-actions .btn {
     /* 内容幅でコンパクトに。両ボタン同じ高さ・余白・字サイズで揃える */
@@ -1162,6 +1163,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-family: inherit;
 }
 .bd-actions .amazon-link:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+/* 読書=主アクションなので Kindle ボタンはアクセント寄りで一段強調 */
+.bd-actions .kindle-link { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.bd-actions .kindle-link:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .bd-actions .btn:hover { background: var(--line2); color: var(--fg); }
 .bd-actions .btn-warning { color: var(--warning); }
 .bd-actions .btn-warning:hover { background: #fff7e0; border-color: var(--warning); }
