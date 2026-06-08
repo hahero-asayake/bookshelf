@@ -636,6 +636,17 @@ class VirtualBookshelf {
             memoVisSel.value = this._getMemoVisibility();
             memoVisSel.addEventListener('change', () => { this._setDisplaySetting('memoVisibility', memoVisSel.value); reRenderForDisplay(); });
         }
+        // 「Kindleで読む」の開き方 (settings.kindleOpenWith: 'web' 既定 / 'app')
+        const kindleOpenSel = document.getElementById('setting-kindle-open-with');
+        if (kindleOpenSel) {
+            kindleOpenSel.value = (this.userData?.settings?.kindleOpenWith === 'app') ? 'app' : 'web';
+            kindleOpenSel.addEventListener('change', () => {
+                if (!this.userData.settings) this.userData.settings = {};
+                this.userData.settings.kindleOpenWith = kindleOpenSel.value;
+                this.saveUserData();
+                reRenderForDisplay();   // 開いている本詳細のリンクを更新
+            });
+        }
 
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
@@ -1730,6 +1741,13 @@ class VirtualBookshelf {
         const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
         const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
 
+        // Kindleで読む (タイトル直下)。開き方は設定 settings.kindleOpenWith ('web' 既定 / 'app')。
+        // 紙書籍 (ISBN ASIN) では出さない。app スキームは別タブ不要 (現タブのまま外部アプリ起動)。
+        const kindleMethod = (this.userData?.settings?.kindleOpenWith === 'app') ? 'app' : 'web';
+        const kindleReadHtml = this.bookManager.isKindleBook(book)
+            ? `<div class="bd-read"><a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book, kindleMethod))}"${kindleMethod === 'web' ? ' target="_blank" rel="noopener"' : ''} title="${kindleMethod === 'app' ? 'Kindle アプリで開く (端末にアプリが必要)' : 'Kindle Cloud Reader で開く (所有していれば本が開きます)'}">${ico('book-open')}Kindleで読む</a></div>`
+            : '';
+
         // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
         const contextSlug = contextBookshelf ? contextBookshelf.id : null;
         const memberBookshelves = (this.userData.bookshelves || [])
@@ -1947,6 +1965,8 @@ class VirtualBookshelf {
                 <h3 class="bd-title">${esc(book.title)}</h3>
                 <div class="bd-author">${esc(book.authors)}</div>
 
+                ${kindleReadHtml}
+
                 ${showBelow ? `<div class="bd-stars">${starWidget}</div>` : ''}
 
                 <div class="bd-sections" id="bd-sections">
@@ -1954,9 +1974,6 @@ class VirtualBookshelf {
                 </div>
 
                 <div class="bd-actions">
-                    ${this.bookManager.isKindleBook(book)
-                        ? `<a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book))}" target="_blank" rel="noopener" title="Kindle Cloud Reader で開く (所有していれば本が開きます)">${ico('book-open')}Kindleで読む</a>`
-                        : ''}
                     <a class="amazon-link" href="${esc(amazonUrl)}" target="_blank" rel="noopener">${ico('external-link')}Amazon</a>
                     ${isEditMode ? `<button class="btn btn-warning exclude-btn" data-asin="${esc(book.asin)}" type="button" title="「全ての本」から除外">${ico('ban')}除外</button>` : ''}
                 </div>

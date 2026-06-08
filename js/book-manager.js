@@ -421,12 +421,18 @@ class BookManager {
     }
 
     /**
-     * Kindle Cloud Reader (ブラウザ) で本を開く URL。Amazon ログイン済みかつ所有していれば
-     * その本のリーダーが開き、未所有/未ログインならライブラリ or ログインに着地する。
-     * read.amazon.co.jp はモバイルでも動作し、端末に Kindle アプリがあれば誘導されることもある。
+     * 本を開く Kindle URL。method で開き方を切替 (設定 settings.kindleOpenWith):
+     *  - 'web' (既定): Kindle Cloud Reader (ブラウザ)。`https://read.amazon.co.jp/?asin=<ASIN>`。
+     *    Amazon ログイン済み＋所有でその本のリーダーが開く。未所有/未ログインはライブラリ/ログインに着地。
+     *    全環境で動作 (モバイル含む)。
+     *  - 'app': Kindle ネイティブアプリの URL スキーム。`kindle://book?action=open&asin=<ASIN>`。
+     *    端末に Kindle アプリが入っていれば直接開く。未対応プラットフォーム/未インストールでは効かない。
      */
-    getKindleReadUrl(book) {
+    getKindleReadUrl(book, method = 'web') {
         const effectiveAsin = this.getEffectiveASIN(book);
+        if (method === 'app') {
+            return `kindle://book?action=open&asin=${effectiveAsin}`;
+        }
         return `https://read.amazon.co.jp/?asin=${effectiveAsin}`;
     }
 
