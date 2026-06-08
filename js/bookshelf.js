@@ -3696,6 +3696,20 @@ class VirtualBookshelf {
 
         // 一覧カードの hover ポップを長押しで表示 (タッチ端末)
         this._initBookPopLongPress();
+
+        // はみ出しテキストのマーキーをリサイズで再評価 (debounce)
+        if (!this._marqueeResizeBound) {
+            this._marqueeResizeBound = true;
+            let rt = null;
+            window.addEventListener('resize', () => {
+                clearTimeout(rt);
+                rt = setTimeout(() => this._refreshMarquees(), 200);
+            });
+        }
+
+        // 上部ステータスバー (#4 同期切断 / #5 更新あり) + pull-to-refresh
+        this._initStatusBar();
+        this._initPullToRefresh();
     }
 
     /**
@@ -5273,6 +5287,150 @@ class VirtualBookshelf {
             descEl.textContent = desc;
             descEl.style.display = desc ? '' : 'none';
         }
+        this._refreshMarquees();
+    }
+
+    /**
+     * はみ出しテキストの自動マーキー。overflow している要素だけ往復スクロールさせる。
+     * el の中身を .amq-inner で一度だけ包み、overflow 幅から --amq-shift/--amq-dur を算出。
+     */
+    _setupMarqueeEl(el) {
+        if (!el) return;
+        let inner = el.querySelector(':scope > .amq-inner');
+        if (!inner || el.childNodes.length !== 1) {
+            // 中身が差し替えられた等で未ラップ → 包み直す
+            inner = document.createElement('span');
+            inner.className = 'amq-inner';
+            while (el.firstChild) inner.appendChild(el.firstChild);
+            el.appendChild(inner);
+            el.classList.add('auto-marquee');
+        }
+        const overflow = inner.scrollWidth - el.clientWidth;
+        if (overflow > 4 && el.clientWidth > 0) {
+            el.style.setProperty('--amq-shift', `-${overflow + 12}px`);
+            el.style.setProperty('--amq-dur', `${Math.max(6, Math.round(overflow / 22))}s`);
+            el.classList.add('is-marquee');
+        } else {
+            el.classList.remove('is-marquee');
+            el.style.removeProperty('--amq-shift');
+        }
+    }
+
+    /** マーキー対象 (1行で省略されがちな箇所) をまとめて再評価。 */
+    _refreshMarquees() {
+        const els = [
+            document.getElementById('current-bookshelf-title'),
+            document.getElementById('current-bookshelf-desc'),
+            ...document.querySelectorAll('.path-display')
+        ];
+        els.forEach(el => { if (el && el.offsetParent !== null) this._setupMarqueeEl(el); });
+    }
+
+    // ===== 上部ステータスバー (#4 同期切断 / #5 更新あり) =====
+    _initStatusBar() {
+        const bar = document.getElementById('app-status-bar');
+        if (bar && !bar._bound) {
+            bar._bound = true;
+            bar.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-status-action]');
+                if (!btn) return;
+                if (btn.dataset.statusAction === 'update') this._applyPwaUpdate();
+                else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal();
+            });
+        }
+        this._updateStatusBar();
+        if (!this._statusBarWatch) {
+            this._statusBarWatch = true;
+            // 同期切れに気づけるよう、復帰時と一定間隔で再評価。読込完了後の状態も拾う。
+            window.addEventListener('focus', () => this._updateStatusBar());
+            setInterval(() => this._updateStatusBar(), 30000);
+            setTimeout(() => this._updateStatusBar(), 1500);
+        }
+    }
+
+    _updateStatusBar() {
+        const bar = document.getElementById('app-status-bar');
+        if (!bar) return;
+        const ico = (n) => `<span class="status-ico">${window.renderIcon(n, { size: 15 })}</span>`;
+        const rows = [];
+        if (this._pwaUpdateReady) {
+            rows.push(`<div class="status-row status-update">${ico('refresh-cw')}<span class="status-msg">新しいバージョンがあります</span><button class="status-btn" data-status-action="update" type="button">更新</button></div>`);
+        }
+        if (!this._isSyncReady()) {
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">同期先が未設定です。変更が保存されません。</span><button class="status-btn" data-status-action="open-sync" type="button">設定</button></div>`);
+        } else if (this._syncError) {
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">同期でエラーが発生しました。</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
+        }
+        if (rows.length === 0) { bar.hidden = true; bar.innerHTML = ''; return; }
+        bar.innerHTML = rows.join('');
+        bar.hidden = false;
+    }
+
+    // ===== PWA 更新 (#5) =====
+    _onPwaUpdateReady(reg) {
+        this._pwaUpdateReg = reg;
+        this._pwaUpdateReady = true;
+        this._updateStatusBar();
+    }
+
+    _applyPwaUpdate() {
+        const reg = this._pwaUpdateReg;
+        if (reg && reg.waiting) {
+            reg.waiting.postMessage({ type: 'skipWaiting' }); // controllerchange でリロード
+        } else {
+            location.reload();
+        }
+    }
+
+    // ===== pull-to-refresh (#5、タッチ。スタンドアロンで下に引いて更新) =====
+    _initPullToRefresh() {
+        const pane = document.querySelector('.app-main-pane');
+        const indicator = document.getElementById('ptr-indicator');
+        if (!pane || !indicator || pane._ptrBound) return;
+        if (!window.matchMedia('(pointer: coarse)').matches) return; // タッチ端末のみ
+        pane._ptrBound = true;
+        const THRESHOLD = 72, MAX = 120;
+        const txt = indicator.querySelector('.ptr-text');
+        let startY = 0, active = false, dist = 0;
+        const scroller = () => document.body.classList.contains('app-view-main')
+            ? document.getElementById('view-main') : document.getElementById('view-bookshelf');
+
+        pane.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1 || document.body.classList.contains('drawer-open')
+                || document.body.classList.contains('book-detail-pinned')) { active = false; return; }
+            const sc = scroller();
+            if (sc && sc.scrollTop <= 0) { startY = e.touches[0].clientY; active = true; dist = 0; }
+            else active = false;
+        }, { passive: true });
+
+        pane.addEventListener('touchmove', (e) => {
+            if (!active) return;
+            dist = e.touches[0].clientY - startY;
+            if (dist <= 0) { active = false; indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); return; }
+            if (e.cancelable) e.preventDefault(); // 自前のPTRに切替 (ネイティブのバウンス抑制)
+            const pull = Math.min(dist * 0.5, MAX);
+            indicator.style.transform = `translateY(${pull - 52}px)`;
+            const armed = dist >= THRESHOLD;
+            indicator.classList.toggle('is-armed', armed);
+            if (txt) txt.textContent = armed ? '離して更新' : '下に引いて更新';
+        }, { passive: false });
+
+        const end = () => {
+            if (!active) return;
+            const trigger = dist >= THRESHOLD;
+            active = false;
+            if (trigger) {
+                indicator.classList.add('is-refreshing', 'is-armed');
+                if (txt) txt.textContent = '更新中…';
+                setTimeout(() => location.reload(), 350);
+            } else {
+                indicator.style.transform = 'translateY(-100%)';
+                indicator.classList.remove('is-armed');
+            }
+            dist = 0;
+        };
+        pane.addEventListener('touchend', end, { passive: true });
+        pane.addEventListener('touchcancel', end, { passive: true });
     }
 
     /**

@@ -32,17 +32,19 @@ class BookshelfDashboard {
      *   render(host, app, config): ウィジェット本体を host に描画
      */
     _buildRegistry() {
+        // 大きさは T シャツサイズ (allowedSizes のキー)。PC では列数 (SIZE_COLS) に、
+        // モバイルでは半分/全幅に自動マッピング (CSS 側)。defaultSpan は列数 (= サイズの実体)。
         return {
-            'heading':             { label: '見出し',     icon: 'heading',          defaultSpan: 12, allowedSpans: [12], heading: true, render: this._renderHeading },
-            'counter-total':       { label: '蔵書数',     icon: 'book-open',        defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterTotal },
-            'counter-shelves':     { label: '本棚数',     icon: 'library',          defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterShelves },
-            'counter-this-month':  { label: '今月追加',   icon: 'calendar',         defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterThisMonth },
-            'counter-unrated':     { label: '未評価',     icon: 'star',             defaultSpan: 3, allowedSpans: [3, 4, 6], counter: true, render: this._renderCounterUnrated },
-            'recent-books':        { label: '最近追加した本', icon: 'clock',         defaultSpan: 8, allowedSpans: [6, 8, 12], render: this._renderRecentBooks },
-            'today-pick':          { label: '今日の一冊', icon: 'sparkles',         defaultSpan: 4, allowedSpans: [3, 4, 6], render: this._renderTodayPick },
-            'bookshelf-highlights':{ label: '本棚ハイライト', icon: 'layout-dashboard', defaultSpan: 12, allowedSpans: [6, 8, 12], render: this._renderBookshelfHighlights },
-            'reading-stats':       { label: '読書統計',   icon: 'bar-chart-3',      defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderReadingStats },
-            'pinned-memo':         { label: 'ピン留めメモ', icon: 'pin',            defaultSpan: 6, allowedSpans: [4, 6, 8, 12], render: this._renderPinnedMemo }
+            'heading':             { label: '見出し',     icon: 'heading',          defaultSpan: 12, allowedSizes: ['xl'], heading: true, render: this._renderHeading },
+            'counter-total':       { label: '蔵書数',     icon: 'book-open',        defaultSpan: 3, allowedSizes: ['sm', 'md'], counter: true, render: this._renderCounterTotal },
+            'counter-shelves':     { label: '本棚数',     icon: 'library',          defaultSpan: 3, allowedSizes: ['sm', 'md'], counter: true, render: this._renderCounterShelves },
+            'counter-this-month':  { label: '今月追加',   icon: 'calendar',         defaultSpan: 3, allowedSizes: ['sm', 'md'], counter: true, render: this._renderCounterThisMonth },
+            'counter-unrated':     { label: '未評価',     icon: 'star',             defaultSpan: 3, allowedSizes: ['sm', 'md'], counter: true, render: this._renderCounterUnrated },
+            'recent-books':        { label: '最近追加した本', icon: 'clock',         defaultSpan: 9, allowedSizes: ['md', 'lg', 'xl'], render: this._renderRecentBooks },
+            'today-pick':          { label: '今日の一冊', icon: 'sparkles',         defaultSpan: 6, allowedSizes: ['sm', 'md'], render: this._renderTodayPick },
+            'bookshelf-highlights':{ label: '本棚ハイライト', icon: 'layout-dashboard', defaultSpan: 12, allowedSizes: ['md', 'lg', 'xl'], render: this._renderBookshelfHighlights },
+            'reading-stats':       { label: '読書統計',   icon: 'bar-chart-3',      defaultSpan: 6, allowedSizes: ['md', 'lg', 'xl'], render: this._renderReadingStats },
+            'pinned-memo':         { label: 'ピン留めメモ', icon: 'pin',            defaultSpan: 6, allowedSizes: ['md', 'lg', 'xl'], render: this._renderPinnedMemo }
         };
     }
 
@@ -51,8 +53,8 @@ class BookshelfDashboard {
         { id: 'counter-shelves',      span: 3 },
         { id: 'counter-this-month',   span: 3 },
         { id: 'counter-unrated',      span: 3 },
-        { id: 'recent-books',         span: 8 },
-        { id: 'today-pick',           span: 4 },
+        { id: 'recent-books',         span: 9 },
+        { id: 'today-pick',           span: 6 },
         { id: 'bookshelf-highlights', span: 12 },
         { id: 'reading-stats',        span: 12 }
     ];
@@ -65,6 +67,22 @@ class BookshelfDashboard {
         'monthly-additions': 'reading-stats',
         'rating-dist': 'reading-stats'
     };
+
+    // ウィジェットの大きさ = T シャツサイズ。PC は列数(SIZE_COLS)、モバイルは半分/全幅(CSS)。
+    // 小・中 → モバイル半分 / 大・全幅 → モバイル全幅 (css/bookshelf.css のリフロー参照)。
+    static SIZE_COLS  = { sm: 3, md: 6, lg: 9, xl: 12 };
+    static SIZE_LABEL = { sm: '小', md: '中', lg: '大', xl: '全幅' };
+
+    // 保存値 (span=列数) から最も近いサイズキーを返す (旧 span 4/8 等の互換)。
+    static spanToSizeKey(span) {
+        const entries = Object.entries(BookshelfDashboard.SIZE_COLS);
+        let best = 'md', bestDiff = Infinity;
+        for (const [k, cols] of entries) {
+            const d = Math.abs(cols - (span || 6));
+            if (d < bestDiff) { bestDiff = d; best = k; }
+        }
+        return best;
+    }
 
     /**
      * userData._storage.main.home.widgets を返す (空なら DEFAULT_LAYOUT)。
@@ -154,11 +172,14 @@ class BookshelfDashboard {
                     <span class="widget-title">${this._escape(entry.label)}</span>
                     ${this.editMode ? `
                         <span class="widget-actions">
-                            <select class="widget-span-select" title="幅">
-                                ${(entry.allowedSpans || [3,4,6,8,12]).map(s =>
-                                    `<option value="${s}"${s === w.span ? ' selected' : ''}>${s}</option>`
-                                ).join('')}
-                            </select>
+                            ${(entry.allowedSizes && entry.allowedSizes.length > 1) ? `
+                            <select class="widget-size-select" title="大きさ">
+                                ${entry.allowedSizes.map(k => {
+                                    const cols = BookshelfDashboard.SIZE_COLS[k];
+                                    const sel = (k === BookshelfDashboard.spanToSizeKey(w.span)) ? ' selected' : '';
+                                    return `<option value="${cols}"${sel}>${BookshelfDashboard.SIZE_LABEL[k]}</option>`;
+                                }).join('')}
+                            </select>` : ''}
                             <button class="widget-remove-btn" type="button" title="外す">${window.renderIcon('x', { size: 14 })}</button>
                         </span>
                     ` : ''}
@@ -227,10 +248,10 @@ class BookshelfDashboard {
             }
         }, { signal });
         grid.addEventListener('change', (e) => {
-            const spanSelect = e.target.closest('.widget-span-select');
-            if (spanSelect) {
-                const card = spanSelect.closest('.dashboard-widget');
-                this._changeSpan(card?.dataset.widgetId, Number(spanSelect.value));
+            const sizeSelect = e.target.closest('.widget-size-select');
+            if (sizeSelect) {
+                const card = sizeSelect.closest('.dashboard-widget');
+                this._changeSpan(card?.dataset.widgetId, Number(sizeSelect.value));
             }
         }, { signal });
 

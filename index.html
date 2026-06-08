@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026060720">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026060722">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -85,6 +85,13 @@
 
             <!-- ===== 中央ペイン (本棚 or ホーム) ===== -->
             <section class="bookshelf-container app-main-pane">
+                <!-- pull-to-refresh インジケータ (タッチで下に引いて更新) -->
+                <div id="ptr-indicator" class="ptr-indicator" aria-hidden="true">
+                    <span class="ptr-spinner" aria-hidden="true"></span>
+                    <span class="ptr-text">下に引いて更新</span>
+                </div>
+                <!-- 上部ステータスバー (同期切断 / 更新あり)。読み込み中と同系の細い帯。 -->
+                <div id="app-status-bar" class="app-status-bar" hidden></div>
                 <div class="loading" id="loading">
                     <div class="loading-spinner" aria-hidden="true"></div>
                     <div class="loading-text" id="loading-text">本棚を準備中…</div>
@@ -761,26 +768,49 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026060720"></script>
-    <script src="js/storage-adapter.js?v=2026060720"></script>
-    <script src="js/local-fs-adapter.js?v=2026060720"></script>
-    <script src="js/github-adapter.js?v=2026060720"></script>
-    <script src="js/github-auth.js?v=2026060720"></script>
-    <script src="js/sync-config.js?v=2026060720"></script>
-    <script src="js/storage.js?v=2026060720"></script>
-    <script src="js/book-manager.js?v=2026060720"></script>
-    <script src="js/bookshelf-manager.js?v=2026060720"></script>
-    <script src="js/exporter.js?v=2026060720"></script>
-    <script src="js/plugin-api.js?v=2026060720"></script>
-    <script src="js/plugin-loader.js?v=2026060720"></script>
-    <script src="js/router.js?v=2026060720"></script>
-    <script src="js/dashboard.js?v=2026060720"></script>
-    <script src="js/bookshelf.js?v=2026060720"></script>
+    <script src="js/icons.js?v=2026060722"></script>
+    <script src="js/storage-adapter.js?v=2026060722"></script>
+    <script src="js/local-fs-adapter.js?v=2026060722"></script>
+    <script src="js/github-adapter.js?v=2026060722"></script>
+    <script src="js/github-auth.js?v=2026060722"></script>
+    <script src="js/sync-config.js?v=2026060722"></script>
+    <script src="js/storage.js?v=2026060722"></script>
+    <script src="js/book-manager.js?v=2026060722"></script>
+    <script src="js/bookshelf-manager.js?v=2026060722"></script>
+    <script src="js/exporter.js?v=2026060722"></script>
+    <script src="js/plugin-api.js?v=2026060722"></script>
+    <script src="js/plugin-loader.js?v=2026060722"></script>
+    <script src="js/router.js?v=2026060722"></script>
+    <script src="js/dashboard.js?v=2026060722"></script>
+    <script src="js/bookshelf.js?v=2026060722"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
+            let swRefreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (swRefreshing) return;
+                swRefreshing = true;
+                location.reload();
+            });
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch((err) => {
+                navigator.serviceWorker.register('sw.js').then((reg) => {
+                    const notify = () => {
+                        if (reg.waiting && navigator.serviceWorker.controller) {
+                            window.bookshelf && window.bookshelf._onPwaUpdateReady && window.bookshelf._onPwaUpdateReady(reg);
+                        }
+                    };
+                    notify(); // 既に待機中の更新があれば通知
+                    reg.addEventListener('updatefound', () => {
+                        const nw = reg.installing;
+                        if (!nw) return;
+                        nw.addEventListener('statechange', () => {
+                            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                                window.bookshelf && window.bookshelf._onPwaUpdateReady && window.bookshelf._onPwaUpdateReady(reg);
+                            }
+                        });
+                    });
+                    reg.update().catch(() => {}); // 起動時に更新チェック
+                }).catch((err) => {
                     console.warn('Service Worker の登録に失敗しました:', err);
                 });
             });

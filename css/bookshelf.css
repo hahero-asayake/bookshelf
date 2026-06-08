@@ -559,8 +559,20 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 .sidebar-nav {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
+    overflow: hidden;            /* nav 全体はスクロールさせない (微スクロール防止) */
+    display: flex;
+    flex-direction: column;
     padding: 0.5rem 0.4rem;
+}
+/* ホーム等の固定セクションは縮まない。本棚ツリーを含むセクションだけが伸び、
+   ツリー内部だけがスクロールする (見出し・ホームは固定)。 */
+.sidebar-nav > .sidebar-section { flex-shrink: 0; }
+.sidebar-nav > .sidebar-section:has(#sidebar-bookshelf-tree) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar-section + .sidebar-section {
@@ -632,6 +644,9 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     display: flex;
     flex-direction: column;
     gap: 0.05rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;          /* 本棚が多いときはここだけスクロール */
 }
 
 .tree-node {
@@ -836,10 +851,11 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 0.75rem 1rem 1.25rem;
 }
 
+/* (重複定義) nav 全体はスクロールさせず、本棚ツリーだけ内部スクロール (#6) */
 .sidebar-nav {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .detail-placeholder {
@@ -1727,6 +1743,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .dashboard-widget.span-4 { grid-column: span 4; }
 .dashboard-widget.span-6 { grid-column: span 6; }
 .dashboard-widget.span-8 { grid-column: span 8; }
+.dashboard-widget.span-9 { grid-column: span 9; }
 .dashboard-widget.span-12 { grid-column: span 12; }
 
 .dashboard-grid.is-edit-mode .dashboard-widget {
@@ -1794,11 +1811,13 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     gap: 0.3rem;
 }
 
-.widget-span-select {
+.widget-size-select {
     font-size: 0.75rem;
     padding: 0.1rem 0.3rem;
     border: 1px solid var(--line);
     border-radius: 4px;
+    background: var(--panel);
+    color: var(--fg);
 }
 
 .widget-remove-btn {
@@ -3611,23 +3630,23 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     margin-bottom: 0.5rem;
 }
 
+/* ラベルを入力の上に積む縦構造。ラベル長がバラついても横位置がずれない (旧 min-width 横並びを廃止)。 */
 .github-form label {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
     font-size: 0.83rem;
     color: var(--fg2);
 }
 
 .github-form .form-label {
-    min-width: 72px;
     font-weight: 600;
-    flex-shrink: 0;
 }
 
 .github-form label > input,
 .github-form label > select {
-    flex: 1;
+    width: 100%;
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--line);
     border-radius: 4px;
@@ -3872,7 +3891,8 @@ body.right-collapsed .app-detail { border-left: none; }
 /* サイドバー下部ユーティリティ (設定 / 本棚管理 / 一覧表示切替 / プラグインボタン) */
 .sidebar-utility {
     flex-shrink: 0;
-    padding: 0.45rem 0.5rem;
+    /* ボタン列を少し上げる: 下余白を増やして最下端から離す */
+    padding: 0.4rem 0.5rem 0.85rem;
     border-top: 1px solid var(--line);
 }
 .sidebar-utility .header-controls {
@@ -5430,6 +5450,91 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     letter-spacing: 0.02em;
 }
 
+/* ===== はみ出しテキストの自動マーキー (overflow 時だけ往復スクロール) =====
+   JS (_setupMarqueeEl) が overflow を検知して .is-marquee と --amq-shift/--amq-dur を付与。 */
+.auto-marquee {
+    overflow: hidden;
+    white-space: nowrap;
+}
+.auto-marquee > .amq-inner {
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    vertical-align: bottom;
+}
+.auto-marquee.is-marquee > .amq-inner {
+    max-width: none;
+    will-change: transform;
+    animation: amq-scroll var(--amq-dur, 8s) ease-in-out infinite alternate;
+}
+@keyframes amq-scroll {
+    0%, 14%   { transform: translateX(0); }
+    86%, 100% { transform: translateX(var(--amq-shift, 0)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auto-marquee.is-marquee > .amq-inner { animation: none; }
+}
+
+/* ===== 上部ステータスバー (#4 同期切断 / #5 更新あり) + pull-to-refresh ===== */
+.bookshelf-container.app-main-pane { position: relative; }
+
+.app-status-bar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+.app-status-bar[hidden] { display: none; }
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.95rem;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--line);
+}
+.status-row .status-ico { display: inline-flex; flex-shrink: 0; }
+.status-row .status-msg { flex: 1; min-width: 0; }
+.status-row .status-btn {
+    flex-shrink: 0;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    border-radius: 6px;
+    padding: 0.15rem 0.75rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.status-row .status-btn:hover { background: rgba(0, 0, 0, 0.06); }
+.status-row.status-warn   { background: #fff8e1; color: #9a6a00; }
+.status-row.status-update { background: var(--accent-bg); color: var(--accent-strong, var(--accent)); }
+body.plugin-dark .status-row.status-warn   { background: rgba(212, 145, 0, 0.16); color: #f0c869; }
+body.plugin-dark .status-row.status-update { background: var(--accent-bg); }
+
+.ptr-indicator {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    transform: translateY(-100%);
+    pointer-events: none;
+    z-index: 4;
+}
+.ptr-indicator.is-armed { color: var(--accent); }
+.ptr-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+}
+.ptr-indicator.is-refreshing { transform: translateY(0) !important; }
+.ptr-indicator.is-refreshing .ptr-spinner { animation: bs-spin 0.8s linear infinite; }
+
 /* 本棚プレビューカードのヘッダー */
 .bookshelf-preview-header {
     margin: 0;
@@ -5770,15 +5875,15 @@ body.select-mode .drag-handle { display: none; }
 
     /* --- 中央ペイン: 下部ナビ分の余白 --- */
     .bookshelf-container.app-main-pane {
-        padding-bottom: calc(56px + env(safe-area-inset-bottom));
+        padding-bottom: calc(50px + env(safe-area-inset-bottom));
     }
 
-    /* --- 下部ナビ --- */
+    /* --- 下部ナビ (全体フッター): やや低背・下寄せにして主張を抑える --- */
     .mobile-bottom-nav {
         display: flex;
         position: fixed;
         left: 0; right: 0; bottom: 0;
-        height: calc(56px + env(safe-area-inset-bottom));
+        height: calc(50px + env(safe-area-inset-bottom));
         padding-bottom: env(safe-area-inset-bottom);
         background: var(--panel);
         border-top: 1px solid var(--line);
@@ -5789,14 +5894,14 @@ body.select-mode .drag-handle { display: none; }
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-end;
         gap: 2px;
         border: none;
         background: transparent;
         color: var(--muted);
-        font-size: 0.65rem;
+        font-size: 0.64rem;
         cursor: pointer;
-        padding: 6px 0;
+        padding: 4px 0 6px;
     }
     .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
     .mobile-bottom-nav button.is-active { color: var(--accent); }
@@ -5816,11 +5921,13 @@ body.select-mode .drag-handle { display: none; }
 
     /* --- ダッシュボード: PC の 12 列 span をモバイルは 2 列リフローに --- */
     .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+    /* T シャツサイズ → モバイル: 小(3)・中(6) = 半分 / 大(9)・全幅(12) = 全幅 */
     .dashboard-widget.span-3,
-    .dashboard-widget.span-4 { grid-column: span 1; }            /* カウンター等は 2 列 */
-    .dashboard-widget.span-6,
+    .dashboard-widget.span-4,
+    .dashboard-widget.span-6 { grid-column: span 1; }
     .dashboard-widget.span-8,
-    .dashboard-widget.span-12 { grid-column: span 2; }           /* 大きいものは全幅 */
+    .dashboard-widget.span-9,
+    .dashboard-widget.span-12 { grid-column: span 2; }
     .add-widget-card { grid-column: span 2; }
     #dashboard { padding: 0.8rem 0.8rem 1.2rem; }
     .dashboard-toolbar { flex-wrap: wrap; gap: 0.5rem; }
@@ -5870,9 +5977,6 @@ body.select-mode .drag-handle { display: none; }
     .settings-section-body { min-width: 0; }
     .plugin-install-hint,
     .sync-method-hint { word-break: break-word; overflow-wrap: anywhere; }
-
-    /* ウィジェット幅セレクタ: モバイルは 2 列リフローで span 値が実態と矛盾するため隠す */
-    .widget-span-select { display: none; }
 
     /* ⌘K パレット: タッチ端末ではキーボード操作ヒント (↑↓/↵/Esc) を隠す */
     .cmdk-footer,

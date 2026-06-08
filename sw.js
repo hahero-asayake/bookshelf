@@ -8,7 +8,12 @@
 const CACHE = 'bookshelf-runtime-v1';
 
 self.addEventListener('install', () => {
-    self.skipWaiting();
+    // skipWaiting は呼ばない。新 SW は待機させ、UI の「更新」ボタン (skipWaiting メッセージ) で適用する。
+    // (初回インストール時は待機中の旧 SW が無いので、そのまま activate される)
+});
+
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
