@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>絞り込み（評価）デザイン案</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#fff; --side:#fbfbfd; --fg:#1c1f24; --fg2:#4b5460;
+    --muted:#8a90a0; --line:#e5e7eb; --line2:#f0f1f4; --accent:#5b6cff;
+    --accent-bg:#eef0ff; --accent-strong:#4856e6; --warning:#f0a020; --danger:#e25555;
+    --shadow:0 10px 30px rgba(18,20,28,.12);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.5;padding:28px 22px 90px}
+  h1{font-size:1.3rem;margin:0 0 4px}
+  .lead{color:var(--fg2);font-size:.9rem;margin:0 0 4px}
+  .lead b{color:var(--accent-strong)}
+  h2{font-size:.98rem;margin:30px 0 4px}
+  .sub{color:var(--muted);font-size:.8rem;margin:0 0 12px}
+  .i{width:16px;height:16px;display:inline-block;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none;vertical-align:-3px}
+  .i.fill{fill:currentColor;stroke:none}
+  .rec{font-size:.7rem;font-weight:700;color:#fff;background:var(--accent);border-radius:999px;padding:.1rem .5rem;margin-left:.4rem;vertical-align:1px}
+
+  /* popover */
+  .pop{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;display:inline-block;vertical-align:top}
+  .pop-h{display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem .4rem}
+  .pop-h b{font-size:.78rem;color:var(--fg2);font-weight:700;letter-spacing:.02em}
+  .rst{color:var(--muted);cursor:pointer;display:inline-flex;width:26px;height:26px;align-items:center;justify-content:center;border-radius:7px;border:1px solid transparent}
+  .rst:hover{background:var(--side);border-color:var(--line)}
+  .pad{padding:.15rem .75rem .8rem}
+  .state-lbl{font-size:.72rem;color:var(--muted);margin:.5rem 0 .35rem}
+
+  .cases{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:8px}
+  .case .t{font-size:.76rem;color:var(--fg2);margin:0 0 8px;font-weight:600}
+
+  /* ---- 案A: 連結セグメント ---- */
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
+  .seg .c{display:inline-flex;align-items:center;gap:.18rem;padding:.42rem .56rem;font-size:.8rem;color:var(--fg2);cursor:pointer;border-left:1px solid var(--line);white-space:nowrap}
+  .seg .c:first-child{border-left:0}
+  .seg .c .i{width:13px;height:13px;color:#cfd2db}
+  .seg .c.on{background:var(--accent-bg);color:var(--accent-strong);font-weight:700}
+  .seg .c.on .i.fill{color:var(--warning)}
+
+  /* ---- 案B: 星を直接タップ（1行）---- */
+  .starbar{display:inline-flex;align-items:center;gap:.5rem}
+  .nochip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:.3rem .6rem;font-size:.78rem;color:var(--fg2);cursor:pointer}
+  .nochip.on{background:var(--accent-bg);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent-strong);font-weight:700}
+  .stars{display:inline-flex;gap:.12rem;background:var(--side);border:1px solid var(--line);border-radius:9px;padding:.28rem .4rem}
+  .stars .s{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;color:#cfd2db;position:relative}
+  .stars .s .i{width:20px;height:20px}
+  .stars .s.on{color:var(--warning)}
+  .stars .s.on .i{fill:currentColor;stroke:none}
+  .stars .s .num{position:absolute;bottom:-1px;right:1px;font-size:.52rem;font-weight:700;color:var(--muted)}
+
+  /* ---- 案C: 独立ピル（1行・折り返さない）---- */
+  .pills{display:inline-flex;gap:.35rem}
+  .pill{display:inline-flex;align-items:center;gap:.16rem;border:1px solid var(--line);background:var(--panel);border-radius:999px;
+    padding:.32rem .5rem;font-size:.78rem;color:var(--fg2);cursor:pointer;white-space:nowrap}
+  .pill .i{width:12px;height:12px;color:#cfd2db}
+  .pill.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .pill.on .i.fill{color:#ffd86b}
+
+  .foot{max-width:760px;color:var(--fg2);font-size:.82rem;margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+  .foot b{color:var(--fg)}
+  code{background:var(--side);border:1px solid var(--line);border-radius:5px;padding:.05rem .3rem;font-size:.82em}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.3 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
+  <symbol id="rst" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+</svg>
+
+<h1>絞り込み（評価）のデザイン案</h1>
+<p class="lead">全部 <b>1行で完結</b>（折り返さない）。操作は <b>タップした評価だけ表示／無選択＝全部</b>（足し算で絞る）。</p>
+<p class="sub">各案、左＝「低評価だけ（★1・★2）」を選んだ状態 ／ 右＝「未選択＝全部表示（＝絞り込みOFF）」。</p>
+
+<!-- 案A -->
+<h2>案A　連結セグメント<span class="rec">おすすめ</span></h2>
+<p class="sub">6つが繋がった1本のバー。境目で「同じ仲間から選ぶ」感が出て、最もコンパクト。</p>
+<div class="cases">
+  <div class="case">
+    <p class="t">低評価だけ（★1・★2）</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="seg">
+          <span class="c">未評価</span>
+          <span class="c on"><svg class="i fill"><use href="#star"/></svg>1</span>
+          <span class="c on"><svg class="i fill"><use href="#star"/></svg>2</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>3</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>4</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>5</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="case">
+    <p class="t">未選択＝全部（絞り込みOFF）</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="seg">
+          <span class="c">未評価</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>1</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>2</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>3</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>4</span>
+          <span class="c"><svg class="i"><use href="#star"/></svg>5</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 案B -->
+<h2>案B　星を直接タップ</h2>
+<p class="sub">5つの星をそれぞれON/OFF（点けた星の評価だけ表示）。未評価だけ左に独立。視覚的で“星を選ぶ”感が強い。</p>
+<div class="cases">
+  <div class="case">
+    <p class="t">低評価だけ（★1・★2）</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="starbar">
+          <span class="nochip">未評価</span>
+          <span class="stars">
+            <span class="s on"><svg class="i"><use href="#star"/></svg><span class="num">1</span></span>
+            <span class="s on"><svg class="i"><use href="#star"/></svg><span class="num">2</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">3</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">4</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">5</span></span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="case">
+    <p class="t">未評価だけ</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="starbar">
+          <span class="nochip on">未評価</span>
+          <span class="stars">
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">1</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">2</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">3</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">4</span></span>
+            <span class="s"><svg class="i"><use href="#star"/></svg><span class="num">5</span></span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 案C -->
+<h2>案C　独立ピル（1行固定）</h2>
+<p class="sub">丸ピルを横1列に固定（折り返さない）。案Aより軽く、間隔があって押しやすい。</p>
+<div class="cases">
+  <div class="case">
+    <p class="t">低評価だけ（★1・★2）</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="pills">
+          <span class="pill">未評価</span>
+          <span class="pill on"><svg class="i fill"><use href="#star"/></svg>1</span>
+          <span class="pill on"><svg class="i fill"><use href="#star"/></svg>2</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>3</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>4</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>5</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="case">
+    <p class="t">高評価だけ（★4・★5）</p>
+    <div class="pop">
+      <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+      <div class="pad">
+        <div class="pills">
+          <span class="pill">未評価</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>1</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>2</span>
+          <span class="pill"><svg class="i"><use href="#star"/></svg>3</span>
+          <span class="pill on"><svg class="i fill"><use href="#star"/></svg>4</span>
+          <span class="pill on"><svg class="i fill"><use href="#star"/></svg>5</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="foot">
+  共通の操作: <b>タップした評価だけ表示</b>、<b>無選択＝全部（絞り込みOFF）</b>、右上 <svg class="i" style="width:13px;height:13px"><use href="#rst"/></svg> で全解除。絞り込み中はツールバーの<b>じょうごが色づく</b>のみ（帯・件数は出さない）。<br>
+  どれも1行で折り返しません。好みを教えてください（おすすめは案A）。
+</p>
+
+</body>
+</html>
