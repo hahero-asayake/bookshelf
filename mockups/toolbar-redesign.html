@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>本棚ツールバー 再設計モック v3</title>
+<title>本棚ツールバー 再設計モック v4（ミニマル）</title>
 <style>
   :root{
     --bg:#f4f5f7; --panel:#fff; --side:#fbfbfd; --fg:#1c1f24; --fg2:#4b5460;
@@ -16,120 +16,83 @@
     font-family:-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
     line-height:1.5;padding:28px 22px 90px}
   h1{font-size:1.35rem;margin:0 0 4px}
-  .lead{color:var(--fg2);margin:0 0 8px;font-size:.92rem}
-  .rule{color:var(--muted);font-size:.82rem;margin:0 0 24px}
-  .rule b{color:var(--accent-strong)}
-  h2{font-size:1.02rem;margin:30px 0 4px;display:flex;align-items:center;gap:.5rem}
+  .lead{color:var(--fg2);margin:0 0 22px;font-size:.9rem}
+  h2{font-size:1rem;margin:28px 0 10px;display:flex;align-items:center;gap:.5rem}
   h2 .n{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:.78rem;
     display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto}
-  .sub{color:var(--muted);font-size:.82rem;margin:0 0 12px}
+  .cap{font-size:.82rem;color:var(--muted);margin:0 0 10px;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+  .keycap{display:inline-flex;align-items:center;gap:.3rem;background:var(--panel);border:1px solid var(--line);
+    border-radius:7px;padding:.2rem .45rem;color:var(--fg2);font-size:.78rem}
   .i{width:16px;height:16px;display:inline-block;stroke:currentColor;stroke-width:2;
      stroke-linecap:round;stroke-linejoin:round;fill:none;vertical-align:-3px;flex:0 0 auto}
   .i.fill{fill:currentColor;stroke:none}
 
-  .pane{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;max-width:760px;box-shadow:var(--shadow)}
+  .pane{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;max-width:720px;box-shadow:var(--shadow)}
 
-  /* === コンパクトヘッダー（1行）=== */
+  /* ヘッダー1行（普段はこれだけ・帯なし） */
   .bvh{padding:.7rem .9rem;display:flex;align-items:center;gap:.8rem}
   .bvh-title{display:flex;align-items:center;gap:.55rem;min-width:0;flex:1}
   .bvh-ic{width:30px;height:30px;border-radius:8px;background:var(--accent-bg);color:var(--accent);
     display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
   .bvh-name{font-size:1rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bvh-desc{color:var(--muted);font-size:.78rem;margin-top:.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bvh-desc{color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tools{display:flex;gap:.35rem;align-items:center;flex:0 0 auto}
   .ib{width:34px;height:34px;border:1px solid var(--line);background:var(--panel);border-radius:8px;
     color:var(--fg2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
-  .ib:hover{background:var(--line2)}
-  .ib.on{background:var(--accent-bg);color:var(--accent-strong);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
-  .ib .dot{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;border-radius:999px;background:var(--accent);
-    color:#fff;font-size:.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--panel);padding:0 3px}
+  .ib.on{background:var(--accent-bg);color:var(--accent-strong);border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+  .ib .pip{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--accent);border:1.5px solid var(--panel)}
   .vdiv{width:1px;height:20px;background:var(--line);margin:0 .15rem}
 
-  /* 絞り込み中だけ出る細い帯（必要なときだけ＝ヘッダーは普段太らない） */
-  .filterbar{display:flex;align-items:center;gap:.5rem;padding:.4rem .9rem;border-top:1px solid var(--line2);
-    background:color-mix(in srgb,var(--accent-bg) 60%,var(--panel));font-size:.78rem}
-  .fchip{display:inline-flex;align-items:center;gap:.3rem;background:var(--panel);border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
-    color:var(--accent-strong);border-radius:999px;padding:.18rem .5rem;font-weight:600}
-  .fchip .x{cursor:pointer;opacity:.7;display:inline-flex}
-  .fcount{color:var(--fg2);margin-left:auto}
-  .fcount b{color:var(--fg)}
-
-  /* カバーグリッド */
-  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:.6rem;padding:.9rem;border-top:1px solid var(--line2)}
-  .card{position:relative}
-  .cv{aspect-ratio:2/3;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18);
-    display:flex;align-items:flex-end;padding:.3rem;color:#fff;font-size:.56rem;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:.55rem;padding:.85rem;border-top:1px solid var(--line2)}
+  .cv{aspect-ratio:2/3;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
   .cv.a{background:linear-gradient(150deg,#2f3c5e,#5d6da0)} .cv.b{background:linear-gradient(150deg,#6e2f2f,#bd7a4c)}
   .cv.c{background:linear-gradient(150deg,#23503e,#4f9079)} .cv.d{background:linear-gradient(150deg,#4a2f6e,#9072c2)}
   .cv.e{background:linear-gradient(150deg,#5c4d22,#bfa84e)}
 
-  /* press-state */
-  .states{display:flex;flex-direction:column;gap:18px;max-width:760px}
-  .state{background:var(--side);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-  .state-h{display:flex;align-items:center;gap:.5rem;font-size:.88rem;font-weight:600;margin-bottom:12px;flex-wrap:wrap}
-  .keycap{display:inline-flex;align-items:center;gap:.3rem;background:var(--panel);border:1px solid var(--line);
-    border-radius:7px;padding:.25rem .5rem;color:var(--fg2);font-size:.8rem}
-  .arrow{color:var(--muted)}
-  .note{font-size:.8rem;color:var(--fg2);margin:.55rem 0 0;padding-left:1.1rem;position:relative}
-  .note::before{content:"→";position:absolute;left:0;color:var(--accent)}
-
-  /* ポップオーバー */
-  .pop{width:300px;background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);overflow:hidden}
-  .pop-search{display:flex;align-items:center;gap:.5rem;padding:.6rem .7rem;color:var(--muted)}
+  /* ポップオーバー（中身は最小限） */
+  .pop{width:262px;background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);overflow:hidden}
+  .pop-search{display:flex;align-items:center;gap:.5rem;padding:.55rem .6rem}
   .pop-search input{border:1px solid var(--line);border-radius:7px;padding:.45rem .6rem;font:inherit;width:100%;outline:0;color:var(--fg)}
-  .pop-h{display:flex;align-items:center;justify-content:space-between;padding:.55rem .8rem;border-bottom:1px solid var(--line2)}
-  .pop-h b{font-size:.84rem}
-  .reset{font-size:.74rem;color:var(--accent);cursor:pointer}
-  .sec{padding:.7rem .8rem} .sec+.sec{border-top:1px solid var(--line2)}
-  .sec-t{font-size:.7rem;font-weight:700;letter-spacing:.03em;color:var(--muted);margin-bottom:.5rem}
-  .pop-foot{padding:.5rem .8rem;border-top:1px solid var(--line2);font-size:.76rem;color:var(--fg2);background:var(--side)}
-  .pop-foot b{color:var(--fg)}
+  .pop-h{display:flex;align-items:center;justify-content:space-between;padding:.5rem .7rem .45rem}
+  .pop-h b{font-size:.8rem;color:var(--fg2);font-weight:700}
+  .pop-h .rst{color:var(--muted);cursor:pointer;display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:6px}
+  .pad{padding:.2rem .7rem .7rem}
 
-  /* プリセット pills */
-  .presets{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.6rem}
-  .preset{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:.28rem .6rem;font-size:.76rem;color:var(--fg2);cursor:pointer}
-  .preset.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-
-  /* 評価チップ（任意に選ぶ＝低評価だけ等もOK） */
+  /* 評価チップ（これだけ） */
   .rates{display:flex;flex-wrap:wrap;gap:.35rem}
-  .rate{display:inline-flex;align-items:center;gap:.2rem;border:1px solid var(--line);background:var(--panel);
-    border-radius:8px;padding:.3rem .5rem;font-size:.78rem;color:var(--fg2);cursor:pointer}
-  .rate .i{width:13px;height:13px;color:#c9ccd6}
+  .rate{display:inline-flex;align-items:center;gap:.18rem;border:1px solid var(--line);background:var(--panel);
+    border-radius:8px;padding:.32rem .52rem;font-size:.8rem;color:var(--fg2);cursor:pointer}
+  .rate .i{width:13px;height:13px;color:#cfd2db}
   .rate.on{background:var(--accent-bg);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent-strong);font-weight:600}
   .rate.on .i.fill{color:var(--warning)}
-  .rate .i.fill{color:var(--warning)}
 
-  /* 表示 */
-  .sortrow{display:flex;gap:.4rem;align-items:center}
-  .sel{flex:1;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);
-    border-radius:8px;padding:.4rem .55rem;font-size:.82rem;background:var(--panel)}
-  .dirbtn{display:inline-flex;align-items:center;gap:.3rem;border:1px solid var(--line);border-radius:8px;
-    padding:.4rem .55rem;font-size:.78rem;background:var(--panel);color:var(--fg2);white-space:nowrap}
-  .hint{font-size:.75rem;color:var(--muted);margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start}
+  /* 表示（最小限のラベル＋コントロール） */
+  .row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.4rem .7rem}
+  .row+.row{border-top:1px solid var(--line2)}
+  .row .lbl{font-size:.8rem;color:var(--fg2)}
+  .sel{display:inline-flex;align-items:center;gap:.3rem;border:1px solid var(--line);border-radius:8px;padding:.34rem .5rem;font-size:.8rem;background:var(--panel)}
+  .dirbtn{display:inline-flex;align-items:center;gap:.25rem;border:1px solid var(--line);border-radius:8px;padding:.34rem .5rem;font-size:.76rem;background:var(--panel);color:var(--fg2)}
   .segs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-  .segs button{border:0;background:var(--panel);color:var(--fg2);padding:.38rem .7rem;font:inherit;font-size:.8rem;cursor:pointer;display:inline-flex;gap:.3rem;align-items:center}
+  .segs button{border:0;background:var(--panel);color:var(--fg2);padding:.32rem .56rem;font:inherit;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:.25rem}
   .segs button+button{border-left:1px solid var(--line)}
   .segs button.on{background:var(--accent-bg);color:var(--accent-strong);font-weight:600}
-  .row{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
-  .row+.row{margin-top:.55rem}
-  .row .lbl{font-size:.78rem;color:var(--fg2)}
 
   /* 選択モード */
-  .pick{position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.95);
-    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .pick{position:absolute;top:5px;left:5px;width:21px;height:21px;border-radius:6px;background:rgba(255,255,255,.95);
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .card{position:relative}
   .card.sel .cv{outline:3px solid var(--accent);outline-offset:1px} .card.sel .pick{background:var(--accent);border-color:var(--accent);color:#fff}
-  .bulk{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin:0 .9rem .9rem;padding:.5rem .65rem;
+  .bulk{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin:0 .85rem .85rem;padding:.5rem .6rem;
     border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:var(--shadow)}
-  .bulk .cnt{font-weight:700;font-size:.84rem;margin-right:.15rem}
-  .b{border:1px solid var(--line);background:var(--panel);color:var(--fg2);border-radius:8px;padding:.38rem .6rem;
-    font:inherit;font-size:.79rem;cursor:pointer;display:inline-flex;align-items:center;gap:.3rem}
+  .bulk .cnt{font-weight:700;font-size:.83rem;margin-right:.15rem}
+  .b{border:1px solid var(--line);background:var(--panel);color:var(--fg2);border-radius:8px;padding:.36rem .58rem;
+    font:inherit;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:.3rem}
   .b.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .b.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
   .b.ghost{border-color:transparent;background:transparent}
   .bulk .divider{width:1px;height:20px;background:var(--line);margin:0 .1rem} .bulk .spacer{flex:1}
 
-  .legend{font-size:.78rem;color:var(--muted);margin:.5rem 2px 0;max-width:760px}
-  .twocol{display:flex;gap:14px;flex-wrap:wrap}
+  .twocol{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
 </style>
 </head>
 <body>
@@ -145,21 +108,18 @@
   <symbol id="star" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.3 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
   <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="down" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
-  <symbol id="move" viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></symbol>
   <symbol id="lib" viewBox="0 0 24 24"><path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/></symbol>
   <symbol id="top" viewBox="0 0 24 24"><path d="M5 3h14M12 21V7M6 11l6-6 6 6"/></symbol>
   <symbol id="ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.5 5.5 13 13"/></symbol>
   <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
-  <symbol id="rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
+  <symbol id="rst" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></symbol>
 </svg>
 
-<h1>本棚ツールバー 再設計モック v3</h1>
-<p class="lead">「探す／絞り込む／表示／選ぶ」の4動詞に整理。どの本棚でも同じUI。</p>
-<p class="rule">反映: <b>ALLも他の棚も同じ扱い（特別扱いしない）</b> ／ <b>評価フィルターは任意選択＋プリセット（★1-2だけ等もOK）</b> ／ ヘッダー1行・複数選択はモード式。</p>
+<h1>本棚ツールバー モック v4（ミニマル）</h1>
+<p class="lead">プリセット・帯・説明文なし。普段は <b>ヘッダー1行のみ</b>。状態は<b>アイコンの色だけ</b>で示す。</p>
 
-<!-- ツールバー -->
-<h2><span class="n">0</span>ツールバー（1行）＋ 絞り込み中だけ出る帯</h2>
-<p class="sub">通常はアイコン4つだけ。絞り込みが効いている間だけ、下に細い「条件＋件数」の帯が出る（必要なときだけ＝普段は太らない）。</p>
+<!-- ツールバー（普段の姿） -->
+<h2><span class="n">0</span>普段（帯なし・1行だけ）</h2>
 <div class="pane" style="margin-bottom:6px">
   <div class="bvh">
     <div class="bvh-title">
@@ -167,141 +127,78 @@
       <div style="min-width:0"><div class="bvh-name">おすすめの漫画</div><div class="bvh-desc">迷ったら読んで欲しい漫画</div></div>
     </div>
     <div class="tools">
-      <span class="ib" title="検索"><svg class="i"><use href="#search"/></svg></span>
-      <span class="ib on" title="絞り込み（適用中）"><svg class="i"><use href="#funnel"/></svg><span class="dot">1</span></span>
-      <span class="ib" title="表示（並び・大きさ）"><svg class="i"><use href="#sliders"/></svg></span>
+      <span class="ib"><svg class="i"><use href="#search"/></svg></span>
+      <span class="ib on"><svg class="i"><use href="#funnel"/></svg><span class="pip"></span></span>
+      <span class="ib"><svg class="i"><use href="#sliders"/></svg></span>
       <span class="vdiv"></span>
-      <span class="ib" title="複数選択"><svg class="i"><use href="#check-sq"/></svg></span>
+      <span class="ib"><svg class="i"><use href="#check-sq"/></svg></span>
     </div>
   </div>
-  <div class="filterbar">
-    <span class="fchip">低評価（★1–2）<span class="x"><svg class="i"><use href="#x"/></svg></span></span>
-    <span class="fcount"><b>9</b> / 87冊</span>
-  </div>
-  <div class="grid" style="grid-template-columns:repeat(6,1fr)">
-    <div class="card"><div class="cv b"></div></div><div class="card"><div class="cv e"></div></div>
-    <div class="card"><div class="cv c"></div></div><div class="card"><div class="cv a"></div></div>
-    <div class="card"><div class="cv d"></div></div><div class="card"><div class="cv b"></div></div>
+  <div class="grid">
+    <div class="cv b"></div><div class="cv e"></div><div class="cv c"></div><div class="cv a"></div><div class="cv d"></div><div class="cv b"></div>
   </div>
 </div>
-<p class="legend">アイコンは 検索 / <strong>絞り込み（じょうご）</strong> / 表示 / 複数選択。絞り込み中はじょうごが色＋件数で光り、下の帯で「何で絞ってるか・何冊か」が分かり、× で即解除。</p>
+<p class="cap">検索 / じょうご=絞り込み / スライダー=表示 / 複数選択。絞り込み中は<b>じょうごが色づく＋小さな点</b>だけ（帯も件数も出さない）。</p>
 
-<div class="states" style="margin-top:18px">
+<!-- 検索 -->
+<h2><span class="n">1</span><span class="keycap"><svg class="i"><use href="#search"/></svg>検索</span></h2>
+<div class="pop" style="width:280px"><div class="pop-search"><svg class="i" style="color:var(--muted)"><use href="#search"/></svg><input placeholder="タイトル / 著者で検索…"></div></div>
 
-  <!-- 検索 -->
-  <div class="state">
-    <div class="state-h"><span class="keycap"><svg class="i"><use href="#search"/></svg>検索</span><span class="arrow">→</span> この本棚内を絞る小窓</div>
-    <div class="pop" style="width:300px"><div class="pop-search"><svg class="i"><use href="#search"/></svg><input placeholder="タイトル / 著者で検索…"></div></div>
-    <p class="note">押すと入力欄。ヘッダーは太らない（今と同じポップオーバー方式）。入力に応じて即絞り込み。</p>
-  </div>
-
-  <!-- 絞り込み（中心） -->
-  <div class="state">
-    <div class="state-h"><span class="keycap"><svg class="i"><use href="#funnel"/></svg>絞り込み</span><span class="arrow">→</span> 評価を“任意に”選ぶ（★1-2だけ・未評価だけ・なんでも）</div>
-    <div class="twocol">
-      <!-- 低評価だけ -->
-      <div class="pop" style="width:300px">
-        <div class="pop-h"><b>絞り込み</b><span class="reset">クリア</span></div>
-        <div class="sec">
-          <div class="sec-t">よく使う</div>
-          <div class="presets">
-            <span class="preset">すべて</span><span class="preset">高評価 ★4+</span>
-            <span class="preset on">低評価 ★1-2</span><span class="preset">未評価</span>
-          </div>
-          <div class="sec-t">評価で選ぶ（タップで ON/OFF・複数可）</div>
-          <div class="rates">
-            <span class="rate">未評価</span>
-            <span class="rate on"><svg class="i fill"><use href="#star"/></svg>1</span>
-            <span class="rate on"><svg class="i fill"><use href="#star"/></svg>2</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>3</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>4</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>5</span>
-          </div>
-        </div>
-        <div class="pop-foot">この棚 <b>87</b>冊中 <b>9</b>冊が該当</div>
-      </div>
-
-      <!-- 高評価プリセット -->
-      <div class="pop" style="width:300px">
-        <div class="pop-h"><b>絞り込み</b><span class="reset">クリア</span></div>
-        <div class="sec">
-          <div class="sec-t">よく使う</div>
-          <div class="presets">
-            <span class="preset">すべて</span><span class="preset on">高評価 ★4+</span>
-            <span class="preset">低評価 ★1-2</span><span class="preset">未評価</span>
-          </div>
-          <div class="sec-t">評価で選ぶ（タップで ON/OFF・複数可）</div>
-          <div class="rates">
-            <span class="rate">未評価</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>1</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>2</span>
-            <span class="rate"><svg class="i"><use href="#star"/></svg>3</span>
-            <span class="rate on"><svg class="i fill"><use href="#star"/></svg>4</span>
-            <span class="rate on"><svg class="i fill"><use href="#star"/></svg>5</span>
-          </div>
-        </div>
-        <div class="pop-foot">この棚 <b>87</b>冊中 <b>41</b>冊が該当</div>
-      </div>
+<!-- 絞り込み -->
+<h2><span class="n">2</span><span class="keycap"><svg class="i"><use href="#funnel"/></svg>絞り込み</span></h2>
+<p class="cap">中身は評価チップだけ。タップでON/OFF（複数可）。「低評価だけ」も自由。右上↺で全解除。</p>
+<div class="pop">
+  <div class="pop-h"><b>評価</b><span class="rst"><svg class="i"><use href="#rst"/></svg></span></div>
+  <div class="pad">
+    <div class="rates">
+      <span class="rate">未評価</span>
+      <span class="rate on"><svg class="i fill"><use href="#star"/></svg>1</span>
+      <span class="rate on"><svg class="i fill"><use href="#star"/></svg>2</span>
+      <span class="rate"><svg class="i"><use href="#star"/></svg>3</span>
+      <span class="rate"><svg class="i"><use href="#star"/></svg>4</span>
+      <span class="rate"><svg class="i"><use href="#star"/></svg>5</span>
     </div>
-    <p class="note">星6個チェックを廃止。<strong>プリセット</strong>（すべて/高評価/低評価/未評価）で一発、細かくは<strong>評価チップを任意にON/OFF</strong>。「★1-2だけ」も「未評価だけ」も自由。該当件数も常時表示。</p>
   </div>
-
-  <!-- 表示 -->
-  <div class="state">
-    <div class="state-h"><span class="keycap"><svg class="i"><use href="#sliders"/></svg>表示</span><span class="arrow">→</span> 並び順・表紙/リスト・大きさ（“見せ方”を1か所に）</div>
-    <div class="twocol">
-      <div class="pop" style="width:300px">
-        <div class="pop-h"><b>表示</b><span class="reset"><svg class="i"><use href="#rotate"/></svg></span></div>
-        <div class="sec">
-          <div class="sec-t">並び順</div>
-          <div class="sortrow"><span class="sel">カスタム順<svg class="i"><use href="#chev"/></svg></span></div>
-          <div class="hint"><svg class="i" style="color:var(--accent)"><use href="#move"/></svg><span>本をドラッグして好きな順に。<b>手動移動はカスタム順のときだけ</b></span></div>
-        </div>
-        <div class="sec"><div class="row"><span class="lbl">表紙 / リスト</span><span class="segs"><button class="on"><svg class="i"><use href="#grid"/></svg>表紙</button><button><svg class="i"><use href="#list"/></svg>リスト</button></span></div>
-          <div class="row"><span class="lbl">表紙の大きさ</span><span class="segs"><button>小</button><button class="on">中</button><button>大</button></span></div>
-        </div>
-      </div>
-      <div class="pop" style="width:300px">
-        <div class="pop-h"><b>表示</b><span class="reset"><svg class="i"><use href="#rotate"/></svg></span></div>
-        <div class="sec">
-          <div class="sec-t">並び順</div>
-          <div class="sortrow"><span class="sel">追加が新しい順<svg class="i"><use href="#chev"/></svg></span><span class="dirbtn"><svg class="i"><use href="#down"/></svg>新→古</span></div>
-          <div class="hint"><svg class="i" style="color:var(--muted)"><use href="#move"/></svg><span style="color:var(--muted)">項目ソート中はドラッグ不可（見た目とズレ防止）</span></div>
-        </div>
-        <div class="sec"><div class="row"><span class="lbl">表紙 / リスト</span><span class="segs"><button class="on"><svg class="i"><use href="#grid"/></svg>表紙</button><button><svg class="i"><use href="#list"/></svg>リスト</button></span></div></div>
-      </div>
-    </div>
-    <p class="note">“どう見せるか”（並び・グリッド/リスト・大きさ）を <strong>表示</strong> に集約。絞り込み（どれを出すか）とは別物として分離。並びは カスタム順／追加順 中心。</p>
-  </div>
-
-  <!-- 複数選択 -->
-  <div class="state">
-    <div class="state-h"><span class="keycap"><svg class="i"><use href="#check-sq"/></svg>複数選択</span><span class="arrow">→</span> 選択モード（モード式は維持）</div>
-    <div class="pane" style="max-width:560px;box-shadow:none">
-      <div class="grid" style="grid-template-columns:repeat(5,1fr);border-top:0">
-        <div class="card sel"><div class="cv a"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
-        <div class="card sel"><div class="cv b"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
-        <div class="card"><div class="cv c"></div><span class="pick"></span></div>
-        <div class="card sel"><div class="cv d"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
-        <div class="card"><div class="cv e"></div><span class="pick"></span></div>
-      </div>
-      <div class="bulk">
-        <span class="cnt">3冊</span>
-        <button class="b primary"><svg class="i"><use href="#lib"/></svg>本棚に追加</button>
-        <button class="b"><svg class="i"><use href="#top"/></svg>先頭へ</button>
-        <button class="b">本棚から外す</button>
-        <span class="divider"></span>
-        <button class="b danger"><svg class="i"><use href="#ban"/></svg>除外</button>
-        <span class="spacer"></span>
-        <button class="b ghost"><svg class="i"><use href="#x"/></svg>選択解除</button>
-      </div>
-    </div>
-    <p class="note">押すとモードに入りチェック表示。「先頭へ」はカスタム順のときだけ出る（現状どおり）。除外＝赤・区切りで分離。</p>
-  </div>
-
 </div>
 
-<p class="legend" style="margin-top:30px">※ 見た目合意用の静止モック。実装時は実データ・ダークモード・スマホ（タップ標的拡大）・⌘K との整合も合わせます。</p>
+<!-- 表示 -->
+<h2><span class="n">3</span><span class="keycap"><svg class="i"><use href="#sliders"/></svg>表示</span></h2>
+<p class="cap">並び順・表紙/リスト・大きさだけ。説明文なし。</p>
+<div class="twocol">
+  <div class="pop">
+    <div class="row"><span class="lbl">並び順</span><span class="sel">カスタム順<svg class="i"><use href="#chev"/></svg></span></div>
+    <div class="row"><span class="lbl">表紙 / リスト</span><span class="segs"><button class="on"><svg class="i"><use href="#grid"/></svg></button><button><svg class="i"><use href="#list"/></svg></button></span></div>
+    <div class="row"><span class="lbl">大きさ</span><span class="segs"><button>小</button><button class="on">中</button><button>大</button></span></div>
+  </div>
+  <div class="pop">
+    <div class="row"><span class="lbl">並び順</span><span style="display:inline-flex;gap:.35rem"><span class="sel">追加が新しい順<svg class="i"><use href="#chev"/></svg></span><span class="dirbtn"><svg class="i"><use href="#down"/></svg></span></span></div>
+    <div class="row"><span class="lbl">表紙 / リスト</span><span class="segs"><button class="on"><svg class="i"><use href="#grid"/></svg></button><button><svg class="i"><use href="#list"/></svg></button></span></div>
+    <div class="row"><span class="lbl">大きさ</span><span class="segs"><button>小</button><button class="on">中</button><button>大</button></span></div>
+  </div>
+</div>
+
+<!-- 複数選択 -->
+<h2><span class="n">4</span><span class="keycap"><svg class="i"><use href="#check-sq"/></svg>複数選択</span></h2>
+<p class="cap">押すとモードに入りチェック表示。一括バーは選択中だけ。除外＝赤・区切りで分離。</p>
+<div class="pane" style="max-width:540px">
+  <div class="grid" style="grid-template-columns:repeat(5,1fr);border-top:0">
+    <div class="card sel"><div class="cv a"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
+    <div class="card sel"><div class="cv b"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
+    <div class="card"><div class="cv c"></div><span class="pick"></span></div>
+    <div class="card sel"><div class="cv d"></div><span class="pick"><svg class="i"><use href="#check"/></svg></span></div>
+    <div class="card"><div class="cv e"></div><span class="pick"></span></div>
+  </div>
+  <div class="bulk">
+    <span class="cnt">3冊</span>
+    <button class="b primary"><svg class="i"><use href="#lib"/></svg>本棚に追加</button>
+    <button class="b"><svg class="i"><use href="#top"/></svg>先頭へ</button>
+    <button class="b">本棚から外す</button>
+    <span class="divider"></span>
+    <button class="b danger"><svg class="i"><use href="#ban"/></svg>除外</button>
+    <span class="spacer"></span>
+    <button class="b ghost"><svg class="i"><use href="#x"/></svg>選択解除</button>
+  </div>
+</div>
 
 </body>
 </html>
