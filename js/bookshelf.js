@@ -55,6 +55,9 @@ class VirtualBookshelf {
         this.booksPerPage = 50;
         this.sortOrder = 'custom';
         this.sortDirection = 'desc';
+        // 評価でしぼり込み (案A 連結セグメント)。Set に入れた評価値(0=未評価,1..5)だけ表示。
+        // 空 = 絞り込みなし(全部表示)。セッション中のみ保持 (永続化しない)。
+        this.ratingFilter = new Set();
         // 同期方式に応じた storage 構築 (LocalFS / GitHub / ...)
         this.syncConfig = SyncConfigManager.load();
         let initialAdapter = SyncConfigManager.buildAdapter(this.syncConfig);
@@ -158,7 +161,6 @@ class VirtualBookshelf {
             this._initHeaderTemplates();
             this._applyHeaderLayout();
             if (typeof window.applyIcons === 'function') window.applyIcons();
-            this._renderStarFilterStars();
             this.updateBookshelfSelector();
             this.updateSortDirectionButton();
             // ホームをダッシュボードに置換 (renderBookshelfOverview は本棚ハイライトウィジェット内で呼ばれる)
@@ -385,10 +387,28 @@ class VirtualBookshelf {
             this.search(e.target.value);
         });
 
-        // Star rating filters
-        ['star-0', 'star-1', 'star-2', 'star-3', 'star-4', 'star-5'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.applyFilters());
-        });
+        // 評価でしぼり込み (連結セグメント): タップした評価だけ表示 / 無選択=全部。
+        const ratingSeg = document.getElementById('rating-seg');
+        if (ratingSeg) {
+            ratingSeg.addEventListener('click', (e) => {
+                const cell = e.target.closest('.rseg');
+                if (!cell) return;
+                const r = Number(cell.dataset.rating);
+                if (this.ratingFilter.has(r)) this.ratingFilter.delete(r);
+                else this.ratingFilter.add(r);
+                this._updateRatingFilterUI();
+                this.applyFilters();
+            });
+        }
+        const ratingReset = document.getElementById('rating-filter-reset');
+        if (ratingReset) {
+            ratingReset.addEventListener('click', () => {
+                this.ratingFilter.clear();
+                this._updateRatingFilterUI();
+                this.applyFilters();
+            });
+        }
+        this._updateRatingFilterUI();
 
         // Sort
         document.getElementById('sort-order').addEventListener('change', (e) => {
@@ -1158,16 +1178,12 @@ class VirtualBookshelf {
             }
             
             
-            // Star rating filter
-            const enabledRatings = [];
-            for (let i = 0; i <= 5; i++) {
-                if (document.getElementById(`star-${i}`).checked) {
-                    enabledRatings.push(i);
+            // 評価でしぼり込み: ratingFilter に選ばれた評価だけ通す。空なら絞り込みなし。
+            if (this.ratingFilter && this.ratingFilter.size > 0) {
+                const bookRating = this.userData.notes[book.asin]?.rating || 0;
+                if (!this.ratingFilter.has(bookRating)) {
+                    return false;
                 }
-            }
-            const bookRating = this.userData.notes[book.asin]?.rating || 0;
-            if (!enabledRatings.includes(bookRating)) {
-                return false;
             }
             
             // Search filter
@@ -1263,23 +1279,19 @@ class VirtualBookshelf {
         this.saveUserData();
     }
     
-    // フィルター popover の星評価チェックボックス: 星アイコンを Lucide で描画
-    _renderStarFilterStars() {
-        document.querySelectorAll('.star-filter-stars').forEach(el => {
-            const count = Number(el.dataset.count) || 0;
-            if (count === 0) {
-                el.innerHTML = `${window.renderIcon('star', { size: 14, class: 'lucide-star is-empty' })}<span class="star-filter-label">未評価</span>`;
-                return;
-            }
-            let html = '';
-            for (let i = 0; i < count; i++) {
-                html += window.renderIcon('star', { size: 14, class: 'lucide-star is-filled' });
-            }
-            for (let i = count; i < 5; i++) {
-                html += window.renderIcon('star', { size: 14, class: 'lucide-star is-empty' });
-            }
-            el.innerHTML = html;
-        });
+    // 評価でしぼり込みセグメントの表示更新: 選択中セルを on、reset 表示、
+    // ツールバーのフィルターボタンに適用中インジケータ(has-active-filter)を付ける。
+    _updateRatingFilterUI() {
+        const seg = document.getElementById('rating-seg');
+        if (seg) {
+            seg.querySelectorAll('.rseg').forEach(cell => {
+                cell.classList.toggle('on', this.ratingFilter.has(Number(cell.dataset.rating)));
+            });
+        }
+        const reset = document.getElementById('rating-filter-reset');
+        if (reset) reset.hidden = this.ratingFilter.size === 0;
+        const fbtn = document.getElementById('toggle-filter');
+        if (fbtn) fbtn.classList.toggle('has-active-filter', this.ratingFilter.size > 0);
     }
 
     updateSortDirectionButton() {
