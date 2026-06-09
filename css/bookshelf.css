@@ -2443,6 +2443,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     transition: all 0.3s ease;
     cursor: pointer;
 }
+/* カスタム順のときだけ本をドラッグ並べ替え可。grab カーソルで「動かせる」を示す */
+.bookshelf.is-custom-order .book-item { cursor: grab; }
+.bookshelf.is-custom-order .book-item.dragging { cursor: grabbing; }
 
 .book-item:hover {
     /* Phase B-8: アニメ削除 (translateY -5px はうるさい) */

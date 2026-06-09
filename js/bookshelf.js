@@ -1317,7 +1317,9 @@ class VirtualBookshelf {
         
         // Apply view and cover size classes
         const coverSize = this.userData.settings?.coverSize || 'medium';
-        bookshelf.className = `bookshelf view-${this.currentView} size-${coverSize}`;
+        // is-custom-order: カスタム順のときだけ本をドラッグ並べ替えできる (grab カーソルで示す)
+        const customCls = (this.sortOrder === 'custom') ? ' is-custom-order' : '';
+        bookshelf.className = `bookshelf view-${this.currentView} size-${coverSize}${customCls}`;
         
         this.renderStandardView(bookshelf);
         
@@ -1367,8 +1369,11 @@ class VirtualBookshelf {
         bookElement.className = 'book-item';
         bookElement.dataset.asin = book.asin;
         
-        // Add drag-and-drop attributes
-        bookElement.draggable = true;
+        // 手動ドラッグ並べ替えは「カスタム順」のときだけ許可する。
+        // 項目ソート中 (購入日/タイトル/著者) は、ドラッグの起点が保存済みの手動順 (bookOrder) で
+        // 画面の表示順と一致しないため、動かすと見た目と反する順番になる。カスタム順のときは
+        // 表示順 = bookOrder なので、見たまま並べ替えられる。
+        bookElement.draggable = (this.sortOrder === 'custom');
         bookElement.setAttribute('data-book-asin', book.asin);
         
         const userNote = this.userData.notes[book.asin];
