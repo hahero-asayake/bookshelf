@@ -8,6 +8,17 @@
 - 開発サーバー: `python -m http.server 8000` をリポジトリ直下で起動 → `http://localhost:8000/index.html`
 - ブラウザ検証: Playwright MCP を使用。スクリーンショットの保存先は許可されたルート配下の絶対パスを指定 (相対パスは失敗する)
 
+## `_local/` — 機密ローカルファイル (夜間運転用)
+
+`bookshelf/_local/` は **gitignore 済み**。ユーザが置いた以下を検証にのみ使う:
+
+| ファイル | 内容 | 用途 |
+|---|---|---|
+| `_local/cloudflare-token.txt` | Cloudflare API トークン | T01 の wrangler デプロイ (`CLOUDFLARE_API_TOKEN` 環境変数として渡す) |
+| `_local/bookshelf_sync.json` | ユーザ実セッションの localStorage `bookshelf_sync` 値 | T01/T09 の実トークン E2E 検証 (Playwright の localStorage に注入) |
+
+**規約**: 中身を echo・console.log・コミット・チャット出力に**絶対に載せない** (存在確認は `Test-Path` / `ls` のみ)。token を含むレスポンスもログに残さない。作業ラウンド終了後にユーザがトークンを失効・削除する前提で扱う。
+
 ## 鉄則 (違反 = タスク失敗)
 
 1. **検証 (受け入れ基準) を全て満たすまで push しない**。満たしたら commit → push → README のチェック更新まで一気に行う

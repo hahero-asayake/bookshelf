@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>PWAアイコン候補 — 本棚から本を取る子供</title>
+<style>
+  body{margin:0;background:#f4f5f7;font-family:"Segoe UI","Hiragino Kaku Gothic ProN",sans-serif;color:#1c1f24;padding:26px}
+  h1{font-size:1.15rem;margin:0 0 2px}
+  p.lead{color:#4b5460;font-size:.85rem;margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;max-width:1040px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:18px}
+  .card h2{font-size:.95rem;margin:0 0 2px}
+  .card .desc{color:#6b7280;font-size:.76rem;margin:0 0 12px}
+  .row{display:flex;align-items:flex-end;gap:18px}
+  .sq{border-radius:22%;overflow:hidden;display:block}
+  .circle{border-radius:50%;overflow:hidden;display:block}
+  .lbl{font-size:.65rem;color:#8a90a0;text-align:center;margin-top:4px}
+  svg{display:block}
+</style>
+</head>
+<body>
+<h1>PWAアイコン候補 — 「本棚から本を取る子供」(Kindle風シルエット)</h1>
+<p class="lead">各案: 大 (角丸=ホーム画面) ／ 小 48px ／ 円形マスク (Android maskable)。白シルエット + accentグラデ地。</p>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c89ff"/><stop offset="1" stop-color="#4453e8"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<!-- ======== 案A: 子供と本棚 (横構図・物語性) ======== -->
+<svg id="iconA" viewBox="0 0 512 512" style="position:absolute;width:0;height:0">
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="#fff">
+    <!-- 棚板2枚 -->
+    <rect x="288" y="176" width="160" height="13" rx="6"/>
+    <rect x="288" y="300" width="160" height="13" rx="6"/>
+    <!-- 上段の本 (1冊抜けた隙間) -->
+    <rect x="300" y="110" width="22" height="66" rx="5"/>
+    <rect x="328" y="104" width="22" height="72" rx="5"/>
+    <!-- 隙間 (取られた場所) -->
+    <rect x="392" y="112" width="22" height="64" rx="5"/>
+    <rect x="420" y="106" width="22" height="70" rx="5"/>
+    <!-- 下段の本 -->
+    <rect x="300" y="236" width="22" height="64" rx="5"/>
+    <rect x="328" y="230" width="22" height="70" rx="5"/>
+    <rect x="356" y="238" width="22" height="62" rx="5"/>
+    <rect x="384" y="232" width="22" height="68" rx="5"/>
+    <rect x="412" y="236" width="22" height="64" rx="5"/>
+  </g>
+  <!-- 取っている本 (傾き) -->
+  <rect x="354" y="96" width="24" height="74" rx="5" fill="#fff" transform="rotate(-24 366 133)"/>
+  <g stroke="#fff" stroke-width="24" stroke-linecap="round" fill="none">
+    <!-- 伸ばす腕 -->
+    <path d="M 196 232 L 332 156"/>
+    <!-- 反対の腕 -->
+    <path d="M 168 244 L 148 318"/>
+    <!-- 脚 -->
+    <path d="M 168 350 L 158 428"/>
+    <path d="M 196 350 L 208 428"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="172" cy="172" r="34"/>
+    <rect x="146" y="208" width="58" height="150" rx="26"/>
+  </g>
+</svg>
+
+<!-- ======== 案B: 背伸びの子供 (背面・人物大きめ) ======== -->
+<svg id="iconB" viewBox="0 0 512 512" style="position:absolute;width:0;height:0">
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="#fff">
+    <!-- 上部の棚板 -->
+    <rect x="92" y="148" width="328" height="13" rx="6"/>
+    <!-- 棚上の本 (中央に隙間) -->
+    <rect x="112" y="84" width="24" height="64" rx="5"/>
+    <rect x="142" y="78" width="24" height="70" rx="5"/>
+    <rect x="172" y="86" width="24" height="62" rx="5"/>
+    <rect x="296" y="80" width="24" height="68" rx="5"/>
+    <rect x="326" y="86" width="24" height="62" rx="5"/>
+    <rect x="356" y="78" width="24" height="70" rx="5"/>
+  </g>
+  <!-- 引き出されかけの本 (隙間から傾いて落ちかけ) -->
+  <rect x="232" y="96" width="26" height="76" rx="5" fill="#fff" transform="rotate(16 245 134)"/>
+  <g stroke="#fff" stroke-width="26" stroke-linecap="round" fill="none">
+    <!-- 両腕を上へ -->
+    <path d="M 226 296 L 232 196"/>
+    <path d="M 290 296 L 262 200"/>
+    <!-- 脚 (つま先立ち気味に内側へ) -->
+    <path d="M 238 408 L 234 460"/>
+    <path d="M 276 408 L 280 460"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="257" cy="262" r="38"/>
+    <rect x="216" y="300" width="82" height="120" rx="32"/>
+  </g>
+</svg>
+
+<!-- ======== 案C: クローズアップ (棚と引き出される本・最も抽象) ======== -->
+<svg id="iconC" viewBox="0 0 512 512" style="position:absolute;width:0;height:0">
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="#fff">
+    <!-- 棚板2枚 -->
+    <rect x="64" y="186" width="384" height="14" rx="7"/>
+    <rect x="64" y="350" width="384" height="14" rx="7"/>
+    <!-- 上段: ぎっしり -->
+    <rect x="84"  y="100" width="28" height="86" rx="6"/>
+    <rect x="118" y="92"  width="28" height="94" rx="6"/>
+    <rect x="152" y="102" width="28" height="84" rx="6"/>
+    <rect x="186" y="96"  width="28" height="90" rx="6"/>
+    <rect x="220" y="100" width="28" height="86" rx="6"/>
+    <rect x="254" y="92"  width="28" height="94" rx="6"/>
+    <rect x="288" y="102" width="28" height="84" rx="6"/>
+    <rect x="322" y="96"  width="28" height="90" rx="6"/>
+    <rect x="356" y="100" width="28" height="86" rx="6"/>
+    <rect x="390" y="94"  width="28" height="92" rx="6"/>
+    <!-- 下段: 1冊が引き出されている (隙間 x=254) -->
+    <rect x="84"  y="262" width="28" height="88" rx="6"/>
+    <rect x="118" y="256" width="28" height="94" rx="6"/>
+    <rect x="152" y="264" width="28" height="86" rx="6"/>
+    <rect x="186" y="258" width="28" height="92" rx="6"/>
+    <rect x="220" y="262" width="28" height="88" rx="6"/>
+    <rect x="288" y="258" width="28" height="92" rx="6"/>
+    <rect x="322" y="264" width="28" height="86" rx="6"/>
+    <rect x="356" y="258" width="28" height="92" rx="6"/>
+    <rect x="390" y="262" width="28" height="88" rx="6"/>
+  </g>
+  <!-- 引き出される本 (下にスライド+傾き) -->
+  <rect x="252" y="300" width="30" height="96" rx="6" fill="#fff" transform="rotate(10 267 348)"/>
+  <!-- 下から伸びる腕と手 -->
+  <path d="M 196 478 L 252 408" stroke="#fff" stroke-width="26" stroke-linecap="round" fill="none"/>
+  <circle cx="256" cy="402" r="19" fill="#fff"/>
+</svg>
+
+<!-- ======== 案D: 取った本を掲げる子供 (正面・喜び) ======== -->
+<svg id="iconD" viewBox="0 0 512 512" style="position:absolute;width:0;height:0">
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- 掲げた本 -->
+  <rect x="178" y="92" width="156" height="48" rx="10" fill="#fff" transform="rotate(-6 256 116)"/>
+  <g stroke="#fff" stroke-width="25" stroke-linecap="round" fill="none">
+    <!-- 両腕を頭上へ -->
+    <path d="M 214 272 L 196 152"/>
+    <path d="M 298 272 L 316 148"/>
+    <!-- 脚 (少し開く) -->
+    <path d="M 234 396 L 222 462"/>
+    <path d="M 278 396 L 290 462"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="256" cy="240" r="36"/>
+    <rect x="216" y="276" width="80" height="128" rx="30"/>
+  </g>
+</svg>
+
+<div class="grid">
+  <div class="card">
+    <h2>案A: 子供と本棚</h2>
+    <p class="desc">横構図。棚から1冊を抜き取る瞬間。物語性が最も強い</p>
+    <div class="row" id="rowA"></div>
+  </div>
+  <div class="card">
+    <h2>案B: 背伸びの子供</h2>
+    <p class="desc">上の棚に両手を伸ばす後ろ姿。人物が大きく小サイズでも読める</p>
+    <div class="row" id="rowB"></div>
+  </div>
+  <div class="card">
+    <h2>案C: 引き出される本</h2>
+    <p class="desc">棚のクローズアップ + 下から伸びる手。最も抽象的・ロゴ的</p>
+    <div class="row" id="rowC"></div>
+  </div>
+  <div class="card">
+    <h2>案D: 本を掲げる子供</h2>
+    <p class="desc">取った本を頭上に。動きと喜び。Kindle (読む人) との対比が明快</p>
+    <div class="row" id="rowD"></div>
+  </div>
+</div>
+
+<script>
+  // 各案を 大/48px/円形 で複製表示
+  for (const k of ['A','B','C','D']) {
+    const src = document.getElementById('icon'+k);
+    const row = document.getElementById('row'+k);
+    const make = (size, cls, label) => {
+      const wrap = document.createElement('div');
+      const box = document.createElement('span');
+      box.className = cls; box.style.width = size+'px'; box.style.height = size+'px';
+      const svg = src.cloneNode(true);
+      svg.removeAttribute('id'); svg.removeAttribute('style');
+      svg.setAttribute('width', size); svg.setAttribute('height', size);
+      box.appendChild(svg); wrap.appendChild(box);
+      const l = document.createElement('div'); l.className='lbl'; l.textContent=label; wrap.appendChild(l);
+      return wrap;
+    };
+    row.appendChild(make(200,'sq','ホーム画面'));
+    row.appendChild(make(48,'sq','48px'));
+    row.appendChild(make(120,'circle','円形マスク'));
+  }
+</script>
+</body>
+</html>

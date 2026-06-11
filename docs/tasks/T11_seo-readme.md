@@ -8,14 +8,17 @@
 
 ## 実装手順
 
-### Step 1: meta / OGP (`index.html` head)
+### Step 1: meta / OGP / 名称 (`index.html` head ほか)
 
-1. `<title>`: `📚 bookshelf` → `bookshelf — 蔵書を眺めて楽しむ本棚アプリ` (📚 は favicon が新調されたため不要。タブ視認性は T02 のアイコンが担う)
-2. `<meta name="description">`: 1〜2 文 (Kindle 蔵書を本棚として整理・公開できる、を平易に)
-3. OGP + Twitter Card:
-   - `og:title` / `og:description` / `og:type=website` / `og:url` (公開 URL) / `twitter:card=summary_large_image`
-   - **`og:image`**: `icons/source.svg` (T02) を元に **1200×630 の OGP 画像**を生成 (`mockups/og-export.html` + Playwright element screenshot、T02 と同手法)。構図: 左にアイコン、右に「bookshelf」ロゴテキスト + 一言。`assets/og-image.png` として保存し絶対 URL で指定
-4. 公開モード時は JS で `document.title` を「<本棚名> — hahero の本棚」等に動的更新 (T10 の表示名規約に従い**本名禁止**)
+正式名称 **AsayakeBookshelf** (ADR-029) をここで全面反映する:
+
+1. `<title>`: `📚 bookshelf` → `AsayakeBookshelf — 蔵書を眺めて楽しむ本棚アプリ` (📚 は favicon が新調されたため不要)
+2. **アプリ内 brand 表示** (サイドバー最上部の「bookshelf」) を `AsayakeBookshelf` に変更 (モバイル幅での収まりを確認。窮屈なら brand のみ `Asayake Bookshelf` の 2 行 or ロゴ調整)
+3. `<meta name="description">`: 1〜2 文 (Kindle 蔵書を本棚として整理・公開できる、を平易に)
+4. OGP + Twitter Card:
+   - `og:title` (AsayakeBookshelf) / `og:description` / `og:type=website` / `og:url` / `twitter:card=summary_large_image`
+   - **`og:image`**: `icons/source.svg` (T02) を元に **1200×630 の OGP 画像**を生成 (`mockups/og-export.html` + Playwright element screenshot、T02 と同手法)。構図: 朝焼けパレット地に左アイコン + 右に「AsayakeBookshelf」ロゴテキスト + 一言。`assets/og-image.png` として保存し絶対 URL で指定
+5. 公開モード時は JS で `document.title` を「<表示名> の本棚 — AsayakeBookshelf」等に動的更新 (T10 の表示名規約に従い**本名禁止**)
 5. 編集モード (個人ツール) を検索結果に出したくないか実装時にユーザへ 1 問確認 → 出したくない場合も、同一 URL のため noindex は付けず **公開ページ優先の説明文**にする (これが既定)
 
 ### Step 2: README.md 刷新

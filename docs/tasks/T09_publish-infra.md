@@ -16,12 +16,15 @@
 - 公開モードは `?u=` で指定された repo の **raw.githubusercontent.com** から fetch (CORS 対応・Pages 設定不要)
 - 旧設計の「public/ にアプリシェルもコピー」は**廃止** (アプリは共通配信)。エクスポート対象は**データのみ**
 
-## 事前手作業 (ユーザ = hahero 自身の公開用。各エンドユーザも同じ手順を踏む)
+## 事前手作業 (ユーザ) — ✅ 完了 (2026-06-12)
 
-1. GitHub で public repo **`bookshelf-public`** を作成 (README のみで可、branch: main)
-2. GitHub App `bookshelf-sync` のインストール対象に bookshelf-public を追加 (Settings → Applications → Configure → Repository access)
+hahero の `bookshelf-public` repo 作成 + App アクセス追加済み。
+→ 同じ 2 手順を**エンドユーザにも同じ作業をしてもらう**ため、Step 2 の UI に導線・案内文を組み込むこと。
 
-→ この 2 手順は**エンドユーザにも同じ作業をしてもらう**ため、Step 2 の UI に導線・案内文を組み込むこと。
+## 夜間運転時の制約 (2026-06-12 ユーザ指示)
+
+- **実データの公開 push は朝のユーザ確認後** (承認済みスコープ: isPublic =「漫画」のみ。実行時に一致しなければ停止)
+- 夜間は実装 + **ドライランまで**: `export({ dryRun: true })` を実装し、push せずに「書き込む/削除するエントリの一覧」を返して報告に残す。private 情報が混ざっていないことの grep 検証はドライラン出力に対して行う
 
 ## 実装手順
 

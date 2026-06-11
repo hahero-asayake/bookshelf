@@ -50,3 +50,7 @@ node_modules/
 
 # Local-only trash (削除予定。git 履歴から復元可能なため commit 不要)
 _trash/
+
+# 夜間運転用の機密ローカルファイル (絶対にcommitしない)
+_local/
+
