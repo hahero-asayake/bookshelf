@@ -15,14 +15,12 @@
 - **フォルダ**: `drive.file` はアプリが作ったファイルしか見えないため、初回接続時にアプリが Drive ルートへ **`bookshelf-data` フォルダを作成**し、その fileId を `bookshelf_sync.googleDrive.rootFolderId` に保存。ユーザによる任意フォルダ選択はしない
 - **バッチなし**: Drive に Trees API 相当はない。`syncBatch` はアダプタがバッチ未対応の場合の**逐次書きフォールバック** (storage.js 実装済み) に乗る
 
-## 事前手作業 (ユーザ) — runbook
+## 事前手作業 (ユーザ) — ✅ 完了 (2026-06-12)
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → 新規プロジェクト `bookshelf-sync`
-2. 「API とサービス」→ ライブラリ → **Google Drive API を有効化**
-3. OAuth 同意画面: External / アプリ名 `bookshelf` / スコープに `drive.file` を追加 / **「アプリを公開」(Production) にする** (drive.file のみなら審査不要。Testing のままだと 7 日でトークン失効)
-4. 認証情報 → OAuth クライアント ID → **ウェブアプリケーション**:
-   - 承認済み JavaScript 生成元: `http://localhost:8000` と `https://hahero-asayake.github.io`
-5. **Client ID** を実装 AI に渡す
+GCP プロジェクト作成・Drive API 有効化・同意画面 Production 化・OAuth クライアント作成済み。
+
+- **Client ID**: `71180460551-i3tltloc3sl2oej2avi748ns2qmm6cvd.apps.googleusercontent.com` (公開情報。コード定数に埋め込む)
+- このクライアントは**全ユーザ共用** (ホスト型マルチユーザ、ADR-028)。各ユーザは自分の Google アカウントで認可し、自分の Drive にだけ書く。JavaScript 生成元はホストされたアプリの URL + localhost のみで足りる
 
 ## 実装手順
 

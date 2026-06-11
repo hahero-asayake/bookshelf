@@ -24,9 +24,9 @@
 
 1. ヒーロー: 1 行説明 + スクリーンショット (PC ホーム / 本棚ビュー / モバイル。Playwright で撮影し `assets/` に保存)
 2. 特徴 (箇条書き 6〜8 個: 本棚階層 / メモ・評価 / ⌘K / ダッシュボード / PWA / 同期 4 方式 / プラグイン / 公開)
-3. 使い始める: GitHub Pages 版 URL / ローカル起動 (`python -m http.server 8000`)
-4. データと同期: 同期フォルダ構造の概要 + vault 設計書 06 へのリンク
-5. フォークする人へ: GitHub App + Cloudflare Worker + (T07/T08 後) Drive/Dropbox アプリ登録が必要 → CLAUDE.md の該当 runbook へのリンク
+3. **使い始める (一般ユーザ向け・最重要)**: ホスト版 URL を開く → データ置き場を用意して接続するだけ (ADR-028 のホスト型前提)。3 方式の準備手順を簡潔に: GitHub (repo 作成 + アプリ認可) / Google Drive (接続するだけ) / Dropbox (接続するだけ)。**fork も登録作業も不要**であることを明記
+4. データと同期: 同期フォルダ構造の概要 + 「データはあなたのストレージにだけ保存される (アプリ運営者には渡らない)」というプライバシー説明
+5. 自己ホストしたい人へ (補助): fork + GitHub App / Cloudflare Worker / Drive・Dropbox アプリの自前登録が必要 → CLAUDE.md の runbook へのリンク (短く)
 6. プラグイン開発: 05_プラグイン仕様書相当の要点 + `plugins-sample/` へのリンク
 7. クレジット: fork 元 (karaage0703 氏) への謝辞を**必ず残す** / ライセンス表記 (既存 LICENSE を確認して整合)
 8. README は日本語。英語版は作らない (07 の i18n 判断に従う)

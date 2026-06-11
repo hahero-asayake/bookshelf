@@ -2,10 +2,29 @@
 
 残バックログを完遂するためのウォーターフォール計画。**実装 AI はまず [COMMON.md](COMMON.md) を読み、次に担当タスクの指示書だけを読んで作業する**こと。
 
+## 大前提: 配布モデル (2026-06-12 ユーザ明確化, ADR-028)
+
+**ホスト型マルチユーザ**。アプリは `hahero-asayake.github.io/bookshelf` の 1 箇所で配信し、**不特定のユーザがそのまま使う**。ユーザは fork せず、**自分のデータ置き場 (GitHub repo / Google Drive / Dropbox) だけを用意**して接続する。
+
+- GitHub App・Google OAuth クライアント・Dropbox アプリ・Cloudflare Worker は **hahero が登録した 1 セットを全ユーザが共用** (いずれも public client 設計で、ユーザの認可は各自のアカウントで行われる)
+- したがって認証情報のオリジン/リダイレクト設定は「ホストされたアプリの URL + localhost (開発)」のみでよい
+- 公開機能 (T09) は「各ユーザが自分の公開 repo を持つ」前提で設計する
+
+### 共用クレデンシャル (公開情報、コード埋め込み可)
+
+| 種別 | 値 |
+|---|---|
+| GitHub App | `bookshelf-sync` (Client ID はコード内 `GITHUB_OAUTH_CLIENT_ID` 設定済み) |
+| Google OAuth Client ID | `71180460551-i3tltloc3sl2oej2avi748ns2qmm6cvd.apps.googleusercontent.com` |
+| Dropbox App | 名前 `asayake-bookshelf` / App key `jv37cvpdbjfd55y` |
+
+(GitHub client secret は Cloudflare Worker の Secret にのみ存在。コード・チャットに書かない)
+
 ## 確定済みの設計判断 (2026-06-12 ヒアリング)
 
 | 論点 | 決定 |
 |---|---|
+| 配布モデル | **ホスト型マルチユーザ + BYO ストレージ** (上記。fork は自己ホスト派向けの補助選択肢) |
 | GitHub トークン期限 (8h で失効) | **refresh_token による自動更新を実装** (Worker が client_secret を注入) |
 | PWA アイコン | **AI が複数案生成 → ユーザ選択**。方向性: 「Kindle アイコン風 (フラットなシルエット人物 + グラデ地)。ただし読む子供ではなく**本棚から本を取る子供**」 |
 | 公開機能の配信構成 | **公開専用 repo `bookshelf-public`** に public スナップショットを push。private データは構造的に公開されない |

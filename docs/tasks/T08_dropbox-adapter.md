@@ -16,12 +16,13 @@
 - access token は約 4 時間 → `tokenExpiresAt` を保存し、期限前 / 401 時に refresh (T01 と同じ「期限前更新 + 401 で 1 回リトライ + 失敗で再接続誘導 + 同時実行ガード」パターン)
 - バッチなし → syncBatch は逐次フォールバック
 
-## 事前手作業 (ユーザ) — runbook
+## 事前手作業 (ユーザ) — ✅ 完了 (2026-06-12)
 
-1. [Dropbox App Console](https://www.dropbox.com/developers/apps) → Create app → **Scoped access** → **App folder** → 名前 `bookshelf-sync` (重複時は別名)
-2. Settings タブ → Redirect URIs に追加: `http://localhost:8000/index.html` と `https://hahero-asayake.github.io/bookshelf/index.html`
-3. Permissions タブ → `files.content.read` と `files.content.write` にチェック → Submit
-4. **App key** を実装 AI に渡す (App secret は使わない)
+Dropbox App 作成・Redirect URI・Permissions 設定済み。
+
+- **App 名**: `asayake-bookshelf` / **App key**: `jv37cvpdbjfd55y` (公開情報。コード定数に埋め込む。App secret は使わない)
+- このアプリは**全ユーザ共用** (ADR-028)。各ユーザの認可で各自の Dropbox の `アプリ/asayake-bookshelf/` に書く
+- ⚠️ **Development ステータスの利用者数上限**: 多数のユーザが使う段階になったら Dropbox の **Production 申請**が必要 (07_残検討事項に TODO 記録済み)。個人利用 + 少数のうちは不要
 
 ## 実装手順
 
