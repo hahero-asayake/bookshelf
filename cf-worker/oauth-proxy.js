@@ -8,13 +8,21 @@
 //   POST /login/device/code           → https://github.com/login/device/code
 //   POST /login/oauth/access_token    → https://github.com/login/oauth/access_token
 //
+// refresh_token グラント (トークン自動更新):
+//   GitHub の仕様で refresh には client_secret が必須。secret はこの Worker の
+//   環境変数 (Secret) `GITHUB_CLIENT_SECRET` にのみ置き、
+//   body に `grant_type=refresh_token` が含まれるリクエストに限って注入する。
+//   それ以外のリクエスト (device code / device flow polling) には付けない。
+//
 // セキュリティ方針:
 //   - 通過するリクエスト/レスポンスを保存しない (Worker のログにも残さない)
-//   - body は素通し、Origin / Referer ヘッダは削ぐ
+//   - body は素通し (refresh 時の client_secret 追加のみ)、Origin / Referer ヘッダは削ぐ
 //   - 上記 2 パス以外は 404 を返す (任意 URL を叩く踏み台にしない)
 //
 // デプロイ:
-//   Cloudflare Dashboard → Workers & Pages → Create Worker → このファイルを貼付 → Deploy
+//   cf-worker/ ディレクトリで `npx wrangler deploy` (wrangler.toml 参照)。
+//   **デプロイ前に Secret `GITHUB_CLIENT_SECRET` の設定が必要**
+//   (Dashboard → Workers → Settings → Variables and Secrets。wrangler デプロイでも保持される)。
 //   発行された <name>.<account>.workers.dev を bookshelf 側の
 //   GITHUB_OAUTH_PROXY_BASE に設定する。
 // =======================================================================
@@ -32,7 +40,7 @@ const CORS_HEADERS = {
 };
 
 export default {
-    async fetch(request) {
+    async fetch(request, env) {
         const url = new URL(request.url);
 
         if (request.method === 'OPTIONS') {
@@ -57,7 +65,23 @@ export default {
         if (accept) fwdHeaders.set('Accept', accept);
         fwdHeaders.set('User-Agent', 'bookshelf-oauth-proxy/1.0');
 
-        const body = await request.text();
+        let body = await request.text();
+
+        // refresh_token グラントのみ client_secret を注入
+        // (クライアントは form-urlencoded で送る前提。同じ形式で追加する)
+        if (url.pathname === '/login/oauth/access_token') {
+            const params = new URLSearchParams(body);
+            if (params.get('grant_type') === 'refresh_token') {
+                if (!env || !env.GITHUB_CLIENT_SECRET) {
+                    return new Response(JSON.stringify({ error: 'proxy_secret_not_configured' }), {
+                        status: 500,
+                        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+                    });
+                }
+                params.set('client_secret', env.GITHUB_CLIENT_SECRET);
+                body = params.toString();
+            }
+        }
 
         let upstream;
         try {

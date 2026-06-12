@@ -55,6 +55,14 @@ class GitHubAdapter extends StorageAdapter {
         return !!this.token && !!this.owner && !!this.repo;
     }
 
+    /**
+     * token を差し替える (refresh 後に呼ぶ)。
+     * _headers() が毎リクエスト this.token を参照するため、差し替え後のリクエストから有効。
+     */
+    setToken(token) {
+        this.token = token;
+    }
+
     // ===== 接続テスト (UI からの「接続確認」用) =====
 
     async testConnection() {

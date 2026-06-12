@@ -42,7 +42,7 @@
 
 | # | タスク | 状態 | 依存 | ユーザ手作業 |
 |---|---|---|---|---|
-| [T01](T01_token-refresh.md) | GitHub トークン自動更新 | [ ] 未着手 | — | App secret 生成 + Worker 設定 |
+| [T01](T01_token-refresh.md) | GitHub トークン自動更新 | [x] 完了 (2026-06-12) | — | App secret 生成 + Worker 設定 |
 | [T02](T02_pwa-icon.md) | PWA アイコン刷新 | [ ] 未着手 | — | 案の選択 |
 | [T03](T03_toolbar-views.md) | ツールバー 4 動詞化 + 画像のみビュー | [ ] 未着手 | — | — |
 | [T04](T04_longmemo-frontmatter.md) | 長文メモ frontmatter 非表示 | [ ] 未着手 | — | — |

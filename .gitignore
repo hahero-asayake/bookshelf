@@ -54,3 +54,6 @@ _trash/
 # 夜間運転用の機密ローカルファイル (絶対にcommitしない)
 _local/
 
+# wrangler の一時ファイル
+.wrangler/
+

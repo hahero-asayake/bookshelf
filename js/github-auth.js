@@ -98,7 +98,9 @@ class GitHubDeviceAuth {
      * @param {object} [options]
      * @param {() => boolean} [options.shouldCancel] true を返すとキャンセル (Error throw)
      * @param {(state: 'waiting' | 'slow') => void} [options.onTick] polling ごとに呼ばれる
-     * @returns {Promise<{access_token, token_type, scope}>}
+     * @returns {Promise<{access_token, token_type, scope, refresh_token?, expires_in?, refresh_token_expires_in?}>}
+     *   GitHub App で「Expire user authorization tokens」が有効な場合、
+     *   refresh_token (約 6 ヶ月有効) と expires_in (8h) が含まれる。
      */
     static async pollAccessToken(deviceCodeResult, options = {}) {
         const { device_code, expires_in, interval } = deviceCodeResult;
@@ -157,6 +159,48 @@ class GitHubDeviceAuth {
             }
         }
         throw new Error('AUTH_EXPIRED');
+    }
+
+    /**
+     * refresh_token で access_token を更新する。
+     * GitHub の仕様で client_secret が必須のため、proxy (Cloudflare Worker) が
+     * grant_type=refresh_token のリクエストに限り secret を注入する (ADR-021)。
+     * 注意: refresh_token はローテーションする (毎回新しい ghr_ が返る) ため、
+     * 戻り値の refreshToken を必ず保存し直すこと。
+     * @param {string} refreshToken
+     * @returns {Promise<{token, refreshToken, tokenExpiresAt, refreshTokenExpiresAt}>}
+     *   ExpiresAt は絶対時刻 (ms)。失敗時は Error('AUTH_REFRESH_FAILED') を throw。
+     */
+    static async refreshAccessToken(refreshToken) {
+        if (!refreshToken) throw new Error('AUTH_REFRESH_FAILED');
+        if (!GitHubDeviceAuth.isProxyConfigured()) throw new Error('AUTH_REFRESH_FAILED');
+        const body = new URLSearchParams({
+            client_id: GITHUB_OAUTH_CLIENT_ID,
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken
+        });
+        let data;
+        try {
+            const res = await fetch(oauthEndpoint('/login/oauth/access_token'), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' },
+                body
+            });
+            // GitHub はエラーを HTTP 200 + { error } で返すことがある → error フィールドで判定
+            data = await res.json();
+        } catch (e) {
+            throw new Error('AUTH_REFRESH_FAILED');
+        }
+        if (!data || data.error || !data.access_token) {
+            throw new Error('AUTH_REFRESH_FAILED');
+        }
+        const now = Date.now();
+        return {
+            token: data.access_token,
+            refreshToken: data.refresh_token || refreshToken,
+            tokenExpiresAt: data.expires_in ? now + data.expires_in * 1000 : null,
+            refreshTokenExpiresAt: data.refresh_token_expires_in ? now + data.refresh_token_expires_in * 1000 : null
+        };
     }
 
     /**

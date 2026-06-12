@@ -7,10 +7,15 @@
 // 設定形式:
 //   {
 //     method: 'local' | 'github' | 'google-drive' | 'dropbox',
-//     github: { owner, repo, branch, basePath, token },
+//     github: { owner, repo, branch, basePath, token, login,
+//               refreshToken,           // ghr_… (約6ヶ月有効・refresh ごとにローテーション)
+//               tokenExpiresAt,         // access_token の失効時刻 (絶対時刻 ms)
+//               refreshTokenExpiresAt   // refresh_token の失効時刻 (絶対時刻 ms)
+//             },
 //     googleDrive: { ... },
 //     dropbox: { ... }
 //   }
+//   refresh 系フィールドは旧接続には無い (後方互換: 無ければ refresh せず 401 時に再接続誘導)
 //
 // 利用方法:
 //   const config = SyncConfigManager.load();

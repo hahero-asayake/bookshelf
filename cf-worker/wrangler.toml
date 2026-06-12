@@ -1,0 +1,10 @@
+# bookshelf OAuth Proxy のデプロイ設定
+# デプロイ: このディレクトリで `npx wrangler deploy` (CLOUDFLARE_API_TOKEN 環境変数が必要)
+# 注意: Secret (GITHUB_CLIENT_SECRET) は Dashboard で管理する。
+#       ここに [vars] を書くと Dashboard 設定が上書きされるため書かないこと。
+name = "bookshelf-oauth-proxy"
+main = "oauth-proxy.js"
+# Cloudflare は UTC 基準。未来日付は拒否される (10021)
+compatibility_date = "2026-06-11"
+# バージョンごとの preview URL は出さない (旧ダッシュボード設定に合わせる)
+preview_urls = false

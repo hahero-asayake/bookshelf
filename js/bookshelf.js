@@ -2369,7 +2369,8 @@ class VirtualBookshelf {
         this._pendingSync = false;
         this._syncInProgress = true;
         try {
-            await this.syncToObsidianFolder();
+            await this._ensureFreshGitHubToken();
+            await this._syncWithAuthRetry();
             // 保存成功 → 同期エラー解消
             if (this._syncError) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
         } catch (e) {
@@ -2377,7 +2378,9 @@ class VirtualBookshelf {
             // 保存失敗 (トークン失効・ハンドル喪失等) を上部バーに出す
             this._syncError = true;
             this._syncErrorMsg = (this.syncMethod === 'github')
-                ? 'GitHub への保存に失敗しました。再接続が必要かもしれません。'
+                ? ((typeof GitHubAuthError !== 'undefined' && e instanceof GitHubAuthError)
+                    ? 'GitHub の認証が切れました。設定から再接続してください。'
+                    : 'GitHub への保存に失敗しました。再接続が必要かもしれません。')
                 : '保存先への書き込みに失敗しました。同期設定を確認してください。';
             this._updateStatusBar();
         } finally {
@@ -2424,12 +2427,79 @@ class VirtualBookshelf {
         }
     }
 
+    /**
+     * GitHub の access_token が失効間近 (10 分前) なら refresh して差し替える。
+     * - 同時実行ガード: 進行中の refresh があれば同じ Promise を待つ (二重 refresh 防止。
+     *   refresh_token はローテーションするため、二重実行は片方を失効させる)
+     * - 後方互換: 旧接続 (refreshToken なし) は refresh せず true を返し、
+     *   401 時の再接続誘導に委ねる
+     * @param {object} [options]
+     * @param {boolean} [options.force] 期限に関わらず refresh する (401 フォールバック用)
+     * @returns {Promise<boolean>} false = refresh を試みて失敗 (再接続が必要)
+     */
+    async _ensureFreshGitHubToken({ force = false } = {}) {
+        if (this.syncMethod !== 'github') return true;
+        if (this._tokenRefreshPromise) return this._tokenRefreshPromise;
+        const gh = (SyncConfigManager.load().github) || {};
+        if (!gh.refreshToken) return !force; // 旧接続: refresh 不可。force 時は失敗扱い
+        const needsRefresh = force
+            || (gh.tokenExpiresAt && Date.now() > gh.tokenExpiresAt - 10 * 60 * 1000);
+        if (!needsRefresh) return true;
+        this._tokenRefreshPromise = (async () => {
+            try {
+                const r = await GitHubDeviceAuth.refreshAccessToken(gh.refreshToken);
+                const merged = SyncConfigManager.load();
+                merged.github = {
+                    ...(merged.github || {}),
+                    token: r.token,
+                    refreshToken: r.refreshToken,
+                    tokenExpiresAt: r.tokenExpiresAt,
+                    refreshTokenExpiresAt: r.refreshTokenExpiresAt
+                };
+                SyncConfigManager.save(merged);
+                this.syncConfig = merged;
+                const adapter = this.storage && this.storage.adapter;
+                if (adapter instanceof GitHubAdapter) adapter.setToken(r.token);
+                console.info('GitHub token refreshed');
+                return true;
+            } catch (e) {
+                console.error('GitHub token refresh failed:', e.message);
+                this._syncError = true;
+                this._syncErrorMsg = 'GitHub の認証が切れました。設定から再接続してください。';
+                this._updateStatusBar();
+                return false;
+            } finally {
+                this._tokenRefreshPromise = null;
+            }
+        })();
+        return this._tokenRefreshPromise;
+    }
+
+    /**
+     * 同期を実行し、401 (トークン失効) なら refresh を 1 回だけ試してリトライする。
+     */
+    async _syncWithAuthRetry() {
+        try {
+            await this.syncToObsidianFolder();
+        } catch (e) {
+            if (this.syncMethod === 'github' && e instanceof GitHubAuthError) {
+                const refreshed = await this._ensureFreshGitHubToken({ force: true });
+                if (refreshed) {
+                    await this.syncToObsidianFolder(); // リトライは 1 回だけ (無限リトライ禁止)
+                    return;
+                }
+            }
+            throw e;
+        }
+    }
+
     async initGitHubSync() {
         const adapter = this.storage.adapter;
         if (!(adapter instanceof GitHubAdapter)) {
             console.warn('initGitHubSync: storage adapter is not GitHubAdapter');
             return;
         }
+        await this._ensureFreshGitHubToken();
         const label = `${adapter.owner}/${adapter.repo}@${adapter.branch}`;
         this.updateSyncStatus('loading', label);
         try {
@@ -2701,6 +2771,7 @@ class VirtualBookshelf {
         const branchSel = document.getElementById('github-branch-select');
         const installPrompt = document.getElementById('github-install-prompt');
         if (!sel) return;
+        await this._ensureFreshGitHubToken();
         const token = (SyncConfigManager.load().github || {}).token;
         if (!token) return;
         sel.innerHTML = '<option value="">(取得中...)</option>';
@@ -2891,11 +2962,16 @@ class VirtualBookshelf {
                 // ユーザ取得失敗は致命的ではないので続行
             }
 
+            const now = Date.now();
             const merged = SyncConfigManager.load();
             merged.method = 'github';
             merged.github = {
                 ...(merged.github || {}),
                 token: token.access_token,
+                // 「Expire user authorization tokens」有効時のみ返る (8h 失効 + 自動 refresh 用)
+                refreshToken: token.refresh_token || '',
+                tokenExpiresAt: token.expires_in ? now + token.expires_in * 1000 : null,
+                refreshTokenExpiresAt: token.refresh_token_expires_in ? now + token.refresh_token_expires_in * 1000 : null,
                 login: user ? user.login : null
             };
             SyncConfigManager.save(merged);
@@ -2949,7 +3025,14 @@ class VirtualBookshelf {
         const merged = SyncConfigManager.load();
         merged.method = 'local';
         if (merged.github) {
-            merged.github = { ...merged.github, token: '', login: null };
+            merged.github = {
+                ...merged.github,
+                token: '',
+                refreshToken: '',
+                tokenExpiresAt: null,
+                refreshTokenExpiresAt: null,
+                login: null
+            };
         }
         SyncConfigManager.save(merged);
         location.reload();
@@ -3308,6 +3391,7 @@ class VirtualBookshelf {
     // 同期先への書き出し (LocalFS / GitHub Adapter 等、storage の adapter に委譲)
     async syncToObsidianFolder() {
         if (!this._isSyncReady()) return;
+        await this._ensureFreshGitHubToken();
         this._lastSyncOk = false;
         try {
             // LocalFS 時のみ FS permission を確認 (GitHub Adapter は token ベースなので不要)
