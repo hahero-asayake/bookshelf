@@ -351,13 +351,13 @@ class VirtualBookshelf {
         this.userData.settings = { ...this.userData.settings, ...config };
         
         this.currentView = this.userData.settings.defaultView || 'covers';
-        
+
         // Load cover size setting
         const coverSize = this.userData.settings.coverSize || 'medium';
         document.getElementById('cover-size').value = coverSize;
-        
-        // ハイブリッド表示は使わない、代わりにcoversを使用
-        if (this.currentView === 'hybrid') {
+
+        // 取り得る値は covers / images / list (旧 hybrid 等は covers へ)
+        if (!['covers', 'images', 'list'].includes(this.currentView)) {
             this.currentView = 'covers';
         }
         
@@ -368,11 +368,13 @@ class VirtualBookshelf {
     }
 
     setupEventListeners() {
-        // View toggle (1ボタンでトグル)
-        const viewToggleBtn = document.getElementById('view-toggle');
-        if (viewToggleBtn) {
-            viewToggleBtn.addEventListener('click', () => {
-                this.setView(this.currentView === 'covers' ? 'list' : 'covers');
+        // 表示形式セグメント (表紙/画像/リスト)。popover は閉じない (連続で試せる)
+        const viewSeg = document.getElementById('view-seg');
+        if (viewSeg) {
+            viewSeg.addEventListener('click', (e) => {
+                const cell = e.target.closest('.rseg');
+                if (!cell || !cell.dataset.view) return;
+                this.setView(cell.dataset.view);
             });
         }
 
@@ -641,6 +643,18 @@ class VirtualBookshelf {
                 this.showBookDetail(this._lastDetailBook, !!this._lastDetailEditMode);
             }
         };
+        // 起動時の表示形式 (settings.defaultView)。変更時は現在のビューも追従させる
+        const defaultViewSel = document.getElementById('setting-default-view');
+        if (defaultViewSel) {
+            const dv = this.userData?.settings?.defaultView;
+            defaultViewSel.value = ['covers', 'images', 'list'].includes(dv) ? dv : 'covers';
+            defaultViewSel.addEventListener('change', () => {
+                if (!this.userData.settings) this.userData.settings = {};
+                this.userData.settings.defaultView = defaultViewSel.value;
+                this.saveUserData();
+                this.setView(defaultViewSel.value);
+            });
+        }
         const starVisSel = document.getElementById('setting-star-visibility');
         if (starVisSel) {
             starVisSel.value = this._getStarVisibility();
@@ -689,24 +703,18 @@ class VirtualBookshelf {
     }
 
     setView(view) {
+        if (!['covers', 'images', 'list'].includes(view)) view = 'covers';
         this.currentView = view;
-        this._updateViewToggleButton();
         this.updateDisplay();
         this.saveUserData();
     }
 
-    _updateViewToggleButton() {
-        // 状態切替アイコン: covers/list それぞれを override 可能
-        const buttons = document.querySelectorAll('[data-header-item="view-toggle"] button, #view-toggle');
-        buttons.forEach(btn => {
-            const stateKey = this.currentView === 'covers' ? 'view-toggle:covers' : 'view-toggle:list';
-            const fallback = this.currentView === 'covers' ? 'image' : 'list';
-            const override = this.getHeaderIconOverride(stateKey);
-            const effectiveIcon = override || fallback;
-            btn.innerHTML = window.renderIcon(effectiveIcon, { size: 20 });
-            btn.dataset.iconValue = effectiveIcon;
-            btn.removeAttribute('data-icon'); // 二重 inject 防止
-            btn.title = this.currentView === 'covers' ? 'リスト表示に切替' : '表紙表示に切替';
+    // 表示 popover の表示形式セグメントを現在ビューに同期
+    _updateViewSegUI() {
+        const seg = document.getElementById('view-seg');
+        if (!seg) return;
+        seg.querySelectorAll('.rseg').forEach(cell => {
+            cell.classList.toggle('on', cell.dataset.view === this.currentView);
         });
     }
 
@@ -717,6 +725,7 @@ class VirtualBookshelf {
     _setupPopovers() {
         const pairs = [
             { btnId: 'toggle-filter',           popId: 'filter-popover',     onOpen: null },
+            { btnId: 'toggle-display',          popId: 'display-popover',    onOpen: () => this._updateViewSegUI() },
             { btnId: 'toggle-search',           popId: 'search-popover',     onOpen: () => {
                 const input = document.getElementById('search-input');
                 if (input) setTimeout(() => input.focus(), 0);
@@ -836,7 +845,9 @@ class VirtualBookshelf {
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const cmds = [
             { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
-            { icon: 'list',              title: '表紙 / リスト表示を切替',        keywords: 'view 表示 表紙 リスト cover list ひょうじ', run: () => this.setView(this.currentView === 'covers' ? 'list' : 'covers') },
+            { icon: 'image',             title: '表示形式: 表紙',                 keywords: 'view 表示 表紙 cover ひょうじ', run: () => this.setView('covers') },
+            { icon: 'images',            title: '表示形式: 画像のみ',             keywords: 'view 表示 画像 表紙ウォール images がぞう', run: () => this.setView('images') },
+            { icon: 'list',              title: '表示形式: リスト',               keywords: 'view 表示 リスト list', run: () => this.setView('list') },
             { icon: 'pen-line',          title: '本棚を管理',                     keywords: '本棚 管理 manage bookshelf へんしゅう', run: () => this.showBookshelfManager() },
             { icon: 'plus',              title: '本棚を新規作成',                 keywords: '本棚 新規 作成 add new create', run: () => this.showBookshelfForm() },
             { icon: 'download',          title: 'Kindle インポート',             keywords: 'import kindle 取込 取り込み インポート', run: () => this.showImportModal() },
@@ -1334,8 +1345,9 @@ class VirtualBookshelf {
         bookshelf.className = `bookshelf view-${this.currentView} size-${coverSize}${customCls}`;
         
         this.renderStandardView(bookshelf);
-        
+
         this.setupPagination();
+        this._updateViewSegUI();
     }
 
 
@@ -1399,14 +1411,16 @@ class VirtualBookshelf {
         //  hover は「表紙に重なるポップアップ」で表示し、行のスペースを取らず位置もずらさない。
         // リスト表示は表紙が小さいので overlay でも below 配置にフォールバック。
         const isCoverView = (displayType === 'cover' || displayType === 'covers');
+        // 画像のみビュー: 表紙ウォール。星・メモ・ホバーポップ・book-info を一切出さない
+        const isImagesView = (displayType === 'images');
         const starVis = this._getStarVisibility();
         const overlayOn = this._getStarOverlay() && isCoverView;
         let starSize;
         if (starVis === 'hover') starSize = 16;             // ホバーポップアップ
         else if (overlayOn) starSize = 18;                  // 常に表示 + 表紙に重ねる (大きめ)
         else starSize = isCoverView ? 15 : 16;              // 常に表示 + 独立
-        const starWidget = (starVis === 'hidden') ? '' : this._starWidgetHtml(book.asin, listRating, starSize);
-        const memoVis = this._getMemoVisibility();
+        const starWidget = (starVis === 'hidden' || isImagesView) ? '' : this._starWidgetHtml(book.asin, listRating, starSize);
+        const memoVis = isImagesView ? 'hidden' : this._getMemoVisibility();
 
         // 常時表示 (in-flow)
         const overlayAlwaysStars = (starVis === 'always' && overlayOn && starWidget)
@@ -1428,7 +1442,7 @@ class VirtualBookshelf {
         const coverHoverPop = isCoverView ? hoverPop : '';
         const rowHoverPop = isCoverView ? '' : hoverPop;
 
-        const placeholderHtml = isCoverView
+        const placeholderHtml = (isCoverView || isImagesView)
             ? `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
             : `<div class="book-cover-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`;
 
@@ -1437,6 +1451,14 @@ class VirtualBookshelf {
         if (this.selectMode && this.selectedAsins && this.selectedAsins.has(book.asin)) {
             bookElement.classList.add('selected');
         }
+        // 画像のみビューは book-info (タイトル・著者・星・メモ) を出力しない
+        const infoHtml = isImagesView ? '' : `
+                <div class="book-info">
+                    <div class="book-title">${this.escapeHtml(book.title)}</div>
+                    <div class="book-author">${this.escapeHtml(book.authors)}</div>
+                    ${belowAlwaysStars}
+                    ${alwaysMemo}
+                </div>`;
         bookElement.innerHTML = `
                 <div class="book-cover-container">
                     <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
@@ -1449,13 +1471,7 @@ class VirtualBookshelf {
                     </div>
                     ${overlayAlwaysStars}
                     ${coverHoverPop}
-                </div>
-                <div class="book-info">
-                    <div class="book-title">${this.escapeHtml(book.title)}</div>
-                    <div class="book-author">${this.escapeHtml(book.authors)}</div>
-                    ${belowAlwaysStars}
-                    ${alwaysMemo}
-                </div>
+                </div>${infoHtml}
                 ${rowHoverPop}
             `;
         
@@ -4266,8 +4282,8 @@ class VirtualBookshelf {
     //
     // key 体系:
     //   - 静的: 'back-to-main', 'bookshelf-selector', 'manage-bookshelves', ...
-    //   - 状態切替: 'view-toggle:covers', 'view-toggle:list',
-    //               'overview-display:images', 'overview-display:text'
+    //   - 状態切替: 'overview-display:images', 'overview-display:text'
+    //     (view-toggle:* は T03 のツールバー4動詞化でボタンごと廃止)
     //   - プラグイン: 'plugin:<id>'
     static HEADER_ICON_OVERRIDES_KEY = 'bookshelf_headerIconOverrides_v1';
 
@@ -4768,8 +4784,8 @@ class VirtualBookshelf {
         if (!tpl) return null;
         tpl.dataset.placementId = placementId;
         tpl.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
-        // 静的アイテムにも override を適用 (view-toggle は除く: 状態切替なので別関数で扱う)
-        if (key !== 'view-toggle') {
+        // 静的アイテムにも override を適用
+        {
             const override = this.getHeaderIconOverride(key);
             const btn = tpl.querySelector('button');
             if (btn) {
@@ -4818,9 +4834,6 @@ class VirtualBookshelf {
 
         // clone された data-icon 要素に SVG を inject
         if (typeof window.applyIcons === 'function') window.applyIcons(header);
-
-        // 状態依存のアイコン表示を反映 (clone 含む)
-        this._updateViewToggleButton();
 
         // サイドバーユーティリティ上で直接 D&D 並び替え (ヘッダーカスタマイザ画面は廃止)
         this._bindSidebarUtilityDnD(header);

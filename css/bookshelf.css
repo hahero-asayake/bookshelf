@@ -2450,6 +2450,12 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     gap: 0.5rem;
 }
 
+/* Images View (画像のみ = 表紙ウォール, T03)。グリッドは covers と同じ。
+   book-info を出力しないため、カード高さ = 表紙高さのみ */
+.bookshelf.view-images {
+    grid-template-columns: repeat(auto-fill, minmax(var(--book-width), 1fr));
+}
+
 /* Hybrid View */
 .bookshelf.view-hybrid {
     display: flex;
@@ -2471,6 +2477,11 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .bookshelf.view-list .book-item {
     content-visibility: auto;
     contain-intrinsic-size: auto 112px;
+}
+/* 画像のみ: テキスト分を含まない表紙の実高さで推定 (サイズ設定に追従) */
+.bookshelf.view-images .book-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--book-height);
 }
 
 
@@ -6013,6 +6024,14 @@ body.select-mode .drag-handle { display: none; }
         gap: 0.9rem;
     }
     .bookshelf.view-covers .book-item { width: 100%; min-width: 0; }
+
+    /* 画像のみビュー: モバイルは 3 列 (テキストが無いぶん詰められる) */
+    .bookshelf.view-images {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 0.6rem;
+    }
+    .bookshelf.view-images .book-item { width: 100%; min-width: 0; }
+    .bookshelf.view-images .book-cover-container { width: 100%; }
 
     /* --- ダッシュボード: スマホは 2 列グリッド。幅は PC の span-N ではなく
            スマホ専用クラス m-half / m-full で決める (dashboard.js が spanMobile から付与)。

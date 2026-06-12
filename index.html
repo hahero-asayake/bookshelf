@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061002">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061202">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -116,7 +116,7 @@
                                     <p class="bookshelf-view-description" id="current-bookshelf-desc"></p>
                                 </div>
                             </div>
-                            <!-- 本棚ツールバー (Phase E): 検索 / 表示切替 / 並び替え・フィルタ / 複数選択 -->
+                            <!-- 本棚ツールバー (ADR-023, 4動詞): 検索 / 絞り込み / 表示 / 選択 -->
                             <div class="bookshelf-toolbar" id="bookshelf-toolbar">
                                 <span class="popover-host">
                                     <button id="toggle-search" class="btn-icon-square" title="この本棚を検索" data-icon="search"></button>
@@ -124,23 +124,9 @@
                                         <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
                                     </div>
                                 </span>
-                                <button id="view-toggle" class="btn-icon-square" title="表紙/リスト切替" data-icon="list"></button>
                                 <span class="popover-host">
-                                    <button id="toggle-filter" class="btn-icon-square" title="並び替え / フィルター / 表示" data-icon="sliders-horizontal"></button>
+                                    <button id="toggle-filter" class="btn-icon-square" title="評価でしぼり込み" data-icon="funnel"></button>
                                     <div class="popover popover-filter" id="filter-popover" hidden>
-                                        <div class="fp-section">
-                                            <div class="fp-section-title">並び順</div>
-                                            <div class="fp-sort-row">
-                                                <select id="sort-order" class="fp-select">
-                                                    <option value="custom" selected>カスタム順</option>
-                                                    <option value="acquiredTime">購入日</option>
-                                                    <option value="title">タイトル</option>
-                                                    <option value="authors">著者</option>
-                                                </select>
-                                                <button id="sort-direction" class="fp-dir-btn" type="button"></button>
-                                            </div>
-                                            <p class="fp-hint" id="fp-custom-hint">本をドラッグして好きな順番に並べ替えできます。</p>
-                                        </div>
                                         <div class="fp-section">
                                             <div class="fp-section-titlerow">
                                                 <div class="fp-section-title">評価でしぼり込み</div>
@@ -155,6 +141,32 @@
                                                 <button type="button" class="rseg" data-rating="4"><span class="h-icon" data-icon="star" data-icon-size="12"></span>4</button>
                                                 <button type="button" class="rseg" data-rating="5"><span class="h-icon" data-icon="star" data-icon-size="12"></span>5</button>
                                             </div>
+                                        </div>
+                                    </div>
+                                </span>
+                                <span class="popover-host">
+                                    <button id="toggle-display" class="btn-icon-square" title="表示" data-icon="sliders-horizontal"></button>
+                                    <div class="popover popover-filter" id="display-popover" hidden>
+                                        <div class="fp-section">
+                                            <div class="fp-section-title">表示形式</div>
+                                            <div class="rating-seg" id="view-seg" role="group" aria-label="表示形式">
+                                                <button type="button" class="rseg" data-view="covers">表紙</button>
+                                                <button type="button" class="rseg" data-view="images">画像</button>
+                                                <button type="button" class="rseg" data-view="list">リスト</button>
+                                            </div>
+                                        </div>
+                                        <div class="fp-section">
+                                            <div class="fp-section-title">並び順</div>
+                                            <div class="fp-sort-row">
+                                                <select id="sort-order" class="fp-select">
+                                                    <option value="custom" selected>カスタム順</option>
+                                                    <option value="acquiredTime">購入日</option>
+                                                    <option value="title">タイトル</option>
+                                                    <option value="authors">著者</option>
+                                                </select>
+                                                <button id="sort-direction" class="fp-dir-btn" type="button"></button>
+                                            </div>
+                                            <p class="fp-hint" id="fp-custom-hint">本をドラッグして好きな順番に並べ替えできます。</p>
                                         </div>
                                         <div class="fp-section">
                                             <div class="fp-section-title">表紙の大きさ</div>
@@ -419,6 +431,15 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="layout-dashboard" data-icon-size="16"></span>表示</summary>
                     <div class="settings-section-body">
                         <div class="memo-config-row">
+                            <label for="setting-default-view">起動時の表示形式</label>
+                            <select id="setting-default-view">
+                                <option value="covers">表紙</option>
+                                <option value="images">画像のみ</option>
+                                <option value="list">リスト</option>
+                            </select>
+                            <p class="memo-config-hint">本棚を開いたときの表示形式。ツールバーの「表示」からいつでも切り替えられます。</p>
+                        </div>
+                        <div class="memo-config-row" style="margin-top:0.9rem;">
                             <label for="setting-star-visibility">星評価の表示</label>
                             <select id="setting-star-visibility">
                                 <option value="always">常に表示</option>
@@ -776,7 +797,7 @@
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/bookshelf.js?v=2026061201"></script>
+    <script src="js/bookshelf.js?v=2026061202"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
