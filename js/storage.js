@@ -423,6 +423,45 @@ updated: ${now}
 
 `;
     }
+
+    // ===== frontmatter ヘルパ (ADR-024: アプリ内では隠し、ファイルには維持) =====
+
+    /**
+     * YAML frontmatter と本文を分離する。
+     * 先頭が `---` 行のときだけ、最初の終端 `---` 行までを frontmatter とみなす
+     * (本文中の `---` 水平線を誤検出しない)。先頭に無ければ frontmatter: null。
+     * @param {string} text
+     * @returns {{frontmatter: string|null, body: string}}
+     *   frontmatter は区切り行を含む生テキスト (joinFrontmatter にそのまま渡す)
+     */
+    static splitFrontmatter(text) {
+        const t = String(text ?? '');
+        // 先頭一致 + 最小マッチ。終端は「行頭の --- + 改行 or 文字列末尾」
+        const m = t.match(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/);
+        if (!m) return { frontmatter: null, body: t };
+        return { frontmatter: m[0], body: t.slice(m[0].length) };
+    }
+
+    /**
+     * frontmatter と本文を結合する。frontmatter が null なら body をそのまま返す
+     * (frontmatter を勝手に追加しない)。frontmatter 内の `updated:` 行のみ現在時刻に
+     * 置換し (無ければ閉じ --- の直前に追加)、他の行は一切変更しない。
+     * @param {string|null} frontmatter splitFrontmatter が返した生テキスト
+     * @param {string} body
+     * @returns {string}
+     */
+    static joinFrontmatter(frontmatter, body) {
+        if (!frontmatter) return body;
+        const now = new Date().toISOString();
+        let fm = frontmatter;
+        if (/^updated:.*$/m.test(fm)) {
+            fm = fm.replace(/^updated:.*$/m, `updated: ${now}`);
+        } else {
+            // 閉じ --- 行の直前に updated 行を追加
+            fm = fm.replace(/(\r?\n)---(\r?\n|$)/, `$1updated: ${now}$1---$2`);
+        }
+        return fm + body;
+    }
 }
 
 function generateInternalId() {

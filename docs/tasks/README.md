@@ -45,7 +45,7 @@
 | [T01](T01_token-refresh.md) | GitHub トークン自動更新 | [x] 完了 (2026-06-12) | — | App secret 生成 + Worker 設定 |
 | [T02](T02_pwa-icon.md) | PWA アイコン刷新 | [x] 完了 (2026-06-12, A1採用) | — | 案の選択 |
 | [T03](T03_toolbar-views.md) | ツールバー 4 動詞化 + 画像のみビュー | [x] 完了 (2026-06-12) | — | — |
-| [T04](T04_longmemo-frontmatter.md) | 長文メモ frontmatter 非表示 | [ ] 未着手 | — | — |
+| [T04](T04_longmemo-frontmatter.md) | 長文メモ frontmatter 非表示 | [x] 完了 (2026-06-12) | — | — |
 | [T05](T05_test-ci.md) | テスト基盤 + GitHub Actions CI | [ ] 未着手 | — | — |
 | [T06](T06_toast.md) | エラー表示の toast 統一 | [ ] 未着手 | T05 推奨 | — |
 | [T07](T07_gdrive-adapter.md) | Google Drive アダプタ | [ ] 未着手 | T01, T05 | GCP プロジェクト作成 |

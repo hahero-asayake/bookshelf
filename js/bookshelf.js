@@ -6388,7 +6388,10 @@ class VirtualBookshelf {
         if (existing == null) {
             existing = this.storage.buildBookMemoTemplate(book);
         }
-        textareaEl.value = existing;
+        // frontmatter はアプリ内では見せない (ADR-024)。保存時に再結合するため保持
+        const { frontmatter, body } = BookshelfStorage.splitFrontmatter(existing);
+        this._bookMemoFrontmatter = frontmatter;
+        textareaEl.value = body;
 
         modal.classList.add('show');
 
@@ -6421,7 +6424,8 @@ class VirtualBookshelf {
         if (!ctx || !editor) return;
         if (statusEl) statusEl.textContent = '💾 保存中...';
         try {
-            const content = editor.value();
+            // body のみ編集させ、保持していた frontmatter (updated を自動更新) と再結合 (ADR-024)
+            const content = BookshelfStorage.joinFrontmatter(this._bookMemoFrontmatter, editor.value());
             await this.storage.writeBookMemo(ctx.asin, ctx.title, content);
             if (!this.userData.notes[ctx.asin]) this.userData.notes[ctx.asin] = { memo: '', rating: 0 };
             this.userData.notes[ctx.asin].hasDetailMemo = true;
@@ -6444,6 +6448,7 @@ class VirtualBookshelf {
             this._bookMemoEditor = null;
         }
         this._bookMemoEditorContext = null;
+        this._bookMemoFrontmatter = null;
     }
 
     showExclusionsModal() {
