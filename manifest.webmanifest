@@ -1,6 +1,6 @@
 {
-  "name": "bookshelf",
-  "short_name": "bookshelf",
+  "name": "AsayakeBookshelf",
+  "short_name": "Asayake",
   "description": "Kindle 蔵書を整理・閲覧できる読書ライブラリ",
   "lang": "ja",
   "start_url": "./?source=pwa",

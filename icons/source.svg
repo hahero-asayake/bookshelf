@@ -1,0 +1,50 @@
+<!-- AsayakeBookshelf アイコン (2026-06-12, ADR-025/029)
+     採用案: A1「朝焼けの空 + 黒シルエット」(mockups/icon-candidates.html の 3 案から選定)
+     構図: 本棚から本を取る子供 (Kindle 風フラットシルエット) / 逆光の朝日グロー
+     パレット: hahero-asayake.github.io の夜空 #181b2c→#2d2638→#4a3b4e + グロー #ff9e7d/#ffecd2
+     PNG 再書き出し: mockups/icon-export.html を開いて Playwright element screenshot (dpr=1) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgNight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#181b2c"/>
+      <stop offset=".45" stop-color="#2d2638"/>
+      <stop offset=".78" stop-color="#4a3b4e"/>
+      <stop offset="1" stop-color="#5a4458"/>
+    </linearGradient>
+    <radialGradient id="glowSunrise" cx=".5" cy=".58" r=".75">
+      <stop offset="0" stop-color="#ffecd2"/>
+      <stop offset=".5" stop-color="#ff9e7d"/>
+      <stop offset="1" stop-color="#ff9e7d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bgNight)"/>
+  <rect width="512" height="512" fill="url(#glowSunrise)"/>
+  <g fill="#181b2c">
+    <!-- 棚板 2 段 -->
+    <rect x="272" y="176" width="188" height="14" rx="7"/>
+    <rect x="272" y="308" width="188" height="14" rx="7"/>
+    <!-- 上段: 2冊 + 隙間 (取られた場所) + 2冊 -->
+    <rect x="294" y="104" width="26" height="72" rx="6"/>
+    <rect x="326" y="98" width="26" height="78" rx="6"/>
+    <rect x="394" y="100" width="26" height="76" rx="6"/>
+    <rect x="426" y="106" width="26" height="70" rx="6"/>
+    <!-- 下段: 4冊 -->
+    <rect x="298" y="238" width="28" height="70" rx="6"/>
+    <rect x="334" y="232" width="28" height="76" rx="6"/>
+    <rect x="370" y="240" width="28" height="68" rx="6"/>
+    <rect x="406" y="234" width="28" height="74" rx="6"/>
+    <!-- 取っている本 (傾き) -->
+    <rect x="346" y="84" width="28" height="80" rx="6" transform="rotate(-22 360 124)"/>
+  </g>
+  <!-- 子供 (腕・脚) -->
+  <g stroke="#181b2c" stroke-width="26" stroke-linecap="round" fill="none">
+    <path d="M 192 256 L 342 158"/>
+    <path d="M 160 268 L 140 342"/>
+    <path d="M 158 372 L 148 450"/>
+    <path d="M 186 372 L 198 450"/>
+  </g>
+  <g fill="#181b2c">
+    <circle cx="166" cy="190" r="40"/>
+    <rect x="134" y="234" width="64" height="142" rx="28"/>
+  </g>
+</svg>

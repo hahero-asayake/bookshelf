@@ -5,7 +5,7 @@
 //   - CDN 等のクロスオリジンは素通し (SW は介在しない)
 //   - ナビゲーション時のオフラインは index.html にフォールバック
 
-const CACHE = 'bookshelf-runtime-v1';
+const CACHE = 'bookshelf-runtime-v2';
 
 self.addEventListener('install', () => {
     // skipWaiting は呼ばない。新 SW は待機させ、UI の「更新」ボタン (skipWaiting メッセージ) で適用する。

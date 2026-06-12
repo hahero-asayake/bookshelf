@@ -152,6 +152,107 @@
   </g>
 </svg>
 
+<!-- ================================================================
+     2026-06-12 ブラッシュアップ: 案A構図 × 朝焼けパレット (AsayakeBookshelf)
+     共通シーン (構図整理: 棚2段・本2+2/4冊・腕のライン・子供の頭身) を
+     #sceneAsayake に定義し、各バリアントは背景と --sil (シルエット色) のみ変える
+     ================================================================ -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="sceneAsayake">
+      <!-- 棚板 2 段 -->
+      <rect x="272" y="176" width="188" height="14" rx="7" fill="var(--sil)"/>
+      <rect x="272" y="308" width="188" height="14" rx="7" fill="var(--sil)"/>
+      <!-- 上段: 2冊 + 隙間 (取られた場所) + 2冊 -->
+      <rect x="294" y="104" width="26" height="72" rx="6" fill="var(--sil)"/>
+      <rect x="326" y="98"  width="26" height="78" rx="6" fill="var(--sil)"/>
+      <rect x="394" y="100" width="26" height="76" rx="6" fill="var(--sil)"/>
+      <rect x="426" y="106" width="26" height="70" rx="6" fill="var(--sil)"/>
+      <!-- 下段: 4冊 -->
+      <rect x="298" y="238" width="28" height="70" rx="6" fill="var(--sil)"/>
+      <rect x="334" y="232" width="28" height="76" rx="6" fill="var(--sil)"/>
+      <rect x="370" y="240" width="28" height="68" rx="6" fill="var(--sil)"/>
+      <rect x="406" y="234" width="28" height="74" rx="6" fill="var(--sil)"/>
+      <!-- 取っている本 (傾き) -->
+      <rect x="346" y="84" width="28" height="80" rx="6" fill="var(--sil)" transform="rotate(-22 360 124)"/>
+      <!-- 子供 (腕・脚) -->
+      <g stroke="var(--sil)" stroke-width="26" stroke-linecap="round" fill="none">
+        <path d="M 192 256 L 342 158"/>
+        <path d="M 160 268 L 140 342"/>
+        <path d="M 158 372 L 148 450"/>
+        <path d="M 186 372 L 198 450"/>
+      </g>
+      <circle cx="166" cy="190" r="40" fill="var(--sil)"/>
+      <rect x="134" y="234" width="64" height="142" rx="28" fill="var(--sil)"/>
+    </g>
+    <!-- A1/A3 共通: 夜空グラデ -->
+    <linearGradient id="bgNight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#181b2c"/>
+      <stop offset=".45" stop-color="#2d2638"/>
+      <stop offset=".78" stop-color="#4a3b4e"/>
+      <stop offset="1" stop-color="#5a4458"/>
+    </linearGradient>
+    <!-- A1: 昇る朝日のグロー (逆光の光源) -->
+    <radialGradient id="glowSunrise" cx=".5" cy=".58" r=".75">
+      <stop offset="0" stop-color="#ffecd2"/>
+      <stop offset=".5" stop-color="#ff9e7d"/>
+      <stop offset="1" stop-color="#ff9e7d" stop-opacity="0"/>
+    </radialGradient>
+    <!-- A2: 暖色グラデ地 (HPの warm グラデ) -->
+    <linearGradient id="bgWarm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffecd2"/>
+      <stop offset=".55" stop-color="#fcb69f"/>
+      <stop offset="1" stop-color="#ff9e7d"/>
+    </linearGradient>
+    <!-- A3: 地平線のかすかなグロー (夜明け前) -->
+    <radialGradient id="glowHorizon" cx=".5" cy=".98" r=".62">
+      <stop offset="0" stop-color="#ff9e7d" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#ff9e7d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
+
+<!-- ======== A1: 朝焼けの空 + 黒シルエット (逆光) ======== -->
+<svg id="iconA1" viewBox="0 0 512 512" style="position:absolute;width:0;height:0;--sil:#181b2c">
+  <rect width="512" height="512" fill="url(#bgNight)"/>
+  <rect width="512" height="512" fill="url(#glowSunrise)"/>
+  <use href="#sceneAsayake"/>
+</svg>
+
+<!-- ======== A2: 暖色地 + 白シルエット ======== -->
+<svg id="iconA2" viewBox="0 0 512 512" style="position:absolute;width:0;height:0;--sil:#ffffff">
+  <rect width="512" height="512" fill="url(#bgWarm)"/>
+  <use href="#sceneAsayake"/>
+</svg>
+
+<!-- ======== A3: 夜明けツートーン (夜空 + クリームシルエット) ======== -->
+<svg id="iconA3" viewBox="0 0 512 512" style="position:absolute;width:0;height:0;--sil:#ffecd2">
+  <rect width="512" height="512" fill="url(#bgNight)"/>
+  <rect width="512" height="512" fill="url(#glowHorizon)"/>
+  <use href="#sceneAsayake"/>
+</svg>
+
+<h1 style="margin-top:6px">ブラッシュアップ 3 案 (2026-06-12) — 案A構図 × 朝焼けパレット</h1>
+<p class="lead">AsayakeBookshelf 用。ホームページ (hahero-asayake.github.io) の夜空 #181b2c〜#4a3b4e + グロー #ff9e7d / #ffecd2〜#fcb69f。</p>
+<div class="grid">
+  <div class="card">
+    <h2>A1: 朝焼けの空 + 黒シルエット</h2>
+    <p class="desc">夜空に昇る朝日のグローを背に、子供と本棚を逆光のダークシルエットで</p>
+    <div class="row" id="rowA1"></div>
+  </div>
+  <div class="card">
+    <h2>A2: 暖色地 + 白シルエット</h2>
+    <p class="desc">HPの暖色グラデ (#ffecd2→#fcb69f→#ff9e7d) 地に白シルエット (案Aの配色替え)</p>
+    <div class="row" id="rowA2"></div>
+  </div>
+  <div class="card">
+    <h2>A3: 夜明けツートーン</h2>
+    <p class="desc">夜空 + 地平のかすかなグロー、シルエットはクリーム (#ffecd2)</p>
+    <div class="row" id="rowA3"></div>
+  </div>
+</div>
+
+<h1 style="margin-top:26px">旧 4 案 (構図検討用・2026-06-12 以前)</h1>
 <div class="grid">
   <div class="card">
     <h2>案A: 子供と本棚</h2>
@@ -177,7 +278,7 @@
 
 <script>
   // 各案を 大/48px/円形 で複製表示
-  for (const k of ['A','B','C','D']) {
+  for (const k of ['A1','A2','A3','A','B','C','D']) {
     const src = document.getElementById('icon'+k);
     const row = document.getElementById('row'+k);
     const make = (size, cls, label) => {
