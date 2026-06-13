@@ -3790,10 +3790,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
 .pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0.95rem; border: 1px solid var(--line); border-radius: 10px; background: var(--side); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
-.pp-row-title { font-weight: 600; }
+.pp-row-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .pp-row-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.1rem; }
-.pp-row-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.pp-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.pp-status { font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; white-space: nowrap; }
+.pp-status-on { color: #1f7a4d; background: #e3f5ec; }
+.pp-status-off { color: var(--muted); background: var(--line2); }
 .pp-list-foot { display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pp-foot-hint { font-size: 0.78rem; color: var(--muted); }
 .pp-url { font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 
 /* --- エディタ: フル幅・セクション縦積み --- */

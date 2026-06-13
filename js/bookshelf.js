@@ -6456,65 +6456,82 @@ class VirtualBookshelf {
     }
 
     /**
-     * private/main.json + bookshelves.json の isPublic を元に public/main.json と public/settings.json を生成
-     * 公開対象本棚のリストだけが含まれた main.json になる。手動で編集していた場合は上書き確認。
+     * 公開実行の共通処理 (ADR-030): 接続/公開先 repo チェック → flushSync → exporter.export()。
+     * 公開はページ単位 (published フラグ) で制御し、サイトは「公開中ページの集合」。
+     * publish/unpublish の両方からこれを呼ぶ。戻り値 { ok, result?, reason? }。
      */
-    /**
-     * 公開する: private/ のスナップショットを加工して同期先の public/ に書き出す。
-     * 旧 copyToPublic + runPublicExport を統合した新仕様 (2026-05-31〜)。
-     * - 別 picker での出力先選択は不要 (同期先内に書く)
-     * - GitHub Adapter なら storage.syncBatch で 1 commit にまとまる
-     */
-    async publishToPublic() {
+    async _runPublishExport() {
         if (!this._isSyncReady()) {
             toast('先に「同期」で保存先を設定してください。', { type: 'warn' });
-            return;
+            return { ok: false, reason: 'sync' };
         }
         // 公開には GitHub 接続が必要 (同期方式が GitHub 以外でも、公開のためだけに接続できる)
         const gh = (SyncConfigManager.load().github) || {};
         if (!gh.token) {
             toast('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', { type: 'warn' });
-            return;
+            return { ok: false, reason: 'github' };
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
             this.storage.setDirHandle(this.obsidianDirHandle);
         }
-
-        // 公開ページ (静的SSG, ADR-030): 作成済みの公開ページを生成して push する
-        const pages = this.publishPageStore ? await this.publishPageStore.load() : [];
-        if (pages.length === 0) {
-            toast('公開ページがありません。「公開ページを管理」で公開ページを作成してください。', { type: 'warn' });
-            this.openPublishPagesModal && this.openPublishPagesModal();
-            return;
-        }
         const pub = this.exporter._resolvePublishConfig();
         if (!pub.repo) {
             toast('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
-            return;
+            return { ok: false, reason: 'repo' };
         }
-        const pageNames = pages.map(p => `・${p.title}`).join('\n');
-        const ok = await confirmDialog({
-            title: 'Web で公開',
-            message: `次の公開ページを ${pub.owner}/${pub.repo} に静的サイトとして公開します:\n${pageNames}\n\n公開 repo の内容は今回の生成物で置き換わります。\n※ 閲覧には公開 repo の GitHub Pages が有効になっている必要があります。よろしいですか？`,
-            okLabel: '公開する'
-        });
-        if (!ok) return;
-
         // 編集中の変更を確実に書き出してから export
         await this.flushSync();
-
         try {
             const result = await this.exporter.export();
-            const errSummary = result.errors.length > 0
-                ? `\n(注意 ${result.errors.length} 件: ${result.errors.slice(0, 2).join(' / ')})`
-                : '';
             this._lastPublishUrl = result.siteUrl;
-            toast(`公開しました (ページ ${result.published})。\n公開 URL: ${result.siteUrl}${errSummary}`, { type: 'success' });
             console.info('公開 URL:', result.siteUrl);
+            return { ok: true, result };
         } catch (e) {
             console.error('公開エクスポートエラー:', e);
             toast(e.message, { type: 'error' });
+            return { ok: false, reason: 'export', error: e };
         }
+    }
+
+    // ページを公開する (published=true にして全公開中ページを push)
+    async _ppPublishPage(id) {
+        const page = this.publishPageStore.get(id);
+        if (!page) return;
+        try { await this.publishPageStore.update(id, { published: true }); }
+        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+        const r = await this._runPublishExport();
+        if (!r.ok) {
+            // 実サイトに出ていないので published を戻す
+            try { await this.publishPageStore.update(id, { published: false }); } catch (_) {}
+            this._renderPublishPagesList();
+            return;
+        }
+        try { await this.publishPageStore.update(id, { lastBuiltAt: Date.now() }); } catch (_) {}
+        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
+        toast(`「${page.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+        this._renderPublishPagesList();
+    }
+
+    // ページの公開を取り消す (published=false にして再 push → 削除同期で実サイトから消える)
+    async _ppUnpublishPage(id) {
+        const page = this.publishPageStore.get(id);
+        if (!page) return;
+        const ok = await confirmDialog({
+            title: '公開を取り消す',
+            message: `「${page.title}」を公開サイトから削除します。\n(他の公開中ページはそのまま残ります)`,
+            okLabel: '公開を取消', danger: true
+        });
+        if (!ok) return;
+        try { await this.publishPageStore.update(id, { published: false }); }
+        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+        const r = await this._runPublishExport();
+        if (!r.ok) {
+            try { await this.publishPageStore.update(id, { published: true }); } catch (_) {}
+            this._renderPublishPagesList();
+            return;
+        }
+        toast(`「${page.title}」の公開を取り消しました。`, { type: 'success' });
+        this._renderPublishPagesList();
     }
 
     // ===== 公開ページ管理 UI (P1 静的SSG, ADR-030) =====
@@ -6538,9 +6555,7 @@ class VirtualBookshelf {
         on('pp-new', 'click', () => this._openPublishPageEditor(null));
         on('pp-back', 'click', () => this._ppShowList());
         on('pp-save', 'click', () => this._ppSave());
-        on('pp-publish-one', 'click', () => this._ppPublishFromEditor());
         on('pp-preview', 'click', () => this._ppPreview());
-        on('pp-do-publish', 'click', () => this.publishToPublic());
         on('pp-style', 'change', () => this._ppOnStyleChange());
         on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
         // プレビュー別画面
@@ -6573,12 +6588,22 @@ class VirtualBookshelf {
                 const styleName = style ? style.name : '(スタイル未選択)';
                 const cnt = (p.select.shelves.length ? `本棚${p.select.shelves.length}` : '') +
                     (p.select.books.length ? `${p.select.shelves.length ? ' / ' : ''}本${p.select.books.length}` : '');
+                const pub = !!p.published;
+                const badge = pub
+                    ? '<span class="pp-status pp-status-on">● 公開中</span>'
+                    : '<span class="pp-status pp-status-off">○ 未公開</span>';
+                // 公開はページ単位 (ADR-030): 未公開→[公開] / 公開中→[更新][公開を取消]
+                const publishActions = pub
+                    ? `<button class="btn btn-secondary btn-small" data-act="republish">更新</button>
+                       <button class="btn btn-warning btn-small" data-act="unpublish">公開を取消</button>`
+                    : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
                 return `<li class="pp-row" data-id="${esc(p.id)}">
                   <div class="pp-row-main">
-                    <span class="pp-row-title">${esc(p.title)}</span>
-                    <span class="pp-row-meta">${esc(styleName)}${cnt ? ' ・ ' + esc(cnt) : ''}${p.lastBuiltAt ? ' ・ 公開済' : ''}</span>
+                    <span class="pp-row-title">${esc(p.title)} ${badge}</span>
+                    <span class="pp-row-meta">${esc(styleName)}${cnt ? ' ・ ' + esc(cnt) : ''}</span>
                   </div>
                   <div class="pp-row-actions">
+                    ${publishActions}
                     <button class="btn btn-secondary btn-small" data-act="edit">編集</button>
                     <button class="btn btn-secondary btn-small" data-act="dup">複製</button>
                     <button class="btn btn-danger btn-small" data-act="del">削除</button>
@@ -6587,10 +6612,15 @@ class VirtualBookshelf {
             }).join('');
             ul.querySelectorAll('.pp-row').forEach(row => {
                 const id = row.dataset.id;
-                row.querySelector('[data-act=edit]').addEventListener('click', () => this._openPublishPageEditor(id));
-                row.querySelector('[data-act=dup]').addEventListener('click', () => this._ppDuplicate(id));
-                row.querySelector('[data-act=del]').addEventListener('click', () => this._ppDelete(id));
+                const bind = (act, fn) => { const b = row.querySelector(`[data-act=${act}]`); if (b) b.addEventListener('click', fn); };
+                bind('publish', () => this._ppPublishPage(id));
+                bind('republish', () => this._ppPublishPage(id));
+                bind('unpublish', () => this._ppUnpublishPage(id));
+                bind('edit', () => this._openPublishPageEditor(id));
+                bind('dup', () => this._ppDuplicate(id));
+                bind('del', () => this._ppDelete(id));
             });
+            if (typeof window.applyIcons === 'function') window.applyIcons(ul);
         }
         const urlEl = document.getElementById('pp-url');
         if (urlEl) urlEl.textContent = this._lastPublishUrl ? `公開URL: ${this._lastPublishUrl}` : '';
@@ -6817,21 +6847,6 @@ class VirtualBookshelf {
             ? '<span class="h-icon" data-icon="monitor" data-icon-size="14"></span>PC 幅'
             : '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅';
         if (typeof window.applyIcons === 'function') window.applyIcons(btn);
-    }
-
-    // エディタから「公開」: まず現在のページを保存し、続けて全ページを Web 公開
-    async _ppPublishFromEditor() {
-        const data = this._ppCollectForm();
-        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
-        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
-            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
-        }
-        try {
-            if (this._ppEditingId) await this.publishPageStore.update(this._ppEditingId, data);
-            else { const created = await this.publishPageStore.create(data); this._ppEditingId = created && created.id; }
-        } catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        await this.publishToPublic();
-        this._renderPublishPagesList();
     }
 
     /**

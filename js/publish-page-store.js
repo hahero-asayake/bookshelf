@@ -14,6 +14,7 @@
 //     books:   [asin],       // 載せる本 (単体)
 //     fields:  { rating, memo, detailMemo, cover, author, amazon }  // 公開項目の取捨
 //   },
+//   published,               // 公開状態 (true=サイトに出す)。公開はページ単位で制御する
 //   createdAt, updatedAt, lastBuiltAt
 // }
 //
@@ -88,6 +89,7 @@ class PublishPageStore {
                 books: Array.isArray(sel.books) ? sel.books.slice() : [],
                 fields: { ...PublishPageStore.defaultFields(), ...(sel.fields || {}) }
             },
+            published: !!partial.published,   // 公開状態 (既定 false)。サイト=公開中ページの集合
             createdAt: now,
             updatedAt: now,
             lastBuiltAt: null
@@ -114,6 +116,7 @@ class PublishPageStore {
             };
         }
         if (patch.slug !== undefined) page.slug = this._uniqueSlug(patch.slug, id);
+        if (patch.published !== undefined) page.published = !!patch.published;
         if (patch.lastBuiltAt !== undefined) page.lastBuiltAt = patch.lastBuiltAt;
         page.updatedAt = Date.now();
         await this._persist();

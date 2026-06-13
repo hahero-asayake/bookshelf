@@ -55,7 +55,7 @@ beforeEach(() => {
 
 describe('happy path', () => {
     it('生成ファイルを push し、README以外の不要ファイルを削除、Pages URL を返す', async () => {
-        const app = makeApp({ pages: [{ id: 'p1' }] });
+        const app = makeApp({ pages: [{ id: 'p1', published: true }] });
         const exporter = new BookshelfExporter(app);
         const r = await exporter.export();
         // push されたパス
@@ -71,7 +71,7 @@ describe('happy path', () => {
     });
 
     it('dryRun は push せず write/delete 一覧を返す', async () => {
-        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
         const r = await exporter.export({ dryRun: true });
         expect(r.dryRun).toBe(true);
         expect(captured.commits.length).toBe(0);
@@ -80,21 +80,42 @@ describe('happy path', () => {
     });
 });
 
-describe('ガード', () => {
-    it('公開ページが無ければ中止', async () => {
-        const exporter = new BookshelfExporter(makeApp({ pages: [] }));
-        await expect(exporter.export()).rejects.toThrow(/公開ページがありません/);
+describe('ページ単位公開 (published フィルタ, ADR-030)', () => {
+    it('published=true のページだけが build に渡る', async () => {
+        let received = null;
+        const app = makeApp({
+            pages: [{ id: 'p1', published: true }, { id: 'p2', published: false }, { id: 'p3', published: true }],
+            build: async (pages) => { received = pages; return { files: [{ path: 'index.html', content: 't' }], pages: pages.map(p => ({ id: p.id, slug: p.id })), leak: [], errors: [] }; }
+        });
+        const r = await new BookshelfExporter(app).export();
+        expect(received.map(p => p.id)).toEqual(['p1', 'p3']);
+        expect(r.published).toBe(2);
     });
 
+    it('公開中ページが 0 でも throw せず index のみ push (サイトをクリア)', async () => {
+        const app = makeApp({
+            pages: [{ id: 'p1', published: false }],
+            build: async () => ({ files: [{ path: 'index.html', content: 'top' }], pages: [], leak: [], errors: [] })
+        });
+        const r = await new BookshelfExporter(app).export();
+        expect(captured.commits.length).toBe(1);
+        expect(captured.entries.map(e => e.path)).toEqual(['index.html']);
+        // 公開中ページが無いので manga 等は削除同期で消える
+        expect(captured.deletes).toContain('stale/index.html');
+        expect(r.published).toBe(0);
+    });
+});
+
+describe('ガード', () => {
     it('公開先 repo 未設定なら中止', async () => {
         mockConfig.publish = { owner: '', repo: '', branch: 'main' };
-        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
         await expect(exporter.export()).rejects.toThrow(/公開先リポジトリ/);
     });
 
     it('generator が leak を返したら push せず中止', async () => {
         const app = makeApp({
-            pages: [{ id: 'p1' }],
+            pages: [{ id: 'p1', published: true }],
             build: async () => ({ files: [{ path: 'index.html', content: 'x' }], pages: [{ id: 'p1', slug: 'x' }], leak: ['MyVault (index.html)'], errors: [] })
         });
         const exporter = new BookshelfExporter(app);
@@ -106,7 +127,7 @@ describe('ガード', () => {
 describe('Pages URL の特例', () => {
     it('repo が <owner>.github.io ならルート', async () => {
         mockConfig.publish = { owner: 'hahero-asayake', repo: 'hahero-asayake.github.io', branch: 'main' };
-        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
         const r = await exporter.export();
         expect(r.siteUrl).toBe('https://hahero-asayake.github.io/');
     });

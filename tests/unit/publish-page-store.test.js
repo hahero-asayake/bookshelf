@@ -82,3 +82,21 @@ describe('update / remove / duplicate', () => {
         expect(ps.pages()).toHaveLength(2);
     });
 });
+
+describe('published (ページ単位公開, ADR-030)', () => {
+    it('作成時の既定は未公開、update で公開状態を切替', async () => {
+        const p = await ps.create({ title: 'x', styleId: 's1' });
+        expect(p.published).toBe(false);
+        await ps.update(p.id, { published: true });
+        expect(ps.get(p.id).published).toBe(true);
+        await ps.update(p.id, { published: false });
+        expect(ps.get(p.id).published).toBe(false);
+    });
+
+    it('複製は未公開で始まる (公開状態は引き継がない)', async () => {
+        const p = await ps.create({ title: '元', styleId: 's1', published: true });
+        expect(p.published).toBe(true);
+        const dup = await ps.duplicate(p.id);
+        expect(dup.published).toBe(false);
+    });
+});

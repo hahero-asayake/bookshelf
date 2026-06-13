@@ -69,13 +69,13 @@ class BookshelfExporter {
         if (!store || !generator) {
             throw new Error('公開システムが初期化されていません。リロードしてください。');
         }
-        const pages = await store.load();
-        if (!pages.length) {
-            throw new Error('公開ページがありません。設定の「Web 公開」で公開ページを作成してください。');
-        }
+        // 公開はページ単位 (ADR-030): サイトは「published=true のページ」の集合。
+        // 公開中 0 件 (=全ページ未公開) も許容し、index のみ push + 削除同期でサイトをクリアする。
+        const allPages = await store.load();
+        const pages = allPages.filter(p => p.published);
 
         const result = await generator.build(pages);
-        if (!result.files.length || result.pages.length === 0) {
+        if (pages.length > 0 && result.pages.length === 0) {
             throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
         if (result.leak.length > 0) {
