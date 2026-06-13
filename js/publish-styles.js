@@ -151,11 +151,131 @@ const BOOK_FEATURE_CSS = `
 @media(max-width:560px){ .book-feature .feature{ grid-template-columns:120px 1fr; gap:16px } }
 `;
 
+// ===== 標準スタイル: 一覧ミニマル型 (表紙ウォール) =====
+const styleCoverWall = {
+    id: 'cover-wall',
+    name: '一覧ミニマル型',
+    description: '表紙だけを敷き詰める軽量なウォール。本棚でも本でも。',
+    declare() {
+        return { requires: { shelves: 'optional', books: 'optional' }, fields: [] };
+    },
+    render(ctx) {
+        const h = ctx.helpers;
+        const all = [];
+        for (const s of ctx.shelves) for (const b of s.books) all.push(b);
+        for (const b of ctx.books) all.push(b);
+        const tiles = all.map(b => {
+            const cover = h.cover(b) || `<div class="cover-ph">${h.esc(b.title)}</div>`;
+            return ctx.fields.amazon
+                ? `<li class="cw-tile"><a href="${h.attr(b.amazonUrl)}" target="_blank" rel="nofollow sponsored noopener" title="${h.attr(b.title)}">${cover}</a></li>`
+                : `<li class="cw-tile" title="${h.attr(b.title)}">${cover}</li>`;
+        }).join('');
+        return { html: `<div class="pub-wrap cover-wall"><ul class="cw-grid">${tiles}</ul></div>`, css: COVER_WALL_CSS };
+    }
+};
+const COVER_WALL_CSS = `
+.cover-wall .cw-grid{ list-style:none; padding:0; margin:32px 0;
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:14px }
+.cover-wall .cw-tile .cover, .cover-wall .cw-tile .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:6px }
+.cover-wall .cw-tile a{ display:block }
+@media(max-width:480px){ .cover-wall .cw-grid{ grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:10px } }
+`;
+
+// ===== 標準スタイル: 雑誌キュレーション型 =====
+const styleMagazine = {
+    id: 'magazine',
+    name: '雑誌キュレーション型',
+    description: '本棚ごとに「推し1冊」を大きく＋残りをグリッド。リード文も添えられる雑誌風。',
+    declare() {
+        return { requires: { shelves: 'many', books: 'none' }, fields: [{ key: 'lead', label: 'リード文（任意）', type: 'textarea', placeholder: '今月のおすすめは…' }] };
+    },
+    render(ctx) {
+        const h = ctx.helpers;
+        const lead = ctx.params.lead ? `<p class="mag-lead">${h.esc(ctx.params.lead)}</p>` : '';
+        const secs = ctx.shelves.map(s => {
+            const feat = s.books[0];
+            const rest = s.books.slice(1);
+            const featHtml = feat ? `
+            <div class="mag-feature">
+              <div class="mag-feat-cover">${h.cover(feat)}</div>
+              <div class="mag-feat-body">
+                <p class="mag-feat-title">${h.esc(feat.title)}</p>
+                ${h.author(feat)}${h.stars(feat)}${h.memo(feat)}${h.amazon(feat, 'Amazon')}
+              </div>
+            </div>` : '';
+            const grid = rest.length ? `<ul class="mag-grid">${rest.map(b => `<li>${h.cover(b)}<p class="mag-bk-title">${h.esc(b.title)}</p>${h.stars(b)}</li>`).join('')}</ul>` : '';
+            return `<section class="mag-sec">
+              <h2 class="mag-title">${h.esc(s.meta.name)}</h2>
+              ${s.meta.description ? `<p class="mag-desc">${h.esc(s.meta.description)}</p>` : ''}
+              ${featHtml}${grid}
+            </section>`;
+        }).join('');
+        return { html: `<div class="pub-wrap magazine">${lead}${secs}</div>`, css: MAGAZINE_CSS };
+    }
+};
+const MAGAZINE_CSS = `
+.magazine .mag-lead{ font-size:1.05rem; color:#5a5263; margin:28px 0; padding-left:14px; border-left:3px solid var(--warm) }
+.magazine .mag-sec{ margin:44px 0 }
+.magazine .mag-title{ font-size:1.4rem; margin:0 0 4px }
+.magazine .mag-desc{ color:var(--muted); margin:.2rem 0 1rem }
+.magazine .mag-feature{ display:grid; grid-template-columns:160px 1fr; gap:22px; align-items:start;
+  background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:20px }
+.magazine .mag-feat-cover .cover, .magazine .mag-feat-cover .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:8px }
+.magazine .mag-feat-title{ font-size:1.15rem; font-weight:700; margin:0 0 .3rem }
+.magazine .mag-grid{ list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:16px }
+.magazine .mag-grid .cover, .magazine .mag-grid .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:6px }
+.magazine .mag-bk-title{ font-size:.82rem; margin:.3rem 0 0 }
+@media(max-width:560px){ .magazine .mag-feature{ grid-template-columns:110px 1fr; gap:14px } }
+`;
+
+// ===== 標準スタイル: フリーフォーム/ミックス型 =====
+const styleMix = {
+    id: 'mix',
+    name: 'フリーフォーム/ミックス型',
+    description: '選んだ「本」を特集カード、選んだ「本棚」をグリッドとして 1 ページに混在。自由構成の受け皿。',
+    declare() {
+        return { requires: { shelves: 'optional', books: 'optional' }, fields: [{ key: 'note', label: '本文（任意）', type: 'textarea', placeholder: 'このページについての説明…' }] };
+    },
+    render(ctx) {
+        const h = ctx.helpers;
+        const note = ctx.params.note ? `<div class="mix-note">${h.esc(ctx.params.note)}</div>` : '';
+        const features = ctx.books.length ? `<div class="mix-features">${ctx.books.map(b => `
+          <article class="mix-feature">
+            <div class="mix-feat-cover">${h.cover(b)}</div>
+            <div class="mix-feat-body">
+              <h3 class="mix-feat-title">${h.esc(b.title)}</h3>
+              ${h.author(b)}${h.stars(b)}${h.memo(b)}${h.detailMemo(b)}${h.amazon(b, 'Amazon で見る')}
+            </div>
+          </article>`).join('')}</div>` : '';
+        const shelfSecs = ctx.shelves.map(s => `
+          <section class="mix-shelf">
+            <h2 class="mix-shelf-title">${h.esc(s.meta.name)}</h2>
+            <ul class="mix-grid">${s.books.map(b => `<li>${h.cover(b)}<p class="mix-bk-title">${h.esc(b.title)}</p>${h.stars(b)}</li>`).join('')}</ul>
+          </section>`).join('');
+        return { html: `<div class="pub-wrap mix">${note}${features}${shelfSecs}</div>`, css: MIX_CSS };
+    }
+};
+const MIX_CSS = `
+.mix .mix-note{ font-size:1rem; color:#4a4350; white-space:pre-wrap; margin:28px 0; padding:14px 16px; background:#fff; border:1px solid var(--line); border-radius:10px }
+.mix .mix-feature{ display:grid; grid-template-columns:170px 1fr; gap:24px; align-items:start; margin:28px 0; padding-bottom:24px; border-bottom:1px solid var(--line) }
+.mix .mix-feat-cover .cover, .mix .mix-feat-cover .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:8px; box-shadow:0 6px 20px rgba(45,38,56,.12) }
+.mix .mix-feat-title{ margin:0 0 .3rem; font-size:1.3rem }
+.mix .mix-shelf{ margin:36px 0 }
+.mix .mix-shelf-title{ font-size:1.25rem; margin:0 0 12px; padding-bottom:6px; border-bottom:2px solid var(--warm); display:inline-block }
+.mix .mix-grid{ list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:16px }
+.mix .mix-grid .cover, .mix .mix-grid .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:6px }
+.mix .mix-bk-title{ font-size:.82rem; margin:.3rem 0 0 }
+@media(max-width:560px){ .mix .mix-feature{ grid-template-columns:110px 1fr; gap:14px } }
+`;
+
 // ===== レジストリ生成 (組み込みスタイル登録) =====
 function createPublishStyleRegistry() {
     const reg = new PublishStyleRegistry();
     reg.register(styleShelfSections);
     reg.register(styleBookFeature);
+    reg.register(styleCoverWall);
+    reg.register(styleMagazine);
+    reg.register(styleMix);
     return reg;
 }
 

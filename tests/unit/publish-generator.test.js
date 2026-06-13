@@ -112,3 +112,26 @@ describe('トップ index と HTML 妥当性', () => {
         expect(r.files.find(f => f.path === 'x/index.html')).toBeUndefined();
     });
 });
+
+describe('全標準スタイルの機能検証 (P1-6)', () => {
+    it('5スタイルが本棚(slug)+本選択で例外なく生成・個人情報非漏洩・非選択本は出ない', async () => {
+        const reg = createPublishStyleRegistry();
+        expect(reg.list().length).toBe(5);
+        for (const style of reg.list()) {
+            const g = new PublishGenerator(makeApp(makeState()), reg);
+            const page = {
+                id: style.id, slug: 'p-' + style.id, title: style.name, intro: '紹介',
+                styleId: style.id, styleParams: { lead: 'リード文', note: '本文ノート' },
+                select: { shelves: ['manga'], books: ['M1'], fields: fields() }
+            };
+            const r = await g.build([page]);
+            const file = r.files.find(f => f.path === `p-${style.id}/index.html`);
+            expect(file, style.id).toBeTruthy();
+            expect(file.content.startsWith('<!doctype html>'), style.id).toBe(true);
+            expect(r.errors, style.id).toEqual([]);
+            expect(r.leak, style.id).toEqual([]);
+            expect(file.content, style.id).not.toContain('小説1'); // 非選択本棚 (novel) は出ない
+            expect(file.content, style.id).not.toContain('MySecretVault');
+        }
+    });
+});
