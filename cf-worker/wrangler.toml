@@ -8,3 +8,7 @@ main = "oauth-proxy.js"
 compatibility_date = "2026-06-11"
 # バージョンごとの preview URL は出さない (旧ダッシュボード設定に合わせる)
 preview_urls = false
+
+# リクエストログ (旧ダッシュボード設定が有効だったため明記して維持)
+[observability]
+enabled = true
