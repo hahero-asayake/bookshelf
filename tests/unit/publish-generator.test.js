@@ -113,6 +113,33 @@ describe('トップ index と HTML 妥当性', () => {
     });
 });
 
+describe('プライバシー誤検知ガード (leak)', () => {
+    it('extensionImportOrigins にアプリ公開 origin があっても footer の Powered by リンクで誤検知しない', async () => {
+        const state = makeState();
+        // 取込元 origin にアプリ自身の公開 origin（footer のリンクと部分一致する）が入っているケース
+        state.privateSettings.extensionImportOrigins = ['http://localhost:*', 'https://hahero-asayake.github.io'];
+        const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
+        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const r = await g.build([page]);
+        // footer に https://hahero-asayake.github.io/bookshelf が必ず入る（正当）
+        expect(r.files.some(f => f.content.includes('hahero-asayake.github.io'))).toBe(true);
+        // それでも leak は 0（取込元 origin は needle にしない）
+        expect(r.leak).toEqual([]);
+    });
+
+    it('vault サブパスが出力に混入した場合は leak として検出する', async () => {
+        const state = makeState();
+        state.privateSettings.obsidianVaultName = 'obsidian';
+        state.privateSettings.obsidianSubPath = '40_reading_secret';
+        // メモにうっかりローカルパスが混入したと仮定
+        state.bookshelfFiles.mid.notes.M1 = { memo: 'メモ see obsidian/40_reading_secret' };
+        const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
+        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const r = await g.build([page]);
+        expect(r.leak.length).toBeGreaterThan(0);
+    });
+});
+
 describe('全標準スタイルの機能検証 (P1-6)', () => {
     it('5スタイルが本棚(slug)+本選択で例外なく生成・個人情報非漏洩・非選択本は出ない', async () => {
         const reg = createPublishStyleRegistry();

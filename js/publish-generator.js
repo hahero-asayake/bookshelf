@@ -178,9 +178,17 @@ class PublishGenerator {
 
     _detectLeak(files, state) {
         const ps = state.privateSettings || {};
-        const banned = [ps.obsidianVaultName, ps.obsidianSubPath].filter(v => v && String(v).length > 1);
-        const origins = Array.isArray(ps.extensionImportOrigins) ? ps.extensionImportOrigins : [];
-        const needles = [...banned, ...origins].filter(Boolean);
+        const vault = String(ps.obsidianVaultName || '').trim();
+        const sub = String(ps.obsidianSubPath || '').trim();
+        // 公開物に出てはいけない「識別性の高い私的パス」だけを needle にする。
+        // - obsidianSubPath / vault+sub: ローカル vault のサブパス（十分に特異）
+        // - vault 名単体・extensionImportOrigins は needle にしない:
+        //   取込元 origin はアプリ自身の公開 URL（footer の Powered by リンク）や
+        //   Amazon（アフィリエイトリンク）と正当に重なり、vault 名は一般語のことがあるため、
+        //   needle にすると誤検知で公開が常にブロックされる。settings 自体は出力に含めないので
+        //   これらが実際に漏れることはない。
+        const needles = [sub, (vault && sub) ? `${vault}/${sub}` : '']
+            .filter(v => v && v.length >= 4);
         const found = new Set();
         for (const f of files) {
             for (const n of needles) {
