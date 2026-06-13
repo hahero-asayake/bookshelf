@@ -326,11 +326,12 @@ class BookshelfStorage {
         return this.adapter.deleteFile(`private/bookshelves/${slug}.json`);
     }
 
-    // ===== 汎用 (プラグインスキャン等の二次利用向け) =====
+    // ===== 汎用 (プラグインスキャン・公開ページ等の二次利用向け) =====
     listDirs(dirPath) { return this.adapter.listDirs(dirPath); }
     listFiles(dirPath) { return this.adapter.listFiles(dirPath); }
     readText(path) { return this.adapter.readText(path); }
     readJSON(path) { return this.adapter.readJSON(path); }
+    writeJSON(path, data) { return this.adapter.writeJSON(path, data); }
 
     // ===== バッチ書き込み =====
     //

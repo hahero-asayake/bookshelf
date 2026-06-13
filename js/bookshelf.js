@@ -69,6 +69,10 @@ class VirtualBookshelf {
         this.syncMethod = this.syncConfig.method;
         this.storage = new BookshelfStorage(initialAdapter);
         this.bookshelfManager = new BookshelfManager(this);
+        // 公開システム (P1 静的SSG, ADR-030): 公開ページ定義 + スタイル + 生成
+        if (window.PublishPageStore) this.publishPageStore = new PublishPageStore(this.storage);
+        if (window.createPublishStyleRegistry) this.publishStyles = createPublishStyleRegistry();
+        if (window.PublishGenerator) this.publishGenerator = new PublishGenerator(this, this.publishStyles);
         this.exporter = new BookshelfExporter(this);
         // プラグインAPI とローダを早期に生成（plugins から window.bookshelfAPI を参照可能に）
         if (window.BookshelfPluginAPI) {
@@ -6574,11 +6578,11 @@ class VirtualBookshelf {
             this.storage.setDirHandle(this.obsidianDirHandle);
         }
 
-        // 公開対象本棚 (オプトイン): isPublic を立てたユーザ本棚のみ。all (全蔵書) は含めない
-        const publicBookshelves = this.bookshelfManager.getBookshelves()
-            .filter(b => b.isPublic && !b.isSpecial);
-        if (publicBookshelves.length === 0) {
-            toast('公開する本棚が1つもありません。本棚の編集画面で「この本棚を公開する」にチェックを入れてください。', { type: 'warn' });
+        // 公開ページ (静的SSG, ADR-030): 作成済みの公開ページを生成して push する
+        const pages = this.publishPageStore ? await this.publishPageStore.load() : [];
+        if (pages.length === 0) {
+            toast('公開ページがありません。「公開ページを管理」で公開ページを作成してください。', { type: 'warn' });
+            this.openPublishPagesModal && this.openPublishPagesModal();
             return;
         }
         const pub = this.exporter._resolvePublishConfig();
@@ -6586,10 +6590,10 @@ class VirtualBookshelf {
             toast('公開先リポジトリが未設定です。設定の「同期 / 公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
             return;
         }
-        const shelfNames = publicBookshelves.map(b => `・${b.name}`).join('\n');
+        const pageNames = pages.map(p => `・${p.title}`).join('\n');
         const ok = await confirmDialog({
             title: 'Web で公開',
-            message: `次の本棚（に含まれる本）だけを ${pub.owner}/${pub.repo} に公開します:\n${shelfNames}\n\nこれ以外の本棚・全蔵書は公開されません。公開 repo の内容は今回のデータで置き換わります。よろしいですか？`,
+            message: `次の公開ページを ${pub.owner}/${pub.repo} に静的サイトとして公開します:\n${pageNames}\n\n公開 repo の内容は今回の生成物で置き換わります。\n※ 閲覧には公開 repo の GitHub Pages が有効になっている必要があります。よろしいですか？`,
             okLabel: '公開する'
         });
         if (!ok) return;
@@ -6602,8 +6606,9 @@ class VirtualBookshelf {
             const errSummary = result.errors.length > 0
                 ? `\n(注意 ${result.errors.length} 件: ${result.errors.slice(0, 2).join(' / ')})`
                 : '';
-            toast(`公開しました (書籍 ${result.exported} / 本棚 ${result.bookshelves})。\n公開 URL: ${result.publicUrl}${errSummary}`, { type: 'success' });
-            console.info('公開 URL:', result.publicUrl);
+            this._lastPublishUrl = result.siteUrl;
+            toast(`公開しました (ページ ${result.published})。\n公開 URL: ${result.siteUrl}${errSummary}`, { type: 'success' });
+            console.info('公開 URL:', result.siteUrl);
         } catch (e) {
             console.error('公開エクスポートエラー:', e);
             toast(e.message, { type: 'error' });

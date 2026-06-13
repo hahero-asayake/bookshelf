@@ -1,19 +1,16 @@
-// BookshelfExporter - 公開スナップショットをユーザの公開 repo へ push する (T09, ADR-022/028)
+// BookshelfExporter - 公開ページ (静的 SSG) をユーザの公開 repo へ push する (P1, ADR-030)
 //
 // ホスト型マルチユーザ前提: アプリは 1 箇所 (hahero-asayake.github.io/bookshelf) で配信され、
-// 各ユーザは自分の公開 repo (例 <user>/bookshelf-public) にデータだけを push する。
-// 公開モードは ?u=<owner>/<repo> でその repo の raw.githubusercontent から fetch する。
+// 各ユーザは自分の公開 repo (例 <user>/bookshelf-public) に「静的ページ」を push する。
 //
-//   出力構造 (公開 repo のルート。アプリシェルは同梱しない = 共通配信):
-//     library.json            # publishable な書誌のみ
-//     bookshelves.json        # isPublic=true (+ all) のみ
-//     bookshelves/all.json    # all (filtered)
-//     bookshelves/<slug>.json # publishable bookshelves
-//     notes.json              # 公開対象 ASIN のみ (hideMemo/hideDetailMemo 反映・フラグ除去)
-//     books/<ASIN>__*.md      # hideDetailMemo=false の長文メモ
-//     main.json / settings.json
-//     plugins/<id>/           # manifest.publishable=true のみ
+// 旧方式 (ADR-022, `?u=` でアプリ丸ごと描画) は廃止。いまは PublishGenerator が
+// 公開ページ定義 (private/publish/pages.json) から自己完結 HTML を生成し、それをそのまま push する。
+//
+//   出力構造 (公開 repo のルート):
+//     index.html              # 公開ページ一覧 (トップ)
+//     <slug>/index.html       # 各公開ページ
 //   README.md はルートに残す (削除同期の対象外)。
+//   配信は公開 repo の GitHub Pages を想定 (https://<owner>.github.io/<repo>/)。
 
 class BookshelfExporter {
     constructor(app) {
@@ -32,8 +29,15 @@ class BookshelfExporter {
         return { owner, repo, branch, token: gh.token, configured: !!(pub.owner && pub.repo) };
     }
 
+    // 公開 repo を GitHub Pages で配信する想定の URL
+    _pagesSiteUrl(owner, repo) {
+        const o = String(owner || '').toLowerCase();
+        if (repo && String(repo).toLowerCase() === `${o}.github.io`) return `https://${o}.github.io/`;
+        return `https://${o}.github.io/${repo}/`;
+    }
+
     /**
-     * 公開エクスポート。
+     * 公開: 公開ページ定義から静的ページを生成し、公開 repo へ push する。
      * @param {object} [opts]
      * @param {boolean} [opts.dryRun] true なら push せず、書き込む/削除するエントリ一覧を返す
      * @returns {Promise<object>}
@@ -59,159 +63,32 @@ class BookshelfExporter {
             pub.token = (SyncConfigManager.load().github || {}).token || pub.token;
         }
 
-        const storage = this.app.storage;
-        const state = await storage.loadAll();
-
-        // 公開対象本棚 (オプトイン): isPublic を立てた「ユーザ本棚」のみ。
-        // all (全蔵書) は isSpecial だが「全部入り」なので無条件には公開しない
-        //  (漫画だけ公開したいのに全蔵書が漏れる事故を防ぐ)。
-        // 公開モードの「すべて」ビューは、公開した本棚の本の和集合として後段で合成する。
-        const publicUserMetas = (state.bookshelvesMeta.bookshelves || [])
-            .filter(meta => meta.isPublic && !meta.isSpecial);
-
-        const publishAsins = new Set();
-        const hideDetailAsins = new Set();
-        const filteredBookshelfFiles = [];
-        const filteredMetas = [];
-
-        for (const meta of publicUserMetas) {
-            const data = state.bookshelfFiles[meta.internalId];
-            if (!data) continue;
-            // publishHide が立った本は除外
-            const filteredBooks = (data.books || []).filter(asin => {
-                const note = data.notes && data.notes[asin];
-                return !(note && note.publishHide);
-            });
-            // 本棚 override の notes は memo だけを残す
-            //  (publishHide 等のフラグや、隠した本のメモを公開データに漏らさない)
-            const cleanNotes = {};
-            for (const asin of filteredBooks) {
-                const n = data.notes && data.notes[asin];
-                if (n && n.memo && !n.hideMemo) cleanNotes[asin] = { memo: n.memo };
-            }
-            const cleanData = { ...data, books: filteredBooks, notes: cleanNotes };
-            filteredBookshelfFiles.push({ slug: meta.slug, data: cleanData });
-            filteredMetas.push(meta);
-            for (const asin of filteredBooks) publishAsins.add(asin);
+        // 公開ページ → 静的ページ生成 (PublishGenerator)
+        const store = this.app.publishPageStore;
+        const generator = this.app.publishGenerator;
+        if (!store || !generator) {
+            throw new Error('公開システムが初期化されていません。リロードしてください。');
+        }
+        const pages = await store.load();
+        if (!pages.length) {
+            throw new Error('公開ページがありません。設定の「Web 公開」で公開ページを作成してください。');
         }
 
-        // 公開対象の本が 1 冊も無ければ中止 (空 push で公開 repo を壊さない)
-        if (publishAsins.size === 0) {
-            throw new Error('公開対象の本がありません。本棚の編集画面で「この本棚を公開する」にチェックを入れてください。');
+        const result = await generator.build(pages);
+        if (!result.files.length || result.pages.length === 0) {
+            throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
-
-        // 長文メモ非公開 (hideDetailMemo) は global notes 側で判定
-        for (const [asin, note] of Object.entries(state.notes || {})) {
-            if (note && note.hideDetailMemo && publishAsins.has(asin)) {
-                hideDetailAsins.add(asin);
-            }
+        if (result.leak.length > 0) {
+            throw new Error(`公開ページに個人情報が混入している可能性があります: ${result.leak.join(', ')}`);
         }
-
-        const libraryBooks = ((state.library && state.library.books) || [])
-            .filter(b => publishAsins.has(b.asin));
-
-        // 公開モードの「すべて」ビュー = 公開本棚の和集合 (全蔵書ではない)。
-        // スキーマは private/bookshelves/all.json と同じく「メタ + books のみ」。
-        const allMeta = (state.bookshelvesMeta.bookshelves || []).find(m => m.slug === 'all');
-        const publicAllMeta = {
-            internalId: (allMeta && allMeta.internalId) || 'public-all',
-            slug: 'all',
-            name: (allMeta && allMeta.name) || 'すべての本',
-            iconName: (allMeta && allMeta.iconName) || 'library',
-            isSpecial: true,
-            isPublic: true,
-            parent: null
-        };
-        const publicAllData = {
-            internalId: publicAllMeta.internalId,
-            slug: 'all',
-            name: publicAllMeta.name,
-            isSpecial: true,
-            isPublic: true,
-            parent: null,
-            books: libraryBooks.map(b => b.asin)
-        };
-
-        const entries = [];
-        const errors = [];
-
-        entries.push({ op: 'put', path: 'library.json', data: {
-            exportDate: new Date().toISOString(),
-            books: libraryBooks
-        }});
-        // bookshelves.json: 合成した all + 公開ユーザ本棚
-        entries.push({ op: 'put', path: 'bookshelves.json', data: {
-            bookshelves: [publicAllMeta, ...filteredMetas]
-        }});
-        entries.push({ op: 'put', path: 'bookshelves/all.json', data: publicAllData });
-        for (const f of filteredBookshelfFiles) {
-            entries.push({ op: 'put', path: `bookshelves/${f.slug}.json`, data: f.data });
-        }
-
-        // notes.json: hideMemo で memo 除去 / hideDetailMemo で hasDetailMemo 除去 / フラグ自体は漏らさない
-        const filteredNotes = {};
-        for (const asin of publishAsins) {
-            const n = state.notes[asin];
-            if (!n) continue;
-            const { hideMemo, hideDetailMemo, hasDetailMemo, memo, ...rest } = n;
-            const out = { ...rest };
-            if (memo && !hideMemo) out.memo = memo;
-            if (hasDetailMemo && !hideDetailMemo && !hideDetailAsins.has(asin)) {
-                out.hasDetailMemo = true;
-            }
-            if (Object.keys(out).length > 0) filteredNotes[asin] = out;
-        }
-        entries.push({ op: 'put', path: 'notes.json', data: { notes: filteredNotes }});
-
-        entries.push({ op: 'put', path: 'main.json', data: {
-            bookshelves: [publicAllMeta.internalId, ...filteredMetas.map(m => m.internalId)],
-            appliedPlugins: [],
-            defaultSort: 'addedDate-desc'
-        }});
-
-        // settings.json (個人情報除外)
-        const publicSettings = { ...(state.privateSettings || {}) };
-        delete publicSettings.affiliateId;
-        delete publicSettings.obsidianVaultName;
-        delete publicSettings.obsidianSubPath;
-        delete publicSettings.extensionImportOrigins;
-        delete publicSettings.bookMemoOpenWith;
-        entries.push({ op: 'put', path: 'settings.json', data: publicSettings });
-
-        // 長文メモ (.md)
-        for (const asin of publishAsins) {
-            if (hideDetailAsins.has(asin)) continue;
-            const book = libraryBooks.find(b => b.asin === asin);
-            if (!book) continue;
-            const note = state.notes[asin];
-            if (!note || !note.hasDetailMemo) continue;
-            try {
-                const text = await storage.readBookMemo(asin, book.title);
-                if (text !== null) {
-                    entries.push({
-                        op: 'put',
-                        path: `books/${storage.bookMemoFileName(asin, book.title)}`,
-                        data: text,
-                        kind: 'text'
-                    });
-                }
-            } catch (e) {
-                errors.push(`books/${asin}: ${e.message}`);
-            }
-        }
-
-        // publishable プラグイン
-        const plugins = await this._collectPublishablePlugins();
-        entries.push(...plugins.entries);
-        errors.push(...plugins.errors);
 
         // 公開 repo 用アダプタ (第 2 インスタンス。token は GitHub 接続のものを共用)
         const publishAdapter = new GitHubAdapter({
             owner: pub.owner, repo: pub.repo, branch: pub.branch, basePath: '', token: pub.token
         });
 
-        // 削除同期: 公開 repo の現状を列挙し、今回エントリに無いものに delete を出す (README.md は残す)
-        const writePaths = new Set(entries.map(e => e.path));
+        // 削除同期: 公開 repo の現状を列挙し、今回の出力に無いものを削除 (README.md は残す)
+        const writePaths = new Set(result.files.map(f => f.path));
         const deletes = [];
         try {
             const existing = await this._listAllFiles(publishAdapter, '');
@@ -221,45 +98,30 @@ class BookshelfExporter {
             }
         } catch (e) {
             // repo が空 or 未作成 → 削除対象なし
-            errors.push(`list publish repo: ${e.message}`);
+            result.errors.push(`list publish repo: ${e.message}`);
         }
 
-        // private 情報の混入チェック (dryRun でも本番でも実施)
-        const leak = this._detectPrivateLeak(entries);
+        const siteUrl = this._pagesSiteUrl(pub.owner, pub.repo);
 
         if (dryRun) {
             return {
                 dryRun: true,
                 target: `${pub.owner}/${pub.repo}@${pub.branch}`,
-                publicBookshelves: filteredMetas.map(m => m.name),
-                exported: publishAsins.size,
-                bookshelves: filteredMetas.length,
-                longMemos: publishAsins.size - hideDetailAsins.size,
-                plugins: plugins.pluginIds,
-                writeEntries: entries.map(e => e.path),
+                pages: result.pages,
+                writeEntries: [...writePaths],
                 deleteEntries: deletes,
-                privateLeak: leak,
-                errors
+                leak: result.leak,
+                siteUrl,
+                errors: result.errors
             };
-        }
-
-        if (leak.length > 0) {
-            throw new Error(`公開データに個人情報が混入している可能性があります: ${leak.join(', ')}`);
         }
 
         // バッチ push (1 commit)
         publishAdapter.beginBatch();
-        for (const e of entries) {
-            const content = (e.kind === 'text') ? e.data : JSON.stringify(e.data, null, 2);
-            publishAdapter.addBatchEntry(e.path, content);
-        }
-        for (const p of deletes) {
-            publishAdapter.addBatchDelete(p);
-        }
+        for (const f of result.files) publishAdapter.addBatchEntry(f.path, f.content);
+        for (const p of deletes) publishAdapter.addBatchDelete(p);
         try {
-            await publishAdapter.commitBatch(
-                `chore(bookshelf): publish ${publishAsins.size} books / ${filteredMetas.length} bookshelves`
-            );
+            await publishAdapter.commitBatch(`chore(bookshelf): publish ${result.pages.length} page(s)`);
         } catch (err) {
             if (err && err.name === 'GitHubConflictError') {
                 throw new Error('公開中に公開 repo が更新されました。リロードしてやり直してください。');
@@ -267,30 +129,20 @@ class BookshelfExporter {
             throw err;
         }
 
-        return {
-            exported: publishAsins.size,
-            bookshelves: filteredMetas.length,
-            longMemos: publishAsins.size - hideDetailAsins.size,
-            plugins: plugins.pluginIds,
-            entries: entries.length,
-            deletes: deletes.length,
-            publicUrl: `${location.origin}${location.pathname}?u=${pub.owner}/${pub.repo}`,
-            errors
-        };
-    }
-
-    // 公開エントリに個人情報が混入していないか検査 (key 名で判定)
-    _detectPrivateLeak(entries) {
-        const banned = ['affiliateId', 'obsidianVaultName', 'obsidianSubPath', 'extensionImportOrigins', 'hideMemo', 'hideDetailMemo'];
-        const found = new Set();
-        for (const e of entries) {
-            if (e.kind === 'text') continue; // 長文メモ本文は対象外 (ユーザが書いた内容)
-            const json = JSON.stringify(e.data);
-            for (const key of banned) {
-                if (json.includes(`"${key}"`)) found.add(`${key} (${e.path})`);
-            }
+        // 各ページの lastBuiltAt を更新
+        const now = Date.now();
+        for (const p of result.pages) {
+            try { await store.update(p.id, { lastBuiltAt: now }); } catch (_) {}
         }
-        return [...found];
+
+        return {
+            pages: result.pages,
+            published: result.pages.length,
+            deletes: deletes.length,
+            siteUrl,
+            publicUrl: siteUrl,
+            errors: result.errors
+        };
     }
 
     // adapter の dir 以下の全ファイル path を再帰列挙
@@ -308,51 +160,6 @@ class BookshelfExporter {
             out.push(...nested);
         }
         return out;
-    }
-
-    async _collectPublishablePlugins() {
-        const entries = [];
-        const errors = [];
-        const pluginIds = [];
-        const storage = this.app.storage;
-
-        let ids;
-        try {
-            ids = await storage.listDirs('plugins');
-        } catch (e) {
-            errors.push(`plugins/: ${e.message}`);
-            return { entries, errors, pluginIds };
-        }
-
-        for (const id of ids) {
-            try {
-                const manifest = await storage.readJSON(`plugins/${id}/manifest.json`);
-                if (!manifest || !manifest.publishable) continue;
-
-                const files = ['manifest.json', ...(manifest.files || ['index.js'])];
-                for (const f of files) {
-                    try {
-                        const text = await storage.readText(`plugins/${id}/${f}`);
-                        if (text == null) {
-                            errors.push(`plugins/${id}/${f}: not found`);
-                            continue;
-                        }
-                        entries.push({
-                            op: 'put',
-                            path: `plugins/${id}/${f}`,
-                            data: text,
-                            kind: 'text'
-                        });
-                    } catch (e) {
-                        errors.push(`plugins/${id}/${f}: ${e.message}`);
-                    }
-                }
-                pluginIds.push(id);
-            } catch (e) {
-                errors.push(`plugins/${id}/manifest.json: ${e.message}`);
-            }
-        }
-        return { entries, errors, pluginIds };
     }
 }
 

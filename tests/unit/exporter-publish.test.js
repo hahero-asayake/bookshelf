@@ -1,122 +1,113 @@
-// BookshelfExporter の「公開はオプトイン」不変条件テスト (T09 / 朝レビュー修正)
-//
-// 重要なプライバシー不変条件:
-//   - all (全蔵書) は isSpecial でも無条件には公開されない
-//   - 公開されるのは isPublic を立てたユーザ本棚の本の和集合だけ
-//   - 公開先リポジトリ未設定なら公開しない (勝手に bookshelf-public を作らない)
+// BookshelfExporter (P1 ページ駆動) の push オーケストレーション テスト (ADR-030)
+//  - 公開ページ → generator.build → GitHubAdapter で push + 削除同期 + Pages URL
 import { describe, it, expect, beforeEach } from 'vitest';
 
-// exporter.js が参照するグローバルをスタブ
 let mockConfig;
-globalThis.SyncConfigManager = {
-    load: () => mockConfig
-};
+let listing; // { '': {files, dirs}, 'stale': {files, dirs} }
+const captured = { entries: [], deletes: [], commits: [] };
+
+globalThis.SyncConfigManager = { load: () => mockConfig };
 globalThis.GitHubAdapter = class {
     constructor(opts) { this.opts = opts; }
-    async listFiles() { return []; }
-    async listDirs() { return []; }
+    async listFiles(dir) { return (listing[dir] || { files: [] }).files; }
+    async listDirs(dir) { return (listing[dir] || { dirs: [] }).dirs || []; }
     beginBatch() {}
-    addBatchEntry() {}
-    addBatchDelete() {}
-    async commitBatch() {}
+    addBatchEntry(path, content) { captured.entries.push({ path, content }); }
+    addBatchDelete(path) { captured.deletes.push(path); }
+    async commitBatch(msg) { captured.commits.push(msg); }
 };
 
 await import('../../js/exporter.js');
 const BookshelfExporter = window.BookshelfExporter;
 
-// 漫画(公開) / 小説(非公開) / all(全蔵書) を持つ蔵書状態
-function makeState() {
+function makeApp({ pages = [], build } = {}) {
+    const updated = [];
     return {
-        library: { books: [
-            { asin: 'M1', title: '漫画1' },
-            { asin: 'M2', title: '漫画2' },
-            { asin: 'N1', title: '小説1' }
-        ]},
-        bookshelvesMeta: { bookshelves: [
-            { internalId: 'allid', slug: 'all', name: 'すべての本', iconName: 'library', isSpecial: true, isPublic: false },
-            { internalId: 'mid', slug: 'manga', name: '漫画', isPublic: true },
-            { internalId: 'nid', slug: 'novel', name: '小説', isPublic: false }
-        ]},
-        bookshelfFiles: {
-            mid: { internalId: 'mid', slug: 'manga', books: ['M1', 'M2'], notes: { M2: { memo: 'おすすめ' } } },
-            nid: { internalId: 'nid', slug: 'novel', books: ['N1'], notes: {} }
-        },
-        allBookshelf: { internalId: 'allid', slug: 'all', books: ['M1', 'M2', 'N1'] },
-        notes: { M1: { memo: 'メモM1', rating: 5 }, N1: { memo: 'メモN1', rating: 3 } },
-        privateSettings: { affiliateId: 'secret-affi', displayName: 'hahero' }
-    };
-}
-
-function makeApp(state) {
-    return {
-        syncMethod: 'local',
         _isSyncReady: () => true,
-        storage: {
-            loadAll: async () => state,
-            listDirs: async () => [],   // plugins なし
-            readJSON: async () => null,
-            readText: async () => null,
-            readBookMemo: async () => null,
-            bookMemoFileName: (asin, title) => `${asin}__${title}.md`
+        syncMethod: 'local',
+        _updates: updated,
+        publishPageStore: {
+            load: async () => pages,
+            update: async (id, patch) => { updated.push({ id, patch }); }
+        },
+        publishGenerator: {
+            build: build || (async () => ({
+                files: [
+                    { path: 'index.html', content: '<!doctype html>top' },
+                    { path: 'manga/index.html', content: '<!doctype html>manga' }
+                ],
+                pages: [{ id: 'p1', slug: 'manga', title: '漫画', url: 'manga/', books: 2 }],
+                leak: [],
+                errors: []
+            }))
         }
     };
 }
 
-let exporter, state;
 beforeEach(() => {
-    state = makeState();
-    mockConfig = {
-        github: { token: 'ghu_xxx', login: 'hahero' },
-        publish: { owner: 'hahero', repo: 'bookshelf-public', branch: 'main' }
+    captured.entries = []; captured.deletes = []; captured.commits = [];
+    mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
+    listing = {
+        '': { files: ['index.html', 'README.md'], dirs: ['stale'] },
+        'stale': { files: ['index.html'], dirs: [] }
     };
-    exporter = new BookshelfExporter(makeApp(state));
 });
 
-describe('公開はオプトイン (全蔵書を漏らさない)', () => {
-    it('公開されるのは isPublic 本棚の本だけ (all 全蔵書は含めない)', async () => {
+describe('happy path', () => {
+    it('生成ファイルを push し、README以外の不要ファイルを削除、Pages URL を返す', async () => {
+        const app = makeApp({ pages: [{ id: 'p1' }] });
+        const exporter = new BookshelfExporter(app);
+        const r = await exporter.export();
+        // push されたパス
+        expect(captured.entries.map(e => e.path).sort()).toEqual(['index.html', 'manga/index.html']);
+        // 削除同期: stale/index.html だけ (README.md は残す、index.html は今回も出力)
+        expect(captured.deletes).toEqual(['stale/index.html']);
+        expect(captured.commits.length).toBe(1);
+        // GitHub Pages URL
+        expect(r.siteUrl).toBe('https://hahero-asayake.github.io/bookshelf-public/');
+        expect(r.published).toBe(1);
+        // lastBuiltAt 更新
+        expect(app._updates[0].patch.lastBuiltAt).toBeTruthy();
+    });
+
+    it('dryRun は push せず write/delete 一覧を返す', async () => {
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
         const r = await exporter.export({ dryRun: true });
         expect(r.dryRun).toBe(true);
-        // 漫画の 2 冊だけ。小説 N1 は publishAsins に入らない
-        expect(r.exported).toBe(2);
-        expect(r.publicBookshelves).toEqual(['漫画']);
-    });
-
-    it('write エントリに公開本棚のファイルだけが出て、非公開本棚は出ない', async () => {
-        const r = await exporter.export({ dryRun: true });
-        expect(r.writeEntries).toContain('bookshelves/manga.json');
-        expect(r.writeEntries).toContain('bookshelves/all.json');
-        expect(r.writeEntries).not.toContain('bookshelves/novel.json');
-    });
-
-    it('個人情報 (affiliateId 等) は公開データに混入しない', async () => {
-        const r = await exporter.export({ dryRun: true });
-        expect(r.privateLeak).toEqual([]);
-    });
-
-    it('合成 all.json には公開本の和集合だけが入る (全蔵書ではない)', async () => {
-        // GitHubAdapter.addBatchEntry を捕捉して実 push データを検査
-        const written = {};
-        globalThis.GitHubAdapter.prototype.addBatchEntry = function (path, content) {
-            written[path] = content;
-        };
-        await exporter.export({ dryRun: false });
-        const all = JSON.parse(written['bookshelves/all.json']);
-        expect(all.books.sort()).toEqual(['M1', 'M2']); // N1 は無い
-        const lib = JSON.parse(written['library.json']);
-        expect(lib.books.map(b => b.asin).sort()).toEqual(['M1', 'M2']);
-        // 非公開本棚のメモが漏れていない
-        expect(JSON.stringify(written)).not.toContain('メモN1');
+        expect(captured.commits.length).toBe(0);
+        expect(r.writeEntries.sort()).toEqual(['index.html', 'manga/index.html']);
+        expect(r.deleteEntries).toEqual(['stale/index.html']);
     });
 });
 
-describe('公開のガード', () => {
-    it('公開先リポジトリ未設定なら公開しない', async () => {
-        mockConfig.publish = { owner: '', repo: '', branch: 'main' };
-        await expect(exporter.export({ dryRun: true })).rejects.toThrow(/公開先リポジトリ/);
+describe('ガード', () => {
+    it('公開ページが無ければ中止', async () => {
+        const exporter = new BookshelfExporter(makeApp({ pages: [] }));
+        await expect(exporter.export()).rejects.toThrow(/公開ページがありません/);
     });
 
-    it('公開対象の本棚が 1 つも無ければ中止', async () => {
-        state.bookshelvesMeta.bookshelves.forEach(m => { if (!m.isSpecial) m.isPublic = false; });
-        await expect(exporter.export({ dryRun: true })).rejects.toThrow(/公開対象の本がありません/);
+    it('公開先 repo 未設定なら中止', async () => {
+        mockConfig.publish = { owner: '', repo: '', branch: 'main' };
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
+        await expect(exporter.export()).rejects.toThrow(/公開先リポジトリ/);
+    });
+
+    it('generator が leak を返したら push せず中止', async () => {
+        const app = makeApp({
+            pages: [{ id: 'p1' }],
+            build: async () => ({ files: [{ path: 'index.html', content: 'x' }], pages: [{ id: 'p1', slug: 'x' }], leak: ['MyVault (index.html)'], errors: [] })
+        });
+        const exporter = new BookshelfExporter(app);
+        await expect(exporter.export()).rejects.toThrow(/個人情報/);
+        expect(captured.commits.length).toBe(0);
+    });
+});
+
+describe('Pages URL の特例', () => {
+    it('repo が <owner>.github.io ならルート', async () => {
+        mockConfig.publish = { owner: 'hahero-asayake', repo: 'hahero-asayake.github.io', branch: 'main' };
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1' }] }));
+        const r = await exporter.export();
+        expect(r.siteUrl).toBe('https://hahero-asayake.github.io/');
     });
 });
