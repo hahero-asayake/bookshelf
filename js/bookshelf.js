@@ -6555,14 +6555,31 @@ class VirtualBookshelf {
         on('pp-new', 'click', () => this._openPublishPageEditor(null));
         on('pp-back', 'click', () => this._ppShowList());
         on('pp-save', 'click', () => this._ppSave());
+        on('pp-save-publish', 'click', () => this._ppSavePublish());
         on('pp-preview', 'click', () => this._ppPreview());
         on('pp-style', 'change', () => this._ppOnStyleChange());
         on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
+        // 一括更新: 公開中ページをまとめて再 push (一括「公開」ではない)
+        on('pp-republish-all', 'click', () => this._ppRepublishAll());
+        // 詳細設定: 公開パスのプレビュー更新＋ページ操作 (複製/公開取消/削除 はエディタへ集約)
+        on('pp-slug', 'input', () => this._ppUpdateSlugPreview());
+        on('pp-title', 'input', () => this._ppUpdateSlugPreview());
+        on('pp-dup', 'click', async () => { if (!this._ppEditingId) return; await this._ppDuplicate(this._ppEditingId); this._ppShowList(); });
+        on('pp-unpublish', 'click', async () => { if (!this._ppEditingId) return; await this._ppUnpublishPage(this._ppEditingId); this._ppShowList(); });
+        on('pp-del', 'click', async () => { if (!this._ppEditingId) return; const did = await this._ppDelete(this._ppEditingId); if (did) this._ppShowList(); });
         // プレビュー別画面
         on('pp-preview-close', 'click', () => this._ppClosePreviewModal());
         on('pp-preview-device', 'click', () => this._ppTogglePreviewDevice());
         const pm = document.getElementById('pp-preview-modal');
         if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._ppClosePreviewModal(); });
+        // 公開する項目はトグルピル (素のチェックボックスにしない)
+        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => {
+            pill.addEventListener('click', () => {
+                const on = pill.getAttribute('aria-pressed') !== 'true';
+                pill.setAttribute('aria-pressed', on ? 'true' : 'false');
+                pill.classList.toggle('is-on', on);
+            });
+        });
     }
 
     _ppShowList() {
@@ -6592,10 +6609,11 @@ class VirtualBookshelf {
                 const badge = pub
                     ? '<span class="pp-status pp-status-on">● 公開中</span>'
                     : '<span class="pp-status pp-status-off">○ 未公開</span>';
-                // 公開はページ単位 (ADR-030): 未公開→[公開] / 公開中→[更新][公開を取消]
+                // 公開はページ単位 (ADR-030)。行はスッキリさせ、主操作だけ置く:
+                //   未公開→[公開]  公開中→[更新]  ＋ 共通[編集]。
+                //   複製/削除/公開取消 はエディタの「詳細設定」へ集約 (行のボタン過多を解消)
                 const publishActions = pub
-                    ? `<button class="btn btn-secondary btn-small" data-act="republish">更新</button>
-                       <button class="btn btn-warning btn-small" data-act="unpublish">公開を取消</button>`
+                    ? `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>`
                     : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
                 return `<li class="pp-row" data-id="${esc(p.id)}">
                   <div class="pp-row-main">
@@ -6605,8 +6623,6 @@ class VirtualBookshelf {
                   <div class="pp-row-actions">
                     ${publishActions}
                     <button class="btn btn-secondary btn-small" data-act="edit">編集</button>
-                    <button class="btn btn-secondary btn-small" data-act="dup">複製</button>
-                    <button class="btn btn-danger btn-small" data-act="del">削除</button>
                   </div>
                 </li>`;
             }).join('');
@@ -6615,10 +6631,7 @@ class VirtualBookshelf {
                 const bind = (act, fn) => { const b = row.querySelector(`[data-act=${act}]`); if (b) b.addEventListener('click', fn); };
                 bind('publish', () => this._ppPublishPage(id));
                 bind('republish', () => this._ppPublishPage(id));
-                bind('unpublish', () => this._ppUnpublishPage(id));
                 bind('edit', () => this._openPublishPageEditor(id));
-                bind('dup', () => this._ppDuplicate(id));
-                bind('del', () => this._ppDelete(id));
             });
             if (typeof window.applyIcons === 'function') window.applyIcons(ul);
         }
@@ -6632,10 +6645,17 @@ class VirtualBookshelf {
         const f = page ? page.select.fields : PublishPageStore.defaultFields();
         document.getElementById('pp-title').value = page ? page.title : '';
         document.getElementById('pp-intro').value = page ? page.intro : '';
+        document.getElementById('pp-slug').value = page ? (page.slug || '') : '';
+        // 詳細設定: 既存ページのみページ操作を出す。公開取消は公開中のときだけ。新規はたたんでおく。
+        const ops = document.getElementById('pp-page-ops'); if (ops) ops.hidden = !id;
+        const unpub = document.getElementById('pp-unpublish'); if (unpub) unpub.hidden = !(page && page.published);
+        const adv = document.getElementById('pp-advanced'); if (adv) adv.open = false;
         this._ppChosenBooks = new Set(page ? page.select.books : []);
         this._ppStyleParams = page ? { ...page.styleParams } : {};
-        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(cb => {
-            cb.checked = f[cb.dataset.field] !== false;
+        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => {
+            const on = f[pill.dataset.field] !== false;
+            pill.setAttribute('aria-pressed', on ? 'true' : 'false');
+            pill.classList.toggle('is-on', on);
         });
         this._ppRenderStyleSelect(page ? page.styleId : '');
         this._ppRenderShelves(page ? page.select.shelves : []);
@@ -6643,8 +6663,25 @@ class VirtualBookshelf {
         document.getElementById('pp-book-search').value = '';
         document.getElementById('pp-book-results').innerHTML = '';
         this._ppOnStyleChange();
+        this._ppUpdateSlugPreview();
         this._ppSetPreview('');
         this._ppShowEditor();
+    }
+
+    // 公開パス (スラッグ) のプレビュー: 入力 (空欄ならタイトル) を slug 化し、公開 URL を表示
+    _ppUpdateSlugPreview() {
+        const el = document.getElementById('pp-slug-preview');
+        if (!el) return;
+        const raw = (document.getElementById('pp-slug').value || '').trim();
+        const title = (document.getElementById('pp-title').value || '').trim();
+        const slug = PublishPageStore.slugify(raw || title || 'page');
+        let base = '<公開先>/';
+        try {
+            const pub = this.exporter._resolvePublishConfig();
+            if (pub.owner && pub.repo) base = this.exporter._pagesSiteUrl(pub.owner, pub.repo);
+        } catch (_) {}
+        const auto = raw ? '' : '（タイトルから自動）';
+        el.textContent = `公開URL: ${base}${slug}/ ${auto}`.trim();
     }
 
     _ppRenderStyleSelect(selectedId) {
@@ -6687,12 +6724,9 @@ class VirtualBookshelf {
         const host = document.getElementById('pp-shelves');
         const set = new Set(selectedIds || []);
         const shelves = this.bookshelfManager.getBookshelves();
-        // 本棚は共通コンポーネント (サイドバーのツリー行と同一の見た目) で選択させる
-        host.innerHTML = shelves.map(b => {
-            const id = b.internalId || b.id;
-            return window.BookshelfUI.pickItem(b, { value: id, count: (b.books && b.books.length) || 0, selected: set.has(id) });
-        }).join('');
-        host.querySelectorAll('.bs-pick-item').forEach(btn => {
+        // 本棚は**階層を保ったまま**選択させる (サイドバーのツリーと同じ親子・見た目)
+        host.innerHTML = window.BookshelfUI.tree(shelves, { selectedSet: set });
+        host.querySelectorAll('.bs-pick-row').forEach(btn => {
             btn.addEventListener('click', () => {
                 const on = btn.getAttribute('aria-pressed') !== 'true';
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -6733,39 +6767,79 @@ class VirtualBookshelf {
 
     _ppCollectForm() {
         const fields = {};
-        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(cb => { fields[cb.dataset.field] = cb.checked; });
-        const shelves = [...document.querySelectorAll('#pp-shelves .bs-pick-item[aria-pressed="true"]')].map(el => el.dataset.value);
+        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => { fields[pill.dataset.field] = pill.getAttribute('aria-pressed') === 'true'; });
+        const shelves = [...document.querySelectorAll('#pp-shelves .bs-pick-row[aria-pressed="true"]')].map(el => el.dataset.value);
         const params = {};
         document.querySelectorAll('#pp-style-params [data-param]').forEach(el => { params[el.dataset.param] = el.value; });
         return {
             title: document.getElementById('pp-title').value.trim() || '無題の公開ページ',
             intro: document.getElementById('pp-intro').value.trim(),
+            slug: (document.getElementById('pp-slug').value || '').trim(),
             styleId: document.getElementById('pp-style').value,
             styleParams: params,
             select: { shelves, books: [...this._ppChosenBooks], fields }
         };
     }
 
-    async _ppSave() {
+    // フォーム値の検証 (保存系で共通)。OK なら data、NG なら null
+    _ppValidatedForm() {
         const data = this._ppCollectForm();
-        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
+        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return null; }
         if (data.select.shelves.length === 0 && data.select.books.length === 0) {
-            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
+            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return null;
         }
+        // スラッグ空欄は「自動」の意味 → patch から外す (update で既存 slug を維持 / create でタイトル由来)
+        if (!data.slug) delete data.slug;
+        return data;
+    }
+
+    // 保存して書き込み、ページ ID を返す (新規は作成して _ppEditingId を更新)
+    async _ppPersistForm(data) {
+        if (this._ppEditingId) { await this.publishPageStore.update(this._ppEditingId, data); return this._ppEditingId; }
+        const p = await this.publishPageStore.create(data);
+        this._ppEditingId = p.id;
+        return p.id;
+    }
+
+    async _ppSave() {
+        const data = this._ppValidatedForm();
+        if (!data) return;
         try {
-            if (this._ppEditingId) await this.publishPageStore.update(this._ppEditingId, data);
-            else await this.publishPageStore.create(data);
+            await this._ppPersistForm(data);
             toast('公開ページを保存しました。', { type: 'success' });
             this._ppShowList();
         } catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); }
     }
 
+    // 保存して公開: 保存 → published=true → push (エディタから 1 アクションで公開)
+    async _ppSavePublish() {
+        const data = this._ppValidatedForm();
+        if (!data) return;
+        let id;
+        try { id = await this._ppPersistForm(data); }
+        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+        await this._ppPublishPage(id);  // published=true + export + toast (失敗時は published を戻す)
+        this._ppShowList();
+    }
+
+    // 一括更新: 公開中ページをまとめて再 push (公開状態は変えない・一括「公開」ではない)
+    async _ppRepublishAll() {
+        const published = this.publishPageStore.pages().filter(p => p.published);
+        if (!published.length) { toast('公開中のページがありません。各ページの「公開」または「保存して公開」で公開してください。', { type: 'warn' }); return; }
+        const r = await this._runPublishExport();
+        if (!r.ok) return;
+        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
+        toast(`公開中の ${r.result.published} ページを更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+        this._renderPublishPagesList();
+    }
+
     async _ppDelete(id) {
         const page = this.publishPageStore.get(id);
         const ok = await confirmDialog({ title: '公開ページを削除', message: `「${page ? page.title : ''}」を削除します。\n(次回の公開で実際のサイトからも消えます)`, okLabel: '削除', danger: true });
-        if (!ok) return;
+        if (!ok) return false;
         await this.publishPageStore.remove(id);
         this._renderPublishPagesList();
+        return true;
     }
 
     async _ppDuplicate(id) {

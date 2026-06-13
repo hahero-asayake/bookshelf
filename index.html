@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061403">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061407">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -697,12 +697,13 @@
             <!-- 一覧ビュー -->
             <div id="pp-list-view">
                 <div class="pp-list-head">
-                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで静的サイトとして公開します。</p>
+                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで静的サイトとして公開します。公開はページごとに行います。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
                 <ul id="pp-list" class="pp-list"></ul>
                 <div class="pp-list-foot">
-                    <span class="pp-foot-hint">公開はページごとに行います。各ページの「公開」を押すと公開先サイトへ反映されます。</span>
+                    <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
+                    <span class="pp-foot-hint">公開中のページをまとめて公開先サイトへ再反映します。</span>
                     <span id="pp-url" class="pp-url"></span>
                 </div>
             </div>
@@ -727,7 +728,7 @@
 
                         <section class="pp-section" id="pp-shelves-group">
                             <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本棚</h3>
-                            <div id="pp-shelves" class="bs-pick-list"></div>
+                            <div id="pp-shelves" class="bs-pick-tree"></div>
                         </section>
 
                         <section class="pp-section" id="pp-books-group">
@@ -740,12 +741,12 @@
                         <section class="pp-section">
                             <h3 class="pp-section-title"><span class="pp-step">4</span>公開する項目</h3>
                             <div class="pp-fields">
-                                <label><input type="checkbox" data-field="cover" checked> 表紙</label>
-                                <label><input type="checkbox" data-field="author" checked> 著者</label>
-                                <label><input type="checkbox" data-field="rating" checked> 評価</label>
-                                <label><input type="checkbox" data-field="memo" checked> 短文メモ</label>
-                                <label><input type="checkbox" data-field="detailMemo" checked> 長文メモ</label>
-                                <label><input type="checkbox" data-field="amazon" checked> Amazonリンク</label>
+                                <button type="button" class="pp-field-pill is-on" data-field="cover" aria-pressed="true">表紙</button>
+                                <button type="button" class="pp-field-pill is-on" data-field="author" aria-pressed="true">著者</button>
+                                <button type="button" class="pp-field-pill is-on" data-field="rating" aria-pressed="true">評価</button>
+                                <button type="button" class="pp-field-pill is-on" data-field="memo" aria-pressed="true">短文メモ</button>
+                                <button type="button" class="pp-field-pill is-on" data-field="detailMemo" aria-pressed="true">長文メモ</button>
+                                <button type="button" class="pp-field-pill is-on" data-field="amazon" aria-pressed="true">Amazonリンク</button>
                             </div>
                         </section>
 
@@ -753,6 +754,29 @@
                             <h3 class="pp-section-title"><span class="pp-step">5</span>スタイル設定</h3>
                             <div id="pp-style-params"></div>
                         </section>
+
+                        <!-- 詳細設定（普段は折りたたみ）: 公開パス＋ページ操作 -->
+                        <details class="pp-advanced" id="pp-advanced">
+                            <summary class="pp-advanced-summary">
+                                <span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="15"></span>
+                                <span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>
+                                詳細設定
+                                <span class="pp-advanced-note">公開パス・ページ操作</span>
+                            </summary>
+                            <div class="pp-advanced-body">
+                                <div class="form-group">
+                                    <label for="pp-slug">公開パス（スラッグ）</label>
+                                    <input id="pp-slug" type="text" placeholder="（空欄ならタイトルから自動）">
+                                    <small id="pp-slug-preview" class="pp-slug-preview"></small>
+                                </div>
+                                <div class="pp-page-ops" id="pp-page-ops" hidden>
+                                    <span class="pp-page-ops-label">このページ</span>
+                                    <button id="pp-dup" class="btn btn-secondary btn-small" type="button">複製</button>
+                                    <button id="pp-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取消</button>
+                                    <button id="pp-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
 
@@ -760,7 +784,8 @@
                     <button id="pp-back" class="btn btn-secondary">← 一覧へ</button>
                     <span class="pp-actions-spacer"></span>
                     <button id="pp-preview" class="btn btn-secondary"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                    <button id="pp-save" class="btn btn-primary"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
+                    <button id="pp-save" class="btn btn-secondary"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
+                    <button id="pp-save-publish" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>保存して公開</button>
                 </div>
             </div>
         </div>
@@ -980,8 +1005,8 @@
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/ui-components.js?v=2026061401"></script>
-    <script src="js/bookshelf.js?v=2026061403"></script>
+    <script src="js/ui-components.js?v=2026061404"></script>
+    <script src="js/bookshelf.js?v=2026061405"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
