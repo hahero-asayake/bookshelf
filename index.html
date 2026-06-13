@@ -258,7 +258,7 @@
                             <option value="local">この端末のフォルダに保存</option>
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
                             <option value="google-drive">Google Drive に保存（複数の端末で同期できます）</option>
-                            <option value="dropbox" disabled>Dropbox（対応予定）</option>
+                            <option value="dropbox">Dropbox に保存（複数の端末で同期できます）</option>
                         </select>
                         <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
                     </div>
@@ -383,6 +383,32 @@
                                 <div class="path-card-footer">
                                     <button id="gdrive-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
                                     <span id="gdrive-status" class="path-status"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sync-config-dropbox" class="sync-config-panel" hidden>
+                        <div class="path-card">
+                            <div class="path-card-header">
+                                <span class="path-card-icon" data-icon="box" data-icon-size="16"></span>
+                                <span class="path-card-label">Dropbox に保存</span>
+                                <span class="path-card-hint">Dropbox で承認するだけ（パスワードやトークンの入力は不要）。アプリ/asayake-bookshelf フォルダに保存します</span>
+                            </div>
+
+                            <div id="dropbox-auth-disconnected" class="path-card-body">
+                                <p class="github-auth-msg">Dropbox アカウントと接続します。<br>「接続」を押すと Dropbox の承認画面へ移動します。</p>
+                                <button id="dropbox-connect-btn" class="btn btn-primary"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>Dropbox に接続</button>
+                            </div>
+
+                            <div id="dropbox-auth-connected" class="path-card-body" hidden>
+                                <p class="github-auth-connected-msg">
+                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="dropbox-connected-email">(unknown)</strong> として接続中
+                                    <button id="dropbox-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
+                                </p>
+                                <div class="path-card-footer">
+                                    <button id="dropbox-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
+                                    <span id="dropbox-status" class="path-status"></span>
                                 </div>
                             </div>
                         </div>
@@ -817,7 +843,9 @@
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/gdrive-adapter.js?v=2026061301"></script>
     <script src="js/gdrive-auth.js?v=2026061301"></script>
-    <script src="js/sync-config.js?v=2026061301"></script>
+    <script src="js/dropbox-adapter.js?v=2026061301"></script>
+    <script src="js/dropbox-auth.js?v=2026061301"></script>
+    <script src="js/sync-config.js?v=2026061302"></script>
     <script src="js/storage.js?v=2026061203"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
@@ -826,7 +854,7 @@
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/bookshelf.js?v=2026061303"></script>
+    <script src="js/bookshelf.js?v=2026061304"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

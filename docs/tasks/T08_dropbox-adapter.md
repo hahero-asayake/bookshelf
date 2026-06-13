@@ -1,6 +1,7 @@
 # T08: Dropbox アダプタ
 
-状態: 未着手 / 依存: T07 (構造・UX パターンを踏襲)
+状態: ✅ コード実装完了 (2026-06-13) / 依存: T07 (構造・UX パターンを踏襲)
+夜間メモ: アダプタのロジック (write/read/上書き / list / delete / 日本語ファイル名の `\uXXXX` エスケープ / 401 force リトライ / 429 Retry-After バックオフ) と PKCE (verifier 86 文字・S256 challenge base64url) をモックで全 PASS。設定 UI も Dropbox 有効化済み (PKCE リダイレクト復帰は init() 冒頭で処理)。**実 OAuth 接続 (認可リダイレクト) と Dropbox 上の実 E2E (受け入れ基準 1〜5) は朝のユーザ操作待ち**。
 
 ## 目的
 
