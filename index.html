@@ -56,6 +56,10 @@
                             <span class="nav-icon" data-icon="library" data-icon-size="16"></span>
                             <span class="nav-label">ホーム</span>
                         </button>
+                        <button class="sidebar-nav-item" id="sidebar-publish" type="button" title="公開ページを管理・公開する">
+                            <span class="nav-icon" data-icon="globe" data-icon-size="16"></span>
+                            <span class="nav-label">公開</span>
+                        </button>
                     </div>
                     <div class="sidebar-section">
                         <div class="sidebar-section-title">
@@ -249,7 +253,7 @@
             <div class="modal-body">
 
                 <details class="settings-section" open>
-                    <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期 / 公開</summary>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期</summary>
                     <div class="settings-section-body">
 
                     <div class="sync-method-row">
@@ -422,6 +426,15 @@
                         </div>
                     </div>
 
+                    <div class="settings-action-row">
+                        <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>バックアップを保存</button>
+                    </div>
+                    </div>
+                </details>
+
+                <details class="settings-section" open>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
+                    <div class="settings-section-body">
                     <div class="publish-config">
                         <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
                         <select id="publish-repo-select">
@@ -430,11 +443,7 @@
                         <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
                         <span id="publish-repo-status" class="path-status"></span>
                     </div>
-
-                    <div class="settings-action-row">
-                        <button id="publish-to-public" class="btn btn-secondary" title="公開ページを作成・編集して静的サイトとして公開します"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開ページ / Web 公開</button>
-                        <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>バックアップを保存</button>
-                    </div>
+                    <small class="publish-config-hint">公開ページの作成・編集・公開は、左ペインの <strong>「公開」</strong> ボタンから行います。</small>
                     </div>
                 </details>
 
@@ -718,7 +727,7 @@
 
                         <section class="pp-section" id="pp-shelves-group">
                             <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本棚</h3>
-                            <div id="pp-shelves" class="pp-checklist"></div>
+                            <div id="pp-shelves" class="bs-pick-list"></div>
                         </section>
 
                         <section class="pp-section" id="pp-books-group">

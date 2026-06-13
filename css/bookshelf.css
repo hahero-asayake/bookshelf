@@ -3806,8 +3806,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .pp-style-select { width: 100%; }
 .pp-style-desc { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 0.45rem; line-height: 1.5; }
 .pp-param-label { display: block; font-size: 0.85rem; color: var(--fg2); margin-bottom: 0.3rem; }
-.pp-checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.35rem 0.9rem; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem; background: var(--panel); }
-.pp-checklist label, .pp-fields label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
+.pp-fields label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
 .pp-fields { display: flex; flex-wrap: wrap; gap: 0.55rem 1.2rem; }
 .pp-book-results { list-style: none; margin: 0.45rem 0 0; padding: 0; max-height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .pp-book-results:empty { display: none; }
@@ -3835,7 +3834,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .pp-preview-stage.pp-stage-mobile { padding: 18px 0; }
 .pp-preview-stage.pp-stage-mobile #pp-preview-frame { width: 390px; max-width: 390px; height: 100%; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18); background: #fff; }
 @media (max-width: 760px) {
-    .pp-checklist { grid-template-columns: 1fr 1fr; }
+    .bs-pick-list { grid-template-columns: 1fr 1fr; }
     .pp-preview-dialog { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
     .pp-edit-actions { flex-wrap: wrap; }
 }

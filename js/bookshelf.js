@@ -565,8 +565,8 @@ class VirtualBookshelf {
             exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
         }
 
-        // 公開ページ管理を開く (静的SSG, ADR-030)
-        const publishBtn = document.getElementById('publish-to-public');
+        // 公開ページ管理を開く (静的SSG, ADR-030)。左ペインの「公開」ボタンから (設定からは分離)
+        const publishBtn = document.getElementById('sidebar-publish');
         if (publishBtn) {
             publishBtn.addEventListener('click', () => this.openPublishPagesModal());
         }
@@ -3813,7 +3813,7 @@ class VirtualBookshelf {
             const isHandleStale = e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError');
             if (isHandleStale && this.syncMethod === 'local' && !this._syncReconnectNotified) {
                 this._syncReconnectNotified = true;
-                toast('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 → 「同期 / 公開」 → 「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
+                toast('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 → 「同期」 → 「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
                 if (this.storage && this.storage.adapter && typeof this.storage.adapter.setDirHandle === 'function') {
                     this.storage.adapter.setDirHandle(null);
                 }
@@ -5163,7 +5163,7 @@ class VirtualBookshelf {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。</p>';
+            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -6467,13 +6467,13 @@ class VirtualBookshelf {
      */
     async publishToPublic() {
         if (!this._isSyncReady()) {
-            toast('先に「同期 / 公開」で保存先を設定してください。', { type: 'warn' });
+            toast('先に「同期」で保存先を設定してください。', { type: 'warn' });
             return;
         }
         // 公開には GitHub 接続が必要 (同期方式が GitHub 以外でも、公開のためだけに接続できる)
         const gh = (SyncConfigManager.load().github) || {};
         if (!gh.token) {
-            toast('公開には GitHub 接続が必要です。設定の「同期 / 公開」で GitHub に接続してください。', { type: 'warn' });
+            toast('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', { type: 'warn' });
             return;
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -6489,7 +6489,7 @@ class VirtualBookshelf {
         }
         const pub = this.exporter._resolvePublishConfig();
         if (!pub.repo) {
-            toast('公開先リポジトリが未設定です。設定の「同期 / 公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
+            toast('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
             return;
         }
         const pageNames = pages.map(p => `・${p.title}`).join('\n');
@@ -6655,13 +6655,21 @@ class VirtualBookshelf {
 
     _ppRenderShelves(selectedIds) {
         const host = document.getElementById('pp-shelves');
-        const esc = PublishGenerator.esc;
         const set = new Set(selectedIds || []);
         const shelves = this.bookshelfManager.getBookshelves();
+        // 本棚は共通コンポーネント (サイドバーのツリー行と同一の見た目) で選択させる
         host.innerHTML = shelves.map(b => {
             const id = b.internalId || b.id;
-            return `<label><input type="checkbox" value="${esc(id)}"${set.has(id) ? ' checked' : ''}> ${esc(b.name)}</label>`;
+            return window.BookshelfUI.pickItem(b, { value: id, count: (b.books && b.books.length) || 0, selected: set.has(id) });
         }).join('');
+        host.querySelectorAll('.bs-pick-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const on = btn.getAttribute('aria-pressed') !== 'true';
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.classList.toggle('is-selected', on);
+            });
+        });
+        if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
     _ppRenderBookResults(query) {
@@ -6696,7 +6704,7 @@ class VirtualBookshelf {
     _ppCollectForm() {
         const fields = {};
         document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(cb => { fields[cb.dataset.field] = cb.checked; });
-        const shelves = [...document.querySelectorAll('#pp-shelves input:checked')].map(cb => cb.value);
+        const shelves = [...document.querySelectorAll('#pp-shelves .bs-pick-item[aria-pressed="true"]')].map(el => el.dataset.value);
         const params = {};
         document.querySelectorAll('#pp-style-params [data-param]').forEach(el => { params[el.dataset.param] = el.value; });
         return {
@@ -6832,7 +6840,7 @@ class VirtualBookshelf {
      */
     async openOrCreateBookMemo(asin) {
         if (!this._isSyncReady()) {
-            toast('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。');
+            toast('先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
@@ -7650,7 +7658,7 @@ class VirtualBookshelf {
             return;
         }
         if (!this._isSyncReady()) {
-            toast('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください');
+            toast('先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください');
             return;
         }
         try {
