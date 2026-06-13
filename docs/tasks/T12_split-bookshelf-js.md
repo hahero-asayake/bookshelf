@@ -1,10 +1,20 @@
-# T12: bookshelf.js モジュール分割
+# T12: bookshelf.js モジュール分割 ＋ 描画重複排除
 
-状態: 未着手 / 依存: **T05 必須 (テスト green が前提)・他全タスク完了後** (最後に実施)
+状態: 一部着手 (描画重複排除を先行開始, 2026-06-14) / 依存: **T05 必須 (テスト green が前提)・ファイル分割本体は他全タスク完了後**
 
 ## 目的
 
-`js/bookshelf.js` (約 7,600 行 + このラウンドの追加分) を責務別ファイルに分割し、以後の変更コストと AI のコンテキスト負荷を下げる。**挙動変更ゼロの移動リファクタ**。
+2 軸ある:
+
+1. **モジュール分割**: `js/bookshelf.js` (約 7,600 行) を責務別ファイルに分割し、変更コストと AI のコンテキスト負荷を下げる。**挙動変更ゼロの移動リファクタ**。
+2. **描画重複排除** (2026-06-14 追加): 同一ドメインオブジェクト (本棚・本) の描画が複数箇所でバラバラに実装されていた問題を、**単一の描画コンポーネントに集約**する。第一歩として本棚行を `js/ui-components.js` の `BookshelfUI` に集約済み (サイドバーツリー + 公開ページの本棚選択が共有)。
+
+### 描画重複排除の進捗・残
+
+- [x] `js/ui-components.js` (`BookshelfUI.rowCore` / `pickItem`) — 本棚行の正実装。サイドバーツリーと公開ピッカーが共有 (commit `e0e0f36` / `e9e91e2`)。
+- [ ] ホームカード `_renderBookshelfCard`、本棚ポップオーバー、本詳細 chip 等の本棚アイコン+名前の描画も BookshelfUI へ寄せる (見た目は icon-frame グループで概ね統一済み)。
+- [ ] **本アイテム** (一覧の `createBookElement` / 公開の本 chip / ホームの表紙) も `BookshelfUI.bookChip` 等に集約。
+- 分割表 (下記) の `app-sidebar.js` / `app-sync-ui.js` へ移すメソッドは **BookshelfUI を使う形** で移す。
 
 ## 方針 — mixin 方式 (ビルドレス維持)
 
@@ -36,8 +46,11 @@ Object.assign(VirtualBookshelf.prototype, window.BookshelfPaletteMixin);
 | `js/app-settings-ui.js` | 設定モーダル (プラグイン管理カード / IconPicker / 表示設定 / 取込 UI) | 大 |
 | `js/app-sync-ui.js` | 同期 UI (GitHub/Drive/Dropbox 接続フォーム / ステータスバー / 公開 UI) | 中 |
 | `js/app-mobile.js` | モバイル (`_initMobileNav` / 長押し / pull-to-refresh / マーキー) | 小 |
+| `js/app-publish-ui.js` | 公開ページ管理 UI (`openPublishPagesModal` / `_pp*` / `_runPublishExport`) | 中 |
+| `js/ui-components.js` ✅ | ドメインオブジェクトの共通描画 (`BookshelfUI`)。**mixin ではなく独立した stateless ヘルパ**。既に新設済み | 小 |
 
 残る `bookshelf.js` コア: constructor / init / 状態 / 保存系 (saveUserData / sync) / ルーティング連携。目標 1,500 行以下。
+※ `app-sidebar.js` / `app-publish-ui.js` のツリー・本棚選択描画は `BookshelfUI` を呼ぶ (重複を作らない)。
 
 ## 手順 (各ファイルごとに繰り返し)
 
