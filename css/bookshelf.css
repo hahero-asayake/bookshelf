@@ -5579,6 +5579,9 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 @media (prefers-reduced-motion: reduce) {
     .auto-marquee.is-marquee > .amq-inner { animation: none; }
+    /* 入場アニメを切る (animation が 0% で凍結し opacity:0 のまま残るのを防ぐ) */
+    .toast, .toast-out, .cfm-overlay { animation: none !important; }
+    .toast-out { opacity: 0; }
 }
 
 /* ===== 上部ステータスバー (#4 同期切断 / #5 更新あり) + pull-to-refresh ===== */
@@ -5896,6 +5899,97 @@ body.select-mode .drag-handle { display: none; }
    ファイル末尾に置き、後勝ちで 3 ペイン用ルールを上書きする。
    ===================================================================== */
 
+/* =====================================================================
+   通知 toast + 確認モーダル (T06, js/ui-feedback.js)
+   色は CSS 変数のみ。z-index はモーダル (1000+) より上の 1200。
+   ===================================================================== */
+#toast-container {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+    width: max-content;
+    max-width: min(92vw, 460px);
+}
+.toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.7rem 0.95rem;
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    box-shadow: 0 6px 24px var(--shadow-color);
+    font-size: 0.88rem;
+    line-height: 1.4;
+    max-width: 100%;
+    opacity: 1; /* 可視は base で保証 (入場アニメは transform のみ。アニメ凍結環境でも見える) */
+    animation: toast-in 0.18s ease-out;
+}
+.toast-message { white-space: pre-line; word-break: break-word; }
+.toast .toast-icon { display: inline-flex; flex: 0 0 auto; color: var(--accent); }
+.toast-success { border-left-color: var(--accent); }
+.toast-success .toast-icon { color: var(--accent); }
+.toast-warn { border-left-color: var(--warning); }
+.toast-warn .toast-icon { color: var(--warning); }
+.toast-error { border-left-color: var(--danger); }
+.toast-error .toast-icon { color: var(--danger); }
+.toast-close {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 0 0 0.25rem;
+}
+.toast-close:hover { color: var(--fg); }
+.toast-out { animation: toast-out 0.18s ease-in forwards; }
+@keyframes toast-in {
+    from { transform: translateY(8px); }
+    to { transform: translateY(0); }
+}
+@keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(8px); }
+}
+
+/* 確認モーダル */
+.cfm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1210;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.42);
+    padding: 1rem;
+    animation: toast-in 0.14s ease-out;
+}
+.cfm-box {
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px var(--shadow-color);
+    padding: 1.2rem 1.3rem;
+    max-width: 440px;
+    width: 100%;
+}
+.cfm-title { font-size: 1.02rem; font-weight: 700; margin-bottom: 0.5rem; }
+.cfm-message { font-size: 0.9rem; line-height: 1.55; white-space: pre-line; word-break: break-word; color: var(--fg2); }
+.cfm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.1rem; }
+
 /* 既定 (PC) ではモバイル専用要素は非表示 */
 .mobile-scrim,
 .mobile-bottom-nav,
@@ -6011,6 +6105,12 @@ body.select-mode .drag-handle { display: none; }
     }
     .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
     .mobile-bottom-nav button.is-active { color: var(--accent); }
+
+    /* toast は下部ナビ (約 58px) + セーフエリアの上に出す */
+    #toast-container {
+        bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+        max-width: 92vw;
+    }
 
     /* 本棚ビューヘッダーの左右余白を詰める */
     .bookshelf-view-header { padding-left: 0.6rem; padding-right: 0.6rem; }

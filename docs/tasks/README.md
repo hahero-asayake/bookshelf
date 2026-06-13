@@ -47,7 +47,7 @@
 | [T03](T03_toolbar-views.md) | ツールバー 4 動詞化 + 画像のみビュー | [x] 完了 (2026-06-12) | — | — |
 | [T04](T04_longmemo-frontmatter.md) | 長文メモ frontmatter 非表示 | [x] 完了 (2026-06-12) | — | — |
 | [T05](T05_test-ci.md) | テスト基盤 + GitHub Actions CI | [x] 完了 (2026-06-13) | — | — |
-| [T06](T06_toast.md) | エラー表示の toast 統一 | [ ] 未着手 | T05 推奨 | — |
+| [T06](T06_toast.md) | エラー表示の toast 統一 | [x] 完了 (2026-06-13) | T05 推奨 | — |
 | [T07](T07_gdrive-adapter.md) | Google Drive アダプタ | [ ] 未着手 | T01, T05 | GCP プロジェクト作成 |
 | [T08](T08_dropbox-adapter.md) | Dropbox アダプタ | [ ] 未着手 | T07 (構造を踏襲) | Dropbox App 作成 |
 | [T09](T09_publish-infra.md) | 公開基盤 (bookshelf-public) | [ ] 未着手 | T01 | repo 作成 + App インストール |
