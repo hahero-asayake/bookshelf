@@ -50,10 +50,13 @@
 | [T06](T06_toast.md) | エラー表示の toast 統一 | [x] 完了 (2026-06-13) | T05 推奨 | — |
 | [T07](T07_gdrive-adapter.md) | Google Drive アダプタ | [x] 実装完了 (2026-06-13, 実接続検証は朝) | T01, T05 | GCP プロジェクト作成 |
 | [T08](T08_dropbox-adapter.md) | Dropbox アダプタ | [x] 実装完了 (2026-06-13, 実接続検証は朝) | T07 (構造を踏襲) | Dropbox App 作成 |
-| [T09](T09_publish-infra.md) | 公開基盤 (bookshelf-public) | [x] 実装完了 (2026-06-13, 実公開pushは朝) | T01 | repo 作成 + App インストール |
-| [T10](T10_public-mode-design.md) | 公開モードデザイン | [ ] 未着手 | T09 | **モック承認ゲート** |
-| [T11](T11_seo-readme.md) | SEO / OGP / README | [ ] 未着手 | T02, T10 | 拡張の Store 公開 (任意) |
+| [T09](T09_publish-infra.md) | 公開基盤 (bookshelf-public) | [~] 実装済→**再設計で置換** (ADR-030) | T01 | repo 作成 + App インストール |
+| [T10](T10_public-mode-design.md) | 公開モードデザイン | [-] **P1 に統合** (静的SSG再設計) | T09 | — |
+| [P1](P1_static-publish-redesign.md) | **公開システム再設計 (静的SSG＋公開ページ単位)** | [ ] 未着手・設計合意済 | (公開選択/個人情報除去/push を流用) | 公開先 public repo |
+| [T11](T11_seo-readme.md) | SEO / OGP / README | [ ] 未着手 | T02, P1 | 拡張の Store 公開 (任意) |
 | [T12](T12_split-bookshelf-js.md) | bookshelf.js モジュール分割 | [ ] 未着手 | T05 必須・他全完了後 | — |
+
+> **公開機能の方針転換 (2026-06-13, ADR-030 / vault 別紙 09)**: T09 の `?u=` でアプリを丸ごと描画する公開モードは**廃止**し、**静的ページ生成 (SSG) ＋ 公開ページ単位 ＋ スタイルのプラグイン化 ＋ 公開先アダプタ**へ作り直す ([P1](P1_static-publish-redesign.md))。T09 で作った「対象/項目の選択・個人情報除去・GitHub push 経路」は流用。T10 (公開モードデザイン) は P1 のスタイルに吸収。**実装は方針合意済み・別紙確定後**。
 
 ### 順序の理由
 
