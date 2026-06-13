@@ -1,6 +1,8 @@
-# 📚 bookshelf
+# AsayakeBookshelf
 
-ローカルファイル（Obsidian vault 等の同期フォルダ）を正本に、本棚を一級概念として扱い、プラグインで拡張可能な個人読書ライブラリ。
+朝焼けを背に本棚から本を取る——ローカルファイル（Obsidian vault 等の同期フォルダ）を正本に、本棚を一級概念として扱い、プラグインで拡張可能な個人読書ライブラリ。
+
+> リポジトリ名・公開 URL は `bookshelf`（`hahero-asayake.github.io/bookshelf`）のまま、表示名のみ **AsayakeBookshelf** に統一（ADR-029）。
 
 [karaage0703/karaage-virtual-bookshelf](https://github.com/karaage0703/karaage-virtual-bookshelf) からフォーク → 全面再設計。
 

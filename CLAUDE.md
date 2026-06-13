@@ -252,7 +252,7 @@ PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀developme
 - 管理ツール (取込・公開・除外等) はサイドバーに置かず、設定モーダル + ⌘K
 - 本棚階層は icon 列を縦揃え、`▼/▸` は末尾 (Lucide chevron)
 - **アプリ内の絵文字は全廃** (2026-06-01 Phase A 完了)。デフォルト UI は Lucide のみ、ユーザが選ぶアイコン (本棚/プラグイン/ヘッダー) は IconPicker で Lucide / 任意文字 (絵文字含む) を切替可
-- 例外: `<title>` と favicon の 📚 はブラウザタブ視認性のため残す
+- `<title>` は表示名 `AsayakeBookshelf`、favicon/PWA アイコンは `icons/` の朝焼けアイコン (ADR-025)。旧 📚 絵文字は廃止
 - ボタンの色規約:
   - `.btn-primary`: `var(--accent)` (青紫 #5b6cff) — 主要アクション (保存、公開、接続 等)
   - `.btn-secondary`: ghost (white + line) — 副次アクション (キャンセル、開く 等)
