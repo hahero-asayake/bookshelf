@@ -49,7 +49,7 @@ class SyncConfigManager {
         return {
             method: 'local',
             github: { owner: '', repo: '', branch: 'main', basePath: '', token: '' },
-            googleDrive: {},
+            googleDrive: { token: '', tokenExpiresAt: null, rootFolderId: '', email: null },
             dropbox: {}
         };
     }
@@ -67,6 +67,7 @@ class SyncConfigManager {
             case 'github':
                 return SyncConfigManager._buildGitHub(config.github);
             case 'google-drive':
+                return SyncConfigManager._buildGoogleDrive(config.googleDrive);
             case 'dropbox':
                 console.warn(`SyncConfigManager: ${config.method} is not implemented yet, falling back to local`);
                 return new LocalFSAdapter();
@@ -86,6 +87,16 @@ class SyncConfigManager {
             branch: github.branch || 'main',
             basePath: github.basePath || '',
             token: github.token
+        });
+    }
+
+    static _buildGoogleDrive(googleDrive) {
+        if (!googleDrive || !googleDrive.rootFolderId) {
+            return null; // 未接続 → 呼び出し側で local フォールバック
+        }
+        return new GoogleDriveAdapter({
+            rootFolderId: googleDrive.rootFolderId,
+            getToken: (opts) => GoogleDriveAuth.ensureToken(opts)
         });
     }
 }

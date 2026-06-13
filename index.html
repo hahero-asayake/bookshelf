@@ -257,7 +257,7 @@
                         <select id="sync-method-select">
                             <option value="local">この端末のフォルダに保存</option>
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
-                            <option value="google-drive" disabled>Google Drive（対応予定）</option>
+                            <option value="google-drive">Google Drive に保存（複数の端末で同期できます）</option>
                             <option value="dropbox" disabled>Dropbox（対応予定）</option>
                         </select>
                         <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
@@ -357,6 +357,32 @@
                                     <button id="github-reload-repos-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>一覧を更新</button>
                                     <button id="github-save-repo-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
                                     <span id="github-status" class="path-status"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sync-config-google-drive" class="sync-config-panel" hidden>
+                        <div class="path-card">
+                            <div class="path-card-header">
+                                <span class="path-card-icon" data-icon="hard-drive" data-icon-size="16"></span>
+                                <span class="path-card-label">Google Drive に保存</span>
+                                <span class="path-card-hint">Google で承認するだけ（パスワードやトークンの入力は不要）。bookshelf-data フォルダに保存します</span>
+                            </div>
+
+                            <div id="gdrive-auth-disconnected" class="path-card-body">
+                                <p class="github-auth-msg">Google アカウントと接続します。<br>「接続」を押すと Google の承認画面が開きます。</p>
+                                <button id="gdrive-connect-btn" class="btn btn-primary"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>Google Drive に接続</button>
+                            </div>
+
+                            <div id="gdrive-auth-connected" class="path-card-body" hidden>
+                                <p class="github-auth-connected-msg">
+                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="gdrive-connected-email">(unknown)</strong> として接続中
+                                    <button id="gdrive-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
+                                </p>
+                                <div class="path-card-footer">
+                                    <button id="gdrive-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
+                                    <span id="gdrive-status" class="path-status"></span>
                                 </div>
                             </div>
                         </div>
@@ -789,7 +815,9 @@
     <script src="js/local-fs-adapter.js?v=2026061002"></script>
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
-    <script src="js/sync-config.js?v=2026061201"></script>
+    <script src="js/gdrive-adapter.js?v=2026061301"></script>
+    <script src="js/gdrive-auth.js?v=2026061301"></script>
+    <script src="js/sync-config.js?v=2026061301"></script>
     <script src="js/storage.js?v=2026061203"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
@@ -798,7 +826,7 @@
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/bookshelf.js?v=2026061301"></script>
+    <script src="js/bookshelf.js?v=2026061303"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

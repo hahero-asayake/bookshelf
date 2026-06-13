@@ -2359,7 +2359,7 @@ class VirtualBookshelf {
 
     /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub=adapter 接続済み) */
     _isSyncReady() {
-        if (this.syncMethod === 'github') {
+        if (this.syncMethod === 'github' || this.syncMethod === 'google-drive') {
             return this.storage && this.storage.adapter && this.storage.adapter.isConnected && this.storage.adapter.isConnected();
         }
         return !!this.obsidianDirHandle;
@@ -2444,8 +2444,48 @@ class VirtualBookshelf {
     async initSync() {
         if (this.syncMethod === 'github') {
             await this.initGitHubSync();
+        } else if (this.syncMethod === 'google-drive') {
+            await this.initGoogleDriveSync();
         } else {
             await this.initObsidianSync();
+        }
+    }
+
+    // Google Drive 初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)
+    async initGoogleDriveSync() {
+        const adapter = this.storage.adapter;
+        if (!(adapter instanceof GoogleDriveAdapter)) {
+            console.warn('initGoogleDriveSync: storage adapter is not GoogleDriveAdapter');
+            return;
+        }
+        const label = 'Google Drive (bookshelf-data)';
+        this.updateSyncStatus('loading', label);
+        try {
+            const format = await this.storage.detectFormat();
+            if (format === 'empty') {
+                await this.storage.initEmpty();
+            } else if (format === 'pre-notes-split') {
+                await this.storage.migrateNotesSplit();
+            } else if (format === 'legacy') {
+                await this.storage.migrateFromLegacy();
+            }
+            const state = await this.storage.loadAll();
+            const loaded = this._applyLoadedState(state);
+            if (loaded) {
+                this.updateDisplay();
+                this.updateStats();
+                this.updateBookshelfSelector();
+                this.renderBookshelfOverview();
+            }
+            this.updateSyncStatus('synced', label);
+        } catch (e) {
+            console.error('initGoogleDriveSync:', e);
+            this.updateSyncStatus('reconnect', label);
+            this._syncError = true;
+            this._syncErrorMsg = (e.message === 'GDRIVE_AUTH_FAILED')
+                ? 'Google Drive の認証が切れました。設定から再接続してください。'
+                : 'Google Drive からの読み込みに失敗しました。';
+            this._updateStatusBar();
         }
     }
 
@@ -2560,11 +2600,13 @@ class VirtualBookshelf {
         const selector = document.getElementById('sync-method-select');
         const localPanel = document.getElementById('sync-config-local');
         const githubPanel = document.getElementById('sync-config-github');
+        const gdrivePanel = document.getElementById('sync-config-google-drive');
         if (!selector || !localPanel || !githubPanel) return;
 
         const showPanel = (method) => {
             localPanel.hidden = (method !== 'local');
             githubPanel.hidden = (method !== 'github');
+            if (gdrivePanel) gdrivePanel.hidden = (method !== 'google-drive');
         };
 
         const config = this.syncConfig || SyncConfigManager.load();
@@ -2572,6 +2614,8 @@ class VirtualBookshelf {
         showPanel(selector.value);
 
         this._renderGitHubAuthState();
+        this._renderGoogleDriveAuthState();
+        this._setupGoogleDriveUI();
 
         selector.addEventListener('change', () => {
             const newMethod = selector.value;
@@ -3056,6 +3100,70 @@ class VirtualBookshelf {
                 login: null
             };
         }
+        SyncConfigManager.save(merged);
+        location.reload();
+    }
+
+    // ===== Google Drive 接続 UI (T07) =====
+
+    _renderGoogleDriveAuthState() {
+        const disc = document.getElementById('gdrive-auth-disconnected');
+        const conn = document.getElementById('gdrive-auth-connected');
+        if (!disc || !conn) return;
+        const gd = (SyncConfigManager.load().googleDrive) || {};
+        const connected = !!gd.rootFolderId;
+        disc.hidden = connected;
+        conn.hidden = !connected;
+        if (connected) {
+            const emailEl = document.getElementById('gdrive-connected-email');
+            if (emailEl) emailEl.textContent = gd.email || '(接続済み)';
+        }
+    }
+
+    _setupGoogleDriveUI() {
+        if (this._gdriveUIBound) return;
+        this._gdriveUIBound = true;
+        const connectBtn = document.getElementById('gdrive-connect-btn');
+        if (connectBtn) connectBtn.addEventListener('click', () => this._connectGoogleDrive());
+        const disconnectBtn = document.getElementById('gdrive-disconnect-btn');
+        if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectGoogleDrive());
+        const useBtn = document.getElementById('gdrive-use-btn');
+        if (useBtn) useBtn.addEventListener('click', () => this._useGoogleDrive());
+    }
+
+    async _connectGoogleDrive() {
+        const status = document.getElementById('gdrive-status');
+        try {
+            if (status) status.textContent = '接続中...';
+            const { email } = await GoogleDriveAuth.connect();
+            this._renderGoogleDriveAuthState();
+            toast(`Google Drive に接続しました${email ? ` (${email})` : ''}。`, { type: 'success' });
+            if (status) status.textContent = '';
+        } catch (e) {
+            console.error('Google Drive 接続エラー:', e);
+            if (status) status.textContent = '';
+            toast('Google Drive への接続に失敗しました。もう一度お試しください。', { type: 'error' });
+        }
+    }
+
+    _disconnectGoogleDrive() {
+        const merged = SyncConfigManager.load();
+        GoogleDriveAuth.disconnect();
+        const after = SyncConfigManager.load();
+        after.googleDrive = { ...(after.googleDrive || {}), rootFolderId: '', email: null };
+        if (merged.method === 'google-drive') after.method = 'local';
+        SyncConfigManager.save(after);
+        location.reload();
+    }
+
+    _useGoogleDrive() {
+        const gd = (SyncConfigManager.load().googleDrive) || {};
+        if (!gd.rootFolderId) {
+            toast('先に Google Drive に接続してください。', { type: 'warn' });
+            return;
+        }
+        const merged = SyncConfigManager.load();
+        merged.method = 'google-drive';
         SyncConfigManager.save(merged);
         location.reload();
     }
@@ -3630,6 +3738,9 @@ class VirtualBookshelf {
             const a = this.storage && this.storage.adapter;
             if (a && a.owner && a.repo) return `${a.owner}/${a.repo}@${a.branch}`;
             return 'GitHub';
+        }
+        if (this.syncMethod === 'google-drive') {
+            return 'Google Drive';
         }
         return this.obsidianDirHandle ? this.obsidianDirHandle.name : '';
     }
@@ -6307,8 +6418,8 @@ class VirtualBookshelf {
 
         const settings = this.userData.settings || (this.userData.settings = {});
         const requestedOpenWith = settings.bookMemoOpenWith || 'app-editor';
-        // GitHub モードでは外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
-        const openWith = (this.syncMethod === 'github') ? 'app-editor' : requestedOpenWith;
+        // クラウド同期 (GitHub / Drive) では外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
+        const openWith = (this.syncMethod === 'github' || this.syncMethod === 'google-drive') ? 'app-editor' : requestedOpenWith;
 
         // アプリ内エディタ: モーダルを開き、雛形は EasyMDE 側で扱う (空時は buildBookMemoTemplate)
         if (openWith === 'app-editor') {
