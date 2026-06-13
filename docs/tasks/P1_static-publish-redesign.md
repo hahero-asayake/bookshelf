@@ -7,7 +7,8 @@
 - [x] P1-1 PublishPageStore (`1aefc4c`) / [x] P1-2 スタイル engine+2種 (`1aefc4c`) / [x] P1-4 generator+ガード (`1aefc4c`) / [x] P1-5 exporter ページ駆動 push + 配線 (`1aefc4c`)
 - [x] P1-3 公開ページ管理 UI + ライブプレビュー (`5981cd1`、実データ検証済)
 - [x] P1-6 標準スタイル5種 + 機能検証 (`8137c1e`)
-- [ ] **残**: 旧 `?u=` 公開モード撤去 (現状は dead だが残置・新公開は静的HTML) / 本番 push / ユーザ手作業=公開repoの GitHub Pages 有効化。
+- [x] 旧 `?u=` 公開モード撤去: `loadDataPublicMode`/`_parsePublicSource`/`_publicBaseUrl`/`isPublicMode`/`.public-mode` を bookshelf.js・css から削除、設計書 (01/02/03/04/06/08) を SSG 実装済みへ同期。
+- [ ] **残**: 本番 push / ユーザ手作業=公開repoの GitHub Pages 有効化。
 - unit 51 + e2e 5 green。実機: 本棚セクション型/雑誌型が実データで描画・console 0。
 
 ## 目的

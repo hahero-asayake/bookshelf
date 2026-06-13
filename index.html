@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061308">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061309">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -427,7 +427,7 @@
                         <select id="publish-repo-select">
                             <option value="">(GitHub 接続後に選べます)</option>
                         </select>
-                        <small class="publish-config-hint">公開モードはここに書き出したデータを誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。</small>
+                        <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
                         <span id="publish-repo-status" class="path-status"></span>
                     </div>
 
@@ -949,7 +949,7 @@
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/bookshelf.js?v=2026061308"></script>
+    <script src="js/bookshelf.js?v=2026061309"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

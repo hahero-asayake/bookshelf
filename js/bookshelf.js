@@ -86,24 +86,11 @@ class VirtualBookshelf {
             this.router = new BookshelfRouter();
             this._suppressRouterUpdate = false;
         }
-        // 公開モード判定 (T09):
-        //   ?u=<owner>/<repo>[@branch] → そのユーザの公開 repo を raw から fetch (マルチユーザ)
-        //   ?mode=public / body[data-public-mode] は後方互換
-        const params = new URLSearchParams(window.location.search);
-        const uParam = params.get('u');
-        this.publicSource = this._parsePublicSource(uParam); // {owner,repo,branch} or null
-        const queryPublic = params.get('mode') === 'public';
-        const bodyPublic = document.body.dataset.publicMode === 'true';
-        this.isPublicMode = !!this.publicSource || queryPublic || bodyPublic;
+        // 公開は静的 SSG (公開ページ生成) へ移行済み (ADR-030)。
+        // 旧 ?u= 公開閲覧モードは廃止。アプリは編集モード単一になった。
 
-        if (this.isPublicMode) {
-            document.body.classList.add('public-mode');
-        }
-
-        // モバイル案内バナー（編集モード、かつ showDirectoryPicker 非対応端末で表示）
-        if (!this.isPublicMode) {
-            this._setupMobileBanner();
-        }
+        // モバイル案内バナー（showDirectoryPicker 非対応端末で表示）
+        this._setupMobileBanner();
 
         this.init();
     }
@@ -163,7 +150,7 @@ class VirtualBookshelf {
         try {
             // Dropbox OAuth リダイレクト復帰 (?code=) を最優先で処理。
             // 交換できたら config に method=dropbox + token が入るのでリロードして反映する。
-            if (!this.isPublicMode && typeof DropboxAuth !== 'undefined' && location.search.includes('code=')) {
+            if (typeof DropboxAuth !== 'undefined' && location.search.includes('code=')) {
                 try {
                     const exchanged = await DropboxAuth.handleRedirect();
                     if (exchanged) { location.reload(); return; }
@@ -172,11 +159,7 @@ class VirtualBookshelf {
                     if (typeof toast === 'function') toast('Dropbox の接続に失敗しました。もう一度お試しください。', { type: 'error' });
                 }
             }
-            if (this.isPublicMode) {
-                await this.loadDataPublicMode();
-            } else {
-                await this.loadData();
-            }
+            await this.loadData();
             this.setupEventListeners();
             this._initHeaderTemplates();
             this._applyHeaderLayout();
@@ -195,30 +178,28 @@ class VirtualBookshelf {
             this._renderSidebarTree();
 
 
-            // 同期は private モードのみ (LocalFS / GitHub / 将来 Drive・Dropbox)
-            if (!this.isPublicMode) {
-                await this.initSync();
-                // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
-                // 重要な同期は flushSync() を明示的に呼ぶ運用とする
-                window.addEventListener('beforeunload', () => {
+            // 同期 (LocalFS / GitHub / Drive・Dropbox)
+            await this.initSync();
+            // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
+            // 重要な同期は flushSync() を明示的に呼ぶ運用とする
+            window.addEventListener('beforeunload', () => {
+                if (this._syncDebounceTimer) {
+                    clearTimeout(this._syncDebounceTimer);
+                    this._syncDebounceTimer = null;
+                    // 同期的に発火（await は出来ないので最小限）
+                    this._runPendingSync();
+                }
+            });
+            // ページ非表示時にも flush（モバイル等）
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden' && this._pendingSync) {
                     if (this._syncDebounceTimer) {
                         clearTimeout(this._syncDebounceTimer);
                         this._syncDebounceTimer = null;
-                        // 同期的に発火（await は出来ないので最小限）
-                        this._runPendingSync();
                     }
-                });
-                // ページ非表示時にも flush（モバイル等）
-                document.addEventListener('visibilitychange', () => {
-                    if (document.visibilityState === 'hidden' && this._pendingSync) {
-                        if (this._syncDebounceTimer) {
-                            clearTimeout(this._syncDebounceTimer);
-                            this._syncDebounceTimer = null;
-                        }
-                        this._runPendingSync();
-                    }
-                });
-            }
+                    this._runPendingSync();
+                }
+            });
 
             // 公開エクスポート先 handle の復元は廃止 (出力先は同期先 public/ に統合)
 
@@ -250,75 +231,6 @@ class VirtualBookshelf {
             this.showError('データの読み込みに失敗しました。');
             this.hideLoading();
         }
-    }
-
-    // 公開モード: data/ 配下を fetch で読み込み
-    /**
-     * ?u= の値を検証して公開ソースに変換。
-     * `owner/repo` または `owner/repo@branch`。パターン外は null (任意 URL fetch への悪用防止)。
-     */
-    _parsePublicSource(u) {
-        if (!u) return null;
-        const m = String(u).match(/^([\w.-]+)\/([\w.-]+)(?:@([\w.\/-]+))?$/);
-        if (!m) return null;
-        const [, owner, repo, branch] = m;
-        // パストラバーサル防止: セグメントに '..' を含まない
-        if ([owner, repo, branch].some(s => s && s.split('/').includes('..'))) return null;
-        return { owner, repo, branch: branch || 'main' };
-    }
-
-    // 公開ソースの base URL。?u= 指定時は raw.githubusercontent、無指定は同階層 (後方互換)
-    _publicBaseUrl() {
-        if (this.publicSource) {
-            const { owner, repo, branch } = this.publicSource;
-            return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/`;
-        }
-        return '';
-    }
-
-    async loadDataPublicMode() {
-        this.bookManager = new BookManager();
-        const base = this._publicBaseUrl();
-
-        const fetchJSON = async (path) => {
-            const r = await fetch(base + path);
-            if (!r.ok) throw new Error(`${path} の取得に失敗 (${r.status})`);
-            return r.json();
-        };
-
-        // 公開データは公開 repo のルート (?u=) or 同階層 (後方互換)。
-        const [main, settings, library, bookshelvesMeta, allBookshelf, notesFile] = await Promise.all([
-            fetchJSON('main.json').catch(() => ({})),
-            fetchJSON('settings.json').catch(() => ({})),
-            fetchJSON('library.json').catch(() => ({ books: [] })),
-            fetchJSON('bookshelves.json').catch(() => ({ bookshelves: [] })),
-            fetchJSON('bookshelves/all.json').catch(() => null),
-            fetchJSON('notes.json').catch(() => ({ notes: {} }))
-        ]);
-
-        const bookshelfFiles = {};
-        for (const meta of (bookshelvesMeta.bookshelves || [])) {
-            if (meta.isSpecial) continue;
-            try {
-                const data = await fetchJSON(`bookshelves/${meta.slug}.json`);
-                bookshelfFiles[meta.internalId] = data;
-            } catch (e) {
-                console.warn(`本棚ファイル取得失敗: ${meta.slug}`, e);
-            }
-        }
-
-        this._applyLoadedState({
-            library,
-            exclusions: { excludedASINs: [] },
-            notes: notesFile.notes || {},
-            bookshelvesMeta,
-            allBookshelf: allBookshelf || { internalId: 'public-all', slug: 'all', name: 'すべての本', isSpecial: true, books: [] },
-            bookshelfFiles,
-            privateSettings: settings,
-            privateMain: main
-        });
-
-        this.applyFilters();
     }
 
     async loadData() {
@@ -884,8 +796,6 @@ class VirtualBookshelf {
      * パレットで実行できるコマンド一覧 (ヘッダーから移設した操作を含む)。
      */
     _paletteCommands() {
-        // 公開モードは ⌘K を検索のみにする (編集系コマンドを出さない、T09)
-        if (this.isPublicMode) return [];
         const navMain = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const cmds = [
@@ -3526,8 +3436,7 @@ class VirtualBookshelf {
         const _priorLocal = this.userData;
         let _hasPendingLocal = false;
         try {
-            _hasPendingLocal = !this.isPublicMode
-                && localStorage.getItem('virtualBookshelf_pendingSync') === '1'
+            _hasPendingLocal = localStorage.getItem('virtualBookshelf_pendingSync') === '1'
                 && !!(_priorLocal && Array.isArray(_priorLocal.bookshelves) && _priorLocal.bookshelves.length);
         } catch (e) { _hasPendingLocal = false; }
         // library.json が無くても allBookshelf があれば空 library として続行
@@ -3544,10 +3453,7 @@ class VirtualBookshelf {
                 lastImportDate: state.library.exportDate || null
             }
         };
-        // 公開モードは閲覧者の localStorage を公開データで汚染しない (T09)
-        if (!this.isPublicMode) {
-            localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
-        }
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
         this.books = this.bookManager.getAllBooks();
 
         // global notes（notes.json 由来、全本の rating/memo/hasDetailMemo の正本）
@@ -3645,8 +3551,7 @@ class VirtualBookshelf {
             }
         };
         // libraryBooks は容量大のため localStorage には保存しない
-        // 公開モードは閲覧者の localStorage を公開データで汚染しない (T09)
-        if (!this.isPublicMode) {
+        {
             const persisted = { ...this.userData };
             const { libraryBooks: _omit, ...storageRest } = persisted._storage;
             persisted._storage = storageRest;

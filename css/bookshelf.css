@@ -49,60 +49,7 @@
     padding: 0 0.3rem;
 }
 
-/* ===== Public mode: 編集系UIを全て非表示 ===== */
-.public-mode #add-book-manually,
-.public-mode #import-kindle,
-.public-mode #show-exclusions,
-.public-mode #export-unified,
-.public-mode #obsidian-sync-btn,
-.public-mode #obsidian-sync-status,
-.public-mode #publish-to-public,
-.public-mode #manage-bookshelves,
-.public-mode #open-settings,
-.public-mode #settings-modal,
-.public-mode .edit-mode-btn,
-.public-mode .delete-btn,
-.public-mode .exclude-btn,
-.public-mode .memo-file-btn,
-.public-mode .save-note-btn,
-.public-mode .save-note-status,
-.public-mode .save-book-changes,
-.public-mode .cancel-edit-btn,
-.public-mode .add-to-bookshelf,
-.public-mode .bookshelf-select,
-.public-mode .remove-from-bookshelf,
-.public-mode .propagate-to-descendants,
-.public-mode .book-edit-section,
-.public-mode .bookshelf-actions,
-.public-mode .star-rating .star {
-    pointer-events: none;
-}
-.public-mode #add-book-manually,
-.public-mode #import-kindle,
-.public-mode #show-exclusions,
-.public-mode #export-unified,
-.public-mode #obsidian-sync-btn,
-.public-mode #obsidian-sync-status,
-.public-mode #publish-to-public,
-.public-mode #manage-bookshelves,
-.public-mode #open-settings,
-.public-mode #settings-modal,
-.public-mode .edit-mode-btn,
-.public-mode .delete-btn,
-.public-mode .exclude-btn,
-.public-mode .memo-file-btn,
-.public-mode .save-note-btn,
-.public-mode .save-note-status,
-.public-mode .save-book-changes,
-.public-mode .cancel-edit-btn,
-.public-mode .add-to-bookshelf,
-.public-mode .bookshelf-select,
-.public-mode .remove-from-bookshelf,
-.public-mode .propagate-to-descendants,
-.public-mode .book-edit-section,
-.public-mode .bookshelf-actions {
-    display: none !important;
-}
+/* 旧 ?u= 公開閲覧モード (.public-mode) は廃止。公開は静的 SSG (ADR-030) に移行。 */
 
 /* Virtual Bookshelf Styles — mockup (refined-iconified.html) 準拠 */
 :root {
