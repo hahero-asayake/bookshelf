@@ -644,3 +644,6 @@ class AutoSaveManager {
         });
     }
 }
+// クラスは window.<ClassName> 公開 (プロジェクト流儀 / テストの jsdom import 用)
+window.BookManager = BookManager;
+window.AutoSaveManager = AutoSaveManager;

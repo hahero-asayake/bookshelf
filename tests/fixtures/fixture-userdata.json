@@ -1,0 +1,45 @@
+{
+  "bookshelves": [
+    {
+      "id": "all",
+      "internalId": "fixall001",
+      "name": "すべての本",
+      "iconName": "library",
+      "description": "",
+      "isSpecial": true,
+      "books": ["B000000001", "B000000002", "B000000003", "B000000004", "B000000005"],
+      "notes": {}
+    },
+    {
+      "id": "fixshelf",
+      "internalId": "fixshelf01",
+      "name": "テスト本棚",
+      "iconName": "library",
+      "description": "スモークテスト用",
+      "parent": "fixall001",
+      "isPublic": false,
+      "books": ["B000000001", "B000000002", "B000000003"],
+      "notes": {},
+      "createdAt": "2026-06-12T00:00:00.000Z"
+    }
+  ],
+  "notes": {
+    "B000000001": { "rating": 5 },
+    "B000000002": { "rating": 5, "memo": "テストメモ" },
+    "B000000003": { "rating": 3 }
+  },
+  "settings": {
+    "version": "2.0",
+    "defaultView": "covers",
+    "coverSize": "medium",
+    "sortOrder": "custom",
+    "disabledPlugins": []
+  },
+  "bookOrder": {
+    "all": ["B000000001", "B000000002", "B000000003", "B000000004", "B000000005"],
+    "fixshelf": ["B000000001", "B000000002", "B000000003"]
+  },
+  "stats": { "totalBooks": 5, "notesCount": 3 },
+  "version": "2.0",
+  "_storage": { "allInternalId": "fixall001", "exclusions": [] }
+}

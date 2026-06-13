@@ -1,0 +1,15 @@
+{
+  "name": "bookshelf-tests",
+  "private": true,
+  "type": "module",
+  "description": "AsayakeBookshelf のテスト用 devDependencies (アプリ本体はビルドレス。<script> 構成に node は不要)",
+  "scripts": {
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "jsdom": "^25.0.0",
+    "vitest": "^2.1.0"
+  }
+}

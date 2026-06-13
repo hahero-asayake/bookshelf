@@ -1,0 +1,15 @@
+{
+  "books": [
+    { "asin": "B000000001", "title": "フィクスチャの本 1", "authors": "著者A", "acquiredTime": 1700000000000, "readStatus": "READ", "productImage": "", "source": "fixture", "addedDate": 1700000000000 },
+    { "asin": "B000000002", "title": "フィクスチャの本 2", "authors": "著者A", "acquiredTime": 1700000001000, "readStatus": "READ", "productImage": "", "source": "fixture", "addedDate": 1700000001000 },
+    { "asin": "B000000003", "title": "フィクスチャの本 3", "authors": "著者B", "acquiredTime": 1700000002000, "readStatus": "UNREAD", "productImage": "", "source": "fixture", "addedDate": 1700000002000 },
+    { "asin": "B000000004", "title": "フィクスチャの本 4", "authors": "著者C", "acquiredTime": 1700000003000, "readStatus": "UNKNOWN", "productImage": "", "source": "fixture", "addedDate": 1700000003000 },
+    { "asin": "B000000005", "title": "フィクスチャの本 5", "authors": "著者C", "acquiredTime": 1700000004000, "readStatus": "READ", "productImage": "", "source": "fixture", "addedDate": 1700000004000 }
+  ],
+  "metadata": {
+    "lastImportDate": "2026-06-12T00:00:00.000Z",
+    "totalBooks": 5,
+    "manuallyAdded": 0,
+    "importedFromKindle": 5
+  }
+}

@@ -1,0 +1,79 @@
+// スモークテスト: 起動・基本操作のリグレッション網
+// フィクスチャを localStorage に注入して起動する (同期フォルダ不要の localStorage フォールバック経路)。
+// ⚠️ 大量冊数の描画テストは書かない (ヘッドレス + content-visibility の制約、COMMON 参照)
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
+const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
+
+/** フィクスチャ注入 + console error 収集付きで起動し、app 初期化を待つ */
+async function bootApp(page) {
+    const errors = [];
+    page.on('console', (msg) => {
+        if (msg.type() === 'error') errors.push(msg.text());
+    });
+    page.on('pageerror', (err) => errors.push(String(err)));
+    await page.addInitScript(([userData, library]) => {
+        localStorage.setItem('virtualBookshelf_userData', userData);
+        localStorage.setItem('virtualBookshelf_library', library);
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+    }, [fixtureUserData, fixtureLibrary]);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
+    // 実データ書込防止 (フィクスチャ起動なので同期先は無いが念のため)
+    await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    return errors;
+}
+
+test('起動してホーム (ダッシュボード) が描画される', async ({ page }) => {
+    const errors = await bootApp(page);
+    await expect(page.locator('#dashboard .dashboard-widget').first()).toBeVisible();
+    expect(await page.evaluate(() => window.bookshelf.books.length)).toBe(5);
+    expect(errors).toEqual([]);
+});
+
+test('本棚へ切替 → フィクスチャの本が描画される', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => window.bookshelf.switchBookshelf('fixshelf'));
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
+    await expect(page.locator('#current-bookshelf-title')).toHaveText('テスト本棚');
+    expect(errors).toEqual([]);
+});
+
+test('⌘K が開いて本棚名で検索 → 遷移', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.keyboard.press('Control+k');
+    await expect(page.locator('#command-palette')).toBeVisible();
+    await page.locator('#cmdk-input').fill('テスト本棚');
+    const item = page.locator('#cmdk-results .cmdk-item', { hasText: 'テスト本棚' }).first();
+    await expect(item).toBeVisible();
+    await item.click();
+    await expect(page.locator('#current-bookshelf-title')).toHaveText('テスト本棚');
+    expect(errors).toEqual([]);
+});
+
+test('本クリック → 右ペインに詳細', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => window.bookshelf.switchBookshelf('fixshelf'));
+    await page.locator('#bookshelf .book-item[data-asin="B000000002"]').click();
+    await expect(page.locator('body')).toHaveClass(/book-detail-pinned/);
+    await expect(page.locator('#book-detail-pane')).toContainText('フィクスチャの本 2');
+    expect(errors).toEqual([]);
+});
+
+test('評価フィルタで件数が変わり、funnel が点灯する', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => window.bookshelf.switchBookshelf('fixshelf'));
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
+    await page.locator('#toggle-filter').click();
+    await page.locator('#rating-seg .rseg[data-rating="5"]').click();
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(2); // ★5 は 2 冊
+    await expect(page.locator('#toggle-filter')).toHaveClass(/has-active-filter/);
+    await page.locator('#rating-filter-reset').click();
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
+    expect(errors).toEqual([]);
+});

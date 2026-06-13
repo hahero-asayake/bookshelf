@@ -57,3 +57,7 @@ _local/
 # wrangler の一時ファイル
 .wrangler/
 
+# Playwright の実行結果
+test-results/
+playwright-report/
+
