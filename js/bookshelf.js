@@ -2705,6 +2705,9 @@ class VirtualBookshelf {
         const reloadAfterInstallBtn = document.getElementById('github-reload-after-install-btn');
         if (reloadAfterInstallBtn) reloadAfterInstallBtn.addEventListener('click', () => this._loadGitHubRepos());
 
+        const publishRepoSel = document.getElementById('publish-repo-select');
+        if (publishRepoSel) publishRepoSel.addEventListener('change', () => this._onPublishRepoSelected());
+
         // basePath ブラウザ
         const browseBtn = document.getElementById('github-basepath-browse-btn');
         if (browseBtn) browseBtn.addEventListener('click', () => this._openBasepathBrowser());
@@ -2924,6 +2927,7 @@ class VirtualBookshelf {
                 sel.appendChild(opt);
             }
             sel.onchange = () => this._onGitHubRepoSelected();
+            this._populatePublishRepoSelect(repos);
             if (currentFull && repos.some(r => r.full_name === currentFull)) {
                 await this._loadGitHubBranches(currentFull, current.branch);
             }
@@ -2954,6 +2958,69 @@ class VirtualBookshelf {
         const sel = document.getElementById('github-repo-select');
         if (!sel || !sel.value) return;
         await this._loadGitHubBranches(sel.value);
+    }
+
+    // 公開先リポジトリのセレクタを、同期 repo 一覧と同じ accessible repos で埋める (T09)
+    _populatePublishRepoSelect(repos) {
+        const sel = document.getElementById('publish-repo-select');
+        if (!sel) return;
+        const cur = SyncConfigManager.load().publish || {};
+        const curFull = cur.owner && cur.repo ? `${cur.owner}/${cur.repo}` : '';
+        sel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— 公開先リポジトリを選択 —';
+        sel.appendChild(ph);
+        for (const r of repos) {
+            const opt = document.createElement('option');
+            opt.value = r.full_name;
+            opt.textContent = `${r.full_name}${r.private ? ' 🔒（非公開・公開不可）' : ''}`;
+            opt.dataset.defaultBranch = r.default_branch || 'main';
+            opt.dataset.private = r.private ? '1' : '';
+            if (r.full_name === curFull) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        // 設定済みだが一覧に無い (App のアクセス対象に未追加) 場合も選択を保持しつつ警告
+        if (curFull && !repos.some(r => r.full_name === curFull)) {
+            const opt = document.createElement('option');
+            opt.value = curFull;
+            opt.textContent = `${curFull}（アプリのアクセス対象に未追加？）`;
+            opt.selected = true;
+            sel.appendChild(opt);
+        }
+        this._reflectPublishRepoStatus();
+    }
+
+    _onPublishRepoSelected() {
+        const sel = document.getElementById('publish-repo-select');
+        if (!sel) return;
+        const full = sel.value;
+        const cfg = SyncConfigManager.load();
+        if (!full) {
+            cfg.publish = { ...(cfg.publish || {}), owner: '', repo: '' };
+            SyncConfigManager.save(cfg);
+            this._reflectPublishRepoStatus();
+            return;
+        }
+        const [owner, repo] = full.split('/');
+        const opt = sel.selectedOptions[0];
+        const branch = (opt && opt.dataset.defaultBranch) || 'main';
+        cfg.publish = { ...(cfg.publish || {}), owner, repo, branch };
+        SyncConfigManager.save(cfg);
+        this._reflectPublishRepoStatus();
+    }
+
+    _reflectPublishRepoStatus() {
+        const sel = document.getElementById('publish-repo-select');
+        const status = document.getElementById('publish-repo-status');
+        if (!sel || !status) return;
+        const opt = sel.selectedOptions[0];
+        if (!sel.value) { status.textContent = ''; return; }
+        if (opt && opt.dataset.private === '1') {
+            status.textContent = '⚠️ 非公開リポジトリは公開モードで読めません。public を選んでください';
+        } else {
+            status.textContent = `✅ 公開先: ${sel.value}`;
+        }
     }
 
     async _loadGitHubBranches(fullName, preferBranch) {
@@ -3243,6 +3310,20 @@ class VirtualBookshelf {
         if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectDropbox());
         const useBtn = document.getElementById('dropbox-use-btn');
         if (useBtn) useBtn.addEventListener('click', () => this._useDropbox());
+
+        // Dropbox App Console に登録すべき Redirect URI を表示 (DropboxAuth._redirectUri と一致)
+        const redirectEl = document.getElementById('dropbox-redirect-uri');
+        const redirectUri = location.origin + location.pathname;
+        if (redirectEl) redirectEl.textContent = redirectUri;
+        const copyBtn = document.getElementById('dropbox-copy-redirect');
+        if (copyBtn) copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(redirectUri);
+                toast('Redirect URI をコピーしました', { type: 'success' });
+            } catch (_) {
+                toast('コピーできませんでした。手動で選択してコピーしてください。', { type: 'warn' });
+            }
+        });
     }
 
     async _connectDropbox() {
@@ -6493,18 +6574,22 @@ class VirtualBookshelf {
             this.storage.setDirHandle(this.obsidianDirHandle);
         }
 
-        // 公開対象本棚を提示して確認
+        // 公開対象本棚 (オプトイン): isPublic を立てたユーザ本棚のみ。all (全蔵書) は含めない
         const publicBookshelves = this.bookshelfManager.getBookshelves()
-            .filter(b => b.isSpecial || b.isPublic);
+            .filter(b => b.isPublic && !b.isSpecial);
         if (publicBookshelves.length === 0) {
             toast('公開する本棚が1つもありません。本棚の編集画面で「この本棚を公開する」にチェックを入れてください。', { type: 'warn' });
             return;
         }
         const pub = this.exporter._resolvePublishConfig();
+        if (!pub.repo) {
+            toast('公開先リポジトリが未設定です。設定の「同期 / 公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
+            return;
+        }
         const shelfNames = publicBookshelves.map(b => `・${b.name}`).join('\n');
         const ok = await confirmDialog({
             title: 'Web で公開',
-            message: `次の本棚を ${pub.owner}/${pub.repo} に公開します:\n${shelfNames}\n\n公開 repo の内容は今回のデータで置き換わります。よろしいですか？`,
+            message: `次の本棚（に含まれる本）だけを ${pub.owner}/${pub.repo} に公開します:\n${shelfNames}\n\nこれ以外の本棚・全蔵書は公開されません。公開 repo の内容は今回のデータで置き換わります。よろしいですか？`,
             okLabel: '公開する'
         });
         if (!ok) return;

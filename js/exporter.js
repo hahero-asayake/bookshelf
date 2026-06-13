@@ -20,15 +20,16 @@ class BookshelfExporter {
         this.app = app;
     }
 
-    // 公開先 repo の設定を解決。owner 既定 = GitHub login、repo 既定 'bookshelf-public'
+    // 公開先 repo の設定を解決。owner 既定 = GitHub login。
+    // repo は「ユーザが明示的に選んだもの」だけを使う (勝手に bookshelf-public を作らない)。
     _resolvePublishConfig() {
         const cfg = SyncConfigManager.load();
         const gh = cfg.github || {};
         const pub = cfg.publish || {};
         const owner = pub.owner || gh.login || gh.owner || '';
-        const repo = pub.repo || 'bookshelf-public';
+        const repo = pub.repo || '';
         const branch = pub.branch || 'main';
-        return { owner, repo, branch, token: gh.token };
+        return { owner, repo, branch, token: gh.token, configured: !!(pub.owner && pub.repo) };
     }
 
     /**
@@ -49,6 +50,9 @@ class BookshelfExporter {
         if (!pub.owner) {
             throw new Error('公開先のアカウントが特定できません。GitHub に接続し直してください。');
         }
+        if (!pub.repo) {
+            throw new Error('公開先リポジトリが未設定です。設定の「同期 / 公開」で、公開用の GitHub リポジトリ（必ず public リポジトリ）を選んでください。');
+        }
         // 同期方式が GitHub の場合はトークンを最新化 (refresh 自動更新)
         if (this.app.syncMethod === 'github' && typeof this.app._ensureFreshGitHubToken === 'function') {
             await this.app._ensureFreshGitHubToken();
@@ -58,33 +62,45 @@ class BookshelfExporter {
         const storage = this.app.storage;
         const state = await storage.loadAll();
 
-        // 公開対象本棚: all (特殊) + isPublic=true のユーザ本棚
-        const publishableMetas = (state.bookshelvesMeta.bookshelves || [])
-            .filter(meta => meta.isSpecial || meta.isPublic);
+        // 公開対象本棚 (オプトイン): isPublic を立てた「ユーザ本棚」のみ。
+        // all (全蔵書) は isSpecial だが「全部入り」なので無条件には公開しない
+        //  (漫画だけ公開したいのに全蔵書が漏れる事故を防ぐ)。
+        // 公開モードの「すべて」ビューは、公開した本棚の本の和集合として後段で合成する。
+        const publicUserMetas = (state.bookshelvesMeta.bookshelves || [])
+            .filter(meta => meta.isPublic && !meta.isSpecial);
 
         const publishAsins = new Set();
         const hideDetailAsins = new Set();
         const filteredBookshelfFiles = [];
         const filteredMetas = [];
 
-        for (const meta of publishableMetas) {
-            const isAll = meta.slug === 'all';
-            const data = isAll ? state.allBookshelf : state.bookshelfFiles[meta.internalId];
+        for (const meta of publicUserMetas) {
+            const data = state.bookshelfFiles[meta.internalId];
             if (!data) continue;
+            // publishHide が立った本は除外
             const filteredBooks = (data.books || []).filter(asin => {
                 const note = data.notes && data.notes[asin];
                 return !(note && note.publishHide);
             });
-            const filteredData = { ...data, books: filteredBooks };
-            filteredBookshelfFiles.push({ slug: meta.slug, data: filteredData });
-            filteredMetas.push(meta);
+            // 本棚 override の notes は memo だけを残す
+            //  (publishHide 等のフラグや、隠した本のメモを公開データに漏らさない)
+            const cleanNotes = {};
             for (const asin of filteredBooks) {
-                publishAsins.add(asin);
-                const note = data.notes && data.notes[asin];
-                if (note && note.hideDetailMemo) hideDetailAsins.add(asin);
+                const n = data.notes && data.notes[asin];
+                if (n && n.memo && !n.hideMemo) cleanNotes[asin] = { memo: n.memo };
             }
+            const cleanData = { ...data, books: filteredBooks, notes: cleanNotes };
+            filteredBookshelfFiles.push({ slug: meta.slug, data: cleanData });
+            filteredMetas.push(meta);
+            for (const asin of filteredBooks) publishAsins.add(asin);
         }
 
+        // 公開対象の本が 1 冊も無ければ中止 (空 push で公開 repo を壊さない)
+        if (publishAsins.size === 0) {
+            throw new Error('公開対象の本がありません。本棚の編集画面で「この本棚を公開する」にチェックを入れてください。');
+        }
+
+        // 長文メモ非公開 (hideDetailMemo) は global notes 側で判定
         for (const [asin, note] of Object.entries(state.notes || {})) {
             if (note && note.hideDetailMemo && publishAsins.has(asin)) {
                 hideDetailAsins.add(asin);
@@ -94,6 +110,28 @@ class BookshelfExporter {
         const libraryBooks = ((state.library && state.library.books) || [])
             .filter(b => publishAsins.has(b.asin));
 
+        // 公開モードの「すべて」ビュー = 公開本棚の和集合 (全蔵書ではない)。
+        // スキーマは private/bookshelves/all.json と同じく「メタ + books のみ」。
+        const allMeta = (state.bookshelvesMeta.bookshelves || []).find(m => m.slug === 'all');
+        const publicAllMeta = {
+            internalId: (allMeta && allMeta.internalId) || 'public-all',
+            slug: 'all',
+            name: (allMeta && allMeta.name) || 'すべての本',
+            iconName: (allMeta && allMeta.iconName) || 'library',
+            isSpecial: true,
+            isPublic: true,
+            parent: null
+        };
+        const publicAllData = {
+            internalId: publicAllMeta.internalId,
+            slug: 'all',
+            name: publicAllMeta.name,
+            isSpecial: true,
+            isPublic: true,
+            parent: null,
+            books: libraryBooks.map(b => b.asin)
+        };
+
         const entries = [];
         const errors = [];
 
@@ -101,9 +139,11 @@ class BookshelfExporter {
             exportDate: new Date().toISOString(),
             books: libraryBooks
         }});
+        // bookshelves.json: 合成した all + 公開ユーザ本棚
         entries.push({ op: 'put', path: 'bookshelves.json', data: {
-            bookshelves: filteredMetas
+            bookshelves: [publicAllMeta, ...filteredMetas]
         }});
+        entries.push({ op: 'put', path: 'bookshelves/all.json', data: publicAllData });
         for (const f of filteredBookshelfFiles) {
             entries.push({ op: 'put', path: `bookshelves/${f.slug}.json`, data: f.data });
         }
@@ -124,7 +164,7 @@ class BookshelfExporter {
         entries.push({ op: 'put', path: 'notes.json', data: { notes: filteredNotes }});
 
         entries.push({ op: 'put', path: 'main.json', data: {
-            bookshelves: filteredMetas.map(m => m.internalId),
+            bookshelves: [publicAllMeta.internalId, ...filteredMetas.map(m => m.internalId)],
             appliedPlugins: [],
             defaultSort: 'addedDate-desc'
         }});
