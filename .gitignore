@@ -60,4 +60,11 @@ _local/
 # Playwright の実行結果
 test-results/
 playwright-report/
+.playwright-mcp/
+
+# アイコン作成の一時/素材スクラッチ (master は icons/source-art.png)
+mockups/_preview/
+mockups/icon-redesign.html
+mockups/icon-finalize.html
+icons/ChatGPT*.png
 
