@@ -1,6 +1,7 @@
 # T09: 公開基盤 (ユーザごとの公開 repo)
 
-状態: 未着手 / 依存: T01 (GitHub 認証基盤)
+状態: ✅ コード実装完了 (2026-06-13) / 依存: T01 (GitHub 認証基盤)
+夜間メモ: exporter を「公開 repo へデータのみ push + 削除同期 + dryRun」に書き換え。`?u=` 公開モード・検証・raw fetch・localStorage 非汚染・⌘K 検索のみ・公開 UI も実装。エクスポート全ロジック (公開本棚のみ・root配置・app shell非同梱・notes/settings の個人情報除去・hideMemo/hideDetailMemo 反映・削除同期・private混入検査・公開URL生成) と `?u=` 検証 (トラバーサル/不正文字/URL 拒否) をモックで全 PASS。**実 GitHub への dry-run/実公開 push は朝のユーザ操作待ち** (_local の ghu_ トークンは 8h で失効・旧接続のため refresh 不可 → 朝に再認証してから「Web 公開」)。**承認済みスコープ: isPublic=「漫画」のみ**。実行時に公開対象が違えば停止。
 
 ## 目的
 

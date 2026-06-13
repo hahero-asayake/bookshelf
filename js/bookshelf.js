@@ -82,10 +82,15 @@ class VirtualBookshelf {
             this.router = new BookshelfRouter();
             this._suppressRouterUpdate = false;
         }
-        // 公開モード判定: URL クエリ ?mode=public または body[data-public-mode="true"]
-        const queryPublic = new URLSearchParams(window.location.search).get('mode') === 'public';
+        // 公開モード判定 (T09):
+        //   ?u=<owner>/<repo>[@branch] → そのユーザの公開 repo を raw から fetch (マルチユーザ)
+        //   ?mode=public / body[data-public-mode] は後方互換
+        const params = new URLSearchParams(window.location.search);
+        const uParam = params.get('u');
+        this.publicSource = this._parsePublicSource(uParam); // {owner,repo,branch} or null
+        const queryPublic = params.get('mode') === 'public';
         const bodyPublic = document.body.dataset.publicMode === 'true';
-        this.isPublicMode = queryPublic || bodyPublic;
+        this.isPublicMode = !!this.publicSource || queryPublic || bodyPublic;
 
         if (this.isPublicMode) {
             document.body.classList.add('public-mode');
@@ -244,17 +249,40 @@ class VirtualBookshelf {
     }
 
     // 公開モード: data/ 配下を fetch で読み込み
+    /**
+     * ?u= の値を検証して公開ソースに変換。
+     * `owner/repo` または `owner/repo@branch`。パターン外は null (任意 URL fetch への悪用防止)。
+     */
+    _parsePublicSource(u) {
+        if (!u) return null;
+        const m = String(u).match(/^([\w.-]+)\/([\w.-]+)(?:@([\w.\/-]+))?$/);
+        if (!m) return null;
+        const [, owner, repo, branch] = m;
+        // パストラバーサル防止: セグメントに '..' を含まない
+        if ([owner, repo, branch].some(s => s && s.split('/').includes('..'))) return null;
+        return { owner, repo, branch: branch || 'main' };
+    }
+
+    // 公開ソースの base URL。?u= 指定時は raw.githubusercontent、無指定は同階層 (後方互換)
+    _publicBaseUrl() {
+        if (this.publicSource) {
+            const { owner, repo, branch } = this.publicSource;
+            return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/`;
+        }
+        return '';
+    }
+
     async loadDataPublicMode() {
         this.bookManager = new BookManager();
+        const base = this._publicBaseUrl();
 
         const fetchJSON = async (path) => {
-            const r = await fetch(path);
+            const r = await fetch(base + path);
             if (!r.ok) throw new Error(`${path} の取得に失敗 (${r.status})`);
             return r.json();
         };
 
-        // 公開モードのアプリは public/ 配下に index.html とデータが配置される想定。
-        // fetch は同階層の相対パス (data/ プレフィックスは廃止)。
+        // 公開データは公開 repo のルート (?u=) or 同階層 (後方互換)。
         const [main, settings, library, bookshelvesMeta, allBookshelf, notesFile] = await Promise.all([
             fetchJSON('main.json').catch(() => ({})),
             fetchJSON('settings.json').catch(() => ({})),
@@ -852,6 +880,8 @@ class VirtualBookshelf {
      * パレットで実行できるコマンド一覧 (ヘッダーから移設した操作を含む)。
      */
     _paletteCommands() {
+        // 公開モードは ⌘K を検索のみにする (編集系コマンドを出さない、T09)
+        if (this.isPublicMode) return [];
         const navMain = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const cmds = [
@@ -3429,7 +3459,10 @@ class VirtualBookshelf {
                 lastImportDate: state.library.exportDate || null
             }
         };
-        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        // 公開モードは閲覧者の localStorage を公開データで汚染しない (T09)
+        if (!this.isPublicMode) {
+            localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        }
         this.books = this.bookManager.getAllBooks();
 
         // global notes（notes.json 由来、全本の rating/memo/hasDetailMemo の正本）
@@ -3527,13 +3560,16 @@ class VirtualBookshelf {
             }
         };
         // libraryBooks は容量大のため localStorage には保存しない
-        const persisted = { ...this.userData };
-        const { libraryBooks: _omit, ...storageRest } = persisted._storage;
-        persisted._storage = storageRest;
-        try {
-            localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
-        } catch (e) {
-            console.error('localStorage 保存失敗:', e);
+        // 公開モードは閲覧者の localStorage を公開データで汚染しない (T09)
+        if (!this.isPublicMode) {
+            const persisted = { ...this.userData };
+            const { libraryBooks: _omit, ...storageRest } = persisted._storage;
+            persisted._storage = storageRest;
+            try {
+                localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
+            } catch (e) {
+                console.error('localStorage 保存失敗:', e);
+            }
         }
 
         // 未同期ローカル編集を採用した場合は、読込後に同期先へ再 push して確定させる
@@ -6443,29 +6479,35 @@ class VirtualBookshelf {
      * - GitHub Adapter なら storage.syncBatch で 1 commit にまとまる
      */
     async publishToPublic() {
-        // Web 公開機能は準備中 (#2 公開モード再設計が前提)。再開時はこのガードを外す。
-        if (this.PUBLISH_COMING_SOON !== false) {
-            toast('Web 公開機能は現在準備中です（近日対応）。');
+        if (!this._isSyncReady()) {
+            toast('先に「同期 / 公開」で保存先を設定してください。', { type: 'warn' });
             return;
         }
-        if (!this._isSyncReady()) {
-            toast('先に「同期 / 公開」で保存先（この端末のフォルダ または GitHub）を設定してください。');
+        // 公開には GitHub 接続が必要 (同期方式が GitHub 以外でも、公開のためだけに接続できる)
+        const gh = (SyncConfigManager.load().github) || {};
+        if (!gh.token) {
+            toast('公開には GitHub 接続が必要です。設定の「同期 / 公開」で GitHub に接続してください。', { type: 'warn' });
             return;
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
             this.storage.setDirHandle(this.obsidianDirHandle);
         }
 
-        // 公開対象本棚が 1 つ以上あるか軽くチェック
+        // 公開対象本棚を提示して確認
         const publicBookshelves = this.bookshelfManager.getBookshelves()
             .filter(b => b.isSpecial || b.isPublic);
         if (publicBookshelves.length === 0) {
-            toast('公開する本棚が1つもありません。\n本棚の編集画面で「この本棚を公開する」にチェックを入れてください。');
+            toast('公開する本棚が1つもありません。本棚の編集画面で「この本棚を公開する」にチェックを入れてください。', { type: 'warn' });
             return;
         }
-        if (!confirm(`Web 公開用のデータを書き出します。\n\n公開する本棚: ${publicBookshelves.length} 個\n\nよろしいですか？`)) {
-            return;
-        }
+        const pub = this.exporter._resolvePublishConfig();
+        const shelfNames = publicBookshelves.map(b => `・${b.name}`).join('\n');
+        const ok = await confirmDialog({
+            title: 'Web で公開',
+            message: `次の本棚を ${pub.owner}/${pub.repo} に公開します:\n${shelfNames}\n\n公開 repo の内容は今回のデータで置き換わります。よろしいですか？`,
+            okLabel: '公開する'
+        });
+        if (!ok) return;
 
         // 編集中の変更を確実に書き出してから export
         await this.flushSync();
@@ -6473,12 +6515,13 @@ class VirtualBookshelf {
         try {
             const result = await this.exporter.export();
             const errSummary = result.errors.length > 0
-                ? `\n\n⚠️ エラー ${result.errors.length} 件:\n${result.errors.slice(0, 3).join('\n')}${result.errors.length > 3 ? '\n...' : ''}`
+                ? `\n(注意 ${result.errors.length} 件: ${result.errors.slice(0, 2).join(' / ')})`
                 : '';
-            toast(`Web 公開用データの書き出しが完了しました。\n\n書籍: ${result.exported}冊\n本棚: ${result.bookshelves}個\n長文メモ: ${result.longMemos}件\nプラグイン: ${result.plugins.length}個\nファイル合計: ${result.entries}${errSummary}`);
+            toast(`公開しました (書籍 ${result.exported} / 本棚 ${result.bookshelves})。\n公開 URL: ${result.publicUrl}${errSummary}`, { type: 'success' });
+            console.info('公開 URL:', result.publicUrl);
         } catch (e) {
             console.error('公開エクスポートエラー:', e);
-            toast(`❌ ${e.message}`);
+            toast(e.message, { type: 'error' });
         }
     }
 

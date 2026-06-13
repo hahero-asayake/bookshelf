@@ -50,7 +50,9 @@ class SyncConfigManager {
             method: 'local',
             github: { owner: '', repo: '', branch: 'main', basePath: '', token: '' },
             googleDrive: { token: '', tokenExpiresAt: null, rootFolderId: '', email: null },
-            dropbox: { token: '', refreshToken: '', tokenExpiresAt: null, email: null }
+            dropbox: { token: '', refreshToken: '', tokenExpiresAt: null, email: null },
+            // 公開先 repo (T09)。owner 未設定なら GitHub login にフォールバック
+            publish: { owner: '', repo: 'bookshelf-public', branch: 'main' }
         };
     }
 
