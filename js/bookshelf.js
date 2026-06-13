@@ -4230,8 +4230,6 @@ class VirtualBookshelf {
             const hasChildren = children.length > 0;
             const isExpanded = expanded.has(nodeKey);
             const bookCount = (bs.books && bs.books.length) || 0;
-            const effectiveIcon = bs.iconName || 'library';
-            const iconSvg = window.renderIcon(effectiveIcon, { size: 16 });
             const isActive = this.currentBookshelf && (bs.id === this.currentBookshelf || bs.internalId === this.currentBookshelf);
 
             const node = document.createElement('div');
@@ -4239,11 +4237,10 @@ class VirtualBookshelf {
             node.dataset.bookshelfId = bs.id;
             node.dataset.internalId = bs.internalId;
             const toggleIconName = isExpanded ? 'chevron-down' : 'chevron-right';
+            // 本棚の「アイコン+名前+冊数」は共通コンポーネントで描画 (ツリー固有の indent/more/toggle だけ付加)
             node.innerHTML = `
                 <span class="tree-indent"></span>
-                <span class="tree-icon" data-icon-value="${effectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>
-                <span class="tree-label" title="${bs.name}">${bs.name}</span>
-                <span class="tree-count">${bookCount}</span>
+                ${window.BookshelfUI.rowCore(bs, { count: bookCount })}
                 <button class="tree-more" type="button" title="${bs.isSpecial ? '本棚の操作 (編集)' : '本棚の操作 (編集 / 子追加 / 削除)'}">${window.renderIcon('more-horizontal', { size: 14 })}</button>
                 ${hasChildren
                     ? `<button class="tree-toggle" type="button" title="${isExpanded ? '折りたたむ' : '展開'}">${window.renderIcon(toggleIconName, { size: 12 })}</button>`

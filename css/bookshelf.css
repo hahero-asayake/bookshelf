@@ -649,24 +649,62 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 .tree-indent { display: block; }
 
-.tree-icon {
-    grid-column: 2;
-    /* サイズ・背景・border は .bs-icon-frame グループで指定 (line ~688) */
-}
-
-.tree-label {
-    grid-column: 3;
+/* ===== 本棚行の共通ビジュアル (BookshelfUI.rowCore) ===== */
+/* 見た目はここで一元化し、配置だけ各コンテナ (tree=grid / picker=flex) が決める */
+.bsr-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
-.tree-count {
-    grid-column: 4;
+.bsr-count {
     font-size: 0.75rem;
     color: var(--line);
     font-variant-numeric: tabular-nums;
 }
+/* ツリー内での配置 (アイコン・サイズ等は .bs-icon-frame グループ) */
+.tree-node .bsr-icon { grid-column: 2; }
+.tree-node .bsr-label { grid-column: 3; }
+.tree-node .bsr-count { grid-column: 4; }
+
+/* 選択可能な本棚行 (公開ページの本棚選択など。BookshelfUI.pickItem) */
+.bs-pick-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 0.35rem;
+    max-height: 220px;
+    overflow: auto;
+    padding: 0.1rem;
+}
+.bookshelf-row.bs-pick-item {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    cursor: pointer;
+    font-size: 0.88rem;
+    color: var(--fg2);
+}
+.bs-pick-item .bsr-label { flex: 1 1 auto; }
+.bs-pick-item:hover { background: var(--line2); }
+.bs-pick-item.is-selected { background: var(--accent-bg); border-color: var(--accent); color: var(--fg); }
+.bsr-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: transparent;
+    background: var(--panel);
+}
+.bs-pick-item.is-selected .bsr-check { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .tree-toggle {
     grid-column: 6;
@@ -1368,7 +1406,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
    背景 #f9fafb + border + 角丸 で 「アイコンらしさ」 を統一。 */
 
 .bs-icon-frame,
-.tree-icon,
+.bsr-icon,
 .bs-popover-icon,
 .bs-chip-icon,
 .bs-card-icon {
@@ -1384,8 +1422,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 /* サイズバリエーション */
-.tree-icon {
-    /* ツリー内 (16px icon) */
+.bsr-icon {
+    /* ツリー / 本棚行 (16px icon) */
     width: 26px;
     height: 26px;
 }
@@ -1411,13 +1449,13 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 /* ホバー (interactive な箇所のみ) */
-.tree-node:hover .tree-icon,
+.tree-node:hover .bsr-icon,
 .bookshelf-popover-item:hover .bs-popover-icon {
     background: var(--accent-bg);
     border-color: #c9d2ff;
 }
 
-.tree-node.is-active .tree-icon,
+.tree-node.is-active .bsr-icon,
 .bookshelf-popover-item.is-current .bs-popover-icon {
     background: var(--accent-bg);
     border-color: var(--accent);
