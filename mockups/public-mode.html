@@ -1,0 +1,199 @@
+<!doctype html>
+<!-- 公開モードデザイン モック 3 案 (T10)。自己完結・ダミーデータ。朝レビュー用。
+     朝焼けパレット (hahero-asayake.github.io): 夜空 #181b2c→#4a3b4e / グロー #ff9e7d / 暖色 #ffecd2→#fcb69f
+     ?case=A|B|C で 1 案ずつ表示 (スクショ用)。無指定は 3 案を縦に並べる。 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公開モード モック — AsayakeBookshelf</title>
+<style>
+  :root{
+    --bg:#f7f7fb; --panel:#fff; --fg:#1c1f29; --fg2:#3a3f4d; --muted:#8990a3;
+    --line:#e7e8ef; --line2:#f0f1f6; --accent:#5b6cff; --accent-bg:#eef0ff;
+    --star:#f0a020;
+    /* 朝焼け (公開ページ差別化) */
+    --asayake-night:#181b2c; --asayake-mid:#2d2638; --asayake-dusk:#4a3b4e;
+    --asayake-glow:#ff9e7d; --asayake-warm1:#ffecd2; --asayake-warm2:#fcb69f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:"Hiragino Kaku Gothic ProN","Segoe UI",system-ui,sans-serif;line-height:1.6}
+  .case-wrap{max-width:1180px;margin:0 auto 60px;background:var(--panel);box-shadow:0 1px 0 var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .case-label{background:var(--fg);color:#fff;font-size:.78rem;padding:6px 16px;letter-spacing:.04em}
+  .cover{background:linear-gradient(135deg,#c9ccd8,#aeb2c2);border-radius:4px;aspect-ratio:2/3;display:flex;align-items:flex-end;justify-content:center;color:#fff;font-size:.62rem;text-align:center;padding:6px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+  .stars{color:var(--star);letter-spacing:1px;font-size:.8rem}
+  .stars .off{color:#d6d8e2}
+  .muted{color:var(--muted)}
+  .chip{display:inline-block;background:var(--accent-bg);color:var(--accent);border-radius:20px;padding:2px 10px;font-size:.72rem;font-weight:600}
+  .aff{font-size:.7rem;color:var(--muted);padding:14px 22px;border-top:1px solid var(--line);background:var(--line2)}
+  .aff a{color:var(--muted)}
+
+  /* ===== 案 A: 3 ペイン閲覧版 (慣れた構造) ===== */
+  .a-shell{display:grid;grid-template-columns:200px 1fr 280px;min-height:520px}
+  .a-side{background:#fafbff;border-right:1px solid var(--line);padding:18px 14px}
+  .a-brand{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px}
+  .a-brand .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(160deg,var(--asayake-night),var(--asayake-dusk));position:relative}
+  .a-brand .logo::after{content:"";position:absolute;inset:5px 5px 8px;background:radial-gradient(circle at 50% 60%,var(--asayake-glow),transparent 70%);border-radius:50%}
+  .a-bio{font-size:.74rem;color:var(--muted);margin:6px 0 16px}
+  .a-navttl{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px}
+  .a-nav a{display:block;padding:7px 10px;border-radius:8px;font-size:.86rem;color:var(--fg2);text-decoration:none}
+  .a-nav a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .a-main{padding:22px 24px;overflow:auto}
+  .a-h2{font-size:1.15rem;margin-bottom:2px}
+  .a-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:18px;margin-top:18px}
+  .a-card .t{font-size:.74rem;margin-top:7px;font-weight:600;line-height:1.3}
+  .a-card .au{font-size:.68rem;color:var(--muted)}
+  .a-detail{background:#fafbff;border-left:1px solid var(--line);padding:20px 18px}
+  .a-detail .cover{width:120px;margin:0 auto 14px}
+  .a-memo{background:var(--line2);border-radius:8px;padding:10px 12px;font-size:.78rem;color:var(--fg2);margin-top:12px}
+  .a-amazon{display:inline-block;margin-top:14px;background:var(--accent);color:#fff;text-decoration:none;font-size:.78rem;padding:8px 14px;border-radius:8px}
+
+  /* ===== 案 B: 1 カラム雑誌風 (朝焼けヒーロー + キュレーション) ===== */
+  .b-hero{background:linear-gradient(135deg,var(--asayake-night),var(--asayake-mid) 55%,var(--asayake-dusk));color:#fff;padding:46px 40px 40px;position:relative;overflow:hidden}
+  .b-hero::after{content:"";position:absolute;right:-80px;top:-40px;width:320px;height:320px;background:radial-gradient(circle,var(--asayake-glow),transparent 65%);opacity:.55}
+  .b-hero h1{font-size:1.9rem;letter-spacing:.02em;position:relative}
+  .b-hero .sub{opacity:.85;margin-top:8px;font-size:.92rem;position:relative;max-width:560px}
+  .b-hero .by{margin-top:18px;font-size:.78rem;opacity:.7;position:relative}
+  .b-sec{padding:30px 40px}
+  .b-sec h2{font-size:1.2rem;display:flex;align-items:baseline;gap:10px;border-left:4px solid var(--asayake-warm2);padding-left:12px}
+  .b-sec h2 .cnt{font-size:.74rem;color:var(--muted);font-weight:400}
+  .b-cur{font-size:.86rem;color:var(--fg2);margin:8px 0 18px;padding-left:16px}
+  .b-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:22px}
+  .b-card .cover{box-shadow:0 6px 18px rgba(24,27,44,.22)}
+  .b-card .t{font-size:.8rem;margin-top:9px;font-weight:600}
+  .b-card .au{font-size:.7rem;color:var(--muted)}
+  .b-card .stars{margin-top:3px}
+  .b-card .note{font-size:.72rem;color:var(--fg2);margin-top:5px;background:var(--line2);border-radius:6px;padding:5px 8px}
+
+  /* ===== 案 C: ハイブリッド (上部 特集ヒーロー + 下部 棚ブラウズ) ===== */
+  .c-hero{background:linear-gradient(120deg,var(--asayake-night),var(--asayake-dusk));color:#fff;padding:34px 36px;display:flex;gap:26px;align-items:center;position:relative;overflow:hidden}
+  .c-hero::before{content:"";position:absolute;left:30%;bottom:-120px;width:380px;height:240px;background:radial-gradient(circle,var(--asayake-glow),transparent 70%);opacity:.5}
+  .c-feat-cover{width:120px;flex:0 0 120px;position:relative}
+  .c-hero .info{position:relative}
+  .c-hero h1{font-size:1.5rem}
+  .c-hero .lead{opacity:.85;font-size:.86rem;margin-top:6px;max-width:430px}
+  .c-hero .badge{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);border-radius:20px;font-size:.7rem;padding:3px 11px;margin-bottom:10px}
+  .c-tabs{display:flex;gap:6px;padding:14px 36px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .c-tabs a{padding:9px 14px;font-size:.84rem;color:var(--fg2);text-decoration:none;border-bottom:2px solid transparent}
+  .c-tabs a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+  .c-body{padding:24px 36px}
+  .c-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:18px}
+  .c-card .t{font-size:.76rem;margin-top:7px;font-weight:600}
+  .c-card .au{font-size:.68rem;color:var(--muted)}
+
+  @media(max-width:720px){
+    .a-shell{grid-template-columns:1fr}
+    .a-side,.a-detail{display:none}
+    .c-hero{flex-direction:column;text-align:center}
+    .b-hero h1{font-size:1.5rem}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  const star = (n)=>`<span class="stars">${'★'.repeat(n)}<span class="off">${'★'.repeat(5-n)}</span></span>`;
+  // ダミー本 (公開名義 hahero、本名は出さない)
+  const books = [
+    {t:'チェンソーマン 1',a:'藤本タツキ',r:5,note:'1巻のつかみが圧巻。'},
+    {t:'ダンジョン飯 1',a:'九井諒子',r:5,note:'飯と冒険の両立。'},
+    {t:'ヴィンランド・サガ 1',a:'幸村誠',r:4,note:''},
+    {t:'スキップとローファー 1',a:'高松美咲',r:5,note:'読後感がいい。'},
+    {t:'ブルーピリオド 1',a:'山口つばさ',r:4,note:''},
+    {t:'チ。―地球の運動について― 1',a:'魚豊',r:5,note:''},
+  ];
+  const coverDiv = (b)=>`<div class="cover">${b.t}</div>`;
+
+  // ---- 案 A ----
+  const caseA = ()=>`
+  <div class="case-wrap"><div class="case-label">案 A — 3 ペイン閲覧版 (編集 UI を簡素化、慣れた構造)</div>
+    <div class="a-shell">
+      <aside class="a-side">
+        <div class="a-brand"><span class="logo"></span>hahero の本棚</div>
+        <div class="a-bio">Kindle で読んだ漫画の記録。月に数十冊。</div>
+        <div class="a-navttl">本棚</div>
+        <nav class="a-nav">
+          <a class="on">漫画 <span class="muted">(${books.length})</span></a>
+          <a>お気に入り <span class="muted">(12)</span></a>
+          <a>今年読んだ <span class="muted">(48)</span></a>
+        </nav>
+      </aside>
+      <main class="a-main">
+        <div class="a-h2">漫画</div>
+        <div class="muted" style="font-size:.82rem">お気に入りの漫画たち</div>
+        <div class="a-grid">
+          ${books.map(b=>`<div class="a-card">${coverDiv(b)}<div class="t">${b.t}</div><div class="au">${b.a}</div>${star(b.r)}</div>`).join('')}
+        </div>
+      </main>
+      <aside class="a-detail">
+        <div class="cover">チェンソーマン 1</div>
+        <div style="font-weight:700">チェンソーマン 1</div>
+        <div class="muted" style="font-size:.8rem">藤本タツキ</div>
+        <div style="margin-top:6px">${star(5)}</div>
+        <span class="chip" style="margin-top:10px">漫画</span>
+        <div class="a-memo">1巻のつかみが圧巻。デンジの衝動と哀しさ。長文メモもここに読み取り専用で表示。</div>
+        <a class="a-amazon">Amazon で見る</a>
+      </aside>
+    </div>
+    <div class="aff">※ 当ページの商品リンクには Amazon アソシエイトを含みます。 / Powered by <a href="#">AsayakeBookshelf</a></div>
+  </div>`;
+
+  // ---- 案 B ----
+  const caseB = ()=>`
+  <div class="case-wrap"><div class="case-label">案 B — 1 カラム雑誌風 (朝焼けヒーロー + 本棚ごとのキュレーション)</div>
+    <div class="b-hero">
+      <h1>hahero の本棚</h1>
+      <div class="sub">Kindle で読んだ漫画を、棚ごとに眺められる読書ログ。気に入った巻にひとことメモを添えています。</div>
+      <div class="by">curated by hahero ・ AsayakeBookshelf</div>
+    </div>
+    <section class="b-sec">
+      <h2>漫画 <span class="cnt">${books.length} 冊</span></h2>
+      <div class="b-cur">今いちばん推している棚。読み返したくなる 1 巻を選びました。</div>
+      <div class="b-row">
+        ${books.map(b=>`<div class="b-card">${coverDiv(b)}<div class="t">${b.t}</div><div class="au">${b.a}</div>${star(b.r)}${b.note?`<div class="note">${b.note}</div>`:''}</div>`).join('')}
+      </div>
+    </section>
+    <section class="b-sec" style="border-top:1px solid var(--line)">
+      <h2>お気に入り <span class="cnt">12 冊</span></h2>
+      <div class="b-cur">何度でも開いてしまう殿堂入り。</div>
+      <div class="b-row">
+        ${books.slice(0,4).map(b=>`<div class="b-card">${coverDiv(b)}<div class="t">${b.t}</div><div class="au">${b.a}</div>${star(b.r)}</div>`).join('')}
+      </div>
+    </section>
+    <div class="aff">※ 当ページの商品リンクには Amazon アソシエイトを含みます。 / Powered by <a href="#">AsayakeBookshelf</a></div>
+  </div>`;
+
+  // ---- 案 C ----
+  const caseC = ()=>`
+  <div class="case-wrap"><div class="case-label">案 C — ハイブリッド (上部に特集ヒーロー + 下部に棚タブでブラウズ)</div>
+    <div class="c-hero">
+      <div class="c-feat-cover"><div class="cover">チェンソーマン 1</div></div>
+      <div class="info">
+        <span class="badge">今月の一冊</span>
+        <h1>hahero の本棚</h1>
+        <div class="lead">いま推したい 1 冊と、棚ごとのコレクション。Kindle 蔵書から公開したものだけを並べています。</div>
+      </div>
+    </div>
+    <nav class="c-tabs">
+      <a class="on">漫画</a><a>お気に入り</a><a>今年読んだ</a><a>SF</a>
+    </nav>
+    <div class="c-body">
+      <div class="c-grid">
+        ${books.map(b=>`<div class="c-card">${coverDiv(b)}<div class="t">${b.t}</div><div class="au">${b.a}</div>${star(b.r)}</div>`).join('')}
+      </div>
+    </div>
+    <div class="aff">※ 当ページの商品リンクには Amazon アソシエイトを含みます。 / Powered by <a href="#">AsayakeBookshelf</a></div>
+  </div>`;
+
+  const sel = new URLSearchParams(location.search).get('case');
+  const all = { A: caseA, B: caseB, C: caseC };
+  const root = document.getElementById('root');
+  root.style.padding = '30px 20px';
+  if (sel && all[sel.toUpperCase()]) {
+    root.innerHTML = all[sel.toUpperCase()]();
+  } else {
+    root.innerHTML = caseA() + caseB() + caseC();
+  }
+</script>
+</body>
+</html>
