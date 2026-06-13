@@ -112,8 +112,15 @@ const SHELF_SECTIONS_CSS = `
 .shelf-sections .card{ background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden;
   display:flex; flex-direction:column }
 .shelf-sections .card .cover, .shelf-sections .card .cover-ph{ width:100%; aspect-ratio:2/3; object-fit:cover }
-.shelf-sections .card-body{ padding:10px 12px 14px }
-.shelf-sections .card-title{ font-weight:600; font-size:.92rem; margin:0 0 .2rem }
+.shelf-sections .card-body{ padding:10px 12px 14px; display:flex; flex-direction:column; gap:2px }
+.shelf-sections .card-title{ font-weight:600; font-size:.92rem; margin:0 0 .15rem;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+/* 短文メモは高さを抑えてカードを揃える（グリッドの行高さが暴れるのを防ぐ）。
+   card-body が flex のため -webkit-box は blockify されうる → max-height で確実に上限を付ける */
+.shelf-sections .card .memo{ font-size:.82rem; line-height:1.45; color:#5a5263; margin:.25rem 0 .1rem;
+  max-height:5.85em; overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical }
+.shelf-sections .card .amazon{ margin-top:auto; align-self:flex-start }
 @media(max-width:480px){ .shelf-sections .grid{ grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:14px } }
 `;
 

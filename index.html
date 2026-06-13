@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061309">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061401">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -700,30 +700,36 @@
 
             <!-- 編集ビュー -->
             <div id="pp-edit-view" hidden>
-                <div class="pp-edit-grid">
-                    <div class="pp-edit-form">
-                        <div class="form-group"><label for="pp-title">タイトル</label><input id="pp-title" type="text" placeholder="例: お気に入りの漫画"></div>
-                        <div class="form-group"><label for="pp-intro">紹介文（任意）</label><textarea id="pp-intro" rows="2"></textarea></div>
-                        <div class="form-group">
-                            <label for="pp-style">スタイル</label>
-                            <select id="pp-style"></select>
-                            <small id="pp-style-desc" class="pp-style-desc"></small>
-                        </div>
+                <div class="pp-editor">
+                    <!-- 1. スタイル選択（先頭） -->
+                    <section class="pp-section">
+                        <h3 class="pp-section-title"><span class="pp-step">1</span>スタイルを選ぶ</h3>
+                        <select id="pp-style" class="pp-style-select"></select>
+                        <small id="pp-style-desc" class="pp-style-desc"></small>
+                    </section>
 
-                        <div class="form-group" id="pp-shelves-group">
-                            <label>載せる本棚</label>
+                    <!-- スタイル選択後に出てくる設定 -->
+                    <div id="pp-config" hidden>
+                        <section class="pp-section">
+                            <h3 class="pp-section-title"><span class="pp-step">2</span>基本情報</h3>
+                            <div class="form-group"><label for="pp-title">タイトル</label><input id="pp-title" type="text" placeholder="例: お気に入りの漫画"></div>
+                            <div class="form-group"><label for="pp-intro">紹介文（任意）</label><textarea id="pp-intro" rows="2" placeholder="ページ冒頭に表示される説明文"></textarea></div>
+                        </section>
+
+                        <section class="pp-section" id="pp-shelves-group">
+                            <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本棚</h3>
                             <div id="pp-shelves" class="pp-checklist"></div>
-                        </div>
+                        </section>
 
-                        <div class="form-group" id="pp-books-group">
-                            <label>載せる本</label>
+                        <section class="pp-section" id="pp-books-group">
+                            <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本</h3>
                             <input id="pp-book-search" type="text" placeholder="タイトル / 著者で検索して追加…">
                             <ul id="pp-book-results" class="pp-book-results"></ul>
                             <ul id="pp-book-chosen" class="pp-book-chosen"></ul>
-                        </div>
+                        </section>
 
-                        <div class="form-group">
-                            <label>公開する項目</label>
+                        <section class="pp-section">
+                            <h3 class="pp-section-title"><span class="pp-step">4</span>公開する項目</h3>
                             <div class="pp-fields">
                                 <label><input type="checkbox" data-field="cover" checked> 表紙</label>
                                 <label><input type="checkbox" data-field="author" checked> 著者</label>
@@ -732,21 +738,38 @@
                                 <label><input type="checkbox" data-field="detailMemo" checked> 長文メモ</label>
                                 <label><input type="checkbox" data-field="amazon" checked> Amazonリンク</label>
                             </div>
-                        </div>
+                        </section>
 
-                        <div class="form-group" id="pp-style-params"></div>
-
-                        <div class="form-actions pp-edit-actions">
-                            <button id="pp-back" class="btn btn-secondary">← 一覧へ</button>
-                            <button id="pp-preview" class="btn btn-secondary"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                            <button id="pp-save" class="btn btn-primary">保存</button>
-                        </div>
-                    </div>
-                    <div class="pp-edit-preview">
-                        <div class="pp-preview-head">プレビュー</div>
-                        <iframe id="pp-preview-frame" title="公開ページ プレビュー" sandbox="allow-same-origin"></iframe>
+                        <section class="pp-section" id="pp-style-params-section" hidden>
+                            <h3 class="pp-section-title"><span class="pp-step">5</span>スタイル設定</h3>
+                            <div id="pp-style-params"></div>
+                        </section>
                     </div>
                 </div>
+
+                <div class="form-actions pp-edit-actions">
+                    <button id="pp-back" class="btn btn-secondary">← 一覧へ</button>
+                    <span class="pp-actions-spacer"></span>
+                    <button id="pp-preview" class="btn btn-secondary"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
+                    <button id="pp-save" class="btn btn-secondary"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
+                    <button id="pp-publish-one" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 公開ページ プレビュー（別画面） -->
+    <div id="pp-preview-modal" class="modal pp-preview-modal">
+        <div class="pp-preview-dialog">
+            <div class="pp-preview-bar">
+                <span class="pp-preview-bar-title"><span class="h-icon" data-icon="eye" data-icon-size="16"></span>プレビュー</span>
+                <div class="pp-preview-bar-actions">
+                    <button id="pp-preview-device" class="btn btn-secondary btn-small" data-mode="desktop"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅</button>
+                    <button id="pp-preview-close" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="x" data-icon-size="14"></span>閉じる</button>
+                </div>
+            </div>
+            <div class="pp-preview-stage">
+                <iframe id="pp-preview-frame" title="公開ページ プレビュー" sandbox="allow-same-origin"></iframe>
             </div>
         </div>
     </div>
@@ -942,14 +965,14 @@
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
     <script src="js/publish-page-store.js?v=2026061307"></script>
-    <script src="js/publish-styles.js?v=2026061308"></script>
-    <script src="js/publish-generator.js?v=2026061308"></script>
+    <script src="js/publish-styles.js?v=2026061402"></script>
+    <script src="js/publish-generator.js?v=2026061401"></script>
     <script src="js/exporter.js?v=2026061307"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
-    <script src="js/bookshelf.js?v=2026061309"></script>
+    <script src="js/bookshelf.js?v=2026061401"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

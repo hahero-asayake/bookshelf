@@ -6541,10 +6541,16 @@ class VirtualBookshelf {
         on('pp-new', 'click', () => this._openPublishPageEditor(null));
         on('pp-back', 'click', () => this._ppShowList());
         on('pp-save', 'click', () => this._ppSave());
+        on('pp-publish-one', 'click', () => this._ppPublishFromEditor());
         on('pp-preview', 'click', () => this._ppPreview());
         on('pp-do-publish', 'click', () => this.publishToPublic());
         on('pp-style', 'change', () => this._ppOnStyleChange());
         on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
+        // プレビュー別画面
+        on('pp-preview-close', 'click', () => this._ppClosePreviewModal());
+        on('pp-preview-device', 'click', () => this._ppTogglePreviewDevice());
+        const pm = document.getElementById('pp-preview-modal');
+        if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._ppClosePreviewModal(); });
     }
 
     _ppShowList() {
@@ -6627,7 +6633,9 @@ class VirtualBookshelf {
         const style = this.publishStyles && this.publishStyles.get(sel.value);
         const desc = document.getElementById('pp-style-desc');
         const req = style ? style.declare().requires : { shelves: 'optional', books: 'optional' };
-        desc.textContent = style ? style.description : '';
+        desc.textContent = style ? style.description : 'スタイルを選ぶと設定項目が表示されます。';
+        // スタイル未選択のうちは設定セクションを隠す（スタイル先行フロー）
+        document.getElementById('pp-config').hidden = !style;
         document.getElementById('pp-shelves-group').hidden = (req.shelves === 'none');
         document.getElementById('pp-books-group').hidden = (req.books === 'none');
         this._ppRenderStyleParams(style);
@@ -6635,14 +6643,16 @@ class VirtualBookshelf {
 
     _ppRenderStyleParams(style) {
         const host = document.getElementById('pp-style-params');
+        const section = document.getElementById('pp-style-params-section');
         const esc = PublishGenerator.esc;
         const fields = (style && style.declare().fields) || [];
-        if (!fields.length) { host.hidden = true; host.innerHTML = ''; return; }
-        host.hidden = false;
-        host.innerHTML = '<label>スタイル設定</label>' + fields.map(fd => {
+        if (!fields.length) { section.hidden = true; host.innerHTML = ''; return; }
+        section.hidden = false;
+        host.innerHTML = fields.map(fd => {
             const val = this._ppStyleParams[fd.key] != null ? this._ppStyleParams[fd.key] : (fd.default || '');
-            if (fd.type === 'textarea') return `<textarea data-param="${esc(fd.key)}" rows="2" placeholder="${esc(fd.placeholder || '')}">${esc(val)}</textarea>`;
-            return `<input data-param="${esc(fd.key)}" type="text" value="${esc(val)}" placeholder="${esc(fd.placeholder || '')}">`;
+            const lbl = fd.label ? `<label class="pp-param-label">${esc(fd.label)}</label>` : '';
+            if (fd.type === 'textarea') return `<div class="form-group">${lbl}<textarea data-param="${esc(fd.key)}" rows="2" placeholder="${esc(fd.placeholder || '')}">${esc(val)}</textarea></div>`;
+            return `<div class="form-group">${lbl}<input data-param="${esc(fd.key)}" type="text" value="${esc(val)}" placeholder="${esc(fd.placeholder || '')}"></div>`;
         }).join('');
     }
 
@@ -6760,6 +6770,11 @@ class VirtualBookshelf {
     async _ppPreview() {
         const data = this._ppCollectForm();
         if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
+        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
+            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
+        }
+        this._ppSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
+        this._ppOpenPreviewModal();
         const tempPage = { id: '_preview', slug: 'preview', ...data };
         try {
             const result = await this.publishGenerator.build([tempPage], { state: this._buildPreviewState() });
@@ -6774,6 +6789,44 @@ class VirtualBookshelf {
     _ppSetPreview(html) {
         const frame = document.getElementById('pp-preview-frame');
         if (frame) frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
+    }
+
+    _ppOpenPreviewModal() {
+        const m = document.getElementById('pp-preview-modal');
+        if (m) { m.classList.add('show'); if (typeof window.applyIcons === 'function') window.applyIcons(m); }
+    }
+    _ppClosePreviewModal() {
+        const m = document.getElementById('pp-preview-modal');
+        if (m) m.classList.remove('show');
+    }
+    _ppTogglePreviewDevice() {
+        const btn = document.getElementById('pp-preview-device');
+        const stage = document.querySelector('#pp-preview-modal .pp-preview-stage');
+        if (!btn || !stage) return;
+        const toMobile = btn.dataset.mode === 'desktop';
+        btn.dataset.mode = toMobile ? 'mobile' : 'desktop';
+        stage.classList.toggle('pp-stage-mobile', toMobile);
+        const lbl = btn.querySelector('span:last-child') || btn;
+        // ラベルとアイコンを切替（PC幅 ⇄ モバイル幅）
+        btn.innerHTML = toMobile
+            ? '<span class="h-icon" data-icon="monitor" data-icon-size="14"></span>PC 幅'
+            : '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅';
+        if (typeof window.applyIcons === 'function') window.applyIcons(btn);
+    }
+
+    // エディタから「公開」: まず現在のページを保存し、続けて全ページを Web 公開
+    async _ppPublishFromEditor() {
+        const data = this._ppCollectForm();
+        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
+        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
+            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
+        }
+        try {
+            if (this._ppEditingId) await this.publishPageStore.update(this._ppEditingId, data);
+            else { const created = await this.publishPageStore.create(data); this._ppEditingId = created && created.id; }
+        } catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+        await this.publishToPublic();
+        this._renderPublishPagesList();
     }
 
     /**

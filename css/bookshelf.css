@@ -3745,39 +3745,62 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 /* ===== 公開ページ管理モーダル (P1 静的SSG, ADR-030) ===== */
-.publish-pages-content { max-width: 960px; width: 96vw; }
-.pp-hint { color: var(--fg3, #888); font-size: 0.85rem; margin: 0; }
-.pp-list-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
-.pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 50vh; overflow: auto; }
-.pp-empty { color: var(--fg3, #888); padding: 1.2rem; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
-.pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg2); }
+.publish-pages-content { max-width: 680px; width: 94vw; }
+.pp-hint { color: var(--muted); font-size: 0.85rem; margin: 0; line-height: 1.5; }
+.pp-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
+.pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 52vh; overflow: auto; }
+.pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
+.pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0.95rem; border: 1px solid var(--line); border-radius: 10px; background: var(--side); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
 .pp-row-title { font-weight: 600; }
-.pp-row-meta { font-size: 0.78rem; color: var(--fg3, #888); }
+.pp-row-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.1rem; }
 .pp-row-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
 .pp-list-foot { display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); flex-wrap: wrap; }
-.pp-url { font-size: 0.78rem; color: var(--fg3, #888); word-break: break-all; }
+.pp-url { font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 
-.pp-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
-.pp-edit-form .form-group { margin-bottom: 1rem; }
-.pp-style-desc { display: block; color: var(--fg3, #888); font-size: 0.78rem; margin-top: 0.3rem; }
-.pp-checklist { display: flex; flex-direction: column; gap: 0.35rem; max-height: 160px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; }
+/* --- エディタ: フル幅・セクション縦積み --- */
+.pp-editor { display: flex; flex-direction: column; gap: 0.9rem; max-height: 62vh; overflow: auto; padding: 0.2rem 0.3rem 0.2rem 0; }
+.pp-section { border: 1px solid var(--line); border-radius: 12px; padding: 0.95rem 1.05rem; background: var(--side); }
+.pp-section-title { display: flex; align-items: center; gap: 0.55rem; margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 700; color: var(--fg); }
+.pp-step { display: inline-flex; align-items: center; justify-content: center; width: 1.45rem; height: 1.45rem; border-radius: 999px; background: var(--accent-bg); color: var(--accent-strong); font-size: 0.78rem; font-weight: 700; flex-shrink: 0; }
+.pp-section .form-group { margin-bottom: 0.75rem; }
+.pp-section .form-group:last-child { margin-bottom: 0; }
+.pp-style-select { width: 100%; }
+.pp-style-desc { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 0.45rem; line-height: 1.5; }
+.pp-param-label { display: block; font-size: 0.85rem; color: var(--fg2); margin-bottom: 0.3rem; }
+.pp-checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.35rem 0.9rem; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem; background: var(--panel); }
 .pp-checklist label, .pp-fields label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
-.pp-fields { display: flex; flex-wrap: wrap; gap: 0.6rem 1.1rem; }
-.pp-book-results { list-style: none; margin: 0.4rem 0 0; padding: 0; max-height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.pp-fields { display: flex; flex-wrap: wrap; gap: 0.55rem 1.2rem; }
+.pp-book-results { list-style: none; margin: 0.45rem 0 0; padding: 0; max-height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .pp-book-results:empty { display: none; }
-.pp-book-results li { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.88rem; }
-.pp-book-results li:hover { background: var(--bg2); }
-.pp-bk-author { color: var(--fg3, #888); font-size: 0.78rem; }
-.pp-book-chosen { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.pp-book-chosen li { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 0.2rem 0.5rem 0.2rem 0.7rem; font-size: 0.8rem; max-width: 260px; }
+.pp-book-results li { padding: 0.45rem 0.75rem; cursor: pointer; font-size: 0.88rem; border-bottom: 1px solid var(--line2); }
+.pp-book-results li:last-child { border-bottom: none; }
+.pp-book-results li:hover { background: var(--accent-bg); }
+.pp-bk-author { color: var(--muted); font-size: 0.78rem; }
+.pp-book-chosen { list-style: none; margin: 0.55rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pp-book-chosen:empty { display: none; }
+.pp-book-chosen li { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 0.22rem 0.5rem 0.22rem 0.7rem; font-size: 0.8rem; max-width: 260px; }
 .pp-book-chosen li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pp-chip-x { border: none; background: none; cursor: pointer; color: var(--fg3, #888); font-size: 1rem; line-height: 1; }
-.pp-edit-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
-.pp-edit-preview { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-height: 420px; }
-.pp-preview-head { padding: 0.5rem 0.8rem; background: var(--bg2); border-bottom: 1px solid var(--line); font-size: 0.8rem; color: var(--fg3, #888); }
-#pp-preview-frame { flex: 1; width: 100%; border: none; background: #fff; min-height: 380px; }
-@media (max-width: 760px) { .pp-edit-grid { grid-template-columns: 1fr; } .pp-edit-preview { min-height: 320px; } }
+.pp-chip-x { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 1rem; line-height: 1; padding: 0; }
+.pp-chip-x:hover { color: var(--danger); }
+.pp-edit-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.pp-actions-spacer { flex: 1; }
+
+/* --- プレビュー別画面 (ほぼ全画面オーバーレイ) --- */
+.pp-preview-modal { z-index: 1200; }
+.pp-preview-dialog { position: relative; display: flex; flex-direction: column; width: 96vw; height: 92vh; max-width: 1100px; margin: 4vh auto 0; background: var(--panel); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.pp-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); background: var(--side); }
+.pp-preview-bar-title { display: inline-flex; align-items: center; font-weight: 700; font-size: 0.92rem; }
+.pp-preview-bar-actions { display: flex; gap: 0.5rem; }
+.pp-preview-stage { flex: 1; overflow: auto; background: #e9e7ee; display: flex; justify-content: center; }
+.pp-preview-stage #pp-preview-frame { width: 100%; max-width: 100%; height: 100%; border: none; background: #fff; }
+.pp-preview-stage.pp-stage-mobile { padding: 18px 0; }
+.pp-preview-stage.pp-stage-mobile #pp-preview-frame { width: 390px; max-width: 390px; height: 100%; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18); background: #fff; }
+@media (max-width: 760px) {
+    .pp-checklist { grid-template-columns: 1fr 1fr; }
+    .pp-preview-dialog { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
+    .pp-edit-actions { flex-wrap: wrap; }
+}
 
 .settings-action-row .btn,
 .settings-action-list .btn {
