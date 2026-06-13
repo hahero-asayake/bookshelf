@@ -3797,6 +3797,41 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-size: 0.78rem;
 }
 
+/* ===== 公開ページ管理モーダル (P1 静的SSG, ADR-030) ===== */
+.publish-pages-content { max-width: 960px; width: 96vw; }
+.pp-hint { color: var(--fg3, #888); font-size: 0.85rem; margin: 0; }
+.pp-list-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
+.pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 50vh; overflow: auto; }
+.pp-empty { color: var(--fg3, #888); padding: 1.2rem; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+.pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg2); }
+.pp-row-main { display: flex; flex-direction: column; min-width: 0; }
+.pp-row-title { font-weight: 600; }
+.pp-row-meta { font-size: 0.78rem; color: var(--fg3, #888); }
+.pp-row-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.pp-list-foot { display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pp-url { font-size: 0.78rem; color: var(--fg3, #888); word-break: break-all; }
+
+.pp-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+.pp-edit-form .form-group { margin-bottom: 1rem; }
+.pp-style-desc { display: block; color: var(--fg3, #888); font-size: 0.78rem; margin-top: 0.3rem; }
+.pp-checklist { display: flex; flex-direction: column; gap: 0.35rem; max-height: 160px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; }
+.pp-checklist label, .pp-fields label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
+.pp-fields { display: flex; flex-wrap: wrap; gap: 0.6rem 1.1rem; }
+.pp-book-results { list-style: none; margin: 0.4rem 0 0; padding: 0; max-height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.pp-book-results:empty { display: none; }
+.pp-book-results li { padding: 0.4rem 0.7rem; cursor: pointer; font-size: 0.88rem; }
+.pp-book-results li:hover { background: var(--bg2); }
+.pp-bk-author { color: var(--fg3, #888); font-size: 0.78rem; }
+.pp-book-chosen { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pp-book-chosen li { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 0.2rem 0.5rem 0.2rem 0.7rem; font-size: 0.8rem; max-width: 260px; }
+.pp-book-chosen li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-chip-x { border: none; background: none; cursor: pointer; color: var(--fg3, #888); font-size: 1rem; line-height: 1; }
+.pp-edit-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
+.pp-edit-preview { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-height: 420px; }
+.pp-preview-head { padding: 0.5rem 0.8rem; background: var(--bg2); border-bottom: 1px solid var(--line); font-size: 0.8rem; color: var(--fg3, #888); }
+#pp-preview-frame { flex: 1; width: 100%; border: none; background: #fff; min-height: 380px; }
+@media (max-width: 760px) { .pp-edit-grid { grid-template-columns: 1fr; } .pp-edit-preview { min-height: 320px; } }
+
 .settings-action-row .btn,
 .settings-action-list .btn {
     width: 100%;

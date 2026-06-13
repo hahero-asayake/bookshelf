@@ -653,10 +653,10 @@ class VirtualBookshelf {
             exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
         }
 
-        // 公開する (旧 copyToPublic + runPublicExport の統合版)
+        // 公開ページ管理を開く (静的SSG, ADR-030)
         const publishBtn = document.getElementById('publish-to-public');
         if (publishBtn) {
-            publishBtn.addEventListener('click', () => this.publishToPublic());
+            publishBtn.addEventListener('click', () => this.openPublishPagesModal());
         }
 
         // 長文メモ モーダル
@@ -6613,6 +6613,262 @@ class VirtualBookshelf {
             console.error('公開エクスポートエラー:', e);
             toast(e.message, { type: 'error' });
         }
+    }
+
+    // ===== 公開ページ管理 UI (P1 静的SSG, ADR-030) =====
+
+    async openPublishPagesModal() {
+        const modal = document.getElementById('publish-pages-modal');
+        if (!modal) return;
+        if (!this.publishPageStore) { toast('公開システムが未初期化です。リロードしてください。', { type: 'error' }); return; }
+        this._setupPublishPagesUI();
+        await this.publishPageStore.load();
+        this._ppShowList();
+        modal.classList.add('show');
+        if (typeof window.applyIcons === 'function') window.applyIcons(modal);
+    }
+
+    _setupPublishPagesUI() {
+        if (this._ppBound) return;
+        this._ppBound = true;
+        const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+        on('publish-pages-close', 'click', () => document.getElementById('publish-pages-modal').classList.remove('show'));
+        on('pp-new', 'click', () => this._openPublishPageEditor(null));
+        on('pp-back', 'click', () => this._ppShowList());
+        on('pp-save', 'click', () => this._ppSave());
+        on('pp-preview', 'click', () => this._ppPreview());
+        on('pp-do-publish', 'click', () => this.publishToPublic());
+        on('pp-style', 'change', () => this._ppOnStyleChange());
+        on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
+    }
+
+    _ppShowList() {
+        document.getElementById('pp-list-view').hidden = false;
+        document.getElementById('pp-edit-view').hidden = true;
+        this._renderPublishPagesList();
+    }
+    _ppShowEditor() {
+        document.getElementById('pp-list-view').hidden = true;
+        document.getElementById('pp-edit-view').hidden = false;
+    }
+
+    _renderPublishPagesList() {
+        const ul = document.getElementById('pp-list');
+        if (!ul) return;
+        const esc = PublishGenerator.esc;
+        const pages = this.publishPageStore.pages();
+        if (!pages.length) {
+            ul.innerHTML = '<li class="pp-empty">まだ公開ページがありません。「新規作成」から作ってください。</li>';
+        } else {
+            ul.innerHTML = pages.map(p => {
+                const style = this.publishStyles && this.publishStyles.get(p.styleId);
+                const styleName = style ? style.name : '(スタイル未選択)';
+                const cnt = (p.select.shelves.length ? `本棚${p.select.shelves.length}` : '') +
+                    (p.select.books.length ? `${p.select.shelves.length ? ' / ' : ''}本${p.select.books.length}` : '');
+                return `<li class="pp-row" data-id="${esc(p.id)}">
+                  <div class="pp-row-main">
+                    <span class="pp-row-title">${esc(p.title)}</span>
+                    <span class="pp-row-meta">${esc(styleName)}${cnt ? ' ・ ' + esc(cnt) : ''}${p.lastBuiltAt ? ' ・ 公開済' : ''}</span>
+                  </div>
+                  <div class="pp-row-actions">
+                    <button class="btn btn-secondary btn-small" data-act="edit">編集</button>
+                    <button class="btn btn-secondary btn-small" data-act="dup">複製</button>
+                    <button class="btn btn-danger btn-small" data-act="del">削除</button>
+                  </div>
+                </li>`;
+            }).join('');
+            ul.querySelectorAll('.pp-row').forEach(row => {
+                const id = row.dataset.id;
+                row.querySelector('[data-act=edit]').addEventListener('click', () => this._openPublishPageEditor(id));
+                row.querySelector('[data-act=dup]').addEventListener('click', () => this._ppDuplicate(id));
+                row.querySelector('[data-act=del]').addEventListener('click', () => this._ppDelete(id));
+            });
+        }
+        const urlEl = document.getElementById('pp-url');
+        if (urlEl) urlEl.textContent = this._lastPublishUrl ? `公開URL: ${this._lastPublishUrl}` : '';
+    }
+
+    _openPublishPageEditor(id) {
+        this._ppEditingId = id;
+        const page = id ? this.publishPageStore.get(id) : null;
+        const f = page ? page.select.fields : PublishPageStore.defaultFields();
+        document.getElementById('pp-title').value = page ? page.title : '';
+        document.getElementById('pp-intro').value = page ? page.intro : '';
+        this._ppChosenBooks = new Set(page ? page.select.books : []);
+        this._ppStyleParams = page ? { ...page.styleParams } : {};
+        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(cb => {
+            cb.checked = f[cb.dataset.field] !== false;
+        });
+        this._ppRenderStyleSelect(page ? page.styleId : '');
+        this._ppRenderShelves(page ? page.select.shelves : []);
+        this._ppRenderBookChosen();
+        document.getElementById('pp-book-search').value = '';
+        document.getElementById('pp-book-results').innerHTML = '';
+        this._ppOnStyleChange();
+        this._ppSetPreview('');
+        this._ppShowEditor();
+    }
+
+    _ppRenderStyleSelect(selectedId) {
+        const sel = document.getElementById('pp-style');
+        const esc = PublishGenerator.esc;
+        const styles = this.publishStyles ? this.publishStyles.list() : [];
+        sel.innerHTML = '<option value="">— スタイルを選択 —</option>' +
+            styles.map(s => `<option value="${esc(s.id)}"${s.id === selectedId ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+    }
+
+    _ppOnStyleChange() {
+        const sel = document.getElementById('pp-style');
+        const style = this.publishStyles && this.publishStyles.get(sel.value);
+        const desc = document.getElementById('pp-style-desc');
+        const req = style ? style.declare().requires : { shelves: 'optional', books: 'optional' };
+        desc.textContent = style ? style.description : '';
+        document.getElementById('pp-shelves-group').hidden = (req.shelves === 'none');
+        document.getElementById('pp-books-group').hidden = (req.books === 'none');
+        this._ppRenderStyleParams(style);
+    }
+
+    _ppRenderStyleParams(style) {
+        const host = document.getElementById('pp-style-params');
+        const esc = PublishGenerator.esc;
+        const fields = (style && style.declare().fields) || [];
+        if (!fields.length) { host.hidden = true; host.innerHTML = ''; return; }
+        host.hidden = false;
+        host.innerHTML = '<label>スタイル設定</label>' + fields.map(fd => {
+            const val = this._ppStyleParams[fd.key] != null ? this._ppStyleParams[fd.key] : (fd.default || '');
+            if (fd.type === 'textarea') return `<textarea data-param="${esc(fd.key)}" rows="2" placeholder="${esc(fd.placeholder || '')}">${esc(val)}</textarea>`;
+            return `<input data-param="${esc(fd.key)}" type="text" value="${esc(val)}" placeholder="${esc(fd.placeholder || '')}">`;
+        }).join('');
+    }
+
+    _ppRenderShelves(selectedIds) {
+        const host = document.getElementById('pp-shelves');
+        const esc = PublishGenerator.esc;
+        const set = new Set(selectedIds || []);
+        const shelves = this.bookshelfManager.getBookshelves();
+        host.innerHTML = shelves.map(b => {
+            const id = b.internalId || b.id;
+            return `<label><input type="checkbox" value="${esc(id)}"${set.has(id) ? ' checked' : ''}> ${esc(b.name)}</label>`;
+        }).join('');
+    }
+
+    _ppRenderBookResults(query) {
+        const host = document.getElementById('pp-book-results');
+        const esc = PublishGenerator.esc;
+        const q = (query || '').trim().toLowerCase();
+        if (!q) { host.innerHTML = ''; return; }
+        const matches = (this.books || []).filter(b =>
+            (b.title && b.title.toLowerCase().includes(q)) || (b.authors && String(b.authors).toLowerCase().includes(q))
+        ).slice(0, 20);
+        host.innerHTML = matches.length
+            ? matches.map(b => `<li data-asin="${esc(b.asin)}">${esc(b.title)} <span class="pp-bk-author">${esc(b.authors || '')}</span></li>`).join('')
+            : '<li class="pp-empty">該当なし</li>';
+        host.querySelectorAll('li[data-asin]').forEach(li => {
+            li.addEventListener('click', () => { this._ppChosenBooks.add(li.dataset.asin); this._ppRenderBookChosen(); });
+        });
+    }
+
+    _ppRenderBookChosen() {
+        const host = document.getElementById('pp-book-chosen');
+        const esc = PublishGenerator.esc;
+        const byAsin = new Map((this.books || []).map(b => [b.asin, b]));
+        host.innerHTML = [...this._ppChosenBooks].map(a => {
+            const b = byAsin.get(a);
+            return `<li data-asin="${esc(a)}"><span>${esc(b ? b.title : a)}</span><button type="button" class="pp-chip-x" title="外す">×</button></li>`;
+        }).join('');
+        host.querySelectorAll('li[data-asin]').forEach(li => {
+            li.querySelector('.pp-chip-x').addEventListener('click', () => { this._ppChosenBooks.delete(li.dataset.asin); this._ppRenderBookChosen(); });
+        });
+    }
+
+    _ppCollectForm() {
+        const fields = {};
+        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(cb => { fields[cb.dataset.field] = cb.checked; });
+        const shelves = [...document.querySelectorAll('#pp-shelves input:checked')].map(cb => cb.value);
+        const params = {};
+        document.querySelectorAll('#pp-style-params [data-param]').forEach(el => { params[el.dataset.param] = el.value; });
+        return {
+            title: document.getElementById('pp-title').value.trim() || '無題の公開ページ',
+            intro: document.getElementById('pp-intro').value.trim(),
+            styleId: document.getElementById('pp-style').value,
+            styleParams: params,
+            select: { shelves, books: [...this._ppChosenBooks], fields }
+        };
+    }
+
+    async _ppSave() {
+        const data = this._ppCollectForm();
+        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
+        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
+            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
+        }
+        try {
+            if (this._ppEditingId) await this.publishPageStore.update(this._ppEditingId, data);
+            else await this.publishPageStore.create(data);
+            toast('公開ページを保存しました。', { type: 'success' });
+            this._ppShowList();
+        } catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); }
+    }
+
+    async _ppDelete(id) {
+        const page = this.publishPageStore.get(id);
+        const ok = await confirmDialog({ title: '公開ページを削除', message: `「${page ? page.title : ''}」を削除します。\n(次回の公開で実際のサイトからも消えます)`, okLabel: '削除', danger: true });
+        if (!ok) return;
+        await this.publishPageStore.remove(id);
+        this._renderPublishPagesList();
+    }
+
+    async _ppDuplicate(id) {
+        await this.publishPageStore.duplicate(id);
+        this._renderPublishPagesList();
+    }
+
+    // プレビュー用の state をメモリ上のデータから組む (未保存編集も反映・未接続でも動く)
+    _buildPreviewState() {
+        const ud = this.userData || {};
+        const shelves = ud.bookshelves || [];
+        // メモリ上の本棚は internalId を持たないことがある → key = internalId || id(slug) に統一
+        const metas = shelves.map(b => {
+            const key = b.internalId || b.id;
+            return {
+                internalId: key, slug: b.id, name: b.name,
+                description: b.description || '', isSpecial: !!b.isSpecial, isPublic: !!b.isPublic
+            };
+        });
+        const allShelf = shelves.find(b => b.isSpecial);
+        const bookshelfFiles = {};
+        for (const b of shelves) {
+            if (b.isSpecial) continue;
+            const key = b.internalId || b.id;
+            bookshelfFiles[key] = { books: b.books || [], notes: b.notes || {} };
+        }
+        return {
+            library: { books: this.books || [] },
+            bookshelvesMeta: { bookshelves: metas },
+            allBookshelf: { books: (allShelf && allShelf.books) || [] },
+            bookshelfFiles,
+            notes: ud.notes || {},
+            privateSettings: ud.settings || {}
+        };
+    }
+
+    async _ppPreview() {
+        const data = this._ppCollectForm();
+        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
+        const tempPage = { id: '_preview', slug: 'preview', ...data };
+        try {
+            const result = await this.publishGenerator.build([tempPage], { state: this._buildPreviewState() });
+            const file = result.files.find(f => f.path === 'preview/index.html');
+            if (file) this._ppSetPreview(file.content);
+            else this._ppSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishGenerator.esc(result.errors[0] || '')}</p>`);
+        } catch (e) {
+            this._ppSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishGenerator.esc(e.message)}</p>`);
+        }
+    }
+
+    _ppSetPreview(html) {
+        const frame = document.getElementById('pp-preview-frame');
+        if (frame) frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
     }
 
     /**

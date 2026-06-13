@@ -102,11 +102,16 @@ class PublishGenerator {
     _resolvePage(page, state, libMap, affiliateId) {
         const fields = page.select.fields || PublishPageStore.defaultFields();
         const metas = state.bookshelvesMeta.bookshelves || [];
-        const metaById = new Map(metas.map(m => [m.internalId, m]));
+        // 本棚参照は slug でも internalId でも引けるようにする (UI は slug、保存メタは両方持つ)
+        const metaByKey = new Map();
+        for (const m of metas) {
+            if (m.slug) metaByKey.set(m.slug, m);
+            if (m.internalId) metaByKey.set(m.internalId, m);
+        }
 
         const shelves = [];
-        for (const internalId of (page.select.shelves || [])) {
-            const meta = metaById.get(internalId);
+        for (const key of (page.select.shelves || [])) {
+            const meta = metaByKey.get(key);
             if (!meta) continue;
             const asins = this._shelfBooks(meta, state);
             const books = asins.map(a => this._resolveBook(a, libMap, state, fields, meta.internalId, affiliateId)).filter(Boolean);
@@ -188,8 +193,17 @@ class PublishGenerator {
     // ===== ビルド =====
 
     async build(pages, opts = {}) {
-        const state = (opts.state) || (await this.app.storage.loadAll());
-        const libMap = new Map(((state.library && state.library.books) || []).map(b => [b.asin, b]));
+        const raw = (opts.state) || (await this.app.storage.loadAll()) || {};
+        // 未接続/欠損でもクラッシュしないよう正規化
+        const state = {
+            library: raw.library || { books: [] },
+            bookshelvesMeta: raw.bookshelvesMeta || { bookshelves: [] },
+            allBookshelf: raw.allBookshelf || { books: [] },
+            bookshelfFiles: raw.bookshelfFiles || {},
+            notes: raw.notes || {},
+            privateSettings: raw.privateSettings || {}
+        };
+        const libMap = new Map((state.library.books || []).map(b => [b.asin, b]));
         const ps = state.privateSettings || {};
         const affiliateId = ps.affiliateId || '';
         const publisher = ps.publicDisplayName || 'hahero';
