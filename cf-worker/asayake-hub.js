@@ -24,23 +24,30 @@
 //   GOOGLE_CLIENT_ID Google OAuth クライアント ID (ID トークンの aud 検証)
 //   HUB_DOMAIN       ハブの単一ホスト名 (例 "asayake.app")。公開 URL の組立に使う
 //   APP_ORIGIN       アプリ配信元 (CORS 許可。例 "https://hahero-asayake.github.io")
-//   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 50MB)
+//   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 100MB = Free プラン。Plus は uid レコードで個別に引き上げ)
+//   WRITE_LIMITER    (任意) ratelimit バインディング。書込 (PUT/DELETE/batch/publish) を uid/キー単位で制限
+//                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
+//
+// コスト防御 (ADR-033, 収益化分析):
+//   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
+//   ② 公開 Class B 読取テール → /public を Cache API (caches.default) でキャッシュし R2 読取を間引く。
 
-const DEFAULT_QUOTA = 50 * 1024 * 1024;
+const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // 公開配信 (認証不要・同一ホストの GET)
-        if (path.startsWith('/public/')) return serveSite(request, env, path);
+        // 公開配信 (認証不要・同一ホストの GET)。Cache API で R2 読取 (Class B) を間引く
+        if (path.startsWith('/public/')) return serveSite(request, env, path, ctx);
 
         // API (アプリは別 origin なので CORS 付与)
         if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
         try {
             if (path === '/session' && request.method === 'POST') return cors(await handleSession(request, env), env, request);
+            if (path === '/usage' && request.method === 'GET') return cors(await handleUsage(request, env), env, request);
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
@@ -52,10 +59,23 @@ export default {
 };
 
 // ===== 公開配信: /public/<siteId>/<rest> → R2 sites/<siteId>/<rest> =====
-async function serveSite(request, env, pathname) {
+// Cache API (caches.default) を前段に置き、ヒット時は R2 / KV を一切叩かない。
+// Class B (R2 読取) のテール課金を抑える主防御 (ADR-033)。キャッシュは max-age=60。
+// ※ ヒット中は通報停止 (report:suspended) の反映が最大 60 秒遅れる (許容)。
+async function serveSite(request, env, pathname, ctx) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
         return new Response('method not allowed', { status: 405 });
     }
+    const cache = caches.default;
+    // HEAD も GET としてキャッシュ照合 (本文は呼び出し側で捨てる)。クエリ無し URL をキーに正規化
+    const cacheKey = new Request(new URL(request.url).origin + pathname, { method: 'GET' });
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+        return request.method === 'HEAD'
+            ? new Response(null, { status: cached.status, headers: cached.headers })
+            : cached;
+    }
+
     const rest = decodeURIComponent(pathname.slice('/public/'.length));
     const slash = rest.indexOf('/');
     const siteId = slash < 0 ? rest : rest.slice(0, slash);
@@ -69,7 +89,10 @@ async function serveSite(request, env, pathname) {
 
     const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
     if (!obj) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
-    return new Response(request.method === 'HEAD' ? null : obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
+    const res = new Response(obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
+    // 200 のみキャッシュ (404/451 はしない)。waitUntil でレスポンスを遅らせない
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cache.put(cacheKey, res.clone()));
+    return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
 }
 
 // 公開配信のセキュリティヘッダ: スクリプト無し CSP・nosniff・cookie 出さない・iframe 制限
@@ -97,14 +120,30 @@ async function handleSession(request, env) {
     if (!rec) {
         // 公開 URL は不透明な siteId (uuid)。本名/メール/Google sub を URL に晒さない
         const siteId = crypto.randomUUID();
-        rec = { siteId, email, quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
+        // plan='free' が既定。Plus 化は uid レコードの plan/quotaBytes を引き上げるだけ (アプリ再実装不要)
+        rec = { siteId, email, plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
         await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
     }
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
     await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
     return json({
         key, uid, siteId: rec.siteId, email,
+        plan: rec.plan || 'free', quotaBytes: rec.quotaBytes, usedBytes: rec.usedBytes || 0,
         apiBase: `https://${env.HUB_DOMAIN}`,
+        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
+    });
+}
+
+// ===== 使用量照会 (認証必須): プラン/quota/used を返す。UI の使用量バー更新用 =====
+async function handleUsage(request, env) {
+    const sess = await requireAuth(request, env);
+    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!rec) throw httpError(404, 'no account');
+    return json({
+        plan: rec.plan || 'free',
+        quotaBytes: rec.quotaBytes || DEFAULT_QUOTA,
+        usedBytes: rec.usedBytes || 0,
+        siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
 }
@@ -119,8 +158,22 @@ async function requireAuth(request, env) {
     return sess; // { uid, siteId }
 }
 
+// ===== 書込レート制限 (Class A 書込暴走対策, ADR-033) =====
+// Bearer キー (無ければ IP) 単位で制限し、KV/R2 を叩く前に弾く。
+// WRITE_LIMITER 未設定なら何もしない (本番では必ず ratelimit バインディングを設定すること)。
+async function enforceWriteLimit(request, env) {
+    if (!env.WRITE_LIMITER || typeof env.WRITE_LIMITER.limit !== 'function') return;
+    const auth = request.headers.get('Authorization') || '';
+    const m = auth.match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
+    const limitKey = m ? m[1] : (request.headers.get('CF-Connecting-IP') || 'anon');
+    const { success } = await env.WRITE_LIMITER.limit({ key: limitKey });
+    if (!success) throw httpError(429, 'rate limit exceeded (slow down)');
+}
+
 // ===== 私的同期 (data/<uid>/...) — uid スコープ。URL の siteId とは無関係 =====
 async function handleData(request, env, url) {
+    // 書込系 (PUT/DELETE) は認証・R2 参照の前にレート制限で弾く
+    if (request.method === 'PUT' || request.method === 'DELETE') await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const rel = safeRel(decodeURIComponent(url.pathname.slice('/data/'.length)));
     const key = `data/${sess.uid}/${rel}`;
@@ -170,6 +223,7 @@ async function listDir(env, base, rel) {
 
 // ===== バッチ (複数 put/delete を 1 リクエスト) =====
 async function handleBatch(request, env) {
+    await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const { entries } = await request.json().catch(() => ({}));
     if (!Array.isArray(entries)) throw httpError(400, 'entries required');
@@ -190,6 +244,7 @@ async function handleBatch(request, env) {
 
 // ===== 公開 (投稿): sites/<siteId>/ を今回集合で置換 =====
 async function handlePublish(request, env) {
+    await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const { files, deleteMissing } = await request.json().catch(() => ({}));
     if (!Array.isArray(files)) throw httpError(400, 'files required');
