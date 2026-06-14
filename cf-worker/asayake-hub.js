@@ -200,14 +200,17 @@ async function handleData(request, env, url) {
 async function putObject(env, sess, key, body, ifMatch) {
     const size = new TextEncoder().encode(body).length;
     const head = await env.BUCKET.head(key);
-    if (ifMatch && (!head || head.httpEtag !== ifMatch)) throw httpError(412, 'etag mismatch');
+    // クライアントの If-Match は HTTP 標準どおりクォート付き ("abc")。R2 の etag / onlyIf.etagMatches は
+    // クォート無し (abc) を要求するため正規化する (W/ 弱 ETag 接頭辞も除去)。
+    const wantEtag = ifMatch ? ifMatch.replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null;
+    if (wantEtag && (!head || head.etag !== wantEtag)) throw httpError(412, 'etag mismatch');
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
     const projected = (rec ? rec.usedBytes : 0) - (head ? head.size : 0) + size;
     if (rec && projected > rec.quotaBytes) throw httpError(413, 'quota exceeded');
     const putOpts = {};
-    if (ifMatch) putOpts.onlyIf = { etagMatches: ifMatch };
+    if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
     const res = await env.BUCKET.put(key, body, putOpts);
-    if (!res) throw httpError(412, 'etag mismatch'); // onlyIf 失敗
+    if (!res) throw httpError(412, 'etag mismatch'); // onlyIf 失敗 (TOCTOU)
     await addUsage(env, sess.uid, size - (head ? head.size : 0));
     return new Response(null, { status: 200, headers: { 'ETag': res.httpEtag } });
 }
