@@ -246,26 +246,53 @@ async function handleBatch(request, env) {
 }
 
 // ===== 公開 (投稿): sites/<siteId>/ を今回集合で置換 =====
+// quota を強制し usedBytes を更新する (公開経路の容量防御, ADR-033)。
+// 原子性: R2 はトランザクション非対応のため、全 put を先に行い (失敗時は delete に進まず
+// サイトを空にしない)、最後に削除同期する。中途失敗は次回の成功公開で自己修復する。
 async function handlePublish(request, env) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const { files, deleteMissing } = await request.json().catch(() => ({}));
     if (!Array.isArray(files)) throw httpError(400, 'files required');
     const base = `sites/${sess.siteId}/`;
+
+    // 既存オブジェクトのサイズ把握 (quota 差分計算 + 削除同期に使う)
+    const existing = new Map();
+    let cursor;
+    do {
+        const res = await env.BUCKET.list({ prefix: base, cursor });
+        for (const o of res.objects) existing.set(o.key, o.size);
+        cursor = res.truncated ? res.cursor : undefined;
+    } while (cursor);
+
+    // 今回の集合と差分サイズ (新規/置換/削除) を算出
+    const enc = new TextEncoder();
+    const puts = [];
     const keep = new Set();
+    let delta = 0;
     for (const f of files) {
-        const rel = safeRel(f.path);
-        keep.add(base + rel);
-        await env.BUCKET.put(base + rel, f.content || '');
+        const key = base + safeRel(f.path);
+        const content = f.content || '';
+        keep.add(key);
+        delta += enc.encode(content).length - (existing.get(key) || 0);
+        puts.push({ key, content });
     }
+    const deletes = [];
     if (deleteMissing) {
-        let cursor;
-        do {
-            const res = await env.BUCKET.list({ prefix: base, cursor });
-            for (const o of res.objects) if (!keep.has(o.key)) await env.BUCKET.delete(o.key);
-            cursor = res.truncated ? res.cursor : undefined;
-        } while (cursor);
+        for (const [key, size] of existing) {
+            if (!keep.has(key)) { deletes.push(key); delta -= size; }
+        }
     }
+
+    // quota 判定 (R2 へ書き込む前に弾く)。超過なら 413 (HubStorageAdapter が HubQuotaError 化)
+    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (rec && (rec.usedBytes || 0) + delta > rec.quotaBytes) throw httpError(413, 'quota exceeded');
+
+    // 全 put を先に (失敗時はここで throw → delete に進まず旧ファイルを消さない)、最後に削除
+    for (const p of puts) await env.BUCKET.put(p.key, p.content);
+    for (const key of deletes) await env.BUCKET.delete(key);
+
+    await addUsage(env, sess.uid, delta);
     return json({ ok: true, siteId: sess.siteId, siteUrl: `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`, published: files.length });
 }
 
