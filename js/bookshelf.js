@@ -639,18 +639,16 @@ class VirtualBookshelf {
 
         // Amazon アソシエイト タグ (settings.affiliateId) — Plus 限定 (ADR-033)。
         // Free は運営タグ固定なので入力欄を隠す。Plus は自分のタグ設定/解除が可能。
+        // 表示可否と値はプラン/同期に追従させる (起動時1回きりにしない) → _reflectAffiliateField()
         const affInput = document.getElementById('setting-affiliate-id');
-        const affWrap = document.getElementById('publish-affiliate');
-        if (affInput && affWrap) {
-            const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
-            affWrap.hidden = (plan !== 'plus');
-            affInput.value = (this.userData?.settings?.affiliateId) || '';
+        if (affInput) {
             affInput.addEventListener('change', () => {
                 if (!this.userData.settings) this.userData.settings = {};
                 this.userData.settings.affiliateId = affInput.value.trim();
                 this.saveUserData();
             });
         }
+        this._reflectAffiliateField();
 
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
@@ -2491,8 +2489,9 @@ class VirtualBookshelf {
      * @param {boolean} [options.force] 期限に関わらず refresh する (401 フォールバック用)
      * @returns {Promise<boolean>} false = refresh を試みて失敗 (再接続が必要)
      */
-    async _ensureFreshGitHubToken({ force = false } = {}) {
-        if (this.syncMethod !== 'github') return true;
+    async _ensureFreshGitHubToken({ force = false, forPublish = false } = {}) {
+        // 公開先=GitHub のとき (forPublish) は同期方式が github 以外でもトークンを更新する
+        if (this.syncMethod !== 'github' && !forPublish) return true;
         if (this._tokenRefreshPromise) return this._tokenRefreshPromise;
         const gh = (SyncConfigManager.load().github) || {};
         if (!gh.refreshToken) return !force; // 旧接続: refresh 不可。force 時は失敗扱い
@@ -2975,9 +2974,27 @@ class VirtualBookshelf {
         if (!sel) return;
         const target = sel.value === 'hub' ? 'hub' : 'github';
         const cfg = SyncConfigManager.load();
+        const last = (cfg.publish || {}).lastPublishedTarget;
         cfg.publish = { ...(cfg.publish || {}), target };
         SyncConfigManager.save(cfg);
         this._reflectPublishTargetPanels(target);
+        // 旧公開先にサイトが残っている場合は警告 (自動削除はしない=手動クリーンアップ誘導)
+        if (last && last !== target) {
+            const name = (t) => t === 'hub' ? '共有（ハブ）' : '自分の GitHub リポジトリ';
+            this._publishSwitchWarn = `⚠️ 以前の公開先「${name(last)}」にサイトが残っています。完全に消すには、公開先を「${name(last)}」に戻し、全ページを「公開を取消」してから再公開（空にする）してください。`;
+            toast(this._publishSwitchWarn, { type: 'warn' });
+        } else {
+            this._publishSwitchWarn = '';
+        }
+        this._reflectPublishSwitchWarn();
+    }
+
+    // 公開先切替の残存警告を該当パネルに常設表示 (toast は消えるため)
+    _reflectPublishSwitchWarn() {
+        const el = document.getElementById('publish-switch-warn');
+        if (!el) return;
+        el.textContent = this._publishSwitchWarn || '';
+        el.hidden = !this._publishSwitchWarn;
     }
 
     _reflectPublishTargetPanels(target) {
@@ -2986,6 +3003,7 @@ class VirtualBookshelf {
         if (ghBlock) ghBlock.hidden = (target !== 'github');
         if (hubBlock) hubBlock.hidden = (target !== 'hub');
         if (target === 'hub') this._reflectPublishHubStatus();
+        this._reflectPublishSwitchWarn();
     }
 
     _reflectPublishHubStatus() {
@@ -3385,6 +3403,21 @@ class VirtualBookshelf {
             fill.style.width = `${(ratio * 100).toFixed(1)}%`;
             fill.classList.toggle('is-warn', ratio >= 0.8 && ratio < 0.98);
             fill.classList.toggle('is-full', ratio >= 0.98);
+        }
+        // プランが変わればアフィタグ欄の表示可否も追従させる
+        this._reflectAffiliateField();
+    }
+
+    // アフィタグ入力欄(Plus限定)の表示可否と値を最新化。プラン変化・設定再オープンに追従
+    _reflectAffiliateField() {
+        const affInput = document.getElementById('setting-affiliate-id');
+        const affWrap = document.getElementById('publish-affiliate');
+        if (!affInput || !affWrap) return;
+        const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+        affWrap.hidden = (plan !== 'plus');
+        // 入力中はユーザの編集を尊重して上書きしない
+        if (document.activeElement !== affInput) {
+            affInput.value = (this.userData && this.userData.settings && this.userData.settings.affiliateId) || '';
         }
     }
 
@@ -4979,6 +5012,8 @@ class VirtualBookshelf {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
         modal.classList.add('show');
+        // 設定を開くたびにアフィタグ欄の表示可否/値を最新化 (プラン変化・別端末更新に追従)
+        this._reflectAffiliateField();
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
         // 分類マークの凡例を描画
@@ -6655,6 +6690,11 @@ class VirtualBookshelf {
      * publish/unpublish の両方からこれを呼ぶ。戻り値 { ok, result?, reason? }。
      */
     async _runPublishExport() {
+        // 多重実行ガード: 公開処理は await を多数挟むため、連打/並行起動を防ぐ
+        if (this._publishInFlight) {
+            toast('公開処理を実行中です。完了までお待ちください。', { type: 'warn' });
+            return { ok: false, reason: 'inflight' };
+        }
         if (!this._isSyncReady()) {
             toast('先に「同期」で保存先を設定してください。', { type: 'warn' });
             return { ok: false, reason: 'sync' };
@@ -6682,30 +6722,50 @@ class VirtualBookshelf {
                 return { ok: false, reason: 'repo' };
             }
         }
-        // 編集中の変更を確実に書き出してから export
-        await this.flushSync();
+        // 未保存編集が保存先に書けているかを公開後に判定するため、flush 前に pending 有無を記録
+        let hadPending = this._pendingSync || this._syncInProgress;
+        try { hadPending = hadPending || localStorage.getItem('virtualBookshelf_pendingSync') === '1'; } catch (_) {}
+
+        this._publishInFlight = true;
         try {
+            // 編集中の変更を確実に書き出してから export
+            await this.flushSync();
+            // flush で同期が失敗した場合、保存先には古い内容しか無い → 古い内容での公開を防ぐ
+            if (hadPending && this._syncError) {
+                toast('未保存の変更を保存先に書き込めませんでした。同期エラーを解消してから公開してください。', { type: 'warn' });
+                return { ok: false, reason: 'flush' };
+            }
             const result = await this.exporter.export();
             this._lastPublishUrl = result.siteUrl;
             console.info('公開 URL:', result.siteUrl);
+            // 公開先を記録 (target 切替時に旧公開先の残存を警告するため)
+            try {
+                const c = SyncConfigManager.load();
+                c.publish = { ...(c.publish || {}), lastPublishedTarget: pub.target };
+                SyncConfigManager.save(c);
+            } catch (_) {}
             return { ok: true, result };
         } catch (e) {
             console.error('公開エクスポートエラー:', e);
             toast(e.message, { type: 'error' });
             return { ok: false, reason: 'export', error: e };
+        } finally {
+            this._publishInFlight = false;
         }
     }
 
-    // ページを公開する (published=true にして全公開中ページを push)
+    // ページを公開する (published=true にして全公開中ページを push)。更新(republish)もここを通る
     async _ppPublishPage(id) {
         const page = this.publishPageStore.get(id);
         if (!page) return;
+        const wasPublished = !!page.published;   // 元の状態 (更新=true / 新規公開=false)
         try { await this.publishPageStore.update(id, { published: true }); }
         catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
         const r = await this._runPublishExport();
         if (!r.ok) {
-            // 実サイトに出ていないので published を戻す
-            try { await this.publishPageStore.update(id, { published: false }); } catch (_) {}
+            // 失敗時は「元の状態」へ戻す。更新(元 true=ライブ)を未公開化して次回公開で実サイトから
+            // 消してしまう事故を防ぐ。新規公開(元 false)のみ未公開へロールバックする。
+            try { await this.publishPageStore.update(id, { published: wasPublished }); } catch (_) {}
             this._renderPublishPagesList();
             return;
         }
@@ -6818,10 +6878,16 @@ class VirtualBookshelf {
                 const publishActions = pub
                     ? `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>`
                     : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
+                // 公開中ページは公開 URL を行に出す (開く + コピー)
+                const url = pub ? this._ppPageUrl(p) : '';
+                const urlRow = url
+                    ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a><button type="button" class="pp-url-copy" data-url="${esc(url)}" title="URL をコピー"><span class="h-icon" data-icon="clipboard" data-icon-size="12"></span></button></span>`
+                    : '';
                 return `<li class="pp-row" data-id="${esc(p.id)}">
                   <div class="pp-row-main">
                     <span class="pp-row-title">${esc(p.title)} ${badge}</span>
                     <span class="pp-row-meta">${esc(styleName)}${cnt ? ' ・ ' + esc(cnt) : ''}</span>
+                    ${urlRow}
                   </div>
                   <div class="pp-row-actions">
                     ${publishActions}
@@ -6835,11 +6901,39 @@ class VirtualBookshelf {
                 bind('publish', () => this._ppPublishPage(id));
                 bind('republish', () => this._ppPublishPage(id));
                 bind('edit', () => this._openPublishPageEditor(id));
+                const copyBtn = row.querySelector('.pp-url-copy');
+                if (copyBtn) copyBtn.addEventListener('click', async () => {
+                    try { await navigator.clipboard.writeText(copyBtn.dataset.url || ''); toast('公開 URL をコピーしました', { type: 'success' }); }
+                    catch (_) { toast('コピーできませんでした', { type: 'warn' }); }
+                });
             });
             if (typeof window.applyIcons === 'function') window.applyIcons(ul);
         }
         const urlEl = document.getElementById('pp-url');
         if (urlEl) urlEl.textContent = this._lastPublishUrl ? `公開URL: ${this._lastPublishUrl}` : '';
+    }
+
+    // 公開先の公開ベース URL (target=hub なら publicBase、github なら Pages URL)。未確定なら ''
+    _ppPagePublicBase() {
+        const cfg = SyncConfigManager.load();
+        const pub = cfg.publish || {};
+        if (pub.target === 'hub') {
+            return (cfg.hub && cfg.hub.publicBase) || '';
+        }
+        const gh = cfg.github || {};
+        const owner = pub.owner || gh.login || gh.owner || '';
+        const repo = pub.repo || '';
+        if (!owner || !repo) return '';
+        const o = String(owner).toLowerCase();
+        if (String(repo).toLowerCase() === `${o}.github.io`) return `https://${o}.github.io/`;
+        return `https://${o}.github.io/${repo}/`;
+    }
+
+    // 公開ページ 1 つの公開 URL (ベース + slug/)。ベース未確定なら ''
+    _ppPageUrl(p) {
+        const base = this._ppPagePublicBase();
+        if (!base || !p || !p.slug) return '';
+        return `${base.replace(/\/?$/, '/')}${p.slug}/`;
     }
 
     _openPublishPageEditor(id) {
@@ -7087,7 +7181,8 @@ class VirtualBookshelf {
         }
         this._ppSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
         this._ppOpenPreviewModal();
-        const tempPage = { id: '_preview', slug: 'preview', ...data };
+        // slug は固定 'preview' を後勝ちで（...data が slug を持つため順序が重要）。出力パスとルックアップを一致させる
+        const tempPage = { ...data, id: '_preview', slug: 'preview' };
         try {
             const result = await this.publishGenerator.build([tempPage], { state: this._buildPreviewState() });
             const file = result.files.find(f => f.path === 'preview/index.html');
@@ -7105,7 +7200,14 @@ class VirtualBookshelf {
 
     _ppOpenPreviewModal() {
         const m = document.getElementById('pp-preview-modal');
-        if (m) { m.classList.add('show'); if (typeof window.applyIcons === 'function') window.applyIcons(m); }
+        if (!m) return;
+        // 開くたびに PC 幅へ初期化 (前回のモバイル幅トグルが残らないように)
+        const btn = document.getElementById('pp-preview-device');
+        const stage = m.querySelector('.pp-preview-stage');
+        if (btn) { btn.dataset.mode = 'desktop'; btn.innerHTML = '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅'; }
+        if (stage) stage.classList.remove('pp-stage-mobile');
+        m.classList.add('show');
+        if (typeof window.applyIcons === 'function') window.applyIcons(m);
     }
     _ppClosePreviewModal() {
         const m = document.getElementById('pp-preview-modal');

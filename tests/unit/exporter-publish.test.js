@@ -4,12 +4,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 let mockConfig;
 let listing; // { '': {files, dirs}, 'stale': {files, dirs} }
+let listThrow = false; // true で listFiles を失敗させ、削除同期の列挙失敗を再現
 const captured = { entries: [], deletes: [], commits: [] };
 
 globalThis.SyncConfigManager = { load: () => mockConfig };
 globalThis.GitHubAdapter = class {
     constructor(opts) { this.opts = opts; }
-    async listFiles(dir) { return (listing[dir] || { files: [] }).files; }
+    async listFiles(dir) { if (listThrow) throw new Error('403 API rate limit exceeded'); return (listing[dir] || { files: [] }).files; }
     async listDirs(dir) { return (listing[dir] || { dirs: [] }).dirs || []; }
     beginBatch() {}
     addBatchEntry(path, content) { captured.entries.push({ path, content }); }
@@ -57,6 +58,7 @@ function makeApp({ pages = [], build } = {}) {
 beforeEach(() => {
     captured.entries = []; captured.deletes = []; captured.commits = [];
     hubCaptured.files = null; hubCaptured.deleteMissing = null;
+    listThrow = false;
     mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
     listing = {
         '': { files: ['index.html', 'README.md'], dirs: ['stale'] },
@@ -146,6 +148,16 @@ describe('共有ハブ公開 (target=hub, ADR-033)', () => {
         expect(r.target).toBe('hub');
         expect(hubCaptured.files).toBeNull();
         expect(r.writeEntries.sort()).toEqual(['index.html', 'manga/index.html']);
+    });
+});
+
+describe('削除同期の安全性 (ADR-033 監査)', () => {
+    it('公開 repo の列挙が失敗したら、黙って続行せず公開を中止する', async () => {
+        listThrow = true; // 403 等で _listAllFiles が throw
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
+        await expect(exporter.export()).rejects.toThrow(/取得できませんでした|中止/);
+        // 列挙失敗時は push もしない (取りこぼし確定の状態で公開を成功させない)
+        expect(captured.commits.length).toBe(0);
     });
 });
 

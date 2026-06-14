@@ -160,7 +160,9 @@ class HubStorageAdapter extends StorageAdapter {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        if (res.status === 413) throw new HubQuotaError('ハブの公開容量上限に達しました');
+        if (res.status === 413) throw new HubQuotaError('ハブの保存容量がいっぱいで公開できません。不要なデータを減らすか、Plus へのアップグレードをご検討ください。');
+        if (res.status === 429) throw new Error('短時間に操作が集中しました。少し時間をおいてから、もう一度公開してください。');
+        if (res.status >= 500) throw new Error('ハブ側で一時的なエラーが発生しました。時間をおいて再試行してください。');
         if (!res.ok) throw await this._err(res, 'POST publish');
         return await res.json();
     }

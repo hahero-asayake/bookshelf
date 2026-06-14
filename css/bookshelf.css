@@ -3835,6 +3835,19 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     line-height: 1.5;
 }
 
+/* 公開先切替の残存警告 */
+.publish-switch-warn {
+    margin: 0.4rem 0 0;
+    padding: 0.5rem 0.7rem;
+    border-radius: 6px;
+    background: rgba(212, 145, 0, 0.1);
+    border: 1px solid var(--warning, #d49100);
+    color: var(--fg2);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+.publish-switch-warn[hidden] { display: none; }
+
 /* 公開先 (github / hub) ごとの設定ブロック */
 .publish-target-config {
     display: flex;
@@ -3887,6 +3900,11 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
 .pp-row-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .pp-row-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.1rem; }
+.pp-row-url { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
+.pp-row-url a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-row-url a:hover { text-decoration: underline; }
+.pp-url-copy { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; flex-shrink: 0; }
+.pp-url-copy:hover { color: var(--accent); }
 .pp-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .pp-status { font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; white-space: nowrap; }
 .pp-status-on { color: #1f7a4d; background: #e3f5ec; }

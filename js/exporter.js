@@ -49,6 +49,12 @@ class BookshelfExporter {
         }
         const pub = this._resolvePublishConfig();
 
+        // アフィタグの Plus/Free 出し分けに使う plan を、生成前に最新化する (ハブ接続時のみ・失敗は無視)。
+        // これをしないと、直前のプラン変更 (Plus化/失効) が次回リロードまで反映されない。
+        if (typeof HubAuth !== 'undefined' && typeof HubAuth.isConnected === 'function' && HubAuth.isConnected()) {
+            try { await HubAuth.refreshUsage(); } catch (_) {}
+        }
+
         // 公開ページ → 静的ページ生成 (PublishGenerator)。生成は公開先に依らず共通
         const store = this.app.publishPageStore;
         const generator = this.app.publishGenerator;
@@ -83,9 +89,10 @@ class BookshelfExporter {
         if (!pub.repo) {
             throw new Error('公開先リポジトリが未設定です。設定の「同期 / 公開」で、公開用の GitHub リポジトリ（必ず public リポジトリ）を選んでください。');
         }
-        // 同期方式が GitHub の場合はトークンを最新化 (refresh 自動更新)
-        if (this.app.syncMethod === 'github' && typeof this.app._ensureFreshGitHubToken === 'function') {
-            await this.app._ensureFreshGitHubToken();
+        // 公開先が GitHub のときは、同期方式に関わらずトークンを最新化する (publish 専用 refresh)。
+        // 同期=Drive/Dropbox/ローカルでも『公開だけ GitHub』構成があり、失効トークンで 401 になるのを防ぐ。
+        if (typeof this.app._ensureFreshGitHubToken === 'function') {
+            try { await this.app._ensureFreshGitHubToken({ forPublish: true }); } catch (_) {}
             pub.token = (SyncConfigManager.load().github || {}).token || pub.token;
         }
 
@@ -104,8 +111,10 @@ class BookshelfExporter {
                 if (!writePaths.has(p)) deletes.push(p);
             }
         } catch (e) {
-            // repo が空 or 未作成 → 削除対象なし
-            result.errors.push(`list publish repo: ${e.message}`);
+            // 空 repo / 未作成なら _listAllFiles は [] を返す (throw しない)。
+            // ここに来る = 403/5xx/認証失効などで「現状を取得できなかった」=削除の取りこぼし確定。
+            // 黙って続行すると非公開化したページが公開サイトに残り続けるため、安全のため公開を中止する。
+            throw new Error('公開先リポジトリの現在のファイル一覧を取得できませんでした。時間をおいて再試行するか、GitHub を再接続してください。（取りこぼしを防ぐため公開を中止しました）');
         }
 
         const siteUrl = this._pagesSiteUrl(pub.owner, pub.repo);
@@ -132,6 +141,10 @@ class BookshelfExporter {
         } catch (err) {
             if (err && err.name === 'GitHubConflictError') {
                 throw new Error('公開中に公開 repo が更新されました。リロードしてやり直してください。');
+            }
+            // 初期コミットの無い空 repo: branch ref が 404 → 分かりやすい案内に変換
+            if (err && /get ref|404/i.test(String(err.message || ''))) {
+                throw new Error('公開先リポジトリが空（初期コミットなし）です。GitHub で「Add a README file」にチェックして初期化してから、もう一度公開してください。');
             }
             throw err;
         }

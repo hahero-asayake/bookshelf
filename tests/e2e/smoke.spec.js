@@ -92,6 +92,24 @@ test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033
     expect(errors).toEqual([]);
 });
 
+test('公開: 新規作成→本棚選択→プレビューが生成される (slug上書きバグ回帰)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.click('#pp-new');
+    await expect(page.locator('#pp-edit-view')).toBeVisible();
+    await page.selectOption('#pp-style', 'shelf-sections'); // selectOption は option の attach を待つ
+    // 本棚を1つ選ぶ (最初の行=「すべて」)
+    await page.click('#pp-shelves .bs-pick-row');
+    await page.click('#pp-preview');
+    // iframe srcdoc に本のタイトルが入り、失敗メッセージは出ない
+    const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+    expect(srcdoc).toContain('フィクスチャの本');
+    expect(srcdoc).not.toContain('生成できませんでした');
+    expect(srcdoc).not.toContain('プレビュー失敗');
+    expect(errors).toEqual([]);
+});
+
 test('設定→公開: 公開先をハブに切替えるとハブ公開ブロックが出る (ADR-033)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });

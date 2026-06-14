@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061501">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061502">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -477,6 +477,7 @@
                             <option value="github">自分の GitHub リポジトリ（GitHub Pages で配信）</option>
                             <option value="hub">Asayake ハブ（共有・Google ログインだけで公開）</option>
                         </select>
+                        <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
 
                         <div id="publish-config-github" class="publish-target-config">
                             <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
@@ -752,7 +753,7 @@
             <!-- 一覧ビュー -->
             <div id="pp-list-view">
                 <div class="pp-list-head">
-                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで静的サイトとして公開します。公開はページごとに行います。</p>
+                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開はページごとに行い、公開中のページには公開 URL が表示されます。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
                 <ul id="pp-list" class="pp-list"></ul>
@@ -1048,7 +1049,7 @@
     <script src="js/gdrive-auth.js?v=2026061301"></script>
     <script src="js/dropbox-adapter.js?v=2026061301"></script>
     <script src="js/dropbox-auth.js?v=2026061301"></script>
-    <script src="js/hub-adapter.js?v=2026061501"></script>
+    <script src="js/hub-adapter.js?v=2026061502"></script>
     <script src="js/sync-config.js?v=2026061501"></script>
     <script src="js/hub-auth.js?v=2026061501"></script>
     <script src="js/storage.js?v=2026061203"></script>
@@ -1056,14 +1057,14 @@
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
     <script src="js/publish-page-store.js?v=2026061402"></script>
     <script src="js/publish-styles.js?v=2026061501"></script>
-    <script src="js/publish-generator.js?v=2026061501"></script>
-    <script src="js/exporter.js?v=2026061501"></script>
+    <script src="js/publish-generator.js?v=2026061502"></script>
+    <script src="js/exporter.js?v=2026061502"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061501"></script>
+    <script src="js/bookshelf.js?v=2026061502"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

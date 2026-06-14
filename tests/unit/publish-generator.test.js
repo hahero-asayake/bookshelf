@@ -68,6 +68,17 @@ describe('本棚セクション型', () => {
         expect(r.errors).toEqual([]);
     });
 
+    it('Plus でも Amazon リンクを OFF にしたページは広告開示を出さない (過剰開示しない)', async () => {
+        const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
+        const f = { ...fields(), amazon: false };
+        const page = { id: 'a', slug: 'noad', title: '広告なし', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: f } };
+        const r = await g.build([page]);
+        const html = r.files.find(f => f.path === 'noad/index.html').content;
+        expect(html).toContain('漫画1');
+        expect(html).not.toContain('amazon.co.jp'); // リンクが無い
+        expect(html).not.toContain('【広告】');       // よって開示も出さない
+    });
+
     it('Free ユーザは自分の affiliate tag を使わない (運営 tag 未設定なら無印・広告開示なし)', async () => {
         // beforeEach の gen は plan='free'。運営 tag は REPLACE のため無印 → 広告開示も出さない
         const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };

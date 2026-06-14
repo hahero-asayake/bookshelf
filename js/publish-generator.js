@@ -198,8 +198,13 @@ class PublishGenerator {
         //   Amazon（アフィリエイトリンク）と正当に重なり、vault 名は一般語のことがあるため、
         //   needle にすると誤検知で公開が常にブロックされる。settings 自体は出力に含めないので
         //   これらが実際に漏れることはない。
-        const needles = [sub, (vault && sub) ? `${vault}/${sub}` : '']
-            .filter(v => v && v.length >= 4);
+        // 素の sub は十分長い時のみ (誤検知回避)。ただし短い sub でも「パス区切り付き」(`${sub}/`)
+        // なら識別性が上がるので length>=2 で拾う (obsidian URL の vault 無し先頭成分 `wip/...` 対策)。
+        const rawNeedles = [];
+        if (sub && sub.length >= 4) rawNeedles.push(sub);
+        if (sub && sub.length >= 2) rawNeedles.push(`${sub}/`);
+        if (vault && sub) rawNeedles.push(`${vault}/${sub}`);
+        const needles = [...new Set(rawNeedles.filter(Boolean))];
         const found = new Set();
         for (const f of files) {
             for (const n of needles) {
@@ -272,9 +277,13 @@ class PublishGenerator {
             try { rendered = style.render(ctx); }
             catch (e) { errors.push(`render ${page.title}: ${e.message}`); continue; }
 
-            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', hasAds);
-            files.push({ path: `${page.slug}/index.html`, content: html });
+            // 広告開示はページ単位で判定: アフィタグがあり、かつそのページに実際に Amazon リンクが
+            // 出る (amazon 項目 ON かつ本が1冊以上) ときだけ「【広告】」を出す (過剰開示を防ぐ)。
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
+            const pageHasAds = hasAds && !!resolved.fields.amazon && bookCount > 0;
+
+            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', pageHasAds);
+            files.push({ path: `${page.slug}/index.html`, content: html });
             built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount });
         }
 
