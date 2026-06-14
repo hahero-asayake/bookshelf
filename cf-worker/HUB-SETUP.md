@@ -60,11 +60,8 @@ cd cf-worker
 wrangler deploy -c wrangler.hub.toml
 ```
 
-### B-3. DNS (proxied・1 本だけ)
-Cloudflare DNS (`asayake.org` ゾーン) に **proxied (オレンジ雲)** レコードを 1 本 (ターゲット IP はダミー、Worker route が処理):
-- `A  hub  192.0.2.1  (Proxied)`  → `hub.asayake.org`
-
-> wildcard は不要。`wrangler.hub.toml` の route `hub.asayake.org/*` が全パスを Worker に流す。
+### B-3. DNS (自動)
+`wrangler.hub.toml` の route は `custom_domain = true` なので、**`wrangler deploy` が `hub.asayake.org` の DNS レコードと TLS 証明書を自動作成**する。手動の DNS 追加は不要 (証明書発行に数分かかることがある)。
 
 ---
 

@@ -15,18 +15,19 @@ bucket_name = "asayake-hub"
 # --- KV (キー/uid/通報) ---
 [[kv_namespaces]]
 binding = "KV"
-id = "<KV_NAMESPACE_ID>"
+id = "d429572547b4434486d44ee0159f46ae"
 
 # --- 環境変数 (いずれも公開値。client secret は持たない) ---
 [vars]
 HUB_DOMAIN = "hub.asayake.org"                             # ハブの単一ホスト
 # CORS 許可 (カンマ区切り)。移行中は github.io と asayake.org を併記
 APP_ORIGIN = "https://hahero-asayake.github.io,https://asayake.org"
-GOOGLE_CLIENT_ID = "<client-id>.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "368547907822-r79adn6052laipf20ram49br1skhv7ru.apps.googleusercontent.com"
 QUOTA_BYTES = "52428800"                                   # 1 ユーザ上限 = 50MB
 
-# --- ルート: 単一ホストの全パスを Worker へ (wildcard サブドメイン不要) ---
-# DNS 側に proxied レコード (A hub <dummy>) が 1 本あれば足りる。
+# --- ルート: hub.asayake.org を Worker 専用ホストに ---
+# custom_domain=true なら wrangler が DNS レコードと TLS 証明書も自動作成する
+# (手動の A レコード追加は不要)。
 [[routes]]
-pattern = "hub.asayake.org/*"
-zone_name = "asayake.org"
+pattern = "hub.asayake.org"
+custom_domain = true
