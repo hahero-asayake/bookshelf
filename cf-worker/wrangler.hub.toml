@@ -1,0 +1,32 @@
+# Asayake Hub Worker の wrangler 設定 (ADR-032 / HUB-SETUP.md)
+# oauth-proxy とは別の Worker。`wrangler deploy -c wrangler.hub.toml` でデプロイ。
+# <...> を HUB-SETUP.md Phase A で控えた値に置換すること。secret は不要。
+# 単一ドメイン・パス分離 (/public/<siteId>/...) なので wildcard サブドメインは不要。
+
+name = "asayake-hub"
+main = "asayake-hub.js"
+compatibility_date = "2026-01-01"
+
+# --- R2 (sites/ 公開・data/ 私的) ---
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "asayake-hub"
+
+# --- KV (キー/uid/通報) ---
+[[kv_namespaces]]
+binding = "KV"
+id = "<KV_NAMESPACE_ID>"
+
+# --- 環境変数 (いずれも公開値。client secret は持たない) ---
+[vars]
+HUB_DOMAIN = "hub.asayake.org"                             # ハブの単一ホスト
+# CORS 許可 (カンマ区切り)。移行中は github.io と asayake.org を併記
+APP_ORIGIN = "https://hahero-asayake.github.io,https://asayake.org"
+GOOGLE_CLIENT_ID = "<client-id>.apps.googleusercontent.com"
+QUOTA_BYTES = "52428800"                                   # 1 ユーザ上限 = 50MB
+
+# --- ルート: 単一ホストの全パスを Worker へ (wildcard サブドメイン不要) ---
+# DNS 側に proxied レコード (A hub <dummy>) が 1 本あれば足りる。
+[[routes]]
+pattern = "hub.asayake.org/*"
+zone_name = "asayake.org"

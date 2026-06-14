@@ -1,73 +1,75 @@
 // Asayake Hub Worker  (参考実装 / リファレンス — ADR-032, 設計書 09 §10)
 // =======================================================================
 // hahero 運営の共有公開先 + 私的同期 (平文) を 1 つの Worker + R2 + KV で提供する。
+// **単一ドメイン・パス分離** (origin 分離はしない。ADR-032 改訂 2026-06-14)。
 //
-//   配信 (公開):  GET https://<handle>.<HUB_DOMAIN>/...      → R2 sites/<handle>/...  (誰でも)
-//   投稿 (公開):  POST https://api.<HUB_DOMAIN>/publish      → sites/<handle>/ を置換
-//   私的同期:     */PUT/DELETE/LIST https://api.<HUB_DOMAIN>/data/<path>  → data/<uid>/<path> (本人のみ・平文)
-//   認証:         POST https://api.<HUB_DOMAIN>/session      → Google ID トークン検証 → ハブ公開キー発行
+//   配信 (公開):  GET  https://<HUB_DOMAIN>/public/<siteId>/...  → R2 sites/<siteId>/...  (誰でも・CSP)
+//   投稿 (公開):  POST https://<HUB_DOMAIN>/publish              → sites/<siteId>/ を置換
+//   私的同期:     GET/PUT/DELETE https://<HUB_DOMAIN>/data/<path> → data/<uid>/<path> (本人のみ・平文)
+//   認証:         POST https://<HUB_DOMAIN>/session             → Google ID トークン検証 → ハブ公開キー発行
 //
-// ⚠️ 重要 (未検証):
-//   - これは「API 契約と挙動」を定義するリファレンス。**本番投入前に live infra で必ず実機検証すること**。
-//   - 特に Google JWT 検証・私的 API の認可・パストラバーサル防止はセキュリティの要。
-//   - origin 分離前提。公開配信と私的 API はホスト名で分け、配信は data/ に到達不能。
+// 同一ドメインで安全な根拠 (この 4 不変条件を保つこと):
+//   (1) ハブのドメインはアプリ配信元 (github.io) と別 → 公開ページはアプリと別 origin。
+//   (2) 認証は Authorization: Bearer (cookie を使わない) → 公開ページに渡る ambient セッションが無い。
+//   (3) /public は CSP `script-src 'none'` → 公開ページで JS が動かない (API を叩けない)。
+//   (4) 私的データは /data の認証必須経路のみ。/public からは到達不能。
+//   → JS を吐くスタイルを将来許可するなら、この前提が崩れるので origin 分離 or 厳格サニタイズを再検討。
+//
+// ⚠️ 未検証: API 契約と挙動の定義。**本番投入前に live infra で必ず実機検証**。
+//   特に Google JWT 検証・私的 API の認可・パストラバーサル防止はセキュリティの要。
 //
 // env バインディング:
 //   BUCKET           R2 bucket (sites/ と data/ を格納)
-//   KV               KV namespace (キー/uid/handle/通報)
+//   KV               KV namespace (キー/uid/通報)
 //   GOOGLE_CLIENT_ID Google OAuth クライアント ID (ID トークンの aud 検証)
-//   HUB_DOMAIN       例 "asayake.example" ( <handle>.asayake.example / api.asayake.example )
+//   HUB_DOMAIN       ハブの単一ホスト名 (例 "asayake.app")。公開 URL の組立に使う
 //   APP_ORIGIN       アプリ配信元 (CORS 許可。例 "https://hahero-asayake.github.io")
 //   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 50MB)
 
 const DEFAULT_QUOTA = 50 * 1024 * 1024;
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
-const RESERVED_HANDLES = new Set(['www', 'api', 'admin', 'mail', 'asayake', 'static', 'assets', 'app']);
 
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
-        const host = url.hostname;
-        const apiHost = `api.${env.HUB_DOMAIN}`;
+        const path = url.pathname;
 
-        // ---- 配信 (公開): <handle>.<HUB_DOMAIN> ----
-        if (host !== apiHost && host.endsWith(`.${env.HUB_DOMAIN}`)) {
-            return serveSite(request, env, host.slice(0, -(env.HUB_DOMAIN.length + 1)), url);
+        // 公開配信 (認証不要・同一ホストの GET)
+        if (path.startsWith('/public/')) return serveSite(request, env, path);
+
+        // API (アプリは別 origin なので CORS 付与)
+        if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
+        try {
+            if (path === '/session' && request.method === 'POST') return cors(await handleSession(request, env), env, request);
+            if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
+            if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
+            if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
+            return cors(json({ error: 'not found' }, 404), env, request);
+        } catch (e) {
+            return cors(json({ error: e.message || 'error' }, e.status || 500), env, request);
         }
-        // ---- API: api.<HUB_DOMAIN> ----
-        if (host === apiHost) {
-            if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env);
-            try {
-                if (url.pathname === '/session' && request.method === 'POST') return cors(await handleSession(request, env), env);
-                if (url.pathname === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env);
-                if (url.pathname === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env);
-                if (url.pathname.startsWith('/data/')) return cors(await handleData(request, env, url), env);
-                return cors(json({ error: 'not found' }, 404), env);
-            } catch (e) {
-                const status = e.status || 500;
-                return cors(json({ error: e.message || 'error' }, status), env);
-            }
-        }
-        return new Response('not found', { status: 404 });
     }
 };
 
-// ===== 公開配信 =====
-async function serveSite(request, env, handle, url) {
+// ===== 公開配信: /public/<siteId>/<rest> → R2 sites/<siteId>/<rest> =====
+async function serveSite(request, env, pathname) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
         return new Response('method not allowed', { status: 405 });
     }
-    const rep = await env.KV.get(`report:${handle}`, 'json');
+    const rest = decodeURIComponent(pathname.slice('/public/'.length));
+    const slash = rest.indexOf('/');
+    const siteId = slash < 0 ? rest : rest.slice(0, slash);
+    let sub = slash < 0 ? '' : rest.slice(slash + 1);
+    if (!siteId || siteId.split('/').some(s => s === '..')) return new Response('bad path', { status: 400 });
+    if (sub === '' || sub.endsWith('/')) sub += 'index.html';
+    if (sub.split('/').some(s => s === '..')) return new Response('bad path', { status: 400 });
+
+    const rep = await env.KV.get(`report:${siteId}`, 'json');
     if (rep && rep.status === 'suspended') return new Response('This site has been suspended.', { status: 451 });
 
-    let path = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-    if (path === '' || path.endsWith('/')) path += 'index.html';
-    if (path.split('/').some(s => s === '..')) return new Response('bad path', { status: 400 });
-
-    const obj = await env.BUCKET.get(`sites/${handle}/${path}`);
+    const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
     if (!obj) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
-    const ct = contentType(path);
-    return new Response(request.method === 'HEAD' ? null : obj.body, { headers: serveHeaders(ct, obj.httpEtag) });
+    return new Response(request.method === 'HEAD' ? null : obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
 }
 
 // 公開配信のセキュリティヘッダ: スクリプト無し CSP・nosniff・cookie 出さない・iframe 制限
@@ -93,36 +95,31 @@ async function handleSession(request, env) {
 
     let rec = await env.KV.get(`uid:${uid}`, 'json');
     if (!rec) {
-        const handle = await allocHandle(env, email, uid);
-        rec = { handle, email, quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
+        // 公開 URL は不透明な siteId (uuid)。本名/メール/Google sub を URL に晒さない
+        const siteId = crypto.randomUUID();
+        rec = { siteId, email, quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
         await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
-        await env.KV.put(`handle:${handle}`, uid);
     }
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
-    await env.KV.put(`key:${key}`, JSON.stringify({ uid, handle: rec.handle, createdAt: Date.now() }));
-    return json({ key, uid, handle: rec.handle, email, apiBase: `https://api.${env.HUB_DOMAIN}` });
+    await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
+    return json({
+        key, uid, siteId: rec.siteId, email,
+        apiBase: `https://${env.HUB_DOMAIN}`,
+        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
+    });
 }
 
-// handle 採番: email ローカル部を DNS セーフ化 → 衝突なら数字付与
-async function allocHandle(env, email, uid) {
-    let base = (email ? email.split('@')[0] : 'user').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'user';
-    if (RESERVED_HANDLES.has(base)) base = `u-${base}`;
-    let cand = base, i = 1;
-    while (await env.KV.get(`handle:${cand}`) || RESERVED_HANDLES.has(cand)) cand = `${base}-${++i}`;
-    return cand;
-}
-
-// ===== 認証ヘルパ (ハブ公開キー → uid/handle) =====
+// ===== 認証ヘルパ (ハブ公開キー → uid/siteId) =====
 async function requireAuth(request, env) {
     const auth = request.headers.get('Authorization') || '';
     const m = auth.match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
     if (!m) throw httpError(401, 'missing key');
     const sess = await env.KV.get(`key:${m[1]}`, 'json');
     if (!sess) throw httpError(401, 'invalid key');
-    return sess; // { uid, handle }
+    return sess; // { uid, siteId }
 }
 
-// ===== 私的同期 (data/<uid>/...) =====
+// ===== 私的同期 (data/<uid>/...) — uid スコープ。URL の siteId とは無関係 =====
 async function handleData(request, env, url) {
     const sess = await requireAuth(request, env);
     const rel = safeRel(decodeURIComponent(url.pathname.slice('/data/'.length)));
@@ -137,8 +134,7 @@ async function handleData(request, env, url) {
         });
     }
     if (request.method === 'PUT') {
-        const body = await request.text();
-        return putObject(env, sess, key, body, request.headers.get('If-Match'));
+        return putObject(env, sess, key, await request.text(), request.headers.get('If-Match'));
     }
     if (request.method === 'DELETE') {
         const head = await env.BUCKET.head(key);
@@ -152,7 +148,6 @@ async function putObject(env, sess, key, body, ifMatch) {
     const size = new TextEncoder().encode(body).length;
     const head = await env.BUCKET.head(key);
     if (ifMatch && (!head || head.httpEtag !== ifMatch)) throw httpError(412, 'etag mismatch');
-    // quota (近似): 既存サイズを引いて新サイズを足す
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
     const projected = (rec ? rec.usedBytes : 0) - (head ? head.size : 0) + size;
     if (rec && projected > rec.quotaBytes) throw httpError(413, 'quota exceeded');
@@ -193,12 +188,12 @@ async function handleBatch(request, env) {
     return new Response(null, { status: 200 });
 }
 
-// ===== 公開 (投稿): sites/<handle>/ を今回集合で置換 =====
+// ===== 公開 (投稿): sites/<siteId>/ を今回集合で置換 =====
 async function handlePublish(request, env) {
     const sess = await requireAuth(request, env);
     const { files, deleteMissing } = await request.json().catch(() => ({}));
     if (!Array.isArray(files)) throw httpError(400, 'files required');
-    const base = `sites/${sess.handle}/`;
+    const base = `sites/${sess.siteId}/`;
     const keep = new Set();
     for (const f of files) {
         const rel = safeRel(f.path);
@@ -213,7 +208,7 @@ async function handlePublish(request, env) {
             cursor = res.truncated ? res.cursor : undefined;
         } while (cursor);
     }
-    return json({ ok: true, handle: sess.handle, siteUrl: `https://${sess.handle}.${env.HUB_DOMAIN}/`, published: files.length });
+    return json({ ok: true, siteId: sess.siteId, siteUrl: `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`, published: files.length });
 }
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
@@ -259,9 +254,15 @@ function contentType(path) {
 function json(obj, status = 200) {
     return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
 }
-function cors(res, env) {
+// APP_ORIGIN はカンマ区切りの許可リスト (移行中は github.io と asayake.org を併記)。
+// リクエストの Origin が許可リストにあればそれを echo、無ければ先頭。
+function cors(res, env, request) {
+    const allow = String(env.APP_ORIGIN || '*').split(',').map(s => s.trim()).filter(Boolean);
+    const origin = request && request.headers.get('Origin');
+    const allowed = allow.includes('*') ? '*' : (origin && allow.includes(origin) ? origin : (allow[0] || '*'));
     const h = new Headers(res.headers);
-    h.set('Access-Control-Allow-Origin', env.APP_ORIGIN || '*');
+    h.set('Access-Control-Allow-Origin', allowed);
+    h.set('Vary', 'Origin');
     h.set('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, HEAD, OPTIONS');
     h.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-Match');
     h.set('Access-Control-Expose-Headers', 'ETag');
