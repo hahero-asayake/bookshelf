@@ -51,6 +51,8 @@ class SyncConfigManager {
             github: { owner: '', repo: '', branch: 'main', basePath: '', token: '' },
             googleDrive: { token: '', tokenExpiresAt: null, rootFolderId: '', email: null },
             dropbox: { token: '', refreshToken: '', tokenExpiresAt: null, email: null },
+            // Asayake ハブ (hahero 運営・平文私的同期, ADR-032/09 §10)。◇設計のみ・UI 未配線
+            hub: { apiBase: '', key: '', uid: '', handle: '', email: null },
             // 公開先 repo (T09)。owner 未設定なら GitHub login にフォールバック
             publish: { owner: '', repo: 'bookshelf-public', branch: 'main' }
         };
@@ -72,6 +74,8 @@ class SyncConfigManager {
                 return SyncConfigManager._buildGoogleDrive(config.googleDrive);
             case 'dropbox':
                 return SyncConfigManager._buildDropbox(config.dropbox);
+            case 'hub':
+                return SyncConfigManager._buildHub(config.hub);
             case 'local':
             default:
                 return new LocalFSAdapter();
@@ -107,6 +111,18 @@ class SyncConfigManager {
         }
         return new DropboxAdapter({
             getToken: (opts) => DropboxAuth.ensureToken(opts)
+        });
+    }
+
+    // Asayake ハブ (ADR-032)。apiBase + ハブ公開キーが揃って初めて構築。
+    // getKey は都度 config を読み直す (再発行/更新が反映されるように)。◇設計・未稼働
+    static _buildHub(hub) {
+        if (!hub || !hub.apiBase || !hub.key) {
+            return null; // 未接続 → 呼び出し側で local フォールバック
+        }
+        return new HubStorageAdapter({
+            apiBase: hub.apiBase,
+            getKey: () => (SyncConfigManager.load().hub || {}).key || ''
         });
     }
 }
