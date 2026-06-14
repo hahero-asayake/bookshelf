@@ -51,10 +51,13 @@ class SyncConfigManager {
             github: { owner: '', repo: '', branch: 'main', basePath: '', token: '' },
             googleDrive: { token: '', tokenExpiresAt: null, rootFolderId: '', email: null },
             dropbox: { token: '', refreshToken: '', tokenExpiresAt: null, email: null },
-            // Asayake ハブ (hahero 運営・平文私的同期, ADR-032/09 §10)。◇設計のみ・UI 未配線
-            hub: { apiBase: '', key: '', uid: '', handle: '', email: null },
-            // 公開先 repo (T09)。owner 未設定なら GitHub login にフォールバック
-            publish: { owner: '', repo: 'bookshelf-public', branch: 'main' }
+            // Asayake ハブ (hahero 運営・平文私的同期 + 共有公開, ADR-032/033)。
+            // key=ハブ公開キー hk_ / siteId=公開サイト ID / plan=free|plus / quota・used はバイト (使用量バー用キャッシュ)
+            hub: { apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
+                   plan: 'free', quotaBytes: 0, usedBytes: 0, publicBase: '' },
+            // 公開先 (T09 / ADR-033)。target='github'(自分の repo) | 'hub'(共有ハブ)。
+            // owner 未設定なら GitHub login にフォールバック
+            publish: { target: 'github', owner: '', repo: 'bookshelf-public', branch: 'main' }
         };
     }
 
@@ -114,8 +117,8 @@ class SyncConfigManager {
         });
     }
 
-    // Asayake ハブ (ADR-032)。apiBase + ハブ公開キーが揃って初めて構築。
-    // getKey は都度 config を読み直す (再発行/更新が反映されるように)。◇設計・未稼働
+    // Asayake ハブ (ADR-032/033)。apiBase + ハブ公開キーが揃って初めて構築。
+    // getKey は都度 config を読み直す (再発行/更新が反映されるように)。認証は HubAuth が担う。
     static _buildHub(hub) {
         if (!hub || !hub.apiBase || !hub.key) {
             return null; // 未接続 → 呼び出し側で local フォールバック

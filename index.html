@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061407">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061501">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -263,6 +263,7 @@
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
                             <option value="google-drive">Google Drive に保存（複数の端末で同期できます）</option>
                             <option value="dropbox">Dropbox に保存（複数の端末で同期できます）</option>
+                            <option value="hub">Asayake ハブに保存（Google ログインだけ・無料 100MB / Plus 3GB）</option>
                         </select>
                         <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
                     </div>
@@ -426,6 +427,41 @@
                         </div>
                     </div>
 
+                    <div id="sync-config-hub" class="sync-config-panel" hidden>
+                        <div class="path-card">
+                            <div class="path-card-header">
+                                <span class="path-card-icon" data-icon="cloud" data-icon-size="16"></span>
+                                <span class="path-card-label">Asayake ハブに保存</span>
+                                <span class="path-card-hint">Google でログインするだけ（パスワードやトークンの入力は不要）。hahero 運営のクラウドに保存します</span>
+                            </div>
+
+                            <div id="hub-auth-disconnected" class="path-card-body">
+                                <p class="github-auth-msg">Google アカウントでログインします。<br>下のボタンを押すと Google のログイン画面が開きます。</p>
+                                <div id="hub-gsi-button" class="hub-gsi-button"></div>
+                                <p class="hub-plan-note"><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランは <strong>100MB</strong> まで。Plus（月 $2 / 年 $12）で <strong>3GB</strong> に増やせます。</p>
+                            </div>
+
+                            <div id="hub-auth-connected" class="path-card-body" hidden>
+                                <p class="github-auth-connected-msg">
+                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="hub-connected-email">(unknown)</strong> として接続中
+                                    <span id="hub-plan-badge" class="hub-plan-badge">無料</span>
+                                    <button id="hub-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
+                                </p>
+                                <div class="hub-usage">
+                                    <div class="hub-usage-head">
+                                        <span class="hub-usage-text"><span id="hub-usage-used">—</span> / <span id="hub-usage-quota">—</span></span>
+                                        <button id="hub-usage-refresh" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>
+                                    </div>
+                                    <div class="hub-usage-bar"><div id="hub-usage-fill" class="hub-usage-fill"></div></div>
+                                </div>
+                                <div class="path-card-footer">
+                                    <button id="hub-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
+                                    <span id="hub-status" class="path-status"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="settings-action-row">
                         <button id="export-unified" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>バックアップを保存</button>
                     </div>
@@ -436,12 +472,31 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
                     <div class="settings-section-body">
                     <div class="publish-config">
-                        <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
-                        <select id="publish-repo-select">
-                            <option value="">(GitHub 接続後に選べます)</option>
+                        <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
+                        <select id="publish-target-select">
+                            <option value="github">自分の GitHub リポジトリ（GitHub Pages で配信）</option>
+                            <option value="hub">Asayake ハブ（共有・Google ログインだけで公開）</option>
                         </select>
-                        <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
-                        <span id="publish-repo-status" class="path-status"></span>
+
+                        <div id="publish-config-github" class="publish-target-config">
+                            <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
+                            <select id="publish-repo-select">
+                                <option value="">(GitHub 接続後に選べます)</option>
+                            </select>
+                            <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
+                            <span id="publish-repo-status" class="path-status"></span>
+                        </div>
+
+                        <div id="publish-config-hub" class="publish-target-config" hidden>
+                            <small class="publish-config-hint">公開ページを Asayake ハブ（hahero 運営）へ直接公開します。GitHub リポジトリは不要で、Google ログインだけで公開 URL が手に入ります。中身は誰でも読めます。</small>
+                            <span id="publish-hub-status" class="path-status"></span>
+                        </div>
+
+                        <div id="publish-affiliate" class="publish-target-config" hidden>
+                            <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ（Plus 限定）</label>
+                            <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false">
+                            <small class="publish-config-hint">あなたの Amazon アソシエイト タグを設定すると、公開ページの商品リンクがあなたの収益になります。<strong>空にすると広告（アフィリエイトリンク）を付けません</strong>。無料プランでは運営（hahero）のタグが付きます。</small>
+                        </div>
                     </div>
                     <small class="publish-config-hint">公開ページの作成・編集・公開は、左ペインの <strong>「公開」</strong> ボタンから行います。</small>
                     </div>
@@ -993,21 +1048,22 @@
     <script src="js/gdrive-auth.js?v=2026061301"></script>
     <script src="js/dropbox-adapter.js?v=2026061301"></script>
     <script src="js/dropbox-auth.js?v=2026061301"></script>
-    <script src="js/hub-adapter.js?v=2026061401"></script>
-    <script src="js/sync-config.js?v=2026061401"></script>
+    <script src="js/hub-adapter.js?v=2026061501"></script>
+    <script src="js/sync-config.js?v=2026061501"></script>
+    <script src="js/hub-auth.js?v=2026061501"></script>
     <script src="js/storage.js?v=2026061203"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
     <script src="js/publish-page-store.js?v=2026061402"></script>
-    <script src="js/publish-styles.js?v=2026061402"></script>
-    <script src="js/publish-generator.js?v=2026061401"></script>
-    <script src="js/exporter.js?v=2026061402"></script>
+    <script src="js/publish-styles.js?v=2026061501"></script>
+    <script src="js/publish-generator.js?v=2026061501"></script>
+    <script src="js/exporter.js?v=2026061501"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061405"></script>
+    <script src="js/bookshelf.js?v=2026061501"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

@@ -155,6 +155,39 @@ describe('batch', () => {
     });
 });
 
+describe('publishSite (共有ハブ公開)', () => {
+    it('files を /publish に POST し、deleteMissing と正規化 path を送る', async () => {
+        let sentBody;
+        mockFetch({ 'POST /publish': ({ init }) => {
+            sentBody = JSON.parse(init.body);
+            return res(JSON.stringify({ ok: true, siteId: 'sid', siteUrl: 'https://hub.example/public/sid/', published: 2 }), 200);
+        } });
+        const out = await adapter.publishSite([
+            { path: '/index.html', content: '<html>' },
+            { path: 'tech/index.html', content: '<html>2' }
+        ], true);
+        expect(sentBody.deleteMissing).toBe(true);
+        expect(sentBody.files).toEqual([
+            { path: 'index.html', content: '<html>' },
+            { path: 'tech/index.html', content: '<html>2' }
+        ]);
+        expect(out.siteUrl).toBe('https://hub.example/public/sid/');
+    });
+
+    it('413 は HubQuotaError', async () => {
+        mockFetch({ 'POST /publish': () => res('too big', 413) });
+        await expect(adapter.publishSite([{ path: 'i.html', content: 'x' }])).rejects.toBeInstanceOf(HubQuotaError);
+    });
+
+    it('Authorization ヘッダにキーを載せる', async () => {
+        mockFetch({ 'POST /publish': ({ init }) => {
+            expect(init.headers['Authorization']).toBe('Bearer hk_deadbeef');
+            return res(JSON.stringify({ ok: true }), 200);
+        } });
+        await adapter.publishSite([{ path: 'i.html', content: 'x' }]);
+    });
+});
+
 describe('認証・安全性', () => {
     it('401 は HubAuthError', async () => {
         mockFetch({ 'GET /data/private/x.json': () => res('no', 401) });

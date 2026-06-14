@@ -146,6 +146,25 @@ class HubStorageAdapter extends StorageAdapter {
         return true;
     }
 
+    // ===== 公開 (共有ハブへのサイト投稿, ADR-033) =====
+    // 公開ページ群を /publish に POST し、sites/<siteId>/ を今回集合で置換する。
+    // 私的同期 (data/) とは別経路。deleteMissing=true で今回出力に無いファイルをサーバ側で削除。
+    // @returns {Promise<{ok, siteId, siteUrl, published}>}
+    async publishSite(files, deleteMissing = true) {
+        const payload = {
+            files: (files || []).map(f => ({ path: this._normalize(f.path), content: f.content || '' })),
+            deleteMissing: !!deleteMissing
+        };
+        const res = await this._fetch('POST', `${this.apiBase}/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.status === 413) throw new HubQuotaError('ハブの公開容量上限に達しました');
+        if (!res.ok) throw await this._err(res, 'POST publish');
+        return await res.json();
+    }
+
     // ===== 内部 =====
 
     async _read(path) {

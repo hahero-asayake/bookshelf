@@ -3502,6 +3502,63 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: none;
 }
 
+/* Asayake ハブ (ADR-032/033): Google ログインボタン・使用量バー・プランバッジ */
+.hub-gsi-button {
+    margin: 0.2rem 0 0.7rem;
+    min-height: 40px;
+}
+.hub-plan-note {
+    font-size: 0.8rem;
+    color: var(--fg2);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.2rem 0 0;
+}
+.hub-plan-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--bg3, #eef0f5);
+    color: var(--fg2);
+    line-height: 1.6;
+}
+.hub-plan-badge.is-plus {
+    background: var(--accent);
+    color: #fff;
+}
+.hub-usage {
+    margin: 0.5rem 0 0.7rem;
+}
+.hub-usage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.3rem;
+}
+.hub-usage-text {
+    font-size: 0.82rem;
+    color: var(--fg2);
+    font-variant-numeric: tabular-nums;
+}
+.hub-usage-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--bg3, #eef0f5);
+    overflow: hidden;
+}
+.hub-usage-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: var(--accent);
+    transition: width 0.3s ease, background 0.3s ease;
+}
+.hub-usage-fill.is-warn { background: var(--warning, #d49100); }
+.hub-usage-fill.is-full { background: var(--danger, #e25555); }
+
 /* GitHub Device Flow UI */
 .github-auth-msg {
     font-size: 0.88rem;
@@ -3777,6 +3834,17 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-size: 0.78rem;
     line-height: 1.5;
 }
+
+/* 公開先 (github / hub) ごとの設定ブロック */
+.publish-target-config {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--line);
+}
+.publish-target-config[hidden] { display: none; }
 
 .dropbox-redirect-hint {
     margin-top: 0.6rem;

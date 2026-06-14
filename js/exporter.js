@@ -17,16 +17,17 @@ class BookshelfExporter {
         this.app = app;
     }
 
-    // 公開先 repo の設定を解決。owner 既定 = GitHub login。
-    // repo は「ユーザが明示的に選んだもの」だけを使う (勝手に bookshelf-public を作らない)。
+    // 公開先の設定を解決。target='github'(自分の repo) | 'hub'(共有ハブ)。
+    // owner 既定 = GitHub login。repo は「ユーザが明示的に選んだもの」だけを使う。
     _resolvePublishConfig() {
         const cfg = SyncConfigManager.load();
         const gh = cfg.github || {};
         const pub = cfg.publish || {};
+        const target = pub.target === 'hub' ? 'hub' : 'github';
         const owner = pub.owner || gh.login || gh.owner || '';
         const repo = pub.repo || '';
         const branch = pub.branch || 'main';
-        return { owner, repo, branch, token: gh.token, configured: !!(pub.owner && pub.repo) };
+        return { target, owner, repo, branch, token: gh.token, configured: !!(pub.owner && pub.repo) };
     }
 
     // 公開 repo を GitHub Pages で配信する想定の URL
@@ -46,24 +47,9 @@ class BookshelfExporter {
         if (!this.app._isSyncReady()) {
             throw new Error('同期先が未接続です');
         }
-        // 公開には GitHub 接続が必須 (同期方式が GitHub 以外でも、公開のためだけに接続できる)
         const pub = this._resolvePublishConfig();
-        if (!pub.token) {
-            throw new Error('公開には GitHub 接続が必要です。設定の「同期 / 公開」で GitHub に接続してください。');
-        }
-        if (!pub.owner) {
-            throw new Error('公開先のアカウントが特定できません。GitHub に接続し直してください。');
-        }
-        if (!pub.repo) {
-            throw new Error('公開先リポジトリが未設定です。設定の「同期 / 公開」で、公開用の GitHub リポジトリ（必ず public リポジトリ）を選んでください。');
-        }
-        // 同期方式が GitHub の場合はトークンを最新化 (refresh 自動更新)
-        if (this.app.syncMethod === 'github' && typeof this.app._ensureFreshGitHubToken === 'function') {
-            await this.app._ensureFreshGitHubToken();
-            pub.token = (SyncConfigManager.load().github || {}).token || pub.token;
-        }
 
-        // 公開ページ → 静的ページ生成 (PublishGenerator)
+        // 公開ページ → 静的ページ生成 (PublishGenerator)。生成は公開先に依らず共通
         const store = this.app.publishPageStore;
         const generator = this.app.publishGenerator;
         if (!store || !generator) {
@@ -80,6 +66,27 @@ class BookshelfExporter {
         }
         if (result.leak.length > 0) {
             throw new Error(`公開ページに個人情報が混入している可能性があります: ${result.leak.join(', ')}`);
+        }
+
+        // 公開先で分岐: 共有ハブ (/publish) か、自分の GitHub repo か
+        if (pub.target === 'hub') {
+            return await this._exportToHub(result, { dryRun });
+        }
+
+        // === GitHub repo への公開 (既定) ===
+        if (!pub.token) {
+            throw new Error('公開には GitHub 接続が必要です。設定の「同期 / 公開」で GitHub に接続してください。');
+        }
+        if (!pub.owner) {
+            throw new Error('公開先のアカウントが特定できません。GitHub に接続し直してください。');
+        }
+        if (!pub.repo) {
+            throw new Error('公開先リポジトリが未設定です。設定の「同期 / 公開」で、公開用の GitHub リポジトリ（必ず public リポジトリ）を選んでください。');
+        }
+        // 同期方式が GitHub の場合はトークンを最新化 (refresh 自動更新)
+        if (this.app.syncMethod === 'github' && typeof this.app._ensureFreshGitHubToken === 'function') {
+            await this.app._ensureFreshGitHubToken();
+            pub.token = (SyncConfigManager.load().github || {}).token || pub.token;
         }
 
         // 公開 repo 用アダプタ (第 2 インスタンス。token は GitHub 接続のものを共用)
@@ -141,6 +148,52 @@ class BookshelfExporter {
             deletes: deletes.length,
             siteUrl,
             publicUrl: siteUrl,
+            errors: result.errors
+        };
+    }
+
+    /**
+     * 共有ハブ (/publish) へ公開する。GitHub repo は不要 (Google ログインのみ)。
+     * sites/<siteId>/ をサーバ側で今回集合に置換 (削除同期は deleteMissing でサーバが担う)。
+     */
+    async _exportToHub(result, { dryRun = false } = {}) {
+        const cfg = SyncConfigManager.load();
+        const hub = cfg.hub || {};
+        if (!hub.key || !hub.apiBase) {
+            throw new Error('共有（ハブ）に公開するには、設定の「同期」で Asayake ハブにログインしてください。');
+        }
+        const siteUrl = hub.publicBase || '';
+        if (dryRun) {
+            return {
+                dryRun: true,
+                target: 'hub',
+                pages: result.pages,
+                writeEntries: result.files.map(f => f.path),
+                deleteEntries: [],   // 削除はサーバ側 (deleteMissing) で実施
+                leak: result.leak,
+                siteUrl,
+                errors: result.errors
+            };
+        }
+        const adapter = new HubStorageAdapter({
+            apiBase: hub.apiBase,
+            getKey: () => (SyncConfigManager.load().hub || {}).key || ''
+        });
+        const resp = await adapter.publishSite(result.files, true);
+        // 公開後に使用量が変わるのでキャッシュ更新 (バー反映用・失敗は黙殺)
+        if (typeof HubAuth !== 'undefined') { try { await HubAuth.refreshUsage(); } catch (_) {} }
+
+        const now = Date.now();
+        for (const p of result.pages) {
+            try { await this.app.publishPageStore.update(p.id, { lastBuiltAt: now }); } catch (_) {}
+        }
+        const url = (resp && resp.siteUrl) || siteUrl;
+        return {
+            pages: result.pages,
+            published: result.pages.length,
+            deletes: 0,
+            siteUrl: url,
+            publicUrl: url,
             errors: result.errors
         };
     }

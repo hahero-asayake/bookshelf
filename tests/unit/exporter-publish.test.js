@@ -17,6 +17,16 @@ globalThis.GitHubAdapter = class {
     async commitBatch(msg) { captured.commits.push(msg); }
 };
 
+const hubCaptured = { files: null, deleteMissing: null };
+globalThis.HubStorageAdapter = class {
+    constructor(opts) { this.opts = opts; }
+    async publishSite(files, deleteMissing) {
+        hubCaptured.files = files; hubCaptured.deleteMissing = deleteMissing;
+        return { ok: true, siteId: 'sid', siteUrl: 'https://hub.example/public/sid/', published: files.length };
+    }
+};
+globalThis.HubAuth = { refreshUsage: async () => {} };
+
 await import('../../js/exporter.js');
 const BookshelfExporter = window.BookshelfExporter;
 
@@ -46,6 +56,7 @@ function makeApp({ pages = [], build } = {}) {
 
 beforeEach(() => {
     captured.entries = []; captured.deletes = []; captured.commits = [];
+    hubCaptured.files = null; hubCaptured.deleteMissing = null;
     mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
     listing = {
         '': { files: ['index.html', 'README.md'], dirs: ['stale'] },
@@ -103,6 +114,38 @@ describe('ページ単位公開 (published フィルタ, ADR-030)', () => {
         // 公開中ページが無いので manga 等は削除同期で消える
         expect(captured.deletes).toContain('stale/index.html');
         expect(r.published).toBe(0);
+    });
+});
+
+describe('共有ハブ公開 (target=hub, ADR-033)', () => {
+    it('target=hub なら /publish 経路で公開し GitHub には触らない', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/' };
+        const app = makeApp({ pages: [{ id: 'p1', published: true }] });
+        const r = await new BookshelfExporter(app).export();
+        expect(hubCaptured.files.map(f => f.path).sort()).toEqual(['index.html', 'manga/index.html']);
+        expect(hubCaptured.deleteMissing).toBe(true);
+        expect(captured.commits.length).toBe(0); // GitHub には push しない
+        expect(r.siteUrl).toBe('https://hub.example/public/sid/');
+        expect(r.published).toBe(1);
+        expect(app._updates.some(u => u.patch.lastBuiltAt)).toBe(true);
+    });
+
+    it('ハブ未ログインなら中止', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: '', apiBase: '' };
+        const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
+        await expect(exporter.export()).rejects.toThrow(/ハブにログイン/);
+    });
+
+    it('dryRun(hub) は publishSite を呼ばず write 一覧を返す', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/' };
+        const r = await new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] })).export({ dryRun: true });
+        expect(r.dryRun).toBe(true);
+        expect(r.target).toBe('hub');
+        expect(hubCaptured.files).toBeNull();
+        expect(r.writeEntries.sort()).toEqual(['index.html', 'manga/index.html']);
     });
 });
 

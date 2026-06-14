@@ -32,8 +32,11 @@ function makeState() {
     };
 }
 
-function makeApp(state) {
+function makeApp(state, plan = 'free') {
     return {
+        // 生成側はプランで affiliate tag を出し分ける (Plus=自分の tag / Free=運営 tag)。
+        // テスト環境に SyncConfigManager は無いので app.syncConfig.hub.plan が参照される。
+        syncConfig: { hub: { plan } },
         storage: {
             loadAll: async () => state,
             readBookMemo: async (asin) => asin === 'M1' ? '---\nupdated: 2026\n---\n長文メモ本文M1' : null
@@ -50,16 +53,29 @@ const fields = () => globalThis.PublishPageStore.defaultFields();
 
 describe('本棚セクション型', () => {
     it('選んだ本棚の本だけ・override メモ・Amazon tag が出る / 非選択本は出ない', async () => {
+        // Plus ユーザは自分の affiliate tag が付く
+        const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const page = { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: 'よろしく', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
-        const r = await gen.build([page]);
+        const r = await g.build([page]);
         const html = r.files.find(f => f.path === 'manga-page/index.html').content;
         expect(html).toContain('漫画1');
         expect(html).toContain('漫画2');
         expect(html).toContain('本棚overrideメモ');     // M2 は override 優先
         expect(html).toContain('ALLメモM1');            // M1 は ALL memo
-        expect(html).toContain('tag=aff-xyz');           // アフィリエイト tag 付き
+        expect(html).toContain('tag=aff-xyz');           // Plus: 自分のアフィリエイト tag 付き
+        expect(html).toContain('【広告】');               // 広告開示が出る (ステマ規制)
         expect(html).not.toContain('小説1');             // 非選択本棚は出ない
         expect(r.errors).toEqual([]);
+    });
+
+    it('Free ユーザは自分の affiliate tag を使わない (運営 tag 未設定なら無印・広告開示なし)', async () => {
+        // beforeEach の gen は plan='free'。運営 tag は REPLACE のため無印 → 広告開示も出さない
+        const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const r = await gen.build([page]);
+        const html = r.files.find(f => f.path === 'free-page/index.html').content;
+        expect(html).toContain('漫画1');
+        expect(html).not.toContain('tag=aff-xyz'); // 自分の tag は付かない
+        expect(html).not.toContain('【広告】');      // tag が無いので広告開示も出さない
     });
 
     it('プライバシー: vault 名が出力に混入しない (leak 検出 0)', async () => {

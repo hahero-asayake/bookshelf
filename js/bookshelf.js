@@ -637,6 +637,21 @@ class VirtualBookshelf {
             });
         }
 
+        // Amazon アソシエイト タグ (settings.affiliateId) — Plus 限定 (ADR-033)。
+        // Free は運営タグ固定なので入力欄を隠す。Plus は自分のタグ設定/解除が可能。
+        const affInput = document.getElementById('setting-affiliate-id');
+        const affWrap = document.getElementById('publish-affiliate');
+        if (affInput && affWrap) {
+            const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+            affWrap.hidden = (plan !== 'plus');
+            affInput.value = (this.userData?.settings?.affiliateId) || '';
+            affInput.addEventListener('change', () => {
+                if (!this.userData.settings) this.userData.settings = {};
+                this.userData.settings.affiliateId = affInput.value.trim();
+                this.saveUserData();
+            });
+        }
+
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
             // 編集モード切り替え (SVG 子要素クリック対応)
@@ -2314,7 +2329,7 @@ class VirtualBookshelf {
 
     /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub=adapter 接続済み) */
     _isSyncReady() {
-        if (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox') {
+        if (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox' || this.syncMethod === 'hub') {
             return this.storage && this.storage.adapter && this.storage.adapter.isConnected && this.storage.adapter.isConnected();
         }
         return !!this.obsidianDirHandle;
@@ -2354,11 +2369,20 @@ class VirtualBookshelf {
             console.error('Obsidian同期エラー:', e);
             // 保存失敗 (トークン失効・ハンドル喪失等) を上部バーに出す
             this._syncError = true;
-            this._syncErrorMsg = (this.syncMethod === 'github')
-                ? ((typeof GitHubAuthError !== 'undefined' && e instanceof GitHubAuthError)
+            if (this.syncMethod === 'github') {
+                this._syncErrorMsg = (typeof GitHubAuthError !== 'undefined' && e instanceof GitHubAuthError)
                     ? 'GitHub の認証が切れました。設定から再接続してください。'
-                    : 'GitHub への保存に失敗しました。再接続が必要かもしれません。')
-                : '保存先への書き込みに失敗しました。同期設定を確認してください。';
+                    : 'GitHub への保存に失敗しました。再接続が必要かもしれません。';
+            } else if (this.syncMethod === 'hub') {
+                // 容量超過・認証失効はメッセージをそのまま見せる (ユーザ対処可能)
+                this._syncErrorMsg = (typeof HubQuotaError !== 'undefined' && e instanceof HubQuotaError)
+                    ? 'ハブの保存容量がいっぱいです。不要なデータを減らすか、Plus へのアップグレードをご検討ください。'
+                    : (typeof HubAuthError !== 'undefined' && e instanceof HubAuthError)
+                        ? 'Asayake ハブの認証が切れました。設定から再ログインしてください。'
+                        : 'Asayake ハブへの保存に失敗しました。通信環境や接続をご確認ください。';
+            } else {
+                this._syncErrorMsg = '保存先への書き込みに失敗しました。同期設定を確認してください。';
+            }
             this._updateStatusBar();
         } finally {
             this._syncInProgress = false;
@@ -2403,22 +2427,27 @@ class VirtualBookshelf {
             await this.initCloudSync('google-drive');
         } else if (this.syncMethod === 'dropbox') {
             await this.initCloudSync('dropbox');
+        } else if (this.syncMethod === 'hub') {
+            await this.initCloudSync('hub');
         } else {
             await this.initObsidianSync();
         }
     }
 
-    // クラウド同期の汎用初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)。Drive / Dropbox 共用
+    // クラウド同期の汎用初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)。Drive / Dropbox / ハブ 共用
     async initCloudSync(method) {
         const adapter = this.storage.adapter;
-        const expected = method === 'google-drive' ? GoogleDriveAdapter : DropboxAdapter;
+        const expected = method === 'google-drive' ? GoogleDriveAdapter
+            : method === 'hub' ? HubStorageAdapter
+            : DropboxAdapter;
         if (!(adapter instanceof expected)) {
             console.warn(`initCloudSync(${method}): adapter type mismatch`);
             return;
         }
-        const label = method === 'google-drive' ? 'Google Drive (bookshelf-data)' : 'Dropbox';
+        const label = method === 'google-drive' ? 'Google Drive (bookshelf-data)'
+            : method === 'hub' ? 'Asayake ハブ' : 'Dropbox';
         const authErrCode = method === 'google-drive' ? 'GDRIVE_AUTH_FAILED' : 'DROPBOX_AUTH_FAILED';
-        const svc = method === 'google-drive' ? 'Google Drive' : 'Dropbox';
+        const svc = method === 'google-drive' ? 'Google Drive' : method === 'hub' ? 'Asayake ハブ' : 'Dropbox';
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -2438,11 +2467,14 @@ class VirtualBookshelf {
                 this.renderBookshelfOverview();
             }
             this.updateSyncStatus('synced', label);
+            // ハブは保存のたびに usedBytes が変わる → 読込後に使用量バーを更新
+            if (method === 'hub') this._refreshHubUsage().catch(() => {});
         } catch (e) {
             console.error(`initCloudSync(${method}):`, e);
             this.updateSyncStatus('reconnect', label);
             this._syncError = true;
-            this._syncErrorMsg = (e.message === authErrCode)
+            const isAuthErr = (e.message === authErrCode) || (e && e.name === 'HubAuthError');
+            this._syncErrorMsg = isAuthErr
                 ? `${svc} の認証が切れました。設定から再接続してください。`
                 : `${svc} からの読み込みに失敗しました。`;
             this._updateStatusBar();
@@ -2564,11 +2596,15 @@ class VirtualBookshelf {
         if (!selector || !localPanel || !githubPanel) return;
 
         const dropboxPanel = document.getElementById('sync-config-dropbox');
+        const hubPanel = document.getElementById('sync-config-hub');
         const showPanel = (method) => {
             localPanel.hidden = (method !== 'local');
             githubPanel.hidden = (method !== 'github');
             if (gdrivePanel) gdrivePanel.hidden = (method !== 'google-drive');
             if (dropboxPanel) dropboxPanel.hidden = (method !== 'dropbox');
+            if (hubPanel) hubPanel.hidden = (method !== 'hub');
+            // ハブを表示する時だけ Google ログインボタンを遅延描画 (外部 GIS 読込)
+            if (method === 'hub') this._ensureHubSignInButton();
         };
 
         const config = this.syncConfig || SyncConfigManager.load();
@@ -2580,6 +2616,8 @@ class VirtualBookshelf {
         this._setupGoogleDriveUI();
         this._renderDropboxAuthState();
         this._setupDropboxUI();
+        this._renderHubAuthState();
+        this._setupHubUI();
 
         selector.addEventListener('change', () => {
             const newMethod = selector.value;
@@ -2621,6 +2659,13 @@ class VirtualBookshelf {
 
         const publishRepoSel = document.getElementById('publish-repo-select');
         if (publishRepoSel) publishRepoSel.addEventListener('change', () => this._onPublishRepoSelected());
+
+        const publishTargetSel = document.getElementById('publish-target-select');
+        if (publishTargetSel) {
+            publishTargetSel.value = (SyncConfigManager.load().publish || {}).target || 'github';
+            publishTargetSel.addEventListener('change', () => this._onPublishTargetSelected());
+            this._reflectPublishTargetPanels(publishTargetSel.value);
+        }
 
         // basePath ブラウザ
         const browseBtn = document.getElementById('github-basepath-browse-btn');
@@ -2922,6 +2967,36 @@ class VirtualBookshelf {
         cfg.publish = { ...(cfg.publish || {}), owner, repo, branch };
         SyncConfigManager.save(cfg);
         this._reflectPublishRepoStatus();
+    }
+
+    // 公開先 (github / hub) の選択を保存し、対応する設定ブロックを出し分ける
+    _onPublishTargetSelected() {
+        const sel = document.getElementById('publish-target-select');
+        if (!sel) return;
+        const target = sel.value === 'hub' ? 'hub' : 'github';
+        const cfg = SyncConfigManager.load();
+        cfg.publish = { ...(cfg.publish || {}), target };
+        SyncConfigManager.save(cfg);
+        this._reflectPublishTargetPanels(target);
+    }
+
+    _reflectPublishTargetPanels(target) {
+        const ghBlock = document.getElementById('publish-config-github');
+        const hubBlock = document.getElementById('publish-config-hub');
+        if (ghBlock) ghBlock.hidden = (target !== 'github');
+        if (hubBlock) hubBlock.hidden = (target !== 'hub');
+        if (target === 'hub') this._reflectPublishHubStatus();
+    }
+
+    _reflectPublishHubStatus() {
+        const status = document.getElementById('publish-hub-status');
+        if (!status) return;
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (hub.key && hub.apiBase) {
+            status.textContent = hub.publicBase ? `✅ 公開 URL: ${hub.publicBase}` : '✅ Asayake ハブに接続済み';
+        } else {
+            status.textContent = '⚠️ 先に設定の「同期」で Asayake ハブにログインしてください。';
+        }
     }
 
     _reflectPublishRepoStatus() {
@@ -3268,6 +3343,122 @@ class VirtualBookshelf {
         }
         const merged = SyncConfigManager.load();
         merged.method = 'dropbox';
+        SyncConfigManager.save(merged);
+        location.reload();
+    }
+
+    // ===== Asayake ハブ接続 UI (ADR-032/033) =====
+
+    _renderHubAuthState() {
+        const disc = document.getElementById('hub-auth-disconnected');
+        const conn = document.getElementById('hub-auth-connected');
+        if (!disc || !conn) return;
+        const hub = (SyncConfigManager.load().hub) || {};
+        const connected = !!(hub.key && hub.apiBase);
+        disc.hidden = connected;
+        conn.hidden = !connected;
+        if (connected) {
+            const emailEl = document.getElementById('hub-connected-email');
+            if (emailEl) emailEl.textContent = hub.email || '(接続済み)';
+            this._renderHubUsageBar(hub);
+        }
+    }
+
+    // 使用量バー・プランバッジを設定キャッシュ (hub) の値で描画
+    _renderHubUsageBar(hub) {
+        hub = hub || (SyncConfigManager.load().hub) || {};
+        const used = Number(hub.usedBytes) || 0;
+        const quota = Number(hub.quotaBytes) || 0;
+        const badge = document.getElementById('hub-plan-badge');
+        if (badge) {
+            const plus = hub.plan === 'plus';
+            badge.textContent = plus ? 'Plus' : '無料';
+            badge.classList.toggle('is-plus', plus);
+        }
+        const usedEl = document.getElementById('hub-usage-used');
+        const quotaEl = document.getElementById('hub-usage-quota');
+        if (usedEl) usedEl.textContent = this._formatBytes(used);
+        if (quotaEl) quotaEl.textContent = quota ? this._formatBytes(quota) : '—';
+        const fill = document.getElementById('hub-usage-fill');
+        if (fill) {
+            const ratio = quota > 0 ? Math.min(1, used / quota) : 0;
+            fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+            fill.classList.toggle('is-warn', ratio >= 0.8 && ratio < 0.98);
+            fill.classList.toggle('is-full', ratio >= 0.98);
+        }
+    }
+
+    _formatBytes(n) {
+        n = Number(n) || 0;
+        if (n < 1024) return `${n} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+        return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    }
+
+    _setupHubUI() {
+        if (this._hubUIBound) return;
+        this._hubUIBound = true;
+        const disconnectBtn = document.getElementById('hub-disconnect-btn');
+        if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectHub());
+        const useBtn = document.getElementById('hub-use-btn');
+        if (useBtn) useBtn.addEventListener('click', () => this._useHub());
+        const refreshBtn = document.getElementById('hub-usage-refresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', () => this._refreshHubUsage({ notify: true }));
+    }
+
+    // Google ログインボタンの描画は「ハブパネルを実際に開いた時」だけ (GIS スクリプトの遅延読込)。
+    // ブート時に外部スクリプトを読みに行かない (オフライン/起動コストを避ける)。
+    _ensureHubSignInButton() {
+        if (this._hubSignInRendered) return;
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (hub.key && hub.apiBase) return; // 接続済みはボタン不要
+        const btnHost = document.getElementById('hub-gsi-button');
+        if (!btnHost || typeof HubAuth === 'undefined') return;
+        this._hubSignInRendered = true;
+        HubAuth.renderSignInButton(btnHost, {
+            onConnected: (session) => {
+                this._renderHubAuthState();
+                toast(`Asayake ハブに接続しました${session && session.email ? ` (${session.email})` : ''}。`, { type: 'success' });
+            },
+            onError: (e) => toast(`ハブへの接続に失敗しました: ${e.message}`, { type: 'error' })
+        });
+    }
+
+    // 使用量を再取得し、バーを更新 (失敗は黙殺 or notify 時のみ通知)
+    async _refreshHubUsage({ notify = false } = {}) {
+        if (typeof HubAuth === 'undefined') return;
+        try {
+            const hub = await HubAuth.refreshUsage();
+            if (hub) {
+                this._renderHubUsageBar(hub);
+                if (notify) toast('使用量を更新しました。', { type: 'success' });
+            }
+        } catch (e) {
+            console.warn('ハブ使用量の取得に失敗:', e);
+            if (notify) toast(`使用量を取得できませんでした: ${e.message}`, { type: 'warn' });
+        }
+    }
+
+    _disconnectHub() {
+        const wasMethod = SyncConfigManager.load().method;
+        HubAuth.disconnect();
+        if (wasMethod === 'hub') {
+            const after = SyncConfigManager.load();
+            after.method = 'local';
+            SyncConfigManager.save(after);
+        }
+        location.reload();
+    }
+
+    _useHub() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) {
+            toast('先に Asayake ハブにログインしてください。', { type: 'warn' });
+            return;
+        }
+        const merged = SyncConfigManager.load();
+        merged.method = 'hub';
         SyncConfigManager.save(merged);
         location.reload();
     }
@@ -3849,6 +4040,9 @@ class VirtualBookshelf {
         }
         if (this.syncMethod === 'dropbox') {
             return 'Dropbox';
+        }
+        if (this.syncMethod === 'hub') {
+            return 'Asayake ハブ';
         }
         return this.obsidianDirHandle ? this.obsidianDirHandle.name : '';
     }
@@ -6465,19 +6659,28 @@ class VirtualBookshelf {
             toast('先に「同期」で保存先を設定してください。', { type: 'warn' });
             return { ok: false, reason: 'sync' };
         }
-        // 公開には GitHub 接続が必要 (同期方式が GitHub 以外でも、公開のためだけに接続できる)
-        const gh = (SyncConfigManager.load().github) || {};
-        if (!gh.token) {
-            toast('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', { type: 'warn' });
-            return { ok: false, reason: 'github' };
-        }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
             this.storage.setDirHandle(this.obsidianDirHandle);
         }
         const pub = this.exporter._resolvePublishConfig();
-        if (!pub.repo) {
-            toast('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
-            return { ok: false, reason: 'repo' };
+        if (pub.target === 'hub') {
+            // 共有ハブ公開: GitHub repo は不要。ハブへのログインだけ確認
+            const hub = (SyncConfigManager.load().hub) || {};
+            if (!(hub.key && hub.apiBase)) {
+                toast('共有（ハブ）公開には Asayake ハブへのログインが必要です。設定の「同期」でログインしてください。', { type: 'warn' });
+                return { ok: false, reason: 'hub' };
+            }
+        } else {
+            // 自分の GitHub repo 公開: GitHub 接続と公開先 repo が必要
+            const gh = (SyncConfigManager.load().github) || {};
+            if (!gh.token) {
+                toast('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', { type: 'warn' });
+                return { ok: false, reason: 'github' };
+            }
+            if (!pub.repo) {
+                toast('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
+                return { ok: false, reason: 'repo' };
+            }
         }
         // 編集中の変更を確実に書き出してから export
         await this.flushSync();
@@ -6941,8 +7144,8 @@ class VirtualBookshelf {
 
         const settings = this.userData.settings || (this.userData.settings = {});
         const requestedOpenWith = settings.bookMemoOpenWith || 'app-editor';
-        // クラウド同期 (GitHub / Drive / Dropbox) では外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
-        const isCloud = (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox');
+        // クラウド同期 (GitHub / Drive / Dropbox / ハブ) では外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
+        const isCloud = (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox' || this.syncMethod === 'hub');
         const openWith = isCloud ? 'app-editor' : requestedOpenWith;
 
         // アプリ内エディタ: モーダルを開き、雛形は EasyMDE 側で扱う (空時は buildBookMemoTemplate)

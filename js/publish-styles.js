@@ -69,6 +69,8 @@ a{ color:var(--accent) }
 .pub-footer{ margin:48px 0 0; padding:24px 20px 40px; border-top:1px solid var(--line);
   color:var(--muted); font-size:.8rem; text-align:center }
 .pub-footer a{ color:var(--muted) }
+.pub-ad-notice{ margin:0 0 .6rem; padding:.5rem .8rem; border-radius:6px;
+  background:#f3eee9; color:var(--muted); font-size:.78rem; line-height:1.5 }
 `;
 
 // ===== 標準スタイル: 本棚セクション型 =====

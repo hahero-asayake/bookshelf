@@ -77,3 +77,34 @@ test('評価フィルタで件数が変わり、funnel が点灯する', async (
     await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
     expect(errors).toEqual([]);
 });
+
+test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033)', async ({ page }) => {
+    const errors = await bootApp(page);
+    // GIS の外部読込を避けるためサインインボタン描画をスタブ化
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
+    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    // 同期方式に hub オプションがある
+    await expect(page.locator('#sync-method-select option[value="hub"]')).toHaveCount(1);
+    // hub を選択 → ハブパネルが表示
+    await page.selectOption('#sync-method-select', 'hub');
+    await expect(page.locator('#sync-config-hub')).toBeVisible();
+    await expect(page.locator('#hub-auth-disconnected')).toBeVisible();
+    expect(errors).toEqual([]);
+});
+
+test('設定→公開: 公開先をハブに切替えるとハブ公開ブロックが出る (ADR-033)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
+    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    // 既定は GitHub ブロック表示、ハブブロックは隠れている
+    await expect(page.locator('#publish-config-github')).toBeVisible();
+    await expect(page.locator('#publish-config-hub')).toBeHidden();
+    // 公開先=ハブ → ハブブロック表示・GitHub ブロック非表示
+    await page.selectOption('#publish-target-select', 'hub');
+    await expect(page.locator('#publish-config-hub')).toBeVisible();
+    await expect(page.locator('#publish-config-github')).toBeHidden();
+    // 設定に target=hub が保存される
+    const target = await page.evaluate(() => JSON.parse(localStorage.getItem('bookshelf_sync')).publish.target);
+    expect(target).toBe('hub');
+    expect(errors).toEqual([]);
+});

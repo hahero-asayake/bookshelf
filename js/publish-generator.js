@@ -13,6 +13,13 @@
 
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/;
 
+// hahero (運営) の Amazon アソシエイト tag (ADR-033)。Free プランの公開ページに付く。
+// ⚠️ 実 tag は未確定 (一次確認 TODO)。REPLACE_ のままの間は無印リンク (誤った tag への送客を防ぐ)。
+const HAHERO_AFFILIATE_TAG = 'REPLACE_HAHERO_AMAZON_TAG';
+function operatorAffiliateTag() {
+    return HAHERO_AFFILIATE_TAG.startsWith('REPLACE') ? '' : HAHERO_AFFILIATE_TAG;
+}
+
 class PublishGenerator {
     constructor(app, styleRegistry) {
         this.app = app;
@@ -130,9 +137,13 @@ class PublishGenerator {
 
     // ===== HTML シェル =====
 
-    _wrapDoc(page, publisher, body, css) {
+    _wrapDoc(page, publisher, body, css, hasAds = false) {
         const esc = PublishGenerator.esc;
         const intro = page.intro || '';
+        // ステマ規制 (景品表示法) 対応: 広告 (アフィリエイト) を含む時だけ明示開示する
+        const adNotice = hasAds
+            ? `<p class="pub-ad-notice">【広告】当ページの商品リンクは Amazon アソシエイト・プログラムによる広告（アフィリエイトリンク）を含みます。適格販売により収入を得る場合があります。</p>`
+            : '';
         return `<!doctype html>
 <html lang="ja">
 <head>
@@ -154,7 +165,7 @@ class PublishGenerator {
 </div></header>
 <main>${body}</main>
 <footer class="pub-footer"><div class="pub-wrap">
-  <p>※ 当ページの商品リンクには Amazon アソシエイトを含みます。適格販売により収入を得る場合があります。</p>
+  ${adNotice}
   <p>Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
 </div></footer>
 </body>
@@ -213,8 +224,19 @@ class PublishGenerator {
         };
         const libMap = new Map((state.library.books || []).map(b => [b.asin, b]));
         const ps = state.privateSettings || {};
-        const affiliateId = ps.affiliateId || '';
         const publisher = ps.publicDisplayName || 'hahero';
+
+        // アフィリエイト tag の出し分け (ADR-033):
+        //   Plus  … 自分の tag (空なら広告なし)。Free … hahero (運営) の tag。
+        // プランは hub 設定 (SyncConfigManager) の plan を正本とする。未接続/テストでは free 扱い。
+        let plan = 'free';
+        try {
+            if (typeof SyncConfigManager !== 'undefined') plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+            else if (this.app && this.app.syncConfig) plan = (this.app.syncConfig.hub || {}).plan || 'free';
+        } catch (_) {}
+        const isPlus = plan === 'plus';
+        const affiliateId = isPlus ? (ps.affiliateId || '') : operatorAffiliateTag();
+        const hasAds = !!affiliateId; // 実際に tag が付く時だけ広告開示を出す
 
         const files = [];
         const built = [];
@@ -250,7 +272,7 @@ class PublishGenerator {
             try { rendered = style.render(ctx); }
             catch (e) { errors.push(`render ${page.title}: ${e.message}`); continue; }
 
-            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '');
+            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', hasAds);
             files.push({ path: `${page.slug}/index.html`, content: html });
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
             built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount });
