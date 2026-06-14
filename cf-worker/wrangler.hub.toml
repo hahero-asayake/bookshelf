@@ -6,6 +6,7 @@
 name = "asayake-hub"
 main = "asayake-hub.js"
 compatibility_date = "2026-01-01"
+account_id = "7b1c63e99dcd20999d3d0d5de0183873"   # asayake.org のあるアカウントに固定 (env var のブレ回避)
 
 # --- R2 (sites/ 公開・data/ 私的) ---
 [[r2_buckets]]
