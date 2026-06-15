@@ -15,7 +15,7 @@ const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/;
 
 // hahero (運営) の Amazon アソシエイト tag (ADR-033)。Free プランの公開ページに付く。
 // ⚠️ 実 tag は未確定 (一次確認 TODO)。REPLACE_ のままの間は無印リンク (誤った tag への送客を防ぐ)。
-const HAHERO_AFFILIATE_TAG = 'REPLACE_HAHERO_AMAZON_TAG';
+const HAHERO_AFFILIATE_TAG = 'asayake09-22';
 function operatorAffiliateTag() {
     return HAHERO_AFFILIATE_TAG.startsWith('REPLACE') ? '' : HAHERO_AFFILIATE_TAG;
 }

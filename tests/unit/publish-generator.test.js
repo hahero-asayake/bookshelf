@@ -79,14 +79,15 @@ describe('本棚セクション型', () => {
         expect(html).not.toContain('【広告】');       // よって開示も出さない
     });
 
-    it('Free ユーザは自分の affiliate tag を使わない (運営 tag 未設定なら無印・広告開示なし)', async () => {
-        // beforeEach の gen は plan='free'。運営 tag は REPLACE のため無印 → 広告開示も出さない
+    it('Free ユーザは運営 tag が付き広告開示が出る (自分の tag は使わない)', async () => {
+        // beforeEach の gen は plan='free'。運営 tag (asayake09-22) が付き、広告開示も出る
         const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
         const r = await gen.build([page]);
         const html = r.files.find(f => f.path === 'free-page/index.html').content;
         expect(html).toContain('漫画1');
-        expect(html).not.toContain('tag=aff-xyz'); // 自分の tag は付かない
-        expect(html).not.toContain('【広告】');      // tag が無いので広告開示も出さない
+        expect(html).not.toContain('tag=aff-xyz');     // 自分の tag は使わない
+        expect(html).toContain('tag=asayake09-22');     // 運営 tag が付く
+        expect(html).toContain('【広告】');               // 広告開示が出る
     });
 
     it('プライバシー: vault 名が出力に混入しない (leak 検出 0)', async () => {
@@ -165,9 +166,14 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         expect(html).not.toContain('運営者に帰属');
     });
 
-    it('収益化していない (Free 無印) なら常時アフィ表明は出さない', async () => {
-        const html = (await gen.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+    it('Plus でアフィ tag 未設定なら広告なし・常時表明も出さない', async () => {
+        // 収益化しない唯一の経路 = Plus かつ自分のタグ空 (Free は運営タグで常に収益化)
+        const state = makeState();
+        state.privateSettings.affiliateId = '';
+        const g = new PublishGenerator(makeApp(state, 'plus'), createPublishStyleRegistry());
+        const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
         expect(html).not.toContain('アソシエイト・プログラムの参加者');
+        expect(html).not.toContain('【広告】');
     });
 
     it('OGP: og:image に代表表紙・favicon・twitter:card が出る', async () => {
