@@ -69,8 +69,13 @@ a{ color:var(--accent) }
 .pub-footer{ margin:48px 0 0; padding:24px 20px 40px; border-top:1px solid var(--line);
   color:var(--muted); font-size:.8rem; text-align:center }
 .pub-footer a{ color:var(--muted) }
+.pub-footer p{ margin:.35rem 0 }
 .pub-ad-notice{ margin:0 0 .6rem; padding:.5rem .8rem; border-radius:6px;
   background:#f3eee9; color:var(--muted); font-size:.78rem; line-height:1.5 }
+.pub-affiliate{ max-width:680px; margin:0 auto .5rem; font-size:.74rem; line-height:1.55; opacity:.85 }
+.pub-rights{ font-size:.74rem; line-height:1.55; opacity:.8 }
+.pub-updated{ font-size:.72rem; opacity:.7 }
+.pub-powered{ margin-top:.6rem !important }
 `;
 
 // ===== 標準スタイル: 本棚セクション型 =====

@@ -140,6 +140,52 @@ describe('トップ index と HTML 妥当性', () => {
     });
 });
 
+describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () => {
+    const mkPage = (extra = {}) => ({
+        id: 'a', slug: 'p', title: 'P', intro: 'しょうかい', styleId: 'shelf-sections', styleParams: {},
+        select: { shelves: ['mid'], books: [], fields: fields() },
+        updatedAt: new Date(2026, 5, 1, 12, 0, 0).getTime(), ...extra
+    });
+
+    it('フッターに発行者・著作権・Powered by・最終更新が出る', async () => {
+        const html = (await gen.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('class="pub-footer"');
+        expect(html).toContain('© 2026 hahero');
+        expect(html).toContain('Powered by');
+        expect(html).toContain('最終更新 2026-06-01');
+    });
+
+    it('サイトが収益化していれば常時アフィ表明を全ページに出す (Plus)', async () => {
+        const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
+        const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('Amazon.co.jp アソシエイト・プログラムの参加者');
+    });
+
+    it('収益化していない (Free 無印) なら常時アフィ表明は出さない', async () => {
+        const html = (await gen.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).not.toContain('アソシエイト・プログラムの参加者');
+    });
+
+    it('OGP: og:image に代表表紙・favicon・twitter:card が出る', async () => {
+        const html = (await gen.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('property="og:image" content="http://img/M1.jpg"');
+        expect(html).toContain('rel="icon"');
+        expect(html).toContain('name="twitter:card"');
+    });
+
+    it('siteBaseUrl を渡すと canonical / og:url が付く', async () => {
+        const r = await gen.build([mkPage()], { siteBaseUrl: 'https://hub.asayake.org/public/abc/' });
+        const html = r.files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('rel="canonical" href="https://hub.asayake.org/public/abc/p/"');
+        expect(html).toContain('property="og:url" content="https://hub.asayake.org/public/abc/p/"');
+    });
+
+    it('page.noindex で robots が noindex になる', async () => {
+        const html = (await gen.build([mkPage({ noindex: true })])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('content="noindex,nofollow"');
+    });
+});
+
 describe('プライバシー誤検知ガード (leak)', () => {
     it('extensionImportOrigins にアプリ公開 origin があっても footer の Powered by リンクで誤検知しない', async () => {
         const state = makeState();

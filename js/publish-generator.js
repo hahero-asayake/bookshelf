@@ -32,6 +32,24 @@ class PublishGenerator {
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    // 公開物の自己完結 favicon (SVG data URI。外部 asset を要求しない)
+    static get FAVICON() {
+        return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d2638'/%3E%3Ccircle cx='16' cy='21' r='8' fill='%23ff9e7d'/%3E%3Crect x='5' y='21' width='22' height='6' fill='%232d2638'/%3E%3C/svg%3E";
+    }
+
+    static _fmtDate(ms) {
+        if (!ms) return '';
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '';
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    static _year(ms) {
+        const d = ms ? new Date(ms) : new Date();
+        return isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+    }
+
     static stripFrontmatter(text) {
         return String(text || '').replace(FRONTMATTER_RE, '').trim();
     }
@@ -137,24 +155,47 @@ class PublishGenerator {
 
     // ===== HTML シェル =====
 
-    _wrapDoc(page, publisher, body, css, hasAds = false) {
+    _wrapDoc(page, publisher, body, css, opts = {}) {
         const esc = PublishGenerator.esc;
         const intro = page.intro || '';
-        // ステマ規制 (景品表示法) 対応: 広告 (アフィリエイト) を含む時だけ明示開示する
-        const adNotice = hasAds
+        // opts: { pageHasAds, siteHasAffiliate, ogImage, canonical, noindex, updatedAt }
+        const pageHasAds = !!opts.pageHasAds;          // このページに実アフィリンクが出る (景表法)
+        const siteHasAffiliate = !!opts.siteHasAffiliate; // サイトとして収益化している (常時表明)
+        const ogImage = opts.ogImage || '';
+        const canonical = opts.canonical || '';
+        const updated = PublishGenerator._fmtDate(opts.updatedAt);
+        const year = PublishGenerator._year(opts.updatedAt);
+
+        // 景表法 (ステマ規制): 実アフィリンクを含むページにだけ目立つ「広告」明示を出す
+        const adNotice = pageHasAds
             ? `<p class="pub-ad-notice">【広告】当ページの商品リンクは Amazon アソシエイト・プログラムによる広告（アフィリエイトリンク）を含みます。適格販売により収入を得る場合があります。</p>`
             : '';
+        // Amazon アソシエイト規約: サイトとして収益化しているなら全ページに常時の参加表明を掲示する
+        const affiliateStanding = siteHasAffiliate
+            ? `<p class="pub-affiliate">当サイトは Amazon.co.jp アソシエイト・プログラムの参加者です。商品リンクを経由した適格販売により、サイト運営者が収入を得る場合があります。</p>`
+            : '';
+
+        const head = [
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width,initial-scale=1">',
+            `<title>${esc(page.title)} — ${esc(publisher)}</title>`,
+            `<meta name="description" content="${esc(intro)}">`,
+            `<meta name="robots" content="${opts.noindex ? 'noindex,nofollow' : 'index,follow'}">`,
+            `<link rel="icon" href="${PublishGenerator.FAVICON}">`,
+            canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
+            `<meta property="og:title" content="${esc(page.title)}">`,
+            `<meta property="og:description" content="${esc(intro)}">`,
+            `<meta property="og:type" content="website">`,
+            `<meta property="og:site_name" content="${esc(publisher)} の本棚">`,
+            canonical ? `<meta property="og:url" content="${esc(canonical)}">` : '',
+            ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : '',
+            ogImage ? `<meta name="twitter:card" content="summary_large_image">` : '<meta name="twitter:card" content="summary">'
+        ].filter(Boolean).join('\n');
+
         return `<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(page.title)} — ${esc(publisher)}</title>
-<meta name="description" content="${esc(intro)}">
-<meta name="robots" content="index,follow">
-<meta property="og:title" content="${esc(page.title)}">
-<meta property="og:description" content="${esc(intro)}">
-<meta property="og:type" content="website">
+${head}
 <style>${PUBLISH_BASE_CSS}${css || ''}</style>
 </head>
 <body>
@@ -166,13 +207,16 @@ class PublishGenerator {
 <main>${body}</main>
 <footer class="pub-footer"><div class="pub-wrap">
   ${adNotice}
-  <p>Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
+  ${affiliateStanding}
+  <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
+  ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
+  <p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
 </div></footer>
 </body>
 </html>`;
     }
 
-    _indexHtml(publisher, pageLinks) {
+    _indexHtml(publisher, pageLinks, opts = {}) {
         const esc = PublishGenerator.esc;
         const items = pageLinks.map(p =>
             `<li><a href="./${esc(p.slug)}/">${esc(p.title)}</a>${p.intro ? `<span class="ix-intro">${esc(p.intro)}</span>` : ''}</li>`
@@ -182,7 +226,12 @@ class PublishGenerator {
 .index-list li{ padding:16px 0; border-bottom:1px solid var(--line) }
 .index-list a{ font-size:1.15rem; font-weight:600; text-decoration:none }
 .index-list .ix-intro{ display:block; color:var(--muted); font-size:.85rem; margin-top:.2rem }`;
-        return this._wrapDoc({ title: `${publisher} の本棚`, intro: '' }, publisher, body, css);
+        const updatedAt = pageLinks.reduce((m, p) => Math.max(m, p.updatedAt || 0), 0);
+        return this._wrapDoc({ title: `${publisher} の本棚`, intro: '' }, publisher, body, css, {
+            siteHasAffiliate: !!opts.siteHasAffiliate,
+            canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
+            updatedAt
+        });
     }
 
     // ===== プライバシーガード =====
@@ -242,6 +291,10 @@ class PublishGenerator {
         const isPlus = plan === 'plus';
         const affiliateId = isPlus ? (ps.affiliateId || '') : operatorAffiliateTag();
         const hasAds = !!affiliateId; // 実際に tag が付く時だけ広告開示を出す
+        // サイトとして収益化しているか (= 1つでもアフィタグが付く)。footer の常時表明はこれで出す
+        const siteHasAffiliate = hasAds;
+        // 公開先の絶対 URL (分かれば canonical / og:url に使う。不明なら付けない)
+        const siteBaseUrl = String(opts.siteBaseUrl || '').replace(/\/+$/, '');
 
         const files = [];
         const built = [];
@@ -282,13 +335,25 @@ class PublishGenerator {
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
             const pageHasAds = hasAds && !!resolved.fields.amazon && bookCount > 0;
 
-            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', pageHasAds);
+            // OGP の og:image に使う代表表紙 (本棚→本の順で最初に見つかったもの)
+            let ogImage = '';
+            for (const s of resolved.shelves) { for (const b of s.books) { if (b.productImage) { ogImage = b.productImage; break; } } if (ogImage) break; }
+            if (!ogImage) { for (const b of resolved.books) { if (b.productImage) { ogImage = b.productImage; break; } } }
+
+            const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', {
+                pageHasAds,
+                siteHasAffiliate,
+                ogImage,
+                canonical: siteBaseUrl ? `${siteBaseUrl}/${page.slug}/` : '',
+                noindex: !!page.noindex,
+                updatedAt: page.updatedAt || page.lastBuiltAt || 0
+            });
             files.push({ path: `${page.slug}/index.html`, content: html });
-            built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount });
+            built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount, updatedAt: page.updatedAt || 0 });
         }
 
         // トップ index
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl }) });
 
         const leak = this._detectLeak(files, state);
         return { files, pages: built, leak, errors };

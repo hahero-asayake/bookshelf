@@ -66,7 +66,15 @@ class BookshelfExporter {
         const allPages = await store.load();
         const pages = allPages.filter(p => p.published);
 
-        const result = await generator.build(pages);
+        // 公開先の絶対 URL (canonical / og:url 用)。hub=publicBase、GitHub=Pages URL。
+        let siteBaseUrl = '';
+        if (pub.target === 'hub') {
+            siteBaseUrl = (SyncConfigManager.load().hub || {}).publicBase || '';
+        } else if (pub.owner && pub.repo) {
+            siteBaseUrl = this._pagesSiteUrl(pub.owner, pub.repo);
+        }
+
+        const result = await generator.build(pages, { siteBaseUrl });
         if (pages.length > 0 && result.pages.length === 0) {
             throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
