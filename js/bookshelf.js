@@ -3040,6 +3040,7 @@ class VirtualBookshelf {
         cfg.publish = { ...(cfg.publish || {}), target };
         SyncConfigManager.save(cfg);
         this._reflectPublishTargetPanels(target);
+        this._reflectAffiliateField(); // 公開先で自分タグ入力の出し分けが変わる (github=プラン不問)
         // 旧公開先にサイトが残っている場合は警告 (自動削除はしない=手動クリーンアップ誘導)
         if (last && last !== target) {
             const name = (t) => t === 'hub' ? '共有（ハブ）' : '自分の GitHub リポジトリ';
@@ -3475,8 +3476,12 @@ class VirtualBookshelf {
         const affInput = document.getElementById('setting-affiliate-id');
         const affWrap = document.getElementById('publish-affiliate');
         if (!affInput || !affWrap) return;
-        const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
-        affWrap.hidden = (plan !== 'plus');
+        const cfg = SyncConfigManager.load();
+        const plan = (cfg.hub || {}).plan || 'free';
+        const target = (cfg.publish || {}).target === 'hub' ? 'hub' : 'github';
+        // 自前 GitHub Pages はユーザの自己責任サイト → プラン不問で自分のタグ可 (運営タグは入れない)。
+        // ハブは運営ホスト → 自分のタグは Plus 特典 (無料は運営タグ)。
+        affWrap.hidden = !((target === 'github') || (plan === 'plus'));
         // 入力中はユーザの編集を尊重して上書きしない
         if (document.activeElement !== affInput) {
             affInput.value = (this.userData && this.userData.settings && this.userData.settings.affiliateId) || '';
@@ -6980,10 +6985,14 @@ class VirtualBookshelf {
         this._renderPublishPagesList();
     }
 
-    // C2: 無料プランで初めて公開する時、運営アフィリエイトタグが付く旨を明示し同意を取る。
+    // C2: ハブ無料プランで初めて公開する時、運営アフィリエイトタグが付く旨を明示し同意を取る。
     // 同意は settings.ackFreeAffiliate に記録し、以後は出さない。Plus は不要(true を返す)。
+    // 公開先=github (自前 GitHub Pages) は運営タグを入れないので同意不要(true)。
     async _ensureFreeAffiliateConsent() {
-        const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+        const cfg = SyncConfigManager.load();
+        const target = (cfg.publish || {}).target === 'hub' ? 'hub' : 'github';
+        if (target !== 'hub') return true; // 自前サイトには運営タグを入れない
+        const plan = (cfg.hub || {}).plan || 'free';
         if (plan === 'plus') return true;
         if (this.userData && this.userData.settings && this.userData.settings.ackFreeAffiliate) return true;
         const ok = await confirmDialog({

@@ -69,10 +69,10 @@ describe('本棚セクション型', () => {
         expect(r.errors).toEqual([]);
     });
 
-    it('Free ユーザは運営 tag が付き広告開示が出る (自分の tag は使わない)', async () => {
-        // beforeEach の gen は plan='free'。運営 tag (asayake09-22) が付き、広告開示も出る
+    it('ハブの Free ユーザは運営 tag が付き広告ラベルが出る (自分の tag は使わない)', async () => {
+        // ハブ公開 (運営ホスト) の無料プラン → 運営 tag (asayake09-22) が付く
         const page = { id: 'a', slug: 'free-page', title: 'おすすめ本', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
-        const r = await gen.build([page]);
+        const r = await gen.build([page], { target: 'hub' });
         const html = r.files.find(f => f.path === 'free-page/index.html').content;
         expect(html).toContain('漫画1');
         expect(html).not.toContain('tag=aff-xyz');     // 自分の tag は使わない
@@ -114,6 +114,34 @@ describe('本棚セクション型', () => {
         const all = r.files.map(f => f.content).join('');
         expect(all).not.toContain('MySecretVault');
         expect(r.leak).toEqual([]);
+    });
+});
+
+describe('公開先による affiliate tag 出し分け (ADR-034追補)', () => {
+    const page = () => ({ id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) });
+
+    it('github (自前サイト): Free でも運営タグは入れず、ユーザ自身のタグを使う', async () => {
+        // makeState の affiliateId='aff-xyz'。プラン free でも github なら自分のタグが付く
+        const r = await gen.build([page()], { target: 'github' });
+        const html = r.files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('tag=aff-xyz');          // 自分のタグ
+        expect(html).not.toContain('tag=asayake09-22');  // 運営タグは入れない
+        expect(html).toContain('class="pub-ad-top"');    // 自分のアフィリンクなので開示は出す
+    });
+
+    it('github (自前サイト): 自分のタグ未設定なら広告なし (運営タグで埋めない)', async () => {
+        const state = makeState();
+        state.privateSettings.affiliateId = '';
+        const g = new PublishGenerator(makeApp(state, 'free'), createPublishStyleRegistry());
+        const html = (await g.build([page()], { target: 'github' })).files.find(f => f.path === 'p/index.html').content;
+        expect(html).not.toContain('tag=');             // どのタグも付かない
+        expect(html).not.toContain('class="pub-ad-top"'); // 広告が無いので開示も無し
+    });
+
+    it('hub (運営ホスト): Free は運営タグ', async () => {
+        const html = (await gen.build([page()], { target: 'hub' })).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('tag=asayake09-22');
+        expect(html).not.toContain('tag=aff-xyz');
     });
 });
 

@@ -297,16 +297,21 @@ ${head}
         }
         if (!publisher) publisher = 'マイ本棚';
 
-        // アフィリエイト tag の出し分け (ADR-033):
-        //   Plus  … 自分の tag (空なら広告なし)。Free … hahero (運営) の tag。
+        // アフィリエイト tag の出し分け (ADR-033 / ADR-034追補):
+        //   公開先 github (= 自前の GitHub Pages) … 運営タグは一切入れない。ユーザ自身の tag のみ
+        //     (プラン不問。自前サイト=完全にユーザの責任)。未設定なら広告なし。
+        //   公開先 hub (= 運営ホスト) … Plus は自分の tag (空なら広告なし)、Free は hahero (運営) の tag。
         // プランは hub 設定 (SyncConfigManager) の plan を正本とする。未接続/テストでは free 扱い。
+        const target = opts.target === 'hub' ? 'hub' : 'github';
         let plan = 'free';
         try {
             if (typeof SyncConfigManager !== 'undefined') plan = (SyncConfigManager.load().hub || {}).plan || 'free';
             else if (this.app && this.app.syncConfig) plan = (this.app.syncConfig.hub || {}).plan || 'free';
         } catch (_) {}
         const isPlus = plan === 'plus';
-        const affiliateId = isPlus ? (ps.affiliateId || '') : operatorAffiliateTag();
+        const affiliateId = target === 'github'
+            ? (ps.affiliateId || '')                                  // 自前サイト: 自分の tag のみ (運営タグ無し)
+            : (isPlus ? (ps.affiliateId || '') : operatorAffiliateTag()); // ハブ: Plus=自分 / Free=運営
         const hasAds = !!affiliateId; // 実際に tag が付く時だけ広告開示を出す
         // サイトとして収益化しているか (= 1つでもアフィタグが付く)。footer の常時表明はこれで出す
         const siteHasAffiliate = hasAds;

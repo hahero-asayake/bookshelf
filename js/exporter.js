@@ -74,7 +74,7 @@ class BookshelfExporter {
             siteBaseUrl = this._pagesSiteUrl(pub.owner, pub.repo);
         }
 
-        const result = await generator.build(pages, { siteBaseUrl });
+        const result = await generator.build(pages, { siteBaseUrl, target: pub.target });
         if (pages.length > 0 && result.pages.length === 0) {
             throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
