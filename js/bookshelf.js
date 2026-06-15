@@ -6925,7 +6925,7 @@ class VirtualBookshelf {
         if (this.userData && this.userData.settings && this.userData.settings.ackFreeAffiliate) return true;
         const ok = await confirmDialog({
             title: '無料プランの公開について',
-            message: '無料プランで公開するページの Amazon 商品リンクには、運営（Asayake）のアフィリエイトタグが付く場合があり、その収益は運営に入ります（無料提供を支えるためです）。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が表示されます。',
+            message: '無料プランで公開するページの Amazon 商品リンクには、運営（Asayake）のアフィリエイトタグが必ず付与され、その収益は運営に帰属します（無料提供の対価です）。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が表示されます。',
             okLabel: '同意して公開', cancelLabel: 'やめる'
         });
         if (!ok) return false;
