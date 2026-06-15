@@ -119,17 +119,17 @@ wrangler deploy -c wrangler.hub.toml
      -d description="公開ストレージ 3GB ＋ アフィリエイト収益を自分のタグで受け取る" \
      -d tax_code="txcd_10103100"
 
-   # 2) 月額 Price (金額は最終価格に。$2/月 = 200)。📝 price_… → STRIPE_PRICE_MONTHLY
+   # 2) 月額 Price ($2/月 = 200)。📝 price_… → STRIPE_PRICE_MONTHLY
    curl https://api.stripe.com/v1/prices \
      -u "$STRIPE_SECRET_KEY:" \
      -H "Stripe-Version: 2026-02-25.preview" \
      -d product="prod_xxx" -d unit_amount=200 -d currency=usd -d "recurring[interval]=month"
 
-   # 3) 年額 Price (例 $12/年 = 1200)。📝 price_… → STRIPE_PRICE_YEARLY
+   # 3) 年額 Price ($5/年 = 500。月額の約2か月ぶんへ大幅割引=年額に寄せる)。📝 price_… → STRIPE_PRICE_YEARLY
    curl https://api.stripe.com/v1/prices \
      -u "$STRIPE_SECRET_KEY:" \
      -H "Stripe-Version: 2026-02-25.preview" \
-     -d product="prod_xxx" -d unit_amount=1200 -d currency=usd -d "recurring[interval]=year"
+     -d product="prod_xxx" -d unit_amount=500 -d currency=usd -d "recurring[interval]=year"
    ```
 4. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。解約・支払い方法変更を許可。`/billing/portal` がこれを開く。
 
