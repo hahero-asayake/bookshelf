@@ -3924,10 +3924,8 @@ class VirtualBookshelf {
                 internalId: meta.internalId,
                 name: meta.name,
                 iconName: meta.iconName || (fileData && fileData.iconName) || 'library',
-                ...(meta.color ? { color: meta.color } : {}),
                 parent: meta.parent || null,
                 appliedPlugins: meta.appliedPlugins || [],
-                isPublic: meta.isPublic || false,
                 isSpecial: meta.isSpecial || isAll,
                 description: meta.description || (fileData && fileData.description) || '',
                 books,
@@ -4152,7 +4150,6 @@ class VirtualBookshelf {
                 slug: 'all',
                 name: (allMeta && allMeta.name) || 'すべての本',
                 isSpecial: true,
-                isPublic: (allMeta && allMeta.isPublic) || false,
                 parent: null,
                 defaultBookOrder: this.userData.settings?.defaultBookOrder || 'addedDate-desc',
                 appliedPlugins: (allMeta && allMeta.appliedPlugins) || [],
@@ -4169,7 +4166,6 @@ class VirtualBookshelf {
                     internalId: allInternalId,
                     name: 'すべての本',
                     isSpecial: true,
-                    isPublic: false,
                     parent: null,
                     appliedPlugins: [],
                     books: allBooksList,
@@ -4182,9 +4178,7 @@ class VirtualBookshelf {
                 name: b.name,
                 iconName: b.iconName || 'library',
                 parent: b.isSpecial ? null : (b.parent || allInternalId),
-                ...(b.color ? { color: b.color } : {}),
                 appliedPlugins: b.appliedPlugins || [],
-                isPublic: b.isPublic || false,
                 ...(b.isSpecial ? { isSpecial: true } : {}),
                 ...(b.description ? { description: b.description } : {})
             }));
@@ -6369,11 +6363,7 @@ class VirtualBookshelf {
         let html = '';
         rows.forEach(({ bs: bookshelf, depth }) => {
             const bookCount = bookshelf.books ? bookshelf.books.length : 0;
-            const isPublic = bookshelf.isPublic || false;
             const isSpecial = bookshelf.isSpecial || false;
-            const publicBadge = isPublic
-                ? `<span class="public-badge"><span class="h-icon">${window.renderIcon('upload-cloud', { size: 12 })}</span>公開中</span>`
-                : '';
             const specialBadge = isSpecial
                 ? `<span class="special-badge"><span class="h-icon">${window.renderIcon('lock', { size: 12 })}</span>特殊</span>`
                 : '';
@@ -6386,7 +6376,7 @@ class VirtualBookshelf {
                 <div class="bookshelf-item" data-id="${bookshelf.id}" data-internal-id="${bm._keyOf(bookshelf)}" data-special="${isSpecial ? '1' : '0'}" draggable="${!isSpecial}" style="margin-left:${depth * 1.5}rem;">
                     <div class="bookshelf-drag-handle">${dragHandle}</div>
                     <div class="bookshelf-info">
-                        <h4><span class="bookshelf-list-icon" data-icon-value="${bsEffectiveIcon.replace(/"/g,'&quot;')}">${bsIconSvg}</span>${bookshelf.name} ${specialBadge}${publicBadge}</h4>
+                        <h4><span class="bookshelf-list-icon" data-icon-value="${bsEffectiveIcon.replace(/"/g,'&quot;')}">${bsIconSvg}</span>${bookshelf.name} ${specialBadge}</h4>
                         <p>${bookshelf.description || ''}</p>
                         <span class="book-count">${bookCount}冊</span>
                     </div>
@@ -6425,14 +6415,12 @@ class VirtualBookshelf {
         const modal = document.getElementById('bookshelf-form-modal');
         const title = document.getElementById('bookshelf-form-title');
         const nameInput = document.getElementById('bookshelf-name');
-        const slugInput = document.getElementById('bookshelf-slug');
         const parentSelect = document.getElementById('bookshelf-parent');
         const iconNameInput = document.getElementById('bookshelf-icon-name');
         const iconLabel = document.getElementById('bookshelf-icon-label');
         const iconPreview = document.getElementById('bookshelf-icon-preview');
         const iconTrigger = document.getElementById('bookshelf-icon-trigger');
         const descriptionInput = document.getElementById('bookshelf-description');
-        const isPublicInput = document.getElementById('bookshelf-is-public');
 
         // 親本棚ドロップダウン構築（編集中は自身と子孫を除外）。
         // 実データは internalId 欠落のため _keyOf(=internalId||id) をキーに使う。
@@ -6460,20 +6448,14 @@ class VirtualBookshelf {
             title.innerHTML = `${titleIcon}本棚を編集`;
             if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = bookshelfToEdit.name;
-            slugInput.value = bookshelfToEdit.id || '';
             parentSelect.value = bookshelfToEdit.parent || '';
             setIcon(bookshelfToEdit.iconName);
             descriptionInput.value = bookshelfToEdit.description || '';
-            isPublicInput.checked = bookshelfToEdit.isPublic || false;
-            // 特殊本棚（all）は slug / 親変更不可
+            // 特殊本棚（all）は親変更不可。slug は自動採番・不変 (UI なし)
             if (bookshelfToEdit.isSpecial) {
-                slugInput.readOnly = true;
-                slugInput.title = '特殊本棚の slug は変更できません';
                 parentSelect.disabled = true;
                 parentSelect.title = '特殊本棚は親を持てません';
             } else {
-                slugInput.readOnly = false;
-                slugInput.title = '';
                 parentSelect.disabled = false;
                 parentSelect.title = '';
             }
@@ -6481,12 +6463,10 @@ class VirtualBookshelf {
             title.innerHTML = `${titleIcon}新しい本棚`;
             if (typeof window.applyIcons === 'function') window.applyIcons(title);
             nameInput.value = '';
-            slugInput.value = '';
             // Phase G: ツリーから「子本棚を追加」した場合は親を事前選択
             parentSelect.value = presetParentInternalId || '';
             setIcon('library');
             descriptionInput.value = '';
-            isPublicInput.checked = false;
         }
 
         // IconPicker トリガ (1 回だけ bind)
@@ -6516,11 +6496,9 @@ class VirtualBookshelf {
 
     async saveBookshelfForm() {
         const nameInput = document.getElementById('bookshelf-name');
-        const slugInput = document.getElementById('bookshelf-slug');
         const parentSelect = document.getElementById('bookshelf-parent');
         const iconNameInput = document.getElementById('bookshelf-icon-name');
         const descriptionInput = document.getElementById('bookshelf-description');
-        const isPublicInput = document.getElementById('bookshelf-is-public');
 
         const name = nameInput.value.trim();
         if (!name) {
@@ -6529,21 +6507,18 @@ class VirtualBookshelf {
             return;
         }
 
-        const slugRaw = slugInput.value.trim();
-        const slug = slugRaw || this._generateDefaultSlug();
-        if (!/^[a-z0-9_-]+$/.test(slug)) {
-            toast('識別子は半角の英小文字・数字・ハイフン（-）・アンダースコア（_）だけ使えます');
-            slugInput.focus();
-            return;
-        }
+        // slug は URL・ファイル名の正本キー (ADR-009)。手動入力 UI は廃止し自動採番に一本化。
+        // 編集時は既存 slug を維持 (リネームしない)、新規は bookshelf1, bookshelf2 ... を自動付与。
+        const slug = this.currentEditingBookshelf
+            ? (this.currentEditingBookshelf.id || this._generateDefaultSlug())
+            : this._generateDefaultSlug();
 
         const parentId = parentSelect.value || null;   // "" = トップ階層(ルート)
         const meta = {
             name,
             slug,
             iconName: iconNameInput.value.trim() || 'library',
-            description: descriptionInput.value.trim(),
-            isPublic: isPublicInput.checked
+            description: descriptionInput.value.trim()
         };
 
         let _emitCreated = null, _emitUpdated = null;
@@ -7013,7 +6988,7 @@ class VirtualBookshelf {
         if (this.userData && this.userData.settings && this.userData.settings.ackFreeAffiliate) return true;
         const ok = await confirmDialog({
             title: '無料プランの公開について',
-            message: '無料プランで公開するページの Amazon 商品リンクには、運営（Asayake）のアフィリエイトタグが必ず付与され、その収益は運営に帰属します（無料提供の対価です）。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が表示されます。',
+            message: '無料プランでは、公開ページの Amazon 商品リンクに運営（Asayake）のアフィリエイト ID が付き、その収益は運営に入ります。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が控えめに表示されます。',
             okLabel: '同意して公開', cancelLabel: 'やめる'
         });
         if (!ok) return false;
@@ -7074,9 +7049,7 @@ class VirtualBookshelf {
         on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
         // 一括更新: 公開中ページをまとめて再 push (一括「公開」ではない)
         on('pp-republish-all', 'click', () => this._ppRepublishAll());
-        // 詳細設定: 公開パスのプレビュー更新＋ページ操作 (複製/公開取消/削除 はエディタへ集約)
-        on('pp-slug', 'input', () => this._ppUpdateSlugPreview());
-        on('pp-title', 'input', () => this._ppUpdateSlugPreview());
+        // 詳細設定: ページ操作 (複製/公開取消/削除 はエディタへ集約)。公開パスは自動採番 (UI なし)
         on('pp-dup', 'click', async () => { if (!this._ppEditingId) return; await this._ppDuplicate(this._ppEditingId); this._ppShowList(); });
         on('pp-unpublish', 'click', async () => { if (!this._ppEditingId) return; await this._ppUnpublishPage(this._ppEditingId); this._ppShowList(); });
         on('pp-del', 'click', async () => { if (!this._ppEditingId) return; const did = await this._ppDelete(this._ppEditingId); if (did) this._ppShowList(); });
@@ -7085,14 +7058,6 @@ class VirtualBookshelf {
         on('pp-preview-device', 'click', () => this._ppTogglePreviewDevice());
         const pm = document.getElementById('pp-preview-modal');
         if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._ppClosePreviewModal(); });
-        // 公開する項目はトグルピル (素のチェックボックスにしない)
-        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => {
-            pill.addEventListener('click', () => {
-                const on = pill.getAttribute('aria-pressed') !== 'true';
-                pill.setAttribute('aria-pressed', on ? 'true' : 'false');
-                pill.classList.toggle('is-on', on);
-            });
-        });
     }
 
     _ppShowList() {
@@ -7195,46 +7160,22 @@ class VirtualBookshelf {
     _openPublishPageEditor(id) {
         this._ppEditingId = id;
         const page = id ? this.publishPageStore.get(id) : null;
-        const f = page ? page.select.fields : PublishPageStore.defaultFields();
         document.getElementById('pp-title').value = page ? page.title : '';
         document.getElementById('pp-intro').value = page ? page.intro : '';
-        document.getElementById('pp-slug').value = page ? (page.slug || '') : '';
         // 詳細設定: 既存ページのみページ操作を出す。公開取消は公開中のときだけ。新規はたたんでおく。
         const ops = document.getElementById('pp-page-ops'); if (ops) ops.hidden = !id;
         const unpub = document.getElementById('pp-unpublish'); if (unpub) unpub.hidden = !(page && page.published);
         const adv = document.getElementById('pp-advanced'); if (adv) adv.open = false;
         this._ppChosenBooks = new Set(page ? page.select.books : []);
         this._ppStyleParams = page ? { ...page.styleParams } : {};
-        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => {
-            const on = f[pill.dataset.field] !== false;
-            pill.setAttribute('aria-pressed', on ? 'true' : 'false');
-            pill.classList.toggle('is-on', on);
-        });
         this._ppRenderStyleSelect(page ? page.styleId : '');
         this._ppRenderShelves(page ? page.select.shelves : []);
         this._ppRenderBookChosen();
         document.getElementById('pp-book-search').value = '';
         document.getElementById('pp-book-results').innerHTML = '';
         this._ppOnStyleChange();
-        this._ppUpdateSlugPreview();
         this._ppSetPreview('');
         this._ppShowEditor();
-    }
-
-    // 公開パス (スラッグ) のプレビュー: 入力 (空欄ならタイトル) を slug 化し、公開 URL を表示
-    _ppUpdateSlugPreview() {
-        const el = document.getElementById('pp-slug-preview');
-        if (!el) return;
-        const raw = (document.getElementById('pp-slug').value || '').trim();
-        const title = (document.getElementById('pp-title').value || '').trim();
-        const slug = PublishPageStore.slugify(raw || title || 'page');
-        let base = '<公開先>/';
-        try {
-            const pub = this.exporter._resolvePublishConfig();
-            if (pub.owner && pub.repo) base = this.exporter._pagesSiteUrl(pub.owner, pub.repo);
-        } catch (_) {}
-        const auto = raw ? '' : '（タイトルから自動）';
-        el.textContent = `公開URL: ${base}${slug}/ ${auto}`.trim();
     }
 
     _ppRenderStyleSelect(selectedId) {
@@ -7319,18 +7260,16 @@ class VirtualBookshelf {
     }
 
     _ppCollectForm() {
-        const fields = {};
-        document.querySelectorAll('#pp-edit-view .pp-fields [data-field]').forEach(pill => { fields[pill.dataset.field] = pill.getAttribute('aria-pressed') === 'true'; });
         const shelves = [...document.querySelectorAll('#pp-shelves .bs-pick-row[aria-pressed="true"]')].map(el => el.dataset.value);
         const params = {};
         document.querySelectorAll('#pp-style-params [data-param]').forEach(el => { params[el.dataset.param] = el.value; });
+        // 公開項目はスタイル固定 (declare().shows)・公開パスは自動採番のため、ここでは集めない。
         return {
             title: document.getElementById('pp-title').value.trim() || '無題の公開ページ',
             intro: document.getElementById('pp-intro').value.trim(),
-            slug: (document.getElementById('pp-slug').value || '').trim(),
             styleId: document.getElementById('pp-style').value,
             styleParams: params,
-            select: { shelves, books: [...this._ppChosenBooks], fields }
+            select: { shelves, books: [...this._ppChosenBooks] }
         };
     }
 
@@ -7341,8 +7280,7 @@ class VirtualBookshelf {
         if (data.select.shelves.length === 0 && data.select.books.length === 0) {
             toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return null;
         }
-        // スラッグ空欄は「自動」の意味 → patch から外す (update で既存 slug を維持 / create でタイトル由来)
-        if (!data.slug) delete data.slug;
+        // 公開パス (slug) は data に含めない → create はタイトル由来で自動採番 / update は既存 slug を維持。
         return data;
     }
 
@@ -7409,7 +7347,7 @@ class VirtualBookshelf {
             const key = b.internalId || b.id;
             return {
                 internalId: key, slug: b.id, name: b.name,
-                description: b.description || '', isSpecial: !!b.isSpecial, isPublic: !!b.isPublic
+                description: b.description || '', isSpecial: !!b.isSpecial
             };
         });
         const allShelf = shelves.find(b => b.isSpecial);
@@ -8794,10 +8732,6 @@ class VirtualBookshelf {
         const iconSvg = window.renderIcon(cardEffectiveIcon, { size: 18 });
         const name = bookshelf.name || (isSpecial ? 'すべての本' : bookshelf.id);
         const description = this._bookshelfDescription(bookshelf);
-        const isPublic = bookshelf.isPublic || false;
-        const publicBadge = isPublic
-            ? `<span class="public-badge"><span class="h-icon">${window.renderIcon('upload-cloud', { size: 12 })}</span>公開中</span>`
-            : '';
 
         // プレビュー対象の本のリスト（特殊本棚 = all は全蔵書）
         let previewAsins = [];
@@ -8833,7 +8767,7 @@ class VirtualBookshelf {
         return `
             <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
                 <div class="bookshelf-preview-header">
-                    <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${name} ${publicBadge}</h3>
+                    <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${name}</h3>
                 </div>
                 <p class="bs-card-desc">${description}</p>
                 <p class="book-count">${bookCount}冊</p>

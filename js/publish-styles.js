@@ -7,6 +7,7 @@
 //     id, name, description,
 //     declare(): {                         // UI 駆動用メタ
 //       requires: { shelves:'many'|'one'|'optional'|'none', books:'many'|'one'|'optional'|'none' },
+//       shows:    { rating,memo,detailMemo,cover,author,amazon }   // このスタイルが出す公開項目 (固定)
 //       fields:   [ {key,label,type:'text'|'textarea',default,placeholder} ]   // styleParams の入力欄
 //     },
 //     render(ctx): { html, css }           // ctx から本文 HTML 断片と CSS を返す (generator が doc に wrap)
@@ -70,11 +71,11 @@ a{ color:var(--accent) }
   color:var(--muted); font-size:.8rem; text-align:center }
 .pub-footer a{ color:var(--muted) }
 .pub-footer p{ margin:.35rem 0 }
-.pub-ad-notice{ margin:0 0 .6rem; padding:.55rem .85rem; border-radius:6px;
-  background:#f3eee9; color:var(--ink); font-size:.85rem; line-height:1.55 }
-.pub-ad-top{ margin:18px 0 4px; padding:.5rem .85rem; border-radius:6px;
-  background:#f6efe7; border:1px solid #e7d8c8; color:var(--ink); font-size:.85rem; line-height:1.5 }
-.pub-affiliate{ max-width:720px; margin:0 auto .5rem; font-size:.82rem; line-height:1.6; color:var(--muted) }
+.pub-ad-top{ display:flex; align-items:center; gap:.45em; margin:14px 0 2px;
+  color:var(--muted); font-size:.76rem; line-height:1.4 }
+.pub-ad-tag{ font-size:.66rem; font-weight:600; letter-spacing:.06em; color:var(--muted);
+  border:1px solid var(--line); border-radius:4px; padding:.05em .45em; flex:none }
+.pub-affiliate{ max-width:720px; margin:0 auto .5rem; font-size:.76rem; line-height:1.6; color:var(--muted); opacity:.85 }
 .pub-rights{ font-size:.74rem; line-height:1.55; opacity:.8 }
 .pub-updated{ font-size:.72rem; opacity:.7 }
 .pub-powered{ margin-top:.6rem !important }
@@ -86,7 +87,11 @@ const styleShelfSections = {
     name: '本棚セクション型',
     description: '公開する本棚ごとにセクション分けし、表紙グリッドで並べる。複数本棚向け。',
     declare() {
-        return { requires: { shelves: 'many', books: 'none' }, fields: [] };
+        return {
+            requires: { shelves: 'many', books: 'none' },
+            shows: { cover: true, author: true, rating: true, memo: true, detailMemo: false, amazon: true },
+            fields: []
+        };
     },
     render(ctx) {
         const h = ctx.helpers;
@@ -139,7 +144,11 @@ const styleBookFeature = {
     name: '本単体じっくり型',
     description: '選んだ本を表紙大きめ＋長文メモ中心で 1 冊ずつ紹介する。書評記事風。',
     declare() {
-        return { requires: { shelves: 'none', books: 'many' }, fields: [] };
+        return {
+            requires: { shelves: 'none', books: 'many' },
+            shows: { cover: true, author: true, rating: true, memo: true, detailMemo: true, amazon: true },
+            fields: []
+        };
     },
     render(ctx) {
         const h = ctx.helpers;
@@ -173,7 +182,11 @@ const styleCoverWall = {
     name: '一覧ミニマル型',
     description: '表紙だけを敷き詰める軽量なウォール。本棚でも本でも。',
     declare() {
-        return { requires: { shelves: 'optional', books: 'optional' }, fields: [] };
+        return {
+            requires: { shelves: 'optional', books: 'optional' },
+            shows: { cover: true, author: false, rating: false, memo: false, detailMemo: false, amazon: true },
+            fields: []
+        };
     },
     render(ctx) {
         const h = ctx.helpers;
@@ -203,7 +216,11 @@ const styleMagazine = {
     name: '雑誌キュレーション型',
     description: '本棚ごとに「推し1冊」を大きく＋残りをグリッド。リード文も添えられる雑誌風。',
     declare() {
-        return { requires: { shelves: 'many', books: 'none' }, fields: [{ key: 'lead', label: 'リード文（任意）', type: 'textarea', placeholder: '今月のおすすめは…' }] };
+        return {
+            requires: { shelves: 'many', books: 'none' },
+            shows: { cover: true, author: true, rating: true, memo: true, detailMemo: false, amazon: true },
+            fields: [{ key: 'lead', label: 'リード文（任意）', type: 'textarea', placeholder: '今月のおすすめは…' }]
+        };
     },
     render(ctx) {
         const h = ctx.helpers;
@@ -250,7 +267,11 @@ const styleMix = {
     name: 'フリーフォーム/ミックス型',
     description: '選んだ「本」を特集カード、選んだ「本棚」をグリッドとして 1 ページに混在。自由構成の受け皿。',
     declare() {
-        return { requires: { shelves: 'optional', books: 'optional' }, fields: [{ key: 'note', label: '本文（任意）', type: 'textarea', placeholder: 'このページについての説明…' }] };
+        return {
+            requires: { shelves: 'optional', books: 'optional' },
+            shows: { cover: true, author: true, rating: true, memo: true, detailMemo: true, amazon: true },
+            fields: [{ key: 'note', label: '本文（任意）', type: 'textarea', placeholder: 'このページについての説明…' }]
+        };
     },
     render(ctx) {
         const h = ctx.helpers;

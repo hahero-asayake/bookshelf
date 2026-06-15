@@ -12,8 +12,8 @@
 //   select: {
 //     shelves: [internalId], // 載せる本棚
 //     books:   [asin],       // 載せる本 (単体)
-//     fields:  { rating, memo, detailMemo, cover, author, amazon }  // 公開項目の取捨
-//   },
+//   },                       // ※ 公開項目はスタイルが固定 (publish-styles の declare().shows)
+
 //   published,               // 公開状態 (true=サイトに出す)。公開はページ単位で制御する
 //   createdAt, updatedAt, lastBuiltAt
 // }
@@ -26,10 +26,6 @@ class PublishPageStore {
     constructor(storage) {
         this.storage = storage;
         this._pages = null; // 未ロード
-    }
-
-    static defaultFields() {
-        return { rating: true, memo: true, detailMemo: true, cover: true, author: true, amazon: true };
     }
 
     // タイトル等から slug を生成 (英数/かな/漢字を残す)
@@ -86,8 +82,7 @@ class PublishPageStore {
             styleParams: partial.styleParams || {},
             select: {
                 shelves: Array.isArray(sel.shelves) ? sel.shelves.slice() : [],
-                books: Array.isArray(sel.books) ? sel.books.slice() : [],
-                fields: { ...PublishPageStore.defaultFields(), ...(sel.fields || {}) }
+                books: Array.isArray(sel.books) ? sel.books.slice() : []
             },
             published: !!partial.published,   // 公開状態 (既定 false)。サイト=公開中ページの集合
             createdAt: now,
@@ -111,8 +106,7 @@ class PublishPageStore {
             const s = patch.select;
             page.select = {
                 shelves: Array.isArray(s.shelves) ? s.shelves.slice() : page.select.shelves,
-                books: Array.isArray(s.books) ? s.books.slice() : page.select.books,
-                fields: { ...page.select.fields, ...(s.fields || {}) }
+                books: Array.isArray(s.books) ? s.books.slice() : page.select.books
             };
         }
         if (patch.slug !== undefined) page.slug = this._uniqueSlug(patch.slug, id);

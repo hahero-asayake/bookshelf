@@ -1,4 +1,5 @@
-// PublishPageStore の CRUD / slug 一意 / フィールド既定 テスト (P1-1, ADR-030)
+// PublishPageStore の CRUD / slug 一意 / published テスト (P1-1, ADR-030)
+// ※ 公開項目はスタイル固定 (publish-styles の declare().shows) のため select.fields は持たない
 import { describe, it, expect, beforeEach } from 'vitest';
 
 await import('../../js/publish-page-store.js');
@@ -26,7 +27,7 @@ describe('create / load 往復', () => {
         const p = await ps.create({ title: '漫画の本棚', styleId: 'shelf-sections' });
         expect(p.id).toBeTruthy();
         expect(p.slug).toBe('漫画の本棚');
-        expect(p.select.fields).toEqual(PublishPageStore.defaultFields());
+        expect(p.select).toEqual({ shelves: [], books: [] }); // fields は持たない (スタイル固定)
 
         const ps2 = new PublishPageStore(storage);
         const pages = await ps2.load();
@@ -34,10 +35,10 @@ describe('create / load 往復', () => {
         expect(pages[0].title).toBe('漫画の本棚');
     });
 
-    it('既定フィールドは全 ON、部分指定はマージ', async () => {
-        const p = await ps.create({ title: 'x', select: { fields: { amazon: false } } });
-        expect(p.select.fields.amazon).toBe(false);
-        expect(p.select.fields.rating).toBe(true);
+    it('select は shelves / books のみ保持する', async () => {
+        const p = await ps.create({ title: 'x', select: { shelves: ['s1'], books: ['B1'] } });
+        expect(p.select).toEqual({ shelves: ['s1'], books: ['B1'] });
+        expect(p.select.fields).toBeUndefined();
     });
 });
 

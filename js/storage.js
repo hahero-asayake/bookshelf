@@ -112,7 +112,6 @@ class BookshelfStorage {
             slug: 'all',
             name: 'すべての本',
             isSpecial: true,
-            isPublic: false,
             parent: null,
             defaultBookOrder: 'addedDate-desc',
             appliedPlugins: [],
@@ -148,9 +147,7 @@ class BookshelfStorage {
                 slug,
                 name: bs.name || slug,
                 parent: allInternalId,
-                ...(bs.color ? { color: bs.color } : {}),
-                appliedPlugins: [],
-                isPublic: bs.isPublic || false
+                appliedPlugins: []
             });
 
             const bookList = (legacy.bookOrder && legacy.bookOrder[bs.id])
@@ -176,8 +173,7 @@ class BookshelfStorage {
                     name: 'すべての本',
                     isSpecial: true,
                     parent: null,
-                    appliedPlugins: [],
-                    isPublic: false
+                    appliedPlugins: []
                 },
                 ...bookshelvesMetaEntries
             ]
@@ -236,8 +232,7 @@ class BookshelfStorage {
                 iconName: 'library',
                 isSpecial: true,
                 parent: null,
-                appliedPlugins: [],
-                isPublic: false
+                appliedPlugins: []
             }]
         });
         await this.adapter.writeJSON('private/bookshelves/all.json', {
@@ -246,7 +241,6 @@ class BookshelfStorage {
             name: 'すべての本',
             iconName: 'library',
             isSpecial: true,
-            isPublic: false,
             parent: null,
             defaultBookOrder: 'addedDate-desc',
             appliedPlugins: [],

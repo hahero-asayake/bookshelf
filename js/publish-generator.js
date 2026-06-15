@@ -13,6 +13,10 @@
 
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/;
 
+// 公開項目はスタイルが declare().shows で固定する (ユーザのページ毎トグルは廃止)。
+// shows を宣言しないスタイル (将来のプラグイン等) のための保険として全項目 ON を既定にする。
+const ALL_FIELDS_ON = { rating: true, memo: true, detailMemo: true, cover: true, author: true, amazon: true };
+
 // hahero (運営) の Amazon アソシエイト tag (ADR-033)。Free プランの公開ページに付く。
 // ⚠️ 実 tag は未確定 (一次確認 TODO)。REPLACE_ のままの間は無印リンク (誤った tag への送客を防ぐ)。
 const HAHERO_AFFILIATE_TAG = 'asayake09-22';
@@ -124,8 +128,8 @@ class PublishGenerator {
     }
 
     // ページ 1 つを解決 → ctx を返す (detailMemo は別 pass で埋める asin リストも返す)
-    _resolvePage(page, state, libMap, affiliateId) {
-        const fields = page.select.fields || PublishPageStore.defaultFields();
+    // fields は呼び出し側がスタイルの declare().shows から渡す (公開項目はスタイル固定)。
+    _resolvePage(page, state, libMap, affiliateId, fields) {
         const metas = state.bookshelvesMeta.bookshelves || [];
         // 本棚参照は slug でも internalId でも引けるようにする (UI は slug、保存メタは両方持つ)
         const metaByKey = new Map();
@@ -167,21 +171,17 @@ class PublishGenerator {
         const updated = PublishGenerator._fmtDate(opts.updatedAt);
         const year = PublishGenerator._year(opts.updatedAt);
 
-        // 景表法 (ステマ規制): 実アフィリンクを含むページに「広告」を明示。クリック前に認識できるよう
-        // 本文冒頭 (ファーストビュー) と末尾の両方に出す。Free は収益帰属先 (運営) も添える (広告主体の明示)。
-        const adAttribution = isPlus
-            ? ''
-            : '無料プランのため、収益はサイト運営者（AsayakeBookshelf 運営）に帰属します。';
-        const adNoticeText = `【広告】当ページの商品リンクは Amazon アソシエイト・プログラムによる広告（アフィリエイトリンク）です。適格販売により収入が発生します。${adAttribution}`;
-        const adNoticeTop = pageHasAds ? `<div class="pub-wrap"><p class="pub-ad-top">${adNoticeText}</p></div>` : '';
-        const adNotice = pageHasAds ? `<p class="pub-ad-notice">${adNoticeText}</p>` : '';
-        // Amazon アソシエイト規約: サイトとして収益化しているなら全ページに常時の参加表明を掲示する。
-        // 広告主体 (誰の広告か) を消費者が認識できるよう、Free は運営帰属を明記する (ステマ規制の核心)。
-        const standingAttribution = isPlus
-            ? ''
-            : `<br>このサイトの Amazon 商品リンクは本サービスの運営者（AsayakeBookshelf 運営 / asayake.hahero@gmail.com）の Amazon アソシエイト・タグで生成されており、適格販売による収益は発行者ではなく運営者に帰属します。`;
+        // 景表法 (ステマ規制): 実アフィリンクを含むページは、クリック前に「広告」と分かるよう
+        // 本文冒頭に控えめなラベルを 1 行だけ出す (景観を損ねない最小限の明示)。
+        const adNoticeTop = pageHasAds
+            ? `<div class="pub-wrap"><p class="pub-ad-top"><span class="pub-ad-tag">広告</span>Amazon アソシエイトのリンクを含みます</p></div>`
+            : '';
+        // Amazon アソシエイト規約: 収益化しているサイトは全ページに参加表明を掲示する (フッターに静かに)。
+        // Free は誰の広告か (運営) を 1 文で添える — ステマ規制の広告主体明示。「対価/帰属」等の硬い語は使わない。
         const affiliateStanding = siteHasAffiliate
-            ? `<p class="pub-affiliate">当サイトは、Amazon.co.jp を宣伝しリンクすることによって紹介料を獲得できる手段を提供することを目的に設定されたアフィリエイト宣伝プログラムである、Amazon アソシエイト・プログラムの参加者です。${standingAttribution}</p>`
+            ? `<p class="pub-affiliate">${isPlus
+                ? '当サイトは、Amazon のアソシエイトとして、適格販売により収入を得ています。'
+                : '本サービスの運営者（AsayakeBookshelf）は、Amazon のアソシエイトとして、適格販売により収入を得ています（商品リンクは運営者のアフィリエイト ID で生成されます）。'}</p>`
             : '';
 
         const head = [
@@ -215,7 +215,6 @@ ${head}
 </div></header>
 <main>${adNoticeTop}${body}</main>
 <footer class="pub-footer"><div class="pub-wrap">
-  ${adNotice}
   ${affiliateStanding}
   <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
   ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
@@ -325,7 +324,10 @@ ${head}
             const style = this.styles && this.styles.get(page.styleId);
             if (!style) { errors.push(`スタイル未選択/不明: ${page.title} (${page.styleId})`); continue; }
 
-            const resolved = this._resolvePage(page, state, libMap, affiliateId);
+            // 公開項目はスタイルが固定 (declare().shows)。未宣言スタイルは全項目 ON にフォールバック。
+            const decl = (typeof style.declare === 'function' && style.declare()) || {};
+            const fields = decl.shows || ALL_FIELDS_ON;
+            const resolved = this._resolvePage(page, state, libMap, affiliateId, fields);
 
             // detailMemo を必要な本だけ async 読み込み
             const detailTargets = [];
@@ -351,8 +353,8 @@ ${head}
             try { rendered = style.render(ctx); }
             catch (e) { errors.push(`render ${page.title}: ${e.message}`); continue; }
 
-            // 広告開示はページ単位で判定: アフィタグがあり、かつそのページに実際に Amazon リンクが
-            // 出る (amazon 項目 ON かつ本が1冊以上) ときだけ「【広告】」を出す (過剰開示を防ぐ)。
+            // 広告ラベルはページ単位で判定: アフィタグがあり、かつそのページに実際に Amazon リンクが
+            // 出る (amazon 項目 ON かつ本が1冊以上) ときだけ冒頭ラベルを出す (過剰開示を防ぐ)。
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
             const pageHasAds = hasAds && !!resolved.fields.amazon && bookCount > 0;
 

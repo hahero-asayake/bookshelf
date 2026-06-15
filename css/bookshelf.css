@@ -4030,26 +4030,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 }
 .pp-style-desc { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 0.45rem; line-height: 1.5; }
 .pp-param-label { display: block; font-size: 0.85rem; color: var(--fg2); margin-bottom: 0.3rem; }
-/* 公開する項目はトグルピル (素のチェックボックスにしない) */
-.pp-fields { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-.pp-field-pill {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.32rem 0.75rem;
-    border: 1px solid var(--line); border-radius: 999px;
-    background: var(--panel); color: var(--muted);
-    font-size: 0.85rem; cursor: pointer; user-select: none;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-.pp-field-pill::before {
-    content: ''; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--line); flex-shrink: 0; transition: background 0.12s;
-}
-.pp-field-pill:hover { border-color: var(--accent); }
-.pp-field-pill.is-on {
-    background: var(--accent-bg); border-color: var(--accent);
-    color: var(--accent-strong); font-weight: 600;
-}
-.pp-field-pill.is-on::before { background: var(--accent); }
 .pp-book-results { list-style: none; margin: 0.45rem 0 0; padding: 0; max-height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .pp-book-results:empty { display: none; }
 .pp-book-results li { padding: 0.45rem 0.75rem; cursor: pointer; font-size: 0.88rem; border-bottom: 1px solid var(--line2); }
@@ -4065,7 +4045,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-edit-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .pp-actions-spacer { flex: 1; }
 
-/* --- 詳細設定（折りたたみ）: 公開パス + ページ操作 --- */
+/* --- 詳細設定（折りたたみ）: ページ操作（複製・削除など） --- */
 .pp-advanced { border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
 .pp-advanced > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; padding: 0.8rem 1.05rem; font-size: 0.9rem; font-weight: 700; color: var(--fg); user-select: none; }
 .pp-advanced > summary::-webkit-details-marker { display: none; }
@@ -4074,8 +4054,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-advanced[open] > summary .pp-advanced-caret { transform: rotate(180deg); }
 .pp-advanced-note { font-weight: 400; font-size: 0.78rem; color: var(--muted); margin-left: auto; }
 .pp-advanced-body { padding: 0 1.05rem 0.95rem; }
-.pp-slug-preview { display: block; margin-top: 0.4rem; color: var(--muted); font-size: 0.78rem; word-break: break-all; }
-.pp-page-ops { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.95rem; padding-top: 0.85rem; border-top: 1px solid var(--line); }
+.pp-page-ops { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; }
 .pp-page-ops-label { font-size: 0.8rem; color: var(--muted); margin-right: 0.25rem; }
 .pp-page-ops .pp-del-spacer { flex: 1; }
 
@@ -5869,20 +5848,6 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     font-size: 0.8rem;
     color: var(--muted);
     font-weight: bold;
-}
-
-/* 公開本棚バッジ */
-.public-badge {
-    background: var(--accent-bg);
-    color: var(--accent);
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 999px;
-    margin-left: 0.5rem;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
 }
 
 .special-badge {

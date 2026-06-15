@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061507">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061508">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -650,7 +650,7 @@
                     <div class="settings-section-body">
                     <p class="about-credit"><span class="h-icon" data-icon="library" data-icon-size="14"></span><strong>AsayakeBookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
                     <p class="about-affiliate">
-                        <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイト・プログラムの参加者です。無料プランで公開したページの商品リンクには運営のタグが付与され、収益は運営に帰属します（公開ページにもその旨が表示されます）。
+                        <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイトとして適格販売により収入を得ています。無料プランで公開したページの商品リンクには運営のアフィリエイト ID が付きます（公開ページにもその旨が控えめに表示されます）。
                     </p>
                     <p class="about-links">
                         <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a>
@@ -747,11 +747,6 @@
                     <input type="text" id="bookshelf-name" placeholder="本棚の名前を入力してください" required>
                 </div>
                 <div class="form-group">
-                    <label for="bookshelf-slug">識別子 (URL・ファイル名に使う)</label>
-                    <input type="text" id="bookshelf-slug" placeholder="my-bookshelf （空欄なら自動）" pattern="[a-z0-9_-]+">
-                    <small style="color: #888;">英小文字 / 数字 / ハイフンのみ。空欄なら bookshelf1, bookshelf2 ... が自動で振られます。表示名とは別物。</small>
-                </div>
-                <div class="form-group">
                     <label for="bookshelf-parent">親本棚</label>
                     <select id="bookshelf-parent"></select>
                     <small style="color: #888;">子は親のサブセットになります（親に無い本は追加できません）</small>
@@ -770,13 +765,6 @@
                 <div class="form-group">
                     <label for="bookshelf-description">説明</label>
                     <textarea id="bookshelf-description" placeholder="本棚の説明を入力してください（任意）" rows="3"></textarea>
-                </div>
-                <!-- 旧オプトイン (isPublic) は静的SSG再設計で公開ページの対象選択へ統合 (ADR-030)。互換のため hidden で残置 -->
-                <div class="form-group" hidden>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="bookshelf-is-public">
-                        <span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>この本棚を公開する（公開エクスポート対象）
-                    </label>
                 </div>
                 <div class="form-actions" style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
                     <button id="cancel-bookshelf-form" class="btn btn-secondary">キャンセル</button>
@@ -800,7 +788,7 @@
                     <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開はページごとに行い、公開中のページには公開 URL が表示されます。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
-                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランで公開するページの商品リンクには、運営（Asayake）のアフィリエイトタグが<strong>必ず付与され</strong>、その収益は運営に帰属します（無料提供の対価です）。自分の収益にする／広告を付けないには <strong>Plus</strong> をご利用ください。</span></p>
+                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランでは、公開ページの商品リンクに運営（Asayake）のアフィリエイト ID が付きます（収益は運営に入ります）。自分の収益にする・広告を付けないようにするには <strong>Plus</strong> をご利用ください。</span></p>
                 <ul id="pp-list" class="pp-list"></ul>
                 <div class="pp-list-foot">
                     <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
@@ -839,20 +827,8 @@
                             <ul id="pp-book-chosen" class="pp-book-chosen"></ul>
                         </section>
 
-                        <section class="pp-section">
-                            <h3 class="pp-section-title"><span class="pp-step">4</span>公開する項目</h3>
-                            <div class="pp-fields">
-                                <button type="button" class="pp-field-pill is-on" data-field="cover" aria-pressed="true">表紙</button>
-                                <button type="button" class="pp-field-pill is-on" data-field="author" aria-pressed="true">著者</button>
-                                <button type="button" class="pp-field-pill is-on" data-field="rating" aria-pressed="true">評価</button>
-                                <button type="button" class="pp-field-pill is-on" data-field="memo" aria-pressed="true">短文メモ</button>
-                                <button type="button" class="pp-field-pill is-on" data-field="detailMemo" aria-pressed="true">長文メモ</button>
-                                <button type="button" class="pp-field-pill is-on" data-field="amazon" aria-pressed="true">Amazonリンク</button>
-                            </div>
-                        </section>
-
                         <section class="pp-section" id="pp-style-params-section" hidden>
-                            <h3 class="pp-section-title"><span class="pp-step">5</span>スタイル設定</h3>
+                            <h3 class="pp-section-title"><span class="pp-step">4</span>スタイル設定</h3>
                             <div id="pp-style-params"></div>
                         </section>
 
@@ -862,14 +838,9 @@
                                 <span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="15"></span>
                                 <span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>
                                 詳細設定
-                                <span class="pp-advanced-note">公開パス・ページ操作</span>
+                                <span class="pp-advanced-note">複製・削除など</span>
                             </summary>
                             <div class="pp-advanced-body">
-                                <div class="form-group">
-                                    <label for="pp-slug">公開パス（スラッグ）</label>
-                                    <input id="pp-slug" type="text" placeholder="（空欄ならタイトルから自動）">
-                                    <small id="pp-slug-preview" class="pp-slug-preview"></small>
-                                </div>
                                 <div class="pp-page-ops" id="pp-page-ops" hidden>
                                     <span class="pp-page-ops-label">このページ</span>
                                     <button id="pp-dup" class="btn btn-secondary btn-small" type="button">複製</button>
@@ -1097,19 +1068,19 @@
     <script src="js/hub-adapter.js?v=2026061502"></script>
     <script src="js/sync-config.js?v=2026061501"></script>
     <script src="js/hub-auth.js?v=2026061501"></script>
-    <script src="js/storage.js?v=2026061203"></script>
+    <script src="js/storage.js?v=2026061508"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
-    <script src="js/bookshelf-manager.js?v=2026061002"></script>
-    <script src="js/publish-page-store.js?v=2026061402"></script>
-    <script src="js/publish-styles.js?v=2026061504"></script>
-    <script src="js/publish-generator.js?v=2026061507"></script>
+    <script src="js/bookshelf-manager.js?v=2026061508"></script>
+    <script src="js/publish-page-store.js?v=2026061508"></script>
+    <script src="js/publish-styles.js?v=2026061509"></script>
+    <script src="js/publish-generator.js?v=2026061509"></script>
     <script src="js/exporter.js?v=2026061503"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061507"></script>
+    <script src="js/bookshelf.js?v=2026061509"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

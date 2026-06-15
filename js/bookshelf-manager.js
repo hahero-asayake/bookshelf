@@ -178,8 +178,6 @@ class BookshelfManager {
             iconName: meta.iconName || 'library',
             description: meta.description || '',
             parent: parentId,
-            color: meta.color,
-            isPublic: !!meta.isPublic,
             appliedPlugins: meta.appliedPlugins || [],
             books: [],
             notes: {},
@@ -212,8 +210,6 @@ class BookshelfManager {
         if (typeof meta.name === 'string') bs.name = meta.name;
         if (typeof meta.iconName === 'string') bs.iconName = meta.iconName;
         if (typeof meta.description === 'string') bs.description = meta.description;
-        if (typeof meta.isPublic === 'boolean') bs.isPublic = meta.isPublic;
-        if (typeof meta.color === 'string') bs.color = meta.color;
         if (Array.isArray(meta.appliedPlugins)) bs.appliedPlugins = meta.appliedPlugins;
         if (typeof meta.parent === 'string') {
             if (bs.isSpecial) {

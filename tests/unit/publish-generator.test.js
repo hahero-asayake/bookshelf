@@ -1,4 +1,4 @@
-// PublishGenerator: データ解決 / 公開項目取捨 / プライバシー / スタイル の検証 (P1-4, ADR-030)
+// PublishGenerator: データ解決 / 公開項目(スタイル固定) / プライバシー / スタイル の検証 (P1-4, ADR-030 / ADR-034追補)
 import { describe, it, expect, beforeEach } from 'vitest';
 
 await import('../../js/publish-page-store.js');
@@ -44,18 +44,19 @@ function makeApp(state, plan = 'free') {
     };
 }
 
+// 公開項目はスタイルが固定する (ページ毎トグルは廃止)。select に fields は持たせない。
+const sel = (shelves = [], books = []) => ({ shelves, books });
+
 let gen;
 beforeEach(() => {
     gen = new PublishGenerator(makeApp(makeState()), createPublishStyleRegistry());
 });
 
-const fields = () => globalThis.PublishPageStore.defaultFields();
-
 describe('本棚セクション型', () => {
     it('選んだ本棚の本だけ・override メモ・Amazon tag が出る / 非選択本は出ない', async () => {
         // Plus ユーザは自分の affiliate tag が付く
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
-        const page = { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: 'よろしく', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: 'よろしく', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await g.build([page]);
         const html = r.files.find(f => f.path === 'manga-page/index.html').content;
         expect(html).toContain('漫画1');
@@ -63,54 +64,66 @@ describe('本棚セクション型', () => {
         expect(html).toContain('本棚overrideメモ');     // M2 は override 優先
         expect(html).toContain('ALLメモM1');            // M1 は ALL memo
         expect(html).toContain('tag=aff-xyz');           // Plus: 自分のアフィリエイト tag 付き
-        expect(html).toContain('【広告】');               // 広告開示が出る (ステマ規制)
+        expect(html).toContain('class="pub-ad-top"');    // 冒頭に控えめな広告ラベルが出る (ステマ規制)
         expect(html).not.toContain('小説1');             // 非選択本棚は出ない
         expect(r.errors).toEqual([]);
     });
 
-    it('Plus でも Amazon リンクを OFF にしたページは広告開示を出さない (過剰開示しない)', async () => {
-        const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
-        const f = { ...fields(), amazon: false };
-        const page = { id: 'a', slug: 'noad', title: '広告なし', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: f } };
-        const r = await g.build([page]);
-        const html = r.files.find(f => f.path === 'noad/index.html').content;
-        expect(html).toContain('漫画1');
-        expect(html).not.toContain('amazon.co.jp'); // リンクが無い
-        expect(html).not.toContain('【広告】');       // よって開示も出さない
-    });
-
     it('Free ユーザは運営 tag が付き広告開示が出る (自分の tag は使わない)', async () => {
         // beforeEach の gen は plan='free'。運営 tag (asayake09-22) が付き、広告開示も出る
-        const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await gen.build([page]);
         const html = r.files.find(f => f.path === 'free-page/index.html').content;
         expect(html).toContain('漫画1');
         expect(html).not.toContain('tag=aff-xyz');     // 自分の tag は使わない
         expect(html).toContain('tag=asayake09-22');     // 運営 tag が付く
-        expect(html).toContain('【広告】');               // 広告開示が出る
+        expect(html).toContain('class="pub-ad-top"');   // 冒頭に控えめな広告ラベルが出る
+        expect(html).toContain('運営者のアフィリエイト ID'); // Free は広告主体 (運営) を明示
+    });
+
+    it('本が0件のページには広告ラベルを出さない (過剰開示しない)', async () => {
+        // 収益化していても (Plus + tag)、実際に商品リンクが出ないページには広告ラベルを付けない
+        const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
+        const page = { id: 'a', slug: 'empty', title: '空ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel([], []) };
+        const r = await g.build([page]);
+        const html = r.files.find(f => f.path === 'empty/index.html').content;
+        expect(html).not.toContain('amazon.co.jp'); // 商品リンクが無い
+        expect(html).not.toContain('class="pub-ad-top"'); // よって冒頭ラベルも出さない
     });
 
     it('プライバシー: vault 名が出力に混入しない (leak 検出 0)', async () => {
-        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await gen.build([page]);
         const all = r.files.map(f => f.content).join('');
         expect(all).not.toContain('MySecretVault');
         expect(r.leak).toEqual([]);
     });
+});
 
-    it('公開項目を OFF にすると出力から消える (amazon/memo)', async () => {
-        const f = { ...fields(), amazon: false, memo: false };
-        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: f } };
+describe('公開項目はスタイルが固定する (ADR-034追補)', () => {
+    it('一覧ミニマル型(cover-wall)は表紙のみ・著者/評価/メモは出さない', async () => {
+        const page = { id: 'a', slug: 'wall', title: 'ウォール', intro: '', styleId: 'cover-wall', styleParams: {}, select: sel(['mid']) };
         const r = await gen.build([page]);
-        const html = r.files.find(f => f.path === 'p/index.html').content;
-        expect(html).not.toContain('amazon.co.jp');
-        expect(html).not.toContain('本棚overrideメモ');
+        const html = r.files.find(f => f.path === 'wall/index.html').content;
+        expect(html).toContain('http://img/M1.jpg'); // 表紙は出る
+        expect(html).not.toContain('作者A');           // 著者は出さない
+        expect(html).not.toContain('本棚overrideメモ'); // 短文メモは出さない
+        expect(html).not.toContain('class="stars"');    // 評価(星)は出さない
+    });
+
+    it('本棚セクション型(shelf-sections)は短文メモを出すが長文メモは出さない', async () => {
+        // M1 は detailMemo を持つが、shelf-sections の shows.detailMemo=false なので読み込まれない
+        const page = { id: 'a', slug: 'sec', title: 'セクション', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
+        const r = await gen.build([page]);
+        const html = r.files.find(f => f.path === 'sec/index.html').content;
+        expect(html).toContain('ALLメモM1');           // 短文メモは出る
+        expect(html).not.toContain('長文メモ本文M1');   // 長文メモは出さない (スタイル固定)
     });
 });
 
 describe('本単体じっくり型 + detailMemo', () => {
     it('長文メモを frontmatter 除去して出す', async () => {
-        const page = { id: 'b', slug: 'feature', title: '特集', intro: '', styleId: 'book-feature', styleParams: {}, select: { shelves: [], books: ['M1'], fields: fields() } };
+        const page = { id: 'b', slug: 'feature', title: '特集', intro: '', styleId: 'book-feature', styleParams: {}, select: sel([], ['M1']) };
         const r = await gen.build([page]);
         const html = r.files.find(f => f.path === 'feature/index.html').content;
         expect(html).toContain('長文メモ本文M1');
@@ -122,8 +135,8 @@ describe('本単体じっくり型 + detailMemo', () => {
 describe('トップ index と HTML 妥当性', () => {
     it('index.html に各ページへのリンクが出る / doctype 付き', async () => {
         const pages = [
-            { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } },
-            { id: 'b', slug: 'feature', title: '特集', intro: '', styleId: 'book-feature', styleParams: {}, select: { shelves: [], books: ['M1'], fields: fields() } }
+            { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) },
+            { id: 'b', slug: 'feature', title: '特集', intro: '', styleId: 'book-feature', styleParams: {}, select: sel([], ['M1']) }
         ];
         const r = await gen.build(pages);
         const idx = r.files.find(f => f.path === 'index.html').content;
@@ -134,7 +147,7 @@ describe('トップ index と HTML 妥当性', () => {
     });
 
     it('不明スタイルは errors に積みファイルは作らない', async () => {
-        const page = { id: 'x', slug: 'x', title: 'X', intro: '', styleId: 'no-such', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'x', slug: 'x', title: 'X', intro: '', styleId: 'no-such', styleParams: {}, select: sel(['mid']) };
         const r = await gen.build([page]);
         expect(r.errors.length).toBe(1);
         expect(r.files.find(f => f.path === 'x/index.html')).toBeUndefined();
@@ -144,7 +157,7 @@ describe('トップ index と HTML 妥当性', () => {
 describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () => {
     const mkPage = (extra = {}) => ({
         id: 'a', slug: 'p', title: 'P', intro: 'しょうかい', styleId: 'shelf-sections', styleParams: {},
-        select: { shelves: ['mid'], books: [], fields: fields() },
+        select: sel(['mid']),
         updatedAt: new Date(2026, 5, 1, 12, 0, 0).getTime(), ...extra
     });
 
@@ -159,11 +172,11 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
     it('サイトが収益化していれば常時アフィ表明を全ページに出す (Plus)', async () => {
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
-        expect(html).toContain('Amazon アソシエイト・プログラムの参加者です');
-        // 本文冒頭にも【広告】を出す (クリック前に認識できるよう, ステマ規制)
-        expect(html).toContain('pub-ad-top');
-        // Plus は自分のタグなので「運営者に帰属」は出さない
-        expect(html).not.toContain('運営者に帰属');
+        expect(html).toContain('適格販売により収入を得ています'); // フッターに常時の参加表明
+        // 本文冒頭にも控えめな広告ラベルを出す (クリック前に認識できるよう, ステマ規制)
+        expect(html).toContain('class="pub-ad-top"');
+        // Plus は自分のタグなので運営の広告主体注記は出さない
+        expect(html).not.toContain('運営者');
     });
 
     it('Plus でアフィ tag 未設定なら広告なし・常時表明も出さない', async () => {
@@ -172,8 +185,8 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         state.privateSettings.affiliateId = '';
         const g = new PublishGenerator(makeApp(state, 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
-        expect(html).not.toContain('アソシエイト・プログラムの参加者');
-        expect(html).not.toContain('【広告】');
+        expect(html).not.toContain('適格販売により収入を得ています');
+        expect(html).not.toContain('class="pub-ad-top"');
     });
 
     it('OGP: og:image に代表表紙・favicon・twitter:card が出る', async () => {
@@ -202,7 +215,7 @@ describe('プライバシー誤検知ガード (leak)', () => {
         // 取込元 origin にアプリ自身の公開 origin（footer のリンクと部分一致する）が入っているケース
         state.privateSettings.extensionImportOrigins = ['http://localhost:*', 'https://hahero-asayake.github.io'];
         const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
-        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await g.build([page]);
         // footer に https://hahero-asayake.github.io/bookshelf が必ず入る（正当）
         expect(r.files.some(f => f.content.includes('hahero-asayake.github.io'))).toBe(true);
@@ -217,7 +230,7 @@ describe('プライバシー誤検知ガード (leak)', () => {
         // メモにうっかりローカルパスが混入したと仮定
         state.bookshelfFiles.mid.notes.M1 = { memo: 'メモ see obsidian/40_reading_secret' };
         const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
-        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: [], fields: fields() } };
+        const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await g.build([page]);
         expect(r.leak.length).toBeGreaterThan(0);
     });
@@ -232,7 +245,7 @@ describe('全標準スタイルの機能検証 (P1-6)', () => {
             const page = {
                 id: style.id, slug: 'p-' + style.id, title: style.name, intro: '紹介',
                 styleId: style.id, styleParams: { lead: 'リード文', note: '本文ノート' },
-                select: { shelves: ['manga'], books: ['M1'], fields: fields() }
+                select: sel(['manga'], ['M1'])
             };
             const r = await g.build([page]);
             const file = r.files.find(f => f.path === `p-${style.id}/index.html`);
@@ -242,6 +255,16 @@ describe('全標準スタイルの機能検証 (P1-6)', () => {
             expect(r.leak, style.id).toEqual([]);
             expect(file.content, style.id).not.toContain('小説1'); // 非選択本棚 (novel) は出ない
             expect(file.content, style.id).not.toContain('MySecretVault');
+        }
+    });
+
+    it('各スタイルの declare().shows が全項目キーを持つ (公開項目はスタイル固定)', () => {
+        const reg = createPublishStyleRegistry();
+        const keys = ['rating', 'memo', 'detailMemo', 'cover', 'author', 'amazon'];
+        for (const style of reg.list()) {
+            const shows = style.declare().shows;
+            expect(shows, style.id).toBeTruthy();
+            for (const k of keys) expect(typeof shows[k], `${style.id}.${k}`).toBe('boolean');
         }
     });
 });
