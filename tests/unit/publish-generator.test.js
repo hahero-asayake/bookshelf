@@ -71,14 +71,16 @@ describe('本棚セクション型', () => {
 
     it('Free ユーザは運営 tag が付き広告開示が出る (自分の tag は使わない)', async () => {
         // beforeEach の gen は plan='free'。運営 tag (asayake09-22) が付き、広告開示も出る
-        const page = { id: 'a', slug: 'free-page', title: '無料ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
+        const page = { id: 'a', slug: 'free-page', title: 'おすすめ本', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await gen.build([page]);
         const html = r.files.find(f => f.path === 'free-page/index.html').content;
         expect(html).toContain('漫画1');
         expect(html).not.toContain('tag=aff-xyz');     // 自分の tag は使わない
         expect(html).toContain('tag=asayake09-22');     // 運営 tag が付く
         expect(html).toContain('class="pub-ad-top"');   // 冒頭に控えめな広告ラベルが出る
-        expect(html).toContain('運営者のアフィリエイト ID'); // Free は広告主体 (運営) を明示
+        // 公開サイトでは「無料プラン/収益の帰属先」は開示不要な情報なので出さない (プラン非依存)
+        expect(html).not.toContain('運営者');
+        expect(html).not.toContain('無料');
     });
 
     it('本が0件のページには広告ラベルを出さない (過剰開示しない)', async () => {
@@ -89,6 +91,21 @@ describe('本棚セクション型', () => {
         const html = r.files.find(f => f.path === 'empty/index.html').content;
         expect(html).not.toContain('amazon.co.jp'); // 商品リンクが無い
         expect(html).not.toContain('class="pub-ad-top"'); // よって冒頭ラベルも出さない
+    });
+
+    it('プラグイン製スタイルが helpers を介さずアフィリンクを埋めても広告ラベルが付く (ADR-034追補・開示はスタイル非依存)', async () => {
+        // shows.amazon=false を申告しつつ render で b.amazonUrl (タグ入り) を直接埋め込む“行儀の悪い”スタイル
+        const reg = createPublishStyleRegistry();
+        reg.register({
+            id: 'rogue', name: 'rogue', description: '',
+            declare: () => ({ requires: { shelves: 'optional', books: 'optional' }, shows: { cover: true, author: false, rating: false, memo: false, detailMemo: false, amazon: false }, fields: [] }),
+            render: (ctx) => ({ html: `<div class="pub-wrap">${ctx.books.map(b => `<a href="${ctx.helpers.attr(b.amazonUrl)}">買う</a>`).join('')}</div>`, css: '' })
+        });
+        const g = new PublishGenerator(makeApp(makeState(), 'plus'), reg);
+        const page = { id: 'a', slug: 'rogue', title: 'R', intro: '', styleId: 'rogue', styleParams: {}, select: sel([], ['M1']) };
+        const html = (await g.build([page])).files.find(f => f.path === 'rogue/index.html').content;
+        expect(html).toContain('tag=aff-xyz');          // アフィリンクが実際に出力されている
+        expect(html).toContain('class="pub-ad-top"');    // shows.amazon=false でも開示ラベルが付く (出力検出ベース)
     });
 
     it('プライバシー: vault 名が出力に混入しない (leak 検出 0)', async () => {
@@ -169,14 +186,15 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         expect(html).toContain('最終更新 2026-06-01');
     });
 
-    it('サイトが収益化していれば常時アフィ表明を全ページに出す (Plus)', async () => {
+    it('サイトが収益化していれば常時アフィ表明を全ページに出す (プラン非依存)', async () => {
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
-        expect(html).toContain('適格販売により収入を得ています'); // フッターに常時の参加表明
+        expect(html).toContain('Amazon アソシエイト・プログラムに参加'); // フッターに中立な参加表明
         // 本文冒頭にも控えめな広告ラベルを出す (クリック前に認識できるよう, ステマ規制)
         expect(html).toContain('class="pub-ad-top"');
-        // Plus は自分のタグなので運営の広告主体注記は出さない
+        // 収益の帰属先 (運営/発行者) や無料プランは閲覧者に開示不要 → 出さない
         expect(html).not.toContain('運営者');
+        expect(html).not.toContain('無料');
     });
 
     it('Plus でアフィ tag 未設定なら広告なし・常時表明も出さない', async () => {
@@ -185,7 +203,7 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         state.privateSettings.affiliateId = '';
         const g = new PublishGenerator(makeApp(state, 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
-        expect(html).not.toContain('適格販売により収入を得ています');
+        expect(html).not.toContain('アソシエイト・プログラムに参加');
         expect(html).not.toContain('class="pub-ad-top"');
     });
 

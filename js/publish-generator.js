@@ -162,10 +162,9 @@ class PublishGenerator {
     _wrapDoc(page, publisher, body, css, opts = {}) {
         const esc = PublishGenerator.esc;
         const intro = page.intro || '';
-        // opts: { pageHasAds, siteHasAffiliate, isPlus, ogImage, canonical, noindex, updatedAt }
+        // opts: { pageHasAds, siteHasAffiliate, ogImage, canonical, noindex, updatedAt }
         const pageHasAds = !!opts.pageHasAds;          // このページに実アフィリンクが出る (景表法)
         const siteHasAffiliate = !!opts.siteHasAffiliate; // サイトとして収益化している (常時表明)
-        const isPlus = !!opts.isPlus;                  // Plus=自分のタグ / Free=運営(hahero)のタグ
         const ogImage = opts.ogImage || '';
         const canonical = opts.canonical || '';
         const updated = PublishGenerator._fmtDate(opts.updatedAt);
@@ -177,11 +176,10 @@ class PublishGenerator {
             ? `<div class="pub-wrap"><p class="pub-ad-top"><span class="pub-ad-tag">広告</span>Amazon アソシエイトのリンクを含みます</p></div>`
             : '';
         // Amazon アソシエイト規約: 収益化しているサイトは全ページに参加表明を掲示する (フッターに静かに)。
-        // Free は誰の広告か (運営) を 1 文で添える — ステマ規制の広告主体明示。「対価/帰属」等の硬い語は使わない。
+        // 収益が誰に入るか (Free=運営 / Plus=発行者) は閲覧者に開示が必要な情報ではないので出さない。
+        // プラン非依存の中立な 1 文に統一する。
         const affiliateStanding = siteHasAffiliate
-            ? `<p class="pub-affiliate">${isPlus
-                ? '当サイトは、Amazon のアソシエイトとして、適格販売により収入を得ています。'
-                : '本サービスの運営者（AsayakeBookshelf）は、Amazon のアソシエイトとして、適格販売により収入を得ています（商品リンクは運営者のアフィリエイト ID で生成されます）。'}</p>`
+            ? `<p class="pub-affiliate">当サイトは Amazon アソシエイト・プログラムに参加しており、リンク経由の適格販売により収益が発生します。</p>`
             : '';
 
         const head = [
@@ -237,7 +235,6 @@ ${head}
         const updatedAt = pageLinks.reduce((m, p) => Math.max(m, p.updatedAt || 0), 0);
         return this._wrapDoc({ title: `${publisher} の本棚`, intro: '' }, publisher, body, css, {
             siteHasAffiliate: !!opts.siteHasAffiliate,
-            isPlus: !!opts.isPlus,
             canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
             updatedAt
         });
@@ -353,10 +350,12 @@ ${head}
             try { rendered = style.render(ctx); }
             catch (e) { errors.push(`render ${page.title}: ${e.message}`); continue; }
 
-            // 広告ラベルはページ単位で判定: アフィタグがあり、かつそのページに実際に Amazon リンクが
-            // 出る (amazon 項目 ON かつ本が1冊以上) ときだけ冒頭ラベルを出す (過剰開示を防ぐ)。
+            // 広告ラベルは「ページに実際に出力された当方のアフィリンク」で判定する。スタイルの自己申告
+            // (declare().shows.amazon) には依存しない — 標準でもプラグイン製でも、当方の Amazon アソシエイト
+            // tag が出力に含まれれば必ず冒頭ラベルが付く (= 行儀の悪い/無自覚なスタイルの未開示リンクを構造的に防ぐ)。
+            // 本が 0 件なら tag も出ないので付かない (過剰開示を防ぐ)。
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
-            const pageHasAds = hasAds && !!resolved.fields.amazon && bookCount > 0;
+            const pageHasAds = hasAds && (rendered.html || '').includes(`tag=${affiliateId}`);
 
             // OGP の og:image に使う代表表紙 (本棚→本の順で最初に見つかったもの)
             let ogImage = '';
@@ -366,7 +365,6 @@ ${head}
             const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', {
                 pageHasAds,
                 siteHasAffiliate,
-                isPlus,
                 ogImage,
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${page.slug}/` : '',
                 noindex: !!page.noindex,
@@ -377,7 +375,7 @@ ${head}
         }
 
         // トップ index
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, isPlus, siteBaseUrl }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl }) });
 
         const leak = this._detectLeak(files, state);
         return { files, pages: built, leak, errors };
