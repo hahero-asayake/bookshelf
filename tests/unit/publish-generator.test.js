@@ -132,6 +132,15 @@ describe('公開先による affiliate tag 出し分け (ADR-034追補)', () => 
         expect(html).toContain('class="pub-ad-top"');    // 自分のアフィリンクなので開示は出す
     });
 
+    it('github: タグに特殊文字が混じっても開示ラベルが脱落しない (検出を焼込と同エンコードに, ADR-035 review)', async () => {
+        const state = makeState();
+        state.privateSettings.affiliateId = 'a b';   // 空白入り (保存時に弾くが、検出側の堅牢性も担保する)
+        const g = new PublishGenerator(makeApp(state, 'free'), createPublishStyleRegistry());
+        const html = (await g.build([page()], { target: 'github' })).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('tag=a%20b');             // エンコードして焼き込まれる
+        expect(html).toContain('class="pub-ad-top"');     // 開示ラベルが付く (検出も同じエンコードで照合)
+    });
+
     it('github (自前サイト): 自分のタグ未設定なら広告なし (運営タグで埋めない)', async () => {
         const state = makeState();
         state.privateSettings.affiliateId = '';

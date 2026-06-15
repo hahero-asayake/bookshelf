@@ -644,7 +644,11 @@ class VirtualBookshelf {
         if (affInput) {
             affInput.addEventListener('change', () => {
                 if (!this.userData.settings) this.userData.settings = {};
-                this.userData.settings.affiliateId = affInput.value.trim();
+                // Amazon アソシエイト ID は [A-Za-z0-9_-] のみ。不正文字を除去して保存 (ハブ側 Worker の検証と一致)。
+                // タグに空白/全角等が混じると github 焼き込み URL がエンコードされ、開示ラベル検出が外れる事故を防ぐ。
+                const cleaned = affInput.value.trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+                if (affInput.value !== cleaned) affInput.value = cleaned;
+                this.userData.settings.affiliateId = cleaned;
                 this.saveUserData();
             });
         }

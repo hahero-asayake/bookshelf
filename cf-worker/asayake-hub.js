@@ -130,8 +130,11 @@ async function handleGo(request, env, pathname) {
     let tag = env.OPERATOR_AFFILIATE_TAG || '';      // 既定 = 運営タグ (Free / 解決不能時)
     const uid = await env.KV.get(`site:${siteId}`);
     if (uid) {
-        const rec = await env.KV.get(`uid:${uid}`, 'json');
-        if (rec && rec.plan === 'plus') tag = rec.affiliateTag || '';   // Plus は本人タグ (空なら無印)
+        const planRec = await getPlan(env, uid);
+        if (planRec && planRec.plan === 'plus') {     // Plus は本人タグ (uid レコード。空なら無印)
+            const rec = await env.KV.get(`uid:${uid}`, 'json');
+            tag = (rec && rec.affiliateTag) || '';
+        }
     }
     const dest = `https://www.amazon.co.jp/dp/${asin}` + (tag ? `?tag=${encodeURIComponent(tag)}` : '');
     return new Response(null, {
@@ -166,24 +169,51 @@ async function handleSession(request, env) {
     const uid = claims.sub;
     const email = claims.email || null;
 
+    // KV は read-modify-write の last-writer-wins (CAS 無し)。同一キーを頻繁な書き手 (addUsage) と
+    // 課金書き手 (setPlan) が共有すると相互クロバーするため、レコードを 3 キーに分離する (ADR-035 競合対策):
+    //   uid:<uid>   identity + affiliateTag   (session で作成 / handlePublish が affiliateTag)
+    //   plan:<uid>  課金 plan/quota/stripe    (session で作成 / setPlan のみ)
+    //   usage:<uid> 使用量バイト数            (session で作成 / addUsage のみ)
     let rec = await env.KV.get(`uid:${uid}`, 'json');
     if (!rec) {
         // 公開 URL は不透明な siteId (uuid)。本名/メール/Google sub を URL に晒さない
         const siteId = crypto.randomUUID();
-        // plan='free' が既定。Plus 化は uid レコードの plan/quotaBytes を引き上げるだけ (アプリ再実装不要)
-        rec = { siteId, email, plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
+        rec = { siteId, email, status: 'ok' };
         await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
+        // plan='free' が既定。Plus 化は plan:<uid> の plan/quotaBytes を引き上げるだけ (アプリ再実装不要)
+        await env.KV.put(`plan:${uid}`, JSON.stringify({ plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA }));
+        await env.KV.put(`usage:${uid}`, '0');
     }
     // siteId → uid の逆引き (/go リダイレクタが利用)。新規/既存とも冪等に張る (既存アカウントの backfill 兼)
     await env.KV.put(`site:${rec.siteId}`, uid);
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
     await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
+    const planRec = await getPlan(env, uid);
     return json({
         key, uid, siteId: rec.siteId, email,
-        plan: rec.plan || 'free', quotaBytes: rec.quotaBytes, usedBytes: rec.usedBytes || 0,
+        plan: planRec.plan, quotaBytes: planRec.quotaBytes, usedBytes: await getUsed(env, uid),
         apiBase: `https://${env.HUB_DOMAIN}`,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
+}
+
+// 課金レコード plan:<uid> を返す (旧形式=uid レコードに plan/quota を持つ場合は遅延フォールバック)。
+async function getPlan(env, uid) {
+    const p = await env.KV.get(`plan:${uid}`, 'json');
+    if (p) return { plan: p.plan || 'free', quotaBytes: p.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
+                    stripeCustomerId: p.stripeCustomerId, stripeSubscriptionId: p.stripeSubscriptionId };
+    const rec = await env.KV.get(`uid:${uid}`, 'json');
+    if (!rec) return { plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA };
+    return { plan: rec.plan || 'free', quotaBytes: rec.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
+             stripeCustomerId: rec.stripeCustomerId, stripeSubscriptionId: rec.stripeSubscriptionId };
+}
+
+// 使用量バイト数を返す (旧形式=uid レコードに usedBytes を持つ場合は遅延フォールバック)。
+async function getUsed(env, uid) {
+    const v = await env.KV.get(`usage:${uid}`);
+    if (v != null) return Number(v) || 0;
+    const rec = await env.KV.get(`uid:${uid}`, 'json');
+    return rec ? (rec.usedBytes || 0) : 0;
 }
 
 // ===== 使用量照会 (認証必須): プラン/quota/used を返す。UI の使用量バー更新用 =====
@@ -191,10 +221,11 @@ async function handleUsage(request, env) {
     const sess = await requireAuth(request, env);
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (!rec) throw httpError(404, 'no account');
+    const planRec = await getPlan(env, sess.uid);
     return json({
-        plan: rec.plan || 'free',
-        quotaBytes: rec.quotaBytes || DEFAULT_QUOTA,
-        usedBytes: rec.usedBytes || 0,
+        plan: planRec.plan,
+        quotaBytes: planRec.quotaBytes,
+        usedBytes: await getUsed(env, sess.uid),
         siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
@@ -257,8 +288,8 @@ async function putObject(env, sess, key, body, ifMatch) {
     const wantEtag = ifMatch ? ifMatch.replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null;
     if (wantEtag && (!head || head.etag !== wantEtag)) throw httpError(412, 'etag mismatch');
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
-    const projected = (rec ? rec.usedBytes : 0) - (head ? head.size : 0) + size;
-    if (rec && projected > rec.quotaBytes) throw httpError(413, 'quota exceeded');
+    const projected = (rec ? await getUsed(env, sess.uid) : 0) - (head ? head.size : 0) + size;
+    if (rec && projected > (await getPlan(env, sess.uid)).quotaBytes) throw httpError(413, 'quota exceeded');
     const putOpts = {};
     if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
     const res = await env.BUCKET.put(key, body, putOpts);
@@ -338,10 +369,11 @@ async function handlePublish(request, env) {
 
     // quota 判定 (R2 へ書き込む前に弾く)。超過なら 413 (HubStorageAdapter が HubQuotaError 化)
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
-    if (rec && (rec.usedBytes || 0) + delta > rec.quotaBytes) throw httpError(413, 'quota exceeded');
+    if (rec && (await getUsed(env, sess.uid)) + delta > (await getPlan(env, sess.uid)).quotaBytes) throw httpError(413, 'quota exceeded');
 
     // 本人の Amazon アフィタグを記録 (/go が Plus 時に解決して使う)。文字種を制限。
-    // この put は addUsage の前に行う (addUsage が rec を読み直して usedBytes を更新するため上書きされない)。
+    // affiliateTag は uid レコードに書く。課金 (setPlan) は plan:<uid>、使用量 (addUsage) は usage:<uid> を
+    // 書くのでキーを共有せず、これらの並行書込が互いをクロバーしない (ADR-035 競合対策)。
     if (rec && typeof affiliateTag === 'string') {
         const t = affiliateTag.trim().slice(0, 32);
         if (/^[A-Za-z0-9_-]*$/.test(t) && (rec.affiliateTag || '') !== t) {
@@ -368,10 +400,19 @@ async function handleAccountDelete(request, env) {
     const m = auth.match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
     const key = m ? m[1] : null;
 
+    // 退会後の課金継続を防ぐため、有効な Stripe サブスクがあれば解約する (billing 未設定/sub 無しはスキップ)。
+    const planRec = await getPlan(env, sess.uid);
+    if (env.STRIPE_SECRET_KEY && planRec && planRec.stripeSubscriptionId) {
+        try { await stripeApi(env, 'DELETE', `subscriptions/${planRec.stripeSubscriptionId}`, null); } catch (_) {}
+    }
+
     await deletePrefix(env, `data/${sess.uid}/`);
     if (sess.siteId) await deletePrefix(env, `sites/${sess.siteId}/`);
 
     await env.KV.delete(`uid:${sess.uid}`);
+    await env.KV.delete(`plan:${sess.uid}`);
+    await env.KV.delete(`usage:${sess.uid}`);
+    if (planRec && planRec.stripeCustomerId) await env.KV.delete(`stripe:${planRec.stripeCustomerId}`);
     if (key) await env.KV.delete(`key:${key}`);
     if (sess.siteId) {
         await env.KV.delete(`report:${sess.siteId}`);
@@ -392,7 +433,7 @@ async function deletePrefix(env, prefix) {
 }
 
 // ===== 課金 (Stripe Checkout / Billing Portal / Webhook, ADR-035) =====
-// Plus 化は uid レコードの plan/quotaBytes を引き上げるだけ (既存設計の延長)。決済の正本は Stripe。
+// Plus 化は plan:<uid> の plan/quotaBytes を引き上げるだけ (既存設計の延長)。決済の正本は Stripe。
 // 未設定 (STRIPE_* なし) の環境では課金系は 503 を返し、何も起きない (口座準備前でも他機能は動く)。
 const PLUS_QUOTA_DEFAULT = 3 * 1024 * 1024 * 1024;   // Plus = 3GB (ADR-033/035)
 
@@ -404,6 +445,7 @@ async function handleCheckout(request, env) {
     const price = body.plan === 'yearly' ? env.STRIPE_PRICE_YEARLY : env.STRIPE_PRICE_MONTHLY;
     if (!price || String(price).startsWith('REPLACE')) throw httpError(503, 'price not configured');
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    const planRec = await getPlan(env, sess.uid);
     const ret = safeReturnUrl(body.returnUrl, env);
     const form = new URLSearchParams();
     form.set('mode', 'subscription');
@@ -412,7 +454,7 @@ async function handleCheckout(request, env) {
     form.set('client_reference_id', sess.uid);        // Webhook で uid を特定する
     form.set('success_url', `${ret}?billing=success`);
     form.set('cancel_url', `${ret}?billing=cancel`);
-    if (rec && rec.stripeCustomerId) form.set('customer', rec.stripeCustomerId);
+    if (planRec && planRec.stripeCustomerId) form.set('customer', planRec.stripeCustomerId);
     else if (rec && rec.email) form.set('customer_email', rec.email);
     const data = await stripeApi(env, 'POST', 'checkout/sessions', form);
     return json({ url: data.url });
@@ -422,11 +464,11 @@ async function handleCheckout(request, env) {
 async function handleBillingPortal(request, env) {
     if (!env.STRIPE_SECRET_KEY) throw httpError(503, 'billing not configured');
     const sess = await requireAuth(request, env);
-    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
-    if (!rec || !rec.stripeCustomerId) throw httpError(400, 'no subscription');
+    const planRec = await getPlan(env, sess.uid);
+    if (!planRec || !planRec.stripeCustomerId) throw httpError(400, 'no subscription');
     const body = await request.json().catch(() => ({}));
     const form = new URLSearchParams();
-    form.set('customer', rec.stripeCustomerId);
+    form.set('customer', planRec.stripeCustomerId);
     form.set('return_url', safeReturnUrl(body.returnUrl, env));
     const data = await stripeApi(env, 'POST', 'billing_portal/sessions', form);
     return json({ url: data.url });
@@ -452,8 +494,15 @@ async function applyStripeEvent(event, env) {
     if (type === 'checkout.session.completed') {
         const uid = obj.client_reference_id;
         if (!uid) return;
-        await setPlan(env, uid, 'plus', { stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription });
+        const ok = await setPlan(env, uid, 'plus', { stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription });
+        // setPlan が false = uid レコードが無い (退会レース等)。throw で 500 を返し Stripe にリトライさせる
+        // (取りこぼしの検知。orphaned な stripe: 逆引きも張らない)。
+        if (!ok) throw httpError(409, 'account record missing (deleted?) — retry');
         if (obj.customer) await env.KV.put(`stripe:${obj.customer}`, uid);   // customer→uid 逆引き (失効イベント用)
+    } else if (type === 'customer.subscription.updated' && ['active', 'trialing'].includes(obj.status)) {
+        // unpaid 等で一度 Free に落ちたサブスクがカード更新で復帰 → Plus に戻す (再アクティブ化は checkout を伴わない)
+        const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
+        if (uid) await setPlan(env, uid, 'plus', { stripeSubscriptionId: obj.id });
     } else if (type === 'customer.subscription.deleted' ||
                (type === 'customer.subscription.updated' && ['canceled', 'unpaid', 'incomplete_expired'].includes(obj.status))) {
         const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
@@ -461,17 +510,20 @@ async function applyStripeEvent(event, env) {
     }
 }
 
-// プラン/quota を引き上げ/引き下げる。/go の Plus 解決もこの plan を見る (降格で運営タグへ戻る)。
+// プラン/quota を引き上げ/引き下げる (plan:<uid> に書く)。/go の Plus 解決もこの plan を見る (降格で運営タグへ戻る)。
+// uid レコードが無ければ false を返す (退会レースの取りこぼし検知に使う)。
 async function setPlan(env, uid, plan, extra) {
     const rec = await env.KV.get(`uid:${uid}`, 'json');
-    if (!rec) return;
-    rec.plan = plan;
-    rec.quotaBytes = plan === 'plus'
-        ? (Number(env.PLUS_QUOTA_BYTES) || PLUS_QUOTA_DEFAULT)
-        : (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA);
-    if (extra && extra.stripeCustomerId) rec.stripeCustomerId = extra.stripeCustomerId;
-    if (extra && extra.stripeSubscriptionId) rec.stripeSubscriptionId = extra.stripeSubscriptionId;
-    await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
+    if (!rec) return false;
+    // 既存 plan:<uid> を継承 (旧形式は uid レコードから引き継ぐ)。setPlan 以外はこのキーを書かない
+    const cur = (await env.KV.get(`plan:${uid}`, 'json'))
+        || { plan: rec.plan, quotaBytes: rec.quotaBytes, stripeCustomerId: rec.stripeCustomerId, stripeSubscriptionId: rec.stripeSubscriptionId };
+    const next = { ...cur, plan,
+        quotaBytes: plan === 'plus' ? (Number(env.PLUS_QUOTA_BYTES) || PLUS_QUOTA_DEFAULT) : (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA) };
+    if (extra && extra.stripeCustomerId) next.stripeCustomerId = extra.stripeCustomerId;
+    if (extra && extra.stripeSubscriptionId) next.stripeSubscriptionId = extra.stripeSubscriptionId;
+    await env.KV.put(`plan:${uid}`, JSON.stringify(next));
+    return true;
 }
 
 // Stripe 署名検証 (Stripe-Signature: t=…,v1=… の HMAC-SHA256(`${t}.${payload}`))。
@@ -498,13 +550,11 @@ function timingSafeEqualHex(a, b) {
     return diff === 0;
 }
 
-// Stripe REST 呼び出し (application/x-www-form-urlencoded)。失敗は 502 に正規化。
+// Stripe REST 呼び出し (application/x-www-form-urlencoded)。失敗は 502 に正規化。form 無し (DELETE 等) は body なし。
 async function stripeApi(env, method, path, form) {
-    const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-        method,
-        headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form
-    });
+    const headers = { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` };
+    if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    const res = await fetch(`https://api.stripe.com/v1/${path}`, { method, headers, body: form || undefined });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw httpError(502, `stripe: ${(data && data.error && data.error.message) || res.status}`);
     return data;
@@ -523,8 +573,8 @@ function safeReturnUrl(url, env) {
     return fallback;
 }
 
-// テスト用に課金ロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature };
+// テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {
@@ -552,10 +602,10 @@ function safeRel(path) {
     return p;
 }
 async function addUsage(env, uid, delta) {
+    // 使用量は usage:<uid> に分離して書く (頻繁な書込が課金レコード plan:<uid> をクロバーしないため, ADR-035)。
     const rec = await env.KV.get(`uid:${uid}`, 'json');
-    if (!rec) return;
-    rec.usedBytes = Math.max(0, (rec.usedBytes || 0) + delta);
-    await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
+    if (!rec) return;   // アカウント無し (削除レース) は無視
+    await env.KV.put(`usage:${uid}`, String(Math.max(0, (await getUsed(env, uid)) + delta)));
 }
 function contentType(path) {
     if (path.endsWith('.html')) return 'text/html; charset=utf-8';

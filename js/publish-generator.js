@@ -183,8 +183,11 @@ class PublishGenerator {
         // Amazon アソシエイト規約: 収益化しているサイトは全ページに参加表明を掲示する (フッターに静かに)。
         // 収益が誰に入るか (Free=運営 / Plus=発行者) は閲覧者に開示が必要な情報ではないので出さない。
         // プラン非依存の中立な 1 文に統一する。
+        // 「収益を得る場合があります」: hub は /go がクリック時にタグ解決するため、運営タグ未設定 Free 等で
+        // タグが付かない構成でも字義的に偽にならない (生成側は Worker のタグ状態を知り得ない)。Amazon 規約が
+        // 求めるのは参加表明であり「必ず収益が発生する」断定ではない。
         const affiliateStanding = siteHasAffiliate
-            ? `<p class="pub-affiliate">当サイトは Amazon アソシエイト・プログラムに参加しており、リンク経由の適格販売により収益が発生します。</p>`
+            ? `<p class="pub-affiliate">当サイトは Amazon アソシエイト・プログラムに参加しており、リンク経由の適格販売により収益を得る場合があります。</p>`
             : '';
 
         const head = [
@@ -376,7 +379,7 @@ ${head}
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
             const pageHasAds = useGo
                 ? (rendered.html || '').includes(`/go/${encodeURIComponent(siteId)}/`)
-                : (!!linkOpts.tag && (rendered.html || '').includes(`tag=${linkOpts.tag}`));
+                : (!!linkOpts.tag && (rendered.html || '').includes(`tag=${encodeURIComponent(linkOpts.tag)}`)); // 焼き込み(_amazonUrl)と同じエンコードで検出。非ASCIIタグでも開示ラベルが脱落しない
 
             // OGP の og:image に使う代表表紙 (本棚→本の順で最初に見つかったもの)
             let ogImage = '';

@@ -1,9 +1,11 @@
 // @vitest-environment node
-// Stripe 課金ロジック (Worker asayake-hub.js): イベント→プラン反映 / 署名検証 (ADR-035)
+// Stripe 課金ロジック (Worker asayake-hub.js): イベント→プラン反映 / 署名検証 / KV キー分離 (ADR-035)
 //  - 決済の実体は Stripe ホスト画面・Webhook。ここでは KV だけに依存する純ロジックを検証する。
+//  - レコードは 3 キーに分離 (uid:=identity / plan:=課金 / usage:=使用量) され、頻繁な書込 (addUsage) と
+//    課金書込 (setPlan) がキーを共有せず互いをクロバーしない。setPlan/applyStripeEvent はその plan: を書く。
 //  - Checkout/Portal の作成 (Stripe REST 呼び出し) は実口座が要るため対象外 (デプロイ後に実機検証)。
 import { describe, it, expect } from 'vitest';
-import { applyStripeEvent, setPlan, verifyStripeSignature } from '../../cf-worker/asayake-hub.js';
+import { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed } from '../../cf-worker/asayake-hub.js';
 
 // 簡易 KV モック (Cloudflare KV の get(json)/put/delete 互換)
 function makeKV(initial = {}) {
@@ -20,79 +22,108 @@ const FREE_QUOTA = 100 * 1024 * 1024;
 const PLUS_QUOTA = 3 * 1024 * 1024 * 1024;
 const env = (KV) => ({ KV, PLUS_QUOTA_BYTES: String(PLUS_QUOTA), QUOTA_BYTES: String(FREE_QUOTA) });
 
-describe('setPlan', () => {
-    it('plus に上げると quota を PLUS_QUOTA_BYTES に・customer/subscription を記録・既存使用量は保持', async () => {
-        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'free', quotaBytes: FREE_QUOTA, usedBytes: 10 } });
-        await setPlan(env(KV), 'u1', 'plus', { stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1' });
-        const rec = await KV.get('uid:u1', 'json');
-        expect(rec.plan).toBe('plus');
-        expect(rec.quotaBytes).toBe(PLUS_QUOTA);
-        expect(rec.stripeCustomerId).toBe('cus_1');
-        expect(rec.stripeSubscriptionId).toBe('sub_1');
-        expect(rec.usedBytes).toBe(10);
+describe('setPlan (plan:<uid> に書く・キー分離)', () => {
+    it('plus に上げると plan: の quota を PLUS に・stripe を記録・true を返す。uid:/usage: は触らない', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', email: 'e', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA }, 'usage:u1': '123' });
+        const ok = await setPlan(env(KV), 'u1', 'plus', { stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1' });
+        expect(ok).toBe(true);
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.plan).toBe('plus');
+        expect(p.quotaBytes).toBe(PLUS_QUOTA);
+        expect(p.stripeCustomerId).toBe('cus_1');
+        expect(p.stripeSubscriptionId).toBe('sub_1');
+        expect(await KV.get('uid:u1', 'json')).toEqual({ siteId: 's1', email: 'e', status: 'ok' }); // identity 不変
+        expect(await KV.get('usage:u1')).toBe('123'); // 使用量不変
     });
 
-    it('free に戻すと quota を Free 既定に・customer は残す (再開時に使える)', async () => {
-        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'plus', quotaBytes: PLUS_QUOTA, usedBytes: 5, stripeCustomerId: 'cus_1' } });
+    it('free に戻すと plan: が Free 既定に・customer は残す (再開時に使える)', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1' } });
         await setPlan(env(KV), 'u1', 'free', {});
-        const rec = await KV.get('uid:u1', 'json');
-        expect(rec.plan).toBe('free');
-        expect(rec.quotaBytes).toBe(FREE_QUOTA);
-        expect(rec.stripeCustomerId).toBe('cus_1');
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.plan).toBe('free');
+        expect(p.quotaBytes).toBe(FREE_QUOTA);
+        expect(p.stripeCustomerId).toBe('cus_1');
     });
 
-    it('存在しない uid は無視 (レコードを作らない)', async () => {
+    it('uid レコードが無ければ false を返し plan: も書かない (退会レース検知)', async () => {
         const KV = makeKV({});
-        await setPlan(env(KV), 'nope', 'plus', {});
-        expect(await KV.get('uid:nope', 'json')).toBeNull();
+        const ok = await setPlan(env(KV), 'nope', 'plus', {});
+        expect(ok).toBe(false);
+        expect(await KV.get('plan:nope', 'json')).toBeNull();
+    });
+
+    it('旧形式 (uid に plan/quota) からの遷移: plan: が無くても uid から継承して plan: を作る', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'free', quotaBytes: FREE_QUOTA, usedBytes: 7 } });
+        await setPlan(env(KV), 'u1', 'plus', { stripeCustomerId: 'cus_1' });
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.plan).toBe('plus');
+        expect(p.quotaBytes).toBe(PLUS_QUOTA);
+    });
+});
+
+describe('getPlan / getUsed の遅延フォールバック', () => {
+    it('plan:/usage: が無い旧形式は uid レコードの plan/quota/usedBytes にフォールバック', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'plus', quotaBytes: PLUS_QUOTA, usedBytes: 42 } });
+        const p = await getPlan(env(KV), 'u1');
+        expect(p.plan).toBe('plus');
+        expect(p.quotaBytes).toBe(PLUS_QUOTA);
+        expect(await getUsed(env(KV), 'u1')).toBe(42);
+    });
+
+    it('plan:/usage: があればそれを優先 (uid の旧フィールドは無視)', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'free', quotaBytes: FREE_QUOTA, usedBytes: 1 }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA }, 'usage:u1': '999' });
+        expect((await getPlan(env(KV), 'u1')).plan).toBe('plus');
+        expect(await getUsed(env(KV), 'u1')).toBe(999);
     });
 });
 
 describe('applyStripeEvent', () => {
     it('checkout.session.completed で Plus 化し customer→uid 逆引きを張る', async () => {
-        const KV = makeKV({ 'uid:u1': { siteId: 's1', plan: 'free', quotaBytes: FREE_QUOTA, usedBytes: 0 } });
-        await applyStripeEvent({
-            type: 'checkout.session.completed',
-            data: { object: { client_reference_id: 'u1', customer: 'cus_1', subscription: 'sub_1' } }
-        }, env(KV));
-        const rec = await KV.get('uid:u1', 'json');
-        expect(rec.plan).toBe('plus');
-        expect(rec.quotaBytes).toBe(PLUS_QUOTA);
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
+        await applyStripeEvent({ type: 'checkout.session.completed', data: { object: { client_reference_id: 'u1', customer: 'cus_1', subscription: 'sub_1' } } }, env(KV));
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.plan).toBe('plus');
+        expect(p.quotaBytes).toBe(PLUS_QUOTA);
         expect(await KV.get('stripe:cus_1')).toBe('u1');
     });
 
     it('client_reference_id が無ければ何もしない', async () => {
-        const KV = makeKV({ 'uid:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
         await applyStripeEvent({ type: 'checkout.session.completed', data: { object: { customer: 'cus_1' } } }, env(KV));
-        expect((await KV.get('uid:u1', 'json')).plan).toBe('free');
+        expect((await KV.get('plan:u1', 'json')).plan).toBe('free');
+    });
+
+    it('checkout で uid レコードが無ければ throw (Stripe にリトライさせる)・orphan 逆引きを張らない', async () => {
+        const KV = makeKV({}); // uid:u1 無し (退会済み等)
+        await expect(applyStripeEvent({ type: 'checkout.session.completed', data: { object: { client_reference_id: 'u1', customer: 'cus_1' } } }, env(KV))).rejects.toThrow();
+        expect(await KV.get('stripe:cus_1')).toBeNull();
     });
 
     it('customer.subscription.deleted で Free に戻す (customer 逆引き経由)', async () => {
-        const KV = makeKV({
-            'uid:u1': { siteId: 's1', plan: 'plus', quotaBytes: PLUS_QUOTA, usedBytes: 0, stripeCustomerId: 'cus_1' },
-            'stripe:cus_1': 'u1'
-        });
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1' }, 'stripe:cus_1': 'u1' });
         await applyStripeEvent({ type: 'customer.subscription.deleted', data: { object: { customer: 'cus_1', status: 'canceled' } } }, env(KV));
-        const rec = await KV.get('uid:u1', 'json');
-        expect(rec.plan).toBe('free');
-        expect(rec.quotaBytes).toBe(FREE_QUOTA);
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.plan).toBe('free');
+        expect(p.quotaBytes).toBe(FREE_QUOTA);
     });
 
-    it('subscription.updated は終了ステータスのときだけ降格 (active は維持)', async () => {
-        const KV = makeKV({
-            'uid:u1': { siteId: 's1', plan: 'plus', quotaBytes: PLUS_QUOTA, usedBytes: 0 },
-            'stripe:cus_1': 'u1'
-        });
-        await applyStripeEvent({ type: 'customer.subscription.updated', data: { object: { customer: 'cus_1', status: 'active' } } }, env(KV));
-        expect((await KV.get('uid:u1', 'json')).plan).toBe('plus');
+    it('subscription.updated は active 復帰で Plus に戻し・終了ステータスで Free に落とす', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA }, 'stripe:cus_1': 'u1' });
+        // unpaid で一度 Free (既に free・no-op)
+        await applyStripeEvent({ type: 'customer.subscription.updated', data: { object: { customer: 'cus_1', status: 'unpaid' } } }, env(KV));
+        expect((await KV.get('plan:u1', 'json')).plan).toBe('free');
+        // カード更新で active 復帰 → Plus に戻す
+        await applyStripeEvent({ type: 'customer.subscription.updated', data: { object: { customer: 'cus_1', status: 'active', id: 'sub_9' } } }, env(KV));
+        expect((await KV.get('plan:u1', 'json')).plan).toBe('plus');
+        // 解約 → Free
         await applyStripeEvent({ type: 'customer.subscription.updated', data: { object: { customer: 'cus_1', status: 'canceled' } } }, env(KV));
-        expect((await KV.get('uid:u1', 'json')).plan).toBe('free');
+        expect((await KV.get('plan:u1', 'json')).plan).toBe('free');
     });
 
     it('未知のイベントは無視', async () => {
-        const KV = makeKV({ 'uid:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
         await applyStripeEvent({ type: 'invoice.created', data: { object: {} } }, env(KV));
-        expect((await KV.get('uid:u1', 'json')).plan).toBe('free');
+        expect((await KV.get('plan:u1', 'json')).plan).toBe('free');
     });
 });
 

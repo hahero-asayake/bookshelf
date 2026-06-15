@@ -545,7 +545,7 @@
 
                         <div id="publish-affiliate" class="publish-target-config" hidden>
                             <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
-                            <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false">
+                            <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
                             <small class="publish-config-hint">設定すると、公開ページの商品リンクがあなたの収益になります。<strong>空にすると広告（アフィリエイトリンク）を付けません</strong>。<br>自分の GitHub Pages 公開ではプランを問わず使えます。ハブ公開は Plus 限定で、無料プランは運営（hahero）のタグが付きます。</small>
                         </div>
                     </div>
