@@ -150,8 +150,6 @@ wrangler deploy -c wrangler.hub.toml
    → アカウント全体に波及: `hahero-asayake.github.io/bookshelf` → **`asayake.org/bookshelf`** (パス維持)。github.io は 301 で `asayake.org` にリダイレクト。
 2. **DNS** (`asayake.org` ゾーン): apex の A レコードを **GitHub Pages の IP** (`185.199.108–111.153`) に。**GitHub に TLS を取らせるため DNS-only (グレー雲)** にする (proxied だと Pages の Let's Encrypt が詰まる)。`www` も CNAME → `hahero-asayake.github.io` (任意)。
 3. **OAuth オリジンを追加** (アプリが `asayake.org` origin で動くため。消さず追加):
-   - **Google Drive** (GIS): 承認済み JS オリジンに `https://asayake.org`
-   - **Dropbox**: Redirect URI に `https://asayake.org/bookshelf/` (完全一致登録、ADR-027)
    - **ハブ** (Google OIDC): JS オリジンに `https://asayake.org`
    - **GitHub** (Device Flow): 変更不要 (origin 非依存)
 4. **Worker `APP_ORIGIN`**: 既に `https://hahero-asayake.github.io,https://asayake.org` を許可済 (移行中も両対応)。

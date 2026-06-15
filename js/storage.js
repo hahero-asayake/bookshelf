@@ -2,7 +2,7 @@
 //
 // I/O は StorageAdapter に委譲する。デフォルトでは LocalFSAdapter
 // (File System Access API) を使用するが、コンストラクタで他の adapter
-// (GitHub / Google Drive / Dropbox) を注入することで切替可能。
+// (GitHub / Asayake ハブ) を注入することで切替可能。
 //
 // ディレクトリ構造 (2026-05-31〜):
 //   <同期フォルダ root>/

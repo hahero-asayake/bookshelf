@@ -1,6 +1,6 @@
 // HubStorageAdapter - Asayake ハブ (hahero 運営) への平文私的同期 (ADR-032, 09 §10.5)
 //
-// 5 つ目の StorageAdapter 実装。GitHub/Drive/Dropbox と同様に path ベース I/O を提供し、
+// StorageAdapter 実装 (Local / GitHub に次ぐ 3 つ目)。GitHub と同様に path ベース I/O を提供し、
 // 既存の同期パイプライン (saveUserData / syncToObsidianFolder / 衝突処理) にそのまま乗る。
 //
 // バックエンドは Cloudflare Worker + R2 (別紙 09 §10)。アダプタは uid を知らず、

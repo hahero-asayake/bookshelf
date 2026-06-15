@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061515">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061601">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -309,8 +309,6 @@
                         <select id="sync-method-select">
                             <option value="local">この端末のフォルダに保存</option>
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
-                            <option value="google-drive">Google Drive に保存（複数の端末で同期できます）</option>
-                            <option value="dropbox">Dropbox に保存（複数の端末で同期できます）</option>
                             <option value="hub">Asayake ハブに保存（Google ログインだけ・無料 100MB / Plus 3GB）</option>
                         </select>
                         <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
@@ -410,66 +408,6 @@
                                     <button id="github-reload-repos-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>一覧を更新</button>
                                     <button id="github-save-repo-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
                                     <span id="github-status" class="path-status"></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="sync-config-google-drive" class="sync-config-panel" hidden>
-                        <div class="path-card">
-                            <div class="path-card-header">
-                                <span class="path-card-icon" data-icon="hard-drive" data-icon-size="16"></span>
-                                <span class="path-card-label">Google Drive に保存</span>
-                                <span class="path-card-hint">Google で承認するだけ（パスワードやトークンの入力は不要）。bookshelf-data フォルダに保存します</span>
-                            </div>
-
-                            <div id="gdrive-auth-disconnected" class="path-card-body">
-                                <p class="github-auth-msg">Google アカウントと接続します。<br>「接続」を押すと Google の承認画面が開きます。</p>
-                                <button id="gdrive-connect-btn" class="btn btn-primary"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>Google Drive に接続</button>
-                            </div>
-
-                            <div id="gdrive-auth-connected" class="path-card-body" hidden>
-                                <p class="github-auth-connected-msg">
-                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="gdrive-connected-email">(unknown)</strong> として接続中
-                                    <button id="gdrive-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
-                                </p>
-                                <div class="path-card-footer">
-                                    <button id="gdrive-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
-                                    <span id="gdrive-status" class="path-status"></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="sync-config-dropbox" class="sync-config-panel" hidden>
-                        <div class="path-card">
-                            <div class="path-card-header">
-                                <span class="path-card-icon" data-icon="box" data-icon-size="16"></span>
-                                <span class="path-card-label">Dropbox に保存</span>
-                                <span class="path-card-hint">Dropbox で承認するだけ（パスワードやトークンの入力は不要）。アプリ/asayake-bookshelf フォルダに保存します</span>
-                            </div>
-
-                            <div id="dropbox-auth-disconnected" class="path-card-body">
-                                <p class="github-auth-msg">Dropbox アカウントと接続します。<br>「接続」を押すと Dropbox の承認画面へ移動します。</p>
-                                <button id="dropbox-connect-btn" class="btn btn-primary"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>Dropbox に接続</button>
-                                <details class="dropbox-redirect-hint">
-                                    <summary><span class="h-icon" data-icon="alert-triangle" data-icon-size="13"></span>「Invalid redirect_uri」と出るとき</summary>
-                                    <p>Dropbox App Console の <strong>Settings → OAuth 2 → Redirect URIs</strong> に、次の URL を<strong>そのまま（末尾スラッシュ含め）</strong>追加してから接続してください。</p>
-                                    <div class="dropbox-redirect-row">
-                                        <code id="dropbox-redirect-uri">(読み込み中)</code>
-                                        <button id="dropbox-copy-redirect" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="clipboard" data-icon-size="13"></span>コピー</button>
-                                    </div>
-                                </details>
-                            </div>
-
-                            <div id="dropbox-auth-connected" class="path-card-body" hidden>
-                                <p class="github-auth-connected-msg">
-                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="dropbox-connected-email">(unknown)</strong> として接続中
-                                    <button id="dropbox-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
-                                </p>
-                                <div class="path-card-footer">
-                                    <button id="dropbox-use-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う</button>
-                                    <span id="dropbox-status" class="path-status"></span>
                                 </div>
                             </div>
                         </div>
@@ -1068,18 +1006,14 @@
 
     <script src="js/icons.js?v=2026061002"></script>
     <script src="js/ui-feedback.js?v=2026061506"></script>
-    <script src="js/storage-adapter.js?v=2026061002"></script>
+    <script src="js/storage-adapter.js?v=2026061601"></script>
     <script src="js/local-fs-adapter.js?v=2026061002"></script>
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
-    <script src="js/gdrive-adapter.js?v=2026061301"></script>
-    <script src="js/gdrive-auth.js?v=2026061301"></script>
-    <script src="js/dropbox-adapter.js?v=2026061301"></script>
-    <script src="js/dropbox-auth.js?v=2026061301"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
-    <script src="js/sync-config.js?v=2026061501"></script>
+    <script src="js/sync-config.js?v=2026061601"></script>
     <script src="js/hub-auth.js?v=2026061501"></script>
-    <script src="js/storage.js?v=2026061508"></script>
+    <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
     <script src="js/publish-page-store.js?v=2026061508"></script>
@@ -1091,7 +1025,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061515"></script>
+    <script src="js/bookshelf.js?v=2026061601"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

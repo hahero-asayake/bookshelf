@@ -148,17 +148,6 @@ class VirtualBookshelf {
 
     async init() {
         try {
-            // Dropbox OAuth リダイレクト復帰 (?code=) を最優先で処理。
-            // 交換できたら config に method=dropbox + token が入るのでリロードして反映する。
-            if (typeof DropboxAuth !== 'undefined' && location.search.includes('code=')) {
-                try {
-                    const exchanged = await DropboxAuth.handleRedirect();
-                    if (exchanged) { location.reload(); return; }
-                } catch (e) {
-                    console.error('Dropbox リダイレクト処理に失敗:', e);
-                    if (typeof toast === 'function') toast('Dropbox の接続に失敗しました。もう一度お試しください。', { type: 'error' });
-                }
-            }
             await this.loadData();
             this.setupEventListeners();
             this._initHeaderTemplates();
@@ -178,7 +167,7 @@ class VirtualBookshelf {
             this._renderSidebarTree();
 
 
-            // 同期 (LocalFS / GitHub / Drive・Dropbox)
+            // 同期 (LocalFS / GitHub / Asayake ハブ)
             await this.initSync();
             // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
             // 重要な同期は flushSync() を明示的に呼ぶ運用とする
@@ -2391,9 +2380,9 @@ class VirtualBookshelf {
         }
     }
 
-    /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub=adapter 接続済み) */
+    /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub・ハブ=adapter 接続済み) */
     _isSyncReady() {
-        if (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox' || this.syncMethod === 'hub') {
+        if (this.syncMethod === 'github' || this.syncMethod === 'hub') {
             return this.storage && this.storage.adapter && this.storage.adapter.isConnected && this.storage.adapter.isConnected();
         }
         return !!this.obsidianDirHandle;
@@ -2487,10 +2476,6 @@ class VirtualBookshelf {
     async initSync() {
         if (this.syncMethod === 'github') {
             await this.initGitHubSync();
-        } else if (this.syncMethod === 'google-drive') {
-            await this.initCloudSync('google-drive');
-        } else if (this.syncMethod === 'dropbox') {
-            await this.initCloudSync('dropbox');
         } else if (this.syncMethod === 'hub') {
             await this.initCloudSync('hub');
         } else {
@@ -2498,20 +2483,15 @@ class VirtualBookshelf {
         }
     }
 
-    // クラウド同期の汎用初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)。Drive / Dropbox / ハブ 共用
+    // クラウド同期の初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)。現状は Asayake ハブ専用。
     async initCloudSync(method) {
         const adapter = this.storage.adapter;
-        const expected = method === 'google-drive' ? GoogleDriveAdapter
-            : method === 'hub' ? HubStorageAdapter
-            : DropboxAdapter;
-        if (!(adapter instanceof expected)) {
+        if (!(adapter instanceof HubStorageAdapter)) {
             console.warn(`initCloudSync(${method}): adapter type mismatch`);
             return;
         }
-        const label = method === 'google-drive' ? 'Google Drive (bookshelf-data)'
-            : method === 'hub' ? 'Asayake ハブ' : 'Dropbox';
-        const authErrCode = method === 'google-drive' ? 'GDRIVE_AUTH_FAILED' : 'DROPBOX_AUTH_FAILED';
-        const svc = method === 'google-drive' ? 'Google Drive' : method === 'hub' ? 'Asayake ハブ' : 'Dropbox';
+        const label = 'Asayake ハブ';
+        const svc = 'Asayake ハブ';
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -2537,7 +2517,7 @@ class VirtualBookshelf {
             console.error(`initCloudSync(${method}):`, e);
             this.updateSyncStatus('reconnect', label);
             this._syncError = true;
-            const isAuthErr = (e.message === authErrCode) || (e && e.name === 'HubAuthError');
+            const isAuthErr = (e && e.name === 'HubAuthError');
             this._syncErrorMsg = isAuthErr
                 ? `${svc} の認証が切れました。設定から再接続してください。`
                 : `${svc} からの読み込みに失敗しました。`;
@@ -2657,16 +2637,12 @@ class VirtualBookshelf {
         const selector = document.getElementById('sync-method-select');
         const localPanel = document.getElementById('sync-config-local');
         const githubPanel = document.getElementById('sync-config-github');
-        const gdrivePanel = document.getElementById('sync-config-google-drive');
         if (!selector || !localPanel || !githubPanel) return;
 
-        const dropboxPanel = document.getElementById('sync-config-dropbox');
         const hubPanel = document.getElementById('sync-config-hub');
         const showPanel = (method) => {
             localPanel.hidden = (method !== 'local');
             githubPanel.hidden = (method !== 'github');
-            if (gdrivePanel) gdrivePanel.hidden = (method !== 'google-drive');
-            if (dropboxPanel) dropboxPanel.hidden = (method !== 'dropbox');
             if (hubPanel) hubPanel.hidden = (method !== 'hub');
             // ハブを表示する時だけ Google ログインボタンを遅延描画 (外部 GIS 読込)
             if (method === 'hub') this._ensureHubSignInButton();
@@ -2677,10 +2653,6 @@ class VirtualBookshelf {
         showPanel(selector.value);
 
         this._renderGitHubAuthState();
-        this._renderGoogleDriveAuthState();
-        this._setupGoogleDriveUI();
-        this._renderDropboxAuthState();
-        this._setupDropboxUI();
         this._renderHubAuthState();
         this._setupHubUI();
 
@@ -3291,143 +3263,6 @@ class VirtualBookshelf {
                 login: null
             };
         }
-        SyncConfigManager.save(merged);
-        location.reload();
-    }
-
-    // ===== Google Drive 接続 UI (T07) =====
-
-    _renderGoogleDriveAuthState() {
-        const disc = document.getElementById('gdrive-auth-disconnected');
-        const conn = document.getElementById('gdrive-auth-connected');
-        if (!disc || !conn) return;
-        const gd = (SyncConfigManager.load().googleDrive) || {};
-        const connected = !!gd.rootFolderId;
-        disc.hidden = connected;
-        conn.hidden = !connected;
-        if (connected) {
-            const emailEl = document.getElementById('gdrive-connected-email');
-            if (emailEl) emailEl.textContent = gd.email || '(接続済み)';
-        }
-    }
-
-    _setupGoogleDriveUI() {
-        if (this._gdriveUIBound) return;
-        this._gdriveUIBound = true;
-        const connectBtn = document.getElementById('gdrive-connect-btn');
-        if (connectBtn) connectBtn.addEventListener('click', () => this._connectGoogleDrive());
-        const disconnectBtn = document.getElementById('gdrive-disconnect-btn');
-        if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectGoogleDrive());
-        const useBtn = document.getElementById('gdrive-use-btn');
-        if (useBtn) useBtn.addEventListener('click', () => this._useGoogleDrive());
-    }
-
-    async _connectGoogleDrive() {
-        const status = document.getElementById('gdrive-status');
-        try {
-            if (status) status.textContent = '接続中...';
-            const { email } = await GoogleDriveAuth.connect();
-            this._renderGoogleDriveAuthState();
-            toast(`Google Drive に接続しました${email ? ` (${email})` : ''}。`, { type: 'success' });
-            if (status) status.textContent = '';
-        } catch (e) {
-            console.error('Google Drive 接続エラー:', e);
-            if (status) status.textContent = '';
-            toast('Google Drive への接続に失敗しました。もう一度お試しください。', { type: 'error' });
-        }
-    }
-
-    _disconnectGoogleDrive() {
-        const merged = SyncConfigManager.load();
-        GoogleDriveAuth.disconnect();
-        const after = SyncConfigManager.load();
-        after.googleDrive = { ...(after.googleDrive || {}), rootFolderId: '', email: null };
-        if (merged.method === 'google-drive') after.method = 'local';
-        SyncConfigManager.save(after);
-        location.reload();
-    }
-
-    _useGoogleDrive() {
-        const gd = (SyncConfigManager.load().googleDrive) || {};
-        if (!gd.rootFolderId) {
-            toast('先に Google Drive に接続してください。', { type: 'warn' });
-            return;
-        }
-        const merged = SyncConfigManager.load();
-        merged.method = 'google-drive';
-        SyncConfigManager.save(merged);
-        location.reload();
-    }
-
-    // ===== Dropbox 接続 UI (T08) =====
-
-    _renderDropboxAuthState() {
-        const disc = document.getElementById('dropbox-auth-disconnected');
-        const conn = document.getElementById('dropbox-auth-connected');
-        if (!disc || !conn) return;
-        const db = (SyncConfigManager.load().dropbox) || {};
-        const connected = !!db.refreshToken;
-        disc.hidden = connected;
-        conn.hidden = !connected;
-        if (connected) {
-            const emailEl = document.getElementById('dropbox-connected-email');
-            if (emailEl) emailEl.textContent = db.email || '(接続済み)';
-        }
-    }
-
-    _setupDropboxUI() {
-        if (this._dropboxUIBound) return;
-        this._dropboxUIBound = true;
-        const connectBtn = document.getElementById('dropbox-connect-btn');
-        if (connectBtn) connectBtn.addEventListener('click', () => this._connectDropbox());
-        const disconnectBtn = document.getElementById('dropbox-disconnect-btn');
-        if (disconnectBtn) disconnectBtn.addEventListener('click', () => this._disconnectDropbox());
-        const useBtn = document.getElementById('dropbox-use-btn');
-        if (useBtn) useBtn.addEventListener('click', () => this._useDropbox());
-
-        // Dropbox App Console に登録すべき Redirect URI を表示 (DropboxAuth._redirectUri と一致)
-        const redirectEl = document.getElementById('dropbox-redirect-uri');
-        const redirectUri = location.origin + location.pathname;
-        if (redirectEl) redirectEl.textContent = redirectUri;
-        const copyBtn = document.getElementById('dropbox-copy-redirect');
-        if (copyBtn) copyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(redirectUri);
-                toast('Redirect URI をコピーしました', { type: 'success' });
-            } catch (_) {
-                toast('コピーできませんでした。手動で選択してコピーしてください。', { type: 'warn' });
-            }
-        });
-    }
-
-    async _connectDropbox() {
-        try {
-            await DropboxAuth.startConnect(); // 認可ページへ遷移 (復帰時に handleRedirect で交換)
-        } catch (e) {
-            console.error('Dropbox 接続エラー:', e);
-            toast('Dropbox への接続を開始できませんでした。', { type: 'error' });
-        }
-    }
-
-    async _disconnectDropbox() {
-        const wasMethod = SyncConfigManager.load().method;
-        await DropboxAuth.disconnect();
-        if (wasMethod === 'dropbox') {
-            const after = SyncConfigManager.load();
-            after.method = 'local';
-            SyncConfigManager.save(after);
-        }
-        location.reload();
-    }
-
-    _useDropbox() {
-        const db = (SyncConfigManager.load().dropbox) || {};
-        if (!db.refreshToken) {
-            toast('先に Dropbox に接続してください。', { type: 'warn' });
-            return;
-        }
-        const merged = SyncConfigManager.load();
-        merged.method = 'dropbox';
         SyncConfigManager.save(merged);
         location.reload();
     }
@@ -4387,12 +4222,6 @@ class VirtualBookshelf {
             const a = this.storage && this.storage.adapter;
             if (a && a.owner && a.repo) return `${a.owner}/${a.repo}@${a.branch}`;
             return 'GitHub';
-        }
-        if (this.syncMethod === 'google-drive') {
-            return 'Google Drive';
-        }
-        if (this.syncMethod === 'dropbox') {
-            return 'Dropbox';
         }
         if (this.syncMethod === 'hub') {
             return 'Asayake ハブ';
@@ -7563,8 +7392,8 @@ class VirtualBookshelf {
 
         const settings = this.userData.settings || (this.userData.settings = {});
         const requestedOpenWith = settings.bookMemoOpenWith || 'app-editor';
-        // クラウド同期 (GitHub / Drive / Dropbox / ハブ) では外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
-        const isCloud = (this.syncMethod === 'github' || this.syncMethod === 'google-drive' || this.syncMethod === 'dropbox' || this.syncMethod === 'hub');
+        // クラウド同期 (GitHub / ハブ) では外部リンクは動かない (ローカルファイル不在のため強制 app-editor)
+        const isCloud = (this.syncMethod === 'github' || this.syncMethod === 'hub');
         const openWith = isCloud ? 'app-editor' : requestedOpenWith;
 
         // アプリ内エディタ: モーダルを開き、雛形は EasyMDE 側で扱う (空時は buildBookMemoTemplate)

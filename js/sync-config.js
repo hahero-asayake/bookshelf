@@ -6,14 +6,13 @@
 //
 // 設定形式:
 //   {
-//     method: 'local' | 'github' | 'google-drive' | 'dropbox',
+//     method: 'local' | 'github' | 'hub',
 //     github: { owner, repo, branch, basePath, token, login,
 //               refreshToken,           // ghr_… (約6ヶ月有効・refresh ごとにローテーション)
 //               tokenExpiresAt,         // access_token の失効時刻 (絶対時刻 ms)
 //               refreshTokenExpiresAt   // refresh_token の失効時刻 (絶対時刻 ms)
 //             },
-//     googleDrive: { ... },
-//     dropbox: { ... }
+//     hub: { ... }
 //   }
 //   refresh 系フィールドは旧接続には無い (後方互換: 無ければ refresh せず 401 時に再接続誘導)
 //
@@ -49,8 +48,6 @@ class SyncConfigManager {
         return {
             method: 'local',
             github: { owner: '', repo: '', branch: 'main', basePath: '', token: '' },
-            googleDrive: { token: '', tokenExpiresAt: null, rootFolderId: '', email: null },
-            dropbox: { token: '', refreshToken: '', tokenExpiresAt: null, email: null },
             // Asayake ハブ (hahero 運営・平文私的同期 + 共有公開, ADR-032/033)。
             // key=ハブ公開キー hk_ / siteId=公開サイト ID / plan=free|plus / quota・used はバイト (使用量バー用キャッシュ)
             hub: { apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
@@ -73,10 +70,6 @@ class SyncConfigManager {
         switch (config.method) {
             case 'github':
                 return SyncConfigManager._buildGitHub(config.github);
-            case 'google-drive':
-                return SyncConfigManager._buildGoogleDrive(config.googleDrive);
-            case 'dropbox':
-                return SyncConfigManager._buildDropbox(config.dropbox);
             case 'hub':
                 return SyncConfigManager._buildHub(config.hub);
             case 'local':
@@ -95,25 +88,6 @@ class SyncConfigManager {
             branch: github.branch || 'main',
             basePath: github.basePath || '',
             token: github.token
-        });
-    }
-
-    static _buildGoogleDrive(googleDrive) {
-        if (!googleDrive || !googleDrive.rootFolderId) {
-            return null; // 未接続 → 呼び出し側で local フォールバック
-        }
-        return new GoogleDriveAdapter({
-            rootFolderId: googleDrive.rootFolderId,
-            getToken: (opts) => GoogleDriveAuth.ensureToken(opts)
-        });
-    }
-
-    static _buildDropbox(dropbox) {
-        if (!dropbox || !dropbox.refreshToken) {
-            return null; // 未接続 → 呼び出し側で local フォールバック
-        }
-        return new DropboxAdapter({
-            getToken: (opts) => DropboxAuth.ensureToken(opts)
         });
     }
 

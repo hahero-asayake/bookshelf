@@ -3946,33 +3946,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 }
 .publish-target-config[hidden] { display: none; }
 
-.dropbox-redirect-hint {
-    margin-top: 0.6rem;
-    font-size: 0.8rem;
-    line-height: 1.5;
-}
-.dropbox-redirect-hint summary {
-    cursor: pointer;
-    color: var(--warning);
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-}
-.dropbox-redirect-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    margin-top: 0.4rem;
-    flex-wrap: wrap;
-}
-.dropbox-redirect-row code {
-    background: var(--bg2);
-    padding: 0.2rem 0.45rem;
-    border-radius: 4px;
-    word-break: break-all;
-    font-size: 0.78rem;
-}
-
 /* ===== 公開ページ管理モーダル (P1 静的SSG, ADR-030) ===== */
 .publish-pages-content { max-width: 680px; width: 94vw; }
 /* 本文 (一覧/編集) は .modal-body を使わない直下要素。ヘッダー左 (2rem) と揃え、

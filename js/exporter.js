@@ -102,7 +102,7 @@ class BookshelfExporter {
             throw new Error('公開先リポジトリが未設定です。設定の「同期 / 公開」で、公開用の GitHub リポジトリ（必ず public リポジトリ）を選んでください。');
         }
         // 公開先が GitHub のときは、同期方式に関わらずトークンを最新化する (publish 専用 refresh)。
-        // 同期=Drive/Dropbox/ローカルでも『公開だけ GitHub』構成があり、失効トークンで 401 になるのを防ぐ。
+        // 同期=ハブ/ローカルでも『公開だけ GitHub』構成があり、失効トークンで 401 になるのを防ぐ。
         if (typeof this.app._ensureFreshGitHubToken === 'function') {
             try { await this.app._ensureFreshGitHubToken({ forPublish: true }); } catch (_) {}
             pub.token = (SyncConfigManager.load().github || {}).token || pub.token;

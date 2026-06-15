@@ -1,6 +1,6 @@
 // StorageAdapter - 同期ストレージの抽象基底クラス
 //
-// bookshelf は同期方式を切り替えられる (Local FS / GitHub / Google Drive / Dropbox)。
+// bookshelf は同期方式を切り替えられる (Local FS / GitHub / Asayake ハブ)。
 // この基底クラスは「path 文字列ベースの最小 I/O インタフェース」を定義する。
 // 具象クラスは継承して各 API を実装する。
 //
