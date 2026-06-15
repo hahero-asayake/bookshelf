@@ -17,12 +17,12 @@ const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/;
 // shows を宣言しないスタイル (将来のプラグイン等) のための保険として全項目 ON を既定にする。
 const ALL_FIELDS_ON = { rating: true, memo: true, detailMemo: true, cover: true, author: true, amazon: true };
 
-// hahero (運営) の Amazon アソシエイト tag (ADR-033)。Free プランの公開ページに付く。
-// ⚠️ 実 tag は未確定 (一次確認 TODO)。REPLACE_ のままの間は無印リンク (誤った tag への送客を防ぐ)。
-const HAHERO_AFFILIATE_TAG = 'asayake09-22';
-function operatorAffiliateTag() {
-    return HAHERO_AFFILIATE_TAG.startsWith('REPLACE') ? '' : HAHERO_AFFILIATE_TAG;
-}
+// アフィリエイトのリンク方式 (ADR-033 / ADR-034追補):
+//   github (自前の GitHub Pages) … ユーザ自身の tag を直接焼き込む。運営タグは一切入れない。空なら無印。
+//   hub    (運営ホスト)          … タグを焼き込まず、Worker の /go/<siteId>/<asin> リダイレクタ経由にする。
+//          クリック時に Worker が現在のプラン/タグ (Free=運営 env / Plus=本人) を解決して 302 する。
+//          → Plus→Free 降格でも再公開不要で運営タグへ即切替でき、静的キャッシュとも両立する。
+//          運営タグの正本は Worker env (OPERATOR_AFFILIATE_TAG) で一元管理し、生成側は持たない。
 
 class PublishGenerator {
     constructor(app, styleRegistry) {
@@ -65,9 +65,13 @@ class PublishGenerator {
         return s;
     }
 
-    _amazonUrl(asin, affiliateId) {
-        let url = `https://www.amazon.co.jp/dp/${encodeURIComponent(asin)}`;
-        if (affiliateId) url += `?tag=${encodeURIComponent(affiliateId)}`;
+    // linkOpts: { goBase } なら hub の /go リダイレクタ経由、{ tag } なら自前タグを焼き込む
+    _amazonUrl(asin, linkOpts) {
+        const a = encodeURIComponent(asin);
+        if (linkOpts && linkOpts.goBase) return `${linkOpts.goBase}/${a}`;
+        let url = `https://www.amazon.co.jp/dp/${a}`;
+        const tag = linkOpts && linkOpts.tag;
+        if (tag) url += `?tag=${encodeURIComponent(tag)}`;
         return url;
     }
 
@@ -92,7 +96,7 @@ class PublishGenerator {
 
     // ===== データ解決 =====
 
-    _resolveBook(asin, libMap, state, fields, shelfInternalId, affiliateId) {
+    _resolveBook(asin, libMap, state, fields, shelfInternalId, linkOpts) {
         const lib = libMap.get(asin);
         if (!lib) return null;
         const effAsin = lib.updatedAsin || lib.asin;
@@ -110,7 +114,7 @@ class PublishGenerator {
             memo,
             detailMemo: '', // 後で async 解決
             _needsDetail: !!(fields.detailMemo && allNote.hasDetailMemo && !allNote.hideDetailMemo),
-            amazonUrl: this._amazonUrl(effAsin, affiliateId)
+            amazonUrl: this._amazonUrl(effAsin, linkOpts)
         };
     }
 
@@ -129,7 +133,8 @@ class PublishGenerator {
 
     // ページ 1 つを解決 → ctx を返す (detailMemo は別 pass で埋める asin リストも返す)
     // fields は呼び出し側がスタイルの declare().shows から渡す (公開項目はスタイル固定)。
-    _resolvePage(page, state, libMap, affiliateId, fields) {
+    // linkOpts は Amazon リンク方式 (github=タグ焼き込み / hub=/go 経由)。
+    _resolvePage(page, state, libMap, linkOpts, fields) {
         const metas = state.bookshelvesMeta.bookshelves || [];
         // 本棚参照は slug でも internalId でも引けるようにする (UI は slug、保存メタは両方持つ)
         const metaByKey = new Map();
@@ -143,7 +148,7 @@ class PublishGenerator {
             const meta = metaByKey.get(key);
             if (!meta) continue;
             const asins = this._shelfBooks(meta, state);
-            const books = asins.map(a => this._resolveBook(a, libMap, state, fields, meta.internalId, affiliateId)).filter(Boolean);
+            const books = asins.map(a => this._resolveBook(a, libMap, state, fields, meta.internalId, linkOpts)).filter(Boolean);
             shelves.push({
                 meta: { name: meta.name, slug: meta.slug, description: meta.description || '', internalId: meta.internalId },
                 books
@@ -151,7 +156,7 @@ class PublishGenerator {
         }
 
         const books = (page.select.books || [])
-            .map(a => this._resolveBook(a, libMap, state, fields, null, affiliateId))
+            .map(a => this._resolveBook(a, libMap, state, fields, null, linkOpts))
             .filter(Boolean);
 
         return { fields, shelves, books };
@@ -301,26 +306,29 @@ ${head}
         }
         if (!publisher) publisher = 'マイ本棚';
 
-        // アフィリエイト tag の出し分け (ADR-033 / ADR-034追補):
-        //   公開先 github (= 自前の GitHub Pages) … 運営タグは一切入れない。ユーザ自身の tag のみ
-        //     (プラン不問。自前サイト=完全にユーザの責任)。未設定なら広告なし。
-        //   公開先 hub (= 運営ホスト) … Plus は自分の tag (空なら広告なし)、Free は hahero (運営) の tag。
-        // プランは hub 設定 (SyncConfigManager) の plan を正本とする。未接続/テストでは free 扱い。
-        const target = opts.target === 'hub' ? 'hub' : 'github';
-        let plan = 'free';
-        try {
-            if (typeof SyncConfigManager !== 'undefined') plan = (SyncConfigManager.load().hub || {}).plan || 'free';
-            else if (this.app && this.app.syncConfig) plan = (this.app.syncConfig.hub || {}).plan || 'free';
-        } catch (_) {}
-        const isPlus = plan === 'plus';
-        const affiliateId = target === 'github'
-            ? (ps.affiliateId || '')                                  // 自前サイト: 自分の tag のみ (運営タグ無し)
-            : (isPlus ? (ps.affiliateId || '') : operatorAffiliateTag()); // ハブ: Plus=自分 / Free=運営
-        const hasAds = !!affiliateId; // 実際に tag が付く時だけ広告開示を出す
-        // サイトとして収益化しているか (= 1つでもアフィタグが付く)。footer の常時表明はこれで出す
-        const siteHasAffiliate = hasAds;
         // 公開先の絶対 URL (分かれば canonical / og:url に使う。不明なら付けない)
         const siteBaseUrl = String(opts.siteBaseUrl || '').replace(/\/+$/, '');
+
+        // Amazon リンク方式の決定 (ADR-033 / ADR-034追補):
+        //   github (自前の GitHub Pages) … ユーザ自身の tag を焼き込む。運営タグは一切入れない。空なら無印。
+        //   hub    (運営ホスト)          … /go/<siteId>/<asin> リダイレクタ経由。タグは Worker がクリック時に
+        //          解決する (Free=運営 env / Plus=本人)。siteId は exporter から渡る (無ければ siteBaseUrl から抽出)。
+        const target = opts.target === 'hub' ? 'hub' : 'github';
+        const ownTag = ps.affiliateId || '';
+        let siteId = '';
+        if (target === 'hub') {
+            siteId = String(opts.siteId || '').trim();
+            if (!siteId) { const m = siteBaseUrl.match(/\/public\/([^/]+)/); if (m) siteId = decodeURIComponent(m[1]); }
+        }
+        const useGo = target === 'hub' && !!siteId;
+        const linkOpts = useGo
+            ? { goBase: `/go/${encodeURIComponent(siteId)}` }    // ハブ: クリック時にタグ解決
+            : { tag: target === 'github' ? ownTag : '' };        // 自前: 自分タグ / hub だが siteId 不明なら無印
+        // サイトとして収益化しているか (footer の常時表明・各ページの広告ラベル判定の基礎):
+        //   hub … Free は運営タグが必ず付くので、/go が使えるなら常に収益化扱い (プラン非依存・降格安全)。
+        //   github … 自分のタグがある時だけ収益化。
+        const monetized = useGo ? true : (target === 'github' ? !!ownTag : false);
+        const siteHasAffiliate = monetized;
 
         const files = [];
         const built = [];
@@ -333,7 +341,7 @@ ${head}
             // 公開項目はスタイルが固定 (declare().shows)。未宣言スタイルは全項目 ON にフォールバック。
             const decl = (typeof style.declare === 'function' && style.declare()) || {};
             const fields = decl.shows || ALL_FIELDS_ON;
-            const resolved = this._resolvePage(page, state, libMap, affiliateId, fields);
+            const resolved = this._resolvePage(page, state, libMap, linkOpts, fields);
 
             // detailMemo を必要な本だけ async 読み込み
             const detailTargets = [];
@@ -360,11 +368,15 @@ ${head}
             catch (e) { errors.push(`render ${page.title}: ${e.message}`); continue; }
 
             // 広告ラベルは「ページに実際に出力された当方のアフィリンク」で判定する。スタイルの自己申告
-            // (declare().shows.amazon) には依存しない — 標準でもプラグイン製でも、当方の Amazon アソシエイト
-            // tag が出力に含まれれば必ず冒頭ラベルが付く (= 行儀の悪い/無自覚なスタイルの未開示リンクを構造的に防ぐ)。
-            // 本が 0 件なら tag も出ないので付かない (過剰開示を防ぐ)。
+            // (declare().shows.amazon) には依存しない — 標準でもプラグイン製でも、当方のアフィリンクが
+            // 出力に含まれれば必ず冒頭ラベルが付く (= 行儀の悪い/無自覚なスタイルの未開示リンクを構造的に防ぐ)。
+            //   github … 焼き込んだ tag=<ownTag> が出力に含まれるか。
+            //   hub    … /go/<siteId>/ リンクが出力に含まれるか (クリック時に必ずタグが付く想定なので開示する)。
+            // 本が 0 件ならリンクも出ないので付かない (過剰開示を防ぐ)。
             const bookCount = resolved.shelves.reduce((n, s) => n + s.books.length, 0) + resolved.books.length;
-            const pageHasAds = hasAds && (rendered.html || '').includes(`tag=${affiliateId}`);
+            const pageHasAds = useGo
+                ? (rendered.html || '').includes(`/go/${encodeURIComponent(siteId)}/`)
+                : (!!linkOpts.tag && (rendered.html || '').includes(`tag=${linkOpts.tag}`));
 
             // OGP の og:image に使う代表表紙 (本棚→本の順で最初に見つかったもの)
             let ogImage = '';
@@ -387,7 +399,8 @@ ${head}
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl }) });
 
         const leak = this._detectLeak(files, state);
-        return { files, pages: built, leak, errors };
+        // ownTag: ハブ公開時に Worker へ送り、Plus 時に /go が解決して使う本人タグ (ADR-034追補)。
+        return { files, pages: built, leak, errors, ownTag };
     }
 }
 

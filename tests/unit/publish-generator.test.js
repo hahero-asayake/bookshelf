@@ -69,15 +69,18 @@ describe('本棚セクション型', () => {
         expect(r.errors).toEqual([]);
     });
 
-    it('ハブの Free ユーザは運営 tag が付き広告ラベルが出る (自分の tag は使わない)', async () => {
-        // ハブ公開 (運営ホスト) の無料プラン → 運営 tag (asayake09-22) が付く
+    it('ハブ公開は /go リダイレクタ経由でリンクを出し、タグは焼き込まない (クリック時に Worker が解決, ADR-034追補)', async () => {
+        // ハブ公開 (運営ホスト) は /go/<siteId>/<asin> を出し、Free=運営 env / Plus=本人 を Worker が解決する。
         const page = { id: 'a', slug: 'free-page', title: 'おすすめ本', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
-        const r = await gen.build([page], { target: 'hub' });
+        const r = await gen.build([page], { target: 'hub', siteId: 'siteX' });
         const html = r.files.find(f => f.path === 'free-page/index.html').content;
         expect(html).toContain('漫画1');
-        expect(html).not.toContain('tag=aff-xyz');     // 自分の tag は使わない
-        expect(html).toContain('tag=asayake09-22');     // 運営 tag が付く
-        expect(html).toContain('class="pub-ad-top"');   // 冒頭に控えめな広告ラベルが出る
+        expect(html).toContain('/go/siteX/');           // /go リダイレクタ経由のリンク
+        expect(html).not.toContain('tag=aff-xyz');       // 本人タグは焼き込まない
+        expect(html).not.toContain('tag=asayake09-22');  // 運営タグも焼き込まない (Worker env が解決)
+        expect(html).toContain('class="pub-ad-top"');    // クリック時に必ずタグが付く想定なので開示する
+        // ハブ公開時は本人タグを Worker へ送る (Plus 時に /go が解決して使う)
+        expect(r.ownTag).toBe('aff-xyz');
         // 公開サイトでは「無料プラン/収益の帰属先」は開示不要な情報なので出さない (プラン非依存)
         expect(html).not.toContain('運営者');
         expect(html).not.toContain('無料');
@@ -138,10 +141,17 @@ describe('公開先による affiliate tag 出し分け (ADR-034追補)', () => 
         expect(html).not.toContain('class="pub-ad-top"'); // 広告が無いので開示も無し
     });
 
-    it('hub (運営ホスト): Free は運営タグ', async () => {
-        const html = (await gen.build([page()], { target: 'hub' })).files.find(f => f.path === 'p/index.html').content;
-        expect(html).toContain('tag=asayake09-22');
-        expect(html).not.toContain('tag=aff-xyz');
+    it('hub (運営ホスト): タグは焼き込まず /go 経由 (Free/Plus とも Worker が解決)', async () => {
+        const html = (await gen.build([page()], { target: 'hub', siteId: 'siteX' })).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('/go/siteX/');           // /go リダイレクタ経由
+        expect(html).not.toContain('tag=asayake09-22');  // 運営タグは焼き込まない (Worker env)
+        expect(html).not.toContain('tag=aff-xyz');       // 本人タグも焼き込まない
+    });
+
+    it('hub: siteBaseUrl からも siteId を抽出して /go を組める (siteId 明示なし)', async () => {
+        const html = (await gen.build([page()], { target: 'hub', siteBaseUrl: 'https://hub.asayake.org/public/abc123/' }))
+            .files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('/go/abc123/');
     });
 });
 

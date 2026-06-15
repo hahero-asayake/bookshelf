@@ -27,6 +27,8 @@
 //   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 100MB = Free プラン。Plus は uid レコードで個別に引き上げ)
 //   WRITE_LIMITER    (任意) ratelimit バインディング。書込 (PUT/DELETE/batch/publish) を uid/キー単位で制限
 //                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
+//   OPERATOR_AFFILIATE_TAG (任意) ハブ公開ページの Amazon アフィタグ (Free / 解決不能時)。/go が解決して使う。
+//                    空なら Free 公開は無印リンク (誤ったタグへの送客を防ぐ)。タグ正本はここで一元管理 (ADR-034追補)。
 //
 // コスト防御 (ADR-033, 収益化分析):
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
@@ -42,6 +44,9 @@ export default {
 
         // 公開配信 (認証不要・同一ホストの GET)。Cache API で R2 読取 (Class B) を間引く
         if (path.startsWith('/public/')) return serveSite(request, env, path, ctx);
+
+        // アフィリンク・リダイレクタ (認証不要・公開ページからクリックされる)。クリック時にタグを解決
+        if (path.startsWith('/go/')) return handleGo(request, env, path);
 
         // API (アプリは別 origin なので CORS 付与)
         if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
@@ -96,6 +101,39 @@ async function serveSite(request, env, pathname, ctx) {
     return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
 }
 
+// ===== アフィリンク・リダイレクタ: /go/<siteId>/<asin> → Amazon (タグ解決) =====
+// 公開ページの Amazon リンクをタグ焼き込みではなくこのリダイレクタ経由にする (ADR-034追補)。
+// クリック時に「現在の」プラン/タグを解決して 302 するため、Plus→Free 降格でも再公開不要で
+// 運営タグへ即切替でき、静的キャッシュとも両立する (タグ正本は env = ハブ側で一元管理)。
+//   Free / 解決不能 … env.OPERATOR_AFFILIATE_TAG (空なら無印)
+//   Plus            … uid レコードの affiliateTag (本人が公開時に送る。空なら無印)
+async function handleGo(request, env, pathname) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('method not allowed', { status: 405 });
+    const rest = decodeURIComponent(pathname.slice('/go/'.length));
+    const slash = rest.indexOf('/');
+    const siteId = slash < 0 ? '' : rest.slice(0, slash);
+    const asin = slash < 0 ? rest : rest.slice(slash + 1);
+    // ASIN は英数字 (10桁前後)。安全な文字種だけ許可し、オープンリダイレクトを構造的に防ぐ
+    if (!siteId || !/^[A-Za-z0-9]{8,14}$/.test(asin)) return new Response('bad path', { status: 400 });
+
+    let tag = env.OPERATOR_AFFILIATE_TAG || '';      // 既定 = 運営タグ (Free / 解決不能時)
+    const uid = await env.KV.get(`site:${siteId}`);
+    if (uid) {
+        const rec = await env.KV.get(`uid:${uid}`, 'json');
+        if (rec && rec.plan === 'plus') tag = rec.affiliateTag || '';   // Plus は本人タグ (空なら無印)
+    }
+    const dest = `https://www.amazon.co.jp/dp/${asin}` + (tag ? `?tag=${encodeURIComponent(tag)}` : '');
+    return new Response(null, {
+        status: 302,
+        headers: {
+            'Location': dest,
+            // プラン変更に追従させるためキャッシュさせない (クリックは低頻度・コスト無視可)
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer'
+        }
+    });
+}
+
 // 公開配信のセキュリティヘッダ: スクリプト無し CSP・nosniff・cookie 出さない・iframe 制限
 function serveHeaders(ct, etag) {
     const h = {
@@ -125,6 +163,8 @@ async function handleSession(request, env) {
         rec = { siteId, email, plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA, usedBytes: 0, status: 'ok' };
         await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
     }
+    // siteId → uid の逆引き (/go リダイレクタが利用)。新規/既存とも冪等に張る (既存アカウントの backfill 兼)
+    await env.KV.put(`site:${rec.siteId}`, uid);
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
     await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
     return json({
@@ -253,7 +293,7 @@ async function handleBatch(request, env) {
 async function handlePublish(request, env) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
-    const { files, deleteMissing } = await request.json().catch(() => ({}));
+    const { files, deleteMissing, affiliateTag } = await request.json().catch(() => ({}));
     if (!Array.isArray(files)) throw httpError(400, 'files required');
     const base = `sites/${sess.siteId}/`;
 
@@ -289,6 +329,16 @@ async function handlePublish(request, env) {
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (rec && (rec.usedBytes || 0) + delta > rec.quotaBytes) throw httpError(413, 'quota exceeded');
 
+    // 本人の Amazon アフィタグを記録 (/go が Plus 時に解決して使う)。文字種を制限。
+    // この put は addUsage の前に行う (addUsage が rec を読み直して usedBytes を更新するため上書きされない)。
+    if (rec && typeof affiliateTag === 'string') {
+        const t = affiliateTag.trim().slice(0, 32);
+        if (/^[A-Za-z0-9_-]*$/.test(t) && (rec.affiliateTag || '') !== t) {
+            rec.affiliateTag = t;
+            await env.KV.put(`uid:${sess.uid}`, JSON.stringify(rec));
+        }
+    }
+
     // 全 put を先に (失敗時はここで throw → delete に進まず旧ファイルを消さない)、最後に削除
     for (const p of puts) await env.BUCKET.put(p.key, p.content);
     for (const key of deletes) await env.BUCKET.delete(key);
@@ -312,7 +362,10 @@ async function handleAccountDelete(request, env) {
 
     await env.KV.delete(`uid:${sess.uid}`);
     if (key) await env.KV.delete(`key:${key}`);
-    if (sess.siteId) await env.KV.delete(`report:${sess.siteId}`);
+    if (sess.siteId) {
+        await env.KV.delete(`report:${sess.siteId}`);
+        await env.KV.delete(`site:${sess.siteId}`);   // /go の逆引きも除去 (孤立防止)
+    }
 
     return json({ ok: true, deleted: true });
 }

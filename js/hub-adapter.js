@@ -149,12 +149,15 @@ class HubStorageAdapter extends StorageAdapter {
     // ===== 公開 (共有ハブへのサイト投稿, ADR-033) =====
     // 公開ページ群を /publish に POST し、sites/<siteId>/ を今回集合で置換する。
     // 私的同期 (data/) とは別経路。deleteMissing=true で今回出力に無いファイルをサーバ側で削除。
+    // affiliateTag: 本人の Amazon アフィタグ。Worker が uid レコードに記録し、Plus 時に /go が
+    //   クリック時に解決して使う (ADR-034追補)。空文字なら送らない。
     // @returns {Promise<{ok, siteId, siteUrl, published}>}
-    async publishSite(files, deleteMissing = true) {
+    async publishSite(files, deleteMissing = true, affiliateTag = '') {
         const payload = {
             files: (files || []).map(f => ({ path: this._normalize(f.path), content: f.content || '' })),
             deleteMissing: !!deleteMissing
         };
+        if (affiliateTag) payload.affiliateTag = String(affiliateTag);
         const res = await this._fetch('POST', `${this.apiBase}/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

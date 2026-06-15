@@ -18,11 +18,11 @@ globalThis.GitHubAdapter = class {
     async commitBatch(msg) { captured.commits.push(msg); }
 };
 
-const hubCaptured = { files: null, deleteMissing: null };
+const hubCaptured = { files: null, deleteMissing: null, affiliateTag: null };
 globalThis.HubStorageAdapter = class {
     constructor(opts) { this.opts = opts; }
-    async publishSite(files, deleteMissing) {
-        hubCaptured.files = files; hubCaptured.deleteMissing = deleteMissing;
+    async publishSite(files, deleteMissing, affiliateTag) {
+        hubCaptured.files = files; hubCaptured.deleteMissing = deleteMissing; hubCaptured.affiliateTag = affiliateTag;
         return { ok: true, siteId: 'sid', siteUrl: 'https://hub.example/public/sid/', published: files.length };
     }
 };
@@ -57,7 +57,7 @@ function makeApp({ pages = [], build } = {}) {
 
 beforeEach(() => {
     captured.entries = []; captured.deletes = []; captured.commits = [];
-    hubCaptured.files = null; hubCaptured.deleteMissing = null;
+    hubCaptured.files = null; hubCaptured.deleteMissing = null; hubCaptured.affiliateTag = null;
     listThrow = false;
     mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
     listing = {
@@ -131,6 +131,20 @@ describe('共有ハブ公開 (target=hub, ADR-033)', () => {
         expect(r.siteUrl).toBe('https://hub.example/public/sid/');
         expect(r.published).toBe(1);
         expect(app._updates.some(u => u.patch.lastBuiltAt)).toBe(true);
+    });
+
+    it('build が返した ownTag を publishSite に転送する (/go の Plus 解決用, ADR-034追補)', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', siteId: 'sid' };
+        const app = makeApp({
+            pages: [{ id: 'p1', published: true }],
+            build: async (pages, opts) => ({
+                files: [{ path: 'index.html', content: 't' }], pages: [{ id: 'p1', slug: 'x' }],
+                leak: [], errors: [], ownTag: 'mytag-22', _opts: opts
+            })
+        });
+        await new BookshelfExporter(app).export();
+        expect(hubCaptured.affiliateTag).toBe('mytag-22');
     });
 
     it('ハブ未ログインなら中止', async () => {

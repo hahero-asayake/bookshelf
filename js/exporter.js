@@ -67,14 +67,18 @@ class BookshelfExporter {
         const pages = allPages.filter(p => p.published);
 
         // 公開先の絶対 URL (canonical / og:url 用)。hub=publicBase、GitHub=Pages URL。
+        // hub のときは siteId も渡す (generator が /go/<siteId>/ アフィリンクを組むのに使う, ADR-034追補)。
         let siteBaseUrl = '';
+        let siteId = '';
         if (pub.target === 'hub') {
-            siteBaseUrl = (SyncConfigManager.load().hub || {}).publicBase || '';
+            const hub = SyncConfigManager.load().hub || {};
+            siteBaseUrl = hub.publicBase || '';
+            siteId = hub.siteId || '';
         } else if (pub.owner && pub.repo) {
             siteBaseUrl = this._pagesSiteUrl(pub.owner, pub.repo);
         }
 
-        const result = await generator.build(pages, { siteBaseUrl, target: pub.target });
+        const result = await generator.build(pages, { siteBaseUrl, target: pub.target, siteId });
         if (pages.length > 0 && result.pages.length === 0) {
             throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
@@ -200,7 +204,8 @@ class BookshelfExporter {
             apiBase: hub.apiBase,
             getKey: () => (SyncConfigManager.load().hub || {}).key || ''
         });
-        const resp = await adapter.publishSite(result.files, true);
+        // ownTag を同送: Worker が uid レコードに記録し、Plus 時に /go がクリック時に解決して使う (ADR-034追補)。
+        const resp = await adapter.publishSite(result.files, true, result.ownTag || '');
         // 公開後に使用量が変わるのでキャッシュ更新 (バー反映用・失敗は黙殺)
         if (typeof HubAuth !== 'undefined') { try { await HubAuth.refreshUsage(); } catch (_) {} }
 
