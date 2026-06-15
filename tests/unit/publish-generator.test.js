@@ -242,6 +242,14 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         expect(html).toContain('name="twitter:card"');
     });
 
+    it('script を無効化する CSP meta が入る (GitHub Pages でも JS 不可, ADR-032)', async () => {
+        const html = (await gen.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
+        expect(html).toContain('http-equiv="Content-Security-Policy"');
+        expect(html).toContain("default-src 'none'"); // script を含む全既定を遮断
+        expect(html).toContain('img-src https: data:'); // 表紙(remote)・favicon(data) は許可
+        expect(html).not.toContain('script-src'); // script は default-src 'none' で自動的に不可
+    });
+
     it('siteBaseUrl を渡すと canonical / og:url が付く', async () => {
         const r = await gen.build([mkPage()], { siteBaseUrl: 'https://hub.asayake.org/public/abc/' });
         const html = r.files.find(f => f.path === 'p/index.html').content;

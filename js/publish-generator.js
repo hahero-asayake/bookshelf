@@ -185,6 +185,10 @@ class PublishGenerator {
         const head = [
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width,initial-scale=1">',
+            // 公開ページは「JS が動かない」前提で安全性が成立する (ADR-032)。ハブは Worker が CSP を付与するが
+            // GitHub Pages はヘッダを付けられないため、出力自体に CSP meta を埋めてどの公開先でも script を無効化する。
+            // 表紙(remote https)・favicon(data)・インライン style のみ許可。frame-ancestors は meta 非対応のため省略。
+            `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:; base-uri 'none'; form-action 'none'">`,
             `<title>${esc(page.title)} — ${esc(publisher)}</title>`,
             `<meta name="description" content="${esc(intro)}">`,
             `<meta name="robots" content="${opts.noindex ? 'noindex,nofollow' : 'index,follow'}">`,
