@@ -4,8 +4,8 @@
 //  - レコードは 3 キーに分離 (uid:=identity / plan:=課金 / usage:=使用量) され、頻繁な書込 (addUsage) と
 //    課金書込 (setPlan) がキーを共有せず互いをクロバーしない。setPlan/applyStripeEvent はその plan: を書く。
 //  - Checkout/Portal の作成 (Stripe REST 呼び出し) は実口座が要るため対象外 (デプロイ後に実機検証)。
-import { describe, it, expect } from 'vitest';
-import { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed } from '../../cf-worker/asayake-hub.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout } from '../../cf-worker/asayake-hub.js';
 
 // 簡易 KV モック (Cloudflare KV の get(json)/put/delete 互換)
 function makeKV(initial = {}) {
@@ -154,5 +154,65 @@ describe('verifyStripeSignature', () => {
         const t = Math.floor(Date.now() / 1000) - 10000;
         const v1 = await sign(payload, 'whsec_test', t);
         await expect(verifyStripeSignature(payload, `t=${t},v1=${v1}`, 'whsec_test')).rejects.toThrow(/tolerance/);
+    });
+});
+
+describe('handleCheckout (Managed Payments, ADR-037)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    function checkoutEnv(KV, extra = {}) {
+        return { KV, STRIPE_SECRET_KEY: 'sk_test', STRIPE_PRICE_MONTHLY: 'price_m', STRIPE_PRICE_YEARLY: 'price_y',
+                 APP_ORIGIN: 'https://app.example', ...extra };
+    }
+    function authedRequest(body) {
+        return new Request('https://hub.example/billing/checkout', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer hk_abc', 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    }
+    // fetch をモックして Stripe へ渡る form / ヘッダを捕捉する
+    function stubStripe() {
+        const captured = {};
+        vi.stubGlobal('fetch', async (url, opts) => {
+            captured.url = url; captured.opts = opts;
+            return new Response(JSON.stringify({ url: 'https://checkout.stripe.com/c/xyz' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+        return captured;
+    }
+
+    it('managed_payments[enabled]=true と プレビュー版ヘッダを付けて Checkout を作る', async () => {
+        const KV = makeKV({ 'key:hk_abc': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x' } });
+        const cap = stubStripe();
+        const res = await handleCheckout(authedRequest({ plan: 'monthly', returnUrl: 'https://app.example/bookshelf/' }), checkoutEnv(KV));
+        expect((await res.json()).url).toBe('https://checkout.stripe.com/c/xyz');
+        expect(cap.url).toBe('https://api.stripe.com/v1/checkout/sessions');
+        expect(cap.opts.headers['Stripe-Version']).toBe('2026-02-25.preview');   // 既定 = プレビュー版
+        expect(cap.opts.body.get('managed_payments[enabled]')).toBe('true');      // MoR 化
+        expect(cap.opts.body.get('mode')).toBe('subscription');
+        expect(cap.opts.body.get('line_items[0][price]')).toBe('price_m');
+        expect(cap.opts.body.get('client_reference_id')).toBe('u1');              // Webhook で uid 特定
+    });
+
+    it('plan=yearly は年額 Price を使い、STRIPE_API_VERSION で版を上書きできる', async () => {
+        const KV = makeKV({ 'key:hk_abc': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x' } });
+        const cap = stubStripe();
+        await handleCheckout(authedRequest({ plan: 'yearly' }), checkoutEnv(KV, { STRIPE_API_VERSION: '2026-03-01.preview' }));
+        expect(cap.opts.headers['Stripe-Version']).toBe('2026-03-01.preview');
+        expect(cap.opts.body.get('line_items[0][price]')).toBe('price_y');
+    });
+
+    it('STRIPE_SECRET_KEY 未設定なら 503 (口座準備前は課金無効)', async () => {
+        const KV = makeKV({ 'key:hk_abc': { uid: 'u1' } });
+        await expect(handleCheckout(authedRequest({ plan: 'monthly' }), { KV, STRIPE_PRICE_MONTHLY: 'price_m' }))
+            .rejects.toMatchObject({ status: 503 });
+    });
+
+    it('Price がプレースホルダ (REPLACE_) なら 503', async () => {
+        const KV = makeKV({ 'key:hk_abc': { uid: 'u1' } });
+        const cap = stubStripe();
+        await expect(handleCheckout(authedRequest({ plan: 'monthly' }), checkoutEnv(KV, { STRIPE_PRICE_MONTHLY: 'REPLACE_price_monthly' })))
+            .rejects.toMatchObject({ status: 503 });
+        expect(cap.url).toBeUndefined();   // Stripe を叩く前に弾く
     });
 });

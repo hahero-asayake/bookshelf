@@ -96,39 +96,66 @@ wrangler deploy -c wrangler.hub.toml
 
 ---
 
-## Phase E. 課金 (Stripe, ADR-035) — Plus プラン
+## Phase E. 課金 (Stripe Managed Payments, ADR-035 / ADR-037) — Plus プラン
 
 > アプリ側の課金導線・Worker エンドポイント (`/billing/checkout` `/billing/portal` `/billing/webhook`)・プラン反映ロジックは**実装済**。
-> ここは **Stripe 口座とキー設定**だけ。未設定の間は課金系が **503** を返し、他機能には影響しない。
+> ここは **Stripe 口座・商品・キー設定**だけ。未設定の間は課金系が **503** を返し、他機能には影響しない。
+>
+> **Managed Payments (ADR-037)**: Checkout に `managed_payments[enabled]=true` を送り、Stripe を **Merchant of Record** にする。
+> 売上税/VAT の計算・徴収・納付は **Stripe が代行**する (= hahero 自身が各国の税登録・申告をしなくてよい)。
+> **プレビュー機能**につき、Checkout・商品作成・Webhook はいずれも **`Stripe-Version: 2026-02-25.preview` 以上**で叩く。
+> 手数料は標準 (2.9%+$0.30) に税処理ぶんが上乗せされる → 価格設定はこれ込みで判断する。
 
-### E-1. Stripe アカウント + 商品/価格
-1. Stripe アカウント作成 (https://dashboard.stripe.com)。最初は **テストモード**で通す。
-2. **Product** を 1 つ作成 (例「AsayakeBookshelf Plus」)。その下に **Price を 2 つ**:
-   - **月額**: ¥(=約 $2) / 月 の **recurring** price。📝 `price_…` を控える → `STRIPE_PRICE_MONTHLY`。
-   - **年額**: ¥(=約 $12) / 年 の **recurring** price。📝 `price_…` を控える → `STRIPE_PRICE_YEARLY`。
-3. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。解約・支払い方法変更を許可。`/billing/portal` がこれを開く。
+### E-1. Stripe アカウント + 商品/価格 (tax_code 付き)
+1. Stripe アカウント作成 (https://dashboard.stripe.com)。最初は **テストモード**で通す。`STRIPE_SECRET_KEY` を環境変数に入れておく (`sk_test_…`)。
+2. 課金資格 (本人確認/口座) を済ませ、**Managed Payments** が使える状態にする (プレビュー枠の有効化が要る場合は Stripe に依頼)。
+3. **商品 (tax_code 付き) と Price 2 本を API で作成** (Dashboard はプレビューの税コードを出さないことがあるため curl が確実):
+   ```bash
+   # 1) 商品を作成。tax_code はデジタル/SaaS 用 (適格要件は Stripe の Tax codes 一覧で確認)。📝 返り値の id (prod_…) を控える
+   curl https://api.stripe.com/v1/products \
+     -u "$STRIPE_SECRET_KEY:" \
+     -H "Stripe-Version: 2026-02-25.preview" \
+     -d name="AsayakeBookshelf Plus" \
+     -d description="公開ストレージ 3GB ＋ アフィリエイト収益を自分のタグで受け取る" \
+     -d tax_code="txcd_10103100"
 
-### E-2. Webhook エンドポイント
+   # 2) 月額 Price (金額は最終価格に。$2/月 = 200)。📝 price_… → STRIPE_PRICE_MONTHLY
+   curl https://api.stripe.com/v1/prices \
+     -u "$STRIPE_SECRET_KEY:" \
+     -H "Stripe-Version: 2026-02-25.preview" \
+     -d product="prod_xxx" -d unit_amount=200 -d currency=usd -d "recurring[interval]=month"
+
+   # 3) 年額 Price (例 $12/年 = 1200)。📝 price_… → STRIPE_PRICE_YEARLY
+   curl https://api.stripe.com/v1/prices \
+     -u "$STRIPE_SECRET_KEY:" \
+     -H "Stripe-Version: 2026-02-25.preview" \
+     -d product="prod_xxx" -d unit_amount=1200 -d currency=usd -d "recurring[interval]=year"
+   ```
+4. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。解約・支払い方法変更を許可。`/billing/portal` がこれを開く。
+
+### E-2. Webhook エンドポイント (Checkout と同じプレビュー版で)
 1. Developers → **Webhooks → Add endpoint**: URL = `https://hub.asayake.org/billing/webhook`。
-2. 送信イベント: **`checkout.session.completed`** / **`customer.subscription.deleted`** / **`customer.subscription.updated`**。
-3. 📝 **Signing secret** (`whsec_…`) を控える → `STRIPE_WEBHOOK_SECRET`。
+2. **API version = `2026-02-25.preview`** を選ぶ (Checkout と同版。イベント形を揃え、Managed Payments の `checkout.session.completed` を確実に受ける)。
+3. 送信イベント: **`checkout.session.completed`** / **`customer.subscription.deleted`** / **`customer.subscription.updated`**。
+4. 📝 **Signing secret** (`whsec_…`) を控える → `STRIPE_WEBHOOK_SECRET`。
 
 ### E-3. キー/価格を Worker に設定 → 再デプロイ
 ```bash
 cd cf-worker
-# Price ID と Plus 上限は vars (wrangler.hub.toml の STRIPE_PRICE_* を REPLACE_… から実値に置換)
+# vars (wrangler.hub.toml): STRIPE_PRICE_* を E-1 の price_… に、STRIPE_API_VERSION は 2026-02-25.preview のまま
 wrangler secret put STRIPE_SECRET_KEY      -c wrangler.hub.toml   # sk_test_… → 本番は sk_live_…
 wrangler secret put STRIPE_WEBHOOK_SECRET  -c wrangler.hub.toml   # whsec_…
 wrangler deploy -c wrangler.hub.toml
 ```
 
 ### E-4. 実機検証 (テストモード)
-1. アプリ→設定→アカウントでログイン (Free) → **「月額で Plus にする」** → Stripe Checkout (テストカード `4242 4242 4242 4242`) → 戻ると `?billing=success` → 数秒後に使用量バーが **Plus / 3GB** に。
-2. Webhook ログ (Stripe Dashboard) が 200。KV `uid:<uid>.plan=plus`・`stripe:<customer>=<uid>` を確認。
-3. **「支払い・解約の管理」** → Portal で解約 → `customer.subscription.deleted` → KV が `plan=free`・quota 100MB に戻る。Phase C-6 の **/go 降格切替**もここで確認。
-4. 通れば **本番キー** (`sk_live_…`・本番 webhook secret) に差し替えて再デプロイ。
+1. アプリ→設定→アカウントでログイン (Free) → **「月額で Plus にする」** → Stripe Checkout。
+2. **請求先住所を変えて** 税額の出方を見る (Managed Payments が地域別に計算)。テストカード `4242 4242 4242 4242` で決済 → 戻ると `?billing=success` → 数秒後に使用量バーが **Plus / 3GB** に。
+3. Webhook ログ (Stripe Dashboard) が 200。KV `plan:<uid>.plan=plus`・`stripe:<customer>=<uid>` を確認。
+4. **「支払い・解約の管理」** → Portal で解約 → `customer.subscription.deleted` → KV が `plan=free`・quota 100MB に戻る。Phase C-6 の **/go 降格切替**もここで確認。
+5. 通れば **本番キー** (`sk_live_…`・本番 webhook secret) に差し替えて再デプロイ。
 
-> 决済の実体は Stripe ホスト画面。アプリ/Worker はカード情報を一切持たない (PCI 範囲を Stripe に寄せる)。
+> 決済の実体は Stripe ホスト画面。アプリ/Worker はカード情報を一切持たない (PCI 範囲を Stripe に寄せる)。税も Stripe (MoR) が処理する。
 
 ---
 

@@ -27,12 +27,14 @@ GOOGLE_CLIENT_ID = "368547907822-r79adn6052laipf20ram49br1skhv7ru.apps.googleuse
 QUOTA_BYTES = "104857600"                                  # Free プラン上限 = 100MB (ADR-033)。Plus は uid レコードで個別引上げ
 OPERATOR_AFFILIATE_TAG = "asayake09-22"                    # ハブ Free 公開ページの Amazon アフィタグ。/go が解決して使う。空にすると無印 (ADR-034追補)
 
-# --- 課金 (Stripe, ADR-035)。Price ID と Plus 上限は公開値なので vars。 ---
+# --- 課金 (Stripe, ADR-035 / Managed Payments ADR-037)。Price ID・版・Plus 上限は公開値なので vars。 ---
 # secret (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET) は wrangler secret put で設定 (toml に書かない)。
 # 未設定 (=空/プレースホルダ) の間は課金系エンドポイントが 503 を返し無効化される。
+# 商品 (tax_code 付き) と Price 2 本は HUB-SETUP.md Phase E の curl で作成し、その price_… をここへ。
 PLUS_QUOTA_BYTES = "3221225472"                            # Plus プラン上限 = 3GB
-STRIPE_PRICE_MONTHLY = "REPLACE_price_monthly"             # 月額 ($2) の Price ID (price_…)
-STRIPE_PRICE_YEARLY = "REPLACE_price_yearly"               # 年額 ($12) の Price ID (price_…)
+STRIPE_PRICE_MONTHLY = "REPLACE_price_monthly"             # 月額の Price ID (price_…)
+STRIPE_PRICE_YEARLY = "REPLACE_price_yearly"               # 年額の Price ID (price_…)
+STRIPE_API_VERSION = "2026-02-25.preview"                  # Managed Payments のプレビュー版 (ADR-037)。Webhook も同版にする
 
 # --- 書込レート制限 (Class A 書込暴走による課金事故防止, ADR-033) ---
 # Bearer キー単位で書込 (PUT/DELETE/batch/publish) を制限。60 秒あたり 60 書込まで。

@@ -34,6 +34,8 @@
 //   STRIPE_WEBHOOK_SECRET  (secret) Webhook 署名シークレット (whsec_…)。/billing/webhook の署名検証。
 //   STRIPE_PRICE_MONTHLY   (var)    月額プランの Price ID (price_…)。
 //   STRIPE_PRICE_YEARLY    (var)    年額プランの Price ID (price_…)。
+//   STRIPE_API_VERSION     (任意)   Checkout を叩く Stripe バージョン。既定 = Managed Payments のプレビュー版
+//                    (2026-02-25.preview, ADR-037)。Stripe が版を上げたらここで追従。Webhook 側も同版にする。
 //   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
 //
 // コスト防御 (ADR-033, 収益化分析):
@@ -437,7 +439,11 @@ async function deletePrefix(env, prefix) {
 // 未設定 (STRIPE_* なし) の環境では課金系は 503 を返し、何も起きない (口座準備前でも他機能は動く)。
 const PLUS_QUOTA_DEFAULT = 3 * 1024 * 1024 * 1024;   // Plus = 3GB (ADR-033/035)
 
-// アップグレード: Stripe Checkout セッションを作り、その URL を返す (アプリがリダイレクト)。
+// Managed Payments (Stripe = Merchant of Record。税の計算/徴収/納付を Stripe が代行) のプレビュー版 (ADR-037)。
+// このバージョン以上が必須。STRIPE_API_VERSION で上書き可 (Stripe が版を上げたら toml で追従)。
+const STRIPE_MANAGED_PAYMENTS_VERSION = '2026-02-25.preview';
+
+// アップグレード: Stripe Checkout セッション (Managed Payments) を作り、その URL を返す (アプリがリダイレクト)。
 async function handleCheckout(request, env) {
     if (!env.STRIPE_SECRET_KEY) throw httpError(503, 'billing not configured');
     const sess = await requireAuth(request, env);
@@ -449,6 +455,7 @@ async function handleCheckout(request, env) {
     const ret = safeReturnUrl(body.returnUrl, env);
     const form = new URLSearchParams();
     form.set('mode', 'subscription');
+    form.set('managed_payments[enabled]', 'true');    // Stripe を MoR 化 → 税は Stripe が処理 (ADR-037)
     form.set('line_items[0][price]', price);
     form.set('line_items[0][quantity]', '1');
     form.set('client_reference_id', sess.uid);        // Webhook で uid を特定する
@@ -456,7 +463,9 @@ async function handleCheckout(request, env) {
     form.set('cancel_url', `${ret}?billing=cancel`);
     if (planRec && planRec.stripeCustomerId) form.set('customer', planRec.stripeCustomerId);
     else if (rec && rec.email) form.set('customer_email', rec.email);
-    const data = await stripeApi(env, 'POST', 'checkout/sessions', form);
+    // Managed Payments はプレビュー版バージョンヘッダ必須。Webhook 側も同版で設定すること (HUB-SETUP Phase E)。
+    const data = await stripeApi(env, 'POST', 'checkout/sessions', form,
+        env.STRIPE_API_VERSION || STRIPE_MANAGED_PAYMENTS_VERSION);
     return json({ url: data.url });
 }
 
@@ -551,9 +560,12 @@ function timingSafeEqualHex(a, b) {
 }
 
 // Stripe REST 呼び出し (application/x-www-form-urlencoded)。失敗は 502 に正規化。form 無し (DELETE 等) は body なし。
-async function stripeApi(env, method, path, form) {
+// apiVersion を渡すとその呼び出しだけ Stripe-Version を固定する (Managed Payments のプレビュー版用, ADR-037)。
+// 渡さなければアカウント既定バージョン (Portal/解約はこちら)。
+async function stripeApi(env, method, path, form, apiVersion) {
     const headers = { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` };
     if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    if (apiVersion) headers['Stripe-Version'] = apiVersion;
     const res = await fetch(`https://api.stripe.com/v1/${path}`, { method, headers, body: form || undefined });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw httpError(502, `stripe: ${(data && data.error && data.error.message) || res.status}`);
@@ -574,7 +586,7 @@ function safeReturnUrl(url, env) {
 }
 
 // テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {
