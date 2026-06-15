@@ -3560,15 +3560,34 @@ class VirtualBookshelf {
         if (goto) goto.addEventListener('click', openAccount);
         const chip = document.getElementById('sidebar-account');
         if (chip) chip.addEventListener('click', async () => { await this._openSettingsModal(); openAccount(); });
+        // 能動同意: 規約/プライバシーへの同意チェックが入って初めて Google ログインボタンを描画する。
+        const consent = document.getElementById('account-consent-check');
+        if (consent) consent.addEventListener('change', async () => {
+            if (consent.checked) {
+                try {
+                    if (!this.userData.settings) this.userData.settings = {};
+                    this.userData.settings.ackTermsPrivacy = { at: new Date().toISOString(), v: 'v1.0' };
+                    await this.saveUserData();
+                } catch (_) {}
+            }
+            this._ensureAccountSignInButton();
+        });
     }
 
     // Google ログインボタンを描画 (GIS 遅延読込)。アカウントセクション用。
+    // 能動同意: 規約/プライバシーの同意チェックが入るまでボタンを出さない (GIS ボタンはクリックで即認証に進むため)。
     _ensureAccountSignInButton() {
-        if (this._accountSignInRendered) return;
         if (typeof HubAuth === 'undefined') return;
         if (HubAuth.isConnected && HubAuth.isConnected()) return; // 接続済みは不要
         const host = document.getElementById('account-gsi-button');
         if (!host) return;
+        const check = document.getElementById('account-consent-check');
+        const hint = document.getElementById('account-consent-hint');
+        const consented = !!(check && check.checked);
+        host.hidden = !consented;
+        if (hint) hint.hidden = consented;
+        if (!consented) return;          // 未同意: ボタンは描画しない
+        if (this._accountSignInRendered) return;
         this._accountSignInRendered = true;
         HubAuth.renderSignInButton(host, {
             onConnected: (session) => {

@@ -3614,6 +3614,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.7rem; }
 .account-legal-note { margin: 0.6rem 0 0; font-size: 0.76rem; color: var(--muted); }
 .account-legal-note a { color: var(--muted); }
+.account-consent { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.2rem 0 0.7rem; font-size: 0.85rem; line-height: 1.5; cursor: pointer; }
+.account-consent input { margin-top: 0.15rem; flex: 0 0 auto; }
+.account-consent a { color: var(--accent); }
 
 /* サイドバー: アカウント状態チップ */
 .sidebar-account-chip {

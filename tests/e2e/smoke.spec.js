@@ -132,7 +132,12 @@ test('設定→アカウント: 同期方式と独立してログイン面が出
     // 同期=hub を選ばずに、アカウントセクションでログインできる
     await expect(page.locator('#account-section')).toBeVisible();
     await expect(page.locator('#account-disconnected')).toBeVisible();
+    // 能動同意: 規約/プライバシーに同意するまでログインボタンは出さない
+    await expect(page.locator('#account-gsi-button')).toBeHidden();
+    await page.locator('#account-consent-check').check();
+    // 同意後にログインボタンが描画される
     await expect(page.locator('#account-gsi-button')).toHaveAttribute('data-stub', '1');
+    await expect(page.locator('#account-gsi-button')).toBeVisible();
     expect(errors).toEqual([]);
 });
 
