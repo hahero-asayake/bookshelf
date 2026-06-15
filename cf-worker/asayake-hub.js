@@ -50,6 +50,7 @@ export default {
             if (path === '/usage' && request.method === 'GET') return cors(await handleUsage(request, env), env, request);
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
+            if (path === '/account' && request.method === 'DELETE') return cors(await handleAccountDelete(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
@@ -294,6 +295,36 @@ async function handlePublish(request, env) {
 
     await addUsage(env, sess.uid, delta);
     return json({ ok: true, siteId: sess.siteId, siteUrl: `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`, published: files.length });
+}
+
+// ===== アカウント削除 (退会, ADR-033 / 個人情報の削除権) =====
+// uid の私的データ (data/<uid>/) と公開サイト (sites/<siteId>/) を全削除し、
+// 使用量レコード・現在の公開キー・通報レコードを KV から消す。
+async function handleAccountDelete(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    const auth = request.headers.get('Authorization') || '';
+    const m = auth.match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
+    const key = m ? m[1] : null;
+
+    await deletePrefix(env, `data/${sess.uid}/`);
+    if (sess.siteId) await deletePrefix(env, `sites/${sess.siteId}/`);
+
+    await env.KV.delete(`uid:${sess.uid}`);
+    if (key) await env.KV.delete(`key:${key}`);
+    if (sess.siteId) await env.KV.delete(`report:${sess.siteId}`);
+
+    return json({ ok: true, deleted: true });
+}
+
+// R2: prefix 配下のオブジェクトを全削除 (ページング対応)
+async function deletePrefix(env, prefix) {
+    let cursor;
+    do {
+        const res = await env.BUCKET.list({ prefix, cursor });
+        for (const o of res.objects) await env.BUCKET.delete(o.key);
+        cursor = res.truncated ? res.cursor : undefined;
+    } while (cursor);
 }
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
