@@ -123,13 +123,13 @@ class VirtualBookshelf {
             if (isIOS) {
                 msg.innerHTML = '📱 <strong>iOS Safari</strong> でローカル vault を編集するには、無料の Safari 拡張「<strong>File Picker</strong>」が必要です。インストール後にこのページを再読み込みしてください。';
                 actions.innerHTML = `
-                    <a href="https://apps.apple.com/jp/app/file-picker/id1595132894" target="_blank" rel="noopener">📥 App Store で入手</a>
-                    <a href="https://filepicker.app/" target="_blank" rel="noopener">ℹ️ 詳細</a>
+                    <a href="https://apps.apple.com/jp/app/file-picker/id1595132894" target="_blank" rel="noopener">App Store で入手</a>
+                    <a href="https://filepicker.app/" target="_blank" rel="noopener">詳細</a>
                 `;
             } else if (isAndroid) {
                 msg.innerHTML = '📱 <strong>Android Chrome</strong> ではローカル vault に直接アクセスできません。<strong>Android アプリ版</strong>（Capacitor ラップ APK）のインストールが必要です。';
                 actions.innerHTML = `
-                    <a href="https://github.com/hahero-asayake/bookshelf/releases/latest" target="_blank" rel="noopener">📥 最新 APK をダウンロード</a>
+                    <a href="https://github.com/hahero-asayake/bookshelf/releases/latest" target="_blank" rel="noopener">最新 APK をダウンロード</a>
                 `;
             }
 
@@ -1049,7 +1049,7 @@ class VirtualBookshelf {
 
     async _bulkAddToShelf(internalId) {
         const asins = [...(this.selectedAsins || [])];
-        if (!asins.length) { toast('📚 本を選択してください'); return; }
+        if (!asins.length) { toast('本を選択してください'); return; }
         const shelf = this.bookshelfManager.getById(internalId);
         if (!shelf) return;
         const ancestors = this.bookshelfManager.getAncestors(internalId) || [];
@@ -1068,12 +1068,12 @@ class VirtualBookshelf {
         if (typeof this.renderBookshelfList === 'function') this.renderBookshelfList();
         if (typeof this._renderSidebarTree === 'function') this._renderSidebarTree();
         const ancMsg = ancestors.length ? `\n（祖先にも自動追加: ${ancestors.map(a => a.name).join('、')}）` : '';
-        toast(`✅ ${added} 冊を「${shelf.name}」に追加しました${ancMsg}`);
+        toast(`${added} 冊を「${shelf.name}」に追加しました${ancMsg}`);
     }
 
     async _bulkExclude() {
         const asins = [...(this.selectedAsins || [])];
-        if (!asins.length) { toast('📚 本を選択してください'); return; }
+        if (!asins.length) { toast('本を選択してください'); return; }
         const okBulkExclude = await confirmDialog({
             title: 'すべての本から除外',
             message: `選択した ${asins.length} 冊を all から除外しますか？\n\n再Kindle取込でも復活しません。除外一覧から解除できます。`,
@@ -1089,7 +1089,7 @@ class VirtualBookshelf {
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
-        toast(`✅ ${asins.length} 冊を除外しました`);
+        toast(`${asins.length} 冊を除外しました`);
     }
 
     /** 現在の本棚の全メンバー ASIN を「表示順 (custom order を尊重)」で返す */
@@ -2706,7 +2706,7 @@ class VirtualBookshelf {
             installLink.addEventListener('click', () => {
                 this._pendingInstallReloadAt = Date.now();
                 const status = document.getElementById('github-status');
-                if (status) status.textContent = '⏳ インストール完了後、このタブに戻ると自動で再取得します';
+                if (status) status.textContent = 'インストール完了後、このタブに戻ると自動で再取得します';
             });
         }
 
@@ -2724,9 +2724,9 @@ class VirtualBookshelf {
                 if (!settingsModal || !settingsModal.classList.contains('show')) return;
                 this._pendingInstallReloadAt = 0;
                 const status = document.getElementById('github-status');
-                if (status) status.textContent = '🔄 戻りました、3秒後に再取得します...';
+                if (status) status.textContent = '戻りました、3秒後に再取得します...';
                 setTimeout(() => {
-                    if (status) status.textContent = '🔄 再取得中...';
+                    if (status) status.textContent = '再取得中...';
                     this._loadGitHubRepos();
                 }, 3000);
             });
@@ -2797,7 +2797,7 @@ class VirtualBookshelf {
                     li.classList.add('basepath-dir');
                     const a = document.createElement('a');
                     a.href = '#';
-                    a.textContent = `📁 ${item.name}`;
+                    a.textContent = `${item.name}`;
                     a.addEventListener('click', (e) => {
                         e.preventDefault();
                         this._loadBasepathBrowser(item.path);
@@ -2884,7 +2884,7 @@ class VirtualBookshelf {
             for (const r of repos) {
                 const opt = document.createElement('option');
                 opt.value = r.full_name;
-                opt.textContent = `${r.full_name}${r.private ? ' 🔒' : ''}`;
+                opt.textContent = `${r.full_name}${r.private ? ' ' : ''}`;
                 opt.dataset.defaultBranch = r.default_branch;
                 if (r.full_name === currentFull) opt.selected = true;
                 sel.appendChild(opt);
@@ -2937,7 +2937,7 @@ class VirtualBookshelf {
         for (const r of repos) {
             const opt = document.createElement('option');
             opt.value = r.full_name;
-            opt.textContent = `${r.full_name}${r.private ? ' 🔒（非公開・公開不可）' : ''}`;
+            opt.textContent = `${r.full_name}${r.private ? ' （非公開・公開不可）' : ''}`;
             opt.dataset.defaultBranch = r.default_branch || 'main';
             opt.dataset.private = r.private ? '1' : '';
             if (r.full_name === curFull) opt.selected = true;
@@ -2986,7 +2986,7 @@ class VirtualBookshelf {
         // 旧公開先にサイトが残っている場合は警告 (自動削除はしない=手動クリーンアップ誘導)
         if (last && last !== target) {
             const name = (t) => t === 'hub' ? '共有（ハブ）' : '自分の GitHub リポジトリ';
-            this._publishSwitchWarn = `⚠️ 以前の公開先「${name(last)}」にサイトが残っています。完全に消すには、公開先を「${name(last)}」に戻し、全ページを「公開を取消」してから再公開（空にする）してください。`;
+            this._publishSwitchWarn = `以前の公開先「${name(last)}」にサイトが残っています。完全に消すには、公開先を「${name(last)}」に戻し、全ページを「公開を取り消す」で取り消してから再公開（空にする）してください。`;
             toast(this._publishSwitchWarn, { type: 'warn' });
         } else {
             this._publishSwitchWarn = '';
@@ -3016,9 +3016,9 @@ class VirtualBookshelf {
         if (!status) return;
         const hub = (SyncConfigManager.load().hub) || {};
         if (hub.key && hub.apiBase) {
-            status.textContent = hub.publicBase ? `✅ 公開 URL: ${hub.publicBase}` : '✅ Asayake ハブに接続済み';
+            status.textContent = hub.publicBase ? `公開 URL: ${hub.publicBase}` : 'Asayake ハブに接続済み';
         } else {
-            status.textContent = '⚠️ 先に設定の「同期」で Asayake ハブにログインしてください。';
+            status.textContent = '先に設定の「同期」で Asayake ハブにログインしてください。';
         }
     }
 
@@ -3029,9 +3029,9 @@ class VirtualBookshelf {
         const opt = sel.selectedOptions[0];
         if (!sel.value) { status.textContent = ''; return; }
         if (opt && opt.dataset.private === '1') {
-            status.textContent = '⚠️ 非公開リポジトリは公開モードで読めません。public を選んでください';
+            status.textContent = '非公開リポジトリは公開モードで読めません。public を選んでください';
         } else {
-            status.textContent = `✅ 公開先: ${sel.value}`;
+            status.textContent = `公開先: ${sel.value}`;
         }
     }
 
@@ -3135,7 +3135,7 @@ class VirtualBookshelf {
             if (pend) pend.hidden = false;
             if (codeEl) codeEl.textContent = device.user_code;
             if (linkEl) linkEl.href = device.verification_uri;
-            if (statusEl) statusEl.textContent = '⏳ GitHub で承認されるのを待っています...';
+            if (statusEl) statusEl.textContent = 'GitHub で承認されるのを待っています...';
 
             const startedAt = Date.now();
             const token = await GitHubDeviceAuth.pollAccessToken(device, {
@@ -3144,8 +3144,8 @@ class VirtualBookshelf {
                     if (!statusEl) return;
                     const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
                     const base = state === 'slow'
-                        ? '⏳ GitHub が混雑中、間隔を伸ばします'
-                        : '⏳ GitHub で承認されるのを待っています';
+                        ? 'GitHub が混雑中、間隔を伸ばします'
+                        : 'GitHub で承認されるのを待っています';
                     statusEl.textContent = `${base} (${elapsedSec}秒経過)`;
                 }
             });
@@ -3172,7 +3172,7 @@ class VirtualBookshelf {
             SyncConfigManager.save(merged);
             this._currentDeviceAuth = null;
             this._renderGitHubAuthState();
-            toast(`✅ GitHub に接続しました${user ? ` (${user.login})` : ''}。\n下のリストからリポジトリを選んで「この設定で使う」を押してください。`);
+            toast(`GitHub に接続しました${user ? ` (${user.login})` : ''}。\n下のリストからリポジトリを選んで「この設定で使う」を押してください。`);
         } catch (e) {
             this._currentDeviceAuth = null;
             if (e.message === 'AUTH_CANCELLED') {
@@ -3180,11 +3180,11 @@ class VirtualBookshelf {
                 return;
             }
             if (e.message === 'AUTH_DENIED') {
-                toast('❌ GitHub での承認が拒否されました。');
+                toast('GitHub での承認が拒否されました。');
             } else if (e.message === 'AUTH_EXPIRED') {
-                toast('❌ コードの有効期限が切れました。もう一度「接続」を押してください。');
+                toast('コードの有効期限が切れました。もう一度「接続」を押してください。');
             } else {
-                toast(`❌ GitHub 接続エラー:\n${e.message}`);
+                toast(`GitHub 接続エラー:\n${e.message}`);
             }
             this._renderGitHubAuthState();
         }
@@ -3206,7 +3206,7 @@ class VirtualBookshelf {
             const copyBtn = document.getElementById('github-copy-code-btn');
             if (copyBtn) {
                 const orig = copyBtn.textContent;
-                copyBtn.textContent = '✅ コピー済';
+                copyBtn.textContent = 'コピー済';
                 setTimeout(() => { copyBtn.textContent = orig; }, 1500);
             }
         } catch (e) {
@@ -3658,19 +3658,19 @@ class VirtualBookshelf {
         const config = SyncConfigManager.load();
         const token = config.github && config.github.token;
         if (!token) {
-            if (status) status.textContent = '⚠️ 先に「GitHub に接続」を押してください';
+            if (status) status.textContent = '先に「GitHub に接続」を押してください';
             return;
         }
         if (!repo.owner || !repo.repo) {
-            if (status) status.textContent = '⚠️ owner / repo は必須';
+            if (status) status.textContent = 'owner / repo は必須';
             return;
         }
-        if (status) status.textContent = '⏳ 接続確認中...';
+        if (status) status.textContent = '接続確認中...';
         try {
             const adapter = new GitHubAdapter({ ...repo, token });
             await adapter.testConnection();
         } catch (e) {
-            if (status) status.textContent = `❌ 接続失敗: ${e.message}`;
+            if (status) status.textContent = `接続失敗: ${e.message}`;
             return;
         }
         const merged = SyncConfigManager.load();
@@ -3683,7 +3683,7 @@ class VirtualBookshelf {
             basePath: repo.basePath
         };
         SyncConfigManager.save(merged);
-        if (status) status.textContent = '✅ 保存しました。ページをリロードします...';
+        if (status) status.textContent = '保存しました。ページをリロードします...';
         setTimeout(() => location.reload(), 800);
     }
 
@@ -3742,14 +3742,14 @@ class VirtualBookshelf {
                 this.renderBookshelfOverview();
                 this.updateSyncStatus('synced', handle.name);
                 if (format === 'empty') {
-                    toast(`✅ 「${handle.name}」に新ファイル構造で初期化しました。`);
+                    toast(`「${handle.name}」に新ファイル構造で初期化しました。`);
                 } else {
-                    toast(`✅ 「${handle.name}」から ${this.books.length} 冊を読み込みました。`);
+                    toast(`「${handle.name}」から ${this.books.length} 冊を読み込みました。`);
                 }
             } else {
                 // load 失敗時は同期フォルダの既存データを上書きしないため、ここでは何もしない
                 this.updateSyncStatus('reconnect', handle.name);
-                toast(`⚠️ 「${handle.name}」のデータ読み込みに失敗しました。\nlibrary.json / bookshelves/all.json の存在を確認してください。\n（既存ファイルを保護するため、自動初期化は行いませんでした）`);
+                toast(`「${handle.name}」のデータ読み込みに失敗しました。\nlibrary.json / bookshelves/all.json の存在を確認してください。\n（既存ファイルを保護するため、自動初期化は行いませんでした）`);
             }
         } catch (e) {
             if (e.name === 'AbortError') return;
@@ -4185,7 +4185,7 @@ class VirtualBookshelf {
         if (this._conflictNotified) return;
         this._conflictNotified = true;
         const ok = confirm(
-            '⚠️ 同期先 (GitHub) のデータが他の場所から更新されています。\n\n' +
+            '同期先 (GitHub) のデータが他の場所から更新されています。\n\n' +
             'このセッションでの直近の編集はまだ GitHub に反映されていません。\n\n' +
             'OK : 最新版を取得するためにページを再読込 (未反映の編集は失われます)\n' +
             'キャンセル: 何もしない (次回保存時にまた衝突する可能性)'
@@ -4224,19 +4224,19 @@ class VirtualBookshelf {
             pathEl.textContent = folderName;
             pathEl.title = folderName;
             pathEl.style.color = '';
-            status.textContent = `✅ ${new Date().toLocaleTimeString()} 同期済み（「変更」で再読み込み）`;
+            status.textContent = `${new Date().toLocaleTimeString()} 同期済み（「フォルダを選ぶ」で再読み込み）`;
             status.style.color = '#4caf50';
         } else if (state === 'loading') {
             pathEl.textContent = folderName;
             pathEl.title = folderName;
             pathEl.style.color = '';
-            status.textContent = '⏳ 読み込み中...';
+            status.textContent = '読み込み中...';
             status.style.color = '#888';
         } else if (state === 'reconnect') {
             pathEl.textContent = `${folderName || ''} (要再接続)`;
             pathEl.title = folderName || '';
             pathEl.style.color = '#f44336';
-            status.textContent = '⚠️ 「変更」を押してフォルダを再選択';
+            status.textContent = '「フォルダを選ぶ」を押してフォルダを選び直してください';
             status.style.color = '#f44336';
         } else {
             pathEl.textContent = '(未接続)';
@@ -4299,7 +4299,7 @@ class VirtualBookshelf {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        console.log('📁 library.jsonファイルを自動生成しました');
+        console.log('library.jsonファイルを自動生成しました');
     }
 
     updateBookshelfSelector() {
@@ -4731,7 +4731,7 @@ class VirtualBookshelf {
         if (!newParent) newParent = allId;
 
         if (!bm.canSetParent(draggedId, newParent)) {
-            toast('❌ 循環参照になるため移動できません');
+            toast('循環参照になるため移動できません');
             return;
         }
 
@@ -4783,7 +4783,7 @@ class VirtualBookshelf {
     async _applyReparentWithConfirm(internalId, newParentId) {
         const bm = this.bookshelfManager;
         const prev = bm.previewReparent(internalId, newParentId);
-        if (!prev.valid) { toast('❌ ' + (prev.reason || '移動できません')); return false; }
+        if (!prev.valid) { toast('' + (prev.reason || '移動できません')); return false; }
         const bs = bm.getById(internalId);
         const parent = bm.getById(newParentId);
         const parentName = parent ? parent.name : '(ルート)';
@@ -4798,7 +4798,7 @@ class VirtualBookshelf {
         try {
             bm.reparent(internalId, newParentId);
         } catch (e) {
-            toast('❌ ' + e.message);
+            toast('' + e.message);
             return false;
         }
         return true;
@@ -5176,8 +5176,8 @@ class VirtualBookshelf {
     static HEADER_ITEMS_META = {
         // back-to-main / bookshelf-selector は 3 ペイン化でサイドバーツリーと完全重複のため撤去 (2026-06-07)。
         // overview-display は no-op の renderBookshelfOverview を呼ぶだけで機能しないため撤去 (2026-06-07)。
-        'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '📝', duplicatable: false },
-        'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '⚙️', duplicatable: false, required: true }
+        'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '', duplicatable: false },
+        'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '', duplicatable: false, required: true }
     };
     static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV8';
 
@@ -5486,7 +5486,7 @@ class VirtualBookshelf {
 
     /**
      * プラグイン一覧セクションを描画 (#plugin-list-section)
-     * 各プラグイン: 名前/version/desc + [有効] チェックボックス + 🗑️ 削除
+     * 各プラグイン: 名前/version/desc + [有効] チェックボックス + 削除
      */
     static PLUGIN_ORDER_STORAGE_KEY = 'pluginOrderV1';
     // 検索対象 (タイトル + 説明) の最大文字数。長すぎる説明文の中だけマッチするのを避ける。
@@ -6244,7 +6244,7 @@ class VirtualBookshelf {
         if (pane) {
             pane.innerHTML = `
                 <div class="detail-placeholder">
-                    <p>📖</p>
+                    <p></p>
                     <p>本を選択すると詳細が表示されます</p>
                 </div>
             `;
@@ -6501,7 +6501,7 @@ class VirtualBookshelf {
                 _emitCreated = created || { ...meta, id: slug };
             }
         } catch (e) {
-            toast(`❌ ${e.message}`);
+            toast(`${e.message}`);
             return;
         }
 
@@ -6579,18 +6579,18 @@ class VirtualBookshelf {
         const bookshelfId = bookshelfSelect.value;
 
         if (!bookshelfId) {
-            toast('📚 本棚を選択してください');
+            toast('本棚を選択してください');
             return;
         }
 
         const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf) {
-            toast('❌ 本棚が見つかりません');
+            toast('本棚が見つかりません');
             return;
         }
 
         if ((bookshelf.books || []).includes(asin)) {
-            toast(`📚 この本は既に「${bookshelf.name}」に追加済みです`);
+            toast(`この本は既に「${bookshelf.name}」に追加済みです`);
             return;
         }
 
@@ -6622,7 +6622,7 @@ class VirtualBookshelf {
         const descendantMsg = propagateTo.length > 0
             ? `\n（子孫にも追加: ${propagateTo.length}個の本棚）`
             : '';
-        toast(`✅ 「${bookshelf.name}」に追加しました${ancestorMsg}${descendantMsg}`);
+        toast(`「${bookshelf.name}」に追加しました${ancestorMsg}${descendantMsg}`);
         bookshelfSelect.value = '';
     }
 
@@ -6685,7 +6685,7 @@ class VirtualBookshelf {
     async removeFromBookshelf(asin, bookshelfId) {
         const bookshelf = this.bookshelfManager.getBySlug(bookshelfId);
         if (!bookshelf || !bookshelf.books) {
-            toast('❌ 本棚が見つかりません');
+            toast('本棚が見つかりません');
             return;
         }
         // 特殊本棚（all）からの削除は permanent でないため excludeBook を案内
@@ -6698,17 +6698,17 @@ class VirtualBookshelf {
         const bookTitle = book ? book.title : 'この本';
 
         if (!bookshelf.books.includes(asin)) {
-            toast(`📚 この本は「${bookshelf.name}」にありません`);
+            toast(`この本は「${bookshelf.name}」にありません`);
             return;
         }
 
         const descendants = this.bookshelfManager.getDescendants(bookshelf.internalId);
         const descendantsWithBook = descendants.filter(d => (d.books || []).includes(asin));
 
-        let confirmMsg = `📚 「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n⚠️ 本自体は削除されず、この本棚からのみ削除されます。`;
+        let confirmMsg = `「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n本自体は削除されず、この本棚からのみ削除されます。`;
         if (descendantsWithBook.length > 0) {
             const names = descendantsWithBook.map(d => `・${d.name}`).join('\n');
-            confirmMsg += `\n\n⚠️ 子孫本棚にも含まれているため、自動カスケード削除されます:\n${names}`;
+            confirmMsg += `\n\n子孫本棚にも含まれているため、自動カスケード削除されます:\n${names}`;
         }
 
         if (!confirm(confirmMsg)) return;
@@ -6724,7 +6724,7 @@ class VirtualBookshelf {
             this.updateDisplay();
         }
 
-        toast(`✅ 「${bookTitle}」を「${bookshelf.name}」から除外しました`);
+        toast(`「${bookTitle}」を「${bookshelf.name}」から除外しました`);
         this.closeModal();
     }
 
@@ -6764,7 +6764,7 @@ class VirtualBookshelf {
     async excludeBook(asin) {
         const book = this.books.find(b => b.asin === asin);
         if (!book) {
-            toast('❌ 指定された書籍が見つかりません');
+            toast('指定された書籍が見つかりません');
             return;
         }
         const okExclude = await confirmDialog({
@@ -6786,7 +6786,7 @@ class VirtualBookshelf {
         this.updateDisplay();
         this.updateStats();
         this.closeModal();
-        toast(`✅ 「${book.title}」を除外しました`);
+        toast(`「${book.title}」を除外しました`);
     }
 
     /**
@@ -6944,7 +6944,7 @@ class VirtualBookshelf {
         const ok = await confirmDialog({
             title: '公開を取り消す',
             message: `「${page.title}」を公開サイトから削除します。\n(他の公開中ページはそのまま残ります)`,
-            okLabel: '公開を取消', danger: true
+            okLabel: '公開を取り消す', danger: true
         });
         if (!ok) return;
         try { await this.publishPageStore.update(id, { published: false }); }
@@ -7438,7 +7438,7 @@ class VirtualBookshelf {
             this.saveUserData();
         } catch (e) {
             console.error('長文メモ作成エラー:', e);
-            toast(`❌ ファイル操作に失敗しました: ${e.message}`);
+            toast(`ファイル操作に失敗しました: ${e.message}`);
             return;
         }
 
@@ -7450,12 +7450,12 @@ class VirtualBookshelf {
             // vault 名未設定なら初回プロンプト
             if (typeof settings.obsidianVaultName === 'undefined') {
                 const vaultInput = prompt(
-                    '📝 Obsidian で開くために vault 名を設定します\n\n同期フォルダが vault 自体: vault 名を入力\n同期フォルダが vault のサブフォルダ: vault 名を入力 (後でサブパスも聞きます)',
+                    'Obsidian で開くために vault 名を設定します\n\n同期フォルダが vault 自体: vault 名を入力\n同期フォルダが vault のサブフォルダ: vault 名を入力 (後でサブパスも聞きます)',
                     folderName
                 );
                 if (vaultInput && vaultInput.trim()) {
                     settings.obsidianVaultName = vaultInput.trim();
-                    const subInput = prompt('vault 内のサブパス (例: 40_📖reading)\n空欄で vault 直下', '');
+                    const subInput = prompt('vault 内のサブパス (例: 40_reading)\n空欄で vault 直下', '');
                     settings.obsidianSubPath = (subInput || '').trim();
                 } else {
                     settings.obsidianVaultName = '';
@@ -7468,14 +7468,14 @@ class VirtualBookshelf {
                 const subPath = (settings.obsidianSubPath || '').replace(/^\/+|\/+$/g, '');
                 const filePath = subPath ? `${subPath}/${fullPath}` : fullPath;
                 const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
-                if (confirm(`${created ? '✅ 詳細メモを作成しました' : '📝 詳細メモ'}\n\n📁 ${fullPath}\n（パスをクリップボードにコピー済）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
+                if (confirm(`${created ? '詳細メモを作成しました' : '詳細メモ'}\n\n${fullPath}\n（パスをクリップボードにコピー済）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
                     window.location.href = obsidianUrl;
                 }
             } else {
-                toast(`📁 ${folderName}/${fullPath}\n（パスをクリップボードにコピー済）\n\nvault 名が未設定です。設定 → 長文メモ から「アプリ内エディタ」に切り替えるか、再度この操作で設定してください。`);
+                toast(`${folderName}/${fullPath}\n（パスをクリップボードにコピー済）\n\nvault 名が未設定です。設定 → 長文メモ から「アプリ内エディタ」に切り替えるか、再度この操作で設定してください。`);
             }
         } else if (openWith === 'system') {
-            toast(`📂 同期フォルダの ${fullPath} を OS のエクスプローラ等で開いてください。\n（パスはクリップボードにコピー済み）`);
+            toast(`同期フォルダの ${fullPath} を OS のエクスプローラ等で開いてください。\n（パスはクリップボードにコピー済み）`);
         }
 
         // PC v2: 右ペインで表示中なら再描画 (modal の互換用に旧 #book-modal もチェック)
@@ -7520,7 +7520,7 @@ class VirtualBookshelf {
         modal.classList.add('show');
 
         if (typeof EasyMDE === 'undefined') {
-            if (statusEl) statusEl.textContent = '❌ エディタライブラリが読み込まれていません (CDN 接続を確認)';
+            if (statusEl) statusEl.textContent = 'エディタライブラリが読み込まれていません (CDN 接続を確認)';
             return;
         }
         this._bookMemoEditor = new EasyMDE({
@@ -7555,12 +7555,12 @@ class VirtualBookshelf {
             this.userData.notes[ctx.asin].hasDetailMemo = true;
             await this.saveUserData();
             if (statusEl) {
-                statusEl.textContent = '✅ 保存しました';
-                setTimeout(() => { if (statusEl.textContent.startsWith('✅')) statusEl.textContent = ''; }, 2500);
+                statusEl.textContent = '保存しました';
+                setTimeout(() => { if (statusEl.textContent.startsWith('')) statusEl.textContent = ''; }, 2500);
             }
         } catch (e) {
             console.error('長文メモ保存失敗:', e);
-            if (statusEl) statusEl.textContent = `❌ ${e.message}`;
+            if (statusEl) statusEl.textContent = `${e.message}`;
         }
     }
 
@@ -7611,7 +7611,7 @@ class VirtualBookshelf {
             const image = book.productImage ? escapeHtml(book.productImage) : '';
             return `
                 <div class="exclusion-item" style="display: flex; align-items: center; padding: 0.5rem; border-bottom: 1px solid #eee; gap: 1rem;">
-                    ${image ? `<img src="${image}" alt="" style="width: 40px; height: 60px; object-fit: cover;">` : '<div style="width: 40px; height: 60px; background: #eee; display: flex; align-items: center; justify-content: center;">📖</div>'}
+                    ${image ? `<img src="${image}" alt="" style="width: 40px; height: 60px; object-fit: cover;">` : '<div style="width: 40px; height: 60px; background: #eee; display: flex; align-items: center; justify-content: center;"></div>'}
                     <div style="flex: 1; min-width: 0;">
                         <div style="font-weight: bold; overflow: hidden; text-overflow: ellipsis;">${title}</div>
                         <div style="color: #888; font-size: 0.85rem;">${authors}</div>
@@ -7636,14 +7636,14 @@ class VirtualBookshelf {
     async deleteBook(asin) {
         const book = this.books.find(b => b.asin === asin);
         if (!book) {
-            toast('❌ 指定された書籍が見つかりません');
+            toast('指定された書籍が見つかりません');
             return;
         }
 
-        const confirmMessage = `🗑️ 書籍「${book.title}」を完全削除しますか？
+        const confirmMessage = `書籍「${book.title}」を完全削除しますか？
 
-⚠️ この操作は取り消せません。
-📝 お気に入り、メモ、本棚からも削除されます。`;
+この操作は取り消せません。
+お気に入り、メモ、本棚からも削除されます。`;
 
         if (!confirm(confirmMessage)) {
             return;
@@ -7692,10 +7692,10 @@ class VirtualBookshelf {
             // モーダルを閉じる
             this.closeModal();
 
-            toast(`✅ 「${book.title}」を削除しました`);
+            toast(`「${book.title}」を削除しました`);
         } catch (error) {
             console.error('削除エラー:', error);
-            toast(`❌ 削除に失敗しました: ${error.message}`);
+            toast(`削除に失敗しました: ${error.message}`);
         }
     }
 
@@ -7840,7 +7840,7 @@ class VirtualBookshelf {
             .filter(b => b && !existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
 
         if (selectedBooks.length === 0) {
-            toast('📚 インポートする本を選択してください');
+            toast('インポートする本を選択してください');
             return;
         }
 
@@ -7870,7 +7870,7 @@ class VirtualBookshelf {
 
         } catch (error) {
             console.error('選択インポートエラー:', error);
-            toast(`❌ インポートに失敗しました: ${error.message}`);
+            toast(`インポートに失敗しました: ${error.message}`);
         }
     }
     
@@ -7898,7 +7898,7 @@ class VirtualBookshelf {
         const newUpdatedAsin = updatedAsinInput.value.trim();
 
         if (!newTitle) {
-            toast('📖 タイトルは必須です');
+            toast('タイトルは必須です');
             return;
         }
 
@@ -7910,7 +7910,7 @@ class VirtualBookshelf {
 
         // 変更後ASINの妥当性チェック
         if (newUpdatedAsin && !this.bookManager.isValidASIN(newUpdatedAsin)) {
-            toast('🔗 変更後ASINは10桁の英数字で入力してください（例: B07ABC1234）');
+            toast('変更後ASINは10桁の英数字で入力してください（例: B07ABC1234）');
             return;
         }
 
@@ -7964,7 +7964,7 @@ class VirtualBookshelf {
                 this.applyFilters();
                 this.updateStats();
 
-                toast('✅ 本の情報を更新しました');
+                toast('本の情報を更新しました');
 
                 // 編集モードから表示モードに戻る
                 if (newOriginalAsin !== asin) {
@@ -7981,7 +7981,7 @@ class VirtualBookshelf {
 
         } catch (error) {
             console.error('本の更新エラー:', error);
-            toast(`❌ 更新に失敗しました: ${error.message}`);
+            toast(`更新に失敗しました: ${error.message}`);
         }
     }
 
@@ -8090,7 +8090,7 @@ class VirtualBookshelf {
     async importFromFile() {
         const fileInput = document.getElementById('kindle-file-input');
         if (!fileInput.files || fileInput.files.length === 0) {
-            toast('📁 ファイルを選択してください');
+            toast('ファイルを選択してください');
             return;
         }
 
@@ -8104,7 +8104,7 @@ class VirtualBookshelf {
             
         } catch (error) {
             console.error('ファイル読み込みエラー:', error);
-            toast(`❌ ファイルの読み込みに失敗しました: ${error.message}`);
+            toast(`ファイルの読み込みに失敗しました: ${error.message}`);
         }
     }
 
@@ -8170,7 +8170,7 @@ class VirtualBookshelf {
             return `
                 <div class="plugin-card" data-plugin-card="${id}" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
                     <div style="flex:1 1 200px; min-width:0;">
-                        <div style="font-weight:600;">${manifest.name || id} <span style="color:#888; font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '🌐' : ''}</span></div>
+                        <div style="font-weight:600;">${manifest.name || id} <span style="color:#888; font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '' : ''}</span></div>
                         <div style="font-size:0.85rem; color:#666;">${manifest.description || ''}</div>
                         <div class="plugin-status"></div>
                     </div>
@@ -8178,7 +8178,7 @@ class VirtualBookshelf {
                         <label style="display:flex; gap:0.3rem; align-items:center; font-size:0.85rem;">
                             <input type="checkbox" data-toggle-plugin="${id}" ${enabled ? 'checked' : ''}> 有効
                         </label>
-                        <button class="btn btn-secondary btn-small" data-uninstall-plugin="${id}">🗑️ 削除</button>
+                        <button class="btn btn-secondary btn-small" data-uninstall-plugin="${id}">削除</button>
                     </div>
                 </div>
             `;
@@ -8207,7 +8207,7 @@ class VirtualBookshelf {
         const loaded = this.pluginLoader && this.pluginLoader.loaded.has(id);
         const failure = this.pluginLoader && this.pluginLoader.failedToLoad.get(id);
         let html = '';
-        if (failure) html += `<div style="font-size:0.8rem; color:#c00;">⚠️ ${failure}</div>`;
+        if (failure) html += `<div style="font-size:0.8rem; color:#c00;">${failure}</div>`;
         if (loaded) html += '<div style="font-size:0.8rem; color:#0a0;">✓ 読み込み済み（リロード不要で有効）</div>';
         statusEl.innerHTML = html;
     }
@@ -8226,14 +8226,14 @@ class VirtualBookshelf {
         try {
             const manifest = await this.pluginLoader.installFromGitHub(url);
             if (manifest) {
-                toast(`✅ ${manifest.name || manifest.id} v${manifest.version || '?'} をインストールしました`);
+                toast(`${manifest.name || manifest.id} v${manifest.version || '?'} をインストールしました`);
                 // 新規プラグインをサイドバー(ボタン)と一覧に反映
                 this._applyHeaderLayout();
                 await this._renderPluginListSection();
                 input.value = '';
             }
         } catch (e) {
-            toast(`❌ インストール失敗: ${e.message}`);
+            toast(`インストール失敗: ${e.message}`);
         }
     }
 
@@ -8266,7 +8266,7 @@ class VirtualBookshelf {
             await this.pluginLoader.uninstall(id);
             await this._renderPluginsList();
         } catch (e) {
-            toast(`❌ 削除失敗: ${e.message}`);
+            toast(`削除失敗: ${e.message}`);
         }
     }
 
@@ -8277,7 +8277,7 @@ class VirtualBookshelf {
      * - opener が無い場合はクリップボードに JSON コピー（フォールバック）
      */
     _buildKindleBookmarkletCode() {
-        const code = `(async()=>{try{var c=window.csrfToken;if(!c){alert('Amazon Kindle一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var items=[],s=0,t=Number.MAX_SAFE_INTEGER;while(items.length<t){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:s,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));var d=j.GetContentOwnershipData;t=d.numberOfItems;s+=100;items.push.apply(items,d.items);}var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert('✅ '+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}}else{await navigator.clipboard.writeText(JSON.stringify(pl));alert('✅ '+pl.length+'冊取得。クリップボードにコピーしました。bookshelf を「Amazon ライブラリページを開く」経由で開いているか確認してください。');}}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('❌ 失敗: '+(e.message||e));}}})();`;
+        const code = `(async()=>{try{var c=window.csrfToken;if(!c){alert('Amazon Kindle一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var items=[],s=0,t=Number.MAX_SAFE_INTEGER;while(items.length<t){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:s,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));var d=j.GetContentOwnershipData;t=d.numberOfItems;s+=100;items.push.apply(items,d.items);}var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}}else{await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf を「Amazon ライブラリページを開く」経由で開いているか確認してください。');}}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
         return 'javascript:' + encodeURIComponent(code);
     }
 
@@ -8285,7 +8285,7 @@ class VirtualBookshelf {
         const bm = this._buildKindleBookmarkletCode();
         try {
             await navigator.clipboard.writeText(bm);
-            toast('📋 ブックマークレットをクリップボードにコピーしました。\n\n手順:\n1. ブラウザのブックマークバーを右クリック → 「ページを追加」\n2. 名前を「Kindle取込」など\n3. URL 欄に Ctrl+V でペースト\n4. 保存\n\n以後はこのブックマークレットを Amazon ライブラリページで1クリックするだけで取込できます。');
+            toast('ブックマークレットをクリップボードにコピーしました。\n\n手順:\n1. ブラウザのブックマークバーを右クリック → 「ページを追加」\n2. 名前を「Kindle取込」など\n3. URL 欄に Ctrl+V でペースト\n4. 保存\n\n以後はこのブックマークレットを Amazon ライブラリページで1クリックするだけで取込できます。');
         } catch (e) {
             // clipboard 失敗時は textarea で表示
             prompt('クリップボードに自動コピーできませんでした。以下を全選択 (Ctrl+A) → コピー (Ctrl+C) してブックマークの URL に貼り付けてください:', bm);
@@ -8294,7 +8294,7 @@ class VirtualBookshelf {
 
     openAmazonForBookmarklet() {
         if (this._kindleImportInFlight) {
-            toast('⏳ 既に取込中です。新しいタブの完了を待ってください。');
+            toast('既に取込中です。新しいタブの完了を待ってください。');
             return;
         }
         // URL に ?bookshelfImport=1 を付けると拡張 (kindle_bookshelf_exporter v0.9.5+) が
@@ -8328,12 +8328,12 @@ class VirtualBookshelf {
             cleanup();
 
             if (!data.ok) {
-                toast(`❌ Kindle 取込に失敗しました: ${data.error || '不明なエラー'}`);
+                toast(`Kindle 取込に失敗しました: ${data.error || '不明なエラー'}`);
                 return;
             }
             const items = Array.isArray(data.items) ? data.items : [];
             if (items.length === 0) {
-                toast('⚠️ 取込対象の本がありませんでした。');
+                toast('取込対象の本がありませんでした。');
                 return;
             }
 
@@ -8346,7 +8346,7 @@ class VirtualBookshelf {
         // 拡張なら数秒〜数十秒で完了、ブックマークレット手動なら長め必要 → 15 分待機
         timer = setTimeout(() => {
             cleanup();
-            toast('⏱️ Kindle 取込タイムアウト（15分）。\n\n拡張 (kindle_bookshelf_exporter) インストール済みなら自動取込されるはずです。\nインストールしていない場合は Amazon ページでブックマークレットを手動クリックしてください。\nブックマークレット登録は「📋 ブックマークレットをコピー」から行えます。');
+            toast('Kindle 取込タイムアウト（15分）。\n\n拡張 (kindle_bookshelf_exporter) インストール済みなら自動取込されるはずです。\nインストールしていない場合は Amazon ページでブックマークレットを手動クリックしてください。\nブックマークレット登録は「ブックマークレットをコピー」から行えます。');
         }, 15 * 60 * 1000);
     }
 
@@ -8377,7 +8377,7 @@ class VirtualBookshelf {
                     </div>
                 </div>
                 <p class="import-note">
-                    ✅ インポートが完了しました。新規追加: ${results.added}冊、更新: ${results.updated}冊
+                    インポートが完了しました。新規追加: ${results.added}冊、更新: ${results.updated}冊
                 </p>
             </div>
         `;
@@ -8471,7 +8471,7 @@ class VirtualBookshelf {
         document.getElementById('manual-asin').value = asin;
         document.getElementById('manual-asin').readOnly = true;
         
-        toast(`⚠️ 書籍情報の自動取得に失敗しました。\nASIN: ${asin}\n\n手動でタイトルと著者を入力してください。`);
+        toast(`書籍情報の自動取得に失敗しました。\nASIN: ${asin}\n\n手動でタイトルと著者を入力してください。`);
     }
 
     /**
@@ -8497,7 +8497,7 @@ class VirtualBookshelf {
         }
 
         // ローディング状態を表示
-        this.showASINStatus('loading', '📥 書籍情報を取得中...');
+        this.showASINStatus('loading', '書籍情報を取得中...');
         fetchBtn.disabled = true;
         fetchBtn.textContent = '取得中...';
 
@@ -8512,16 +8512,16 @@ class VirtualBookshelf {
 
             // 取得結果に応じてメッセージを表示
             if (bookData.title && bookData.title !== 'タイトル未取得' && bookData.title !== '') {
-                this.showASINStatus('success', `✅ 自動取得成功: ${bookData.title}`);
+                this.showASINStatus('success', `自動取得成功: ${bookData.title}`);
             } else {
-                this.showASINStatus('error', '❌ 情報取得できませんでした。手動で入力してください。');
+                this.showASINStatus('error', '情報取得できませんでした。手動で入力してください。');
                 // 自動取得失敗の場合、タイトルフィールドにフォーカス
                 titleInput.focus();
             }
 
         } catch (error) {
             console.error('書籍情報取得エラー:', error);
-            this.showASINStatus('error', '❌ 取得に失敗しました。手動で入力してください。');
+            this.showASINStatus('error', '取得に失敗しました。手動で入力してください。');
         } finally {
             // ボタンを元に戻す
             fetchBtn.disabled = false;
@@ -8557,12 +8557,12 @@ class VirtualBookshelf {
         const dateInput = document.getElementById('manual-acquired-date')?.value;
 
         if (!asin) {
-            toast('📝 ASINを入力してください');
+            toast('ASINを入力してください');
             return;
         }
 
         if (!title) {
-            toast('📝 タイトルを入力してください');
+            toast('タイトルを入力してください');
             return;
         }
 
@@ -8607,7 +8607,7 @@ class VirtualBookshelf {
 
         } catch (error) {
             console.error('追加エラー:', error);
-            toast(`❌ 追加に失敗しました: ${error.message}`);
+            toast(`追加に失敗しました: ${error.message}`);
         }
     }
 
@@ -8618,7 +8618,7 @@ class VirtualBookshelf {
         const resultsDiv = document.getElementById('add-book-results');
         resultsDiv.innerHTML = `
             <div class="add-success">
-                <h3>✅ 書籍を追加しました</h3>
+                <h3>書籍を追加しました</h3>
                 <div class="added-book-info">
                     <p><strong>タイトル:</strong> ${book.title}</p>
                     <p><strong>著者:</strong> ${book.authors}</p>
@@ -8756,7 +8756,7 @@ class VirtualBookshelf {
 
     showError(message) {
         const bookshelf = document.getElementById('bookshelf');
-        bookshelf.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+        bookshelf.innerHTML = `<div class="error-message">${message}</div>`;
     }
     
     generateStarRating(rating, size = 18) {

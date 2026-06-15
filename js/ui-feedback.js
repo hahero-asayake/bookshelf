@@ -29,9 +29,9 @@
     ];
 
     function inferType(msg) {
-        if (/失敗|エラー|できません|拒否され/.test(msg)) return 'error';
+        if (/失敗|エラー|できません|拒否|見つかりません|切れまし|無効|不正/.test(msg)) return 'error';
         if (/してください|ありません|未設定|ブロックされ/.test(msg)) return 'warn';
-        if (/しました/.test(msg)) return 'success';
+        if (/しました|完了/.test(msg)) return 'success';
         return 'info';
     }
 
