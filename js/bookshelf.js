@@ -3552,6 +3552,15 @@ class VirtualBookshelf {
         if (del) del.addEventListener('click', () => this._deleteAccount());
         const refresh = document.getElementById('account-usage-refresh');
         if (refresh) refresh.addEventListener('click', () => this._refreshHubUsage({ notify: true }));
+        // 課金 (Stripe, ADR-035): アップグレード / 支払い管理 (解約)
+        const upM = document.getElementById('account-upgrade-monthly');
+        if (upM) upM.addEventListener('click', () => this._startCheckout('monthly'));
+        const upY = document.getElementById('account-upgrade-yearly');
+        if (upY) upY.addEventListener('click', () => this._startCheckout('yearly'));
+        const manage = document.getElementById('account-manage-billing');
+        if (manage) manage.addEventListener('click', () => this._openBillingPortal());
+        // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
+        this._handleBillingReturn();
         const openAccount = () => {
             const sec = document.getElementById('account-section');
             if (sec) { sec.open = true; sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -3640,6 +3649,14 @@ class VirtualBookshelf {
             fill.classList.toggle('is-warn', ratio >= 0.8 && ratio < 0.98);
             fill.classList.toggle('is-full', ratio >= 0.98);
         }
+        // 課金導線 (ADR-035): Free=アップグレード提示 / Plus=支払い管理。接続済みのみ
+        const plus = hub.plan === 'plus';
+        const billing = document.getElementById('account-billing');
+        const upgrade = document.getElementById('account-upgrade');
+        const manage = document.getElementById('account-manage-billing');
+        if (billing) billing.hidden = false;
+        if (upgrade) upgrade.hidden = plus;
+        if (manage) manage.hidden = !plus;
     }
 
     _reflectAccountChip(hub, connected) {
@@ -3701,6 +3718,80 @@ class VirtualBookshelf {
         } catch (e) {
             console.warn('ハブ使用量の取得に失敗:', e);
             if (notify) toast(`使用量を取得できませんでした: ${e.message}`, { type: 'warn' });
+        }
+    }
+
+    // ===== 課金 (Stripe Checkout / Billing Portal, ADR-035) =====
+    // 決済の実体は Stripe ホスト画面。アプリは Worker でセッションを作り、その URL へ遷移するだけ。
+
+    // Plus にアップグレード: Worker に Checkout セッションを作らせ、Stripe へ遷移
+    async _startCheckout(plan) {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) { toast('先にログインしてください。', { type: 'warn' }); return; }
+        const btns = ['account-upgrade-monthly', 'account-upgrade-yearly'].map(id => document.getElementById(id));
+        btns.forEach(b => { if (b) b.disabled = true; });
+        try {
+            const res = await fetch(`${hub.apiBase}/billing/checkout`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${hub.key}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan, returnUrl: location.href.split('?')[0].split('#')[0] })
+            });
+            if (res.status === 503) { toast('Plus の決済は現在準備中です。もう少しお待ちください。', { type: 'warn' }); return; }
+            if (!res.ok) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error(`${res.status}${d ? ': ' + d : ''}`); }
+            const data = await res.json();
+            if (data.url) { location.href = data.url; return; }   // Stripe Checkout へ遷移
+            throw new Error('セッション URL が取得できませんでした');
+        } catch (e) {
+            toast(`アップグレードを開始できませんでした: ${e.message}`, { type: 'error' });
+        } finally {
+            btns.forEach(b => { if (b) b.disabled = false; });
+        }
+    }
+
+    // 支払い方法・解約の管理: Stripe Billing Portal へ遷移
+    async _openBillingPortal() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) { toast('先にログインしてください。', { type: 'warn' }); return; }
+        const btn = document.getElementById('account-manage-billing');
+        if (btn) btn.disabled = true;
+        try {
+            const res = await fetch(`${hub.apiBase}/billing/portal`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${hub.key}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ returnUrl: location.href.split('?')[0].split('#')[0] })
+            });
+            if (res.status === 503) { toast('支払い管理は現在準備中です。', { type: 'warn' }); return; }
+            if (!res.ok) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error(`${res.status}${d ? ': ' + d : ''}`); }
+            const data = await res.json();
+            if (data.url) { location.href = data.url; return; }
+            throw new Error('管理ページの URL が取得できませんでした');
+        } catch (e) {
+            toast(`支払い管理を開けませんでした: ${e.message}`, { type: 'error' });
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // 決済からの戻り (?billing=success|cancel)。プラン反映は Webhook 経由なので使用量を再取得
+    _handleBillingReturn() {
+        if (this._billingReturnHandled) return;
+        let params;
+        try { params = new URLSearchParams(location.search); } catch (_) { return; }
+        const billing = params.get('billing');
+        if (!billing) return;
+        this._billingReturnHandled = true;
+        // クエリを URL から除去 (リロードで再通知しない)
+        try {
+            params.delete('billing');
+            const qs = params.toString();
+            history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+        } catch (_) {}
+        if (billing === 'success') {
+            toast('お支払いが完了しました。Plus を反映しています…', { type: 'success' });
+            // Webhook 反映に数秒かかることがあるので少し遅らせて使用量を再取得
+            setTimeout(() => this._refreshHubUsage({ notify: false }), 2500);
+        } else if (billing === 'cancel') {
+            toast('アップグレードはキャンセルされました。', { type: 'info' });
         }
     }
 

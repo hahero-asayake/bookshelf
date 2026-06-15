@@ -29,6 +29,12 @@
 //                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
 //   OPERATOR_AFFILIATE_TAG (任意) ハブ公開ページの Amazon アフィタグ (Free / 解決不能時)。/go が解決して使う。
 //                    空なら Free 公開は無印リンク (誤ったタグへの送客を防ぐ)。タグ正本はここで一元管理 (ADR-034追補)。
+//   --- 課金 (Stripe, ADR-035。未設定なら課金系は 503 を返し無効化) ---
+//   STRIPE_SECRET_KEY      (secret) Stripe シークレットキー (sk_…)。Checkout / Portal セッション作成に使う。
+//   STRIPE_WEBHOOK_SECRET  (secret) Webhook 署名シークレット (whsec_…)。/billing/webhook の署名検証。
+//   STRIPE_PRICE_MONTHLY   (var)    月額プランの Price ID (price_…)。
+//   STRIPE_PRICE_YEARLY    (var)    年額プランの Price ID (price_…)。
+//   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
 //
 // コスト防御 (ADR-033, 収益化分析):
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
@@ -48,6 +54,9 @@ export default {
         // アフィリンク・リダイレクタ (認証不要・公開ページからクリックされる)。クリック時にタグを解決
         if (path.startsWith('/go/')) return handleGo(request, env, path);
 
+        // Stripe Webhook (サーバ間・署名検証。CORS 不要。アプリ origin 制限の外なので個別処理)
+        if (path === '/billing/webhook' && request.method === 'POST') return handleStripeWebhook(request, env);
+
         // API (アプリは別 origin なので CORS 付与)
         if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
         try {
@@ -56,6 +65,8 @@ export default {
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
             if (path === '/account' && request.method === 'DELETE') return cors(await handleAccountDelete(request, env), env, request);
+            if (path === '/billing/checkout' && request.method === 'POST') return cors(await handleCheckout(request, env), env, request);
+            if (path === '/billing/portal' && request.method === 'POST') return cors(await handleBillingPortal(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
@@ -379,6 +390,141 @@ async function deletePrefix(env, prefix) {
         cursor = res.truncated ? res.cursor : undefined;
     } while (cursor);
 }
+
+// ===== 課金 (Stripe Checkout / Billing Portal / Webhook, ADR-035) =====
+// Plus 化は uid レコードの plan/quotaBytes を引き上げるだけ (既存設計の延長)。決済の正本は Stripe。
+// 未設定 (STRIPE_* なし) の環境では課金系は 503 を返し、何も起きない (口座準備前でも他機能は動く)。
+const PLUS_QUOTA_DEFAULT = 3 * 1024 * 1024 * 1024;   // Plus = 3GB (ADR-033/035)
+
+// アップグレード: Stripe Checkout セッションを作り、その URL を返す (アプリがリダイレクト)。
+async function handleCheckout(request, env) {
+    if (!env.STRIPE_SECRET_KEY) throw httpError(503, 'billing not configured');
+    const sess = await requireAuth(request, env);
+    const body = await request.json().catch(() => ({}));
+    const price = body.plan === 'yearly' ? env.STRIPE_PRICE_YEARLY : env.STRIPE_PRICE_MONTHLY;
+    if (!price || String(price).startsWith('REPLACE')) throw httpError(503, 'price not configured');
+    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    const ret = safeReturnUrl(body.returnUrl, env);
+    const form = new URLSearchParams();
+    form.set('mode', 'subscription');
+    form.set('line_items[0][price]', price);
+    form.set('line_items[0][quantity]', '1');
+    form.set('client_reference_id', sess.uid);        // Webhook で uid を特定する
+    form.set('success_url', `${ret}?billing=success`);
+    form.set('cancel_url', `${ret}?billing=cancel`);
+    if (rec && rec.stripeCustomerId) form.set('customer', rec.stripeCustomerId);
+    else if (rec && rec.email) form.set('customer_email', rec.email);
+    const data = await stripeApi(env, 'POST', 'checkout/sessions', form);
+    return json({ url: data.url });
+}
+
+// 解約/支払い方法の管理: Stripe Billing Portal セッションを作り URL を返す。
+async function handleBillingPortal(request, env) {
+    if (!env.STRIPE_SECRET_KEY) throw httpError(503, 'billing not configured');
+    const sess = await requireAuth(request, env);
+    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!rec || !rec.stripeCustomerId) throw httpError(400, 'no subscription');
+    const body = await request.json().catch(() => ({}));
+    const form = new URLSearchParams();
+    form.set('customer', rec.stripeCustomerId);
+    form.set('return_url', safeReturnUrl(body.returnUrl, env));
+    const data = await stripeApi(env, 'POST', 'billing_portal/sessions', form);
+    return json({ url: data.url });
+}
+
+// Webhook: 署名を検証し、課金イベントを uid レコードに反映する。
+async function handleStripeWebhook(request, env) {
+    if (!env.STRIPE_WEBHOOK_SECRET) return new Response('billing not configured', { status: 503 });
+    const sig = request.headers.get('Stripe-Signature') || '';
+    const raw = await request.text();
+    let event;
+    try { event = await verifyStripeSignature(raw, sig, env.STRIPE_WEBHOOK_SECRET); }
+    catch (e) { return new Response(`bad signature: ${e.message}`, { status: 400 }); }
+    try { await applyStripeEvent(event, env); }
+    catch (e) { return new Response(`handler error: ${e.message}`, { status: 500 }); }
+    return new Response('ok', { status: 200 });
+}
+
+// イベント → プラン反映 (テスト対象。KV だけに依存する純ロジック)。
+async function applyStripeEvent(event, env) {
+    const type = event && event.type;
+    const obj = (event && event.data && event.data.object) || {};
+    if (type === 'checkout.session.completed') {
+        const uid = obj.client_reference_id;
+        if (!uid) return;
+        await setPlan(env, uid, 'plus', { stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription });
+        if (obj.customer) await env.KV.put(`stripe:${obj.customer}`, uid);   // customer→uid 逆引き (失効イベント用)
+    } else if (type === 'customer.subscription.deleted' ||
+               (type === 'customer.subscription.updated' && ['canceled', 'unpaid', 'incomplete_expired'].includes(obj.status))) {
+        const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
+        if (uid) await setPlan(env, uid, 'free', {});
+    }
+}
+
+// プラン/quota を引き上げ/引き下げる。/go の Plus 解決もこの plan を見る (降格で運営タグへ戻る)。
+async function setPlan(env, uid, plan, extra) {
+    const rec = await env.KV.get(`uid:${uid}`, 'json');
+    if (!rec) return;
+    rec.plan = plan;
+    rec.quotaBytes = plan === 'plus'
+        ? (Number(env.PLUS_QUOTA_BYTES) || PLUS_QUOTA_DEFAULT)
+        : (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA);
+    if (extra && extra.stripeCustomerId) rec.stripeCustomerId = extra.stripeCustomerId;
+    if (extra && extra.stripeSubscriptionId) rec.stripeSubscriptionId = extra.stripeSubscriptionId;
+    await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
+}
+
+// Stripe 署名検証 (Stripe-Signature: t=…,v1=… の HMAC-SHA256(`${t}.${payload}`))。
+async function verifyStripeSignature(payload, header, secret, toleranceSec = 300) {
+    const parts = {};
+    for (const kv of String(header).split(',')) {
+        const i = kv.indexOf('=');
+        if (i > 0) parts[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+    }
+    const t = parts.t, v1 = parts.v1;
+    if (!t || !v1) throw new Error('missing t/v1');
+    if (Math.abs(Date.now() / 1000 - Number(t)) > toleranceSec) throw new Error('timestamp out of tolerance');
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${payload}`));
+    const hex = [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+    if (!timingSafeEqualHex(hex, v1)) throw new Error('signature mismatch');
+    return JSON.parse(payload);
+}
+
+function timingSafeEqualHex(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+}
+
+// Stripe REST 呼び出し (application/x-www-form-urlencoded)。失敗は 502 に正規化。
+async function stripeApi(env, method, path, form) {
+    const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+        method,
+        headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw httpError(502, `stripe: ${(data && data.error && data.error.message) || res.status}`);
+    return data;
+}
+
+// 戻り先 URL を APP_ORIGIN 許可リストで検証 (オープンリダイレクト防止)。不正なら先頭 origin。
+function safeReturnUrl(url, env) {
+    const allow = String(env.APP_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+    const fallback = (allow[0] || '') + '/bookshelf/';
+    if (!url) return fallback;
+    try {
+        const u = new URL(url);
+        const origin = `${u.protocol}//${u.host}`;
+        if (allow.includes(origin)) return `${origin}${u.pathname}`;   // クエリ/ハッシュは落とす
+    } catch (_) {}
+    return fallback;
+}
+
+// テスト用に課金ロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
+export { applyStripeEvent, setPlan, verifyStripeSignature };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

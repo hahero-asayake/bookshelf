@@ -65,17 +65,26 @@ wrangler deploy -c wrangler.hub.toml
 
 ---
 
-## Phase C. 検証 (security-critical — 必ず実機で)
+## Phase C. 検証 (security-critical — 必ず実機で) ＝ B-3「実機検証」の手順書
+
+> Worker 再デプロイ後、**ハブ機能を本番投入する前に必ずここを通す**。Google ログインは自動化できないので手動。
+> アプリ (`hahero-asayake.github.io/bookshelf`) を開き、設定→同期/アカウントから操作する。
 
 1. **配信**: R2 に `sites/test/index.html` を置き、`https://<HUB_DOMAIN>/public/test/` が表示。レスポンスに **CSP (`script-src` 無し＝`default-src 'none'`)**・`Set-Cookie` 無しを確認。
 2. **認証**: Google サインイン → ID トークンを `POST /session` → `{key, siteId, publicBase}`。改ざん/別 aud は **401**。
+   - ※ 事前に **Google Cloud Console の OAuth クライアント (Web)** の「承認済み JavaScript 生成元」にアプリ配信元 (`https://hahero-asayake.github.io`、移行後は `https://asayake.org`) が登録済みであること。未登録だと GIS ボタンが出ても認証が通らない。OAuth 同意画面にプライバシー URL (`…/bookshelf/legal/privacy.html`) も登録。
 3. **私的 API**: 返ったキーで
    - `PUT /data/private/library.json` → `ETag` → 古い If-Match で再 PUT は **412**。
    - 別キーで他人の `/data/` が読めないこと。`?list=1` / `DELETE` / `POST /data/batch` 往復。quota 超過で **413**。
 4. **パストラバーサル**: `..` 入り path が **400**。
 5. **公開**: `POST /publish` (キー付) → `sites/<siteId>/` に書かれ `/public/<siteId>/` で見える。削除同期 (`deleteMissing`) で消える。
+6. **アフィリンク /go (ADR-034追補)**: 公開ページの Amazon リンクが `https://<HUB_DOMAIN>/go/<siteId>/<asin>` になっていること。これを開くと Amazon へ **302**。
+   - **Free** のとき → `?tag=<OPERATOR_AFFILIATE_TAG>` 付き (vars の値) に飛ぶ。
+   - **Plus** のとき → 公開時に送った本人タグ付きに飛ぶ。
+   - **Plus→Free 降格 (Phase E で解約)** 後、**再公開せずに**同じ `/go` を開くと運営タグに切替わっている (= キャッシュ無効 `no-store` の効果)。`..`/不正 ASIN は **400**。
+7. **退会 `DELETE /account`**: アカウント削除 → `data/<uid>/`・`sites/<siteId>/`・KV (`uid:`/`key:`/`report:`/`site:`) が消える。削除後 `/public/<siteId>/` が **404**、キーが **401**。
 
-> ここが通って初めて UI 統合 (5 つ目の同期方式・公開先「共有」) に進む。
+> ここが通って初めて UI 統合 (5 つ目の同期方式・公開先「共有」) と課金 (Phase E) を本番投入する。
 
 ---
 
@@ -84,6 +93,42 @@ wrangler deploy -c wrangler.hub.toml
 1. **ToS / プライバシーポリシー** (平文で私的個人データを預かる = hahero が管理者)。削除・エクスポート要求の窓口、通報導線。
 2. **バックアップ** (A-2 の方針を実装 or 明文化)。
 3. **通報→停止**: KV `report:<siteId>` を `suspended` にすると `/public/<siteId>/` が 451。
+
+---
+
+## Phase E. 課金 (Stripe, ADR-035) — Plus プラン
+
+> アプリ側の課金導線・Worker エンドポイント (`/billing/checkout` `/billing/portal` `/billing/webhook`)・プラン反映ロジックは**実装済**。
+> ここは **Stripe 口座とキー設定**だけ。未設定の間は課金系が **503** を返し、他機能には影響しない。
+
+### E-1. Stripe アカウント + 商品/価格
+1. Stripe アカウント作成 (https://dashboard.stripe.com)。最初は **テストモード**で通す。
+2. **Product** を 1 つ作成 (例「AsayakeBookshelf Plus」)。その下に **Price を 2 つ**:
+   - **月額**: ¥(=約 $2) / 月 の **recurring** price。📝 `price_…` を控える → `STRIPE_PRICE_MONTHLY`。
+   - **年額**: ¥(=約 $12) / 年 の **recurring** price。📝 `price_…` を控える → `STRIPE_PRICE_YEARLY`。
+3. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。解約・支払い方法変更を許可。`/billing/portal` がこれを開く。
+
+### E-2. Webhook エンドポイント
+1. Developers → **Webhooks → Add endpoint**: URL = `https://hub.asayake.org/billing/webhook`。
+2. 送信イベント: **`checkout.session.completed`** / **`customer.subscription.deleted`** / **`customer.subscription.updated`**。
+3. 📝 **Signing secret** (`whsec_…`) を控える → `STRIPE_WEBHOOK_SECRET`。
+
+### E-3. キー/価格を Worker に設定 → 再デプロイ
+```bash
+cd cf-worker
+# Price ID と Plus 上限は vars (wrangler.hub.toml の STRIPE_PRICE_* を REPLACE_… から実値に置換)
+wrangler secret put STRIPE_SECRET_KEY      -c wrangler.hub.toml   # sk_test_… → 本番は sk_live_…
+wrangler secret put STRIPE_WEBHOOK_SECRET  -c wrangler.hub.toml   # whsec_…
+wrangler deploy -c wrangler.hub.toml
+```
+
+### E-4. 実機検証 (テストモード)
+1. アプリ→設定→アカウントでログイン (Free) → **「月額で Plus にする」** → Stripe Checkout (テストカード `4242 4242 4242 4242`) → 戻ると `?billing=success` → 数秒後に使用量バーが **Plus / 3GB** に。
+2. Webhook ログ (Stripe Dashboard) が 200。KV `uid:<uid>.plan=plus`・`stripe:<customer>=<uid>` を確認。
+3. **「支払い・解約の管理」** → Portal で解約 → `customer.subscription.deleted` → KV が `plan=free`・quota 100MB に戻る。Phase C-6 の **/go 降格切替**もここで確認。
+4. 通れば **本番キー** (`sk_live_…`・本番 webhook secret) に差し替えて再デプロイ。
+
+> 决済の実体は Stripe ホスト画面。アプリ/Worker はカード情報を一切持たない (PCI 範囲を Stripe に寄せる)。
 
 ---
 

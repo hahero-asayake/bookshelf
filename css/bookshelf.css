@@ -3618,6 +3618,12 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-consent input { margin-top: 0.15rem; flex: 0 0 auto; }
 .account-consent a { color: var(--accent); }
 
+/* 課金 (アップグレード / 支払い管理, ADR-035) */
+.account-billing { margin: 0.7rem 0; }
+.account-upgrade-lead { margin: 0 0 0.45rem; font-size: 0.85rem; color: var(--muted, #6b6477); line-height: 1.5; }
+.account-upgrade-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+#account-manage-billing { margin-top: 0.2rem; }
+
 /* サイドバー: アカウント状態チップ */
 .sidebar-account-chip {
     display: flex; align-items: center; gap: 0.5rem; width: 100%;
