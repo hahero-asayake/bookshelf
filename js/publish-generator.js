@@ -158,21 +158,30 @@ class PublishGenerator {
     _wrapDoc(page, publisher, body, css, opts = {}) {
         const esc = PublishGenerator.esc;
         const intro = page.intro || '';
-        // opts: { pageHasAds, siteHasAffiliate, ogImage, canonical, noindex, updatedAt }
+        // opts: { pageHasAds, siteHasAffiliate, isPlus, ogImage, canonical, noindex, updatedAt }
         const pageHasAds = !!opts.pageHasAds;          // このページに実アフィリンクが出る (景表法)
         const siteHasAffiliate = !!opts.siteHasAffiliate; // サイトとして収益化している (常時表明)
+        const isPlus = !!opts.isPlus;                  // Plus=自分のタグ / Free=運営(hahero)のタグ
         const ogImage = opts.ogImage || '';
         const canonical = opts.canonical || '';
         const updated = PublishGenerator._fmtDate(opts.updatedAt);
         const year = PublishGenerator._year(opts.updatedAt);
 
-        // 景表法 (ステマ規制): 実アフィリンクを含むページにだけ目立つ「広告」明示を出す
-        const adNotice = pageHasAds
-            ? `<p class="pub-ad-notice">【広告】当ページの商品リンクは Amazon アソシエイト・プログラムによる広告（アフィリエイトリンク）を含みます。適格販売により収入を得る場合があります。</p>`
-            : '';
-        // Amazon アソシエイト規約: サイトとして収益化しているなら全ページに常時の参加表明を掲示する
+        // 景表法 (ステマ規制): 実アフィリンクを含むページに「広告」を明示。クリック前に認識できるよう
+        // 本文冒頭 (ファーストビュー) と末尾の両方に出す。Free は収益帰属先 (運営) も添える (広告主体の明示)。
+        const adAttribution = isPlus
+            ? ''
+            : '無料プランのため、収益はサイト運営者（AsayakeBookshelf 運営）に帰属します。';
+        const adNoticeText = `【広告】当ページの商品リンクは Amazon アソシエイト・プログラムによる広告（アフィリエイトリンク）です。適格販売により収入が発生します。${adAttribution}`;
+        const adNoticeTop = pageHasAds ? `<div class="pub-wrap"><p class="pub-ad-top">${adNoticeText}</p></div>` : '';
+        const adNotice = pageHasAds ? `<p class="pub-ad-notice">${adNoticeText}</p>` : '';
+        // Amazon アソシエイト規約: サイトとして収益化しているなら全ページに常時の参加表明を掲示する。
+        // 広告主体 (誰の広告か) を消費者が認識できるよう、Free は運営帰属を明記する (ステマ規制の核心)。
+        const standingAttribution = isPlus
+            ? ''
+            : `<br>このサイトの Amazon 商品リンクは本サービスの運営者（AsayakeBookshelf 運営 / asayake.hahero@gmail.com）の Amazon アソシエイト・タグで生成されており、適格販売による収益は発行者ではなく運営者に帰属します。`;
         const affiliateStanding = siteHasAffiliate
-            ? `<p class="pub-affiliate">当サイトは Amazon.co.jp アソシエイト・プログラムの参加者です。商品リンクを経由した適格販売により、サイト運営者が収入を得る場合があります。</p>`
+            ? `<p class="pub-affiliate">当サイトは、Amazon.co.jp を宣伝しリンクすることによって紹介料を獲得できる手段を提供することを目的に設定されたアフィリエイト宣伝プログラムである、Amazon アソシエイト・プログラムの参加者です。${standingAttribution}</p>`
             : '';
 
         const head = [
@@ -204,7 +213,7 @@ ${head}
   ${intro ? `<p class="intro">${esc(intro)}</p>` : ''}
   <p class="by">${esc(publisher)} の本棚</p>
 </div></header>
-<main>${body}</main>
+<main>${adNoticeTop}${body}</main>
 <footer class="pub-footer"><div class="pub-wrap">
   ${adNotice}
   ${affiliateStanding}
@@ -229,6 +238,7 @@ ${head}
         const updatedAt = pageLinks.reduce((m, p) => Math.max(m, p.updatedAt || 0), 0);
         return this._wrapDoc({ title: `${publisher} の本棚`, intro: '' }, publisher, body, css, {
             siteHasAffiliate: !!opts.siteHasAffiliate,
+            isPlus: !!opts.isPlus,
             canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
             updatedAt
         });
@@ -343,6 +353,7 @@ ${head}
             const html = this._wrapDoc(page, publisher, rendered.html || '', rendered.css || '', {
                 pageHasAds,
                 siteHasAffiliate,
+                isPlus,
                 ogImage,
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${page.slug}/` : '',
                 noindex: !!page.noindex,
@@ -353,7 +364,7 @@ ${head}
         }
 
         // トップ index
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, isPlus, siteBaseUrl }) });
 
         const leak = this._detectLeak(files, state);
         return { files, pages: built, leak, errors };

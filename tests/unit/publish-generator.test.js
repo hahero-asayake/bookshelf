@@ -158,7 +158,11 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
     it('サイトが収益化していれば常時アフィ表明を全ページに出す (Plus)', async () => {
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
-        expect(html).toContain('Amazon.co.jp アソシエイト・プログラムの参加者');
+        expect(html).toContain('Amazon アソシエイト・プログラムの参加者です');
+        // 本文冒頭にも【広告】を出す (クリック前に認識できるよう, ステマ規制)
+        expect(html).toContain('pub-ad-top');
+        // Plus は自分のタグなので「運営者に帰属」は出さない
+        expect(html).not.toContain('運営者に帰属');
     });
 
     it('収益化していない (Free 無印) なら常時アフィ表明は出さない', async () => {
