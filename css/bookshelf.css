@@ -1746,6 +1746,41 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     gap: 1rem;
 }
 
+/* 初回オンボーディング (蔵書0のときだけ) */
+.dashboard-welcome {
+    position: relative;
+    background: linear-gradient(160deg, var(--panel, #fff), var(--surface-2, #f4f1f7));
+    border: 1px solid var(--line, #ece7ef);
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem 1.3rem;
+    margin-bottom: 1rem;
+}
+.dashboard-welcome .dw-close {
+    position: absolute; top: 0.6rem; right: 0.6rem;
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; background: transparent; border-radius: 6px; cursor: pointer; color: var(--muted, #6b6675);
+}
+.dashboard-welcome .dw-close:hover { background: var(--surface-3, #ece7f1); }
+.dashboard-welcome .dw-title { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.15rem; font-size: 1.1rem; }
+.dashboard-welcome .dw-title .h-icon { color: var(--accent, #5b6cff); }
+.dashboard-welcome .dw-sub { margin: 0 0 0.9rem; color: var(--muted, #6b6675); font-size: 0.86rem; }
+.dashboard-welcome .dw-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.dashboard-welcome .dw-step { display: flex; align-items: center; gap: 0.8rem; }
+.dashboard-welcome .dw-num {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent, #5b6cff); color: #fff; font-size: 0.82rem; font-weight: 700;
+}
+.dashboard-welcome .dw-step.is-done .dw-num { background: var(--success, #3aa657); }
+.dashboard-welcome .dw-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.dashboard-welcome .dw-body strong { font-size: 0.92rem; }
+.dashboard-welcome .dw-body span { font-size: 0.8rem; color: var(--muted, #6b6675); }
+.dashboard-welcome .dw-step .btn { flex: 0 0 auto; }
+@media (max-width: 560px) {
+    .dashboard-welcome .dw-step { flex-wrap: wrap; }
+    .dashboard-welcome .dw-step .btn { margin-left: 36px; }
+}
+
 .dashboard-widget {
     background: var(--panel);
     border: 1px solid var(--line);
@@ -2437,6 +2472,18 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .bookshelf.view-covers {
     grid-template-columns: repeat(auto-fill, minmax(var(--book-width), 1fr));
 }
+
+/* 一覧 0 件の空状態 (grid なら全幅にまたがる) */
+.bookshelf-empty {
+    grid-column: 1 / -1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.4rem; padding: 56px 20px; text-align: center; color: var(--muted, #6b6675); min-height: 32vh;
+}
+.bookshelf-empty .bse-icon { color: var(--line2, #cfc8d6); line-height: 0; margin-bottom: 0.3rem; }
+.bookshelf-empty .bse-icon svg { width: 32px; height: 32px; }
+.bookshelf-empty .bse-title { font-size: 1rem; font-weight: 600; color: var(--text, #241f2b); margin: 0; }
+.bookshelf-empty .bse-sub { font-size: 0.85rem; margin: 0; max-width: 26rem; line-height: 1.6; }
+.bookshelf-empty .btn { margin-top: 0.7rem; }
 
 /* List View */
 .bookshelf.view-list {

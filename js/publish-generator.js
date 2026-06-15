@@ -288,7 +288,18 @@ ${head}
         };
         const libMap = new Map((state.library.books || []).map(b => [b.asin, b]));
         const ps = state.privateSettings || {};
-        const publisher = ps.publicDisplayName || 'hahero';
+        // 発行者名: 設定の公開名義 → 未設定ならハブのアカウント名(email ローカル部) → 中立値。
+        // 運営名 'hahero' を他ユーザーの公開ページに出さない (ADR-034)。
+        let publisher = ps.publicDisplayName || '';
+        if (!publisher) {
+            try {
+                if (typeof SyncConfigManager !== 'undefined') {
+                    const email = (SyncConfigManager.load().hub || {}).email || '';
+                    publisher = email ? email.split('@')[0] : '';
+                }
+            } catch (_) {}
+        }
+        if (!publisher) publisher = 'マイ本棚';
 
         // アフィリエイト tag の出し分け (ADR-033):
         //   Plus  … 自分の tag (空なら広告なし)。Free … hahero (運営) の tag。

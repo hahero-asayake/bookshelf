@@ -210,7 +210,10 @@ class BookshelfDashboard {
         `;
 
         const gridHtml = `<div class="dashboard-grid${this.editMode ? ' is-edit-mode' : ''}" id="dashboard-grid"></div>`;
-        host.innerHTML = toolbarHtml + gridHtml;
+        // 蔵書 0 かつ未消去のときだけ初回オンボーディングを出す
+        const showWelcome = !this.editMode && (this.app.books || []).length === 0 && !this._welcomeDismissed();
+        host.innerHTML = toolbarHtml + (showWelcome ? this._welcomeHtml() : '') + gridHtml;
+        if (showWelcome) this._bindWelcome();
 
         const grid = document.getElementById('dashboard-grid');
         for (let i = 0; i < layout.length; i++) {
@@ -262,6 +265,56 @@ class BookshelfDashboard {
         }
 
         this._bindEvents();
+    }
+
+    // ===== 初回オンボーディング (蔵書0のときだけ出す3ステップ案内) =====
+    _welcomeDismissed() {
+        try { return localStorage.getItem('bookshelf_welcome_dismissed') === '1'; } catch (_) { return false; }
+    }
+
+    _welcomeHtml() {
+        const ico = (n, s = 16) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        let syncDone = false;
+        try {
+            const m = (window.SyncConfigManager && window.SyncConfigManager.load().method) || 'local';
+            syncDone = m !== 'local' || !!(this.app && this.app.obsidianDirHandle);
+        } catch (_) {}
+        const step = (n, done, title, desc, label, primary, act) =>
+            `<li class="dw-step${done ? ' is-done' : ''}">
+                <span class="dw-num">${done ? window.renderIcon('check', { size: 14 }) : n}</span>
+                <div class="dw-body"><strong>${title}</strong><span>${desc}</span></div>
+                <button class="btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-small" data-dw="${act}" type="button">${label}</button>
+            </li>`;
+        return `<div class="dashboard-welcome" id="dashboard-welcome">
+            <button class="dw-close" id="dw-close" type="button" title="閉じる">${window.renderIcon('x', { size: 16 })}</button>
+            <h3 class="dw-title">${ico('sparkles', 18)}AsayakeBookshelf へようこそ</h3>
+            <p class="dw-sub">3 ステップで本棚を作って公開できます。</p>
+            <ol class="dw-steps">
+                ${step(1, syncDone, '保存先を選ぶ', '本のデータの保存場所（この端末／GitHub／ハブ 等）', syncDone ? '設定済み' : '保存先を選ぶ', false, 'sync')}
+                ${step(2, false, '本を取り込む', 'Kindle から取り込むか、ASIN を手動で追加', '本を追加・取り込み', true, 'import')}
+                ${step(3, false, '公開ページを作る', '本棚を選んでスタイルを選び、Web サイトとして公開', '公開を開く', false, 'publish')}
+            </ol>
+        </div>`;
+    }
+
+    _bindWelcome() {
+        const wel = document.getElementById('dashboard-welcome');
+        if (!wel) return;
+        const close = document.getElementById('dw-close');
+        if (close) close.addEventListener('click', () => {
+            try { localStorage.setItem('bookshelf_welcome_dismissed', '1'); } catch (_) {}
+            wel.remove();
+        });
+        wel.querySelectorAll('[data-dw]').forEach((b) => {
+            b.addEventListener('click', async () => {
+                const act = b.getAttribute('data-dw');
+                if (act === 'publish') { if (typeof this.app.openPublishPagesModal === 'function') await this.app.openPublishPagesModal(); return; }
+                if (typeof this.app._openSettingsModal === 'function') await this.app._openSettingsModal();
+                const id = act === 'sync' ? 'sync-method-select' : 'import-kindle';
+                const el = document.getElementById(id);
+                if (el) { el.closest('details.settings-section')?.setAttribute('open', ''); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            });
+        });
     }
 
     _bindEvents() {

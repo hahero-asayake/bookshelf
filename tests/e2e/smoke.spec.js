@@ -92,6 +92,36 @@ test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033
     expect(errors).toEqual([]);
 });
 
+test('本棚: 絞り込みで0件になると空状態が出る (D)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => window.bookshelf.switchBookshelf('fixshelf'));
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
+    // 検索で0件に → 空状態
+    await page.evaluate(() => window.bookshelf.search('zzz該当なしzzz'));
+    await expect(page.locator('#bookshelf .bookshelf-empty')).toBeVisible();
+    await expect(page.locator('#bookshelf .bse-title')).toContainText('条件に合う本がありません');
+    // 「絞り込みを解除」で戻る
+    await page.locator('#bookshelf .bookshelf-empty .btn').click();
+    await expect(page.locator('#bookshelf .book-item')).toHaveCount(3);
+    expect(errors).toEqual([]);
+});
+
+test('初回オンボーディング: 蔵書0でウェルカムカードが出る (E)', async ({ page }) => {
+    const errors = await bootApp(page);
+    // 蔵書0の状態を再現してダッシュボードを再描画 (data/ フォールバック干渉を避け確定的に検証)
+    await page.evaluate(() => {
+        window.bookshelf.books = [];
+        try { localStorage.removeItem('bookshelf_welcome_dismissed'); } catch (_) {}
+        const d = window.bookshelf.dashboard; if (d) d.render();
+    });
+    await expect(page.locator('#dashboard-welcome')).toBeVisible();
+    await expect(page.locator('#dashboard-welcome .dw-step')).toHaveCount(3);
+    // 閉じると消える
+    await page.locator('#dw-close').click();
+    await expect(page.locator('#dashboard-welcome')).toHaveCount(0);
+    expect(errors).toEqual([]);
+});
+
 test('設定→アカウント: 同期方式と独立してログイン面が出る (A)', async ({ page }) => {
     const errors = await bootApp(page);
     // GIS の外部読込を避けるためサインインボタン描画をスタブ化

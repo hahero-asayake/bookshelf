@@ -650,6 +650,17 @@ class VirtualBookshelf {
         }
         this._reflectAffiliateField();
 
+        // 公開名義 (発行者名)。公開ページのタイトル/フッターに使う (ADR-034)
+        const pubNameInput = document.getElementById('setting-public-name');
+        if (pubNameInput) {
+            pubNameInput.addEventListener('change', () => {
+                if (!this.userData.settings) this.userData.settings = {};
+                this.userData.settings.publicDisplayName = pubNameInput.value.trim();
+                this.saveUserData();
+            });
+        }
+        this._reflectPublicNameField();
+
         // アカウント (ログイン) は同期方式と独立した第一級の面。
         // 起動時はチップ反映のみ (GIS の外部読込はしない)。ログインボタンの描画は設定を開いた時だけ。
         this._setupAccountUI();
@@ -1358,6 +1369,12 @@ class VirtualBookshelf {
         // スクロールも JS を介さずネイティブで滑らか。一括描画のままで OK。
         // ※ ソフトウェアレンダリング環境 (CI のヘッドレス等) では cv+大量要素でレンダラが
         //   詰まることがあるが、GPU 有効の実ブラウザでは問題なし。
+        // 0 件のときは空状態を出す (絞り込み由来 / 空本棚 で出し分け)。真っ白を防ぐ。
+        if (booksToRender.length === 0) {
+            container.appendChild(this._buildBookshelfEmptyState());
+            if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView });
+            return;
+        }
         const frag = document.createDocumentFragment();
         for (const book of booksToRender) {
             frag.appendChild(this.createBookElement(book, this.currentView));
@@ -1365,6 +1382,46 @@ class VirtualBookshelf {
         container.appendChild(frag);
         // view 系プラグイン用: 一覧描画完了を通知
         if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView });
+    }
+
+    // 一覧 0 件のときの空状態。絞り込み中 / all が空 / 通常本棚が空 で文言と導線を変える。
+    _buildBookshelfEmptyState() {
+        const wrap = document.createElement('div');
+        wrap.className = 'bookshelf-empty';
+        const icon = (name) => (typeof window.renderIcon === 'function' ? window.renderIcon(name, { size: 32 }) : '');
+        const filterActive = !!this.searchQuery || (this.ratingFilter && this.ratingFilter.size > 0);
+        const shelf = this.userData.bookshelves?.find(b => b.id === this.currentBookshelf);
+        const isAll = !this.currentBookshelf || (shelf && shelf.isSpecial);
+
+        const head = (iconName, title, sub) => {
+            const i = document.createElement('div'); i.className = 'bse-icon'; i.innerHTML = icon(iconName);
+            const t = document.createElement('p'); t.className = 'bse-title'; t.textContent = title;
+            const s = document.createElement('p'); s.className = 'bse-sub'; s.textContent = sub;
+            wrap.append(i, t, s);
+        };
+        const action = (label, primary, fn) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = `btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-small`;
+            b.textContent = label; b.addEventListener('click', fn); wrap.appendChild(b);
+        };
+
+        if (filterActive) {
+            head('search-x', '条件に合う本がありません', '検索や評価の絞り込みを外すと表示されます。');
+            action('絞り込みを解除', false, () => {
+                this.searchQuery = '';
+                if (this.ratingFilter) this.ratingFilter.clear();
+                const si = document.getElementById('search-input'); if (si) si.value = '';
+                if (typeof this._updateRatingFilterUI === 'function') this._updateRatingFilterUI();
+                this.applyFilters();
+            });
+        } else if (isAll) {
+            head('book-plus', 'まだ本がありません', 'Kindle から取り込むか、ASIN を手動で追加すると、ここに本が並びます。');
+            action('本を追加・取り込み', true, () => this._openSettingsModal());
+        } else {
+            head('book-plus', `「${shelf ? shelf.name : 'この本棚'}」にはまだ本がありません`, '「すべての本」から本を選んで、この本棚に追加できます。');
+            action('すべての本を見る', false, () => this.switchBookshelf('all'));
+        }
+        return wrap;
     }
 
     createBookElement(book, displayType) {
@@ -3426,6 +3483,20 @@ class VirtualBookshelf {
         }
     }
 
+    // 公開名義フィールドの値と placeholder を最新化 (placeholder はアカウント名由来)
+    _reflectPublicNameField() {
+        const el = document.getElementById('setting-public-name');
+        if (!el) return;
+        const s = (this.userData && this.userData.settings) || {};
+        if (document.activeElement !== el) el.value = s.publicDisplayName || '';
+        let derived = '';
+        try {
+            const email = (SyncConfigManager.load().hub || {}).email || '';
+            derived = email ? email.split('@')[0] : '';
+        } catch (_) {}
+        el.placeholder = derived ? `例: ${derived}（未入力ならこの名前を使用）` : '例: あなたの名前 / ハンドル';
+    }
+
     _formatBytes(n) {
         n = Number(n) || 0;
         if (n < 1024) return `${n} B`;
@@ -5150,6 +5221,7 @@ class VirtualBookshelf {
         modal.classList.add('show');
         // 設定を開くたびにアフィタグ欄の表示可否/値を最新化 (プラン変化・別端末更新に追従)
         this._reflectAffiliateField();
+        this._reflectPublicNameField();
         // アカウント状態 (ログイン/プラン/使用量) も最新化
         this._setupAccountUI();
         this._renderAccountSection();
@@ -6828,6 +6900,22 @@ class VirtualBookshelf {
      * 公開はページ単位 (published フラグ) で制御し、サイトは「公開中ページの集合」。
      * publish/unpublish の両方からこれを呼ぶ。戻り値 { ok, result?, reason? }。
      */
+    // 公開などで設定が未完のとき、警告だけで終わらせず confirmDialog から設定の該当箇所へ誘導する。
+    async _confirmOpenSettings(message, targetId) {
+        const ok = await confirmDialog({ title: '設定が必要です', message, okLabel: '設定を開く', cancelLabel: '閉じる' });
+        if (!ok) return;
+        // 公開モーダルが開いていれば閉じてから設定を開く (モーダルの積み重なりを避ける)
+        document.getElementById('publish-pages-modal')?.classList.remove('show');
+        await this._openSettingsModal();
+        const el = targetId && document.getElementById(targetId);
+        if (el) {
+            const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
+            if (det) det.open = true;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
+        }
+    }
+
     async _runPublishExport() {
         // 多重実行ガード: 公開処理は await を多数挟むため、連打/並行起動を防ぐ
         if (this._publishInFlight) {
@@ -6835,7 +6923,7 @@ class VirtualBookshelf {
             return { ok: false, reason: 'inflight' };
         }
         if (!this._isSyncReady()) {
-            toast('先に「同期」で保存先を設定してください。', { type: 'warn' });
+            await this._confirmOpenSettings('本のデータの保存先がまだ設定されていません。設定の「同期」で保存先を選んでください。', 'sync-method-select');
             return { ok: false, reason: 'sync' };
         }
         if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -6846,18 +6934,18 @@ class VirtualBookshelf {
             // 共有ハブ公開: GitHub repo は不要。ハブへのログインだけ確認
             const hub = (SyncConfigManager.load().hub) || {};
             if (!(hub.key && hub.apiBase)) {
-                toast('共有（ハブ）公開には Asayake ハブへのログインが必要です。設定の「同期」でログインしてください。', { type: 'warn' });
+                await this._confirmOpenSettings('共有（ハブ）公開には Asayake アカウントへのログインが必要です。設定の「アカウント」でログインしてください。', 'account-section');
                 return { ok: false, reason: 'hub' };
             }
         } else {
             // 自分の GitHub repo 公開: GitHub 接続と公開先 repo が必要
             const gh = (SyncConfigManager.load().github) || {};
             if (!gh.token) {
-                toast('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', { type: 'warn' });
+                await this._confirmOpenSettings('公開には GitHub 接続が必要です。設定の「同期」で GitHub に接続してください。', 'sync-method-select');
                 return { ok: false, reason: 'github' };
             }
             if (!pub.repo) {
-                toast('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', { type: 'warn' });
+                await this._confirmOpenSettings('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', 'publish-target-select');
                 return { ok: false, reason: 'repo' };
             }
         }

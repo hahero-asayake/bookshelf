@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061506">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061507">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -508,6 +508,9 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
                     <div class="settings-section-body">
                     <div class="publish-config">
+                        <label class="form-label" for="setting-public-name"><span class="h-icon" data-icon="user" data-icon-size="14"></span>公開名義（発行者名）</label>
+                        <input id="setting-public-name" type="text" placeholder="例: あなたの名前 / ハンドル" autocomplete="off">
+                        <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
                         <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
                         <select id="publish-target-select">
                             <option value="github">自分の GitHub リポジトリ（GitHub Pages で配信）</option>
@@ -1099,14 +1102,14 @@
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
     <script src="js/publish-page-store.js?v=2026061402"></script>
     <script src="js/publish-styles.js?v=2026061504"></script>
-    <script src="js/publish-generator.js?v=2026061505"></script>
+    <script src="js/publish-generator.js?v=2026061507"></script>
     <script src="js/exporter.js?v=2026061503"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
-    <script src="js/dashboard.js?v=2026061002"></script>
+    <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061506"></script>
+    <script src="js/bookshelf.js?v=2026061507"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
