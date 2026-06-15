@@ -92,6 +92,20 @@ test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033
     expect(errors).toEqual([]);
 });
 
+test('設定→アカウント: 同期方式と独立してログイン面が出る (A)', async ({ page }) => {
+    const errors = await bootApp(page);
+    // GIS の外部読込を避けるためサインインボタン描画をスタブ化
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
+    // サイドバーのアカウントチップは未接続時「ログイン」
+    await expect(page.locator('#sidebar-account-label')).toHaveText('ログイン');
+    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    // 同期=hub を選ばずに、アカウントセクションでログインできる
+    await expect(page.locator('#account-section')).toBeVisible();
+    await expect(page.locator('#account-disconnected')).toBeVisible();
+    await expect(page.locator('#account-gsi-button')).toHaveAttribute('data-stub', '1');
+    expect(errors).toEqual([]);
+});
+
 test('公開: 新規作成→本棚選択→プレビューが生成される (slug上書きバグ回帰)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });

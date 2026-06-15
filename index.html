@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061502">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061503">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -73,6 +73,11 @@
                 </nav>
                 <!-- ユーティリティ: 本棚管理 / 設定 / 有効プラグインのボタン (_applyHeaderLayout が描画)。D&D で並び替え可 -->
                 <div class="sidebar-utility">
+                    <button class="sidebar-account-chip" id="sidebar-account" type="button" title="アカウント">
+                        <span class="sac-icon" data-icon="user-circle" data-icon-size="16"></span>
+                        <span class="sac-label" id="sidebar-account-label">ログイン</span>
+                        <span class="sac-plan" id="sidebar-account-plan" hidden>無料</span>
+                    </button>
                     <div class="header-controls" id="header-controls">
                         <span class="header-item" data-header-item="manage-bookshelves">
                             <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理" data-icon="pen-line"></button>
@@ -251,6 +256,38 @@
                 <h2><span class="h-icon" data-icon="settings" data-icon-size="20"></span>設定</h2>
             </div>
             <div class="modal-body">
+
+                <details class="settings-section" id="account-section" open>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="user-circle" data-icon-size="16"></span>アカウント</summary>
+                    <div class="settings-section-body">
+                    <div class="path-card">
+                        <div id="account-disconnected" class="path-card-body">
+                            <p class="github-auth-msg">Asayake アカウント（Google ログイン）に接続すると、ハブへの保存・公開やプラン管理ができます。<strong>保存先の選択（同期）とは別に、いつでもここからログインできます。</strong></p>
+                            <div id="account-gsi-button" class="hub-gsi-button"></div>
+                            <p class="hub-plan-note"><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランは <strong>100MB</strong> まで。Plus（月 $2 / 年 $12）で <strong>3GB</strong> に増やせます。</p>
+                            <p class="account-legal-note">ログインすると <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a> と <a href="legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a> に同意したものとみなされます。</p>
+                        </div>
+                        <div id="account-connected" class="path-card-body" hidden>
+                            <p class="github-auth-connected-msg">
+                                <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="account-email">(unknown)</strong> でログイン中
+                                <span id="account-plan-badge" class="hub-plan-badge">無料</span>
+                            </p>
+                            <div class="hub-usage">
+                                <div class="hub-usage-head">
+                                    <span class="hub-usage-text"><span id="account-usage-used">—</span> / <span id="account-usage-quota">—</span></span>
+                                    <button id="account-usage-refresh" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>
+                                </div>
+                                <div class="hub-usage-bar"><div id="account-usage-fill" class="hub-usage-fill"></div></div>
+                            </div>
+                            <div class="account-actions">
+                                <button id="account-logout-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="log-out" data-icon-size="14"></span>ログアウト</button>
+                                <button id="account-delete-btn" class="btn btn-danger btn-small"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span>アカウントを削除</button>
+                            </div>
+                            <p class="account-legal-note"><a href="legal/index.html" target="_blank" rel="noopener">各種ポリシー</a></p>
+                        </div>
+                    </div>
+                    </div>
+                </details>
 
                 <details class="settings-section" open>
                     <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期</summary>
@@ -436,9 +473,8 @@
                             </div>
 
                             <div id="hub-auth-disconnected" class="path-card-body">
-                                <p class="github-auth-msg">Google アカウントでログインします。<br>下のボタンを押すと Google のログイン画面が開きます。</p>
-                                <div id="hub-gsi-button" class="hub-gsi-button"></div>
-                                <p class="hub-plan-note"><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランは <strong>100MB</strong> まで。Plus（月 $2 / 年 $12）で <strong>3GB</strong> に増やせます。</p>
+                                <p class="github-auth-msg">ハブに保存するには、まず <strong>「アカウント」</strong> でログインしてください。</p>
+                                <button id="hub-goto-account" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="user-circle" data-icon-size="14"></span>アカウントでログイン</button>
                             </div>
 
                             <div id="hub-auth-connected" class="path-card-body" hidden>
@@ -614,6 +650,11 @@
                         <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span><strong>アフィリエイト開示:</strong> このサイトは Amazon.co.jp アソシエイトプログラムに参加しており、適格販売により収入を得る場合があります。
                     </p>
                     <p class="about-links">
+                        <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a>
+                        ｜ <a href="legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>
+                        ｜ <a href="legal/tokushoho.html" target="_blank" rel="noopener">特定商取引法に基づく表記</a>
+                    </p>
+                    <p class="about-links">
                         <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
                         ｜ Forked from <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">karaage0703/karaage-virtual-bookshelf</a>
                     </p>
@@ -756,6 +797,7 @@
                     <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開はページごとに行い、公開中のページには公開 URL が表示されます。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
+                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランで公開するページの商品リンクには、運営（Asayake）のアフィリエイトタグが付く場合があります（収益は運営に入ります）。自分の収益にするには <strong>Plus</strong> をご利用ください。</p>
                 <ul id="pp-list" class="pp-list"></ul>
                 <div class="pp-list-foot">
                     <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
@@ -1056,15 +1098,15 @@
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061002"></script>
     <script src="js/publish-page-store.js?v=2026061402"></script>
-    <script src="js/publish-styles.js?v=2026061501"></script>
-    <script src="js/publish-generator.js?v=2026061502"></script>
-    <script src="js/exporter.js?v=2026061502"></script>
+    <script src="js/publish-styles.js?v=2026061503"></script>
+    <script src="js/publish-generator.js?v=2026061503"></script>
+    <script src="js/exporter.js?v=2026061503"></script>
     <script src="js/plugin-api.js?v=2026061002"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061502"></script>
+    <script src="js/bookshelf.js?v=2026061503"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

@@ -650,6 +650,11 @@ class VirtualBookshelf {
         }
         this._reflectAffiliateField();
 
+        // アカウント (ログイン) は同期方式と独立した第一級の面。
+        // 起動時はチップ反映のみ (GIS の外部読込はしない)。ログインボタンの描画は設定を開いた時だけ。
+        this._setupAccountUI();
+        this._reflectAccountChip();
+
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
             // 編集モード切り替え (SVG 子要素クリック対応)
@@ -3458,6 +3463,135 @@ class VirtualBookshelf {
         });
     }
 
+    // ===== アカウント (ログイン/状態) — 同期方式と独立した第一級のログイン面 (A) =====
+    // 設定の「アカウント」セクションとサイドバーのチップに状態を反映する。
+    // 「同期=ハブ」を選ばなくてもここからログインできる (= 旧来「同期からしか入れない」の解消)。
+
+    _setupAccountUI() {
+        if (this._accountUIBound) return;
+        this._accountUIBound = true;
+        const logout = document.getElementById('account-logout-btn');
+        if (logout) logout.addEventListener('click', () => this._logoutAccount());
+        const del = document.getElementById('account-delete-btn');
+        if (del) del.addEventListener('click', () => this._deleteAccount());
+        const refresh = document.getElementById('account-usage-refresh');
+        if (refresh) refresh.addEventListener('click', () => this._refreshHubUsage({ notify: true }));
+        const openAccount = () => {
+            const sec = document.getElementById('account-section');
+            if (sec) { sec.open = true; sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        };
+        const goto = document.getElementById('hub-goto-account');
+        if (goto) goto.addEventListener('click', openAccount);
+        const chip = document.getElementById('sidebar-account');
+        if (chip) chip.addEventListener('click', async () => { await this._openSettingsModal(); openAccount(); });
+    }
+
+    // Google ログインボタンを描画 (GIS 遅延読込)。アカウントセクション用。
+    _ensureAccountSignInButton() {
+        if (this._accountSignInRendered) return;
+        if (typeof HubAuth === 'undefined') return;
+        if (HubAuth.isConnected && HubAuth.isConnected()) return; // 接続済みは不要
+        const host = document.getElementById('account-gsi-button');
+        if (!host) return;
+        this._accountSignInRendered = true;
+        HubAuth.renderSignInButton(host, {
+            onConnected: (session) => {
+                this._renderAccountSection();
+                this._renderHubAuthState();
+                toast(`Asayake アカウントにログインしました${session && session.email ? ` (${session.email})` : ''}。`, { type: 'success' });
+            },
+            onError: (e) => toast(`ログインに失敗しました: ${e.message}`, { type: 'error' })
+        });
+    }
+
+    // アカウントセクション本体 + サイドバーチップを現在の接続状態で描画
+    _renderAccountSection() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        const connected = !!(hub.key && hub.apiBase);
+        const disc = document.getElementById('account-disconnected');
+        const conn = document.getElementById('account-connected');
+        if (disc && conn) {
+            disc.hidden = connected;
+            conn.hidden = !connected;
+            if (connected) {
+                const emailEl = document.getElementById('account-email');
+                if (emailEl) emailEl.textContent = hub.email || '(ログイン済み)';
+                this._renderAccountUsageBar(hub);
+            } else {
+                this._ensureAccountSignInButton();
+            }
+        }
+        this._reflectAccountChip(hub, connected);
+    }
+
+    _renderAccountUsageBar(hub) {
+        hub = hub || (SyncConfigManager.load().hub) || {};
+        const used = Number(hub.usedBytes) || 0;
+        const quota = Number(hub.quotaBytes) || 0;
+        const badge = document.getElementById('account-plan-badge');
+        if (badge) {
+            const plus = hub.plan === 'plus';
+            badge.textContent = plus ? 'Plus' : '無料';
+            badge.classList.toggle('is-plus', plus);
+        }
+        const usedEl = document.getElementById('account-usage-used');
+        const quotaEl = document.getElementById('account-usage-quota');
+        if (usedEl) usedEl.textContent = this._formatBytes(used);
+        if (quotaEl) quotaEl.textContent = quota ? this._formatBytes(quota) : '—';
+        const fill = document.getElementById('account-usage-fill');
+        if (fill) {
+            const ratio = quota > 0 ? Math.min(1, used / quota) : 0;
+            fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+            fill.classList.toggle('is-warn', ratio >= 0.8 && ratio < 0.98);
+            fill.classList.toggle('is-full', ratio >= 0.98);
+        }
+    }
+
+    _reflectAccountChip(hub, connected) {
+        hub = hub || (SyncConfigManager.load().hub) || {};
+        if (connected === undefined) connected = !!(hub.key && hub.apiBase);
+        const label = document.getElementById('sidebar-account-label');
+        const plan = document.getElementById('sidebar-account-plan');
+        if (label) label.textContent = connected ? (hub.email || 'ログイン中') : 'ログイン';
+        if (plan) {
+            const plus = hub.plan === 'plus';
+            plan.hidden = !connected;
+            plan.textContent = plus ? 'Plus' : '無料';
+            plan.classList.toggle('is-plus', plus);
+        }
+        const chip = document.getElementById('sidebar-account');
+        if (chip) chip.classList.toggle('is-connected', connected);
+    }
+
+    _logoutAccount() {
+        if (!confirm('ログアウトしますか？\nこの端末からハブの接続情報を消します（ハブ上のデータは残ります）。\nOK を押すとページを再読み込みします。')) return;
+        this._disconnectHub();   // 切断 + 同期=hub なら local に戻す + reload
+    }
+
+    // アカウント削除 (E): ハブ上の保存データと公開サイトを消す。Worker の DELETE /account が前提。
+    async _deleteAccount() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) { toast('ログインしていません。', { type: 'warn' }); return; }
+        if (!confirm('アカウントを削除しますか？\n\nハブ上の保存データと、ハブで公開したサイトがすべて削除されます。この操作は取り消せません。\n（GitHub やこの端末に保存したデータは消えません）\n\nOK を押すと削除して再読み込みします。')) return;
+        const btn = document.getElementById('account-delete-btn');
+        if (btn) btn.disabled = true;
+        try {
+            const res = await fetch(`${hub.apiBase}/account`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${hub.key}` }
+            });
+            if (!res.ok) {
+                let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {}
+                throw new Error(`${res.status}${d ? ': ' + d : ''}`);
+            }
+            toast('アカウントを削除しました。', { type: 'success' });
+            this._disconnectHub(); // ローカル接続情報も消去して再読み込み
+        } catch (e) {
+            if (btn) btn.disabled = false;
+            toast(`アカウント削除に失敗しました: ${e.message}`, { type: 'error' });
+        }
+    }
+
     // 使用量を再取得し、バーを更新 (失敗は黙殺 or notify 時のみ通知)
     async _refreshHubUsage({ notify = false } = {}) {
         if (typeof HubAuth === 'undefined') return;
@@ -3465,6 +3599,8 @@ class VirtualBookshelf {
             const hub = await HubAuth.refreshUsage();
             if (hub) {
                 this._renderHubUsageBar(hub);
+                this._renderAccountUsageBar(hub);
+                this._reflectAccountChip(hub, true);
                 if (notify) toast('使用量を更新しました。', { type: 'success' });
             }
         } catch (e) {
@@ -5014,6 +5150,9 @@ class VirtualBookshelf {
         modal.classList.add('show');
         // 設定を開くたびにアフィタグ欄の表示可否/値を最新化 (プラン変化・別端末更新に追従)
         this._reflectAffiliateField();
+        // アカウント状態 (ログイン/プラン/使用量) も最新化
+        this._setupAccountUI();
+        this._renderAccountSection();
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
         // 分類マークの凡例を描画
@@ -6758,6 +6897,9 @@ class VirtualBookshelf {
     async _ppPublishPage(id) {
         const page = this.publishPageStore.get(id);
         if (!page) return;
+        // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
+        // 更新(再公開)も含め published=true にする操作の前で行う。Plus は自分のタグ/広告なしなので不要。
+        if (!(await this._ensureFreeAffiliateConsent())) return;
         const wasPublished = !!page.published;   // 元の状態 (更新=true / 新規公開=false)
         try { await this.publishPageStore.update(id, { published: true }); }
         catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
@@ -6773,6 +6915,26 @@ class VirtualBookshelf {
         const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
         toast(`「${page.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
         this._renderPublishPagesList();
+    }
+
+    // C2: 無料プランで初めて公開する時、運営アフィリエイトタグが付く旨を明示し同意を取る。
+    // 同意は settings.ackFreeAffiliate に記録し、以後は出さない。Plus は不要(true を返す)。
+    async _ensureFreeAffiliateConsent() {
+        const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+        if (plan === 'plus') return true;
+        if (this.userData && this.userData.settings && this.userData.settings.ackFreeAffiliate) return true;
+        const ok = await confirmDialog({
+            title: '無料プランの公開について',
+            message: '無料プランで公開するページの Amazon 商品リンクには、運営（Asayake）のアフィリエイトタグが付く場合があり、その収益は運営に入ります（無料提供を支えるためです）。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が表示されます。',
+            okLabel: '同意して公開', cancelLabel: 'やめる'
+        });
+        if (!ok) return false;
+        try {
+            if (!this.userData.settings) this.userData.settings = {};
+            this.userData.settings.ackFreeAffiliate = true;
+            await this.saveUserData();
+        } catch (_) {}
+        return true;
     }
 
     // ページの公開を取り消す (published=false にして再 push → 削除同期で実サイトから消える)
@@ -6848,6 +7010,12 @@ class VirtualBookshelf {
     _ppShowList() {
         document.getElementById('pp-list-view').hidden = false;
         document.getElementById('pp-edit-view').hidden = true;
+        // C2: 無料プランのときだけ、運営アフィリエイトタグが付く旨の注記を出す
+        const notice = document.getElementById('pp-free-notice');
+        if (notice) {
+            const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
+            notice.hidden = (plan === 'plus');
+        }
         this._renderPublishPagesList();
     }
     _ppShowEditor() {
