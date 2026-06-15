@@ -1,0 +1,27 @@
+/* AsayakeBookshelf 法務ページ共通スタイル (自己完結・アプリ非依存) */
+:root{ --ink:#241f2b; --muted:#6b6675; --line:#ece7ef; --bg:#fbfafc; --night:#2d2638; --accent:#b35a3e; --warn:#d49100; }
+*{ box-sizing:border-box }
+body{ margin:0; color:var(--ink); background:var(--bg); line-height:1.75;
+  font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; }
+a{ color:var(--accent) }
+.l-hero{ background:linear-gradient(160deg,#2d2638,#4a3b4e 60%,#7a5a52); color:#fff7ef; padding:40px 20px 32px }
+.l-hero .wrap{ max-width:760px; margin:0 auto }
+.l-hero h1{ margin:0; font-size:1.5rem; letter-spacing:.02em }
+.l-hero .crumb{ margin:0 0 10px; font-size:.8rem; opacity:.85 }
+.l-hero .crumb a{ color:#fdd9c4 }
+.wrap{ max-width:760px; margin:0 auto; padding:0 20px }
+main{ padding:28px 0 64px }
+h2{ font-size:1.1rem; margin:32px 0 8px; padding-top:8px; border-top:1px solid var(--line) }
+h2:first-of-type{ border-top:0; padding-top:0 }
+h3{ font-size:.98rem; margin:18px 0 4px }
+p,li{ font-size:.92rem }
+small,.muted{ color:var(--muted) }
+table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:.9rem }
+th,td{ border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top }
+th{ background:#f3eef4; width:34%; white-space:nowrap }
+.todo{ background:#fff7e6; border:1px solid #f0d9a8; border-radius:8px; padding:12px 14px; margin:18px 0; font-size:.86rem }
+.todo strong{ color:var(--warn) }
+.fill{ background:#fff3c4; padding:0 .3em; border-radius:3px; color:#7a5b00; font-weight:600 }
+.l-footer{ border-top:1px solid var(--line); padding:22px 20px 48px; color:var(--muted); font-size:.8rem; text-align:center }
+.l-footer a{ color:var(--muted) }
+.updated{ color:var(--muted); font-size:.82rem; margin-top:4px }
