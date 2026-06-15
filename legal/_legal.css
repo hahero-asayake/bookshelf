@@ -19,6 +19,17 @@ small,.muted{ color:var(--muted) }
 table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:.9rem }
 th,td{ border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top }
 th{ background:#f3eef4; width:34%; white-space:nowrap }
+/* 狭幅では見出し列を折返し可にし、はみ出しを防ぐ（必要なら縦積み） */
+@media (max-width:560px){
+  th{ white-space:normal; width:38% }
+}
+@media (max-width:400px){
+  table, tbody, tr, th, td{ display:block; width:auto }
+  th{ border-bottom:0; background:transparent; padding-bottom:0; font-weight:700 }
+  td{ padding-top:2px }
+  tr{ border:1px solid var(--line); border-radius:6px; margin:8px 0; padding:4px 6px }
+  th, td{ border:0 }
+}
 .todo{ background:#fff7e6; border:1px solid #f0d9a8; border-radius:8px; padding:12px 14px; margin:18px 0; font-size:.86rem }
 .todo strong{ color:var(--warn) }
 .fill{ background:#fff3c4; padding:0 .3em; border-radius:3px; color:#7a5b00; font-weight:600 }

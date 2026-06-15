@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061503">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061506">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -264,12 +264,12 @@
                         <div id="account-disconnected" class="path-card-body">
                             <p class="github-auth-msg">Asayake アカウント（Google ログイン）に接続すると、ハブへの保存・公開やプラン管理ができます。<strong>保存先の選択（同期）とは別に、いつでもここからログインできます。</strong></p>
                             <div id="account-gsi-button" class="hub-gsi-button"></div>
-                            <p class="hub-plan-note"><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランは <strong>100MB</strong> まで。Plus（月 $2 / 年 $12）で <strong>3GB</strong> に増やせます。</p>
+                            <p class="hub-plan-note"><span class="h-icon" data-icon="info" data-icon-size="13"></span><span>無料プランは <strong>100MB</strong> まで。Plus（月 $2 / 年 $12）で <strong>3GB</strong> に増やせます。</span></p>
                             <p class="account-legal-note">ログインすると <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a> と <a href="legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a> に同意したものとみなされます。</p>
                         </div>
                         <div id="account-connected" class="path-card-body" hidden>
                             <p class="github-auth-connected-msg">
-                                <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="account-email">(unknown)</strong> でログイン中
+                                <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><span class="acc-id"><strong id="account-email">(unknown)</strong> でログイン中</span>
                                 <span id="account-plan-badge" class="hub-plan-badge">無料</span>
                             </p>
                             <div class="hub-usage">
@@ -479,9 +479,9 @@
 
                             <div id="hub-auth-connected" class="path-card-body" hidden>
                                 <p class="github-auth-connected-msg">
-                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><strong id="hub-connected-email">(unknown)</strong> として接続中
+                                    <span class="h-icon" data-icon="check-circle" data-icon-size="14" style="color: var(--accent);"></span><span class="acc-id"><strong id="hub-connected-email">(unknown)</strong> でログイン中</span>
                                     <span id="hub-plan-badge" class="hub-plan-badge">無料</span>
-                                    <button id="hub-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="plug" data-icon-size="14"></span>切断</button>
+                                    <button id="hub-disconnect-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="log-out" data-icon-size="14"></span>ログアウト</button>
                                 </p>
                                 <div class="hub-usage">
                                     <div class="hub-usage-head">
@@ -797,7 +797,7 @@
                     <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開はページごとに行い、公開中のページには公開 URL が表示されます。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
-                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span>無料プランで公開するページの商品リンクには、運営（Asayake）のアフィリエイトタグが<strong>必ず付与され</strong>、その収益は運営に帰属します（無料提供の対価です）。自分の収益にする／広告を付けないには <strong>Plus</strong> をご利用ください。</p>
+                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランで公開するページの商品リンクには、運営（Asayake）のアフィリエイトタグが<strong>必ず付与され</strong>、その収益は運営に帰属します（無料提供の対価です）。自分の収益にする／広告を付けないには <strong>Plus</strong> をご利用ください。</span></p>
                 <ul id="pp-list" class="pp-list"></ul>
                 <div class="pp-list-foot">
                     <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
@@ -870,7 +870,7 @@
                                 <div class="pp-page-ops" id="pp-page-ops" hidden>
                                     <span class="pp-page-ops-label">このページ</span>
                                     <button id="pp-dup" class="btn btn-secondary btn-small" type="button">複製</button>
-                                    <button id="pp-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取消</button>
+                                    <button id="pp-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
                                     <button id="pp-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
                                 </div>
                             </div>
@@ -1082,7 +1082,7 @@
     </div>
 
     <script src="js/icons.js?v=2026061002"></script>
-    <script src="js/ui-feedback.js?v=2026061301"></script>
+    <script src="js/ui-feedback.js?v=2026061506"></script>
     <script src="js/storage-adapter.js?v=2026061002"></script>
     <script src="js/local-fs-adapter.js?v=2026061002"></script>
     <script src="js/github-adapter.js?v=2026061201"></script>
@@ -1106,7 +1106,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061002"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061504"></script>
+    <script src="js/bookshelf.js?v=2026061506"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

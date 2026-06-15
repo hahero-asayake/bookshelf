@@ -3511,10 +3511,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-size: 0.8rem;
     color: var(--fg2);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.4rem;
     margin: 0.2rem 0 0;
 }
+/* flex 直下の生テキスト混在で語順が崩れるのを防ぐ: アイコンは固定、本文は単一インライン要素で受ける */
+.hub-plan-note > .h-icon { flex: 0 0 auto; margin-top: 0.15rem; }
+.hub-plan-note > span:not(.h-icon) { flex: 1 1 auto; min-width: 0; }
+.github-auth-connected-msg .acc-id { min-width: 0; overflow-wrap: anywhere; }
 .hub-plan-badge {
     font-size: 0.72rem;
     font-weight: 700;
@@ -3923,6 +3927,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-free-notice { display: flex; align-items: flex-start; gap: 0.4rem; margin: 0 0 0.8rem; padding: 0.5rem 0.7rem;
     background: #fff7e6; border: 1px solid #f0d9a8; border-radius: 8px; color: #7a5b00; font-size: 0.8rem; line-height: 1.5; }
 .pp-free-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; color: var(--warning, #d49100); }
+.pp-free-notice-text { flex: 1 1 auto; min-width: 0; }
 .pp-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
 .pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 52vh; overflow: auto; }
 .pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
