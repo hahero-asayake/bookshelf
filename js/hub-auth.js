@@ -110,6 +110,10 @@ class HubAuth {
             plan: data.plan || 'free',
             quotaBytes: data.quotaBytes || 0,
             usedBytes: data.usedBytes || 0,
+            interval: data.interval || null,
+            currentPeriodEnd: data.currentPeriodEnd || null,
+            cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
+            subStatus: data.subStatus || null,
             publicBase: data.publicBase || ''
         };
         SyncConfigManager.save(cfg);
@@ -135,6 +139,10 @@ class HubAuth {
             plan: data.plan || 'free',
             quotaBytes: data.quotaBytes || 0,
             usedBytes: data.usedBytes || 0,
+            interval: data.interval || null,
+            currentPeriodEnd: data.currentPeriodEnd || null,
+            cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
+            subStatus: data.subStatus || null,
             siteId: data.siteId || (cfg.hub || {}).siteId || '',
             publicBase: data.publicBase || (cfg.hub || {}).publicBase || ''
         };
@@ -149,7 +157,9 @@ class HubAuth {
         }
         cfg.hub = {
             apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
-            plan: 'free', quotaBytes: 0, usedBytes: 0, publicBase: ''
+            plan: 'free', quotaBytes: 0, usedBytes: 0,
+            interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null,
+            publicBase: ''
         };
         SyncConfigManager.save(cfg);
     }

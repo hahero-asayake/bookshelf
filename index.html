@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061601">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061602">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -281,6 +281,10 @@
                                 <div class="hub-usage-bar"><div id="account-usage-fill" class="hub-usage-fill"></div></div>
                             </div>
                             <div id="account-billing" class="account-billing" hidden>
+                                <div id="account-plan-detail" class="account-plan-detail" hidden>
+                                    <span id="account-plan-period" class="account-plan-period"></span>
+                                    <span id="account-plan-cancel" class="account-plan-cancel" hidden></span>
+                                </div>
                                 <div id="account-upgrade" class="account-upgrade" hidden>
                                     <p class="account-upgrade-lead">Plus（3GB・自分のアフィリエイト収益）に upgrade できます。</p>
                                     <div class="account-upgrade-actions">
@@ -288,7 +292,7 @@
                                         <button id="account-upgrade-yearly" class="btn btn-secondary btn-small" type="button">年額（$5・年払いでお得）</button>
                                     </div>
                                 </div>
-                                <button id="account-manage-billing" class="btn btn-secondary btn-small" type="button" hidden><span class="h-icon" data-icon="credit-card" data-icon-size="14"></span>支払い・解約の管理</button>
+                                <button id="account-manage-billing" class="btn btn-secondary btn-small" type="button" hidden><span class="h-icon" data-icon="credit-card" data-icon-size="14"></span>プラン変更・支払い・解約</button>
                             </div>
                             <div class="account-actions">
                                 <button id="account-logout-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="log-out" data-icon-size="14"></span>ログアウト</button>
@@ -1012,7 +1016,7 @@
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
     <script src="js/sync-config.js?v=2026061601"></script>
-    <script src="js/hub-auth.js?v=2026061501"></script>
+    <script src="js/hub-auth.js?v=2026061602"></script>
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026061203"></script>
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
@@ -1025,7 +1029,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061601"></script>
+    <script src="js/bookshelf.js?v=2026061602"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

@@ -194,6 +194,8 @@ async function handleSession(request, env) {
     return json({
         key, uid, siteId: rec.siteId, email,
         plan: planRec.plan, quotaBytes: planRec.quotaBytes, usedBytes: await getUsed(env, uid),
+        interval: planRec.interval, currentPeriodEnd: planRec.currentPeriodEnd,
+        cancelAtPeriodEnd: planRec.cancelAtPeriodEnd, subStatus: planRec.subStatus,
         apiBase: `https://${env.HUB_DOMAIN}`,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
@@ -203,7 +205,8 @@ async function handleSession(request, env) {
 async function getPlan(env, uid) {
     const p = await env.KV.get(`plan:${uid}`, 'json');
     if (p) return { plan: p.plan || 'free', quotaBytes: p.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
-                    stripeCustomerId: p.stripeCustomerId, stripeSubscriptionId: p.stripeSubscriptionId };
+                    stripeCustomerId: p.stripeCustomerId, stripeSubscriptionId: p.stripeSubscriptionId,
+                    interval: p.interval, currentPeriodEnd: p.currentPeriodEnd, cancelAtPeriodEnd: !!p.cancelAtPeriodEnd, subStatus: p.subStatus };
     const rec = await env.KV.get(`uid:${uid}`, 'json');
     if (!rec) return { plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA };
     return { plan: rec.plan || 'free', quotaBytes: rec.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
@@ -228,6 +231,10 @@ async function handleUsage(request, env) {
         plan: planRec.plan,
         quotaBytes: planRec.quotaBytes,
         usedBytes: await getUsed(env, sess.uid),
+        interval: planRec.interval,
+        currentPeriodEnd: planRec.currentPeriodEnd,
+        cancelAtPeriodEnd: planRec.cancelAtPeriodEnd,
+        subStatus: planRec.subStatus,
         siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
@@ -503,20 +510,47 @@ async function applyStripeEvent(event, env) {
     if (type === 'checkout.session.completed') {
         const uid = obj.client_reference_id;
         if (!uid) return;
-        const ok = await setPlan(env, uid, 'plus', { stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription });
+        // サブスク詳細 (周期/次回更新/解約予約) は session に無い → Stripe から取得して一緒に保存し UI に出す。
+        // 秘密鍵が無い環境 (単体テスト) では取得をスキップ (plus 化だけ行う)。
+        let meta = {};
+        if (obj.subscription && env.STRIPE_SECRET_KEY) {
+            try { meta = subMeta(await stripeApi(env, 'GET', `subscriptions/${obj.subscription}`, null, env.STRIPE_API_VERSION || STRIPE_MANAGED_PAYMENTS_VERSION)); }
+            catch (_) {}
+        }
+        const ok = await setPlan(env, uid, 'plus', { stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription, ...meta });
         // setPlan が false = uid レコードが無い (退会レース等)。throw で 500 を返し Stripe にリトライさせる
         // (取りこぼしの検知。orphaned な stripe: 逆引きも張らない)。
         if (!ok) throw httpError(409, 'account record missing (deleted?) — retry');
-        if (obj.customer) await env.KV.put(`stripe:${obj.customer}`, uid);   // customer→uid 逆引き (失効イベント用)
-    } else if (type === 'customer.subscription.updated' && ['active', 'trialing'].includes(obj.status)) {
-        // unpaid 等で一度 Free に落ちたサブスクがカード更新で復帰 → Plus に戻す (再アクティブ化は checkout を伴わない)
+        if (obj.customer) await env.KV.put(`stripe:${obj.customer}`, uid);   // customer→uid 逆引き (失効/変更イベント用)
+    } else if (type === 'customer.subscription.updated' || type === 'customer.subscription.created') {
         const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
-        if (uid) await setPlan(env, uid, 'plus', { stripeSubscriptionId: obj.id });
-    } else if (type === 'customer.subscription.deleted' ||
-               (type === 'customer.subscription.updated' && ['canceled', 'unpaid', 'incomplete_expired'].includes(obj.status))) {
+        if (!uid) return;   // 逆引き未確立 (created が completed より先着) — completed 側で確定する
+        const meta = subMeta(obj);
+        if (['active', 'trialing'].includes(obj.status)) {
+            // 周期変更 (月↔年)・解約予約 (cancel_at_period_end) もここで取り込む。降格中からの復帰も Plus に戻す
+            await setPlan(env, uid, 'plus', { stripeSubscriptionId: obj.id, ...meta });
+        } else if (['canceled', 'unpaid', 'incomplete_expired'].includes(obj.status)) {
+            await setPlan(env, uid, 'free', {});
+        }
+    } else if (type === 'customer.subscription.deleted') {
+        // 解約予約の期間満了でサブスクが実際に終了 → Free に降格 (周期/更新日もクリア)
         const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
         if (uid) await setPlan(env, uid, 'free', {});
     }
+}
+
+// サブスクから UI 表示用メタを抽出 (課金周期/次回更新日/解約予約/状態)。版差で period が item 側にも入るので両対応。
+function subMeta(sub) {
+    if (!sub || typeof sub !== 'object') return {};
+    const item = sub.items && sub.items.data && sub.items.data[0];
+    const interval = item && item.price && item.price.recurring && item.price.recurring.interval;
+    const periodEnd = sub.current_period_end || (item && item.current_period_end) || undefined;
+    return {
+        interval: interval || undefined,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+        subStatus: sub.status || undefined
+    };
 }
 
 // プラン/quota を引き上げ/引き下げる (plan:<uid> に書く)。/go の Plus 解決もこの plan を見る (降格で運営タグへ戻る)。
@@ -531,6 +565,13 @@ async function setPlan(env, uid, plan, extra) {
         quotaBytes: plan === 'plus' ? (Number(env.PLUS_QUOTA_BYTES) || PLUS_QUOTA_DEFAULT) : (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA) };
     if (extra && extra.stripeCustomerId) next.stripeCustomerId = extra.stripeCustomerId;
     if (extra && extra.stripeSubscriptionId) next.stripeSubscriptionId = extra.stripeSubscriptionId;
+    // サブスク表示メタ (周期/次回更新/解約予約/状態) を取り込む (渡されたぶんだけ更新)
+    if (extra && extra.interval !== undefined) next.interval = extra.interval;
+    if (extra && extra.currentPeriodEnd !== undefined) next.currentPeriodEnd = extra.currentPeriodEnd;
+    if (extra && extra.cancelAtPeriodEnd !== undefined) next.cancelAtPeriodEnd = !!extra.cancelAtPeriodEnd;
+    if (extra && extra.subStatus !== undefined) next.subStatus = extra.subStatus;
+    // Free 降格時は周期/更新日/解約予約をクリア (有効なサブスクが無い)
+    if (plan === 'free') { delete next.interval; delete next.currentPeriodEnd; next.cancelAtPeriodEnd = false; delete next.subStatus; }
     await env.KV.put(`plan:${uid}`, JSON.stringify(next));
     return true;
 }

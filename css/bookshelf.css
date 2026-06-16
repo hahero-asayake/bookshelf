@@ -3623,6 +3623,11 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-upgrade-lead { margin: 0 0 0.45rem; font-size: 0.85rem; color: var(--muted, #6b6477); line-height: 1.5; }
 .account-upgrade-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 #account-manage-billing { margin-top: 0.2rem; }
+/* Plus 課金状態 (周期・次回更新日・解約予約) */
+.account-plan-detail { margin: 0 0 0.55rem; font-size: 0.82rem; line-height: 1.5; }
+.account-plan-period { color: var(--fg2, #4b5460); font-weight: 600; }
+.account-plan-cancel { display: block; margin-top: 0.15rem; color: var(--warning, #d49100); }
+.account-plan-detail.is-canceling .account-plan-period { color: var(--warning, #d49100); }
 
 /* サイドバー: アカウント状態チップ */
 .sidebar-account-chip {

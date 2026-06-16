@@ -3488,7 +3488,7 @@ class VirtualBookshelf {
             fill.classList.toggle('is-warn', ratio >= 0.8 && ratio < 0.98);
             fill.classList.toggle('is-full', ratio >= 0.98);
         }
-        // 課金導線 (ADR-035): Free=アップグレード提示 / Plus=支払い管理。接続済みのみ
+        // 課金導線 (ADR-035): Free=アップグレード提示 / Plus=課金状態 + 管理。接続済みのみ
         const plus = hub.plan === 'plus';
         const billing = document.getElementById('account-billing');
         const upgrade = document.getElementById('account-upgrade');
@@ -3496,6 +3496,41 @@ class VirtualBookshelf {
         if (billing) billing.hidden = false;
         if (upgrade) upgrade.hidden = plus;
         if (manage) manage.hidden = !plus;
+        this._renderPlanDetail(hub, plus);
+    }
+
+    // Plus の課金状態 (周期・次回更新日・解約予約) を表示する (ADR-035 追補)。
+    // データは Worker が Stripe webhook から KV に保存し /usage で返す。古い Worker・未取得なら何も出さない。
+    _renderPlanDetail(hub, plus) {
+        const wrap = document.getElementById('account-plan-detail');
+        const periodEl = document.getElementById('account-plan-period');
+        const cancelEl = document.getElementById('account-plan-cancel');
+        if (!wrap || !periodEl || !cancelEl) return;
+        const end = Number(hub.currentPeriodEnd) || 0;   // unix 秒
+        if (!plus || !end) { wrap.hidden = true; return; }
+        const cycle = hub.interval === 'year' ? '年額' : hub.interval === 'month' ? '月額' : 'Plus';
+        const dateStr = this._formatDate(end * 1000);
+        if (hub.cancelAtPeriodEnd) {
+            // 解約予約済み: 期間末まで Plus、その後 Free
+            periodEl.textContent = `${cycle}（解約予約済み）`;
+            cancelEl.textContent = `${dateStr} まで利用可能 ・ その後 無料プランに戻ります`;
+            cancelEl.hidden = false;
+            wrap.classList.add('is-canceling');
+        } else {
+            periodEl.textContent = `${cycle} ・ 次回更新 ${dateStr}`;
+            cancelEl.textContent = '';
+            cancelEl.hidden = true;
+            wrap.classList.remove('is-canceling');
+        }
+        wrap.hidden = false;
+    }
+
+    // unix ミリ秒 → YYYY/MM/DD (ローカル)
+    _formatDate(ms) {
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '';
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
     }
 
     _reflectAccountChip(hub, connected) {

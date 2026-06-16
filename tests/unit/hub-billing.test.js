@@ -127,6 +127,59 @@ describe('applyStripeEvent', () => {
     });
 });
 
+describe('サブスク表示メタ (周期/次回更新/解約予約, ADR-035 追補)', () => {
+    // subscription.updated から interval / current_period_end / cancel_at_period_end を plan: に取り込む
+    function subUpdated(status, extra = {}) {
+        return { type: 'customer.subscription.updated', data: { object: {
+            id: 'sub_9', customer: 'cus_1', status,
+            cancel_at_period_end: !!extra.cancel,
+            current_period_end: extra.periodEnd,
+            items: { data: [{ price: { recurring: { interval: extra.interval || 'month' } } }] }
+        } } };
+    }
+
+    it('active のサブスク更新で周期・次回更新日を取り込む (getPlan が返す)', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA }, 'stripe:cus_1': 'u1' });
+        await applyStripeEvent(subUpdated('active', { interval: 'year', periodEnd: 1800000000 }), env(KV));
+        const p = await getPlan(env(KV), 'u1');
+        expect(p.plan).toBe('plus');
+        expect(p.interval).toBe('year');
+        expect(p.currentPeriodEnd).toBe(1800000000);
+        expect(p.cancelAtPeriodEnd).toBe(false);
+    });
+
+    it('解約予約 (cancel_at_period_end=true・status=active) は Plus を維持しつつ予約フラグを立てる', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1' }, 'stripe:cus_1': 'u1' });
+        await applyStripeEvent(subUpdated('active', { interval: 'month', periodEnd: 1700000000, cancel: true }), env(KV));
+        const p = await getPlan(env(KV), 'u1');
+        expect(p.plan).toBe('plus');             // 期間末まで Plus
+        expect(p.cancelAtPeriodEnd).toBe(true);  // 予約フラグ
+        expect(p.currentPeriodEnd).toBe(1700000000);
+    });
+
+    it('期間満了で deleted → Free 降格時に周期/更新日/解約予約をクリア', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' },
+            'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', interval: 'month', currentPeriodEnd: 1700000000, cancelAtPeriodEnd: true },
+            'stripe:cus_1': 'u1' });
+        await applyStripeEvent({ type: 'customer.subscription.deleted', data: { object: { customer: 'cus_1', status: 'canceled' } } }, env(KV));
+        const p = await getPlan(env(KV), 'u1');
+        expect(p.plan).toBe('free');
+        expect(p.interval).toBeUndefined();
+        expect(p.currentPeriodEnd).toBeUndefined();
+        expect(p.cancelAtPeriodEnd).toBe(false);
+    });
+
+    it('周期変更 (月→年) は interval を上書きする', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' },
+            'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', interval: 'month', currentPeriodEnd: 1700000000 },
+            'stripe:cus_1': 'u1' });
+        await applyStripeEvent(subUpdated('active', { interval: 'year', periodEnd: 1731536000 }), env(KV));
+        const p = await getPlan(env(KV), 'u1');
+        expect(p.interval).toBe('year');
+        expect(p.currentPeriodEnd).toBe(1731536000);
+    });
+});
+
 describe('verifyStripeSignature', () => {
     async function sign(payload, secret, t) {
         const enc = new TextEncoder();

@@ -131,7 +131,10 @@ wrangler deploy -c wrangler.hub.toml
      -H "Stripe-Version: 2026-02-25.preview" \
      -d product="prod_xxx" -d unit_amount=500 -d currency=usd -d "recurring[interval]=year"
    ```
-4. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。解約・支払い方法変更を許可。`/billing/portal` がこれを開く。
+4. **Customer Portal** を有効化 (Settings → Billing → Customer portal)。`/billing/portal` がこれを開く。次を ON にする (アプリ側 UI が「プラン変更・支払い・解約」をここに委ねるため):
+   - **支払い方法の更新**
+   - **サブスクリプションのキャンセル** (期間末で解約。即時解約でなく period end 推奨 → アプリが「◯◯まで利用可能」を表示)
+   - **プランの変更 (switch plans)** → 対象 product に **月額・年額の両 price を登録**。これで顧客が Portal で月↔年を切替できる (アプリは現在の周期を表示するだけ)。
 
 ### E-2. Webhook エンドポイント (Checkout と同じプレビュー版で)
 1. Developers → **Webhooks → Add endpoint**: URL = `https://hub.asayake.org/billing/webhook`。
