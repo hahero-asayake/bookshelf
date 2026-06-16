@@ -160,6 +160,26 @@ wrangler deploy -c wrangler.hub.toml
 
 > 決済の実体は Stripe ホスト画面。アプリ/Worker はカード情報を一切持たない (PCI 範囲を Stripe に寄せる)。税も Stripe (MoR) が処理する。
 
+### E-5. 本番 (live) への移行
+> **test と live は商品・price・webhook・キーがすべて別物**。live モードで E-1〜E-4 をもう一周する。先に E-4 をテストモードで一度通しておくこと (未検証のまま live にしない)。
+
+1. Stripe ダッシュボード左上のトグルを **本番モード** に切替。**アカウントを有効化** (事業者情報・銀行口座・本人確認)。
+2. **Managed Payments が live で使えるか確認** (プレビュー機能のため枠が要る場合あり)。使えなければ ADR-037 の revert (Checkout の `managed_payments[enabled]` と版固定を外す) で標準 Checkout に即戻せる。
+3. **live で商品 (tax_code) + price 2 本を作成** (E-1 の curl を、`$STRIPE_SECRET_KEY` に **`sk_live_…`** を入れて実行。または Dashboard)。📝 **live の `price_…` を 2 つ控える**。
+4. **live の Webhook を作成** (E-2 と同手順・`api_version=2026-02-25.preview`・同 3 イベント)。📝 **live の `whsec_…`** を控える。
+5. `wrangler.hub.toml` の `STRIPE_PRICE_MONTHLY`/`STRIPE_PRICE_YEARLY` を **live の price_… に差替** (test ID のままだと live キーで決済が落ちる)。
+6. secret を live に差替えて再デプロイ:
+   ```bash
+   cd cf-worker
+   wrangler secret put STRIPE_SECRET_KEY      -c wrangler.hub.toml   # sk_live_…
+   wrangler secret put STRIPE_WEBHOOK_SECRET  -c wrangler.hub.toml   # live の whsec_…
+   wrangler deploy -c wrangler.hub.toml
+   ```
+7. **Customer Portal を live モードでも設定** (E-1 step 4 と同じ。プラン切替・期間末解約)。
+8. 実カードで**少額スモークテスト** → 即解約/返金で確認。Webhook ログ 200・KV の `plan:` 反映を確認。
+
+> ⚠️ live は実際にお金が動く。価格 (月$2/年$5) と税 (MoR=Stripe 処理) を最終確認してから公開導線を出すこと。
+
 ---
 
 ## 控える値チェックリスト (B で使用)
