@@ -3403,6 +3403,12 @@ class VirtualBookshelf {
         if (admPlus) admPlus.addEventListener('click', () => this._adminSetPlan('plus'));
         const admFree = document.getElementById('account-admin-free');
         if (admFree) admFree.addEventListener('click', () => this._adminSetPlan('free'));
+        const admReset = document.getElementById('account-admin-reset');
+        if (admReset) admReset.addEventListener('click', () => {
+            const email = (document.getElementById('account-admin-email') || {}).value || '';
+            if (!email.trim()) { toast('対象のメールを入力してください。', { type: 'warn' }); return; }
+            if (confirm(`${email.trim()} の Stripe 課金リンク（customer/subscription）を外して無料に戻します。\n（test→live 切替で詰まった時の復旧用。Stripe 側の課金は止めません）\nよろしいですか？`)) this._adminSetPlan('free', true);
+        });
         // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
         this._handleBillingReturn();
         const openAccount = () => {
@@ -3678,24 +3684,24 @@ class VirtualBookshelf {
 
     // 管理者: 対象アカウント (メール指定) のプランを Stripe を経由せず切替える (ADR-038)。
     // 自分が管理者のときだけ UI が出る。サーバ側でも ADMIN_EMAILS で再検証される。
-    async _adminSetPlan(plan) {
+    async _adminSetPlan(plan, reset = false) {
         const hub = (SyncConfigManager.load().hub) || {};
         if (!(hub.key && hub.apiBase)) { toast('先にログインしてください。', { type: 'warn' }); return; }
         const input = document.getElementById('account-admin-email');
         const email = (input && input.value || '').trim();
         if (!email) { toast('対象のメールを入力してください。', { type: 'warn' }); return; }
         const result = document.getElementById('account-admin-result');
-        const btns = ['account-admin-plus', 'account-admin-free'].map(id => document.getElementById(id));
+        const btns = ['account-admin-plus', 'account-admin-free', 'account-admin-reset'].map(id => document.getElementById(id));
         btns.forEach(b => { if (b) b.disabled = true; });
         try {
             const res = await fetch(`${hub.apiBase}/admin/plan`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${hub.key}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, plan })
+                body: JSON.stringify({ email, plan, resetBilling: reset })
             });
             if (!res.ok) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error(`${res.status}${d ? ': ' + d : ''}`); }
             const data = await res.json();
-            const label = data.plan === 'plus' ? 'Plus' : '無料';
+            const label = data.reset ? '無料（課金リンクをリセット）' : (data.plan === 'plus' ? 'Plus' : '無料');
             if (result) { result.textContent = `${data.email} を ${label} にしました。`; result.hidden = false; }
             toast(`${data.email} を ${label} にしました。`, { type: 'success' });
             // 自分自身を切替えた場合は表示も更新

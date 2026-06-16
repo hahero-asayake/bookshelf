@@ -180,6 +180,13 @@ wrangler deploy -c wrangler.hub.toml
 
 > ⚠️ live は実際にお金が動く。価格 (月$2/年$5) と税 (MoR=Stripe 処理) を最終確認してから公開導線を出すこと。
 
+#### test→live の stale Stripe ID 対策 (ADR-039)
+test モードで一度でも Plus 化 (または Checkout) した uid は、KV `plan:<uid>` に **test の `cus_…`/`sub_…` が残る** (test/live で ID プレフィクスが共通)。これを live API に渡すと `502 No such customer` になる。対策は実装済み:
+- **自己修復**: `handleCheckout` は `No such customer` を検知すると customer を外して作り直し、stale を掃除する → 被害ユーザは「もう一度アップグレード」を押すだけで直る。`handleBillingPortal` も掃除して 400 に縮退。
+- **管理者リセット**: 管理者は アプリの管理者パネル「**課金リンクをリセット**」、または `POST /admin/plan {email, resetBilling:true}` で対象を純 KV で free に戻し Stripe リンクを外せる (stale でも必ず成功)。
+- **一括**: 移行直後に `plan:*` を棚卸しし `stripeCustomerId`/`stripeSubscriptionId` を剥がす + `stripe:*` 逆引きを削除する wrangler kv 一括処理を流すと最も確実。
+- **デプロイ後の確認 (必須ゲート)**: live の最初の失敗時に実際の **error.code / param / message** を 1 度採取し、`isStripeMissing` の `resource_missing` 判定・正規表現と一致するか確認 (プレビュー版が code を返すか)。文言が違えば正規表現を調整。
+
 ### E-6. 管理者プラン切替 (ADR-038, 任意)
 運営/招待アカウントを Stripe 非経由で 無料↔Plus に切替えたいとき設定する。
 ```bash

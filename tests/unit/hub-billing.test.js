@@ -245,6 +245,157 @@ describe('管理者プラン切替 /admin/plan (ADR-038)', () => {
     });
 });
 
+// ===== stale Stripe ID の自己修復 (test→live 切替, ADR-039) =====
+import { isStripeMissing, clearStaleStripe, handleBillingPortal, handleAccountDelete } from '../../cf-worker/asayake-hub.js';
+
+describe('stale Stripe ID 自己修復 (ADR-039)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    function bEnv(KV, extra = {}) {
+        return { KV, STRIPE_SECRET_KEY: 'sk_test', PLUS_QUOTA_BYTES: String(PLUS_QUOTA), QUOTA_BYTES: String(FREE_QUOTA),
+                 STRIPE_PRICE_MONTHLY: 'price_m', STRIPE_PRICE_YEARLY: 'price_y', APP_ORIGIN: 'https://app.example', ADMIN_EMAILS: 'boss@example.com',
+                 BUCKET: { async list() { return { objects: [], truncated: false }; }, async delete() {}, async put() {}, async get() { return null; } }, ...extra };
+    }
+    function bReq(path, method, body, key = 'hk_a1') {
+        return new Request('https://hub.example' + path, { method, headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    }
+    function stubFetch(responder) {
+        const calls = [];
+        vi.stubGlobal('fetch', async (url, opts) => {
+            const call = { url, method: opts && opts.method, body: opts && opts.body };
+            calls.push(call);
+            const r = responder(call) || { status: 200, json: {} };
+            return new Response(JSON.stringify(r.json || {}), { status: r.status || 200, headers: { 'Content-Type': 'application/json' } });
+        });
+        return calls;
+    }
+    const missingCustomer = { status: 400, json: { error: { code: 'resource_missing', param: 'customer', message: "No such customer: 'cus_OLD'" } } };
+
+    it('isStripeMissing: code 優先・message フォールバック・param 一致・無関係は false', () => {
+        expect(isStripeMissing({ stripeCode: 'resource_missing', stripeParam: 'customer' }, 'customer')).toBe(true);
+        expect(isStripeMissing({ message: "No such customer: 'cus_x'" }, 'customer')).toBe(true);
+        expect(isStripeMissing({ message: 'a similar object exists in test mode' }, null)).toBe(true);
+        expect(isStripeMissing({ stripeCode: 'resource_missing', stripeParam: 'customer' }, 'subscription')).toBe(false);
+        expect(isStripeMissing({ stripeCode: 'rate_limit', message: 'too many' }, 'customer')).toBe(false);
+        expect(isStripeMissing(null, 'customer')).toBe(false);
+    });
+
+    it('setPlan: stripeCustomerId:null で明示クリア、キー未指定では温存', async () => {
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1' } });
+        await setPlan(env(KV), 'u1', 'plus', { stripeCustomerId: null, stripeSubscriptionId: null });
+        let p = await KV.get('plan:u1', 'json');
+        expect(p.stripeCustomerId).toBeUndefined();
+        expect(p.stripeSubscriptionId).toBeUndefined();
+        await setPlan(env(KV), 'u1', 'plus', { stripeCustomerId: 'cus_2' });
+        await setPlan(env(KV), 'u1', 'free', {});                 // extra 空 → 温存
+        p = await KV.get('plan:u1', 'json');
+        expect(p.stripeCustomerId).toBe('cus_2');
+    });
+
+    it('clearStaleStripe: old 一致なら customer/sub をクリアし自分を指す逆引きを削除 (plan は維持)', async () => {
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_OLD', stripeSubscriptionId: 'sub_OLD' }, 'stripe:cus_OLD': 'u1' });
+        await clearStaleStripe(env(KV), 'u1', 'cus_OLD');
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.stripeCustomerId).toBeUndefined();
+        expect(p.stripeSubscriptionId).toBeUndefined();
+        expect(p.plan).toBe('plus');
+        expect(await KV.get('stripe:cus_OLD')).toBeNull();
+    });
+
+    it('clearStaleStripe: 現 customer が old と違えば(webhook が新値を入れた) 触らない', async () => {
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_NEW' }, 'stripe:cus_OLD': 'u1' });
+        await clearStaleStripe(env(KV), 'u1', 'cus_OLD');
+        expect((await KV.get('plan:u1', 'json')).stripeCustomerId).toBe('cus_NEW');
+        expect(await KV.get('stripe:cus_OLD')).toBe('u1');
+    });
+
+    it('clearStaleStripe: 逆引きが他 uid を指すなら消さない (cross-uid 保護)', async () => {
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_X' }, 'stripe:cus_X': 'u2' });
+        await clearStaleStripe(env(KV), 'u1', 'cus_X');
+        expect(await KV.get('stripe:cus_X')).toBe('u2');
+    });
+
+    it('handleCheckout: stale customer は customer を外し email で作り直し KV を掃除する (self-heal)', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_OLD', stripeSubscriptionId: 'sub_OLD' }, 'stripe:cus_OLD': 'u1' });
+        const calls = stubFetch((c) => {
+            if (c.url.includes('checkout/sessions')) {
+                if (c.body && c.body.get && c.body.get('customer')) return missingCustomer;
+                return { status: 200, json: { url: 'https://checkout/new' } };
+            }
+            return { status: 200, json: {} };
+        });
+        const res = await handleCheckout(bReq('/billing/checkout', 'POST', { plan: 'monthly' }), bEnv(KV));
+        expect((await res.json()).url).toBe('https://checkout/new');
+        const co = calls.filter(c => c.url.includes('checkout/sessions'));
+        expect(co.length).toBe(2);
+        expect(co[1].body.get('customer')).toBeNull();
+        expect(co[1].body.get('customer_email')).toBe('e@x');
+        const p = await KV.get('plan:u1', 'json');
+        expect(p.stripeCustomerId).toBeUndefined();
+        expect(p.stripeSubscriptionId).toBeUndefined();
+        expect(await KV.get('stripe:cus_OLD')).toBeNull();
+    });
+
+    it('handleCheckout: customer 以外のエラーはリトライせず throw', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_OLD' } });
+        const calls = stubFetch(() => ({ status: 400, json: { error: { code: 'resource_missing', param: 'line_items', message: 'No such price' } } }));
+        await expect(handleCheckout(bReq('/billing/checkout', 'POST', { plan: 'monthly' }), bEnv(KV))).rejects.toMatchObject({ status: 502 });
+        expect(calls.filter(c => c.url.includes('checkout/sessions')).length).toBe(1);
+    });
+
+    it('handleBillingPortal: stale customer は掃除して 400 no subscription', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_OLD' }, 'stripe:cus_OLD': 'u1' });
+        stubFetch(() => missingCustomer);
+        await expect(handleBillingPortal(bReq('/billing/portal', 'POST', {}), bEnv(KV))).rejects.toMatchObject({ status: 400 });
+        expect((await KV.get('plan:u1', 'json')).stripeCustomerId).toBeUndefined();
+        expect(await KV.get('stripe:cus_OLD')).toBeNull();
+    });
+
+    it('checkout.session.completed: 既存の別サブスクがあれば解約する (二重課金防止)', async () => {
+        const KV = makeKV({ 'uid:u1': { status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_OLD' } });
+        const calls = stubFetch((c) => {
+            if (c.url.includes('subscriptions/sub_NEW')) return { status: 200, json: { id: 'sub_NEW', status: 'active', items: { data: [{ price: { recurring: { interval: 'month' } } }] }, current_period_end: 1800000000 } };
+            return { status: 200, json: {} };
+        });
+        await applyStripeEvent({ type: 'checkout.session.completed', data: { object: { client_reference_id: 'u1', customer: 'cus_1', subscription: 'sub_NEW' } } }, bEnv(KV));
+        expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_OLD'))).toBe(true);
+        expect((await KV.get('plan:u1', 'json')).stripeSubscriptionId).toBe('sub_NEW');
+    });
+
+    it('handleAdminSetPlan resetBilling: 純 KV で free にリセットし customer/sub/adminGrant を消す (Stripe 未呼び出し)', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'admin1' }, 'uid:admin1': { email: 'boss@example.com' },
+            'email:t@example.com': 'u2', 'uid:u2': { status: 'ok' },
+            'plan:u2': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_T', stripeSubscriptionId: 'sub_T', adminGrant: true, interval: 'month' }, 'stripe:cus_T': 'u2' });
+        const calls = stubFetch(() => ({ status: 200, json: {} }));
+        const res = await handleAdminSetPlan(bReq('/admin/plan', 'POST', { email: 't@example.com', resetBilling: true }), bEnv(KV));
+        const out = await res.json();
+        expect(out.reset).toBe(true);
+        expect(out.plan).toBe('free');
+        const p = await KV.get('plan:u2', 'json');
+        expect(p.plan).toBe('free');
+        expect(p.quotaBytes).toBe(FREE_QUOTA);
+        expect(p.stripeCustomerId).toBeUndefined();
+        expect(p.stripeSubscriptionId).toBeUndefined();
+        expect(p.adminGrant).toBe(false);
+        expect(await KV.get('stripe:cus_T')).toBeNull();
+        expect(calls.length).toBe(0);
+    });
+
+    it('handleAccountDelete: stale サブは customer の全サブ(status=all)を list し active/trialing を解約・canceled は除外', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_STALE' }, 'stripe:cus_1': 'u1' });
+        const calls = stubFetch((c) => {
+            if (c.method === 'DELETE' && c.url.includes('subscriptions/sub_STALE')) return { status: 404, json: { error: { code: 'resource_missing', param: 'subscription', message: 'No such subscription' } } };
+            if (c.url.includes('subscriptions?customer=')) return { status: 200, json: { data: [{ id: 'sub_LIVE1', status: 'active' }, { id: 'sub_TRIAL', status: 'trialing' }, { id: 'sub_DEAD', status: 'canceled' }] } };
+            return { status: 200, json: {} };
+        });
+        await handleAccountDelete(bReq('/account', 'DELETE', undefined), bEnv(KV, { STRIPE_SECRET_KEY: 'sk_live' }));
+        expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_LIVE1'))).toBe(true);
+        expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_TRIAL'))).toBe(true);
+        expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_DEAD'))).toBe(false);
+        expect(await KV.get('uid:u1', 'json')).toBeNull();
+    });
+});
+
 describe('verifyStripeSignature', () => {
     async function sign(payload, secret, t) {
         const enc = new TextEncoder();

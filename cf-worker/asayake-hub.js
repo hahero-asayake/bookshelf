@@ -262,15 +262,28 @@ async function handleAdminSetPlan(request, env) {
     const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (!caller || !isAdminEmail(caller.email, env)) throw httpError(403, 'admin only');
     const body = await request.json().catch(() => ({}));
+    const resetBilling = body.resetBilling === true || body.resetBilling === 'true';   // 課金リンクのリセット (ADR-039)
     const plan = body.plan === 'plus' ? 'plus' : 'free';
     const email = String(body.email || '').trim().toLowerCase();
     if (!email) throw httpError(400, 'email required');
     const targetUid = await env.KV.get(`email:${email}`);
     if (!targetUid) throw httpError(404, 'account not found (まだログインしていない可能性)');
-    // adminGrant: Plus 付与時 true / 解除時 false。setPlan が plan/quota も合わせて更新する
-    const ok = await setPlan(env, targetUid, plan, { adminGrant: plan === 'plus' });
+    let ok;
+    if (resetBilling) {
+        // test→live 残骸の課金リンクを純 KV で安全にリセット (Stripe を呼ばないので stale ID でも 502 にならない, ADR-039)。
+        // customer/subscription/周期メタ/adminGrant を全消去し free に戻す。逆引きは自分を指すときだけ削除。
+        const old = await getPlan(env, targetUid);
+        ok = await setPlan(env, targetUid, 'free', { stripeCustomerId: null, stripeSubscriptionId: null, interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, adminGrant: false });
+        if (ok && old.stripeCustomerId) {
+            const owner = await env.KV.get(`stripe:${old.stripeCustomerId}`);
+            if (owner === targetUid) await env.KV.delete(`stripe:${old.stripeCustomerId}`);
+        }
+    } else {
+        // adminGrant: Plus 付与時 true / 解除時 false。setPlan が plan/quota も合わせて更新する
+        ok = await setPlan(env, targetUid, plan, { adminGrant: plan === 'plus' });
+    }
     if (!ok) throw httpError(404, 'account record missing');
-    return json({ ok: true, email, uid: targetUid, plan, adminGrant: plan === 'plus' });
+    return json({ ok: true, email, uid: targetUid, plan: resetBilling ? 'free' : plan, adminGrant: resetBilling ? false : (plan === 'plus'), reset: resetBilling });
 }
 
 // ===== 認証ヘルパ (ハブ公開キー → uid/siteId) =====
@@ -445,7 +458,21 @@ async function handleAccountDelete(request, env) {
     // 退会後の課金継続を防ぐため、有効な Stripe サブスクがあれば解約する (billing 未設定/sub 無しはスキップ)。
     const planRec = await getPlan(env, sess.uid);
     if (env.STRIPE_SECRET_KEY && planRec && planRec.stripeSubscriptionId) {
-        try { await stripeApi(env, 'DELETE', `subscriptions/${planRec.stripeSubscriptionId}`, null); } catch (_) {}
+        try {
+            await stripeApi(env, 'DELETE', `subscriptions/${planRec.stripeSubscriptionId}`, null);
+        } catch (e) {
+            // 1本目が stale (No such subscription) なら、customer に紐づく生きたサブスクを全解約して課金継続を防ぐ (ADR-039)。
+            // status=all で取り、終了済み (canceled/incomplete_expired) 以外を解約する (trialing/past_due 等も拾う)。
+            if (isStripeMissing(e, 'subscription') && planRec.stripeCustomerId) {
+                try {
+                    const list = await stripeApi(env, 'GET', `subscriptions?customer=${encodeURIComponent(planRec.stripeCustomerId)}&status=all&limit=100`, null);
+                    for (const s of (list.data || [])) {
+                        if (['canceled', 'incomplete_expired'].includes(s.status)) continue;
+                        try { await stripeApi(env, 'DELETE', `subscriptions/${s.id}`, null); } catch (_) {}
+                    }
+                } catch (_) {}
+            }
+        }
     }
 
     await deletePrefix(env, `data/${sess.uid}/`);
@@ -454,7 +481,10 @@ async function handleAccountDelete(request, env) {
     await env.KV.delete(`uid:${sess.uid}`);
     await env.KV.delete(`plan:${sess.uid}`);
     await env.KV.delete(`usage:${sess.uid}`);
-    if (planRec && planRec.stripeCustomerId) await env.KV.delete(`stripe:${planRec.stripeCustomerId}`);
+    if (planRec && planRec.stripeCustomerId) {
+        const owner = await env.KV.get(`stripe:${planRec.stripeCustomerId}`);
+        if (owner === sess.uid) await env.KV.delete(`stripe:${planRec.stripeCustomerId}`);   // 自分を指す逆引きだけ削除 (ADR-039)
+    }
     if (key) await env.KV.delete(`key:${key}`);
     if (sess.siteId) {
         await env.KV.delete(`report:${sess.siteId}`);
@@ -504,8 +534,20 @@ async function handleCheckout(request, env) {
     if (planRec && planRec.stripeCustomerId) form.set('customer', planRec.stripeCustomerId);
     else if (rec && rec.email) form.set('customer_email', rec.email);
     // Managed Payments はプレビュー版バージョンヘッダ必須。Webhook 側も同版で設定すること (HUB-SETUP Phase E)。
-    const data = await stripeApi(env, 'POST', 'checkout/sessions', form,
-        env.STRIPE_API_VERSION || STRIPE_MANAGED_PAYMENTS_VERSION);
+    const ver = env.STRIPE_API_VERSION || STRIPE_MANAGED_PAYMENTS_VERSION;
+    let data;
+    try {
+        data = await stripeApi(env, 'POST', 'checkout/sessions', form, ver);
+    } catch (e) {
+        // test→live 等でKVに残った customer が live に存在しない ("No such customer") → customer を外し
+        // email で1回だけ作り直し、stale を掃除する (self-heal, ADR-039)。次回 checkout は新 customer で通る。
+        if (planRec && planRec.stripeCustomerId && isStripeMissing(e, 'customer')) {
+            form.delete('customer');
+            if (rec && rec.email) form.set('customer_email', rec.email);
+            data = await stripeApi(env, 'POST', 'checkout/sessions', form, ver);
+            await clearStaleStripe(env, sess.uid, planRec.stripeCustomerId);
+        } else throw e;
+    }
     return json({ url: data.url });
 }
 
@@ -519,7 +561,14 @@ async function handleBillingPortal(request, env) {
     const form = new URLSearchParams();
     form.set('customer', planRec.stripeCustomerId);
     form.set('return_url', safeReturnUrl(body.returnUrl, env));
-    const data = await stripeApi(env, 'POST', 'billing_portal/sessions', form);
+    let data;
+    try {
+        data = await stripeApi(env, 'POST', 'billing_portal/sessions', form);
+    } catch (e) {
+        // stale customer (test→live 残骸) なら掃除して「管理対象なし」に縮退 → ユーザは再 Checkout で自己修復 (ADR-039)
+        if (isStripeMissing(e, 'customer')) { await clearStaleStripe(env, sess.uid, planRec.stripeCustomerId); throw httpError(400, 'no subscription'); }
+        throw e;
+    }
     return json({ url: data.url });
 }
 
@@ -543,6 +592,12 @@ async function applyStripeEvent(event, env) {
     if (type === 'checkout.session.completed') {
         const uid = obj.client_reference_id;
         if (!uid) return;
+        // 二重課金防止 (ADR-039): 同一 uid に既存の別サブスクが残っていたら解約する (1 uid = 1 有効サブスク)。
+        // self-heal の再 Checkout やユーザの連打で複数サブスクが並行成立するのを防ぐ。stale な旧 sub は DELETE 失敗→無視。
+        const prev = await getPlan(env, uid);
+        if (env.STRIPE_SECRET_KEY && prev.stripeSubscriptionId && obj.subscription && prev.stripeSubscriptionId !== obj.subscription) {
+            try { await stripeApi(env, 'DELETE', `subscriptions/${prev.stripeSubscriptionId}`, null); } catch (_) {}
+        }
         // サブスク詳細 (周期/次回更新/解約予約) は session に無い → Stripe から取得して一緒に保存し UI に出す。
         // 秘密鍵が無い環境 (単体テスト) では取得をスキップ (plus 化だけ行う)。
         let meta = {};
@@ -602,8 +657,10 @@ async function setPlan(env, uid, plan, extra) {
         || { plan: rec.plan, quotaBytes: rec.quotaBytes, stripeCustomerId: rec.stripeCustomerId, stripeSubscriptionId: rec.stripeSubscriptionId };
     const next = { ...cur, plan,
         quotaBytes: plan === 'plus' ? (Number(env.PLUS_QUOTA_BYTES) || PLUS_QUOTA_DEFAULT) : (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA) };
-    if (extra && extra.stripeCustomerId) next.stripeCustomerId = extra.stripeCustomerId;
-    if (extra && extra.stripeSubscriptionId) next.stripeSubscriptionId = extra.stripeSubscriptionId;
+    // 'in extra' 判定: キーを渡したときだけ更新。truthy なら上書き、null/'' なら明示クリア (ADR-039)。
+    // キー未指定 (通常の Stripe イベントは extra に customer を含めない) では既存値を温存する。
+    if (extra && 'stripeCustomerId' in extra) { if (extra.stripeCustomerId) next.stripeCustomerId = extra.stripeCustomerId; else delete next.stripeCustomerId; }
+    if (extra && 'stripeSubscriptionId' in extra) { if (extra.stripeSubscriptionId) next.stripeSubscriptionId = extra.stripeSubscriptionId; else delete next.stripeSubscriptionId; }
     // サブスク表示メタ (周期/次回更新/解約予約/状態) を取り込む (渡されたぶんだけ更新)
     if (extra && extra.interval !== undefined) next.interval = extra.interval;
     if (extra && extra.currentPeriodEnd !== undefined) next.currentPeriodEnd = extra.currentPeriodEnd;
@@ -614,6 +671,20 @@ async function setPlan(env, uid, plan, extra) {
     if (plan === 'free') { delete next.interval; delete next.currentPeriodEnd; next.cancelAtPeriodEnd = false; delete next.subStatus; }
     await env.KV.put(`plan:${uid}`, JSON.stringify(next));
     return true;
+}
+
+// test→live 等で残った stale な Stripe リンク (customer/subscription) を KV から掃除する (純 KV・Stripe を呼ばない, ADR-039)。
+// plan 自体は変えない (Plus 化は再 Checkout 完了の webhook が行う)。
+// CAS ガード: (1) webhook が先に新 customer を書いていたら消さない (現値が oldCustomer と一致時のみ)。
+//            (2) 逆引きは自分(uid)を指すときだけ削除 (他 uid の逆引きを巻き込まない)。
+async function clearStaleStripe(env, uid, oldCustomer) {
+    const cur = await getPlan(env, uid);
+    if (cur.stripeCustomerId && oldCustomer && cur.stripeCustomerId !== oldCustomer) return;   // 既に新 customer に置換済み → 触らない
+    await setPlan(env, uid, cur.plan, { stripeCustomerId: null, stripeSubscriptionId: null });
+    if (oldCustomer) {
+        const owner = await env.KV.get(`stripe:${oldCustomer}`);
+        if (owner === uid) await env.KV.delete(`stripe:${oldCustomer}`);
+    }
 }
 
 // Stripe 署名検証 (Stripe-Signature: t=…,v1=… の HMAC-SHA256(`${t}.${payload}`))。
@@ -649,8 +720,25 @@ async function stripeApi(env, method, path, form, apiVersion) {
     if (apiVersion) headers['Stripe-Version'] = apiVersion;
     const res = await fetch(`https://api.stripe.com/v1/${path}`, { method, headers, body: form || undefined });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw httpError(502, `stripe: ${(data && data.error && data.error.message) || res.status}`);
+    if (!res.ok) {
+        const se = (data && data.error) || {};
+        const e = httpError(502, `stripe: ${se.message || res.status}`);
+        e.stripeCode = se.code; e.stripeParam = se.param; e.stripeStatus = res.status;   // 呼び出し側が stale を判別できるよう構造を残す (ADR-039)
+        throw e;
+    }
     return data;
+}
+
+// Stripe の「対象が存在しない」エラーか (test→live で残った customer/subscription ID 等, ADR-039)。
+// code(resource_missing) を最優先。Managed Payments プレビュー版が code を返さない場合に備え message 正規表現も併用。
+function isStripeMissing(e, param) {
+    if (!e) return false;
+    const msg = String(e.message || '');
+    const codeMissing = e.stripeCode === 'resource_missing';
+    const msgMissing = /no such (customer|subscription)/i.test(msg) || /similar object exists in test mode/i.test(msg);
+    if (!(codeMissing || msgMissing)) return false;
+    if (!param) return true;
+    return e.stripeParam === param || new RegExp('no such ' + param, 'i').test(msg);
 }
 
 // 戻り先 URL を APP_ORIGIN 許可リストで検証 (オープンリダイレクト防止)。不正なら先頭 origin。
@@ -667,7 +755,7 @@ function safeReturnUrl(url, env) {
 }
 
 // テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

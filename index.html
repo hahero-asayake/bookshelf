@@ -301,6 +301,7 @@
                                     <input id="account-admin-email" type="email" placeholder="対象のメール" autocomplete="off" spellcheck="false">
                                     <button id="account-admin-plus" class="btn btn-primary btn-small" type="button">Plus にする</button>
                                     <button id="account-admin-free" class="btn btn-secondary btn-small" type="button">無料にする</button>
+                                    <button id="account-admin-reset" class="btn btn-warning btn-small" type="button" title="Stripe の課金リンク（customer/subscription）を外して無料に戻す。test→live で詰まった時の復旧用">課金リンクをリセット</button>
                                 </div>
                                 <p id="account-admin-result" class="account-admin-result" hidden></p>
                             </div>
@@ -1039,7 +1040,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061603"></script>
+    <script src="js/bookshelf.js?v=2026061604"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
