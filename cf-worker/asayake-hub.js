@@ -37,6 +37,8 @@
 //   STRIPE_API_VERSION     (任意)   Checkout を叩く Stripe バージョン。既定 = Managed Payments のプレビュー版
 //                    (2026-02-25.preview, ADR-037)。Stripe が版を上げたらここで追従。Webhook 側も同版にする。
 //   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
+//   ADMIN_EMAILS           (secret) カンマ区切りの管理者メール。/admin/plan で特定アカウントを無料↔Plus に手動
+//                    切替できる (Stripe を経由しない優待。ADR-038)。未設定なら /admin/plan は 403。
 //
 // コスト防御 (ADR-033, 収益化分析):
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
@@ -67,6 +69,7 @@ export default {
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
             if (path === '/account' && request.method === 'DELETE') return cors(await handleAccountDelete(request, env), env, request);
+            if (path === '/admin/plan' && request.method === 'POST') return cors(await handleAdminSetPlan(request, env), env, request);
             if (path === '/billing/checkout' && request.method === 'POST') return cors(await handleCheckout(request, env), env, request);
             if (path === '/billing/portal' && request.method === 'POST') return cors(await handleBillingPortal(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
@@ -188,6 +191,8 @@ async function handleSession(request, env) {
     }
     // siteId → uid の逆引き (/go リダイレクタが利用)。新規/既存とも冪等に張る (既存アカウントの backfill 兼)
     await env.KV.put(`site:${rec.siteId}`, uid);
+    // email → uid の逆引き (管理者プラン切替 /admin/plan がメール指定で対象を引くため。ADR-038)。冪等
+    if (rec.email) await env.KV.put(`email:${String(rec.email).toLowerCase()}`, uid);
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
     await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
     const planRec = await getPlan(env, uid);
@@ -196,9 +201,17 @@ async function handleSession(request, env) {
         plan: planRec.plan, quotaBytes: planRec.quotaBytes, usedBytes: await getUsed(env, uid),
         interval: planRec.interval, currentPeriodEnd: planRec.currentPeriodEnd,
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd, subStatus: planRec.subStatus,
+        isAdmin: isAdminEmail(rec.email || email, env),
         apiBase: `https://${env.HUB_DOMAIN}`,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
+}
+
+// 管理者判定: ADMIN_EMAILS (secret, カンマ区切り) に含まれるメールか。未設定なら常に false。
+function isAdminEmail(email, env) {
+    if (!email || !env.ADMIN_EMAILS) return false;
+    const set = String(env.ADMIN_EMAILS).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    return set.includes(String(email).toLowerCase());
 }
 
 // 課金レコード plan:<uid> を返す (旧形式=uid レコードに plan/quota を持つ場合は遅延フォールバック)。
@@ -235,9 +248,29 @@ async function handleUsage(request, env) {
         currentPeriodEnd: planRec.currentPeriodEnd,
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd,
         subStatus: planRec.subStatus,
+        isAdmin: isAdminEmail(rec.email, env),
         siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
     });
+}
+
+// 管理者によるプラン手動切替 (ADR-038): 特定アカウントを無料↔Plus に切替える (Stripe を経由しない)。
+// 用途は運営/招待アカウントの優待・検証。対象は **Stripe サブスクを持たないアカウント** を想定。
+// adminGrant フラグを立て、Stripe 失効イベントで降格しないようにする (comp が webhook で剥がれない)。
+async function handleAdminSetPlan(request, env) {
+    const sess = await requireAuth(request, env);
+    const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!caller || !isAdminEmail(caller.email, env)) throw httpError(403, 'admin only');
+    const body = await request.json().catch(() => ({}));
+    const plan = body.plan === 'plus' ? 'plus' : 'free';
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!email) throw httpError(400, 'email required');
+    const targetUid = await env.KV.get(`email:${email}`);
+    if (!targetUid) throw httpError(404, 'account not found (まだログインしていない可能性)');
+    // adminGrant: Plus 付与時 true / 解除時 false。setPlan が plan/quota も合わせて更新する
+    const ok = await setPlan(env, targetUid, plan, { adminGrant: plan === 'plus' });
+    if (!ok) throw httpError(404, 'account record missing');
+    return json({ ok: true, email, uid: targetUid, plan, adminGrant: plan === 'plus' });
 }
 
 // ===== 認証ヘルパ (ハブ公開キー → uid/siteId) =====
@@ -530,13 +563,19 @@ async function applyStripeEvent(event, env) {
             // 周期変更 (月↔年)・解約予約 (cancel_at_period_end) もここで取り込む。降格中からの復帰も Plus に戻す
             await setPlan(env, uid, 'plus', { stripeSubscriptionId: obj.id, ...meta });
         } else if (['canceled', 'unpaid', 'incomplete_expired'].includes(obj.status)) {
-            await setPlan(env, uid, 'free', {});
+            if (!(await isAdminGranted(env, uid))) await setPlan(env, uid, 'free', {});   // 管理者付与は剥がさない
         }
     } else if (type === 'customer.subscription.deleted') {
         // 解約予約の期間満了でサブスクが実際に終了 → Free に降格 (周期/更新日もクリア)
         const uid = obj.customer ? await env.KV.get(`stripe:${obj.customer}`) : null;
-        if (uid) await setPlan(env, uid, 'free', {});
+        if (uid && !(await isAdminGranted(env, uid))) await setPlan(env, uid, 'free', {});
     }
+}
+
+// 管理者付与 (ADR-038) が立っているか。立っていれば Stripe 失効でも Plus を維持する。
+async function isAdminGranted(env, uid) {
+    const p = await env.KV.get(`plan:${uid}`, 'json');
+    return !!(p && p.adminGrant);
 }
 
 // サブスクから UI 表示用メタを抽出 (課金周期/次回更新日/解約予約/状態)。版差で period が item 側にも入るので両対応。
@@ -570,6 +609,7 @@ async function setPlan(env, uid, plan, extra) {
     if (extra && extra.currentPeriodEnd !== undefined) next.currentPeriodEnd = extra.currentPeriodEnd;
     if (extra && extra.cancelAtPeriodEnd !== undefined) next.cancelAtPeriodEnd = !!extra.cancelAtPeriodEnd;
     if (extra && extra.subStatus !== undefined) next.subStatus = extra.subStatus;
+    if (extra && extra.adminGrant !== undefined) next.adminGrant = !!extra.adminGrant;   // 管理者付与 (ADR-038)
     // Free 降格時は周期/更新日/解約予約をクリア (有効なサブスクが無い)
     if (plan === 'free') { delete next.interval; delete next.currentPeriodEnd; next.cancelAtPeriodEnd = false; delete next.subStatus; }
     await env.KV.put(`plan:${uid}`, JSON.stringify(next));
@@ -627,7 +667,7 @@ function safeReturnUrl(url, env) {
 }
 
 // テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

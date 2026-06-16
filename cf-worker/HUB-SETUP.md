@@ -180,6 +180,17 @@ wrangler deploy -c wrangler.hub.toml
 
 > ⚠️ live は実際にお金が動く。価格 (月$2/年$5) と税 (MoR=Stripe 処理) を最終確認してから公開導線を出すこと。
 
+### E-6. 管理者プラン切替 (ADR-038, 任意)
+運営/招待アカウントを Stripe 非経由で 無料↔Plus に切替えたいとき設定する。
+```bash
+cd cf-worker
+wrangler secret put ADMIN_EMAILS -c wrangler.hub.toml   # カンマ区切りの管理者メール (例 自分のメール)
+wrangler deploy -c wrangler.hub.toml
+```
+- 設定後、その管理者でアプリにログインすると 設定→アカウントに「**管理者: プラン手動切替**」パネルが出る。対象メール (相手が一度ログイン済みであること) を入れて「Plus にする/無料にする」。
+- 付与した Plus (`adminGrant`) は Stripe の解約イベントでは剥がれない (comp 用)。解除は同パネルで「無料にする」。
+- ⚠️ `ADMIN_EMAILS` 漏洩=任意アカウントを Plus にできる。secret 厳守 (toml に書かない)。未設定なら `/admin/plan` は 403。
+
 ---
 
 ## 控える値チェックリスト (B で使用)

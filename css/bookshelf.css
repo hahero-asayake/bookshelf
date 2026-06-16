@@ -3628,6 +3628,13 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-plan-period { color: var(--fg2, #4b5460); font-weight: 600; }
 .account-plan-cancel { display: block; margin-top: 0.15rem; color: var(--warning, #d49100); }
 .account-plan-detail.is-canceling .account-plan-period { color: var(--warning, #d49100); }
+/* 管理者: プラン手動切替 (ADR-038) */
+.account-admin { margin: 0.7rem 0; padding: 0.6rem 0.7rem; border: 1px dashed var(--line, #ece7ef); border-radius: 9px; background: var(--surface-2, #f7f5fa); }
+.account-admin-title { margin: 0 0 0.25rem; font-size: 0.82rem; font-weight: 600; color: var(--fg2, #4b5460); display: flex; align-items: center; gap: 0.35rem; }
+.account-admin-hint { margin: 0 0 0.45rem; font-size: 0.78rem; color: var(--muted, #6b6477); line-height: 1.5; }
+.account-admin-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.account-admin-row input { flex: 1 1 12rem; min-width: 0; padding: 0.35rem 0.5rem; border: 1px solid var(--line, #ece7ef); border-radius: 7px; font-size: 0.85rem; }
+.account-admin-result { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--fg2, #4b5460); }
 
 /* サイドバー: アカウント状態チップ */
 .sidebar-account-chip {

@@ -38,6 +38,10 @@ STRIPE_PRICE_MONTHLY = "price_1TidClCd056fwM22DkhBceZa"    # 月額 $2 (test)
 STRIPE_PRICE_YEARLY = "price_1TidClCd056fwM22UZJSRmRf"     # 年額 $5 (test)
 STRIPE_API_VERSION = "2026-02-25.preview"                  # Managed Payments のプレビュー版 (ADR-037)。Webhook も同版にする
 
+# --- 管理者プラン切替 (ADR-038)。メールは公開 repo に載せたくないので secret にする ---
+# wrangler secret put ADMIN_EMAILS  (カンマ区切りの管理者メール。例 "a@example.com,b@example.com")
+# 未設定なら誰も管理者にならず /admin/plan は 403。
+
 # --- 書込レート制限 (Class A 書込暴走による課金事故防止, ADR-033) ---
 # Bearer キー単位で書込 (PUT/DELETE/batch/publish) を制限。60 秒あたり 60 書込まで。
 # unsafe.bindings の ratelimit はネイティブ機能 (KV 書込を消費しない)。
