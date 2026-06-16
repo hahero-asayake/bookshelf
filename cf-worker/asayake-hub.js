@@ -201,6 +201,7 @@ async function handleSession(request, env) {
         plan: planRec.plan, quotaBytes: planRec.quotaBytes, usedBytes: await getUsed(env, uid),
         interval: planRec.interval, currentPeriodEnd: planRec.currentPeriodEnd,
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd, subStatus: planRec.subStatus,
+        billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
         isAdmin: isAdminEmail(rec.email || email, env),
         apiBase: `https://${env.HUB_DOMAIN}`,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
@@ -248,6 +249,7 @@ async function handleUsage(request, env) {
         currentPeriodEnd: planRec.currentPeriodEnd,
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd,
         subStatus: planRec.subStatus,
+        billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
         isAdmin: isAdminEmail(rec.email, env),
         siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`

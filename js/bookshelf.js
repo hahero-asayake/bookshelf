@@ -3506,7 +3506,9 @@ class VirtualBookshelf {
         const manage = document.getElementById('account-manage-billing');
         if (billing) billing.hidden = false;
         if (upgrade) upgrade.hidden = plus;
-        if (manage) manage.hidden = !plus;
+        // 「プラン変更・支払い・解約」(Stripe Billing Portal) は実際に Stripe サブスクがある時だけ。
+        // 管理者付与の Plus (comp) や未払いは Stripe 顧客が無く Portal を開けないので出さない (ADR-039)。
+        if (manage) manage.hidden = !(plus && hub.billingManaged);
         this._renderPlanDetail(hub, plus);
         const admin = document.getElementById('account-admin');   // 管理者のみ表示 (ADR-038)
         if (admin) admin.hidden = !hub.isAdmin;

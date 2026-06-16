@@ -114,6 +114,7 @@ class HubAuth {
             currentPeriodEnd: data.currentPeriodEnd || null,
             cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
             subStatus: data.subStatus || null,
+            billingManaged: !!data.billingManaged,
             isAdmin: !!data.isAdmin,
             publicBase: data.publicBase || ''
         };
@@ -144,6 +145,7 @@ class HubAuth {
             currentPeriodEnd: data.currentPeriodEnd || null,
             cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
             subStatus: data.subStatus || null,
+            billingManaged: !!data.billingManaged,
             isAdmin: !!data.isAdmin,
             siteId: data.siteId || (cfg.hub || {}).siteId || '',
             publicBase: data.publicBase || (cfg.hub || {}).publicBase || ''
@@ -160,7 +162,7 @@ class HubAuth {
         cfg.hub = {
             apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
             plan: 'free', quotaBytes: 0, usedBytes: 0,
-            interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, isAdmin: false,
+            interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, billingManaged: false, isAdmin: false,
             publicBase: ''
         };
         SyncConfigManager.save(cfg);
