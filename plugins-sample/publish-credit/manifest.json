@@ -1,0 +1,11 @@
+{
+    "id": "publish-credit",
+    "name": "公開フッターのひとこと",
+    "version": "1.0.0",
+    "files": ["index.js"],
+    "dependencies": [],
+    "publishable": true,
+    "icon": "megaphone",
+    "categories": ["settings"],
+    "description": "公開ページのフッターに任意の一文を表示する (例: サイトの説明・連絡先)。設定で編集し data/publish.json に純データとして保存、公開時に全ページ＋トップのフッターへ出る。ADR-042 の公開スナップショット dogfood。"
+}

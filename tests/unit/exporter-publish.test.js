@@ -201,3 +201,36 @@ describe('Pages URL の特例', () => {
         expect(r.siteUrl).toBe('https://hahero-asayake.github.io/');
     });
 });
+
+describe('プラグイン公開スナップショット収集 (_collectPluginPublishData, ADR-042)', () => {
+    it('publishable プラグインの publish.json から footerNote だけ集める (壊れ/空/無は除外・コード非実行)', async () => {
+        const app = makeApp({ pages: [] });
+        app._collectPublishablePluginIds = async () => new Set(['pc', 'broken', 'empty', 'nofile']);
+        const store = {
+            pc: JSON.stringify({ footerNote: '  ひとこと  ' }),
+            broken: '{ not json',
+            empty: JSON.stringify({ footerNote: '   ' }),
+            nofile: null
+        };
+        app.pluginAPI = { readPluginFile: async (id) => store[id] };
+        const out = await new BookshelfExporter(app)._collectPluginPublishData();
+        expect(out).toEqual([{ id: 'pc', footerNote: 'ひとこと' }]);
+    });
+
+    it('収集した publishData が generator.build に渡る (配線)', async () => {
+        let opts = null;
+        const app = makeApp({
+            pages: [{ id: 'p1', published: true }],
+            build: async (pages, o) => { opts = o; return { files: [{ path: 'index.html', content: 't' }], pages: pages.map(p => ({ id: p.id, slug: p.id })), leak: [], errors: [] }; }
+        });
+        app._collectPublishablePluginIds = async () => new Set(['pc']);
+        app.pluginAPI = { readPluginFile: async () => JSON.stringify({ footerNote: 'hi' }) };
+        await new BookshelfExporter(app).export();
+        expect(opts.publishData).toEqual([{ id: 'pc', footerNote: 'hi' }]);
+    });
+
+    it('収集器の前提が無い旧 app でも空配列で安全 (後方互換)', async () => {
+        const out = await new BookshelfExporter(makeApp({ pages: [] }))._collectPluginPublishData();
+        expect(out).toEqual([]);
+    });
+});

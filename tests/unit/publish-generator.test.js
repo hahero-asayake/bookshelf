@@ -341,3 +341,48 @@ describe('全標準スタイルの機能検証 (P1-6)', () => {
         }
     });
 });
+
+describe('プラグイン公開スナップショット (publishData footerNote, ADR-042)', () => {
+    const page = { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
+
+    it('footerNote が全ページ + トップ index のフッターに esc されて出る (サイト単位の加算スロット)', async () => {
+        const r = await gen.build([page], { publishData: [{ id: 'pc', footerNote: '連絡先は example まで' }] });
+        const pageHtml = r.files.find(f => f.path === 'manga-page/index.html').content;
+        const idxHtml = r.files.find(f => f.path === 'index.html').content;
+        expect(pageHtml).toContain('<p class="pub-plugin-note">連絡先は example まで</p>');
+        expect(idxHtml).toContain('<p class="pub-plugin-note">連絡先は example まで</p>');
+    });
+
+    it('footerNote は必ず esc される (script / Amazon リンクを能動注入できない)', async () => {
+        const evil = '<script>alert(1)</script><a href="https://www.amazon.co.jp/dp/X?tag=evil-22">x</a>';
+        const r = await gen.build([page], { publishData: [{ id: 'pc', footerNote: evil }] });
+        const html = r.files.find(f => f.path === 'manga-page/index.html').content;
+        expect(html).not.toContain('<script>alert(1)</script>');
+        expect(html).toContain('&lt;script&gt;');
+        expect(html).not.toContain('href="https://www.amazon.co.jp/dp/X?tag=evil-22"');
+    });
+
+    it('publishData 無し / 空 footerNote は何も足さない (既存挙動を変えない)', async () => {
+        const r1 = await gen.build([page]);
+        const r2 = await gen.build([page], { publishData: [{ id: 'pc', footerNote: '   ' }] });
+        for (const r of [r1, r2]) {
+            const html = r.files.find(f => f.path === 'manga-page/index.html').content;
+            expect(html).not.toContain('pub-plugin-note');
+        }
+    });
+
+    it('CSP は維持され script-src を足さない (公開ページで JS 実行不可のまま)', async () => {
+        const r = await gen.build([page], { publishData: [{ id: 'pc', footerNote: 'x' }] });
+        const html = r.files.find(f => f.path === 'manga-page/index.html').content;
+        expect(html).toContain("default-src 'none'");
+        expect(html).not.toMatch(/script-src/i);
+    });
+
+    it('footerNote に私的 vault パスが混入すると _detectLeak が検知する (公開中止に乗る)', async () => {
+        const state = makeState();
+        state.privateSettings.obsidianSubPath = '40_reading/secret';
+        const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
+        const r = await g.build([page], { publishData: [{ id: 'pc', footerNote: 'パスは 40_reading/secret です' }] });
+        expect(r.leak.length).toBeGreaterThan(0);
+    });
+});

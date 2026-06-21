@@ -215,7 +215,7 @@ bookshelf は **同期先フォルダを 1 つだけ指定** する。中身は 
 │   ├── library.json (filtered)
 │   ├── bookshelves.json (isPublic=true)
 │   ├── bookshelves/, books/, notes.json, main.json, settings.json
-│   └── plugins/<id>/ (publishable=true)
+│   └── (プラグイン貢献は plugins/<id>/data/publish.json の純データを各ページ footer へ反映。public/plugins/ へのコード書き出しは無し, ADR-042)
 └── plugins/<id>/                  # プラグインソース (root)
     ├── manifest.json
     ├── index.js

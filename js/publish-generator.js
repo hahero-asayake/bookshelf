@@ -161,7 +161,10 @@ class PublishGenerator {
     _wrapDoc(page, publisher, body, css, opts = {}) {
         const esc = PublishGenerator.esc;
         const intro = page.intro || '';
-        // opts: { pageHasAds, siteHasAffiliate, ogImage, canonical, noindex, updatedAt }
+        // opts: { pageHasAds, siteHasAffiliate, ogImage, canonical, noindex, updatedAt, pluginFooter }
+        // pluginFooter: プラグインの公開スナップショット (純データ) をコアが esc 済み HTML 片にしたもの。
+        //   サイト単位の加算スロット (ADR-042)。全ページ + index (この _wrapDoc 経由) に一括で出る。
+        const pluginFooter = opts.pluginFooter || '';
         const pageHasAds = !!opts.pageHasAds;          // このページに実アフィリンクが出る (景表法)
         const siteHasAffiliate = !!opts.siteHasAffiliate; // サイトとして収益化している (常時表明)
         const ogImage = opts.ogImage || '';
@@ -220,6 +223,7 @@ ${head}
 <main>${adNoticeTop}${body}</main>
 <footer class="pub-footer"><div class="pub-wrap">
   ${affiliateStanding}
+  ${pluginFooter}
   <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
   ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
   <p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
@@ -242,7 +246,8 @@ ${head}
         return this._wrapDoc({ title: `${publisher} の本棚`, intro: '' }, publisher, body, css, {
             siteHasAffiliate: !!opts.siteHasAffiliate,
             canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
-            updatedAt
+            updatedAt,
+            pluginFooter: opts.pluginFooter || ''
         });
     }
 
@@ -327,6 +332,15 @@ ${head}
         const monetized = useGo ? true : (target === 'github' ? !!ownTag : false);
         const siteHasAffiliate = monetized;
 
+        // プラグインの公開スナップショット (純データ) を所定スロット用の HTML 片へ。コアが esc して組む
+        // (ADR-042: コード非実行・純データのみ・サイト単位の加算スロット)。footerNote だけを受け付け、
+        // 文字列値は必ず esc するので、Amazon リンク等の能動的 HTML は構造的に注入できない。
+        const pluginFooter = (Array.isArray(opts.publishData) ? opts.publishData : [])
+            .map(d => (d && typeof d.footerNote === 'string' && d.footerNote.trim())
+                ? `<p class="pub-plugin-note">${PublishGenerator.esc(d.footerNote.trim())}</p>` : '')
+            .filter(Boolean)
+            .join('');
+
         const files = [];
         const built = [];
         const errors = [];
@@ -386,14 +400,15 @@ ${head}
                 ogImage,
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${page.slug}/` : '',
                 noindex: !!page.noindex,
-                updatedAt: page.updatedAt || page.lastBuiltAt || 0
+                updatedAt: page.updatedAt || page.lastBuiltAt || 0,
+                pluginFooter
             });
             files.push({ path: `${page.slug}/index.html`, content: html });
             built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount, updatedAt: page.updatedAt || 0 });
         }
 
         // トップ index
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, pluginFooter }) });
 
         const leak = this._detectLeak(files, state);
         // ownTag: ハブ公開時に Worker へ送り、Plus 時に /go が解決して使う本人タグ (ADR-034追補)。

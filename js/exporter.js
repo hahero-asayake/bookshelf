@@ -78,7 +78,10 @@ class BookshelfExporter {
             siteBaseUrl = this._pagesSiteUrl(pub.owner, pub.repo);
         }
 
-        const result = await generator.build(pages, { siteBaseUrl, target: pub.target, siteId });
+        // プラグインの公開スナップショットを収集 (コード非実行・data/publish.json を読むだけ。ADR-042)
+        const publishData = await this._collectPluginPublishData();
+
+        const result = await generator.build(pages, { siteBaseUrl, target: pub.target, siteId, publishData });
         if (pages.length > 0 && result.pages.length === 0) {
             throw new Error('公開できるページがありません。各ページのスタイルと対象（本棚/本）を確認してください。');
         }
@@ -222,6 +225,29 @@ class BookshelfExporter {
             publicUrl: url,
             errors: result.errors
         };
+    }
+
+    // プラグインの公開スナップショットを収集する (ADR-042)。publishable=true のプラグインの
+    // plugins/<id>/data/publish.json (純データ JSON) を読むだけで、プラグインのコードは実行しない。
+    // 読めない / 壊れた JSON はスキップ。返り値は generator.build の opts.publishData。
+    // 受け付けるのは footerNote (文字列) のみ。generator 側が必ず esc して所定スロットへ出す。
+    async _collectPluginPublishData() {
+        const out = [];
+        try {
+            if (typeof this.app._collectPublishablePluginIds !== 'function' || !this.app.pluginAPI) return out;
+            const ids = await this.app._collectPublishablePluginIds();
+            for (const id of ids) {
+                let json;
+                try {
+                    const text = await this.app.pluginAPI.readPluginFile(id, 'publish.json');
+                    if (!text) continue;
+                    json = JSON.parse(text);
+                } catch (_) { continue; }
+                const note = json && typeof json.footerNote === 'string' ? json.footerNote.trim() : '';
+                if (note) out.push({ id, footerNote: note });
+            }
+        } catch (_) {}
+        return out;
     }
 
     // adapter の dir 以下の全ファイル path を再帰列挙
