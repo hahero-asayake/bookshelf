@@ -115,6 +115,20 @@ export function activate(api, manifest) {
         iconName: 'layers',
         onClick: toggle
     });
+
+    // 「自分は今フィルタ中」をコアに申告 (属性プロバイダ)。これで折りたたみ結果が 0 件でも
+    // 空状態が「条件に合う本がありません」+「絞り込みを解除」を出し、解除でまとめ表示も OFF になる。
+    // sync/btn を参照するので、それらの宣言より後に登録する (TDZ 回避＋安全な順序を例示)。
+    api.registerActiveFilter({
+        isActive: () => enabled,
+        reset: () => {
+            if (!enabled) return; // 冪等: 既に OFF なら何もしない
+            enabled = false;
+            try { localStorage.setItem(STORAGE_KEY, '0'); } catch (_) {}
+            cache = null;
+            sync(); // ボタンの ON/OFF 表示だけ更新。再描画はコア (applyFilters) が 1 回行う
+        }
+    });
     sync();
 
     return { deactivate() { cache = null; } };

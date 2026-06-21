@@ -1210,7 +1210,10 @@ class VirtualBookshelf {
             return true;
         });
         
-        // プラグイン由来のフィルタを適用
+        // プラグイン由来のフィルタを適用。適用前の件数を控える: 空状態の判定で
+        // 「コアフィルタ後は本があったが、プラグインが畳んで0件にした」のか
+        // 「本棚が元から空 (0件)」なのかを区別するため (誤った空状態文言＋誤解除を防ぐ)。
+        this._countBeforePluginFilters = this.filteredBooks.length;
         if (this.pluginAPI && typeof this.pluginAPI._runBookFilters === 'function') {
             this.filteredBooks = this.pluginAPI._runBookFilters(this.filteredBooks);
         }
@@ -1401,7 +1404,13 @@ class VirtualBookshelf {
         const wrap = document.createElement('div');
         wrap.className = 'bookshelf-empty';
         const icon = (name) => (typeof window.renderIcon === 'function' ? window.renderIcon(name, { size: 32 }) : '');
-        const filterActive = !!this.searchQuery || (this.ratingFilter && this.ratingFilter.size > 0);
+        // プラグインフィルタが「原因で」0件になった時だけ絞り込み版を出す:
+        // (a) コアフィルタ後は本があった (_countBeforePluginFilters > 0) かつ
+        // (b) いずれかのプラグインが「フィルタ中」を申告している (解除導線が効く相手がいる)。
+        // 本棚が元から空のケース ((a) が false) は通常の空状態に落とす。
+        const pluginFilterActive = (this._countBeforePluginFilters || 0) > 0
+            && !!(this.pluginAPI && typeof this.pluginAPI.isAnyFilterActive === 'function' && this.pluginAPI.isAnyFilterActive());
+        const filterActive = !!this.searchQuery || (this.ratingFilter && this.ratingFilter.size > 0) || pluginFilterActive;
         const shelf = this.userData.bookshelves?.find(b => b.id === this.currentBookshelf);
         const isAll = !this.currentBookshelf || (shelf && shelf.isSpecial);
 
@@ -1424,6 +1433,9 @@ class VirtualBookshelf {
                 if (this.ratingFilter) this.ratingFilter.clear();
                 const si = document.getElementById('search-input'); if (si) si.value = '';
                 if (typeof this._updateRatingFilterUI === 'function') this._updateRatingFilterUI();
+                // プラグイン由来のフィルタ (registerActiveFilter) も解除する。各 reset は状態クリアのみで
+                // 再描画はしない契約なので、最後の applyFilters() 1 回でまとめて反映する。
+                if (this.pluginAPI && typeof this.pluginAPI.resetActiveFilters === 'function') this.pluginAPI.resetActiveFilters();
                 this.applyFilters();
             });
         } else if (isAll) {

@@ -29,6 +29,7 @@
 //   registerDetailSection({ id, render })  本詳細ペインにセクション追加 (render(host, book, ctx))
 //   injectCSS(id, css) / removeCSS(id)     スコープ付き <style> 注入 (unload で自動除去)
 //   registerBookFilter(fn) / registerExportTransform(fn)  蔵書フィルタ / エクスポート変換
+//   registerActiveFilter({ isActive, reset? })  「自分は今フィルタ中」をコアに申告 (空状態判定が参照)
 //
 // 読み取りヘルパー (コア BookManager への薄いラッパ。ADR-043):
 //   getAmazonUrl(bookOrAsin, affiliateId?)  Amazon 商品 URL (affiliateId 省略でユーザ設定を自動付与)
@@ -71,6 +72,7 @@ class BookshelfPluginAPI {
         this._uiButtons = []; // { id, where, label, onClick, element, _pluginId }
         this._exportTransforms = []; // { fn, _pluginId }
         this._bookFilters = []; // fn(books) => filteredBooks。applyFilters 内で順次適用
+        this._activeFilters = []; // { isActive, reset, pluginId } 「フィルタ中」申告 (属性プロバイダ)
         this._commands = [];      // { id, title, icon, keywords, run, pluginId } ⌘K パレット
         this._detailSections = []; // { id, render, pluginId } 本詳細ペインのセクション
         this._pluginSettings = new Map(); // pluginId → render(host, api) プラグインごとの設定画面
@@ -91,6 +93,7 @@ class BookshelfPluginAPI {
                 uiButtonIds: new Set(),
                 exportTransforms: [],
                 bookFilters: [],
+                activeFilters: [],
                 commandIds: new Set(),
                 widgetIds: new Set(),
                 detailSectionIds: new Set(),
@@ -142,6 +145,15 @@ class BookshelfPluginAPI {
             registerBookFilter: (fn) => {
                 self.registerBookFilter(fn);
                 reg.bookFilters.push(fn);
+            },
+            registerActiveFilter: (opts) => {
+                const entry = self.registerActiveFilter(opts, pluginId);
+                if (entry) reg.activeFilters.push(entry);
+                return entry;
+            },
+            removeActiveFilter: (entry) => {
+                self.removeActiveFilter(entry);
+                reg.activeFilters = reg.activeFilters.filter(e => e !== entry);
             },
             registerCommand: (opts) => {
                 const entry = self.registerCommand(opts, pluginId);
@@ -196,6 +208,9 @@ class BookshelfPluginAPI {
         }
         if (reg.bookFilters && reg.bookFilters.length > 0) {
             this._bookFilters = this._bookFilters.filter(fn => !reg.bookFilters.includes(fn));
+        }
+        if (reg.activeFilters && reg.activeFilters.length > 0) {
+            this._activeFilters = this._activeFilters.filter(e => !reg.activeFilters.includes(e));
         }
         if (reg.commandIds) {
             for (const id of reg.commandIds) this.removeCommand(id);
@@ -596,7 +611,7 @@ class BookshelfPluginAPI {
         if (reg.detailSectionIds && reg.detailSectionIds.size) cats.push('detail');
         if (reg.uiButtonIds && reg.uiButtonIds.size) cats.push('button');
         if (reg.styleIds && reg.styleIds.size) cats.push('theme');
-        if (reg.bookFilters && reg.bookFilters.length) cats.push('filter');
+        if ((reg.bookFilters && reg.bookFilters.length) || (reg.activeFilters && reg.activeFilters.length)) cats.push('filter');
         if (reg.exportTransforms && reg.exportTransforms.length) cats.push('export');
         if (reg.settingsRegistered) cats.push('settings');
         return cats;
@@ -633,6 +648,42 @@ class BookshelfPluginAPI {
                 return acc;
             }
         }, books);
+    }
+
+    // ===== アクティブフィルタ宣言フック（属性プロバイダ。ADR-041/043） =====
+    // プラグインが「自分は今、表示を絞り込んでいる」とコアに申告する。コアの空状態判定
+    // (filterActive) が登録プロバイダにも尋ね、0 件時の文言と「絞り込みを解除」導線を正す。
+    // { isActive: () => boolean, reset?: () => void }
+    //  - reset() の契約: 状態クリアのみに留め、再描画 (refreshUI/applyFilters) は呼ばない。
+    //    再描画はコアが「絞り込みを解除」押下時に applyFilters で 1 回だけ行う (二重描画回避)。
+    //  - reset() は冪等であること (複数回呼ばれても安全)。
+    registerActiveFilter({ isActive, reset } = {}, pluginId = this._pluginId) {
+        if (typeof isActive !== 'function') {
+            console.warn('[pluginAPI] registerActiveFilter: isActive() function required');
+            return null;
+        }
+        const entry = { isActive, reset: typeof reset === 'function' ? reset : null, pluginId };
+        this._activeFilters.push(entry);
+        return entry;
+    }
+    removeActiveFilter(entry) {
+        this._activeFilters = this._activeFilters.filter(e => e !== entry);
+    }
+    /** コアの空状態判定が呼ぶ: いずれかのプラグインが現在フィルタ中か */
+    isAnyFilterActive() {
+        return this._activeFilters.some(e => {
+            try { return !!e.isActive(); }
+            catch (err) { console.error('[activeFilter] isActive error:', err); return false; }
+        });
+    }
+    /** コアの「絞り込みを解除」導線が呼ぶ: 登録プロバイダの reset を一括実行
+     *  (再描画はコア側で 1 回だけ行う前提。各 reset は状態クリアのみに留める) */
+    resetActiveFilters() {
+        for (const e of this._activeFilters) {
+            if (!e.reset) continue;
+            try { e.reset(); }
+            catch (err) { console.error('[activeFilter] reset error:', err); }
+        }
     }
 
     // ===== ストレージ補助 =====

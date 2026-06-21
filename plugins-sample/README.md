@@ -19,7 +19,7 @@ registerDetailSection / injectCSS / registerBookFilter / イベント) の使用
 | [export-markdown](export-markdown/) | **registerCommand** | 本棚別セクション付き Markdown でダウンロード |
 | [dark-theme](dark-theme/) | **injectCSS** + command | CSS 変数を上書きして暗色テーマに |
 | [view-spines](view-spines/) | **injectCSS** + ui:books-rendered | 本棚を物理本棚風（背表紙）に。ビュー系の例 |
-| [series-grouping](series-grouping/) | **registerBookFilter** | シリーズの第2巻以降を折りたたむ |
+| [series-grouping](series-grouping/) | **registerBookFilter** + **registerActiveFilter** | シリーズの第2巻以降を折りたたむ。属性プロバイダで「フィルタ中」を申告し、0件時の空状態・解除導線を正す |
 
 > 旧 `quick-switcher` は本体の ⌘K コマンドパレットに置き換わったため廃止。
 > `view-coverflow / view-mosaic / view-compact / view-timeline`（view-spines と同方式の派生）と
@@ -92,6 +92,7 @@ export function activate(api, manifest) {
 | CSS 注入 | `injectCSS(id, css)` / `removeCSS(id)` |
 | ヘッダーボタン | `addUIButton({ id, label, title, iconName, onClick })` / `removeUIButton(id)` |
 | 蔵書フィルタ | `registerBookFilter(fn)` — `fn(books) => books` を applyFilters 末尾で適用 |
+| フィルタ申告 | `registerActiveFilter({ isActive, reset? })` — 「今フィルタ中」を申告。プラグインが畳んで0件にした時の空状態文言と「絞り込みを解除」導線をコアが正す (属性プロバイダ) |
 | エクスポート変換 | `registerExportTransform(fn)` — `fn(state) => state` |
 | ストレージ | `writePluginFile(rel, text)` / `readPluginFile(rel)` — `plugins/<id>/data/` 配下 (adapter経由でGitHubでも動く) |
 
