@@ -7890,13 +7890,13 @@ class VirtualBookshelf {
             // 変更後ASINの処理
             if (newUpdatedAsin) {
                 updateData.updatedAsin = newUpdatedAsin;
-                // 新しいASINで画像URLも更新
-                updateData.productImage = `https://images-na.ssl-images-amazon.com/images/P/${newUpdatedAsin}.01.L.jpg`;
+                // 新しいASINで画像URLも更新 (URL 形式は getProductImageUrl が唯一の正)
+                updateData.productImage = this.bookManager.getProductImageUrl({ asin: newUpdatedAsin });
             } else {
                 // 変更後ASINが削除された場合、プロパティを削除
                 updateData.updatedAsin = undefined;
                 // 元のASIN（変更された可能性がある）で画像URLを復元
-                updateData.productImage = `https://images-na.ssl-images-amazon.com/images/P/${newOriginalAsin}.01.L.jpg`;
+                updateData.productImage = this.bookManager.getProductImageUrl({ asin: newOriginalAsin });
             }
 
             const success = await this.bookManager.updateBook(asin, updateData);

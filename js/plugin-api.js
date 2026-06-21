@@ -29,6 +29,11 @@
 //   registerDetailSection({ id, render })  本詳細ペインにセクション追加 (render(host, book, ctx))
 //   injectCSS(id, css) / removeCSS(id)     スコープ付き <style> 注入 (unload で自動除去)
 //   registerBookFilter(fn) / registerExportTransform(fn)  蔵書フィルタ / エクスポート変換
+//
+// 読み取りヘルパー (コア BookManager への薄いラッパ。ADR-043):
+//   getAmazonUrl(bookOrAsin, affiliateId?)  Amazon 商品 URL (affiliateId 省略でユーザ設定を自動付与)
+//   getProductImageUrl(bookOrAsin)          表紙画像 URL
+//   effectiveAsin(bookOrAsin)               表示・リンク用の有効 ASIN (updatedAsin 優先)
 
 class PluginEventBus {
     constructor() {
@@ -111,6 +116,9 @@ class BookshelfPluginAPI {
             getBookshelf: (id) => self.getBookshelf(id),
             getBookshelfBySlug: (slug) => self.getBookshelfBySlug(slug),
             getCurrentBookshelf: () => self.getCurrentBookshelf(),
+            getAmazonUrl: (bookOrAsin, affiliateId) => self.getAmazonUrl(bookOrAsin, affiliateId),
+            getProductImageUrl: (bookOrAsin) => self.getProductImageUrl(bookOrAsin),
+            effectiveAsin: (bookOrAsin) => self.effectiveAsin(bookOrAsin),
             updateNote: (asin, partial) => self.updateNote(asin, partial),
             openBook: (asin) => self.openBook(asin),
             openBookshelf: (slug) => self.openBookshelf(slug),
@@ -251,6 +259,38 @@ class BookshelfPluginAPI {
         if (!internalId) return null;
         const b = this._app.bookshelfManager.getById(internalId);
         return b ? { ...b } : null;
+    }
+
+    // ===== Amazon / 画像 URL（コア BookManager への薄いラッパ。ADR-043） =====
+    // 引数は book オブジェクト または ASIN 文字列。ASIN 文字列は蔵書から解決し、
+    // 未所蔵なら { asin } を合成して扱う（関連本など蔵書外 ASIN も渡せる）。
+    _resolveBookArg(bookOrAsin) {
+        if (bookOrAsin && typeof bookOrAsin === 'object') return bookOrAsin;
+        if (!bookOrAsin) return null;
+        return this.getBook(bookOrAsin) || { asin: bookOrAsin };
+    }
+    /** 表示・リンク用の有効 ASIN（updatedAsin 優先） */
+    effectiveAsin(bookOrAsin) {
+        const bm = this._app.bookManager;
+        const b = this._resolveBookArg(bookOrAsin);
+        return (bm && b) ? bm.getEffectiveASIN(b) : null;
+    }
+    /** Amazon 商品画像 URL */
+    getProductImageUrl(bookOrAsin) {
+        const bm = this._app.bookManager;
+        const b = this._resolveBookArg(bookOrAsin);
+        return (bm && b) ? bm.getProductImageUrl(b) : null;
+    }
+    /** Amazon 商品 URL。affiliateId 省略時はユーザ設定の affiliateId を自動付与、
+     *  null を明示すると無タグの素 URL を返す。 */
+    getAmazonUrl(bookOrAsin, affiliateId) {
+        const bm = this._app.bookManager;
+        const b = this._resolveBookArg(bookOrAsin);
+        if (!bm || !b) return null;
+        const tag = affiliateId !== undefined
+            ? affiliateId
+            : (this._app.userData?.settings?.affiliateId || null);
+        return bm.getAmazonUrl(b, tag);
     }
 
     // ===== 書き込み（副作用あり、内部で sync/redraw 実行） =====
