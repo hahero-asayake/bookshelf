@@ -428,6 +428,25 @@ class VirtualBookshelf {
                 if (e.target === settingsModal) this._closeSettingsModal();
             });
         }
+        const doneSettings = document.getElementById('settings-modal-done');
+        if (doneSettings) {
+            doneSettings.addEventListener('click', () => this._closeSettingsModal());
+        }
+
+        // 全モーダル共通: Esc で最前面の開いているモーダルを閉じる (各モーダルの × と同じ処理を呼ぶ)
+        if (!this._globalModalEscBound) {
+            this._globalModalEscBound = true;
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || e.defaultPrevented) return;
+                const open = Array.from(document.querySelectorAll('.modal.show'));
+                if (!open.length) return;
+                const top = open[open.length - 1];
+                const closeBtn = top.querySelector('.modal-close');
+                if (closeBtn) closeBtn.click();
+                else top.classList.remove('show');
+                e.preventDefault();
+            });
+        }
 
 
         // manage-bookshelves は上記 delegation で処理 (複製配置可能なため)
@@ -1409,7 +1428,7 @@ class VirtualBookshelf {
             });
         } else if (isAll) {
             head('book-plus', 'まだ本がありません', 'Kindle から取り込むか、ASIN を手動で追加すると、ここに本が並びます。');
-            action('本を追加・取り込み', true, () => this._openSettingsModal());
+            action('本を追加・取り込み', true, () => this._openSettingsModal('library-section'));
         } else {
             head('book-plus', `「${shelf ? shelf.name : 'この本棚'}」にはまだ本がありません`, '「すべての本」から本を選んで、この本棚に追加できます。');
             action('すべての本を見る', false, () => this.switchBookshelf('all'));
@@ -1430,8 +1449,8 @@ class VirtualBookshelf {
         bookElement.setAttribute('data-book-asin', book.asin);
         
         const userNote = this.userData.notes[book.asin];
-        // 一覧表示用メモ: 本棚 override → ALL の解決値を使う (Phase B-2)
-        const listMemo = this.bookshelfManager.resolveMemo(book.asin, this._currentBookshelfInternalId());
+        // 一覧表示用メモ: ALL の短文メモ (2026-06-20: 本棚 override は廃止)
+        const listMemo = this.bookshelfManager.resolveMemo(book.asin);
         const listRating = userNote?.rating || 0;
 
         // 一覧カードの星・メモ表示は全体設定で制御。
@@ -1787,8 +1806,7 @@ class VirtualBookshelf {
         const isHidden = this.userData.hiddenBooks && this.userData.hiddenBooks.includes(book.asin);
         const contextInternalId = this._currentBookshelfInternalId();
         const allRecord = this.userData.notes[book.asin] || {};
-        const resolvedMemo = this.bookshelfManager.resolveMemo(book.asin, contextInternalId);
-        const hasBookshelfOverride = this.bookshelfManager.hasMemoOverride(book.asin, contextInternalId);
+        const resolvedMemo = this.bookshelfManager.resolveMemo(book.asin);
         const userNote = {
             memo: resolvedMemo,
             rating: this.bookshelfManager.resolveRating(book.asin),
@@ -1796,9 +1814,7 @@ class VirtualBookshelf {
             hideMemo: !!allRecord.hideMemo,
             hideDetailMemo: !!allRecord.hideDetailMemo
         };
-        // 公開時 publishHide フラグは本棚 override 側にあり (本棚スコープ)
         const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
-        const contextNote = (contextBookshelf && contextBookshelf.notes && contextBookshelf.notes[book.asin]) || {};
         const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
         const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
         const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
@@ -1837,86 +1853,8 @@ class VirtualBookshelf {
             </div>
         ` : '';
 
-        // 短文メモ section (Phase B-7: ALL + 全本棚 override をどこからでも表示・編集)
-        // - ALL.notes[asin].memo = デフォルト (常に表示・編集可)
-        // - 各本棚の notes[asin].memo = 任意の override (該当本棚に override があれば一覧)
-        // - 編集モード: 全項目を個別 textarea で編集、本棚ごと × で override 削除、
-        //              member 本棚から override を新規追加可
+        // 短文メモ section (2026-06-20: 本棚 override 廃止 → ALL 1段のみ。閲覧/編集どちらでも直接編集可)
         const allMemoValue = (allRecord && allRecord.memo) || '';
-        const overrides = this.bookshelfManager.getAllMemoOverrides(book.asin);
-        const overrideBookshelfIds = new Set(overrides.map(o => o.bookshelf.id));
-        const memberBookshelvesNoOverride = memberBookshelves.filter(bs => !overrideBookshelfIds.has(bs.id));
-
-        const memoSectionHeader = `<div class="bd-h5">${ico('notebook-pen')}短文メモ</div>`;
-
-        // ALL メモ
-        const allMemoBlock = (() => {
-            if (isEditMode) {
-                return `
-                    <div class="bd-memo-block">
-                        <div class="bd-memo-block-head">
-                            <span class="bd-memo-scope bd-memo-scope-all">${ico('library', 12)}ALL (デフォルト)</span>
-                            <span class="save-note-status bd-save-status" data-asin="${esc(book.asin)}" data-scope="all"></span>
-                        </div>
-                        <textarea class="note-textarea bd-textarea" data-asin="${esc(book.asin)}" data-scope="all" rows="4" placeholder="どこから開いても表示される基本メモ">${esc(allMemoValue)}</textarea>
-                        <label class="bd-flag-label">
-                            <input type="checkbox" class="hide-memo-check" data-asin="${esc(book.asin)}" ${userNote.hideMemo ? 'checked' : ''}>
-                            公開時にこの ALL メモを非公開
-                        </label>
-                    </div>
-                `;
-            }
-            if (!allMemoValue) {
-                return '<p class="bd-empty-note">ALL メモはまだありません</p>';
-            }
-            return `
-                <div class="bd-memo-block">
-                    <div class="bd-memo-block-head"><span class="bd-memo-scope bd-memo-scope-all">${ico('library', 12)}ALL</span></div>
-                    <div class="bd-note-display">${this.convertMarkdownLinksToHtml(allMemoValue)}</div>
-                </div>
-            `;
-        })();
-
-        // 各本棚 override — 開いている本棚 (context) の override は色を強調
-        const overrideBlocks = overrides.map(({ bookshelf, memo }) => {
-            const bsIcon = bookshelf.iconName || 'library';
-            const bsNote = (bookshelf.notes && bookshelf.notes[book.asin]) || {};
-            const isCtx = contextSlug && bookshelf.id === contextSlug;
-            const chip = `<span class="bd-memo-scope bd-memo-scope-bs"><span class="bd-chip-icon">${window.renderIcon(bsIcon, { size: 12 })}</span>${esc(bookshelf.name)}</span>`;
-            if (isEditMode) {
-                return `
-                    <div class="bd-memo-block${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bookshelf.id)}">
-                        <div class="bd-memo-block-head">
-                            ${chip}
-                            <span class="save-note-status bd-save-status" data-asin="${esc(book.asin)}" data-scope="${esc(bookshelf.id)}"></span>
-                            <button class="bd-memo-block-remove memo-override-remove" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bookshelf.id)}" title="この本棚専用メモを削除 (ALL に戻る)">×</button>
-                        </div>
-                        <textarea class="note-textarea bd-textarea" data-asin="${esc(book.asin)}" data-scope="${esc(bookshelf.id)}" rows="3" placeholder="この本棚専用メモ">${esc(memo)}</textarea>
-                        <label class="bd-flag-label">
-                            <input type="checkbox" class="publish-hide-check" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bookshelf.id)}" ${bsNote.publishHide ? 'checked' : ''}>
-                            公開時にこの本棚から除外
-                        </label>
-                    </div>
-                `;
-            }
-            return `
-                <div class="bd-memo-block${isCtx ? ' is-context' : ''}">
-                    <div class="bd-memo-block-head">${chip}</div>
-                    <div class="bd-note-display">${this.convertMarkdownLinksToHtml(memo)}</div>
-                </div>
-            `;
-        }).join('');
-
-        // override 追加 (member 本棚から、まだ override がないもの)
-        const addOverrideHtml = (isEditMode && memberBookshelvesNoOverride.length > 0) ? `
-            <div class="bd-add-override">
-                <select class="bd-add-override-select" data-asin="${esc(book.asin)}">
-                    <option value="">本棚専用メモを追加...</option>
-                    ${memberBookshelvesNoOverride.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
-                </select>
-                <button class="btn btn-secondary btn-small bd-add-override-btn" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
-            </div>
-        ` : '';
 
         // ===== セクション本体 (順序は設定で並び替え可、デフォルト: 本棚→短文→長文→基本情報) =====
         const grip = window.renderIcon('grip-vertical', { size: 12 });
@@ -1929,11 +1867,18 @@ class VirtualBookshelf {
             ${addBookshelfHtml}
         `;
 
-        // 短文メモセクション body
+        // 短文メモセクション body (ALL 1段。閲覧/編集どちらでも直接編集できる textarea。星と対称)
         const shortMemoBody = `
-            ${allMemoBlock}
-            ${overrideBlocks}
-            ${addOverrideHtml}
+            <div class="bd-memo-block">
+                <textarea class="note-textarea bd-textarea" data-asin="${esc(book.asin)}" data-scope="all" rows="4" placeholder="この本のメモ">${esc(allMemoValue)}</textarea>
+                <span class="save-note-status bd-save-status" data-asin="${esc(book.asin)}" data-scope="all"></span>
+                ${isEditMode ? `
+                    <label class="bd-flag-label">
+                        <input type="checkbox" class="hide-memo-check" data-asin="${esc(book.asin)}" ${userNote.hideMemo ? 'checked' : ''}>
+                        公開時にこのメモを非公開
+                    </label>
+                ` : ''}
+            </div>
         `;
 
         // 長文メモセクション body
@@ -2044,23 +1989,13 @@ class VirtualBookshelf {
         if (isEditMode) this._bindDetailSectionReorder(modalBody, book);
         
         // Setup modal event listeners
-        // 全 textarea (ALL + 各本棚 override) に自動保存ハンドラを bind
-        if (isEditMode) {
-            modalBody.querySelectorAll('.note-textarea').forEach(ta => {
-                ta.addEventListener('input', (e) => {
-                    this._scheduleNoteAutoSave(e.target.dataset.asin, e.target.value, modalBody, e.target.dataset.scope || 'all');
-                });
-            });
-        }
-
-        // 本棚 publishHide (本棚 override に紐づく)
-        modalBody.querySelectorAll('.publish-hide-check').forEach(cb => {
-            cb.addEventListener('change', async (e) => {
-                const asin = e.currentTarget.dataset.asin;
-                const bookshelfId = e.currentTarget.dataset.bookshelfId;
-                await this._toggleBookshelfNoteFlag(asin, bookshelfId, 'publishHide', e.currentTarget.checked);
+        // 短文メモ textarea は閲覧/編集どちらでも自動保存 (星と対称に、閲覧のまま書ける)
+        modalBody.querySelectorAll('.note-textarea').forEach(ta => {
+            ta.addEventListener('input', (e) => {
+                this._scheduleNoteAutoSave(e.target.dataset.asin, e.target.value, modalBody, e.target.dataset.scope || 'all');
             });
         });
+
         const hideDetailMemoCheck = modalBody.querySelector('.hide-detail-memo-check');
         if (hideDetailMemoCheck) {
             hideDetailMemoCheck.addEventListener('change', async (e) => {
@@ -2073,44 +2008,13 @@ class VirtualBookshelf {
                 await this._toggleAllNoteFlag(e.currentTarget.dataset.asin, 'hideMemo', e.currentTarget.checked);
             });
         }
-        // 本棚専用メモを追加
-        const addOverrideBtn = modalBody.querySelector('.bd-add-override-btn');
-        if (addOverrideBtn) {
-            addOverrideBtn.addEventListener('click', async (e) => {
-                const asin = e.currentTarget.dataset.asin;
-                const select = modalBody.querySelector('.bd-add-override-select');
-                const bookshelfId = select?.value;
-                if (!bookshelfId) return;
-                const bs = this.bookshelfManager.getBySlug(bookshelfId);
-                if (!bs) return;
-                // 空 override エントリを作って再描画 (textarea が出る)
-                if (!bs.notes) bs.notes = {};
-                if (!bs.notes[asin]) bs.notes[asin] = {};
-                bs.notes[asin].memo = ' '; // 1 文字 placeholder で override 成立 (即削除可能)
-                await this.saveUserData();
-                this.showBookDetail(book, true);
-            });
-        }
-        // 本棚専用メモを削除 (override 撤去 → ALL に戻る)
-        modalBody.querySelectorAll('.memo-override-remove').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const asin = e.currentTarget.dataset.asin;
-                const bookshelfId = e.currentTarget.dataset.bookshelfId;
-                const bs = this.bookshelfManager.getBySlug(bookshelfId);
-                if (!bs || !bs.notes || !bs.notes[asin]) return;
-                delete bs.notes[asin].memo;
-                if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
-                await this.saveUserData();
-                this.showBookDetail(book, true);
-            });
-        });
-
         // 旧「💾 メモを保存」ボタンは廃止。自動保存に切り替わったため不要。
         
         const addToBookshelfBtn = modalBody.querySelector('.add-to-bookshelf');
         if (addToBookshelfBtn) {
             addToBookshelfBtn.addEventListener('click', (e) => {
-                this.addBookToBookshelf(e.target.dataset.asin);
+                // currentTarget = ボタン本体。e.target だとボタン内アイコン(SVG)クリックで asin が undefined になる
+                this.addBookToBookshelf(e.currentTarget.dataset.asin);
             });
         }
         
@@ -2188,7 +2092,7 @@ class VirtualBookshelf {
         // modal は使わず右ペインに表示する (PC v2)
         // プラグインの本詳細セクションを描画 + イベント発火
         if (this.pluginAPI) {
-            this.pluginAPI._runDetailSections(modalBody, book);
+            this.pluginAPI._runDetailSections(modalBody, book, contextBookshelf);
             this.pluginAPI._emit('ui:book-detail-rendered', { asin: book.asin, book, container: modalBody });
             // [非推奨] 旧名 (互換用): #book-modal を前提とした旧プラグインは動かないが名前は残す
             this.pluginAPI._emit('ui:book-modal-opened', { asin: book.asin });
@@ -2217,39 +2121,6 @@ class VirtualBookshelf {
 
 
 
-    // 本棚スコープのフラグ (publishHide のみ)
-    async _togglePublishFlag(asin, flag, value) {
-        const internalId = this._currentBookshelfInternalId();
-        if (!internalId) return;
-        const bs = this.bookshelfManager.getById(internalId);
-        if (!bs) return;
-        if (!bs.notes) bs.notes = {};
-        if (!bs.notes[asin]) bs.notes[asin] = {};
-        if (value) {
-            bs.notes[asin][flag] = true;
-        } else {
-            delete bs.notes[asin][flag];
-            if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
-        }
-        await this.saveUserData();
-    }
-
-    // 任意の本棚 (slug 指定) のフラグ
-    async _toggleBookshelfNoteFlag(asin, bookshelfId, flag, value) {
-        if (!bookshelfId) return;
-        const bs = this.bookshelfManager.getBySlug(bookshelfId);
-        if (!bs || bs.isSpecial) return;
-        if (!bs.notes) bs.notes = {};
-        if (!bs.notes[asin]) bs.notes[asin] = {};
-        if (value) {
-            bs.notes[asin][flag] = true;
-        } else {
-            delete bs.notes[asin][flag];
-            if (Object.keys(bs.notes[asin]).length === 0) delete bs.notes[asin];
-        }
-        await this.saveUserData();
-    }
-
     // ALL スコープのフラグ (hideMemo / hideDetailMemo / hasDetailMemo)
     async _toggleAllNoteFlag(asin, flag, value) {
         if (!this.userData.notes) this.userData.notes = {};
@@ -2267,16 +2138,9 @@ class VirtualBookshelf {
         await this.saveUserData();
     }
 
-    // saveNote(asin, memo, scope) — scope: 'all' or bookshelf slug
-    async saveNote(asin, memo, scope = 'all') {
-        if (scope === 'all') {
-            this.bookshelfManager.setMemo(asin, memo, { scope: null });
-        } else {
-            // scope は本棚 slug — internalId に変換
-            const bs = this.bookshelfManager.getBySlug(scope);
-            if (!bs) return;
-            this.bookshelfManager.setMemo(asin, memo, { scope: bs.internalId });
-        }
+    // saveNote(asin, memo) — 短文メモは ALL 1段 (2026-06-20: 本棚 override 廃止)。余分な scope 引数は無視。
+    async saveNote(asin, memo) {
+        this.bookshelfManager.setMemo(asin, memo);
         await this.saveUserData();
         if (this.pluginAPI) this.pluginAPI._emit('note:updated', { asin, note: this.userData.notes?.[asin] || { memo } });
     }
@@ -2296,7 +2160,7 @@ class VirtualBookshelf {
         const timer = setTimeout(async () => {
             this._noteAutoSaveTimers.delete(key);
             try {
-                await this.saveNote(asin, value, scope);
+                await this.saveNote(asin, value);
                 if (statusEl) {
                     statusEl.textContent = '保存しました';
                     setTimeout(() => { if (statusEl.textContent === '保存しました') statusEl.textContent = ''; }, 1500);
@@ -4492,6 +4356,19 @@ class VirtualBookshelf {
             });
         }
 
+        // ブランドロゴ = ホーム (Web 慣習)。span 要素なのでキーボード操作も付与
+        const brand = document.querySelector('.sidebar-brand');
+        if (brand && !brand._bound) {
+            brand._bound = true;
+            brand.style.cursor = 'pointer';
+            brand.setAttribute('role', 'button');
+            brand.setAttribute('tabindex', '0');
+            brand.setAttribute('title', 'ホーム');
+            const goHome = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
+            brand.addEventListener('click', goHome);
+            brand.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
+        }
+
         // モバイル UI (ドロワー / 下部ナビ / 詳細シート) の初期化
         this._initMobileNav();
     }
@@ -5239,7 +5116,7 @@ class VirtualBookshelf {
         return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    async _openSettingsModal() {
+    async _openSettingsModal(targetId) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
         modal.classList.add('show');
@@ -5255,6 +5132,19 @@ class VirtualBookshelf {
         this._renderPluginCategoryLegend();
         // プラグイン一覧はインストール済み情報を非同期で取得して描画
         try { await this._renderPluginListSection(); } catch (e) { console.warn(e); }
+        // 指定があればその節を開いてスクロール (空状態ボタン・⌘K・公開誘導から共通利用)
+        if (targetId) this._scrollSettingsTo(targetId);
+    }
+
+    // 設定モーダル内の特定要素/節へジャンプ (details を開いて scrollIntoView)。
+    // 引数 targetId は要素 id (details 自身でも、節内の要素でも可)。
+    _scrollSettingsTo(targetId) {
+        const el = targetId && document.getElementById(targetId);
+        if (!el) return;
+        const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
+        if (det) det.open = true;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
     }
 
     // ===== Header customization (V6: square icon buttons, linear flow, vertical drag&drop editor) =====
@@ -6652,7 +6542,12 @@ class VirtualBookshelf {
     }
 
     async addBookToBookshelf(asin) {
-        const bookshelfSelect = document.getElementById(`bookshelf-select-${asin}`);
+        // select は id ではなく class + data-asin で描画される (showBookDetail の addBookshelfHtml 参照)
+        const bookshelfSelect = document.querySelector(`.bookshelf-select[data-asin="${CSS.escape(asin)}"]`);
+        if (!bookshelfSelect) {
+            toast('本棚を選択してください');
+            return;
+        }
         const bookshelfId = bookshelfSelect.value;
 
         if (!bookshelfId) {
@@ -6911,14 +6806,7 @@ class VirtualBookshelf {
         if (!ok) return;
         // 公開モーダルが開いていれば閉じてから設定を開く (モーダルの積み重なりを避ける)
         document.getElementById('publish-pages-modal')?.classList.remove('show');
-        await this._openSettingsModal();
-        const el = targetId && document.getElementById(targetId);
-        if (el) {
-            const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
-            if (det) det.open = true;
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
-        }
+        await this._openSettingsModal(targetId);
     }
 
     async _runPublishExport() {

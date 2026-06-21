@@ -1,0 +1,11 @@
+{
+    "id": "per-shelf-memo",
+    "name": "本棚別メモ",
+    "version": "0.1.0",
+    "description": "本棚ごとに独立した短文メモを本詳細に追加する。コアの共通メモ (ALL) と併存し、置き換えない。",
+    "publishable": false,
+    "files": ["index.js"],
+    "dependencies": [],
+    "icon": "notebook-pen",
+    "categories": ["detail"]
+}

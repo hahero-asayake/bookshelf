@@ -101,10 +101,8 @@ class PublishGenerator {
         if (!lib) return null;
         const effAsin = lib.updatedAsin || lib.asin;
         const allNote = (state.notes && state.notes[asin]) || {};
-        const shelfFile = shelfInternalId ? state.bookshelfFiles[shelfInternalId] : null;
-        const shelfNote = (shelfFile && shelfFile.notes && shelfFile.notes[asin]) || {};
-        // memo: 本棚 override 優先、無ければ ALL (hideMemo は ALL memo の opt-out)
-        const memo = shelfNote.memo || (allNote.hideMemo ? '' : (allNote.memo || '')) || '';
+        // memo: ALL のみ (2026-06-20: 本棚 override 廃止。hideMemo は ALL memo の opt-out)
+        const memo = allNote.hideMemo ? '' : (allNote.memo || '');
         return {
             asin,
             title: lib.title || '',
@@ -124,11 +122,7 @@ class PublishGenerator {
         }
         const file = state.bookshelfFiles[meta.internalId];
         if (!file) return [];
-        // publishHide が立った本は除外
-        return (file.books || []).filter(asin => {
-            const n = file.notes && file.notes[asin];
-            return !(n && n.publishHide);
-        });
+        return file.books || [];
     }
 
     // ページ 1 つを解決 → ctx を返す (detailMemo は別 pass で埋める asin リストも返す)

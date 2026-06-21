@@ -110,6 +110,7 @@ class BookshelfPluginAPI {
             getBookshelves: () => self.getBookshelves(),
             getBookshelf: (id) => self.getBookshelf(id),
             getBookshelfBySlug: (slug) => self.getBookshelfBySlug(slug),
+            getCurrentBookshelf: () => self.getCurrentBookshelf(),
             updateNote: (asin, partial) => self.updateNote(asin, partial),
             openBook: (asin) => self.openBook(asin),
             openBookshelf: (slug) => self.openBookshelf(slug),
@@ -234,12 +235,21 @@ class BookshelfPluginAPI {
     }
     getBookshelf(internalId) {
         if (!this._app.bookshelfManager) return null;
-        const b = this._app.bookshelfManager.getByInternalId(internalId);
+        // getById は internalId→slug フォールバック付き (getByInternalId は BookshelfManager に未定義)
+        const b = this._app.bookshelfManager.getById(internalId);
         return b ? { ...b } : null;
     }
     getBookshelfBySlug(slug) {
         if (!this._app.bookshelfManager) return null;
         const b = this._app.bookshelfManager.getBySlug(slug);
+        return b ? { ...b } : null;
+    }
+    // 現在表示中の本棚 (live state の純加算 READ。ADR-043。slug は返り値の .id)
+    getCurrentBookshelf() {
+        if (!this._app.bookshelfManager || typeof this._app._currentBookshelfInternalId !== 'function') return null;
+        const internalId = this._app._currentBookshelfInternalId();
+        if (!internalId) return null;
+        const b = this._app.bookshelfManager.getById(internalId);
         return b ? { ...b } : null;
     }
 
@@ -469,9 +479,11 @@ class BookshelfPluginAPI {
         // 既に描画済みの DOM があれば除去
         document.querySelectorAll(`.plugin-detail-section[data-plugin-section="${id}"]`).forEach(el => el.remove());
     }
-    /** bookshelf 側 showBookDetail から呼ばれる: 登録セクションを container に描画 */
-    _runDetailSections(container, book) {
+    /** bookshelf 側 showBookDetail から呼ばれる: 登録セクションを container に描画。
+     *  bookshelf = 本詳細を開いた文脈の本棚 (ADR-043。null=ホーム/検索など本棚文脈なし) */
+    _runDetailSections(container, book, bookshelf) {
         if (!container || !this._detailSections.length) return;
+        const shelf = bookshelf ? { ...bookshelf } : null; // プラグインへは浅コピーで渡す
         for (const s of this._detailSections) {
             let host = container.querySelector(`.plugin-detail-section[data-plugin-section="${s.id}"]`);
             if (!host) {
@@ -481,7 +493,7 @@ class BookshelfPluginAPI {
                 container.appendChild(host);
             }
             host.innerHTML = '';
-            try { s.render(host, book, { app: this._app, asin: book && book.asin }); }
+            try { s.render(host, book, { app: this._app, asin: book && book.asin, bookshelf: shelf }); }
             catch (e) { console.error(`[plugin detailSection "${s.id}"]`, e); }
         }
     }

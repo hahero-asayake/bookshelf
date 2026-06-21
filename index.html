@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061603">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026061901">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -315,7 +315,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section" open>
+                <details class="settings-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期</summary>
                     <div class="settings-section-body">
 
@@ -468,7 +468,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section" open>
+                <details class="settings-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
                     <div class="settings-section-body">
                     <div class="publish-config">
@@ -506,7 +506,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section" open>
+                <details class="settings-section" id="library-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="library" data-icon-size="16"></span>蔵書</summary>
                     <div class="settings-section-body">
                     <div class="settings-action-list">
@@ -629,6 +629,9 @@
                 </details>
 
             </div>
+                <div class="modal-footer settings-modal-footer">
+                    <button type="button" class="btn btn-secondary" id="settings-modal-done">閉じる</button>
+                </div>
         </div>
     </div>
 
@@ -1035,12 +1038,12 @@
     <script src="js/publish-styles.js?v=2026061509"></script>
     <script src="js/publish-generator.js?v=2026061515"></script>
     <script src="js/exporter.js?v=2026061515"></script>
-    <script src="js/plugin-api.js?v=2026061002"></script>
+    <script src="js/plugin-api.js?v=2026062001"></script>
     <script src="js/plugin-loader.js?v=2026061002"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026061605"></script>
+    <script src="js/bookshelf.js?v=2026062001"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

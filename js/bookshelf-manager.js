@@ -3,7 +3,7 @@
 // 設計:
 // - 本棚→本（順引き）が正本: bookshelf.books 配列
 // - 本→本棚（逆引き）は起動時にメモリで構築: Map<ASIN, Set<internalId>>
-// - 短文メモ継承: bookshelves/<id>.notes[asin].memo → 親 → all.notes[asin].memo
+// - 短文メモ: all.notes[asin].memo のみ (2026-06-20: 本棚ごとの override は廃止)
 // - 親に本追加 → 子・孫へは「ダイアログで選んだ本棚にも追加」
 // - 親から本削除 → 子・孫から自動カスケード削除（サブセット制約）
 
@@ -115,44 +115,11 @@ class BookshelfManager {
         return Array.from(ids).map(id => this.getById(id)).filter(Boolean);
     }
 
-    // ===== 短文メモ解決 (2026-06-01 Phase B-2: 親継承廃止) =====
-    // 優先順: 本棚自身の notes[asin].memo (override) → all.notes[asin].memo (default)
-    // 親継承チェーンは廃止。ALL = デフォルト、本棚は任意で override 可。
-    resolveMemo(asin, bookshelfInternalId) {
-        const allMemo = (this.app.userData.notes && this.app.userData.notes[asin] && this.app.userData.notes[asin].memo) || '';
-        const allId = this.getAllInternalId();
-        if (!bookshelfInternalId || bookshelfInternalId === allId) return allMemo;
-        const bs = this.getById(bookshelfInternalId);
-        if (bs && !bs.isSpecial) {
-            const override = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
-            if (override && override.length > 0) return override;
-        }
-        return allMemo;
-    }
-
-    // この本に対する全ての本棚 override (空文字以外) を返す
-    // 本詳細ペインで「どこからでも全 override を編集」できるようにするため
-    getAllMemoOverrides(asin) {
-        const result = [];
-        for (const bs of this.getBookshelves()) {
-            if (bs.isSpecial) continue;
-            const m = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
-            if (m && m.length > 0) {
-                result.push({ bookshelf: bs, memo: m });
-            }
-        }
-        return result;
-    }
-
-    // 本棚 override が存在するか (boolean)
-    hasMemoOverride(asin, bookshelfInternalId) {
-        if (!bookshelfInternalId) return false;
-        const allId = this.getAllInternalId();
-        if (bookshelfInternalId === allId) return false;
-        const bs = this.getById(bookshelfInternalId);
-        if (!bs || bs.isSpecial) return false;
-        const m = bs.notes && bs.notes[asin] && bs.notes[asin].memo;
-        return !!(m && m.length > 0);
+    // ===== 短文メモ解決 (2026-06-20: 本棚 override 廃止 → ALL 1段) =====
+    // 短文メモは all.notes[asin].memo のみ。本棚ごとの override は撤去（拡張機能はプラグインへ）。
+    // 引数 bookshelfInternalId は後方互換で受け取るが無視する。
+    resolveMemo(asin) {
+        return (this.app.userData.notes && this.app.userData.notes[asin] && this.app.userData.notes[asin].memo) || '';
     }
 
     // 評価は本棚スコープを持たない（all.notes が唯一の正本）
@@ -442,40 +409,16 @@ class BookshelfManager {
         return removed;
     }
 
-    // ===== 短文メモ・評価の編集 (Phase B-2 簡素化: 親継承廃止、override 仕様) =====
-    // setMemo(asin, memo, { scope })
-    //   scope: internalId
-    //     - 未指定 or all → ALL.notes (デフォルト) に保存
-    //     - 通常本棚 → bookshelf.notes に override として保存
-    //   空文字 ('') を本棚スコープに保存すると override 削除 (ALL にフォールバック)
-    setMemo(asin, memo, { scope } = {}) {
-        const allId = this.getAllInternalId();
+    // ===== 短文メモ・評価の編集 =====
+    // setMemo(asin, memo) — ALL.notes に保存 (2026-06-20: 本棚 override 廃止、scope 引数を撤去)
+    setMemo(asin, memo) {
         if (!this.app.userData.notes) this.app.userData.notes = {};
-
-        if (!scope || scope === allId) {
-            if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
-            this.app.userData.notes[asin].memo = memo;
-            // memo が空かつ他フィールドも空ならエントリ自体削除
-            const n = this.app.userData.notes[asin];
-            if (!n.memo && !n.rating && !n.hasDetailMemo && !n.hideMemo && !n.hideDetailMemo) {
-                delete this.app.userData.notes[asin];
-            }
-            return;
-        }
-
-        const bs = this.getById(scope);
-        if (!bs || bs.isSpecial) return;
-        if (!bs.notes) bs.notes = {};
-        if (!bs.notes[asin]) bs.notes[asin] = {};
-
-        if (memo && memo.length > 0) {
-            bs.notes[asin].memo = memo;
-        } else {
-            // 空文字なら override 削除
-            delete bs.notes[asin].memo;
-            if (Object.keys(bs.notes[asin]).length === 0) {
-                delete bs.notes[asin];
-            }
+        if (!this.app.userData.notes[asin]) this.app.userData.notes[asin] = {};
+        this.app.userData.notes[asin].memo = memo;
+        // memo が空かつ他フィールドも空ならエントリ自体削除
+        const n = this.app.userData.notes[asin];
+        if (!n.memo && !n.rating && !n.hasDetailMemo && !n.hideMemo && !n.hideDetailMemo) {
+            delete this.app.userData.notes[asin];
         }
     }
 

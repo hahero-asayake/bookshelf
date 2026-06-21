@@ -3358,6 +3358,19 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     width: min(720px, 92vw);
 }
 
+/* 設定モーダル下部の固定フッタ (スクロール最下部でも閉じやすく) */
+.settings-modal-footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    padding: 0.75rem 2rem;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    z-index: 5;
+}
+
 /* Collapsible settings sections (details/summary) */
 .settings-section {
     margin-bottom: 0.6rem;

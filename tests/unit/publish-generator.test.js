@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 describe('本棚セクション型', () => {
-    it('選んだ本棚の本だけ・override メモ・Amazon tag が出る / 非選択本は出ない', async () => {
+    it('選んだ本棚の本だけ・ALLメモ・Amazon tag が出る / 本棚overrideは読まない・非選択本は出ない', async () => {
         // Plus ユーザは自分の affiliate tag が付く
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const page = { id: 'a', slug: 'manga-page', title: '漫画ページ', intro: 'よろしく', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
@@ -61,7 +61,7 @@ describe('本棚セクション型', () => {
         const html = r.files.find(f => f.path === 'manga-page/index.html').content;
         expect(html).toContain('漫画1');
         expect(html).toContain('漫画2');
-        expect(html).toContain('本棚overrideメモ');     // M2 は override 優先
+        expect(html).not.toContain('本棚overrideメモ'); // 本棚 override は廃止 (2026-06-20)。fixture に残っていても公開は読まない
         expect(html).toContain('ALLメモM1');            // M1 は ALL memo
         expect(html).toContain('tag=aff-xyz');           // Plus: 自分のアフィリエイト tag 付き
         expect(html).toContain('class="pub-ad-top"');    // 冒頭に控えめな広告ラベルが出る (ステマ規制)
@@ -171,7 +171,7 @@ describe('公開項目はスタイルが固定する (ADR-034追補)', () => {
         const html = r.files.find(f => f.path === 'wall/index.html').content;
         expect(html).toContain('http://img/M1.jpg'); // 表紙は出る
         expect(html).not.toContain('作者A');           // 著者は出さない
-        expect(html).not.toContain('本棚overrideメモ'); // 短文メモは出さない
+        expect(html).not.toContain('ALLメモM1');        // 短文メモ(ALL)は出さない
         expect(html).not.toContain('class="stars"');    // 評価(星)は出さない
     });
 
@@ -300,8 +300,8 @@ describe('プライバシー誤検知ガード (leak)', () => {
         const state = makeState();
         state.privateSettings.obsidianVaultName = 'obsidian';
         state.privateSettings.obsidianSubPath = '40_reading_secret';
-        // メモにうっかりローカルパスが混入したと仮定
-        state.bookshelfFiles.mid.notes.M1 = { memo: 'メモ see obsidian/40_reading_secret' };
+        // メモにうっかりローカルパスが混入したと仮定 (ALL メモ。本棚 override は廃止 2026-06-20)
+        state.notes.M1.memo = 'メモ see obsidian/40_reading_secret';
         const g = new PublishGenerator(makeApp(state), createPublishStyleRegistry());
         const page = { id: 'a', slug: 'p', title: 'P', intro: '', styleId: 'shelf-sections', styleParams: {}, select: sel(['mid']) };
         const r = await g.build([page]);

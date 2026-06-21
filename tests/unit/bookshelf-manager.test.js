@@ -131,29 +131,25 @@ describe('addBookToBookshelf / removeBookFromBookshelf', () => {
     });
 });
 
-describe('短文メモの 2 段解決 (override → ALL)', () => {
-    it('resolveMemo: override があればそれ、無ければ ALL', () => {
-        expect(mgr.resolveMemo('A1', 'c1')).toBe('子のoverride');
-        expect(mgr.resolveMemo('A1', 'p1')).toBe('ALLメモ');
+describe('短文メモ (ALL 1段。本棚 override は廃止 — 2026-06-20)', () => {
+    it('resolveMemo: 常に ALL.notes の memo を返す (本棚 override は無視)', () => {
+        // fixture の child(c1) には A1 の override メモがあるが、もう参照されない
+        expect(mgr.resolveMemo('A1')).toBe('ALLメモ');
+        expect(mgr.resolveMemo('A1', 'c1')).toBe('ALLメモ');
         expect(mgr.resolveMemo('A1', 'allid')).toBe('ALLメモ');
         expect(mgr.resolveMemo('A1', null)).toBe('ALLメモ');
+        expect(mgr.resolveMemo('ZZZ')).toBe('');
     });
-    it('hasMemoOverride: 本棚 override の有無', () => {
-        expect(mgr.hasMemoOverride('A1', 'c1')).toBe(true);
-        expect(mgr.hasMemoOverride('A1', 'p1')).toBe(false);
-        expect(mgr.hasMemoOverride('A1', 'allid')).toBe(false);
+    it('setMemo: ALL.notes に保存 (他フィールドは保持)', () => {
+        mgr.setMemo('A1', '新メモ');
+        expect(mgr.resolveMemo('A1')).toBe('新メモ');
+        expect(app.userData.notes['A1'].rating).toBe(4);
     });
-    it('setMemo: 空文字で override 削除 (ALL へフォールバック)', () => {
-        mgr.setMemo('A1', '', { scope: 'c1' });
-        expect(mgr.resolveMemo('A1', 'c1')).toBe('ALLメモ');
-        expect(mgr.getById('c1').notes['A1']).toBeUndefined();
-    });
-    it('setMemo: ALL スコープで全フィールド空ならエントリ削除', () => {
+    it('setMemo: 全フィールド空ならエントリ削除 / rating があれば残す', () => {
         app.userData.notes['A2'] = { memo: 'x' };
-        mgr.setMemo('A2', '', {});
+        mgr.setMemo('A2', '');
         expect(app.userData.notes['A2']).toBeUndefined();
-        // rating があるエントリは消えない
-        mgr.setMemo('A1', '', {});
+        mgr.setMemo('A1', '');
         expect(app.userData.notes['A1']).toBeDefined();
         expect(app.userData.notes['A1'].rating).toBe(4);
     });

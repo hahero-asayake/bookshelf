@@ -82,8 +82,8 @@ test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033
     const errors = await bootApp(page);
     // GIS の外部読込を避けるためサインインボタン描画をスタブ化
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
-    // 同期方式に hub オプションがある
+    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    // 設定セクションは既定折りたたみ → targetId で同期セクションを開く。同期方式に hub オプションがある
     await expect(page.locator('#sync-method-select option[value="hub"]')).toHaveCount(1);
     // hub を選択 → ハブパネルが表示
     await page.selectOption('#sync-method-select', 'hub');
@@ -162,8 +162,8 @@ test('公開: 新規作成→本棚選択→プレビューが生成される (s
 test('設定→公開: 公開先をハブに切替えるとハブ公開ブロックが出る (ADR-033)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
-    // 既定は GitHub ブロック表示、ハブブロックは隠れている
+    await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
+    // 公開セクションを開く (既定折りたたみ)。既定は GitHub ブロック表示、ハブブロックは隠れている
     await expect(page.locator('#publish-config-github')).toBeVisible();
     await expect(page.locator('#publish-config-hub')).toBeHidden();
     // 公開先=ハブ → ハブブロック表示・GitHub ブロック非表示

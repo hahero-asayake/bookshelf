@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>マーケット入口 比較モック — AsayakeBookshelf</title>
+<!-- 実アプリのデザインをそのまま使う（勝手なデザインにしない） -->
+<link rel="stylesheet" href="../css/bookshelf.css?v=entrancemock1" />
+<style>
+  /* === 比較モック専用の枠だけ。アプリのデザインは触らない === */
+  body { background: var(--bg, #f4f5f7); color: var(--fg, #1c1f24); margin: 0;
+         font-family: -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; }
+  .mock-wrap { max-width: 1180px; margin: 0 auto; padding: 1.4rem 1.4rem 4rem; }
+  .mock-h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 .25rem; }
+  .mock-sub { color: var(--muted, #6b7280); font-size: .85rem; margin: 0 0 1rem; }
+
+  /* 確定/未確定バナー */
+  .scope-banner { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin: 0 0 1.2rem; }
+  .scope-card { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: .7rem .85rem; background: var(--panel,#fff); }
+  .scope-card h4 { margin: 0 0 .35rem; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted,#6b7280); }
+  .scope-card.now h4 { color: var(--accent, #5b6cff); }
+  .scope-card.now { border-color: var(--accent,#5b6cff); box-shadow: 0 0 0 2px rgba(91,108,255,.12); }
+  .scope-card p { margin: 0; font-size: .82rem; line-height: 1.5; }
+
+  /* タブ */
+  .tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin: 0 0 1rem; }
+  .tab { border: 1px solid var(--line,#e5e7eb); background: var(--panel,#fff); border-radius: 999px;
+         padding: .5rem .95rem; font-size: .85rem; cursor: pointer; color: var(--fg,#1c1f24);
+         display: flex; align-items: center; gap: .45rem; }
+  .tab .tag { font-weight: 700; color: var(--muted,#6b7280); }
+  .tab.active { background: var(--accent,#5b6cff); border-color: var(--accent,#5b6cff); color: #fff; }
+  .tab.active .tag { color: #fff; }
+
+  /* レイアウト: 左=ビジュアル / 右=分析 */
+  .compare { display: grid; grid-template-columns: minmax(0,1fr) 380px; gap: 1.2rem; align-items: start; }
+  @media (max-width: 900px){ .compare { grid-template-columns: 1fr; } }
+
+  .stage { background: var(--panel,#fff); border: 1px solid var(--line,#e5e7eb); border-radius: 12px; padding: 1rem; }
+  .stage-title { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted,#6b7280); margin: 0 0 .6rem; }
+  .stage-row { display: flex; gap: 1.1rem; align-items: flex-start; flex-wrap: wrap; }
+
+  /* PC 3ペイン縮小ビュー */
+  .pc-shell { display: flex; border: 1px solid var(--line,#e5e7eb); border-radius: 10px; overflow: hidden;
+              height: 430px; flex: 1 1 380px; min-width: 320px; position: relative; background: var(--side,#fbfbfd); }
+  /* 実アプリの .app-sidebar をスタンドアロンで描くための最小上書き */
+  .pc-shell .app-sidebar { position: relative; width: 218px; height: 100%; flex: 0 0 218px;
+                           grid-area: auto; display: flex; flex-direction: column; }
+  .pc-center { flex: 1 1 auto; padding: .9rem; color: var(--muted,#6b7280); font-size: .8rem;
+               display: flex; flex-direction: column; gap: .5rem; position: relative; }
+  .pc-center .ph-block { background: #fff; border: 1px dashed var(--line,#e5e7eb); border-radius: 8px; }
+  .pc-center .ph-1 { height: 30px; }
+  .pc-center .ph-2 { flex: 1; }
+  .pc-right { flex: 0 0 120px; border-left: 1px solid var(--line,#e5e7eb); background: #fff; }
+  .caption-mini { font-size: .72rem; color: var(--muted,#6b7280); margin-top: .3rem; }
+
+  /* 本棚ツリーの簡易行（実 .sidebar-nav-item を流用） */
+  .mock-shelf .nav-label { font-weight: 400; }
+  .mock-shelf .shelf-count { margin-left: auto; font-size: .72rem; color: var(--muted,#9aa0aa); }
+
+  /* 入口ハイライト */
+  .entrance-here { position: relative; outline: 2px solid var(--accent,#5b6cff);
+                   outline-offset: 1px; border-radius: 8px; animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(91,108,255,.35);} 50%{ box-shadow: 0 0 0 6px rgba(91,108,255,0);} }
+
+  /* 案D 用 ⌘K プレビューカード */
+  .cmdk-card { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%);
+               width: 240px; background: #fff; border: 1px solid var(--line,#e5e7eb); border-radius: 10px;
+               box-shadow: 0 12px 30px rgba(0,0,0,.16); overflow: hidden; }
+  .cmdk-card .ci { display: flex; align-items: center; gap: .5rem; padding: .55rem .7rem; border-bottom: 1px solid var(--line,#eee); font-size: .8rem; color: var(--muted,#6b7280); }
+  .cmdk-card .cr { padding: .5rem .7rem; font-size: .8rem; display: flex; align-items: center; gap: .5rem; }
+  .cmdk-card .cr.hit { background: rgba(91,108,255,.1); color: var(--fg,#1c1f24); font-weight: 600; outline: 2px solid var(--accent,#5b6cff); outline-offset: -2px; border-radius: 6px; margin: 0 .25rem; }
+
+  /* 隠し要素（案ごとに出し分け） */
+  .hidden-variant { display: none !important; }
+
+  /* スマホフレーム */
+  .phone { width: 196px; flex: 0 0 196px; border: 8px solid #20242c; border-radius: 26px;
+           height: 414px; background: #fff; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .phone-screen { flex: 1; background: var(--bg,#f4f5f7); padding: .6rem; font-size: .72rem; color: var(--muted,#6b7280);
+                  display: flex; flex-direction: column; gap: .4rem; }
+  .phone-screen .pb { background:#fff; border:1px dashed var(--line,#e5e7eb); border-radius:6px; }
+  .phone-screen .pb1 { height: 22px; } .phone-screen .pb2 { flex:1; }
+  .phone-nav { display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line,#e5e7eb); background:#fff; }
+  .phone-nav button { border: none; background: none; padding: .45rem 0 .5rem; display: flex; flex-direction: column;
+                      align-items: center; gap: .15rem; font-size: .6rem; color: var(--muted,#9aa0aa); cursor: default; }
+  .phone-nav button .pn-ic { width: 18px; height: 18px; display: inline-flex; }
+  .phone-nav button.path { color: var(--accent,#5b6cff); }
+  .phone-nav button.path .pn-ic { outline: 2px solid var(--accent,#5b6cff); outline-offset: 3px; border-radius: 6px; }
+
+  /* 分析パネル */
+  .analysis { background: var(--panel,#fff); border: 1px solid var(--line,#e5e7eb); border-radius: 12px; padding: 1rem 1.1rem; position: sticky; top: 1rem; }
+  .analysis h3 { margin: 0 0 .15rem; font-size: 1.02rem; }
+  .analysis .where { font-size: .8rem; color: var(--muted,#6b7280); line-height: 1.55; margin: 0 0 .8rem; }
+  .analysis .where b { color: var(--fg,#1c1f24); }
+  .pc-row { display: grid; grid-template-columns: 64px 1fr; gap: .4rem .6rem; font-size: .8rem; margin-bottom: .8rem; }
+  .pc-row .k { color: var(--muted,#6b7280); }
+  .pc-row .reach { font-weight: 700; }
+  .pros, .cons { margin: 0 0 .7rem; padding: 0; list-style: none; font-size: .81rem; line-height: 1.5; }
+  .pros li, .cons li { display: flex; gap: .45rem; margin: .25rem 0; }
+  .pros li::before { content: "＋"; color: #1f9d57; font-weight: 700; }
+  .cons li::before { content: "－"; color: #d4574f; font-weight: 700; }
+  .sec-label { font-size: .7rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted,#6b7280); margin: .2rem 0 .15rem; }
+  .spec-note { font-size: .76rem; line-height: 1.55; background: #f6f7fb; border-left: 3px solid var(--accent,#5b6cff);
+               border-radius: 0 6px 6px 0; padding: .55rem .65rem; color: var(--fg,#1c1f24); }
+  .obs { margin-top: 1.4rem; background: #fffaf0; border: 1px solid #f0d9a8; border-radius: 10px; padding: .7rem .85rem; font-size: .8rem; line-height: 1.55; }
+  .obs h4 { margin: 0 0 .3rem; font-size: .8rem; color: #8a6d1f; }
+</style>
+</head>
+<body>
+<div class="mock-wrap">
+  <h1 class="mock-h1">マーケットの入口（アクセス方法）— 比較モック</h1>
+  <p class="mock-sub">既存デザインのまま「入口をどこに置くか」だけを比較。左＝PC左ペイン+スマホ下部ナビでの位置、右＝メリット/デメリットの精査。</p>
+
+  <div class="scope-banner">
+    <div class="scope-card">
+      <h4>確定済み</h4>
+      <p>マーケット(ハブ)を作る方針／用語／公開ゲート＋SHAピン／Workerは asayake-hub.js 相乗り／MVP=Phase1。</p>
+    </div>
+    <div class="scope-card now">
+      <h4>今このタスク</h4>
+      <p><b>入口（アクセス方法）をどこに置くか</b>だけを決める。これ1点。</p>
+    </div>
+    <div class="scope-card">
+      <h4>未確定（今は触らない）</h4>
+      <p>マーケット画面の中身・体験設計／既存プラグインUIの作り直し／設定の3分解／左nav全体再編／デザイン変更。</p>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-c="A"><span class="tag">案A</span> 左nav 第一級</button>
+    <button class="tab" data-c="B"><span class="tag">案B</span> 左nav 下部に控えめ常駐</button>
+    <button class="tab" data-c="C"><span class="tag">案C</span> 設定内「拡張」</button>
+    <button class="tab" data-c="D"><span class="tag">案D</span> ⌘K中心＋最小の入口</button>
+  </div>
+
+  <div class="compare">
+    <!-- ===== 左: ビジュアル ===== -->
+    <div class="stage">
+      <p class="stage-title">配置プレビュー（実デザイン）</p>
+      <div class="stage-row">
+
+        <!-- PC -->
+        <div style="flex:1 1 380px; min-width:320px;">
+          <div class="pc-shell">
+            <aside class="app-sidebar">
+              <div class="sidebar-brand">
+                <span class="brand-icon" data-icon="library" data-icon-size="18"></span>
+                <span class="brand-text">AsayakeBookshelf</span>
+              </div>
+              <nav class="sidebar-nav">
+                <div class="sidebar-section">
+                  <button class="sidebar-nav-item"><span class="nav-icon" data-icon="library" data-icon-size="16"></span><span class="nav-label">ホーム</span></button>
+                  <button class="sidebar-nav-item"><span class="nav-icon" data-icon="globe" data-icon-size="16"></span><span class="nav-label">公開</span></button>
+                  <!-- 案A: 第一級 -->
+                  <button class="sidebar-nav-item hidden-variant" id="ent-A" data-only="A"><span class="nav-icon" data-icon="puzzle" data-icon-size="16"></span><span class="nav-label">マーケット</span></button>
+                </div>
+                <div class="sidebar-section">
+                  <div class="sidebar-section-title"><span>本棚</span><button class="sidebar-add-btn" data-icon="plus" data-icon-size="14"></button></div>
+                  <div class="sidebar-bookshelf-tree">
+                    <button class="sidebar-nav-item mock-shelf"><span class="nav-icon" data-icon="book" data-icon-size="16"></span><span class="nav-label">技術書</span><span class="shelf-count">128</span></button>
+                    <button class="sidebar-nav-item mock-shelf"><span class="nav-icon" data-icon="book" data-icon-size="16"></span><span class="nav-label">ビジネス</span><span class="shelf-count">64</span></button>
+                    <button class="sidebar-nav-item mock-shelf"><span class="nav-icon" data-icon="book" data-icon-size="16"></span><span class="nav-label">小説</span><span class="shelf-count">211</span></button>
+                  </div>
+                </div>
+              </nav>
+              <div class="sidebar-utility">
+                <button class="sidebar-account-chip"><span class="sac-icon" data-icon="user-circle" data-icon-size="16"></span><span class="sac-label">ログイン</span></button>
+                <div class="header-controls">
+                  <!-- 案B: 控えめ常駐（ツール帯） -->
+                  <span class="header-item hidden-variant" id="ent-B" data-only="B"><button class="btn-icon-square" data-icon="puzzle" title="マーケット"></button></span>
+                  <span class="header-item"><button class="btn-icon-square" data-icon="pen-line" title="本棚管理"></button></span>
+                  <span class="header-item" id="gear"><button class="btn-icon-square" data-icon="settings" title="設定"></button></span>
+                </div>
+              </div>
+            </aside>
+            <div class="pc-center">
+              <div class="ph-block ph-1"></div>
+              <div class="ph-block ph-2"></div>
+              <span>中央ペイン（ホーム / 本棚一覧）</span>
+              <!-- 案D: ⌘K プレビュー -->
+              <div class="cmdk-card hidden-variant" id="ent-D" data-only="D">
+                <div class="ci"><span data-icon="search" data-icon-size="14"></span>マーケ…</div>
+                <div class="cr hit"><span data-icon="puzzle" data-icon-size="14"></span>マーケットを開く</div>
+                <div class="cr"><span data-icon="book" data-icon-size="14"></span>本を検索</div>
+              </div>
+            </div>
+            <div class="pc-right"></div>
+          </div>
+          <div class="caption-mini" id="pc-caption"></div>
+        </div>
+
+        <!-- スマホ -->
+        <div>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="pb pb1"></div>
+              <div class="pb pb2"></div>
+              <span style="text-align:center;">スマホ（≤768px）</span>
+            </div>
+            <div class="phone-nav" id="phone-nav">
+              <button data-mn="home"><span class="pn-ic" data-icon="home" data-icon-size="18"></span><span>ホーム</span></button>
+              <button data-mn="shelves"><span class="pn-ic" data-icon="library" data-icon-size="18"></span><span>本棚</span></button>
+              <button data-mn="search"><span class="pn-ic" data-icon="search" data-icon-size="18"></span><span>検索</span></button>
+              <button data-mn="settings"><span class="pn-ic" data-icon="settings" data-icon-size="18"></span><span>設定</span></button>
+            </div>
+          </div>
+          <div class="caption-mini" id="phone-caption" style="width:196px;"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== 右: 分析 ===== -->
+    <div class="analysis" id="analysis"></div>
+  </div>
+
+  <div class="obs">
+    <h4>観察（※決定ではない・参考）</h4>
+    <p>4案は排他ではない。実務的には「常時の到達経路（D＝検索が1タップ）」＋「発見性の最低保証（B＝控えめ常駐 or 初回ヒント）」のハイブリッドが落としどころになりうる。ただし今は<b>入口の方向性</b>を決める段階で、ハイブリッドの作り込みは未確定。</p>
+  </div>
+</div>
+
+<script src="../js/icons.js?v=entrancemock1"></script>
+<script>
+const DATA = {
+  A: {
+    title: "案A — 左nav 第一級（常駐）",
+    where: "PC: 左ペイン上段、<b>ホーム／公開と並ぶ常駐項目</b>「マーケット」。<br>モバイル: 左ドロワー内（下部ナビ「本棚」をタップ→ドロワー展開→マーケット）。",
+    pcReach: "1クリック", mbReach: "本棚→ドロワー（2タップ・要発見）",
+    pcCaption: "▲ ホーム／公開と同列の常駐 nav 項目",
+    phoneCaption: "「本棚」でドロワーを開いた先にマーケット。\"本棚\"ラベルから想起しにくい。",
+    mnPath: "shelves",
+    pros: [
+      "PCでの発見性が最高。初見でも「マーケットがある」と即わかる",
+      "公開と同格＝「アプリの主要機能」というIA上の格を与えられる",
+      "PCでは1クリックで開ける",
+    ],
+    cons: [
+      "常駐ノイズ：マーケットは毎日使う導線ではない（時々）。常時占有のコストに見合うか",
+      "設計原則と緊張：「管理ツールはサイドバーに置かず設定＋⌘K」(04画面設計書/CLAUDE.md)。※公開が既に例外だが2つ目の例外を増やす",
+      "モバイルで遠い：下部ナビに枠が無く、ドロワー越し2タップ＋\"本棚\"ラベルで発見性が落ちる",
+    ],
+    spec: "公開ボタンを左navに置いた前例はある。ただし本来「サイドバーに管理ツールを置かない」原則の例外を2つ目に増やす判断になる。",
+  },
+  B: {
+    title: "案B — 左nav 下部に控えめ常駐",
+    where: "PC: 下部のユーティリティ帯（アカウント／本棚管理／設定の並び）に<b>マーケットのアイコンを1つ追加</b>。<br>モバイル: 同じくドロワー内（「本棚」タップで展開）。",
+    pcReach: "1クリック", mbReach: "本棚→ドロワー（2タップ）",
+    pcCaption: "▲ ツール帯にアイコンで控えめに常駐",
+    phoneCaption: "モバイルは案Aと同じくドロワー越し。",
+    mnPath: "shelves",
+    pros: [
+      "常駐だが控えめ＝視覚ノイズが小さい",
+      "「設定・管理系ツール」と同じ島に置く意味的グルーピングが自然（マーケット＝拡張の管理）",
+      "既存ユーティリティ帯はD&D並び替え対応で拡張しやすい",
+    ],
+    cons: [
+      "アイコンのみだと意味が伝わりにくい（ラベル無しでは何の入口か不明）",
+      "発見性は中。下部は視線が落ちにくい",
+      "モバイルはやはりドロワー越しで遠い",
+    ],
+    spec: "ユーティリティ帯（本棚管理/設定）と同列＝「主要nav」ではなく「ツール」扱い。原則（管理ツールはnav上段に置かない）との親和性は案Aより高い。",
+  },
+  C: {
+    title: "案C — 設定モーダル内「拡張」セクション",
+    where: "PC/モバイル: 設定（歯車 / 下部ナビ「設定」1タップ）→ <b>「拡張」セクション</b>。現状のプラグインUIの位置にほぼ一致。",
+    pcReach: "歯車→スクロール", mbReach: "設定（1タップ）→スクロール",
+    pcCaption: "▲ 入口は設定モーダルの中（歯車から）",
+    phoneCaption: "「設定」1タップ→モーダル内の拡張までスクロール。",
+    mnPath: "settings",
+    pros: [
+      "最小改修・最も可逆（現プラグインUIの場所にほぼ一致）",
+      "常駐UIゼロ＝3ペインの簡潔さを一切汚さない",
+      "モバイル到達は設定1タップで素直（案A/Bのドロワーより近い）",
+    ],
+    cons: [
+      "埋没：まさに現状で「プラグインが埋もれている」と棚卸し済みの位置",
+      "「マーケットを第一級にしたい」方針(2026-06-18 IA再設計)と真っ向から矛盾",
+      "設定＝\"設定する場所\"であり\"探索して入れる場所\"ではない。探索体験と相性が悪い",
+    ],
+    spec: "現状維持に最も近く安全。ただし今回のIA再設計の動機（マーケットを第一級に）を満たさない。",
+  },
+  D: {
+    title: "案D — ⌘K中心＋最小の入口",
+    where: "PC: ⌘K（コマンドパレット）に「マーケットを開く」。常駐は最小（無 or 極小アイコン1つ）。<br>モバイル: 下部ナビ「検索」=⌘K=<b>常時1タップ</b>。そこから「マーケット」。",
+    pcReach: "⌘K→入力", mbReach: "検索＝⌘K（1タップ）",
+    pcCaption: "▲ ⌘K に「マーケットを開く」。左ペインは増やさない",
+    phoneCaption: "「検索」は下部ナビの押しやすい位置＝1タップ。⌘Kはパワーユーザ専用ではない。",
+    mnPath: "search",
+    pros: [
+      "モバイル到達性が最良：検索は下部ナビで1タップ。案A/Bのドロワー2タップより近い（⌘K＝モバイル第一級導線）",
+      "常駐UIを足さない＝3ペイン＆設計原則「管理ツールは⌘K」に最も忠実",
+      "拡張に強い：将来マーケット以外のコマンドも同じ入口に集約できる",
+    ],
+    cons: [
+      "発見性の壁：コマンドの存在を知らないと辿り着けない。初見は「マーケットがある」と気づきにくい",
+      "視覚的な\"お店がある感\"が出ず、探索のワクワクを喚起しにくい",
+      "PCは⌘Kを開く一手間（ただし⌘Kは元々主要導線）",
+    ],
+    spec: "設計方針（管理ツールは⌘K＋設定）に最も忠実。⌘Kはモバイル下部ナビ「検索」＝_openPalette() で1タップ＝パワーユーザ専用という認識は誤り。発見性は別途「初回ヒント」等で補う前提。",
+  },
+};
+
+function render(c){
+  const d = DATA[c];
+  // タブ
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.c === c));
+  // 入口要素の出し分け（クラスで制御。空文字インラインだとCSSのdisplay:noneが勝つため）
+  document.querySelectorAll('[data-only]').forEach(el => { el.classList.toggle('hidden-variant', el.dataset.only !== c); });
+  // ハイライト
+  ['ent-A','ent-B','ent-D','gear'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('entrance-here'); });
+  if (c === 'A') document.getElementById('ent-A').classList.add('entrance-here');
+  if (c === 'B') document.getElementById('ent-B').classList.add('entrance-here');
+  if (c === 'C') document.getElementById('gear').classList.add('entrance-here');
+  if (c === 'D') document.getElementById('ent-D').classList.add('entrance-here');
+  // キャプション
+  document.getElementById('pc-caption').textContent = d.pcCaption;
+  document.getElementById('phone-caption').textContent = d.phoneCaption;
+  // スマホ下部ナビの経路ハイライト
+  document.querySelectorAll('#phone-nav button').forEach(b => b.classList.toggle('path', b.dataset.mn === d.mnPath));
+  // 分析パネル
+  document.getElementById('analysis').innerHTML = `
+    <h3>${d.title}</h3>
+    <p class="where">${d.where}</p>
+    <div class="pc-row">
+      <span class="k">PC到達</span><span class="reach">${d.pcReach}</span>
+      <span class="k">モバイル到達</span><span class="reach">${d.mbReach}</span>
+    </div>
+    <div class="sec-label">メリット</div>
+    <ul class="pros">${d.pros.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <div class="sec-label">デメリット</div>
+    <ul class="cons">${d.cons.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <div class="sec-label">アプリ仕様との整合</div>
+    <div class="spec-note">${d.spec}</div>
+  `;
+  // アイコン再描画（動的に追加した分）
+  if (window.applyIcons) window.applyIcons(document);
+}
+
+document.getElementById('tabs').addEventListener('click', e => {
+  const t = e.target.closest('.tab'); if (!t) return; render(t.dataset.c);
+});
+window.addEventListener('DOMContentLoaded', () => { if (window.applyIcons) window.applyIcons(document); render('A'); });
+</script>
+</body>
+</html>
