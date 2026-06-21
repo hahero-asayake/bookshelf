@@ -1,0 +1,13 @@
+# 行末は LF に固定 (リポジトリの正は LF)。Windows/WSL 混在での CRLF churn を防ぐ。
+* text=auto eol=lf
+
+# バイナリは変換しない
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
