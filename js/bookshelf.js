@@ -5142,6 +5142,8 @@ class VirtualBookshelf {
         if (urlInput) urlInput.value = '';
         // 分類マークの凡例を描画
         this._renderPluginCategoryLegend();
+        // マーケット (公式カタログ) を非同期で読み込み (公開・認証不要。失敗は黙殺し再試行ボタンを出す)
+        this._renderMarketSection().catch(e => console.warn('market render failed', e));
         // プラグイン一覧はインストール済み情報を非同期で取得して描画
         try { await this._renderPluginListSection(); } catch (e) { console.warn(e); }
         // 指定があればその節を開いてスクロール (空状態ボタン・⌘K・公開誘導から共通利用)
@@ -5590,6 +5592,83 @@ class VirtualBookshelf {
 
         this._bindPluginListEvents();
         this._applyPluginSearchFilter();
+    }
+
+    // ===== マーケット (公式カタログ。ADR-040 Phase1) =====
+    // ハブの公開レジストリ GET /plugins を読み、カード一覧 + ワンタップ導入 (SHA ピン) を出す。
+    // 認証不要 (公開) なのでハブ未接続でも閲覧可。導入は同期先の接続が必要。
+    async _renderMarketSection() {
+        const host = document.getElementById('plugin-market-section');
+        if (!host) return;
+        const apiBase = (SyncConfigManager.load().hub?.apiBase) || 'https://hub.asayake.org';
+        const icoBtn = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        host.innerHTML = '<p style="color:#888;">マーケットを読み込み中…</p>';
+        let plugins = [];
+        try {
+            const res = await fetch(`${apiBase}/plugins`, { method: 'GET' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            plugins = Array.isArray(data.plugins) ? data.plugins : [];
+        } catch (e) {
+            host.innerHTML = `<p style="color:#888;">マーケットを読み込めませんでした（${this.escapeHtml(e.message)}）。 <button type="button" class="btn btn-small" id="market-retry">再試行</button></p>`;
+            host.querySelector('#market-retry')?.addEventListener('click', () => this._renderMarketSection());
+            return;
+        }
+        if (plugins.length === 0) {
+            host.innerHTML = '<p style="color:#888;">公開中のプラグインはまだありません。</p>';
+            return;
+        }
+        let installedIds = new Set();
+        if (this.pluginLoader && this._isSyncReady()) {
+            try { installedIds = new Set((await this.pluginLoader.listInstalledPlugins()).map(p => p.id)); } catch (_) {}
+        }
+        const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
+        host.innerHTML = plugins.map(p => {
+            const installed = installedIds.has(p.id);
+            const catBadges = this._renderPluginCategoryBadges(Array.isArray(p.categories) ? p.categories : []);
+            const action = installed
+                ? `<span class="plugin-state muted">${icoBtn('check', 12)}導入済み</span>`
+                : `<button type="button" class="btn btn-small btn-primary market-install-btn" data-market-id="${esc(p.id)}">${icoBtn('download')}導入</button>`;
+            return `
+                <div class="plugin-card-v2" data-market-card="${esc(p.id)}">
+                    <div class="pcard-head">
+                        <span class="pcard-icon">${window.renderIcon(p.icon || 'puzzle', { size: 18 })}</span>
+                        <div class="pcard-headtext">
+                            <div class="pcard-name"><strong>${esc(p.name || p.id)}</strong></div>
+                            ${p.author ? `<div class="pcard-meta"><span class="pcard-version">${esc(p.author)}</span></div>` : ''}
+                        </div>
+                    </div>
+                    ${catBadges}
+                    ${p.description ? `<div class="plugin-card-desc">${esc(p.description)}</div>` : ''}
+                    <div class="plugin-card-actions">${action}</div>
+                </div>`;
+        }).join('');
+        host.querySelectorAll('.market-install-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.marketId;
+                const entry = plugins.find(p => p.id === id);
+                if (!entry) return;
+                if (!this._isSyncReady()) { toast('先に「同期」で保存先を接続してください'); return; }
+                btn.disabled = true;
+                btn.innerHTML = `${icoBtn('loader')}導入中…`;
+                try {
+                    // SHA ピンで取得 (検証コード = 取得コード)。skipConfirm: マーケットの「導入」が確認の代わり
+                    const m = await this.pluginLoader.installFromGitHub(entry.repoUrl, { sha: entry.sha, path: entry.path, skipConfirm: true });
+                    if (m) {
+                        toast(`「${entry.name || id}」を導入しました`);
+                        await this._renderPluginListSection();
+                        await this._renderMarketSection();
+                    } else {
+                        btn.disabled = false;
+                        btn.innerHTML = `${icoBtn('download')}導入`;
+                    }
+                } catch (e) {
+                    toast(`導入に失敗: ${e.message}`);
+                    btn.disabled = false;
+                    btn.innerHTML = `${icoBtn('download')}導入`;
+                }
+            });
+        });
     }
 
     /** 拡張点カテゴリ → 表示メタ (バッジ + 説明)。一般ユーザ向けに「何をする種類か」を説明。 */

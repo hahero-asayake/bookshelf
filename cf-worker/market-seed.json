@@ -1,0 +1,132 @@
+{
+  "_note": "マーケット初期カタログ (ADR-040 Phase1)。hahero が Worker デプロイ後に POST /admin/plugins で登録する公式カタログ。",
+  "_howto": "各 plugin に共通の repoUrl/sha/author を付与して POST /admin/plugins (Authorization: Bearer <admin hk_>) で登録する。sha は登録時の bookshelf main の最新コミットSHAに置換すること (SHAピン=検証コード=配布コード)。",
+  "repoUrl": "https://github.com/hahero-asayake/bookshelf",
+  "sha": "<REPLACE_WITH_CURRENT_MAIN_SHA>",
+  "author": "hahero",
+  "plugins": [
+    {
+      "id": "author-grouping",
+      "name": "同じ著者の本",
+      "description": "本詳細ペインに「この著者の他の蔵書」セクションを追加 (registerDetailSection)。クリックでその本へ遷移。",
+      "path": "plugins-sample/author-grouping",
+      "categories": [
+        "detail"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "csv-export",
+      "name": "CSV エクスポート",
+      "description": "蔵書一覧を CSV (UTF-8 BOM 付) でダウンロード。⌘K パレットから実行 (registerCommand)。",
+      "path": "plugins-sample/csv-export",
+      "categories": [
+        "command"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "dark-theme",
+      "name": "ダークテーマ",
+      "description": "アプリの CSS 変数を上書きして暗色テーマに切替 (injectCSS)。⌘K コマンド/ヘッダーボタンでトグル。",
+      "path": "plugins-sample/dark-theme",
+      "categories": [
+        "theme",
+        "command"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "export-markdown",
+      "name": "Markdown エクスポート",
+      "description": "蔵書を本棚別セクション付き Markdown でダウンロード。⌘K パレットから実行 (registerCommand)。",
+      "path": "plugins-sample/export-markdown",
+      "categories": [
+        "command"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "highlights-builtin",
+      "name": "Kindle ハイライト表示",
+      "description": "本詳細ペインに Kindle ハイライトを表示 (registerDetailSection)。plugins/highlights-builtin/data/ の .txt を ASIN で読み込む (storage adapter 経由)。",
+      "path": "plugins-sample/highlights-builtin",
+      "categories": [
+        "detail"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "memo-templates",
+      "name": "メモテンプレート",
+      "description": "本詳細ペインのメモ欄にテンプレ (感想・要点・引用 …) を1クリック挿入 (registerDetailSection)。",
+      "path": "plugins-sample/memo-templates",
+      "categories": [
+        "detail"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "per-shelf-memo",
+      "name": "本棚別メモ",
+      "description": "本棚ごとに独立した短文メモを本詳細に追加する。コアの共通メモ (ALL) と併存し、置き換えない。",
+      "path": "plugins-sample/per-shelf-memo",
+      "categories": [
+        "detail"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "publish-credit",
+      "name": "公開フッターのひとこと",
+      "description": "公開ページのフッターに任意の一文を表示する (例: サイトの説明・連絡先)。設定で編集し data/publish.json に純データとして保存、公開時に全ページ＋トップのフッターへ出る。ADR-042 の公開スナップショット dogfood。",
+      "path": "plugins-sample/publish-credit",
+      "categories": [
+        "settings"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "random-pick",
+      "name": "ランダムピック",
+      "description": "ランダムに1冊選んで本詳細を開く。⌘K パレットに「ランダム」「未読のみ」を登録 (registerCommand)。",
+      "path": "plugins-sample/random-pick",
+      "categories": [
+        "command"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "reading-goal",
+      "name": "年間読書目標",
+      "description": "年間読了目標と進捗バーをダッシュボード widget に表示 (registerWidget)。読了=★4以上・今年取得。",
+      "path": "plugins-sample/reading-goal",
+      "categories": [
+        "widget",
+        "settings"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "series-grouping",
+      "name": "シリーズまとめ",
+      "description": "シリーズを検出し第1巻だけ代表表示に折りたたむ (registerBookFilter)。⌘K/ボタンで ON/OFF。",
+      "path": "plugins-sample/series-grouping",
+      "categories": [
+        "filter",
+        "command"
+      ],
+      "capabilities": []
+    },
+    {
+      "id": "view-spines",
+      "name": "View: Spines",
+      "description": "本棚を物理本棚風 (背表紙縦書き) に切替えるビュー系プラグイン (injectCSS + ui:books-rendered)。",
+      "path": "plugins-sample/view-spines",
+      "categories": [
+        "view"
+      ],
+      "capabilities": []
+    }
+  ]
+}

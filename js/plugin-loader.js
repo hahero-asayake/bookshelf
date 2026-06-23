@@ -194,8 +194,10 @@ class BookshelfPluginLoader {
     //   https://github.com/owner/repo                          → main / ルート
     //   https://github.com/owner/repo/tree/branch              → branch / ルート
     //   https://github.com/owner/repo/tree/branch/sub/path     → branch / sub/path
-    async installFromGitHub(repoUrl) {
-        const raw = this._toRawGitHubBase(repoUrl);
+    // opts.sha / opts.path: マーケット導入の SHA ピン + サブパス指定 (ADR-040)。
+    // opts.skipConfirm: マーケット UI が自前で確認済みのとき confirm を省く (ワンタップ導入)。
+    async installFromGitHub(repoUrl, opts = {}) {
+        const raw = this._toRawGitHubBase(repoUrl, opts);
         if (!raw) throw new Error('GitHub の repo URL を指定してください (https://github.com/owner/repo[/tree/branch/path])');
 
         let manifest;
@@ -215,7 +217,7 @@ class BookshelfPluginLoader {
             `version: ${manifest.version || '(未指定)'}\n` +
             `publishable: ${manifest.publishable ? 'yes' : 'no'}\n\n` +
             `${manifest.description || ''}`;
-        if (!confirm(confirmMsg)) return null;
+        if (!opts.skipConfirm && !confirm(confirmMsg)) return null;
 
         if (!this._isReady()) throw new Error('同期先が未接続です');
 
@@ -247,7 +249,10 @@ class BookshelfPluginLoader {
         return manifest;
     }
 
-    _toRawGitHubBase(repoUrl) {
+    // opts.sha: ref を特定コミット SHA に固定 (マーケット導入の SHA ピン。ADR-040。
+    //   「検証したコード = 取得するコード」を保証)。opts.path: repo 内サブパスを上書き
+    //   (例 'plugins-sample/dark-theme')。いずれも省略時は repoUrl から解釈した branch/sub を使う。
+    _toRawGitHubBase(repoUrl, opts = {}) {
         try {
             const u = new URL(repoUrl);
             if (u.hostname !== 'github.com') return null;
@@ -261,6 +266,8 @@ class BookshelfPluginLoader {
                 branch = parts[3];
                 if (parts.length > 4) subPath = parts.slice(4).join('/') + '/';
             }
+            if (opts.sha) branch = String(opts.sha);
+            if (opts.path) subPath = String(opts.path).replace(/^\/+|\/+$/g, '') + '/';
             return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${subPath}`;
         } catch {
             return null;

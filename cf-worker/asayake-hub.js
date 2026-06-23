@@ -70,6 +70,8 @@ export default {
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
             if (path === '/account' && request.method === 'DELETE') return cors(await handleAccountDelete(request, env), env, request);
             if (path === '/admin/plan' && request.method === 'POST') return cors(await handleAdminSetPlan(request, env), env, request);
+            if (path === '/plugins' && request.method === 'GET') return cors(await handleListPlugins(request, env), env, request);
+            if (path === '/admin/plugins' && request.method === 'POST') return cors(await handleAdminUpsertPlugin(request, env), env, request);
             if (path === '/billing/checkout' && request.method === 'POST') return cors(await handleCheckout(request, env), env, request);
             if (path === '/billing/portal' && request.method === 'POST') return cors(await handleBillingPortal(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
@@ -286,6 +288,60 @@ async function handleAdminSetPlan(request, env) {
     }
     if (!ok) throw httpError(404, 'account record missing');
     return json({ ok: true, email, uid: targetUid, plan: resetBilling ? 'free' : plan, adminGrant: resetBilling ? false : (plan === 'plus'), reset: resetBilling });
+}
+
+// ===== プラグインマーケット レジストリ (ADR-040 Phase1) =====
+// 公開レジストリ。plugin:<id> に { id, name, description, author, repoUrl, path, sha,
+// categories, capabilities, stars, installs, reportCount, updatedAt } を保持する。
+// 配布は GitHub の SHA ピン (repoUrl + path + sha)。Phase1 は hahero が手動登録 = 公式カタログ。
+
+async function handleListPlugins(request, env) {
+    // 公開一覧 (認証不要)。plugin:* を全件列挙して name 順で返す。
+    const out = [];
+    let cursor;
+    do {
+        const res = await env.KV.list({ prefix: 'plugin:', cursor });
+        for (const k of res.keys) {
+            const v = await env.KV.get(k.name, 'json');
+            if (v) out.push(v);
+        }
+        cursor = res.list_complete ? null : res.cursor;
+    } while (cursor);
+    out.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    return json({ plugins: out });
+}
+
+async function handleAdminUpsertPlugin(request, env) {
+    // 管理者のみ。レジストリにエントリを upsert / 削除する (Phase1 は hahero 手動登録)。
+    const sess = await requireAuth(request, env);
+    const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!caller || !isAdminEmail(caller.email, env)) throw httpError(403, 'admin only');
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.id || '').trim();
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) throw httpError(400, 'invalid id');
+    if (body.delete === true) {
+        await env.KV.delete(`plugin:${id}`);
+        return json({ ok: true, deleted: id });
+    }
+    if (!/^https:\/\/github\.com\//.test(String(body.repoUrl || ''))) throw httpError(400, 'repoUrl must be a github.com URL');
+    const entry = {
+        id,
+        name: String(body.name || id),
+        description: String(body.description || ''),
+        author: String(body.author || ''),
+        repoUrl: String(body.repoUrl),
+        path: String(body.path || ''),
+        sha: String(body.sha || ''),
+        categories: Array.isArray(body.categories) ? body.categories.map(String) : [],
+        capabilities: Array.isArray(body.capabilities) ? body.capabilities.map(String) : [],
+        // 予約フィールド (Phase3/4: 星 / インストール数 / 通報)
+        stars: Number(body.stars) || 0,
+        installs: Number(body.installs) || 0,
+        reportCount: Number(body.reportCount) || 0,
+        updatedAt: Date.now()
+    };
+    await env.KV.put(`plugin:${id}`, JSON.stringify(entry));
+    return json({ ok: true, plugin: entry });
 }
 
 // ===== 認証ヘルパ (ハブ公開キー → uid/siteId) =====
@@ -757,7 +813,7 @@ function safeReturnUrl(url, env) {
 }
 
 // テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

@@ -198,6 +198,30 @@ wrangler deploy -c wrangler.hub.toml
 - 付与した Plus (`adminGrant`) は Stripe の解約イベントでは剥がれない (comp 用)。解除は同パネルで「無料にする」。
 - ⚠️ `ADMIN_EMAILS` 漏洩=任意アカウントを Plus にできる。secret 厳守 (toml に書かない)。未設定なら `/admin/plan` は 403。
 
+## Phase F. プラグインマーケット (ADR-040 Phase1, 任意・後でよい)
+公式カタログ (一覧 + ワンタップ導入) を有効にする。コードは既存 Worker に同梱済みなので **再デプロイのみ**。新しい binding/secret は不要 (既存 `KV` / `ADMIN_EMAILS` を流用)。
+
+1. **再デプロイ**: `wrangler deploy -c wrangler.hub.toml` (`GET /plugins`・`POST /admin/plugins` が有効化)。
+2. **seed の SHA を確定**: `cf-worker/market-seed.json` の `"sha"` を、公開する **bookshelf main の最新コミット SHA** に置換 (SHAピン=検証コード=配布コード)。
+3. **管理者キーを控える**: 管理者メール (`ADMIN_EMAILS`) でアプリにログイン → DevTools の `localStorage['bookshelf_sync']` の `hub.key` (`hk_…`)。
+4. **登録** (各 plugin に共通の repoUrl/sha/author を付与して 12 回 POST):
+   ```bash
+   cd cf-worker
+   KEY=hk_xxxxx   # 手順3で控えた管理者キー
+   node -e '
+     const s=require("./market-seed.json");
+     (async()=>{ for(const p of s.plugins){
+       const body={...p, repoUrl:s.repoUrl, sha:s.sha, author:s.author};
+       const r=await fetch("https://hub.asayake.org/admin/plugins",{method:"POST",
+         headers:{"Authorization":"Bearer "+process.env.KEY,"Content-Type":"application/json"},
+         body:JSON.stringify(body)});
+       console.log(p.id, r.status);
+     }})();' 
+   ```
+5. **確認**: アプリ 設定→プラグイン→「マーケット」に一覧が出れば成功。「導入」で SHA ピン取得 → 同期先 `plugins/` に展開。
+- capability の静的解析・第三者投稿・星/通報は Phase2-4 (未実装)。Phase1 は hahero 手動登録 = 公式カタログのみ。
+- 更新時: プラグインを直したら main を push → seed の `sha` を新コミットに更新 → 手順4を再実行 (KV 上書き)。
+
 ---
 
 ## 控える値チェックリスト (B で使用)
