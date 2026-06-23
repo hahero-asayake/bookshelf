@@ -2,7 +2,7 @@
   "_note": "マーケット初期カタログ (ADR-040 Phase1)。hahero が Worker デプロイ後に POST /admin/plugins で登録する公式カタログ。",
   "_howto": "各 plugin に共通の repoUrl/sha/author を付与して POST /admin/plugins (Authorization: Bearer <admin hk_>) で登録する。sha は登録時の bookshelf main の最新コミットSHAに置換すること (SHAピン=検証コード=配布コード)。",
   "repoUrl": "https://github.com/hahero-asayake/bookshelf",
-  "sha": "<REPLACE_WITH_CURRENT_MAIN_SHA>",
+  "sha": "d5f3b148fbbbb77e7ad31963733927aed9378986",
   "author": "hahero",
   "plugins": [
     {
