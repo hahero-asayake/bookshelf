@@ -74,6 +74,17 @@ export default {
             if (path === '/admin/plugins' && request.method === 'POST') return cors(await handleAdminUpsertPlugin(request, env), env, request);
             if (path === '/billing/checkout' && request.method === 'POST') return cors(await handleCheckout(request, env), env, request);
             if (path === '/billing/portal' && request.method === 'POST') return cors(await handleBillingPortal(request, env), env, request);
+            // --- Asayake コミュニティ (ADR-044): 公開本棚ギャラリー＋マーケット社会機能。D1 (env.DB) 必須 ---
+            if (path === '/community/plugins' && request.method === 'GET') return cors(await handleCommunityPlugins(request, env), env, request);
+            if (path === '/community/sites' && request.method === 'GET') return cors(await handleCommunitySitesList(request, env, url), env, request);
+            if (path === '/community/sites' && request.method === 'POST') return cors(await handleCommunitySiteUpsert(request, env), env, request);
+            if (path.startsWith('/community/sites/') && request.method === 'DELETE') return cors(await handleCommunitySiteDelete(request, env, path), env, request);
+            if (path === '/community/stars' && request.method === 'POST') return cors(await handleCommunityStar(request, env), env, request);
+            if (path === '/community/me/stars' && request.method === 'GET') return cors(await handleCommunityMyStars(request, env), env, request);
+            if (path === '/community/comments' && request.method === 'GET') return cors(await handleCommunityCommentsList(request, env, url), env, request);
+            if (path === '/community/comments' && request.method === 'POST') return cors(await handleCommunityCommentAdd(request, env), env, request);
+            if (path === '/community/install' && request.method === 'POST') return cors(await handleCommunityInstall(request, env), env, request);
+            if (path === '/community/report' && request.method === 'POST') return cors(await handleCommunityReport(request, env), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
@@ -813,7 +824,254 @@ function safeReturnUrl(url, env) {
 }
 
 // テスト用に課金/プランロジックを名前付きエクスポート (Cloudflare は default のみ使用・named は無視)。
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin };
+// ===== Asayake コミュニティ (ADR-044): 公開本棚ギャラリー＋マーケット社会機能 =====
+// バックエンドは hub Worker 相乗り。社会データ (sites/stars/comments/reports/stats) は D1 (env.DB)。
+// 設計: スター=ログイン無料 / コメント投稿=有料(Plus)のみ・閲覧は無料 / 直接インストール=hub同期ユーザ。
+// 広告・UI はフロント (別repo bookshelf-community) 側で、ここは API のみを提供する。
+// target_type は 'plugin' | 'site' の2種で star/comment/report/install を共通土台に載せる (拡張前提)。
+
+function requireD1(env) {
+    if (!env.DB || typeof env.DB.prepare !== 'function') throw httpError(503, 'community backend (D1) not configured');
+    return env.DB;
+}
+function ttOk(t) { return t === 'plugin' || t === 'site'; }
+async function isPlus(env, uid) { return (await getPlan(env, uid)).plan === 'plus'; }
+function rawGitHubBase(repoUrl, sha, subPath) {
+    // repoUrl (https://github.com/owner/repo) + SHA ピン + subPath → raw.githubusercontent.com ベース。
+    const m = String(repoUrl || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+    if (!m) return null;
+    const ref = String(sha || 'main');
+    let p = String(subPath || '').replace(/^\/+|\/+$/g, '');
+    if (p) p += '/';
+    return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${ref}/${p}`;
+}
+async function fetchRaw(rawUrl) {
+    const r = await fetch(rawUrl, { cf: { cacheTtl: 300 } });
+    if (!r.ok) return null;
+    return await r.text();
+}
+// stats を 1 行 upsert し metric を delta 加算 (ランキング読取用の集計を書込時に維持)。
+async function bumpStat(env, type, id, metric, delta) {
+    const cols = ['star_count', 'install_count', 'view_count', 'comment_count'];
+    if (!cols.includes(metric)) return;
+    const init = cols.map(c => c === metric ? delta : 0);
+    await env.DB.prepare(
+        `INSERT INTO stats (target_type, target_id, star_count, install_count, view_count, comment_count)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(target_type, target_id) DO UPDATE SET ${metric} = ${metric} + ?7`
+    ).bind(type, id, init[0], init[1], init[2], init[3], delta).run();
+}
+async function getStatsMap(env, type) {
+    const map = {};
+    if (!env.DB || typeof env.DB.prepare !== 'function') return map;
+    const rs = await env.DB.prepare(
+        `SELECT target_id, star_count, install_count, view_count, comment_count FROM stats WHERE target_type = ?1`
+    ).bind(type).all();
+    for (const r of (rs.results || [])) map[r.target_id] = r;
+    return map;
+}
+
+// 一覧 (公開): プラグイン (KV レジストリ) に D1 の星/インストール数/コメント数を合成して返す。
+async function handleCommunityPlugins(request, env) {
+    const baseRes = await handleListPlugins(request, env);
+    const data = await baseRes.json();
+    const map = await getStatsMap(env, 'plugin');
+    for (const p of (data.plugins || [])) {
+        const st = map[p.id] || {};
+        p.stars = st.star_count || 0;
+        p.installs = st.install_count || p.installs || 0;
+        p.comments = st.comment_count || 0;
+    }
+    return json(data);
+}
+
+// 一覧 (公開): 掲載された公開本棚。?sort=new|stars。
+async function handleCommunitySitesList(request, env, url) {
+    requireD1(env);
+    const sort = (url && url.searchParams.get('sort')) || 'new';
+    const rs = await env.DB.prepare(
+        `SELECT id, url, title, description, cover_url, tags, created_at, updated_at FROM sites WHERE hidden = 0`
+    ).all();
+    const sites = rs.results || [];
+    const map = await getStatsMap(env, 'site');
+    for (const s of sites) {
+        const st = map[s.id] || {};
+        s.stars = st.star_count || 0;
+        s.comments = st.comment_count || 0;
+        s.views = st.view_count || 0;
+        s.tags = s.tags ? String(s.tags).split(',').filter(Boolean) : [];
+    }
+    sites.sort(sort === 'stars'
+        ? (a, b) => (b.stars - a.stars) || (b.created_at - a.created_at)
+        : (a, b) => b.created_at - a.created_at);
+    return json({ sites });
+}
+
+// 掲載 (オプトイン・認証必須): 自分の公開本棚 URL を登録/更新。1 uid が複数掲載可、同一 URL は更新。
+async function handleCommunitySiteUpsert(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    const body = await request.json().catch(() => ({}));
+    const url = String(body.url || '').trim();
+    if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 500) throw httpError(400, 'url must be https');
+    const title = String(body.title || '').trim().slice(0, 200);
+    if (!title) throw httpError(400, 'title required');
+    const description = String(body.description || '').slice(0, 1000);
+    const coverUrl = String(body.coverUrl || body.cover_url || '').trim().slice(0, 500);
+    const tags = (Array.isArray(body.tags) ? body.tags : String(body.tags || '').split(','))
+        .map(s => String(s).trim()).filter(Boolean).slice(0, 10).join(',');
+    const now = Date.now();
+    const existing = await env.DB.prepare(`SELECT id FROM sites WHERE uid = ?1 AND url = ?2`).bind(sess.uid, url).first();
+    let id;
+    if (existing) {
+        id = existing.id;
+        await env.DB.prepare(`UPDATE sites SET title=?1, description=?2, cover_url=?3, tags=?4, updated_at=?5 WHERE id=?6`)
+            .bind(title, description, coverUrl, tags, now, id).run();
+    } else {
+        id = crypto.randomUUID();
+        await env.DB.prepare(
+            `INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 0)`
+        ).bind(id, sess.uid, url, title, description, coverUrl, tags, now).run();
+    }
+    return json({ ok: true, id });
+}
+
+// 掲載の取り下げ (本人 or 管理者)。
+async function handleCommunitySiteDelete(request, env, path) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    const id = decodeURIComponent(path.slice('/community/sites/'.length));
+    const row = await env.DB.prepare(`SELECT uid FROM sites WHERE id = ?1`).bind(id).first();
+    if (!row) return new Response(null, { status: 204 });
+    const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (row.uid !== sess.uid && !(caller && isAdminEmail(caller.email, env))) throw httpError(403, 'not owner');
+    await env.DB.prepare(`DELETE FROM sites WHERE id = ?1`).bind(id).run();
+    return new Response(null, { status: 204 });
+}
+
+// スター toggle (ログイン無料・1 uid 1 票)。
+async function handleCommunityStar(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    const body = await request.json().catch(() => ({}));
+    const type = String(body.targetType || body.target_type || '');
+    const id = String(body.targetId || body.target_id || '');
+    if (!ttOk(type) || !id) throw httpError(400, 'bad target');
+    const existing = await env.DB.prepare(`SELECT 1 AS x FROM stars WHERE target_type=?1 AND target_id=?2 AND uid=?3`).bind(type, id, sess.uid).first();
+    let starred;
+    if (existing) {
+        await env.DB.prepare(`DELETE FROM stars WHERE target_type=?1 AND target_id=?2 AND uid=?3`).bind(type, id, sess.uid).run();
+        await bumpStat(env, type, id, 'star_count', -1);
+        starred = false;
+    } else {
+        await env.DB.prepare(`INSERT INTO stars (target_type, target_id, uid, created_at) VALUES (?1,?2,?3,?4)`).bind(type, id, sess.uid, Date.now()).run();
+        await bumpStat(env, type, id, 'star_count', 1);
+        starred = true;
+    }
+    const st = await env.DB.prepare(`SELECT star_count FROM stats WHERE target_type=?1 AND target_id=?2`).bind(type, id).first();
+    return json({ ok: true, starred, starCount: (st && st.star_count) || 0 });
+}
+
+// 自分がスター済みの一覧 (UI の塗り分け用)。uid は返さない。
+async function handleCommunityMyStars(request, env) {
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    const rs = await env.DB.prepare(`SELECT target_type, target_id FROM stars WHERE uid = ?1`).bind(sess.uid).all();
+    return json({ stars: rs.results || [] });
+}
+
+// コメント閲覧 (公開)。uid は晒さず author_name のみ返す。
+async function handleCommunityCommentsList(request, env, url) {
+    requireD1(env);
+    const type = url.searchParams.get('targetType') || url.searchParams.get('target_type') || '';
+    const id = url.searchParams.get('targetId') || url.searchParams.get('target_id') || '';
+    if (!ttOk(type) || !id) throw httpError(400, 'bad target');
+    const rs = await env.DB.prepare(
+        `SELECT id, author_name, body, created_at FROM comments WHERE target_type=?1 AND target_id=?2 AND hidden=0 ORDER BY created_at DESC LIMIT 200`
+    ).bind(type, id).all();
+    return json({ comments: rs.results || [] });
+}
+
+// コメント投稿 (有料会員のみ・民度対策, ADR-044)。
+async function handleCommunityCommentAdd(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    if (!(await isPlus(env, sess.uid))) throw httpError(403, 'comments are for Plus members');
+    const body = await request.json().catch(() => ({}));
+    const type = String(body.targetType || body.target_type || '');
+    const id = String(body.targetId || body.target_id || '');
+    const text = String(body.body || '').trim().slice(0, 2000);
+    if (!ttOk(type) || !id) throw httpError(400, 'bad target');
+    if (!text) throw httpError(400, 'empty comment');
+    const name = String(body.authorName || '').trim().slice(0, 60);
+    const cid = crypto.randomUUID();
+    await env.DB.prepare(
+        `INSERT INTO comments (id, target_type, target_id, uid, author_name, body, created_at, hidden, report_count) VALUES (?1,?2,?3,?4,?5,?6,?7,0,0)`
+    ).bind(cid, type, id, sess.uid, name, text, Date.now()).run();
+    await bumpStat(env, type, id, 'comment_count', 1);
+    return json({ ok: true, id: cid });
+}
+
+// 直接インストール (hub 同期ユーザ向け, ADR-044): レジストリの SHA ピンから GitHub raw を取得し、
+// 認証ユーザの hub ストレージ data/<uid>/plugins/<id>/ へ書き込む (アプリが次回ロードで取り込む)。
+// GitHub/ローカル同期ユーザはサーバがストレージに書けないため、アプリ内マーケットでインストールする。
+async function handleCommunityInstall(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.pluginId || body.id || '').trim();
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) throw httpError(400, 'invalid plugin id');
+    const entry = await env.KV.get(`plugin:${id}`, 'json');
+    if (!entry) throw httpError(404, 'plugin not found');
+    const rawBase = rawGitHubBase(entry.repoUrl, entry.sha, entry.path);
+    if (!rawBase) throw httpError(400, 'bad repoUrl');
+    const manifestText = await fetchRaw(rawBase + 'manifest.json');
+    if (manifestText == null) throw httpError(502, 'manifest.json fetch failed');
+    let manifest;
+    try { manifest = JSON.parse(manifestText); } catch { throw httpError(502, 'manifest.json invalid'); }
+    const files = ['manifest.json', 'index.js'];
+    if (Array.isArray(manifest.files)) for (const f of manifest.files) if (typeof f === 'string') files.push(f);
+    const written = [];
+    let added = 0;
+    for (const f of [...new Set(files)]) {
+        const safe = safeRel(f);
+        const text = f === 'manifest.json' ? manifestText : await fetchRaw(rawBase + safe);
+        if (text == null) { if (f === 'index.js') throw httpError(502, `fetch failed: ${f}`); else continue; }
+        const key = `data/${sess.uid}/plugins/${id}/${safe}`;
+        const head = await env.BUCKET.head(key);
+        await env.BUCKET.put(key, text);
+        added += new TextEncoder().encode(text).length - (head ? head.size : 0);
+        written.push(safe);
+    }
+    if (added) await addUsage(env, sess.uid, added);
+    if (env.DB && typeof env.DB.prepare === 'function') await bumpStat(env, 'plugin', id, 'install_count', 1);
+    return json({ ok: true, installed: id, files: written });
+}
+
+// 通報 (Phase C: モデレーションキュー)。非表示化は hahero の審査で別途行う。
+async function handleCommunityReport(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    requireD1(env);
+    const body = await request.json().catch(() => ({}));
+    const type = String(body.targetType || body.target_type || '');
+    const id = String(body.targetId || body.target_id || '');
+    if (!ttOk(type) || !id) throw httpError(400, 'bad target');
+    const commentId = String(body.commentId || body.comment_id || '');
+    const rid = crypto.randomUUID();
+    await env.DB.prepare(
+        `INSERT INTO reports (id, target_type, target_id, comment_id, uid, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)`
+    ).bind(rid, type, id, commentId, sess.uid, String(body.reason || '').slice(0, 500), Date.now()).run();
+    if (commentId) await env.DB.prepare(`UPDATE comments SET report_count = report_count + 1 WHERE id = ?1`).bind(commentId).run();
+    return json({ ok: true });
+}
+
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

@@ -18,6 +18,17 @@ bucket_name = "asayake-hub"
 binding = "KV"
 id = "d429572547b4434486d44ee0159f46ae"
 
+# --- D1 (Asayake コミュニティ ADR-044: sites/stars/comments/reports/stats) ---
+# 未作成の間はこのブロックをコメントのままにする (binding 無し → /community/* は 503、他は正常)。
+# 有効化手順 (hahero 手動・着手時): powershell.exe 経由で
+#   wrangler d1 create asayake-community          # 出力の database_id を下に貼る
+#   下の3行のコメントを外す → wrangler deploy -c wrangler.hub.toml
+#   wrangler d1 execute asayake-community --remote --file=community-schema.sql
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "asayake-community"
+# database_id = "<REPLACE_WITH_D1_DATABASE_ID>"
+
 # --- 環境変数 (いずれも公開値。client secret は持たない) ---
 [vars]
 HUB_DOMAIN = "hub.asayake.org"                             # ハブの単一ホスト
