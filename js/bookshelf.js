@@ -476,6 +476,12 @@ class VirtualBookshelf {
             this.importFromFile();
         });
 
+        // 貼り付け / クリップボード取込 (スマホ向け。ブックマークレットがコピーした JSON を取込む)
+        const importFromPasteBtn = document.getElementById('import-from-paste');
+        if (importFromPasteBtn) importFromPasteBtn.addEventListener('click', () => this.importFromPasteInput());
+        const readClipboardBtn = document.getElementById('read-clipboard-import');
+        if (readClipboardBtn) readClipboardBtn.addEventListener('click', () => this.readClipboardForImport());
+
         // Plugin install (in settings modal)
         const installPluginBtn = document.getElementById('install-plugin-btn');
         if (installPluginBtn) {
@@ -8144,6 +8150,46 @@ class VirtualBookshelf {
         } catch (error) {
             console.error('ファイル読み込みエラー:', error);
             toast(`ファイルの読み込みに失敗しました: ${error.message}`);
+        }
+    }
+
+    /**
+     * 貼り付け / クリップボードの JSON テキストから取込 (拡張の無いスマホでブックマークレット経路を完結させる)。
+     * 受理形: 配列 `[..]` (ブックマークレット/ファイル) / `{items:[..]}` / `{books:[..]}`。
+     */
+    importFromPastedText(text) {
+        const raw = String(text || '').trim();
+        if (!raw) { toast('取込データを貼り付けてください'); return; }
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (e) {
+            toast('JSON として読み取れませんでした。ブックマークレットがコピーした内容をそのまま貼り付けてください。');
+            return;
+        }
+        const books = Array.isArray(parsed) ? parsed
+            : (Array.isArray(parsed.items) ? parsed.items
+                : (Array.isArray(parsed.books) ? parsed.books : null));
+        if (!books) { toast('取込データの形式が不正です (本の配列が見つかりません)。'); return; }
+        if (books.length === 0) { toast('取込対象の本がありませんでした。'); return; }
+        this.showBookSelectionForImport(books, 'paste');
+    }
+
+    /** テキストエリアに貼り付けられた内容から取込 */
+    importFromPasteInput() {
+        const ta = document.getElementById('kindle-paste-input');
+        this.importFromPastedText(ta ? ta.value : '');
+    }
+
+    /** クリップボードを読み取り、テキストエリアに反映して取込 (権限が無ければ手動貼り付けへ誘導) */
+    async readClipboardForImport() {
+        try {
+            const text = await navigator.clipboard.readText();
+            const ta = document.getElementById('kindle-paste-input');
+            if (ta) ta.value = text;
+            this.importFromPastedText(text);
+        } catch (e) {
+            toast('クリップボードを読み取れませんでした。手動で貼り付けてから「貼り付けたデータを取込」を押してください。');
         }
     }
 

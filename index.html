@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026061901">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062501">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -881,6 +881,18 @@
                         <input type="file" id="kindle-file-input" accept=".json" />
                         <button id="import-from-file" class="btn btn-secondary">ファイルをインポート</button>
                     </div>
+                    <hr class="settings-divider">
+                    <div class="import-option">
+                        <h3><span class="h-icon" data-icon="clipboard" data-icon-size="16"></span>貼り付けて取込（スマホ向け）</h3>
+                        <p class="import-option-desc">
+                            Amazon ライブラリページでブックマークレットを実行するとデータがクリップボードにコピーされます。下に貼り付けるか「クリップボードから読み取り」で取込めます。<strong>拡張が使えないスマホ</strong>でもこの方法で取込できます。
+                        </p>
+                        <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データ (JSON) を貼り付け"></textarea>
+                        <div class="import-option-actions">
+                            <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
+                            <button id="import-from-paste" class="btn btn-primary">貼り付けたデータを取込</button>
+                        </div>
+                    </div>
 
                 </div>
                 <div id="book-selection" class="book-selection" style="display: none;">
@@ -1048,7 +1060,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026061507"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026062202"></script>
+    <script src="js/bookshelf.js?v=2026062501"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

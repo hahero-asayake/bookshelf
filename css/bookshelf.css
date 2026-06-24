@@ -5129,6 +5129,18 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     color: var(--fg);
 }
 
+.kindle-paste-input {
+    width: 100%;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
 .import-option input[type="file"] {
     margin-bottom: 1rem;
     padding: 0.5rem;
