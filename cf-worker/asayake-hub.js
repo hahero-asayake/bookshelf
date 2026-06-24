@@ -885,12 +885,21 @@ async function handleCommunityPlugins(request, env) {
     return json(data);
 }
 
-// 一覧 (公開): 掲載された公開本棚。?sort=new|stars。
+// Bearer キーがあれば uid を返す (無ければ null)。公開エンドポイントで「自分のものか」を判定する用。
+async function optionalUid(request, env) {
+    const m = (request.headers.get('Authorization') || '').match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
+    if (!m) return null;
+    const sess = await env.KV.get(`key:${m[1]}`, 'json');
+    return sess ? sess.uid : null;
+}
+
+// 一覧 (公開): 掲載された公開本棚。?sort=new|stars。uid は晒さず owned フラグだけ返す。
 async function handleCommunitySitesList(request, env, url) {
     requireD1(env);
     const sort = (url && url.searchParams.get('sort')) || 'new';
+    const viewer = await optionalUid(request, env);
     const rs = await env.DB.prepare(
-        `SELECT id, url, title, description, cover_url, tags, created_at, updated_at FROM sites WHERE hidden = 0`
+        `SELECT id, uid, url, title, description, cover_url, tags, created_at, updated_at FROM sites WHERE hidden = 0`
     ).all();
     const sites = rs.results || [];
     const map = await getStatsMap(env, 'site');
@@ -900,6 +909,8 @@ async function handleCommunitySitesList(request, env, url) {
         s.comments = st.comment_count || 0;
         s.views = st.view_count || 0;
         s.tags = s.tags ? String(s.tags).split(',').filter(Boolean) : [];
+        s.owned = !!(viewer && s.uid === viewer);
+        delete s.uid;   // Google sub を公開レスポンスに出さない
     }
     sites.sort(sort === 'stars'
         ? (a, b) => (b.stars - a.stars) || (b.created_at - a.created_at)

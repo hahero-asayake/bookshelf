@@ -49,7 +49,7 @@ function makeD1() {
             const row = t.stats.find(r => r.target_type === p[0] && r.target_id === p[1]);
             return row ? { star_count: row.star_count } : null;
         }
-        if (s.startsWith('SELECT id, url, title') && s.includes('FROM sites'))
+        if (s.startsWith('SELECT id, uid, url') && s.includes('FROM sites'))
             return { results: t.sites.filter(r => r.hidden === 0).map(r => ({ ...r })) };
         if (s.startsWith('SELECT id FROM sites WHERE uid')) {
             const row = t.sites.find(r => r.uid === p[0] && r.url === p[1]); return row ? { id: row.id } : null;
@@ -155,6 +155,15 @@ describe('公開本棚 掲載 (sites)', () => {
         expect(list.sites[0].title).toBe('改題した本棚');
         expect(list.sites[0].tags).toEqual(['SF', '技術書']);
         expect(list.sites[0].stars).toBe(0);
+        expect(list.sites[0].owned).toBe(false);          // 未認証の閲覧
+        expect(list.sites[0]).not.toHaveProperty('uid');  // Google sub を晒さない
+    });
+    it('認証して一覧すると自分の掲載は owned=true', async () => {
+        const e = makeEnv();
+        await handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: 'mine' }, 'hk_bbbbbb'), e);
+        const r = req('/community/sites', 'GET', null, 'hk_bbbbbb');
+        const list = await (await handleCommunitySitesList(r, e, withUrl(r))).json();
+        expect(list.sites[0].owned).toBe(true);
     });
     it('title 無しは 400 / https でない URL は 400', async () => {
         const e = makeEnv();
