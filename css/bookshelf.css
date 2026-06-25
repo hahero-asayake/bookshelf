@@ -578,6 +578,18 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     font-weight: 600;
 }
 
+/* ⌘K 起動ボタン右端のショートカットヒント */
+.sidebar-nav-item .nav-kbd {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--fg3, var(--fg2));
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    line-height: 1.4;
+    font-family: inherit;
+}
+
 /* 同一セクション内のナビ項目は詰めず、わずかに間隔を空ける (ホームと公開がくっつかないように) */
 .sidebar-section > .sidebar-nav-item + .sidebar-nav-item { margin-top: 0.15rem; }
 /* 「公開」はナビ移動でなくアクション。ホームから区切って少し下げる */

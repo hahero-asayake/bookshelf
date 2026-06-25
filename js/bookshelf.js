@@ -121,13 +121,13 @@ class VirtualBookshelf {
             if (!banner || !msg || !actions) return;
 
             if (isIOS) {
-                msg.innerHTML = '📱 <strong>iOS Safari</strong> でローカル vault を編集するには、無料の Safari 拡張「<strong>File Picker</strong>」が必要です。インストール後にこのページを再読み込みしてください。';
+                msg.innerHTML = '<strong>iOS Safari</strong> でローカル vault を編集するには、無料の Safari 拡張「<strong>File Picker</strong>」が必要です。インストール後にこのページを再読み込みしてください。';
                 actions.innerHTML = `
                     <a href="https://apps.apple.com/jp/app/file-picker/id1595132894" target="_blank" rel="noopener">App Store で入手</a>
                     <a href="https://filepicker.app/" target="_blank" rel="noopener">詳細</a>
                 `;
             } else if (isAndroid) {
-                msg.innerHTML = '📱 <strong>Android Chrome</strong> ではローカル vault に直接アクセスできません。<strong>Android アプリ版</strong>（Capacitor ラップ APK）のインストールが必要です。';
+                msg.innerHTML = '<strong>Android Chrome</strong> ではローカル vault に直接アクセスできません。<strong>Android アプリ版</strong>（Capacitor ラップ APK）のインストールが必要です。';
                 actions.innerHTML = `
                     <a href="https://github.com/hahero-asayake/bookshelf/releases/latest" target="_blank" rel="noopener">最新 APK をダウンロード</a>
                 `;
@@ -1446,7 +1446,7 @@ class VirtualBookshelf {
             });
         } else if (isAll) {
             head('book-plus', 'まだ本がありません', 'Kindle から取り込むか、ASIN を手動で追加すると、ここに本が並びます。');
-            action('本を追加・取り込み', true, () => this._openSettingsModal('library-section'));
+            action('本を取り込む', true, () => this.showImportModal());
         } else {
             head('book-plus', `「${shelf ? shelf.name : 'この本棚'}」にはまだ本がありません`, '「すべての本」から本を選んで、この本棚に追加できます。');
             action('すべての本を見る', false, () => this.switchBookshelf('all'));
@@ -6166,7 +6166,7 @@ class VirtualBookshelf {
                 const btn = e.target.closest('[data-status-action]');
                 if (!btn) return;
                 if (btn.dataset.statusAction === 'update') this._applyPwaUpdate();
-                else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal();
+                else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal('sync-method-select');
             });
         }
         this._updateStatusBar();
@@ -7583,6 +7583,7 @@ class VirtualBookshelf {
             ]
         });
         this._bookMemoEditorContext = { asin, title: book.title };
+        this._bookMemoInitial = body;   // 閉じる時の破棄確認用 (未保存の変更検出)
         if (statusEl) statusEl.textContent = '';
     }
 
@@ -7591,7 +7592,7 @@ class VirtualBookshelf {
         const editor = this._bookMemoEditor;
         const statusEl = document.getElementById('book-memo-status');
         if (!ctx || !editor) return;
-        if (statusEl) statusEl.textContent = '💾 保存中...';
+        if (statusEl) statusEl.textContent = '保存中...';
         try {
             // body のみ編集させ、保持していた frontmatter (updated を自動更新) と再結合 (ADR-024)
             const content = BookshelfStorage.joinFrontmatter(this._bookMemoFrontmatter, editor.value());
@@ -7599,9 +7600,10 @@ class VirtualBookshelf {
             if (!this.userData.notes[ctx.asin]) this.userData.notes[ctx.asin] = { memo: '', rating: 0 };
             this.userData.notes[ctx.asin].hasDetailMemo = true;
             await this.saveUserData();
+            this._bookMemoInitial = editor.value();   // 保存済み = 破棄確認の基準を更新
             if (statusEl) {
                 statusEl.textContent = '保存しました';
-                setTimeout(() => { if (statusEl.textContent.startsWith('')) statusEl.textContent = ''; }, 2500);
+                setTimeout(() => { if (statusEl.textContent === '保存しました') statusEl.textContent = ''; }, 2500);
             }
         } catch (e) {
             console.error('長文メモ保存失敗:', e);
@@ -7609,7 +7611,19 @@ class VirtualBookshelf {
         }
     }
 
-    closeBookMemoModal() {
+    async closeBookMemoModal() {
+        // 未保存の変更があれば破棄確認 (このメモは明示保存・自動保存なしのため、黙って消さない)
+        const editor = this._bookMemoEditor;
+        if (editor && this._bookMemoInitial != null && editor.value() !== this._bookMemoInitial) {
+            const ok = await confirmDialog({
+                title: '長文メモを閉じる',
+                message: '保存していない変更があります。破棄して閉じますか？',
+                okLabel: '破棄して閉じる',
+                cancelLabel: '編集に戻る',
+                danger: true
+            });
+            if (!ok) return;
+        }
         const modal = document.getElementById('book-memo-modal');
         if (modal) modal.classList.remove('show');
         if (this._bookMemoEditor) {
@@ -7618,6 +7632,7 @@ class VirtualBookshelf {
         }
         this._bookMemoEditorContext = null;
         this._bookMemoFrontmatter = null;
+        this._bookMemoInitial = null;
     }
 
     showExclusionsModal() {
@@ -8900,6 +8915,9 @@ class VirtualBookshelf {
             w.innerHTML = this.generateStarRating(rating, size);
         });
         this.updateStats();
+        // 評価フィルタ適用中に評価を変えたら、絞り込み条件と表示の食い違いを防ぐため再フィルタする
+        // (一覧カード・本詳細の両方の星がこの共通メソッドを通るため一箇所で両経路に効く)
+        if (this.ratingFilter && this.ratingFilter.size > 0) this.applyFilters();
     }
     
     saveRating(asin, rating) {

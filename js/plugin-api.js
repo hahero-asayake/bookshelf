@@ -451,7 +451,12 @@ class BookshelfPluginAPI {
             btn.dataset.iconValue = iconValue; // CDN 後追い差し替え用
             return;
         }
-        btn.textContent = entry.emoji || '🧩';
+        // フォールバック: ユーザ指定の絵文字があればそれ、無ければ Lucide puzzle (一覧カードと統一・絵文字全廃方針)
+        if (window.renderIcon) {
+            btn.innerHTML = window.renderIcon(entry.emoji || 'puzzle', { size: 20 });
+        } else {
+            btn.textContent = entry.emoji || '🧩';
+        }
     }
 
     // ===== コマンド登録 (⌘K パレット) =====

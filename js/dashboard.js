@@ -309,10 +309,9 @@ class BookshelfDashboard {
             b.addEventListener('click', async () => {
                 const act = b.getAttribute('data-dw');
                 if (act === 'publish') { if (typeof this.app.openPublishPagesModal === 'function') await this.app.openPublishPagesModal(); return; }
-                if (typeof this.app._openSettingsModal === 'function') await this.app._openSettingsModal();
-                const id = act === 'sync' ? 'sync-method-select' : 'import-kindle';
-                const el = document.getElementById(id);
-                if (el) { el.closest('details.settings-section')?.setAttribute('open', ''); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+                if (act === 'import') { if (typeof this.app.showImportModal === 'function') this.app.showImportModal(); return; }
+                // act === 'sync': 設定の同期方式セレクトへ直接ジャンプ (_scrollSettingsTo が details を開く)
+                if (typeof this.app._openSettingsModal === 'function') await this.app._openSettingsModal('sync-method-select');
             });
         });
     }

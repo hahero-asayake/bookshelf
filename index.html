@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026062501">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062502">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -52,6 +52,11 @@
                 </div>
                 <nav class="sidebar-nav" id="sidebar-nav">
                     <div class="sidebar-section">
+                        <button class="sidebar-nav-item" id="palette-trigger" type="button" title="本・本棚・コマンドを横断検索 (⌘K)">
+                            <span class="nav-icon" data-icon="search" data-icon-size="16"></span>
+                            <span class="nav-label">検索</span>
+                            <kbd class="nav-kbd">⌘K</kbd>
+                        </button>
                         <button class="sidebar-nav-item" data-nav="home" type="button">
                             <span class="nav-icon" data-icon="library" data-icon-size="16"></span>
                             <span class="nav-label">ホーム</span>
@@ -1055,12 +1060,12 @@
     <script src="js/publish-styles.js?v=2026061509"></script>
     <script src="js/publish-generator.js?v=2026062201"></script>
     <script src="js/exporter.js?v=2026062201"></script>
-    <script src="js/plugin-api.js?v=2026062201"></script>
+    <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026062202"></script>
     <script src="js/router.js?v=2026061002"></script>
-    <script src="js/dashboard.js?v=2026061507"></script>
+    <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026062501"></script>
+    <script src="js/bookshelf.js?v=2026062502"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
