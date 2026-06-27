@@ -10,7 +10,11 @@ export default defineConfig({
         reuseExistingServer: true
     },
     use: {
-        baseURL: 'http://localhost:8000'
+        baseURL: 'http://localhost:8000',
+        // Service Worker をブロック。index.html は controllerchange で location.reload() するため、
+        // SW 初回制御の発火タイミング次第でテストが「navigation で context 破棄」になる (フレーク源)。
+        // E2E はアプリのロジック検証が目的で SW キャッシュは不要なので一律ブロックして決定化する。
+        serviceWorkers: 'block'
     },
     projects: [
         { name: 'chromium', use: { browserName: 'chromium' } }

@@ -276,11 +276,12 @@ bookshelf は **StorageAdapter** で 3 方式を切替できる:
 
 | 方式 | 対応環境 |
 |---|---|
-| **ローカルファイル** (FS API / SAF) | PC Chrome/Edge, Android Capacitor |
-| **GitHub リポジトリ** | 全環境 (PC / iOS PWA / Android) |
+| **ローカルファイル** (FS API) | **PC Chrome/Edge のみ** (showDirectoryPicker 非対応環境では選択不可) |
+| **GitHub リポジトリ** | 全環境 (PC / iOS PWA / Android ブラウザ) |
 | **Asayake ハブ** (hahero 運営・Google ログイン) | 全環境 |
 
 > Google Drive / Dropbox は 2026-06-16 に撤去 (ADR-036)。共有 OAuth アプリの連携ユーザ上限＋申請運用が割に合わず、hub (R2) + GitHub と機能重複したため。撤去コードは `archive/removed-sync-backends/`。iCloud Drive は公式 Web API がないため非対応。
+> ローカルは **PC (Chrome/Edge) 限定に格下げ** (2026-06-26, ADR-046)。Android ネイティブ (Capacitor/APK・SAF) は廃止。モバイルの保存先は GitHub / ハブの 2 択。非対応環境では同期セレクトの local オプションを disabled 化。
 
 ### GitHub 接続: OAuth Device Flow のみ (PAT 非採用)
 
@@ -357,10 +358,12 @@ GitHub の OAuth endpoints (`github.com/login/device/code` と `oauth/access_tok
 
 GitHub App の **Contents: Read and write のみ** (scope の概念は使わない)。アクセス可能なのは「ユーザが App をインストール時に選んだ repo」だけ。
 
-## モバイル配布方針
+## モバイル配布方針 (ADR-046 で改訂, 2026-06-26)
 
 - **iOS**: PWA で配布 (Safari → ホーム画面に追加)。Capacitor / ネイティブアプリは作らない
   - 同期は GitHub / Asayake ハブ のいずれか (ローカル不可)
   - 7日問題・ストア審査・署名問題から完全に解放される
-- **Android**: Capacitor で `.apk` ビルド、GitHub Releases 等で直接配布
+- **Android**: **ブラウザ (Chrome 等) + クラウド同期 (GitHub / ハブ)**。PWA「ホーム画面に追加」も可。
+  - **Capacitor / `.apk` ネイティブ配布は廃止** (ADR-046)。ローカル保存は PC 限定に格下げしたため、Android ネイティブの存在価値が無くなった
 - **App Store / Play Store は使わない**
+- ローカルファイル保存は **PC (Chrome/Edge) 限定**。モバイルはクラウド 2 択に一本化

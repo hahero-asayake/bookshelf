@@ -121,9 +121,9 @@ API 詳細は [js/plugin-api.js](js/plugin-api.js) と [plugins-sample/README.md
 
 ## モバイル
 
-現状 PC ブラウザ専用（File System Access API が必須）。iOS は File Picker 拡張、Android は Capacitor ラッパで対応する計画（未実装）。
+ローカルファイル保存は **PC の Chrome / Edge 限定**（File System Access API が必須）。モバイル（iOS / Android）は **GitHub 同期 / Asayake ハブ** の 2 択で全機能が使える。iOS は PWA（ホーム画面に追加）で配布。**Android ネイティブ（Capacitor / APK）は廃止**（ADR-046）。
 
-UA 検出時にバナーで案内を表示。
+showDirectoryPicker 非対応環境では、同期セレクトの「ローカル」は選択不可とし、上部バナーでクラウド保存へ誘導する。
 
 ## ライセンス
 

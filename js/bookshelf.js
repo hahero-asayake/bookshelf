@@ -96,10 +96,12 @@ class VirtualBookshelf {
     }
 
     /**
-     * モバイル端末で showDirectoryPicker が無い場合の案内バナー
-     * - iOS: App Store の File Picker 拡張をインストールして再読み込み
-     * - Android: 配布 APK をインストール
-     * - File Picker 拡張で API が生えている場合はバナー出さない
+     * モバイル端末向けセットアップ案内バナー
+     * iOS/Android のブラウザは showDirectoryPicker 非対応 → ローカル保存が使えない。
+     * 配布方針 (iOS=PWA + クラウド同期, CLAUDE.md) に沿って、ローカル前提の旧案内を廃し
+     * 「保存先 (GitHub / Asayake ハブ) を決める」+ iOS は「ホーム画面に追加」へ誘導する。
+     * 表示条件: モバイル かつ showDirectoryPicker 非対応。ただし standalone 起動済み かつ
+     * クラウド同期設定済み なら案内不要 (= 完了済み)。出すことが無ければ何も表示しない。
      */
     _setupMobileBanner() {
         try {
@@ -109,7 +111,28 @@ class VirtualBookshelf {
             const hasDirPicker = 'showDirectoryPicker' in window;
 
             if (!isIOS && !isAndroid) return; // PC は何もしない
-            if (hasDirPicker) return; // 既に API が生えている（File Picker 入り / Capacitor アプリ内）
+            if (hasDirPicker) return; // showDirectoryPicker が生えている環境 (iOS の File Picker 拡張など)
+
+            // ホーム画面アプリ (standalone) として起動済みか
+            const standalone = (window.navigator.standalone === true) ||
+                !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+            // GitHub / ハブ のクラウド同期を設定済みか (ローカルのままは未設定扱い)。
+            // 生の永続値でなく実効 method (this.syncConfig.method = adapter 構築失敗時は
+            // コンストラクタで 'local' にフォールバック済み) を見る。
+            // = 「クラウドを選んだが設定不完全」を未同期扱いにし、復旧案内を出す。
+            let method = 'local';
+            try { method = (this.syncConfig && this.syncConfig.method) || (SyncConfigManager.load().method) || 'local'; } catch (_) {}
+            const synced = method !== 'local';
+
+            // 案内する内容を組み立てる。両方とも満たされていれば何も出さない。
+            const lines = [];
+            if (!synced) {
+                lines.push('この端末ではブラウザのフォルダ保存が使えません。<strong>GitHub</strong> か <strong>Asayake ハブ</strong>（Google ログインだけ）での保存に切り替えてください。');
+            }
+            if (isIOS && !standalone) {
+                lines.push('Safari の共有メニューから <strong>「ホーム画面に追加」</strong> でアプリのように使えます。');
+            }
+            if (lines.length === 0) return; // standalone かつ同期済み → 案内不要
 
             const dismissedKey = 'bookshelf_mobileBanner_dismissed';
             if (localStorage.getItem(dismissedKey) === '1') return;
@@ -120,17 +143,20 @@ class VirtualBookshelf {
             const closeBtn = document.getElementById('mobile-setup-banner-close');
             if (!banner || !msg || !actions) return;
 
-            if (isIOS) {
-                msg.innerHTML = '<strong>iOS Safari</strong> でローカル vault を編集するには、無料の Safari 拡張「<strong>File Picker</strong>」が必要です。インストール後にこのページを再読み込みしてください。';
-                actions.innerHTML = `
-                    <a href="https://apps.apple.com/jp/app/file-picker/id1595132894" target="_blank" rel="noopener">App Store で入手</a>
-                    <a href="https://filepicker.app/" target="_blank" rel="noopener">詳細</a>
-                `;
-            } else if (isAndroid) {
-                msg.innerHTML = '<strong>Android Chrome</strong> ではローカル vault に直接アクセスできません。<strong>Android アプリ版</strong>（Capacitor ラップ APK）のインストールが必要です。';
-                actions.innerHTML = `
-                    <a href="https://github.com/hahero-asayake/bookshelf/releases/latest" target="_blank" rel="noopener">最新 APK をダウンロード</a>
-                `;
+            msg.innerHTML = lines.join('<br>');
+            actions.innerHTML = '';
+
+            // 保存先未設定なら設定モーダルの同期節へ直行 (外部 App Store/APK 誘導は廃止。
+            // ローカル保存は PC の Chrome/Edge 限定・Android ネイティブ配布も廃止のため、
+            // モバイルの保存先は GitHub / Asayake ハブの 2 択に一本化)
+            if (!synced) {
+                const setupBtn = document.createElement('button');
+                setupBtn.type = 'button';
+                setupBtn.textContent = '保存先を設定する';
+                setupBtn.addEventListener('click', () => {
+                    this._openSettingsModal('sync-method-select');
+                });
+                actions.appendChild(setupBtn);
             }
 
             if (closeBtn) {
@@ -2378,6 +2404,19 @@ class VirtualBookshelf {
         try {
             const format = await this.storage.detectFormat();
             if (format === 'empty') {
+                // 別端末からの再ログイン直後などにハブが空に見えても、無確認で初期化しない
+                // (GitHub と対称。誤って既存アカウントを空データで上書きする事故を防ぐ)。
+                // init 中はローディング表示が前面にあるため、確実に出るネイティブ confirm を使う。
+                this.updateSyncStatus('reconnect', `${label} (空)`);
+                const ok = confirm(`${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）`);
+                if (!ok) {
+                    // 初期化せず中断。接続済みのまま放置すると次回 save で手元の古いデータが
+                    // 空ハブへ上書きされる恐れがあるため、目立つ警告を出して状態を error にする。
+                    this._syncError = true;
+                    this._syncErrorMsg = `${svc} は空です。初期化していません。設定でログイン先を確認してください（このまま編集すると空のハブに上書きされる恐れがあります）。`;
+                    this._updateStatusBar();
+                    return;
+                }
                 await this.storage.initEmpty();
             } else if (format === 'pre-notes-split') {
                 await this.storage.migrateNotesSplit();
@@ -2521,18 +2560,31 @@ class VirtualBookshelf {
         const githubPanel = document.getElementById('sync-config-github');
         if (!selector || !localPanel || !githubPanel) return;
 
+        // ローカル保存は PC (Chrome/Edge) 限定。showDirectoryPicker 非対応環境 (モバイル /
+        // Firefox / Safari) では行き止まりを避けるため local オプションを選べなくする。
+        // Android ネイティブ (Capacitor/APK) は廃止 → モバイルの保存先は GitHub / ハブの 2 択。
+        const localUnsupported = !('showDirectoryPicker' in window);
+        if (localUnsupported) {
+            const localOpt = selector.querySelector('option[value="local"]');
+            if (localOpt) localOpt.disabled = true;
+        }
+
         const hubPanel = document.getElementById('sync-config-hub');
         const showPanel = (method) => {
             localPanel.hidden = (method !== 'local');
             githubPanel.hidden = (method !== 'github');
             if (hubPanel) hubPanel.hidden = (method !== 'hub');
-            // ハブを表示する時だけ Google ログインボタンを遅延描画 (外部 GIS 読込)
-            if (method === 'hub') this._ensureHubSignInButton();
+            // ハブパネルを開いた時は状態を再描画 (未ログインなら節内 GIS ボタンを遅延描画)
+            if (method === 'hub') this._renderHubAuthState();
         };
 
         const config = this.syncConfig || SyncConfigManager.load();
-        selector.value = config.method || 'local';
-        showPanel(selector.value);
+        let viewMethod = config.method || 'local';
+        // 非対応環境で local が既定だと、機能しないフォルダ画面に着地して混乱する。
+        // 実 method (キャッシュ動作) は据え置きつつ、表示は最初の有効方式 (GitHub) へ寄せる。
+        if (localUnsupported && viewMethod === 'local') viewMethod = 'github';
+        selector.value = viewMethod;
+        showPanel(viewMethod);
 
         this._renderGitHubAuthState();
         this._renderHubAuthState();
@@ -3155,7 +3207,8 @@ class VirtualBookshelf {
         const disc = document.getElementById('hub-auth-disconnected');
         const conn = document.getElementById('hub-auth-connected');
         if (!disc || !conn) return;
-        const hub = (SyncConfigManager.load().hub) || {};
+        const cfg = SyncConfigManager.load();
+        const hub = cfg.hub || {};
         const connected = !!(hub.key && hub.apiBase);
         disc.hidden = connected;
         conn.hidden = !connected;
@@ -3163,6 +3216,52 @@ class VirtualBookshelf {
             const emailEl = document.getElementById('hub-connected-email');
             if (emailEl) emailEl.textContent = hub.email || '(接続済み)';
             this._renderHubUsageBar(hub);
+            // 「ログイン済み」と「保存先として使用中」は別物。未適用なら 1 クリック確定を促す。
+            const active = cfg.method === 'hub';
+            const stateEl = document.getElementById('hub-active-state');
+            if (stateEl) {
+                stateEl.hidden = false;
+                stateEl.classList.toggle('is-active', active);
+                stateEl.innerHTML = active
+                    ? '<span class="h-icon" data-icon="check-circle" data-icon-size="14"></span>この保存先を使用中です。'
+                    : '<span class="h-icon" data-icon="alert-triangle" data-icon-size="14"></span>ログイン済みですが、まだ本のデータの保存先になっていません。下の<strong>「この設定で使う」</strong>を押すと切り替わります。';
+                if (typeof window.applyIcons === 'function') window.applyIcons(stateEl);
+            }
+            const useBtn = document.getElementById('hub-use-btn');
+            if (useBtn) {
+                useBtn.disabled = active;
+                useBtn.innerHTML = active
+                    ? '<span class="h-icon" data-icon="check" data-icon-size="14"></span>使用中'
+                    : '<span class="h-icon" data-icon="check" data-icon-size="14"></span>この設定で使う';
+                if (typeof window.applyIcons === 'function') window.applyIcons(useBtn);
+            }
+        } else {
+            this._renderHubDisconnected();
+        }
+    }
+
+    // 未ログイン時のハブ節: 規約同意済みなら節内で直接 Google ログイン (旧来は死に配線だった
+    // hub-gsi-button を有効化)、未同意ならアカウント節へ誘導する (規約同意 UI はそちらに集約)。
+    _renderHubDisconnected() {
+        const consented = !!(this.userData && this.userData.settings && this.userData.settings.ackTermsPrivacy);
+        const host = document.getElementById('hub-gsi-button');
+        const gotoBtn = document.getElementById('hub-goto-account');
+        const msg = document.getElementById('hub-disc-msg');
+        // gotoBtn は .btn (display 指定) のため [hidden] 属性が効かない → style.display で制御
+        if (consented) {
+            if (gotoBtn) gotoBtn.style.display = 'none';
+            if (msg) msg.textContent = 'Google でログインすると、この端末でハブの保存データを使えます。';
+            if (host) {
+                host.hidden = false;
+                // 外部 GIS スクリプトの実体化はハブパネルが実際に開いている時だけ。
+                // ブート時 (_setupSyncMethodUI→_renderHubAuthState) の先読みを避ける (遅延読込方針)。
+                const hubPanel = document.getElementById('sync-config-hub');
+                if (hubPanel && !hubPanel.hidden) this._ensureHubSignInButton();
+            }
+        } else {
+            if (host) host.hidden = true;
+            if (gotoBtn) gotoBtn.style.display = '';
+            if (msg) msg.textContent = 'ハブを使うには、まず「アカウント」で Google ログイン（規約への同意）が必要です。';
         }
     }
 
@@ -3250,11 +3349,15 @@ class VirtualBookshelf {
         if (hub.key && hub.apiBase) return; // 接続済みはボタン不要
         const btnHost = document.getElementById('hub-gsi-button');
         if (!btnHost || typeof HubAuth === 'undefined') return;
+        // 規約同意済みのときだけ描画 (未同意は _renderHubDisconnected が host を hidden にする)。
+        if (!(this.userData && this.userData.settings && this.userData.settings.ackTermsPrivacy)) return;
         this._hubSignInRendered = true;
         HubAuth.renderSignInButton(btnHost, {
             onConnected: (session) => {
                 this._renderHubAuthState();
-                toast(`Asayake ハブに接続しました${session && session.email ? ` (${session.email})` : ''}。`, { type: 'success' });
+                this._renderAccountSection();
+                // ハブ節からのログイン = ハブを使う意図。未適用ラベルで「この設定で使う」を強調済み。
+                toast(`Asayake ハブにログインしました${session && session.email ? ` (${session.email})` : ''}。「この設定で使う」で保存先に設定できます。`, { type: 'success' });
             },
             onError: (e) => toast(`ハブへの接続に失敗しました: ${e.message}`, { type: 'error' })
         });
@@ -3312,6 +3415,8 @@ class VirtualBookshelf {
                 } catch (_) {}
             }
             this._ensureAccountSignInButton();
+            // 同意でハブ節の出し分け (誘導↔節内ログイン) も即追従。パネルが開いていれば GIS 実体化。
+            this._renderHubAuthState();
         });
     }
 
