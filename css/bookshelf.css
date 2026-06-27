@@ -3433,6 +3433,99 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 1rem;
 }
 
+/* ===== 設定 master-detail (ADR-047 P2) =====
+   iOS設定アプリ型: 一覧 (#settings-master) → カテゴリを押すと全画面 detail。
+   PC では左レール (master) + 右ペイン (detail) の 2 ペインに化ける。
+   ‹戻る=一覧へ1段 / ×=閉じる。フッターの「閉じる」は廃止。 */
+.settings-md-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.5rem 0 0.9rem;
+    min-height: 52px;
+    border-bottom: 1px solid var(--line);
+    margin: 0;
+}
+.settings-md-header h2 { flex: 1 1 auto; margin: 0; min-width: 0; }
+/* × はヘッダー内に配置 (既定の absolute を解除) */
+.settings-md-header .modal-close { position: static; flex: 0 0 auto; }
+.settings-md-back {
+    flex: 0 0 auto;
+    width: 34px; height: 34px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--fg2);
+    border-radius: 8px; cursor: pointer;
+}
+.settings-md-back .h-icon { color: inherit; }
+.settings-md-back:hover { background: var(--line2); color: var(--fg); }
+/* hidden 属性を尊重 (.btn 同様 display 明示が UA の [hidden] を上書きするため) */
+.settings-md-back[hidden] { display: none; }
+
+/* 本文ラッパー (modal-body は付けず padding を自前管理) */
+.settings-md-body { padding: 0; }
+
+/* 一覧 (master) */
+.settings-master { display: block; padding: 0.3rem 0; }
+.settings-cat {
+    display: flex; align-items: center; gap: 0.75rem; width: 100%;
+    padding: 0.7rem 1rem; background: transparent; border: none;
+    border-top: 1px solid var(--line2); cursor: pointer; text-align: left;
+    color: var(--fg); font: inherit;
+}
+.settings-master .settings-cat:first-child { border-top: none; }
+.settings-cat:hover { background: var(--line2); }
+.settings-cat-ic {
+    flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px;
+    background: var(--accent-bg); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+}
+.settings-cat-ic .h-icon { color: var(--accent); }
+.settings-cat-tx { flex: 1 1 auto; min-width: 0; }
+.settings-cat-tt { display: block; font-size: 0.95rem; font-weight: 600; line-height: 1.25; }
+.settings-cat-ds { display: block; font-size: 0.74rem; color: var(--muted); margin-top: 2px; line-height: 1.25; }
+.settings-cat-chev { flex: 0 0 auto; color: #c4c9d2; }
+
+/* 詳細 (各 details を pane として 1 つだけ表示) */
+.settings-detail { min-width: 0; }
+.settings-detail > .settings-section {
+    display: none;
+    margin: 0; border: none; border-radius: 0; background: var(--panel); overflow: visible;
+}
+.settings-detail > .settings-section.pane-active { display: block; }
+/* 節見出し (アコーディオン summary) は非表示。タイトルはヘッダー/レールが担う */
+.settings-detail > .settings-section > summary.settings-section-title { display: none; }
+.settings-detail > .settings-section > .settings-section-body { padding: 1rem 1.1rem 1.4rem; }
+
+/* PC (>=769px): 左レール + 右ペインの 2 ペイン */
+@media (min-width: 769px) {
+    .settings-md-body { display: flex; align-items: stretch; min-height: 360px; }
+    .settings-master {
+        flex: 0 0 190px; padding: 0.6rem 0.5rem;
+        border-right: 1px solid var(--line); background: var(--line2);
+    }
+    .settings-cat {
+        border-top: none; border-radius: 9px; padding: 0.55rem 0.6rem; gap: 0.55rem;
+        margin-bottom: 2px;
+    }
+    .settings-master .settings-cat:first-child { border-top: none; }
+    .settings-cat-ic { width: 26px; height: 26px; border-radius: 7px; background: transparent; color: var(--muted); }
+    .settings-cat-ic .h-icon { color: inherit; }
+    .settings-cat-tt { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .settings-cat-ds, .settings-cat-chev { display: none; }
+    .settings-cat.cat-active { background: var(--accent-bg); }
+    .settings-cat.cat-active .settings-cat-tt { color: var(--accent); }
+    .settings-cat.cat-active .settings-cat-ic,
+    .settings-cat.cat-active .settings-cat-ic .h-icon { color: var(--accent); }
+    .settings-detail { flex: 1 1 auto; overflow-y: auto; }
+    .settings-md-back { display: none !important; }
+}
+
+/* スマホ (<=768px): 一覧 or 詳細 を data-settings-view で全画面切替 */
+@media (max-width: 768px) {
+    .settings-modal-content[data-settings-view="master"] .settings-detail { display: none; }
+    .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
+}
+
 /* About section (footer 内容を移動) */
 .about-credit,
 .about-links {

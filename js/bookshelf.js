@@ -439,10 +439,7 @@ class VirtualBookshelf {
                 if (e.target === settingsModal) this._closeSettingsModal();
             });
         }
-        const doneSettings = document.getElementById('settings-modal-done');
-        if (doneSettings) {
-            doneSettings.addEventListener('click', () => this._closeSettingsModal());
-        }
+        // フッターの「閉じる」(#settings-modal-done) は ADR-047 P2 で廃止 (× と同機能の二重を解消)。
 
         // 全モーダル共通: Esc で最前面の開いているモーダルを閉じる (各モーダルの × と同じ処理を呼ぶ)
         if (!this._globalModalEscBound) {
@@ -3388,14 +3385,12 @@ class VirtualBookshelf {
         });
         // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
         this._handleBillingReturn();
-        const openAccount = () => {
-            const sec = document.getElementById('account-section');
-            if (sec) { sec.open = true; sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-        };
+        // 同期節の「アカウントでログイン」誘導 → アカウントカテゴリへ切替 (設定は既に開いている)
+        const openAccount = () => this._activateSettingsCategory('account-section', { push: true });
         const goto = document.getElementById('hub-goto-account');
         if (goto) goto.addEventListener('click', openAccount);
         const chip = document.getElementById('sidebar-account');
-        if (chip) chip.addEventListener('click', async () => { await this._openSettingsModal(); openAccount(); });
+        if (chip) chip.addEventListener('click', () => this._openSettingsModal('account-section'));
         // 能動同意: 規約/プライバシーへの同意チェックが入って初めて Google ログインボタンを描画する。
         const consent = document.getElementById('account-consent-check');
         if (consent) consent.addEventListener('change', async () => {
@@ -5233,37 +5228,168 @@ class VirtualBookshelf {
         return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // 設定 master-detail のカテゴリ定義 (順序 = 一覧/レールの並び)。ADR-047 P2。
+    // ※公開・プラグインは P3 で専用ページへ移すまで設定内に残す (P1 の「プラグイン」ボタン遷移先)。
+    static SETTINGS_CATEGORIES = [
+        { id: 'account-section',  icon: 'user-circle',      label: 'アカウント',        desc: 'ログイン・プラン・使用量' },
+        { id: 'sync-section',     icon: 'folder-cog',       label: '同期',              desc: '保存先: この端末 / GitHub / ハブ' },
+        { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
+        { id: 'library-section',  icon: 'library',          label: '蔵書',              desc: '取り込み・手動追加・除外一覧' },
+        { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: 'インストール・マーケット' },
+        { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: '詳細メモの設定' },
+        { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
+        { id: 'about-section',    icon: 'info',             label: 'このアプリについて',  desc: 'バージョン・各種ポリシー' },
+    ];
+
+    _isSettingsMobile() {
+        try { return window.matchMedia('(max-width: 768px)').matches; } catch (_) { return false; }
+    }
+
+    // 一覧 (master) を 1 度だけ構築。スマホでは縦リスト、PC では左レールとして使う。
+    _buildSettingsMaster() {
+        const host = document.getElementById('settings-master');
+        if (!host || host._built) return;
+        host._built = true;
+        host.innerHTML = '';
+        for (const cat of VirtualBookshelf.SETTINGS_CATEGORIES) {
+            if (!document.getElementById(cat.id)) continue; // 節が無ければスキップ
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'settings-cat';
+            btn.dataset.cat = cat.id;
+            btn.innerHTML =
+                `<span class="settings-cat-ic"><span class="h-icon" data-icon="${cat.icon}" data-icon-size="17"></span></span>` +
+                `<span class="settings-cat-tx"><span class="settings-cat-tt"></span><span class="settings-cat-ds"></span></span>` +
+                `<span class="settings-cat-chev"><span class="h-icon" data-icon="chevron-right" data-icon-size="16"></span></span>`;
+            btn.querySelector('.settings-cat-tt').textContent = cat.label;
+            btn.querySelector('.settings-cat-ds').textContent = cat.desc;
+            btn.addEventListener('click', () => this._activateSettingsCategory(cat.id, { push: true }));
+            host.appendChild(btn);
+        }
+        if (typeof window.applyIcons === 'function') window.applyIcons(host);
+    }
+
     async _openSettingsModal(targetId) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
+        this._buildSettingsMaster();
         modal.classList.add('show');
-        // 設定を開くたびにアフィタグ欄の表示可否/値を最新化 (プラン変化・別端末更新に追従)
+        // スワイプ戻る用に履歴ベースを 1 つ積む (スマホのみ)。× / 戻るで巻き戻す。
+        this._settingsHist = 0;
+        this._bindSettingsPopstate();
+        if (this._isSettingsMobile()) { history.pushState({ bsSettings: 'open' }, ''); this._settingsHist = 1; }
+        // 開くたびに最新化 (プラン変化・別端末更新に追従)。軽い再描画のみ。重い market/プラグイン一覧は
+        // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
         this._reflectAffiliateField();
         this._reflectPublicNameField();
-        // アカウント状態 (ログイン/プラン/使用量) も最新化
         this._setupAccountUI();
         this._renderAccountSection();
+        this._renderPluginCategoryLegend();
         const urlInput = document.getElementById('plugin-repo-url');
         if (urlInput) urlInput.value = '';
-        // 分類マークの凡例を描画
-        this._renderPluginCategoryLegend();
-        // マーケット (公式カタログ) を非同期で読み込み (公開・認証不要。失敗は黙殺し再試行ボタンを出す)
-        this._renderMarketSection().catch(e => console.warn('market render failed', e));
-        // プラグイン一覧はインストール済み情報を非同期で取得して描画
-        try { await this._renderPluginListSection(); } catch (e) { console.warn(e); }
-        // 指定があればその節を開いてスクロール (空状態ボタン・⌘K・公開誘導から共通利用)
-        if (targetId) this._scrollSettingsTo(targetId);
+        // 初期表示: targetId があればその節へ / 無ければ スマホ=一覧・PC=先頭(アカウント)
+        if (targetId) {
+            this._scrollSettingsTo(targetId);
+        } else if (this._isSettingsMobile()) {
+            this._showSettingsMaster();
+        } else {
+            this._activateSettingsCategory('account-section', { push: false });
+        }
     }
 
-    // 設定モーダル内の特定要素/節へジャンプ (details を開いて scrollIntoView)。
+    // 開いたカテゴリだけ重い描画 (毎回の market+プラグイン一覧の再描画を回避)。
+    _renderSettingsCategory(id) {
+        if (id === 'plugins-section') {
+            this._renderMarketSection().catch(e => console.warn('market render failed', e));
+            this._renderPluginListSection().catch(e => console.warn('plugin list render failed', e));
+        } else if (id === 'account-section') {
+            this._setupAccountUI();
+            this._renderAccountSection();
+        } else if (id === 'publish-section') {
+            this._reflectAffiliateField();
+            this._reflectPublicNameField();
+        }
+    }
+
+    // カテゴリを有効化 (pane 表示 + レール active + ヘッダー差し替え + 遅延描画)。
+    // スマホでは一覧→詳細で履歴を 1 段積む (戻る/スワイプで一覧へ)。
+    _activateSettingsCategory(id, { push = true } = {}) {
+        const content = document.querySelector('.settings-modal-content');
+        const detail = document.getElementById('settings-detail');
+        const target = document.getElementById(id);
+        if (!content || !detail || !target || !detail.contains(target)) return;
+        const mobile = this._isSettingsMobile();
+        if (mobile && push) {
+            if (this._settingsHist >= 2) history.replaceState({ bsSettings: 'cat', id }, '');
+            else { history.pushState({ bsSettings: 'cat', id }, ''); this._settingsHist = 2; }
+        }
+        detail.querySelectorAll('.settings-section.pane-active').forEach(el => el.classList.remove('pane-active'));
+        target.open = true;
+        target.classList.add('pane-active');
+        const master = document.getElementById('settings-master');
+        if (master) master.querySelectorAll('.settings-cat').forEach(b => b.classList.toggle('cat-active', b.dataset.cat === id));
+        const cat = VirtualBookshelf.SETTINGS_CATEGORIES.find(c => c.id === id);
+        const titleEl = document.getElementById('settings-md-title');
+        const backBtn = document.getElementById('settings-back');
+        content.dataset.settingsView = 'detail';
+        // スマホはヘッダーに「‹戻る + カテゴリ名」。PC はヘッダー「設定」固定でカテゴリはレールが示す。
+        if (titleEl) {
+            const icon = (mobile && cat) ? cat.icon : 'settings';
+            const label = (mobile && cat) ? cat.label : '設定';
+            titleEl.innerHTML = `<span class="h-icon" data-icon="${icon}" data-icon-size="20"></span>`;
+            titleEl.appendChild(document.createTextNode(label));
+            if (typeof window.applyIcons === 'function') window.applyIcons(titleEl);
+        }
+        if (backBtn) backBtn.hidden = !mobile;
+        this._renderSettingsCategory(id);
+        detail.scrollTop = 0;
+    }
+
+    // 一覧 (master) ビューへ戻す。
+    _showSettingsMaster() {
+        const content = document.querySelector('.settings-modal-content');
+        if (!content) return;
+        content.dataset.settingsView = 'master';
+        const detail = document.getElementById('settings-detail');
+        if (detail) detail.querySelectorAll('.settings-section.pane-active').forEach(el => el.classList.remove('pane-active'));
+        const master = document.getElementById('settings-master');
+        if (master) master.querySelectorAll('.settings-cat.cat-active').forEach(b => b.classList.remove('cat-active'));
+        const titleEl = document.getElementById('settings-md-title');
+        if (titleEl) {
+            titleEl.innerHTML = '<span class="h-icon" data-icon="settings" data-icon-size="20"></span>';
+            titleEl.appendChild(document.createTextNode('設定'));
+            if (typeof window.applyIcons === 'function') window.applyIcons(titleEl);
+        }
+        const backBtn = document.getElementById('settings-back');
+        if (backBtn) backBtn.hidden = true;
+    }
+
+    // 戻るボタン (スマホ) と popstate を 1 度だけ配線。ルーターは hashchange のみ購読のため
+    // 同一 URL の pushState/popstate はルーターに影響しない。
+    _bindSettingsPopstate() {
+        if (this._settingsPopstateBound) return;
+        this._settingsPopstateBound = true;
+        const backBtn = document.getElementById('settings-back');
+        if (backBtn) backBtn.addEventListener('click', () => history.back());
+        window.addEventListener('popstate', () => {
+            const modal = document.getElementById('settings-modal');
+            if (!modal || !modal.classList.contains('show')) return; // 閉じている間は無視 (× の go(-n) 吸収)
+            if (this._settingsHist >= 2) { this._settingsHist = 1; this._showSettingsMaster(); }       // 詳細→一覧
+            else if (this._settingsHist === 1) { this._settingsHist = 0; this._closeSettingsModal({ fromHistory: true }); } // 一覧→閉じる
+        });
+    }
+
+    // 設定モーダル内の特定要素/節へジャンプ (該当カテゴリを開いて要素へフォーカス)。
     // 引数 targetId は要素 id (details 自身でも、節内の要素でも可)。
     _scrollSettingsTo(targetId) {
         const el = targetId && document.getElementById(targetId);
         if (!el) return;
         const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
-        if (det) det.open = true;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
+        if (det && det.id) this._activateSettingsCategory(det.id, { push: true });
+        if (el !== det) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
+        }
     }
 
     // ===== Header customization (V6: square icon buttons, linear flow, vertical drag&drop editor) =====
@@ -6158,9 +6284,14 @@ class VirtualBookshelf {
         this._applyHeaderLayout();
     }
 
-    _closeSettingsModal() {
+    _closeSettingsModal(opts = {}) {
         const modal = document.getElementById('settings-modal');
-        if (modal) modal.classList.remove('show');
+        if (!modal) return;
+        modal.classList.remove('show'); // 先に閉じる → 以降の popstate は早期 return で吸収
+        const n = opts.fromHistory ? 0 : (this._settingsHist || 0);
+        this._settingsHist = 0;
+        if (n > 0) { try { history.go(-n); } catch (_) {} } // 積んだ履歴ベース/詳細を巻き戻す
+        this._showSettingsMaster(); // 次回開いた時のために一覧へ戻す
     }
 
     /**

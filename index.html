@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026062702">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062801">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -247,12 +247,17 @@
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal">
-        <div class="modal-content settings-modal-content">
-            <button class="modal-close" id="settings-modal-close">×</button>
-            <div class="modal-header">
-                <h2><span class="h-icon" data-icon="settings" data-icon-size="20"></span>設定</h2>
+        <div class="modal-content settings-modal-content" data-settings-view="master">
+            <!-- master-detail (ADR-047 P2): ‹戻る=一覧へ1段 / ×=閉じる。フッターの「閉じる」は廃止。
+                 一覧 (#settings-master) と各カテゴリ pane (#settings-detail 内の details) を JS が出し分ける。 -->
+            <div class="modal-header settings-md-header">
+                <button class="settings-md-back" id="settings-back" type="button" aria-label="一覧へ戻る" hidden><span class="h-icon" data-icon="chevron-left" data-icon-size="20"></span></button>
+                <h2 id="settings-md-title"><span class="h-icon" data-icon="settings" data-icon-size="20"></span>設定</h2>
+                <button class="modal-close" id="settings-modal-close" type="button" aria-label="閉じる">×</button>
             </div>
-            <div class="modal-body">
+            <div class="settings-md-body">
+                <nav class="settings-master" id="settings-master" aria-label="設定カテゴリ"></nav>
+                <div class="settings-detail" id="settings-detail">
 
                 <details class="settings-section" id="account-section" open>
                     <summary class="settings-section-title"><span class="h-icon" data-icon="user-circle" data-icon-size="16"></span>アカウント</summary>
@@ -312,7 +317,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="sync-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="folder-cog" data-icon-size="16"></span>同期</summary>
                     <div class="settings-section-body">
 
@@ -467,7 +472,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="publish-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
                     <div class="settings-section-body">
                     <div class="publish-config">
@@ -553,7 +558,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="longmemo-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="notebook-pen" data-icon-size="16"></span>長文メモ</summary>
                     <div class="settings-section-body">
                         <div class="memo-config-row">
@@ -568,7 +573,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="display-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="layout-dashboard" data-icon-size="16"></span>表示</summary>
                     <div class="settings-section-body">
                         <div class="memo-config-row">
@@ -613,7 +618,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="about-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="info" data-icon-size="16"></span>このアプリについて</summary>
                     <div class="settings-section-body">
                     <p class="about-credit"><span class="h-icon" data-icon="library" data-icon-size="14"></span><strong>AsayakeBookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
@@ -632,10 +637,8 @@
                     </div>
                 </details>
 
+                </div><!-- /#settings-detail -->
             </div>
-                <div class="modal-footer settings-modal-footer">
-                    <button type="button" class="btn btn-secondary" id="settings-modal-done">閉じる</button>
-                </div>
         </div>
     </div>
 
@@ -1059,7 +1062,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026062701"></script>
+    <script src="js/bookshelf.js?v=2026062801"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
