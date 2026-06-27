@@ -533,7 +533,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--line);
+    color: var(--muted);
     padding: 0.25rem 0.6rem;
     margin-bottom: 0.25rem;
     display: flex;
@@ -544,7 +544,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--line);
+    color: var(--accent);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -675,7 +675,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 }
 .bsr-count {
     font-size: 0.75rem;
-    color: var(--line);
+    color: var(--muted);
     font-variant-numeric: tabular-nums;
 }
 /* ツリー内での配置 (アイコン・サイズ等は .bs-icon-frame グループ) */
@@ -754,12 +754,12 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     height: 18px;
 }
 
-/* 本棚操作メニュー起動ボタン (Phase G) — ホバー時のみ表示 */
+/* 本棚操作メニュー起動ボタン (Phase G) — 常時表示 (タッチでも届くように。旧: hover 限定で隠れていた) */
 .tree-more {
     grid-column: 5;
     width: 20px;
     height: 20px;
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
@@ -770,7 +770,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     border-radius: 4px;
 }
 .tree-node:hover .tree-more,
-.tree-node.is-active .tree-more { display: inline-flex; }
+.tree-node.is-active .tree-more { color: var(--fg2); }
 .tree-more:hover { background: var(--line); color: var(--accent); }
 
 .tree-node-menu {
@@ -6568,4 +6568,12 @@ body.select-mode .drag-handle { display: none; }
     /* ⌘K パレット: タッチ端末ではキーボード操作ヒント (↑↓/↵/Esc) を隠す */
     .cmdk-footer,
     .cmdk-esc-kbd { display: none; }
+
+    /* iOS は font-size<16px の入力に focus すると自動ズームする (viewport の maximum-scale は
+       a11y のため設定しない方針)。全フォームコントロールを 16px に統一してズームを止める。
+       コンポーネント個別指定 (例 .bd-meta-edit-body .edit-field input) より強くするため !important。
+       checkbox/radio/range/color はテキスト入力でなくズーム対象外なので除外。 */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    select,
+    textarea { font-size: 16px !important; }
 }
