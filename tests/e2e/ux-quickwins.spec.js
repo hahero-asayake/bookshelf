@@ -39,10 +39,12 @@ test('QW2: 評価フィルタ中に星を下げると一覧から即座に外れ
     expect(errors).toEqual([]);
 });
 
-test('QW3: サイドバーの検索 (⌘K) ボタンでコマンドパレットが開く', async ({ page }) => {
+test('QW3: フッターの検索ボタンでコマンドパレットが開く', async ({ page }) => {
+    // ADR-047 P1: 検索は左ペインから下部フッターへ移設 (旧 #palette-trigger は撤去)
     const errors = await bootApp(page);
-    await expect(page.locator('#palette-trigger')).toBeVisible();
-    await page.locator('#palette-trigger').click();
+    const searchBtn = page.locator('#mobile-bottom-nav [data-mobile-nav="search"]');
+    await expect(searchBtn).toBeVisible();
+    await searchBtn.click();
     await expect(page.locator('#command-palette')).toBeVisible();
     expect(errors).toEqual([]);
 });

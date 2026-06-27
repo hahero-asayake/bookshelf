@@ -415,25 +415,10 @@ class VirtualBookshelf {
         // 同期方式選択 UI (LocalFS / GitHub / ...)
         this._setupSyncMethodUI();
 
-        // ヘッダー: 静的ボタン全部を event delegation で処理 (clone でも動くように)
-        const headerEl = document.getElementById('header-controls');
-        if (headerEl) {
-            headerEl.addEventListener('click', (e) => {
-                const btn = e.target.closest('button');
-                if (!btn) return;
-                const item = e.target.closest('[data-header-item]');
-                if (!item) return;
-                const key = item.dataset.headerItem;
-                switch (key) {
-                    case 'manage-bookshelves':
-                        this.showBookshelfManager();
-                        break;
-                    case 'open-settings':
-                        this._openSettingsModal();
-                        break;
-                }
-            });
-        }
+        // #header-controls は有効プラグインの UI ボタンの受け皿 (_applyHeaderLayout が描画)。
+        // 本棚管理は撤去 (⌘K から到達)、設定は下部フッターへ移設したため、組込ボタンの
+        // delegation は不要 (ADR-047 P1)。プラグインボタンのクリックは _buildPlacementElement で
+        // 各ボタンに直接配線される。
 
         // 全 popover の共通制御 (toggle ボタン押下 / 外側クリック / Esc)
         this._setupPopovers();
@@ -609,6 +594,13 @@ class VirtualBookshelf {
         const publishBtn = document.getElementById('sidebar-publish');
         if (publishBtn) {
             publishBtn.addEventListener('click', () => this.openPublishPagesModal());
+        }
+
+        // 左ペイン「プラグイン」ボタン (ADR-047 P1)。当面は設定のプラグイン節を開く
+        // (P3 で #/plugins 専用ページへ差し替え予定)。
+        const pluginsBtn = document.getElementById('sidebar-plugins');
+        if (pluginsBtn) {
+            pluginsBtn.addEventListener('click', () => this._openSettingsModal('plugins-section'));
         }
 
         // 長文メモ モーダル
@@ -4939,20 +4931,22 @@ class VirtualBookshelf {
     }
 
     _updateSidebarActive() {
+        const isMain = document.body.classList.contains('app-view-main');
         const tree = document.getElementById('sidebar-bookshelf-tree');
-        if (!tree) return;
-        tree.querySelectorAll('.tree-node').forEach(node => {
+        if (tree) tree.querySelectorAll('.tree-node').forEach(node => {
             const id = node.dataset.bookshelfId;
             const internalId = node.dataset.internalId;
-            const isMain = document.body.classList.contains('app-view-main');
             const matches = !isMain && (this.currentBookshelf === id || this.currentBookshelf === internalId);
             node.classList.toggle('is-active', !!matches);
         });
-        // ホームナビのハイライト
-        const homeBtn = document.querySelector('.sidebar-nav-item[data-nav="home"]');
-        if (homeBtn) {
-            homeBtn.classList.toggle('is-active', document.body.classList.contains('app-view-main'));
-        }
+        // 下部フッターの現在地ハイライト (ADR-047 P1)。ホーム=main ビュー / 本棚=本棚ビュー。
+        // 検索・設定はモーダルなので持続ハイライトしない。
+        const nav = document.getElementById('mobile-bottom-nav');
+        if (nav) nav.querySelectorAll('[data-mobile-nav]').forEach(btn => {
+            const a = btn.dataset.mobileNav;
+            const active = (a === 'home' && isMain) || (a === 'shelves' && !isMain);
+            btn.classList.toggle('is-active', active);
+        });
     }
 
     // ===== Header Icon Override (localStorage、全ヘッダーアイテム共通) =====
@@ -5279,28 +5273,16 @@ class VirtualBookshelf {
     // - id は placement 単位の一意値
     // - 全アイテム duplicatable: false (1つのボタンに状態が紐づくため)
     // - プラグインボタン (plugin:<id>) は duplicatable: false 扱い (1配置のみ)
-    // - needsBookshelf: メインビューでは disabled 表示
-    // - required: 取り外せない (open-settings のみ)
-    // Phase C: ヘッダーは brand + ⌘K + 設定 に最小化。view-toggle/search/filter は
-    // 本棚ツールバー(Phase E)へ、back-to-main/bookshelf-selector/manage/overview は ⌘K へ移設。
-    // 下記はカスタマイザで「任意に再配置できる」候補。required は open-settings のみ。
-    static HEADER_ITEMS_META = {
-        // back-to-main / bookshelf-selector は 3 ペイン化でサイドバーツリーと完全重複のため撤去 (2026-06-07)。
-        // overview-display は no-op の renderBookshelfOverview を呼ぶだけで機能しないため撤去 (2026-06-07)。
-        'manage-bookshelves':  { label: '本棚管理',     defaultIcon: 'pen-line',          emoji: '', duplicatable: false },
-        'open-settings':       { label: '設定',         defaultIcon: 'settings',          emoji: '', duplicatable: false, required: true }
-    };
+    // - needsBookshelf: メインビューでは disabled 表示 (現状 plugin: のみ運用)
+    // 組込ヘッダーアイテムは廃止 (ADR-047 P1)。本棚管理は撤去 (⌘K)、設定はフッターへ移設。
+    // #header-controls は有効プラグインの UI ボタン (plugin:<id>) 専用の受け皿になった。
+    // 旧 back-to-main / bookshelf-selector / overview-display も既に撤去済み (2026-06-07)。
+    static HEADER_ITEMS_META = {};
     static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV8';
 
     _defaultHeaderLayout() {
-        // Phase C2: コンテナはサイドバー下部ユーティリティへ移設。
-        // 既定は 本棚管理 / 設定。有効プラグインの UI ボタンは _currentHeaderLayout で自動追加。
-        return {
-            items: [
-                { id: this._newPlacementId(), key: 'manage-bookshelves' },
-                { id: this._newPlacementId(), key: 'open-settings' }
-            ]
-        };
+        // 既定は空。有効プラグインの UI ボタンは _currentHeaderLayout で自動追加される (ADR-047 P1)。
+        return { items: [] };
     }
 
     _newPlacementId() {

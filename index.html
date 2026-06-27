@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026062701">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062702">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -51,19 +51,16 @@
                     <span class="brand-text">AsayakeBookshelf</span>
                 </div>
                 <nav class="sidebar-nav" id="sidebar-nav">
+                    <!-- 上段ナビは「公開 / プラグイン」だけ。検索/ホーム/設定は下部フッターへ集約 (ADR-047 P1)。
+                         遷移先は当面: 公開→公開ページ管理 / プラグイン→設定のプラグイン節 (P3 で専用ページへ)。 -->
                     <div class="sidebar-section">
-                        <button class="sidebar-nav-item" id="palette-trigger" type="button" title="本・本棚・コマンドを横断検索 (⌘K)">
-                            <span class="nav-icon" data-icon="search" data-icon-size="16"></span>
-                            <span class="nav-label">検索</span>
-                            <kbd class="nav-kbd">⌘K</kbd>
-                        </button>
-                        <button class="sidebar-nav-item" data-nav="home" type="button">
-                            <span class="nav-icon" data-icon="library" data-icon-size="16"></span>
-                            <span class="nav-label">ホーム</span>
-                        </button>
                         <button class="sidebar-nav-item" id="sidebar-publish" type="button" title="公開ページを管理・公開する">
                             <span class="nav-icon" data-icon="globe" data-icon-size="16"></span>
                             <span class="nav-label">公開</span>
+                        </button>
+                        <button class="sidebar-nav-item" id="sidebar-plugins" type="button" title="プラグインを管理する">
+                            <span class="nav-icon" data-icon="puzzle" data-icon-size="16"></span>
+                            <span class="nav-label">プラグイン</span>
                         </button>
                     </div>
                     <div class="sidebar-section">
@@ -76,21 +73,16 @@
                         </div>
                     </div>
                 </nav>
-                <!-- ユーティリティ: 本棚管理 / 設定 / 有効プラグインのボタン (_applyHeaderLayout が描画)。D&D で並び替え可 -->
+                <!-- ユーティリティ: アカウントチップ + 有効プラグインの UI ボタン (_applyHeaderLayout が描画)。
+                     本棚管理は撤去 (⌘K から到達)、設定は下部フッターへ移設 (ADR-047 P1)。
+                     #header-controls はプラグインボタンの受け皿として存続 (D&D 並び替え可)。 -->
                 <div class="sidebar-utility">
                     <button class="sidebar-account-chip" id="sidebar-account" type="button" title="アカウント">
                         <span class="sac-icon" data-icon="user-circle" data-icon-size="16"></span>
                         <span class="sac-label" id="sidebar-account-label">ログイン</span>
                         <span class="sac-plan" id="sidebar-account-plan" hidden>無料</span>
                     </button>
-                    <div class="header-controls" id="header-controls">
-                        <span class="header-item" data-header-item="manage-bookshelves">
-                            <button id="manage-bookshelves" class="btn-icon-square" title="本棚管理" data-icon="pen-line"></button>
-                        </span>
-                        <span class="header-item" data-header-item="open-settings">
-                            <button id="open-settings" class="btn-icon-square" title="設定" data-icon="settings"></button>
-                        </span>
-                    </div>
+                    <div class="header-controls" id="header-controls"></div>
                 </div>
             </aside>
 
@@ -524,7 +516,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
+                <details class="settings-section" id="plugins-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="puzzle" data-icon-size="16"></span>プラグイン</summary>
                     <div class="settings-section-body">
 
@@ -1067,7 +1059,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026062601"></script>
+    <script src="js/bookshelf.js?v=2026062701"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

@@ -6359,10 +6359,46 @@ body.select-mode .drag-handle { display: none; }
 .cfm-message { font-size: 0.9rem; line-height: 1.55; white-space: pre-line; word-break: break-word; color: var(--fg2); }
 .cfm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.1rem; }
 
-/* 既定 (PC) ではモバイル専用要素は非表示 */
+/* 既定 (PC) ではドロワー系のモバイル専用要素は非表示 */
 .mobile-scrim,
-.mobile-bottom-nav,
 .mobile-detail-back { display: none; }
+
+/* ===== 下部フッターナビ (PC・モバイル共通で常時表示, ADR-047 P1) =====
+   ホーム / 本棚 / 検索 / 設定 を集約。現在地ハイライト (.is-active) は
+   _updateSidebarActive() が配線。PC では本棚タブはツリーが常時見えるため隠す。 */
+.mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: calc(50px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    z-index: 950;
+}
+.mobile-bottom-nav button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.64rem;
+    cursor: pointer;
+    padding: 4px 0 6px;
+}
+.mobile-bottom-nav button .mnav-icon { display: inline-flex; }
+.mobile-bottom-nav button.is-active { color: var(--accent); }
+
+/* PC: フッター分の余白を確保 (3 ペインが被らない)。本棚タブは隠す。toast もフッター上へ。 */
+@media (min-width: 769px) {
+    .main { padding-bottom: calc(50px + env(safe-area-inset-bottom)); }
+    .mobile-bottom-nav button[data-mobile-nav="shelves"] { display: none; }
+    #toast-container { bottom: calc(50px + 24px + env(safe-area-inset-bottom)); }
+}
 
 @media (max-width: 768px) {
     /* --- 単一ペイン化: 中央のみ。左右はオーバーレイで重ねる --- */
@@ -6446,34 +6482,7 @@ body.select-mode .drag-handle { display: none; }
     .bookshelf-container.app-main-pane {
         padding-bottom: calc(50px + env(safe-area-inset-bottom));
     }
-
-    /* --- 下部ナビ (全体フッター): やや低背・下寄せにして主張を抑える --- */
-    .mobile-bottom-nav {
-        display: flex;
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        height: calc(50px + env(safe-area-inset-bottom));
-        padding-bottom: env(safe-area-inset-bottom);
-        background: var(--panel);
-        border-top: 1px solid var(--line);
-        z-index: 950;
-    }
-    .mobile-bottom-nav button {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 2px;
-        border: none;
-        background: transparent;
-        color: var(--muted);
-        font-size: 0.64rem;
-        cursor: pointer;
-        padding: 4px 0 6px;
-    }
-    .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
-    .mobile-bottom-nav button.is-active { color: var(--accent); }
+    /* 下部ナビ本体のスタイルは基底 (.mobile-bottom-nav) に集約。モバイルでは本棚タブも表示。 */
 
     /* toast は下部ナビ (約 58px) + セーフエリアの上に出す */
     #toast-container {
