@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定 再設計モック — AsayakeBookshelf</title>
+<style>
+  :root{
+    --bg:#eef0f4; --panel:#ffffff; --side:#fbfbfd; --fg:#1c1f24; --fg2:#5b6573;
+    --muted:#98a0ad; --line:#e7e9ee; --line2:#eef0f4; --accent:#5b6cff; --accent-bg:#eef0ff;
+    --danger:#e25555; --ok:#2bb673;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-font-smoothing:antialiased;padding:28px 20px 60px}
+  h1{font-size:18px;margin:0 0 4px}
+  .lead{color:var(--fg2);font-size:13px;margin:0 0 22px;max-width:880px;line-height:1.6}
+  .lead b{color:var(--fg)}
+  .row{display:flex;flex-wrap:wrap;gap:34px;align-items:flex-start}
+  .cap{font-size:12.5px;color:var(--fg2);margin:0 0 9px;font-weight:600}
+  .cap small{color:var(--muted);font-weight:400}
+  /* ---- device frames ---- */
+  .phone{width:300px;border:1px solid #d9dce3;border-radius:26px;background:var(--panel);
+    box-shadow:0 14px 34px rgba(20,25,40,.13);overflow:hidden}
+  .phone .notch{height:26px;background:var(--side);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;justify-content:center}
+  .phone .notch i{width:46px;height:5px;border-radius:5px;background:#d3d7df}
+  .desktop{width:560px;border:1px solid #d9dce3;border-radius:12px;background:var(--panel);
+    box-shadow:0 14px 34px rgba(20,25,40,.13);overflow:hidden}
+  .winbar{height:30px;background:var(--side);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;gap:7px;padding:0 12px}
+  .winbar i{width:11px;height:11px;border-radius:50%;background:#dfe2e8}
+  /* ---- generic settings header ---- */
+  .shead{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;
+    border-bottom:1px solid var(--line);font-weight:700;font-size:15px}
+  .shead .x,.shead .back{margin-left:auto;width:30px;height:30px;border-radius:8px;border:none;
+    background:none;color:var(--fg2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .shead .back{margin-left:0;margin-right:2px}
+  .shead.detail{font-size:15px}
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .svg.sm{width:17px;height:17px}
+  /* ---- category list (master) ---- */
+  .glist{padding:10px 0}
+  .gitem{display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer}
+  .gitem+.gitem{border-top:1px solid var(--line2)}
+  .gitem .ic{width:32px;height:32px;border-radius:9px;background:var(--accent-bg);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .gitem .tt{font-size:14px;font-weight:600;line-height:1.2}
+  .gitem .ds{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.2}
+  .gitem .chev{margin-left:auto;color:#c4c9d2;flex:0 0 auto}
+  .gitem.active{background:var(--accent-bg)}
+  .gitem.active .tt{color:var(--accent)}
+  .movednote{margin:8px 14px 0;font-size:11px;color:var(--muted);background:var(--line2);
+    border-radius:8px;padding:8px 10px;line-height:1.45}
+  /* ---- detail content (sync demo) ---- */
+  .body{padding:14px}
+  .flabel{font-size:12px;color:var(--fg2);font-weight:600;margin:0 0 6px}
+  .sel{width:100%;height:40px;border:1px solid var(--line);border-radius:9px;background:#fff;
+    padding:0 12px;font-size:14px;color:var(--fg);display:flex;align-items:center}
+  .sel .cv{margin-left:auto;color:var(--muted)}
+  .card{border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:12px}
+  .card .ch{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px}
+  .card .ch .gl{color:var(--accent)}
+  .conn{display:flex;align-items:center;gap:7px;font-size:12.5px;margin-top:10px}
+  .conn .ck{color:var(--ok)}
+  .badge{font-size:10.5px;font-weight:700;background:#eef0f5;color:var(--fg2);border-radius:999px;padding:2px 8px}
+  .usage{margin-top:10px}
+  .usage .t{display:flex;justify-content:space-between;font-size:11.5px;color:var(--fg2)}
+  .bar{height:7px;border-radius:7px;background:var(--line2);margin-top:5px;overflow:hidden}
+  .bar i{display:block;height:100%;width:32%;background:var(--accent)}
+  .btnrow{margin-top:13px;display:flex;align-items:center;gap:9px}
+  .btn{height:34px;border-radius:9px;border:none;background:var(--accent);color:#fff;font-size:12.5px;
+    font-weight:600;padding:0 14px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--fg)}
+  .state{margin-top:11px;font-size:12px;display:flex;gap:7px;align-items:flex-start;
+    background:color-mix(in srgb,var(--accent) 9%,transparent);
+    border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);border-radius:8px;padding:8px 10px;line-height:1.4}
+  /* ---- desktop two-pane ---- */
+  .dwrap{display:flex;min-height:330px}
+  .rail{width:180px;border-right:1px solid var(--line);padding:10px 8px;background:var(--side)}
+  .rail .ri{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;font-size:13px;
+    font-weight:600;color:var(--fg2);cursor:pointer}
+  .rail .ri .svg{color:var(--muted)}
+  .rail .ri+.ri{margin-top:2px}
+  .rail .ri.active{background:var(--accent-bg);color:var(--accent)}
+  .rail .ri.active .svg{color:var(--accent)}
+  .dpane{flex:1;padding:16px 18px}
+  .dpane h3{margin:0 0 12px;font-size:15px}
+  .legend{margin-top:30px;max-width:880px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:16px 18px}
+  .legend h2{font-size:14px;margin:0 0 10px}
+  .legend ul{margin:0;padding-left:18px;color:var(--fg2);font-size:13px;line-height:1.85}
+  .legend b{color:var(--fg)}
+  .key{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:0 6px;font-size:11px;color:var(--fg2);background:#fff}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <g id="i-user"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></g>
+  <g id="i-cloud"><path d="M6 18a4 4 0 0 1 .5-8 6 6 0 0 1 11.4 1.5A3.5 3.5 0 0 1 17.5 18Z"/></g>
+  <g id="i-book"><path d="M5 4h12a1 1 0 0 1 1 1v15l-3-2-3 2-3-2-3 2V5a1 1 0 0 1 1-1Z"/></g>
+  <g id="i-file"><path d="M7 3h7l4 4v14H7Z"/><path d="M14 3v4h4"/><path d="M10 13h6M10 16h6"/></g>
+  <g id="i-eye"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></g>
+  <g id="i-info"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></g>
+  <g id="i-chev"><path d="M9 6l6 6-6 6"/></g>
+  <g id="i-back"><path d="M15 6l-6 6 6 6"/></g>
+  <g id="i-x"><path d="M6 6l12 12M18 6 6 18"/></g>
+  <g id="i-gh"><path d="M12 2a10 10 0 0 0-3 19.5c.5 0 .7-.2.7-.5v-2c-2.8.6-3.4-1.2-3.4-1.2-.5-1.1-1.1-1.4-1.1-1.4-.9-.6 0-.6 0-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1 2.9.8.1-.6.3-1 .6-1.3-2.2-.2-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.7 0 3.9-2.4 4.8-4.6 5 .4.3.7.9.7 1.8v2.6c0 .3.2.6.7.5A10 10 0 0 0 12 2Z"/></g>
+</defs></svg>
+
+<h1>設定 再設計モック — AsayakeBookshelf</h1>
+<p class="lead">いまの設定は <b>8項目アコーディオンの縦スクロール</b>（公開・プラグインを外すと6項目）。これを <b>iOS設定アプリ型の「一覧 → 押すと全画面で開く」</b> に変えます。スマホは下位画面を <b>履歴に積む</b> ので <b>戻る/スワイプで1段戻れる</b>（モーダルの根治）。PCでは同じ構造が <b>左レールのタブ</b> に化けます。同機能の「閉じる」ボタン2つは廃止。</p>
+
+<div class="row">
+
+  <!-- ===== Phone 1: master list ===== -->
+  <div>
+    <p class="cap">スマホ① 設定トップ（一覧）<small> ← ここが入口</small></p>
+    <div class="phone">
+      <div class="notch"><i></i></div>
+      <div class="shead">設定<button class="x"><svg class="svg"><use href="#i-x"/></svg></button></div>
+      <div class="glist">
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-user"/></svg></div>
+          <div><div class="tt">アカウント</div><div class="ds">ログイン・プラン・使用量</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-cloud"/></svg></div>
+          <div><div class="tt">同期</div><div class="ds">保存先：この端末／GitHub／ハブ</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-book"/></svg></div>
+          <div><div class="tt">蔵書</div><div class="ds">取り込み・手動追加・除外一覧</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-file"/></svg></div>
+          <div><div class="tt">長文メモ</div><div class="ds">詳細メモの設定</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-eye"/></svg></div>
+          <div><div class="tt">表示</div><div class="ds">星・メモ・Kindleの開き方</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="gitem"><div class="ic"><svg class="svg sm"><use href="#i-info"/></svg></div>
+          <div><div class="tt">このアプリについて</div><div class="ds">バージョン・各種ポリシー</div></div>
+          <svg class="svg sm chev"><use href="#i-chev"/></svg></div>
+        <div class="movednote">「公開」「プラグイン」はここから外し、<b>専用ページ</b>へ移動（そこから Asayake / Cloudflare へ）。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Phone 2: detail (sync) ===== -->
+  <div>
+    <p class="cap">スマホ② 「同期」を押した状態<small> ← 全画面・戻る/スワイプで一覧へ</small></p>
+    <div class="phone">
+      <div class="notch"><i></i></div>
+      <div class="shead detail"><button class="back"><svg class="svg"><use href="#i-back"/></svg></button>同期</div>
+      <div class="body">
+        <p class="flabel">本のデータの保存先</p>
+        <div class="sel">Asayake ハブに保存<span class="cv">▾</span></div>
+        <div class="card">
+          <div class="ch"><svg class="svg sm gl"><use href="#i-cloud"/></svg>Asayake ハブに保存</div>
+          <div class="conn"><svg class="svg sm ck"><use href="#i-info"/></svg><b>reader@example.com</b> でログイン中<span class="badge">無料</span></div>
+          <div class="usage"><div class="t"><span>32 MB / 100 MB</span><span>更新</span></div><div class="bar"><i></i></div></div>
+          <div class="state"><svg class="svg sm"><use href="#i-info"/></svg>この保存先を使用中です。</div>
+          <div class="btnrow"><button class="btn">使用中</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Desktop: rail tabs ===== -->
+  <div>
+    <p class="cap">PC（左レールタブ）<small> ← 同じ構造がタブに化ける</small></p>
+    <div class="desktop">
+      <div class="winbar"><i></i><i></i><i></i></div>
+      <div class="shead">設定<button class="x"><svg class="svg"><use href="#i-x"/></svg></button></div>
+      <div class="dwrap">
+        <div class="rail">
+          <div class="ri"><svg class="svg sm"><use href="#i-user"/></svg>アカウント</div>
+          <div class="ri active"><svg class="svg sm"><use href="#i-cloud"/></svg>同期</div>
+          <div class="ri"><svg class="svg sm"><use href="#i-book"/></svg>蔵書</div>
+          <div class="ri"><svg class="svg sm"><use href="#i-file"/></svg>長文メモ</div>
+          <div class="ri"><svg class="svg sm"><use href="#i-eye"/></svg>表示</div>
+          <div class="ri"><svg class="svg sm"><use href="#i-info"/></svg>このアプリ</div>
+        </div>
+        <div class="dpane">
+          <h3>同期</h3>
+          <p class="flabel">本のデータの保存先</p>
+          <div class="sel">Asayake ハブに保存<span class="cv">▾</span></div>
+          <div class="card">
+            <div class="ch"><svg class="svg sm gl"><use href="#i-cloud"/></svg>Asayake ハブに保存</div>
+            <div class="conn"><svg class="svg sm ck"><use href="#i-info"/></svg><b>reader@example.com</b> でログイン中<span class="badge">無料</span></div>
+            <div class="usage"><div class="t"><span>32 MB / 100 MB</span><span>更新</span></div><div class="bar"><i></i></div></div>
+            <div class="btnrow"><button class="btn">使用中</button><button class="btn ghost">ログアウト</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h2>この案で直ること</h2>
+  <ul>
+    <li><b>ごちゃごちゃ解消</b>：8項目の縦スクロール → 1カテゴリずつ全画面。公開/プラグインが抜けて <b>6項目</b>。</li>
+    <li><b>スワイプで戻れる</b>：下位画面を <span class="key">history.pushState</span> で積むので、OSの戻る/スワイプで一覧へ1段戻る。</li>
+    <li><b>閉じるボタンの役割分離</b>：<span class="key">×</span> ＝設定を閉じる／<span class="key">‹ 戻る・スワイプ</span> ＝一覧へ1段戻る。<b>フッターの「閉じる」は廃止</b>（同機能2つを解消）。</li>
+    <li><b>軽くなる</b>：開いた瞬間に market＋プラグイン一覧＋アカウントを毎回再描画していたのを、開いたカテゴリだけ描画に。</li>
+  </ul>
+</div>
+
+</body>
+</html>

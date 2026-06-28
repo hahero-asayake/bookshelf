@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ナビ/フッター 再設計モック — AsayakeBookshelf</title>
+<style>
+  :root{
+    --bg:#eef0f4; --panel:#ffffff; --side:#fbfbfd; --fg:#1c1f24; --fg2:#5b6573;
+    --muted:#98a0ad; --line:#e7e9ee; --line2:#eef0f4; --accent:#5b6cff; --accent-bg:#eef0ff;
+    --danger:#e25555; --ok:#2bb673;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-font-smoothing:antialiased;padding:28px 20px 60px}
+  h1{font-size:18px;margin:0 0 4px}
+  .lead{color:var(--fg2);font-size:13px;margin:0 0 22px;max-width:900px;line-height:1.6}
+  .lead b{color:var(--fg)}
+  .row{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start}
+  .cap{font-size:12.5px;color:var(--fg2);margin:0 0 9px;font-weight:600}
+  .cap small{color:var(--muted);font-weight:400}
+  .svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .svg.sm{width:17px;height:17px}
+  /* device frames */
+  .phone{width:300px;border:1px solid #d9dce3;border-radius:26px;background:var(--panel);
+    box-shadow:0 14px 34px rgba(20,25,40,.13);overflow:hidden;display:flex;flex-direction:column;height:600px}
+  .notch{height:26px;background:var(--side);border-bottom:1px solid var(--line2);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .notch i{width:46px;height:5px;border-radius:5px;background:#d3d7df}
+  .desktop{width:640px;border:1px solid #d9dce3;border-radius:12px;background:var(--panel);
+    box-shadow:0 14px 34px rgba(20,25,40,.13);overflow:hidden;display:flex;flex-direction:column;height:430px}
+  .winbar{height:30px;background:var(--side);border-bottom:1px solid var(--line2);display:flex;align-items:center;gap:7px;padding:0 12px;flex:0 0 auto}
+  .winbar i{width:11px;height:11px;border-radius:50%;background:#dfe2e8}
+  /* sidebar (new) */
+  .sb{display:flex;flex-direction:column;min-height:0}
+  .brand{display:flex;align-items:center;gap:8px;padding:13px 14px 10px;font-weight:800;font-size:15px}
+  .brand .dot{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#ffb35b,#5b6cff)}
+  .navsec{padding:4px 8px 10px;border-bottom:1px solid var(--line2)}
+  .navi{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--fg);cursor:pointer}
+  .navi .svg{color:var(--fg2)}
+  .navi .to{margin-left:auto;font-size:10.5px;color:var(--muted);font-weight:500}
+  .navi:hover{background:var(--line2)}
+  .shsec{padding:10px 8px 6px;display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+  .shhead{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 8px}
+  .shhead .lbl{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--fg2)}
+  .addbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--accent);color:var(--accent);
+    background:var(--accent-bg);border-radius:8px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer}
+  .tree{display:flex;flex-direction:column;gap:1px;overflow:auto}
+  .tn{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;font-size:13px;cursor:pointer}
+  .tn:hover{background:var(--line2)}
+  .tn.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .tn .ti{color:var(--fg2)}
+  .tn.active .ti{color:var(--accent)}
+  .tn .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tn .more{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--fg2);flex:0 0 auto}
+  .tn .more:hover{background:rgba(0,0,0,.06)}
+  .acct{margin-top:auto;display:flex;align-items:center;gap:9px;padding:9px 11px;margin:8px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;font-weight:600;color:var(--fg2);flex:0 0 auto}
+  .acct .av{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+  /* footer bottom nav */
+  .footer{display:flex;border-top:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+  .fitem{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 9px;color:var(--muted);font-size:10.5px;font-weight:600;cursor:pointer}
+  .fitem.active{color:var(--accent)}
+  /* mobile content placeholder behind drawer */
+  .mwrap{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  .drawer{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:var(--panel)}
+  /* desktop layout */
+  .dmain{flex:1 1 auto;display:flex;min-height:0}
+  .dside{width:200px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .dcontent{flex:1;background:var(--bg);padding:14px;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:74px;gap:10px;align-content:start}
+  .ph-card{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+  .badge-old{display:inline-block;background:#fde8e8;color:#c0392b;border-radius:5px;font-size:10px;padding:1px 6px;margin-left:6px;font-weight:700}
+  .legend{margin-top:30px;max-width:900px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .legend h2{font-size:14px;margin:0 0 10px}
+  .legend ul{margin:0;padding-left:18px;color:var(--fg2);font-size:13px;line-height:1.85}
+  .legend b{color:var(--fg)}
+  .legend del{color:var(--muted)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <g id="i-globe"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></g>
+  <g id="i-puzzle"><path d="M10 4a2 2 0 1 1 4 0v2h2a1 1 0 0 1 1 1v2a2 2 0 1 1 0 4v3a1 1 0 0 1-1 1h-3a2 2 0 1 0-4 0H6a1 1 0 0 1-1-1v-3a2 2 0 1 1 0-4V7a1 1 0 0 1 1-1h4Z"/></g>
+  <g id="i-plus"><path d="M12 5v14M5 12h14"/></g>
+  <g id="i-more"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></g>
+  <g id="i-lib"><path d="M5 4v16M9 4v16"/><path d="M13 5l5 1-2 15-5-1z"/></g>
+  <g id="i-home"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></g>
+  <g id="i-search"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></g>
+  <g id="i-gear"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M18.5 5.5l-2 2M7.5 16.5l-2 2"/></g>
+  <g id="i-user"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0 1 13 0"/></g>
+  <g id="i-chev"><path d="M9 6l6 6-6 6"/></g>
+</defs></svg>
+
+<h1>ナビ / フッター 再設計モック — AsayakeBookshelf</h1>
+<p class="lead">左ペインから <b>検索・ホーム・設定</b> を外し、<b>下部フッター</b>（ホーム / 本棚 / 検索 / 設定・現在地ハイライト付き）に集約。<b>PCにも同じフッター</b>を出す。左ペインの上段は <b>公開・プラグインだけ</b>（押すと専用ページ→Cloudflare）。<b>本棚追加</b>と各棚の <b>⋯（編集メニュー）</b> は薄い hover 表示をやめて常時はっきり表示。</p>
+
+<div class="row">
+
+  <!-- ===== Mobile ===== -->
+  <div>
+    <p class="cap">スマホ（ドロワー＝左ペイン ＋ 下部フッター）</p>
+    <div class="phone">
+      <div class="notch"><i></i></div>
+      <div class="mwrap">
+        <div class="drawer sb">
+          <div class="brand"><span class="dot"></span>Asayake</div>
+          <div class="navsec">
+            <div class="navi"><svg class="svg sm"><use href="#i-globe"/></svg>公開<span class="to">→ ページ</span></div>
+            <div class="navi"><svg class="svg sm"><use href="#i-puzzle"/></svg>プラグイン<span class="to">→ ページ</span></div>
+          </div>
+          <div class="shsec">
+            <div class="shhead"><span class="lbl">本棚</span><span class="addbtn"><svg class="svg" style="width:13px;height:13px"><use href="#i-plus"/></svg>追加</span></div>
+            <div class="tree">
+              <div class="tn"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">すべての本</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+              <div class="tn active"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">漫画</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+              <div class="tn"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">技術書</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+              <div class="tn"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">小説</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+            </div>
+          </div>
+          <div class="acct"><span class="av"><svg class="svg sm"><use href="#i-user"/></svg></span>ログイン</div>
+        </div>
+        <div class="footer">
+          <div class="fitem"><svg class="svg sm"><use href="#i-home"/></svg>ホーム</div>
+          <div class="fitem active"><svg class="svg sm"><use href="#i-lib"/></svg>本棚</div>
+          <div class="fitem"><svg class="svg sm"><use href="#i-search"/></svg>検索</div>
+          <div class="fitem"><svg class="svg sm"><use href="#i-gear"/></svg>設定</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Desktop ===== -->
+  <div>
+    <p class="cap">PC（左ペイン ＋ 同じフッターを下部に）</p>
+    <div class="desktop">
+      <div class="winbar"><i></i><i></i><i></i></div>
+      <div class="dmain">
+        <div class="dside sb">
+          <div class="brand"><span class="dot"></span>Asayake</div>
+          <div class="navsec">
+            <div class="navi"><svg class="svg sm"><use href="#i-globe"/></svg>公開<span class="to">→ ページ</span></div>
+            <div class="navi"><svg class="svg sm"><use href="#i-puzzle"/></svg>プラグイン<span class="to">→ ページ</span></div>
+          </div>
+          <div class="shsec">
+            <div class="shhead"><span class="lbl">本棚</span><span class="addbtn"><svg class="svg" style="width:13px;height:13px"><use href="#i-plus"/></svg>追加</span></div>
+            <div class="tree">
+              <div class="tn"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">すべての本</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+              <div class="tn active"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">漫画</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+              <div class="tn"><svg class="svg sm ti"><use href="#i-lib"/></svg><span class="nm">技術書</span><span class="more"><svg class="svg sm"><use href="#i-more"/></svg></span></div>
+            </div>
+          </div>
+          <div class="acct"><span class="av"><svg class="svg sm"><use href="#i-user"/></svg></span>ログイン</div>
+        </div>
+        <div class="dcontent">
+          <div class="ph-card"></div><div class="ph-card"></div><div class="ph-card"></div>
+          <div class="ph-card"></div><div class="ph-card"></div><div class="ph-card"></div>
+        </div>
+      </div>
+      <div class="footer">
+        <div class="fitem active"><svg class="svg sm"><use href="#i-home"/></svg>ホーム</div>
+        <div class="fitem"><svg class="svg sm"><use href="#i-search"/></svg>検索</div>
+        <div class="fitem"><svg class="svg sm"><use href="#i-gear"/></svg>設定</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h2>変わること</h2>
+  <ul>
+    <li>左ペイン上段：<del>検索 / ホーム / 公開</del> → <b>公開 / プラグイン</b>（押すと専用ページ、そこから Asayake / Cloudflare へ）</li>
+    <li><b>検索・ホーム・設定はフッターへ</b>。スマホの「検索が2か所」やホームの二重を解消。フッターは <b>PCにも</b>表示（現在地ハイライト＝is-active を配線）</li>
+    <li><del>本棚管理ボタン</del> 撤去（左ペインのツリーで十分・本棚管理は ⌘K から到達）</li>
+    <li><b>本棚追加</b>＝薄い「＋」をやめ、はっきりした「＋追加」ボタンに。各棚の <b>⋯ 編集メニュー</b> も hover 限定をやめ常時表示（タッチで届く）</li>
+    <li>⌘K（コマンドパレット）＝全操作の入口として存続。検索フッターから起動</li>
+  </ul>
+</div>
+
+<script>document.querySelectorAll('svg.svg').forEach(s=>s.setAttribute('viewBox','0 0 24 24'));</script>
+</body>
+</html>

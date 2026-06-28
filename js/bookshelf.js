@@ -1474,11 +1474,6 @@ class VirtualBookshelf {
         bookElement.className = 'book-item';
         bookElement.dataset.asin = book.asin;
         
-        // 手動ドラッグ並べ替えは「カスタム順」のときだけ許可する。
-        // 項目ソート中 (購入日/タイトル/著者) は、ドラッグの起点が保存済みの手動順 (bookOrder) で
-        // 画面の表示順と一致しないため、動かすと見た目と反する順番になる。カスタム順のときは
-        // 表示順 = bookOrder なので、見たまま並べ替えられる。
-        bookElement.draggable = (this.sortOrder === 'custom');
         bookElement.setAttribute('data-book-asin', book.asin);
         
         const userNote = this.userData.notes[book.asin];
@@ -1556,12 +1551,12 @@ class VirtualBookshelf {
                 ${rowHoverPop}
             `;
         
-        // Add drag event listeners
-        bookElement.addEventListener('dragstart', (e) => this.handleDragStart(e));
-        bookElement.addEventListener('dragover', (e) => this.handleDragOver(e));
-        bookElement.addEventListener('drop', (e) => this.handleDrop(e));
-        bookElement.addEventListener('dragend', (e) => this.handleDragEnd(e));
-        
+        // Pointer Events drag (カスタム順のみ有効。drag-handle 上の pointerdown で起動)
+        const dragHandle = bookElement.querySelector('.drag-handle');
+        if (dragHandle) {
+            dragHandle.addEventListener('pointerdown', (e) => this._onBookPointerDown(e, bookElement));
+        }
+
         bookElement.addEventListener('click', (e) => {
             // 長押しで pop を出した直後の click は抑制 (詳細を開かない)
             if (bookElement._suppressClick) {
@@ -1603,70 +1598,105 @@ class VirtualBookshelf {
         return bookElement;
     }
 
-    handleDragStart(e) {
-        // Get the book-item element, not the drag handle
-        const bookItem = e.target.closest('.book-item');
-        this.draggedElement = bookItem;
-        this.draggedASIN = bookItem.dataset.asin;
-        bookItem.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', this.draggedASIN);
-        // Phase H2-5: ドラッグ中の端オートスクロール開始
+    // ===== Pointer Events ドラッグ並べ替え (P4) =====
+    // HTML5 Drag API を廃し、Pointer Events で実装。モバイル(touch)でも動作する。
+
+    _onBookPointerDown(e, bookElement) {
+        if (this.sortOrder !== 'custom') return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const handle = e.currentTarget;
+        handle.setPointerCapture(e.pointerId);
+
+        this.draggedElement = bookElement;
+        this.draggedASIN = bookElement.dataset.asin;
+        bookElement.classList.add('dragging');
+        bookElement._suppressClick = true;
+
+        // ゴースト: 元要素を fixed clone して pointer に追従させる
+        const rect = bookElement.getBoundingClientRect();
+        const ghost = bookElement.cloneNode(true);
+        ghost.className = 'book-item drag-ghost';
+        ghost.style.cssText = [
+            'position:fixed',
+            `width:${rect.width}px`,
+            `height:${rect.height}px`,
+            `left:${rect.left}px`,
+            `top:${rect.top}px`,
+            'pointer-events:none',
+            'z-index:9999',
+            'opacity:0.78',
+            'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+            'transition:none',
+        ].join(';');
+        document.body.appendChild(ghost);
+        this._dragGhost = ghost;
+        this._dragOffsetX = e.clientX - rect.left;
+        this._dragOffsetY = e.clientY - rect.top;
         this._dragPointerY = e.clientY;
+        this._lastDragOverTarget = null;
+
+        this._boundPMove = (ev) => this._onBookPointerMove(ev);
+        this._boundPUp   = (ev) => this._onBookPointerUp(ev);
+        handle.addEventListener('pointermove',   this._boundPMove);
+        handle.addEventListener('pointerup',     this._boundPUp);
+        handle.addEventListener('pointercancel', this._boundPUp);
+        this._dragHandle = handle;
+
         this._startBookDragAutoScroll();
     }
 
-    handleDragOver(e) {
-        if (e.preventDefault) {
-            e.preventDefault();
-        }
-        e.dataTransfer.dropEffect = 'move';
-        this._dragPointerY = e.clientY;   // オートスクロール用
+    _onBookPointerMove(e) {
+        e.preventDefault();
+        if (!this.draggedElement) return;
 
-        // Visual feedback (直前のインジケータは消してから付ける)
-        const target = e.target.closest('.book-item');
+        // ゴーストをポインタに追従
+        this._dragGhost.style.left = (e.clientX - this._dragOffsetX) + 'px';
+        this._dragGhost.style.top  = (e.clientY - this._dragOffsetY) + 'px';
+        this._dragPointerY = e.clientY;
+
+        // ゴーストを一時非表示にして elementFromPoint でゴースト下の要素を得る
+        this._dragGhost.style.display = 'none';
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        this._dragGhost.style.display = '';
+
+        const target = el && el.closest('.book-item');
         if (target && target !== this.draggedElement) {
             if (this._lastDragOverTarget && this._lastDragOverTarget !== target) {
                 this._lastDragOverTarget.style.borderLeft = '';
             }
             target.style.borderLeft = '3px solid var(--accent)';
             this._lastDragOverTarget = target;
+        } else if (!target && this._lastDragOverTarget) {
+            this._lastDragOverTarget.style.borderLeft = '';
+            this._lastDragOverTarget = null;
         }
-        return false;
     }
 
-    handleDrop(e) {
-        if (e.stopPropagation) {
-            e.stopPropagation();
-        }
-
-        const target = e.target.closest('.book-item');
-        if (target && target !== this.draggedElement) {
-            const targetASIN = target.dataset.asin;
+    _onBookPointerUp(e) {
+        if (!this.draggedElement) return;
+        if (this._lastDragOverTarget && this._lastDragOverTarget !== this.draggedElement) {
+            const targetASIN = this._lastDragOverTarget.dataset.asin;
             this.reorderBooks(this.draggedASIN, targetASIN);
         }
-
-        // Clear visual feedback
-        document.querySelectorAll('.book-item').forEach(item => {
-            item.style.borderLeft = '';
-        });
-
-        return false;
+        this._cancelBookPointerDrag();
     }
 
-    handleDragEnd(e) {
-        const bookItem = e.target.closest('.book-item');
-        if (bookItem) {
-            bookItem.classList.remove('dragging');
+    _cancelBookPointerDrag() {
+        if (this.draggedElement) this.draggedElement.classList.remove('dragging');
+        if (this._dragGhost) { this._dragGhost.remove(); this._dragGhost = null; }
+        if (this._lastDragOverTarget) { this._lastDragOverTarget.style.borderLeft = ''; this._lastDragOverTarget = null; }
+        document.querySelectorAll('.book-item').forEach(item => { item.style.borderLeft = ''; });
+        if (this._dragHandle) {
+            this._dragHandle.removeEventListener('pointermove',   this._boundPMove);
+            this._dragHandle.removeEventListener('pointerup',     this._boundPUp);
+            this._dragHandle.removeEventListener('pointercancel', this._boundPUp);
+            this._dragHandle = null;
         }
         this.draggedElement = null;
         this.draggedASIN = null;
         this._stopBookDragAutoScroll();
-
-        // Clear all visual feedback
-        document.querySelectorAll('.book-item').forEach(item => {
-            item.style.borderLeft = '';
-        });
     }
 
     // ===== Phase H2-5: 本D&Dの端オートスクロール =====
@@ -1676,22 +1706,17 @@ class VirtualBookshelf {
     }
 
     _startBookDragAutoScroll() {
-        const scroller = this._bookScrollContainer();
-        if (!scroller) return;
-        // ポインタ位置追跡 (容器全体で dragover を拾う。1度だけ bind)
-        if (!scroller._dragTrackBound) {
-            scroller._dragTrackBound = true;
-            scroller.addEventListener('dragover', (e) => { this._dragPointerY = e.clientY; });
-        }
         if (this._dragRAF) return; // 二重起動防止
         const EDGE = 90, MAX = 20;
         const step = () => {
             if (!this.draggedElement) { this._dragRAF = null; return; }
+            const scroller = this._bookScrollContainer();
+            if (!scroller) { this._dragRAF = null; return; }
             const r = scroller.getBoundingClientRect();
             const y = this._dragPointerY || 0;
             let dy = 0;
-            if (y < r.top + EDGE)      dy = -Math.ceil(MAX * Math.min(1, (r.top + EDGE - y) / EDGE));
-            else if (y > r.bottom - EDGE) dy = Math.ceil(MAX * Math.min(1, (y - (r.bottom - EDGE)) / EDGE));
+            if (y < r.top + EDGE)         dy = -Math.ceil(MAX * Math.min(1, (r.top + EDGE - y) / EDGE));
+            else if (y > r.bottom - EDGE) dy =  Math.ceil(MAX * Math.min(1, (y - (r.bottom - EDGE)) / EDGE));
             if (dy) scroller.scrollTop += dy;
             this._dragRAF = requestAnimationFrame(step);
         };

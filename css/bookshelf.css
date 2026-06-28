@@ -5624,24 +5624,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     padding: 0.35rem 0.7rem;
 }
 
-/* Drag and Drop Styles */
-.book-item.dragging {
-    opacity: 0.5;
-    transform: rotate(5deg);
-    z-index: 1000;
-}
-
-.all-books-list.drag-over {
-    background-color: rgba(52, 152, 219, 0.1);
-    border: 2px dashed var(--secondary-color);
-    border-radius: 8px;
-}
-
-.book-item.drag-placeholder {
-    visibility: hidden;
-}
-
-/* Drag Handle Styles */
+/* Drag Handle Styles (Pointer Events D&D) */
 .drag-handle {
     position: absolute;
     top: 5px;
@@ -5656,31 +5639,33 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     transition: opacity 0.2s;
     z-index: 100;
     user-select: none;
+    touch-action: none; /* Pointer Events が touch スクロールより優先 */
 }
 
-.book-item:hover .drag-handle {
+/* カスタム順のときだけハンドルを表示 */
+.bookshelf.is-custom-order .book-item:hover .drag-handle,
+.bookshelf.is-custom-order .book-item:focus-within .drag-handle {
     opacity: 1;
-}
-
-.book-item[draggable="true"] {
-    cursor: move;
-}
-
-.book-item.dragging {
-    opacity: 0.5;
-    transform: scale(1.05);
 }
 
 .drag-handle:active {
     cursor: grabbing;
 }
 
-.book-cover-container {
-    position: relative;
+/* ドラッグ中の元要素を薄くする */
+.book-item.dragging {
+    opacity: 0.35;
 }
 
-.book-item.drag-over {
-    border-left: 3px solid #3498db !important;
+/* ゴースト要素 (JS で fixed clone を挿入) */
+.book-item.drag-ghost {
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+    border-radius: var(--radius, 6px);
+    opacity: 0.78;
+}
+
+.book-cover-container {
+    position: relative;
 }
 
 /* Star Rating Filter Styles */
