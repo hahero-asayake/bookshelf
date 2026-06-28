@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026062901">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062902">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -51,7 +51,9 @@
                     <span class="brand-text">AsayakeBookshelf</span>
                 </div>
                 <nav class="sidebar-nav" id="sidebar-nav">
-                    <!-- 上段ナビは「公開 / プラグイン」だけ。検索/ホーム/設定は下部フッターへ集約 (ADR-047 P1)。
+                    <!-- 左ペインは PC/モバイル 共通構成 (ADR-047 P5)。上段=機能ページ (公開 / プラグイン)、
+                         その下に区切りを挟んでユーティリティ (検索 / 設定)。PC のフッターは廃止し、ここへ集約。
+                         モバイルのみ下部フッターを別途残す。
                          遷移先は当面: 公開→公開ページ管理 / プラグイン→設定のプラグイン節 (P3 で専用ページへ)。 -->
                     <div class="sidebar-section">
                         <button class="sidebar-nav-item" id="sidebar-publish" type="button" title="公開ページを管理・公開する">
@@ -62,6 +64,8 @@
                             <span class="nav-icon" data-icon="puzzle" data-icon-size="16"></span>
                             <span class="nav-label">プラグイン</span>
                         </button>
+                    </div>
+                    <div class="sidebar-section sidebar-section-utility">
                         <button class="sidebar-nav-item" id="sidebar-search" type="button" title="検索 (⌘K)">
                             <span class="nav-icon" data-icon="search" data-icon-size="16"></span>
                             <span class="nav-label">検索</span>
@@ -593,19 +597,19 @@
                                 <option value="list">リスト</option>
                             </select>
                         </div>
-                        <div class="memo-config-row" style="margin-top:0.9rem;">
+                        <div class="memo-config-row">
                             <label for="setting-star-visibility">星評価の表示</label>
                             <select id="setting-star-visibility">
                                 <option value="always">常に表示</option>
                                 <option value="hover">カーソルを乗せた時だけ</option>
                                 <option value="hidden">非表示</option>
                             </select>
-                            <label class="checkbox-label" style="margin-top:0.5rem;">
+                            <label class="checkbox-label">
                                 <input type="checkbox" id="setting-star-overlay" checked>
                                 <span>星を表紙に重ねる</span>
                             </label>
                         </div>
-                        <div class="memo-config-row" style="margin-top:0.9rem;">
+                        <div class="memo-config-row">
                             <label for="setting-memo-visibility">短文メモの表示</label>
                             <select id="setting-memo-visibility">
                                 <option value="always">常に表示</option>
@@ -613,7 +617,7 @@
                                 <option value="hidden">非表示</option>
                             </select>
                         </div>
-                        <div class="memo-config-row" style="margin-top:0.9rem;">
+                        <div class="memo-config-row">
                             <label for="setting-kindle-open-with">「Kindleで読む」の開き方</label>
                             <select id="setting-kindle-open-with">
                                 <option value="web">ブラウザ（その本が開く・おすすめ）</option>

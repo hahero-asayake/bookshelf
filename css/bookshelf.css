@@ -3531,27 +3531,42 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
 }
 
-/* ===== 設定画面 整列 ===== */
-/* form row: ラベル→コントロール→ヒント の縦積み、一定間隔で整列 */
+/* ===== 設定画面 整列 (ADR-047 P5) =====
+   各設定行 = ラベル → コントロール → ヒント の縦積み。行間は CSS で一定
+   (インライン margin-top は廃止)。ラベル太字・コントロール幅上限で整列。
+   publish-config / sync-method-row / action-row / subsection-title の整列は
+   後方の既存定義側に集約して二重化を避ける。 */
+
+/* --- 1 設定 = 1 行 (memo-config-row) --- */
 .settings-section-body .memo-config-row {
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.3rem 0;
 }
-.settings-section-body .memo-config-row label { font-size: 0.88rem; font-weight: 600; color: var(--fg2); }
+/* 連続する設定行は一定間隔で離す (旧インライン margin-top:0.9rem の置き換え) */
+.settings-section-body .memo-config-row + .memo-config-row {
+    margin-top: 1.1rem;
+}
+.settings-section-body .memo-config-row > label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--fg2);
+    display: block;
+}
+/* チェックボックス行はコントロールの直下に詰める */
+.settings-section-body .memo-config-row .checkbox-label {
+    margin-top: 0.4rem;
+    font-weight: 400;
+}
+
+/* --- コントロール幅の上限を全セクションで統一 (横ガタつきを抑える) --- */
 .settings-section-body .memo-config-row select,
 .settings-section-body .memo-config-row input[type="text"],
 .settings-section-body .memo-config-row input[type="url"] {
     max-width: 360px;
+    width: 100%;
 }
-.memo-config-hint { font-size: 0.77rem; color: var(--muted); margin: 0.15rem 0 0; line-height: 1.45; }
-
-/* settings-action-list: ボタン群をラップ横並び */
-.settings-action-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
+.memo-config-hint { display: block; font-size: 0.77rem; color: var(--muted); margin: 0.2rem 0 0; line-height: 1.5; }
 
 /* About section (footer 内容を移動) */
 .about-credit,
@@ -4046,11 +4061,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.15);
 }
 
-/* セクション末尾のアクションボタンを縦並び */
+/* セクションのアクションボタン群はラップ横並びで整列 (3つ以上でも収まる) */
 .settings-action-row,
 .settings-action-list {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
@@ -4072,7 +4087,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--fg2);
+    margin-top: 0.7rem;
 }
+/* 先頭ラベルは上余白なし (塊の区切りは 2 つ目以降に付ける) */
+.publish-config > .form-label:first-child { margin-top: 0; }
 
 .publish-config select {
     width: 100%;
@@ -4238,11 +4256,16 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 }
 
 .settings-subsection-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     font-size: 0.9rem;
     color: var(--fg2);
     margin: 1.4rem 0 0.6rem;
     font-weight: 600;
 }
+/* 節の先頭サブ見出しは上余白を詰める (ヘッダー直下の二重余白を避ける) */
+.settings-section-body > .settings-subsection-title:first-child { margin-top: 0.2rem; }
 
 /* プラグインインストールカード */
 .plugin-install-card {
@@ -4387,9 +4410,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     color: var(--fg);
     border-bottom: 1px solid var(--line);
     border-radius: 0;
+    cursor: pointer;
     transition: background 0.12s, color 0.12s;
 }
 .sidebar-brand:hover { background: var(--line2); }
+.sidebar-brand:hover .brand-text { color: var(--accent); }
 .sidebar-brand .brand-icon {
     width: 18px;
     height: 18px;

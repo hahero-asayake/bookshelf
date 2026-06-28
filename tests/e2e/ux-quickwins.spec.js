@@ -39,8 +39,18 @@ test('QW2: 評価フィルタ中に星を下げると一覧から即座に外れ
     expect(errors).toEqual([]);
 });
 
-test('QW3: フッターの検索ボタンでコマンドパレットが開く', async ({ page }) => {
-    // ADR-047 P1: 検索は左ペインから下部フッターへ移設 (旧 #palette-trigger は撤去)
+test('QW3: 左ペインの検索ボタンでコマンドパレットが開く', async ({ page }) => {
+    // ADR-047 P5: 検索は左ペインへ復帰 (PC フッターは廃止)。PC viewport で検証
+    const errors = await bootApp(page);
+    const searchBtn = page.locator('#sidebar-search');
+    await expect(searchBtn).toBeVisible();
+    await searchBtn.click();
+    await expect(page.locator('#command-palette')).toBeVisible();
+    expect(errors).toEqual([]);
+});
+
+test('QW3b: モバイルはフッターの検索ボタンでコマンドパレットが開く', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
     const errors = await bootApp(page);
     const searchBtn = page.locator('#mobile-bottom-nav [data-mobile-nav="search"]');
     await expect(searchBtn).toBeVisible();
