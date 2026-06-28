@@ -3368,6 +3368,10 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .settings-modal-content {
     max-width: 720px;
     width: min(720px, 92vw);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    overflow: hidden;
 }
 
 /* 設定モーダル下部の固定フッタ (スクロール最下部でも閉じやすく) */
@@ -3496,11 +3500,12 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .settings-detail > .settings-section > summary.settings-section-title { display: none; }
 .settings-detail > .settings-section > .settings-section-body { padding: 1rem 1.1rem 1.4rem; }
 
-/* PC (>=769px): 左レール + 右ペインの 2 ペイン */
+/* PC (>=769px): 左レール + 右ペインの 2 ペイン（独立スクロール） */
 @media (min-width: 769px) {
-    .settings-md-body { display: flex; align-items: stretch; min-height: 360px; }
+    .settings-md-header { flex-shrink: 0; }
+    .settings-md-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 0; overflow: hidden; }
     .settings-master {
-        flex: 0 0 190px; padding: 0.6rem 0.5rem;
+        flex: 0 0 190px; padding: 0.6rem 0.5rem; overflow-y: auto;
         border-right: 1px solid var(--line); background: var(--line2);
     }
     .settings-cat {
@@ -3516,7 +3521,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     .settings-cat.cat-active .settings-cat-tt { color: var(--accent); }
     .settings-cat.cat-active .settings-cat-ic,
     .settings-cat.cat-active .settings-cat-ic .h-icon { color: var(--accent); }
-    .settings-detail { flex: 1 1 auto; overflow-y: auto; }
+    .settings-detail { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
     .settings-md-back { display: none !important; }
 }
 
@@ -3524,6 +3529,28 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 @media (max-width: 768px) {
     .settings-modal-content[data-settings-view="master"] .settings-detail { display: none; }
     .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
+}
+
+/* ===== 設定画面 整列 ===== */
+/* form row: ラベル→コントロール→ヒント の縦積み、一定間隔で整列 */
+.settings-section-body .memo-config-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.3rem 0;
+}
+.settings-section-body .memo-config-row label { font-size: 0.88rem; font-weight: 600; color: var(--fg2); }
+.settings-section-body .memo-config-row select,
+.settings-section-body .memo-config-row input[type="text"],
+.settings-section-body .memo-config-row input[type="url"] {
+    max-width: 360px;
+}
+.memo-config-hint { font-size: 0.77rem; color: var(--muted); margin: 0.15rem 0 0; line-height: 1.45; }
+
+/* settings-action-list: ボタン群をラップ横並び */
+.settings-action-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 /* About section (footer 内容を移動) */
@@ -4359,7 +4386,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     letter-spacing: 0.02em;
     color: var(--fg);
     border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    transition: background 0.12s, color 0.12s;
 }
+.sidebar-brand:hover { background: var(--line2); }
 .sidebar-brand .brand-icon {
     width: 18px;
     height: 18px;
@@ -6471,11 +6501,9 @@ body.select-mode .drag-handle { display: none; }
 .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
 .mobile-bottom-nav button.is-active { color: var(--accent); }
 
-/* PC: フッター分の余白を確保 (3 ペインが被らない)。本棚タブは隠す。toast もフッター上へ。 */
+/* PC: フッターナビは左ペインに統合済みのため非表示 */
 @media (min-width: 769px) {
-    .main { padding-bottom: calc(50px + env(safe-area-inset-bottom)); }
-    .mobile-bottom-nav button[data-mobile-nav="shelves"] { display: none; }
-    #toast-container { bottom: calc(50px + 24px + env(safe-area-inset-bottom)); }
+    .mobile-bottom-nav { display: none; }
 }
 
 @media (max-width: 768px) {

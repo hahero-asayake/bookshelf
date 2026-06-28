@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026062801">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026062901">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -61,6 +61,15 @@
                         <button class="sidebar-nav-item" id="sidebar-plugins" type="button" title="プラグインを管理する">
                             <span class="nav-icon" data-icon="puzzle" data-icon-size="16"></span>
                             <span class="nav-label">プラグイン</span>
+                        </button>
+                        <button class="sidebar-nav-item" id="sidebar-search" type="button" title="検索 (⌘K)">
+                            <span class="nav-icon" data-icon="search" data-icon-size="16"></span>
+                            <span class="nav-label">検索</span>
+                            <kbd class="nav-kbd">⌘K</kbd>
+                        </button>
+                        <button class="sidebar-nav-item" id="sidebar-settings" type="button" title="設定">
+                            <span class="nav-icon" data-icon="settings" data-icon-size="16"></span>
+                            <span class="nav-label">設定</span>
                         </button>
                     </div>
                     <div class="sidebar-section">
@@ -328,7 +337,7 @@
                             <option value="github">GitHub に保存（複数の端末で同期できます）</option>
                             <option value="hub">Asayake ハブに保存（Google ログインだけ・無料 100MB / Plus 3GB）</option>
                         </select>
-                        <span class="sync-method-hint">GitHub にするときは下の枠で接続してください。この端末の保存に戻すときは、上の選択を切り替えてください。</span>
+                        <span class="sync-method-hint">GitHub は下の枠で接続。端末保存へ戻すときは上の選択を切り替え。</span>
                     </div>
 
                     <div id="sync-config-local" class="sync-config-panel">
@@ -387,7 +396,7 @@
                                     <button id="github-reload-after-install-btn" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="14"></span>もう一度読み込む</button>
                                     を押してください。
                                     <br>
-                                    <span class="github-install-hint"><span class="h-icon" data-icon="clock" data-icon-size="14"></span>インストールや権限の変更の直後は、GitHub 側に反映されるまで <strong>数十秒〜数分</strong> かかることがあります。すぐに出ないときは少し待ってからもう一度読み込んでください。うまくいかないときは <strong>切断 → 再接続</strong> もお試しください。</span>
+                                    <span class="github-install-hint"><span class="h-icon" data-icon="clock" data-icon-size="14"></span>反映に数十秒〜数分かかる場合あり。うまくいかなければ切断→再接続。</span>
                                 </div>
 
                                 <div class="github-form">
@@ -568,7 +577,7 @@
                                 <option value="obsidian">Obsidian で開く（この端末保存のときだけ）</option>
                                 <option value="system">保存フォルダで自分で開く（この端末保存のときだけ）</option>
                             </select>
-                            <p class="memo-config-hint">アプリ内エディタは書式ボタンとプレビュー付きで書けます。GitHub 保存のときはアプリ内エディタをお使いください（外部アプリ連携は動きません）。</p>
+                            <p class="memo-config-hint">GitHub 保存時はアプリ内エディタのみ対応（外部連携不可）。</p>
                         </div>
                     </div>
                 </details>
@@ -583,7 +592,6 @@
                                 <option value="images">画像のみ</option>
                                 <option value="list">リスト</option>
                             </select>
-                            <p class="memo-config-hint">本棚を開いたときの表示形式。ツールバーの「表示」からいつでも切り替えられます。</p>
                         </div>
                         <div class="memo-config-row" style="margin-top:0.9rem;">
                             <label for="setting-star-visibility">星評価の表示</label>
@@ -596,7 +604,6 @@
                                 <input type="checkbox" id="setting-star-overlay" checked>
                                 <span>星を表紙に重ねる</span>
                             </label>
-                            <p class="memo-config-hint">一覧カードの星の出し方。星はクリックで評価でき、一覧からも付けられます。本詳細では常に表示・編集できます。</p>
                         </div>
                         <div class="memo-config-row" style="margin-top:0.9rem;">
                             <label for="setting-memo-visibility">短文メモの表示</label>
@@ -605,15 +612,14 @@
                                 <option value="hover">カーソルを乗せた時だけ</option>
                                 <option value="hidden">非表示</option>
                             </select>
-                            <p class="memo-config-hint">一覧カードに短文メモを出すか。本詳細では常に表示されます。</p>
                         </div>
                         <div class="memo-config-row" style="margin-top:0.9rem;">
                             <label for="setting-kindle-open-with">「Kindleで読む」の開き方</label>
                             <select id="setting-kindle-open-with">
-                                <option value="web">ブラウザ（その本が開く）</option>
+                                <option value="web">ブラウザ（その本が開く・おすすめ）</option>
                                 <option value="app">アプリ（Kindle アプリで開く）</option>
                             </select>
-                            <p class="memo-config-hint"><strong>ブラウザ</strong>はどの端末でもその本の Kindle Cloud Reader を開きます（おすすめ）。<strong>アプリ</strong>は Kindle アプリで開きます — <strong>PC/Mac のデスクトップアプリはその本が開きます</strong>が、<strong>スマホ（iOS/Android）は Amazon の仕様でアプリ起動（ライブラリ）止まり</strong>です。スマホで本を直接開くにはブラウザを選んでください。</p>
+                            <p class="memo-config-hint">スマホでアプリ選択時はライブラリ起動止まり（Amazon 仕様）。スマホはブラウザ推奨。</p>
                         </div>
                     </div>
                 </details>

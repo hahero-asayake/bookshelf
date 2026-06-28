@@ -600,6 +600,14 @@ class VirtualBookshelf {
             pluginsBtn.addEventListener('click', () => this._openSettingsModal('plugins-section'));
         }
 
+        // 左ペイン「検索」ボタン → ⌘K パレット
+        const searchSideBtn = document.getElementById('sidebar-search');
+        if (searchSideBtn) searchSideBtn.addEventListener('click', () => this._openPalette());
+
+        // 左ペイン「設定」ボタン → 設定モーダル
+        const settingsSideBtn = document.getElementById('sidebar-settings');
+        if (settingsSideBtn) settingsSideBtn.addEventListener('click', () => this._openSettingsModal());
+
         // 長文メモ モーダル
         const memoSaveBtn = document.getElementById('book-memo-save-btn');
         if (memoSaveBtn) memoSaveBtn.addEventListener('click', () => this.saveBookMemoFromModal());
