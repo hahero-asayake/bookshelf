@@ -3692,6 +3692,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 .sync-method-row select {
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--line);
     border-radius: 4px;
