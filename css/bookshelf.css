@@ -3370,6 +3370,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     width: min(720px, 92vw);
     display: flex;
     flex-direction: column;
+    height: min(680px, 88vh);
     max-height: 90vh;
     overflow: hidden;
 }
@@ -3505,7 +3506,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     .settings-md-header { flex-shrink: 0; }
     .settings-md-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 0; overflow: hidden; }
     .settings-master {
-        flex: 0 0 190px; padding: 0.6rem 0.5rem; overflow-y: auto;
+        flex: 0 0 210px; padding: 0.6rem 0.5rem; overflow-y: auto;
         border-right: 1px solid var(--line); background: var(--line2);
     }
     .settings-cat {
