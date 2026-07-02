@@ -5379,6 +5379,14 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     vertical-align: middle;
     line-height: 1.6;
 }
+.upgrade-costly-badge {
+    display: inline-block;
+    margin-left: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--warning, #d49100);
+    vertical-align: middle;
+}
 
 .import-results {
     background: var(--accent-bg);
