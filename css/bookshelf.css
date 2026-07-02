@@ -5331,6 +5331,16 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     width: 100%;
 }
 
+.import-option-tip {
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.8rem;
+    background: var(--line2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    font-size: 0.85rem;
+    color: var(--fg-sub, var(--fg));
+}
+
 .import-relay-status {
     margin-top: 1rem;
     padding: 0.75rem 1rem;
