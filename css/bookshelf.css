@@ -5331,6 +5331,45 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     width: 100%;
 }
 
+.import-relay-status {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--fg);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.import-relay-status .h-icon { flex: 0 0 auto; animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.relay-url-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.relay-url-label { font-size: 0.78rem; color: var(--muted, #6b6477); }
+.relay-url-copy {
+    font-size: 0.75rem;
+    word-break: break-all;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    user-select: all;
+}
+
+.upgrade-rec-badge {
+    display: inline-block;
+    margin-left: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: #fff3;
+    border: 1px solid #fff5;
+    border-radius: 999px;
+    padding: 0 0.45em;
+    vertical-align: middle;
+    line-height: 1.6;
+}
+
 .import-results {
     background: var(--accent-bg);
     border: 1px solid #3498db;

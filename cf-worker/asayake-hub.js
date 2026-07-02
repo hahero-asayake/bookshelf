@@ -61,6 +61,13 @@ export default {
         // Stripe Webhook (サーバ間・署名検証。CORS 不要。アプリ origin 制限の外なので個別処理)
         if (path === '/billing/webhook' && request.method === 'POST') return handleStripeWebhook(request, env);
 
+        // Kindle リレー (認証不要・amazon.co.jp ブックマークレットから呼ばれるため CORS は全開放)
+        if ((path === '/kindle/relay' || path.startsWith('/kindle/relay/')) && request.method === 'OPTIONS') {
+            return corsAll(new Response(null, { status: 204 }));
+        }
+        if (path === '/kindle/relay' && request.method === 'POST') return corsAll(await handleKindleRelayCreate(request, env));
+        if (path.startsWith('/kindle/relay/') && request.method === 'GET') return corsAll(await handleKindleRelayGet(request, env, path));
+
         // API (アプリは別 origin なので CORS 付与)
         if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
         try {
@@ -1124,6 +1131,33 @@ function contentType(path) {
     if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
     return 'application/octet-stream';
 }
+// ===== Kindle リレー =====
+// ブックマークレットが amazon.co.jp から結果を送り付け、bookshelf 側がポーリングで受け取る。
+// UUID は bookshelf 側が生成・Amazon URL に ?bs_relay= で埋め込む。KV TTL 900s で自動失効。
+// 認証なし・CORS 全開放 (UUID の 128bit 非推測性がセキュリティ根拠)。
+
+async function handleKindleRelayCreate(request, env) {
+    const body = await request.json().catch(() => null);
+    if (!body || !Array.isArray(body.items)) throw httpError(400, 'need {id, items:[...]}');
+    if (!body.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id)) {
+        throw httpError(400, 'invalid relay id');
+    }
+    if (body.items.length > 10000) throw httpError(400, 'too many items');
+    await env.KV.put(`kindle:relay:${body.id}`, JSON.stringify(body.items), { expirationTtl: 900 });
+    return json({ ok: true });
+}
+
+async function handleKindleRelayGet(request, env, path) {
+    const id = path.slice('/kindle/relay/'.length);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        throw httpError(400, 'invalid relay id');
+    }
+    const raw = await env.KV.get(`kindle:relay:${id}`);
+    if (!raw) return json({ items: null }); // まだ届いていない
+    await env.KV.delete(`kindle:relay:${id}`); // 1 回限り消費
+    return json({ items: JSON.parse(raw) });
+}
+
 function json(obj, status = 200) {
     return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
 }
@@ -1142,6 +1176,13 @@ function cors(res, env, request) {
     return new Response(res.body, { status: res.status, headers: h });
 }
 function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
+function corsAll(res) {
+    const h = new Headers(res.headers);
+    h.set('Access-Control-Allow-Origin', '*');
+    h.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    h.set('Access-Control-Allow-Headers', 'Content-Type');
+    return new Response(res.body, { status: res.status, headers: h });
+}
 function b64urlToText(s) { return new TextDecoder().decode(b64urlToBytes(s)); }
 function b64urlToBytes(s) {
     const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4);
