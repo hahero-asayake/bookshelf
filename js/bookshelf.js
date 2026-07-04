@@ -8675,6 +8675,13 @@ class VirtualBookshelf {
 
         if (mobile) {
             // スマホ向け: window.open が使えないケースが多いためリンクをコピーして案内
+            if (!relayId) {
+                // Hub 未接続ならポーリング不可 → フラグをすぐに解放し通常クリップボードフローへ案内
+                this._kindleImportInFlight = false;
+                toast('Asayake アカウントに接続していないため自動受信できません。\nリンクをスマホで開き、ブックマークレット実行後は「貼り付けて取込」をご利用ください。');
+                navigator.clipboard.writeText(url).catch(() => {});
+                return;
+            }
             this._startKindleRelayPoll(relayId, apiBase);
             navigator.clipboard.writeText(url).catch(() => {});
             const el = document.getElementById('import-relay-status');
