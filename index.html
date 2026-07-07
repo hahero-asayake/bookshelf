@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026070301">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026070601">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -528,7 +528,7 @@
                     <div class="settings-section-body">
                     <div class="settings-action-list">
                         <button id="add-book-manually" class="btn btn-secondary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>手動追加</button>
-                        <button id="import-kindle" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>Kindle インポート</button>
+                        <button id="import-kindle" class="btn btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>Kindleの本を取り込む</button>
                         <button id="show-exclusions" class="btn btn-secondary"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>除外一覧</button>
                     </div>
                     </div>
@@ -869,76 +869,145 @@
         <div class="modal-content">
             <button class="modal-close" id="import-modal-close">×</button>
             <div class="modal-header">
-                <h2><span class="h-icon" data-icon="download" data-icon-size="20"></span>Kindle データインポート</h2>
+                <h2><span class="h-icon" data-icon="download" data-icon-size="20"></span>Kindleの本を取り込む</h2>
             </div>
             <div class="modal-body">
-                <div class="import-options">
-                    <div class="import-option">
-                        <h3><span class="h-icon" data-icon="zap" data-icon-size="16"></span>ワンクリック取込（PC）</h3>
-                        <p class="import-option-desc">
-                            「Amazon ライブラリページを開く」を押すと、Amazon タブが開いて自動取込されます。
-                        </p>
-                        <ul class="import-option-list">
-                            <li><strong>拡張 (kindle_bookshelf_exporter) インストール済み</strong>: 数秒〜数十秒で自動取込 → タブ自動 close</li>
-                            <li><strong>拡張未インストール</strong>: 一度だけブックマークレットを登録 (「ブックマークレットをコピー」) → 以後は Amazon タブで手動クリック</li>
-                        </ul>
-                        <div class="import-option-actions">
-                            <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazon ライブラリページを開く</button>
-                            <button id="copy-bookmarklet" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>ブックマークレットをコピー</button>
-                        </div>
-                    </div>
-                    <hr class="settings-divider">
-                    <div class="import-option">
-                        <h3><span class="h-icon" data-icon="smartphone" data-icon-size="16"></span>スマホから取込（iOS / Android）</h3>
-                        <p class="import-option-desc">
-                            iPhone / Android でもブックマークレットを使って取込できます。Asayake アカウントに接続済みの場合はリレー経由で自動連携されます。
-                        </p>
-                        <ol class="import-option-list">
-                            <li>「ブックマークレットをコピー」でコードをコピーし、スマホのブラウザのブックマークの URL に貼り付けて保存する（一度だけ）</li>
-                            <li>「Amazon を開く（スマホ向け）」を押してリンクをコピーし、スマホの Safari / Chrome で開く</li>
-                            <li>Kindle ライブラリページが開いたら保存したブックマークを実行する</li>
-                            <li>完了すると bookshelf に自動で取込まれます（アカウント接続時）</li>
-                        </ol>
-                        <p class="import-option-tip"><strong>iOS Safari の場合</strong>: ショートカット App を使うと共有シートから直接実行できます。Hub 接続時はクリップボードへのコピー・ペースト不要で自動受信されます。設定手順は <code>docs/ios-shortcut-import.md</code> を参照してください。</p>
-                        <div class="import-option-actions">
-                            <button id="open-amazon-relay" class="btn btn-primary"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>Amazon を開く（スマホ向け）</button>
-                        </div>
-                        <div id="import-relay-status" class="import-relay-status" hidden>
-                            <span class="h-icon" data-icon="loader" data-icon-size="14"></span>
-                            <span>ブックマークレット / ショートカット実行待ち中… Amazon ページで実行してください</span>
-                            <div class="relay-url-row">
-                                <span class="relay-url-label">リンク（スマホで直接開く）:</span>
-                                <span class="relay-url-copy"></span>
-                            </div>
-                        </div>
-                    </div>
-                    <hr class="settings-divider">
-                    <div class="import-option">
-                        <h3>ファイルからインポート（手動）</h3>
-                        <input type="file" id="kindle-file-input" accept=".json" />
-                        <button id="import-from-file" class="btn btn-secondary">ファイルをインポート</button>
-                    </div>
-                    <hr class="settings-divider">
-                    <div class="import-option">
-                        <h3><span class="h-icon" data-icon="clipboard" data-icon-size="16"></span>貼り付けて取込（スマホ向け）</h3>
-                        <p class="import-option-desc">
-                            Amazon ライブラリページでブックマークレットを実行するとデータがクリップボードにコピーされます。下に貼り付けるか「クリップボードから読み取り」で取込めます。<strong>拡張が使えないスマホ</strong>でもこの方法で取込できます。
-                        </p>
-                        <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データ (JSON) を貼り付け"></textarea>
-                        <div class="import-option-actions">
-                            <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
-                            <button id="import-from-paste" class="btn btn-primary">貼り付けたデータを取込</button>
-                        </div>
+                <div class="import-options"><!-- クラス名維持必須: showBookSelectionForImport / cancelImport が querySelector('.import-options') 参照 -->
+                    <p class="pp-hint">Amazonで買った本を取り込みます。端末ごとに手順が違います（お使いの端末を自動で選択済み）。</p>
+
+                    <div class="import-device-tabs" role="tablist" aria-label="端末を選ぶ">
+                        <button type="button" class="import-device-tab" role="tab" data-import-device="pc" aria-selected="false"><span class="h-icon" data-icon="monitor" data-icon-size="14"></span>PC<span class="import-device-badge" hidden>この端末</span></button>
+                        <button type="button" class="import-device-tab" role="tab" data-import-device="ios" aria-selected="false"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>iPhone / iPad<span class="import-device-badge" hidden>この端末</span></button>
+                        <button type="button" class="import-device-tab" role="tab" data-import-device="android" aria-selected="false"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>Android<span class="import-device-badge" hidden>この端末</span></button>
                     </div>
 
+                    <!-- 方式① PC（拡張機能） -->
+                    <section class="import-lane" id="import-lane-pc" hidden>
+                        <details class="pp-advanced import-setup" id="import-setup-pc">
+                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（拡張機能を追加）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <div class="pp-advanced-body">
+                                <p class="pp-hint">取込用の拡張機能をブラウザ（Chrome / Edge）に追加します。1回だけで、以後はボタンひとつで取り込めます。Amazon.co.jp にはログインしておいてください。</p>
+                                <div class="import-option-actions">
+                                    <a id="kindle-exporter-link" class="btn btn-secondary" href="#" target="_blank" rel="noopener" hidden><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>拡張機能の入手ページを開く</a>
+                                    <span class="pp-hint" id="kindle-exporter-nourl" hidden>拡張機能（kindle_bookshelf_exporter）を Chrome / Edge に読み込んでおいてください。拡張機能をまだ用意できない場合は、下の「取込データを直接渡す」に貼り付ける方法でも取り込めます。</span>
+                                    <button type="button" class="btn btn-secondary" data-import-setup-done="pc"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
+                                </div>
+                            </div>
+                        </details>
+                        <div class="import-lane-steps">
+                            <p class="pp-hint">ボタンを押すとAmazonの本の一覧が新しいタブで開き、自動で読み取ってこの画面に戻ります（数秒〜数十秒）。</p>
+                            <div class="import-option-actions">
+                                <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonから取り込む</button>
+                            </div>
+                            <p class="pp-hint">反応がないとき: 上の「初回だけの準備」で拡張機能が追加されているか、ブラウザのポップアップが許可されているかを確認してください。</p>
+                        </div>
+                    </section>
+
+                    <!-- 方式② iPhone / iPad（ショートカット） -->
+                    <section class="import-lane" id="import-lane-ios" hidden>
+                        <details class="pp-advanced import-setup" id="import-setup-ios">
+                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（ショートカット作成・約3分）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <div class="pp-advanced-body">
+                                <ol class="import-option-list">
+                                    <li>下の「取込用コードをコピー」を押す</li>
+                                    <li>ショートカットAppで新規作成し、アクション「WebページでJavaScriptを実行」を追加してコードを貼り付ける</li>
+                                    <li>名前を「Kindle取込」にし、設定（ⓘ）で「共有シートに表示」をオン（受け取る種類はSafariのWebページ）</li>
+                                </ol>
+                                <p class="pp-hint">通知の出し分けなど詳しい作り方は「作り方ガイド」に手順どおりまとめてあります。</p>
+                                <div class="import-option-actions">
+                                    <button type="button" class="btn btn-secondary" data-import-action="copy-shortcut-code"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込用コードをコピー</button>
+                                    <a class="btn btn-secondary" href="docs/ios-shortcut-import.md" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>作り方ガイドを開く</a>
+                                    <button type="button" class="btn btn-secondary" data-import-setup-done="ios"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
+                                </div>
+                                <p class="pp-hint" data-nohub-only hidden>（おすすめ）Asayakeアカウントに接続しておくと、実行後にこの画面へ自動で届きます。 <button type="button" class="btn btn-small" data-import-action="open-sync-settings">接続設定を開く</button></p>
+                            </div>
+                        </details>
+                        <div class="import-lane-steps">
+                            <h3 class="pp-section-title"><span class="pp-step">1</span>取込リンクを作る</h3>
+                            <p class="pp-hint">押すとリンクがコピーされ、下にも表示されます。Safariでそのリンクを開いてください。</p>
+                            <div class="import-option-actions">
+                                <button id="open-amazon-relay" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>取込リンクを作る</button>
+                            </div>
+                            <h3 class="pp-section-title"><span class="pp-step">2</span>開いたページで 共有ボタン → 「Kindle取込」をタップ</h3>
+                            <h3 class="pp-section-title"><span class="pp-step">3</span>この画面に戻る</h3>
+                            <p class="pp-hint" data-hub-only hidden>「取込完了！」と出たら、この画面に本の一覧が自動で表示されます（最長15分待ち受けます）。</p>
+                            <p class="pp-hint" data-nohub-only hidden>実行すると「コピーしました」と出ます。下のボタンで読み取って取り込んでください。</p>
+                            <p class="import-fallback-note">「コピーしました」と出たときは → <button type="button" class="btn btn-secondary btn-small" data-import-action="read-clipboard"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コピーしたデータを読み取って取り込む</button></p>
+                        </div>
+                    </section>
+
+                    <!-- 方式③ Android（取込用ブックマーク） -->
+                    <section class="import-lane" id="import-lane-android" hidden>
+                        <details class="pp-advanced import-setup" id="import-setup-android">
+                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（取込用ブックマーク作成・約3分）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <div class="pp-advanced-body">
+                                <ol class="import-option-list">
+                                    <li>下の「取込用ブックマークのコードをコピー」を押す</li>
+                                    <li>Chromeで適当なページ（Amazonなど）を開き、☆ でブックマークに追加する</li>
+                                    <li>メニュー → ブックマーク → 今作ったものを「編集」。名前を「Kindle取込」に、URL欄は全部消してコピーしたコードを貼り付けて保存</li>
+                                </ol>
+                                <div class="import-option-actions">
+                                    <button id="copy-bookmarklet" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込用ブックマークのコードをコピー</button>
+                                    <button type="button" class="btn btn-secondary" data-import-setup-done="android"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
+                                </div>
+                                <p class="pp-hint" data-nohub-only hidden>（おすすめ）Asayakeアカウントに接続しておくと、実行後にこの画面へ自動で届きます。 <button type="button" class="btn btn-small" data-import-action="open-sync-settings">接続設定を開く</button></p>
+                            </div>
+                        </details>
+                        <div class="import-lane-steps">
+                            <h3 class="pp-section-title"><span class="pp-step">1</span>取込リンクを作る</h3>
+                            <p class="pp-hint">押すとリンクがコピーされ、下にも表示されます。Chromeでそのリンクを開いてください。</p>
+                            <div class="import-option-actions">
+                                <button type="button" class="btn btn-primary" data-import-action="open-amazon-mobile"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>取込リンクを作る</button>
+                            </div>
+                            <h3 class="pp-section-title"><span class="pp-step">2</span>開いたページで、アドレスバーに「Kindle取込」と入力し、候補に出たブックマークをタップ</h3>
+                            <p class="pp-hint">ブックマーク一覧から開いても動きません。必ずAmazonのページを開いたまま、アドレスバーの候補からタップしてください。</p>
+                            <h3 class="pp-section-title"><span class="pp-step">3</span>この画面に戻る</h3>
+                            <p class="pp-hint" data-hub-only hidden>「送信しました」と出たら、この画面に本の一覧が自動で表示されます（最長15分待ち受けます）。</p>
+                            <p class="pp-hint" data-nohub-only hidden>実行すると「コピーしました」と出ます。下のボタンで読み取って取り込んでください。</p>
+                            <p class="import-fallback-note">「コピーしました」と出たときは → <button type="button" class="btn btn-secondary btn-small" data-import-action="read-clipboard"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コピーしたデータを読み取って取り込む</button></p>
+                        </div>
+                    </section>
+
+                    <!-- 受信待ちステータス（全レーン共有・ID維持） -->
+                    <div id="import-relay-status" class="import-relay-status" hidden>
+                        <div class="import-relay-waiting" data-relay-waiting hidden>
+                            <span class="h-icon" data-icon="loader" data-icon-size="14"></span>
+                            <span>実行を待っています…（最長15分。届いたら自動でこの画面に本の一覧が出ます）</span>
+                        </div>
+                        <div class="relay-url-row">
+                            <span class="relay-url-label">取込リンク（コピー済み。タップでも開けます）:</span>
+                            <a class="relay-url-copy" target="_blank" rel="noopener"></a>
+                        </div>
+                        <button type="button" id="cancel-relay-wait" class="btn btn-secondary btn-small" data-relay-waiting hidden>待機をやめる</button>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- 方式④ 取込データを直接渡す（貼り付け＋ファイル統合） -->
+                    <details class="pp-advanced" id="import-method-data" open><!-- 静的HTMLはopen固定。閉じるのはJS（アクティブレーンの準備完了フラグが立っている時だけ）。E2E互換の要 -->
+                        <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">「コピーしました」と出たときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                        <div class="pp-advanced-body">
+                            <p class="pp-hint">「Kindle取込」の実行後に「コピーしました」と出た内容を貼り付けるか、保存してある取込データファイル（.json）から取り込めます。</p>
+                            <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データを貼り付け"></textarea>
+                            <div class="import-option-actions">
+                                <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
+                                <button id="import-from-paste" class="btn btn-primary">貼り付けたデータを取り込む</button>
+                            </div>
+                            <hr class="settings-divider">
+                            <div class="import-file-row">
+                                <input type="file" id="kindle-file-input" accept=".json" />
+                                <button id="import-from-file" class="btn btn-secondary">ファイルから取り込む</button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
                 <div id="book-selection" class="book-selection" style="display: none;">
-                    <h3><span class="h-icon" data-icon="list-checks" data-icon-size="16"></span>インポートする本を選択</h3>
+                    <h3><span class="h-icon" data-icon="list-checks" data-icon-size="16"></span>取り込む本を選ぶ</h3>
                     <div class="selection-controls">
                         <div class="filter-options">
                             <label class="inline-check-label">
                                 <input type="checkbox" id="hide-existing-books" checked>
-                                <span><span class="h-icon" data-icon="eye-off" data-icon-size="14"></span>インポート済みの本を非表示にする</span>
+                                <span><span class="h-icon" data-icon="eye-off" data-icon-size="14"></span>取り込み済みの本を非表示にする</span>
                             </label>
                         </div>
                         <button id="select-all-books" class="btn btn-small">全て選択</button>
@@ -949,7 +1018,7 @@
                         <!-- Book selection checkboxes will be populated here -->
                     </div>
                     <div class="import-actions">
-                        <button id="import-selected-books" class="btn btn-primary" disabled>選択した本をインポート</button>
+                        <button id="import-selected-books" class="btn btn-primary" disabled>選択した本を取り込む</button>
                         <button id="cancel-import" class="btn btn-secondary">キャンセル</button>
                     </div>
                 </div>
@@ -1097,7 +1166,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026070201"></script>
+    <script src="js/bookshelf.js?v=2026070601"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

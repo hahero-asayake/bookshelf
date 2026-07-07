@@ -2,6 +2,9 @@
 // Debug flag system
 const DEBUG = false; // Set to false for production
 
+// kindle_bookshelf_exporter 拡張の配布URL。未確定の間は空文字（取込モーダルではリンク非表示・代替文言を表示）
+const KINDLE_EXPORTER_URL = '';
+
 // --- Obsidian Folder Sync: IndexedDB helpers ---
 function openSyncDB() {
     return new Promise((resolve, reject) => {
@@ -510,6 +513,39 @@ class VirtualBookshelf {
             openAmazonMobileBtn.addEventListener('click', () => this.openAmazonForBookmarklet({ mobile: true }));
         }
 
+        // Kindle 取込モーダル: 端末タブ・レーン内アクションの delegation (2026-07 端末ファースト改修)
+        const importModalEl = document.getElementById('import-modal');
+        if (importModalEl && !this._importModalDelegationBound) {
+            this._importModalDelegationBound = true;
+            importModalEl.addEventListener('click', (e) => {
+                const tab = e.target.closest('.import-device-tab');
+                if (tab) {
+                    try { localStorage.setItem('bookshelf_import_device', tab.dataset.importDevice); } catch (_) {}
+                    this._renderImportLanes();
+                    return;
+                }
+                const setupDone = e.target.closest('[data-import-setup-done]');
+                if (setupDone) {
+                    this._markImportSetupDone(setupDone.dataset.importSetupDone);
+                    return;
+                }
+                const action = e.target.closest('[data-import-action]');
+                if (action) {
+                    const kind = action.dataset.importAction;
+                    if (kind === 'copy-shortcut-code') this.copyKindleShortcutCode();
+                    else if (kind === 'open-amazon-mobile') this.openAmazonForBookmarklet({ mobile: true });
+                    else if (kind === 'read-clipboard') this.readClipboardForImport();
+                    else if (kind === 'open-sync-settings') { this.closeImportModal(); this._openSettingsModal('sync-section'); }
+                    return;
+                }
+                if (e.target.closest('#cancel-relay-wait')) this._cancelKindleImportWait();
+            });
+            // iOS PWA のタイマー凍結対策: 画面復帰時にリレーポーリングを即 1 回実行
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && this._kindleRelayTick) this._kindleRelayTick();
+            });
+        }
+
         // 画像表示切替は overview-display ヘッダー項目に統合済み (delegation で処理)
 
         // Modal close - individual handlers for each modal
@@ -879,7 +915,7 @@ class VirtualBookshelf {
             { icon: 'list',              title: '表示形式: リスト',               keywords: 'view 表示 リスト list', run: () => this.setView('list') },
             { icon: 'pen-line',          title: '本棚を管理',                     keywords: '本棚 管理 manage bookshelf へんしゅう', run: () => this.showBookshelfManager() },
             { icon: 'plus',              title: '本棚を新規作成',                 keywords: '本棚 新規 作成 add new create', run: () => this.showBookshelfForm() },
-            { icon: 'download',          title: 'Kindle インポート',             keywords: 'import kindle 取込 取り込み インポート', run: () => this.showImportModal() },
+            { icon: 'download',          title: 'Kindleの本を取り込む',           keywords: 'import kindle 取込 取り込み インポート', run: () => this.showImportModal() },
             { icon: 'plus',              title: '本を手動追加',                   keywords: '手動 追加 add book マニュアル', run: () => this.showAddBookModal() },
             { icon: 'ban',               title: '除外一覧を開く',                 keywords: '除外 exclusion じょがい', run: () => this.showExclusionsModal() },
             { icon: 'settings',          title: '設定を開く',                     keywords: 'settings 設定 config せってい', run: () => this._openSettingsModal() },
@@ -8060,15 +8096,15 @@ class VirtualBookshelf {
 
             visibleCount++;
             const stateClass = isExisting ? 'existing-book' : (isExcluded ? 'excluded-book' : '');
-            const stateLabel = isExisting ? '(既にインポート済み)' : (isExcluded ? '(除外済み・取り込みません)' : '');
+            const stateLabel = isExisting ? '(取り込み済み)' : (isExcluded ? '(除外済み・取り込みません)' : '');
             const bookItem = document.createElement('div');
             bookItem.className = `book-selection-item ${stateClass}`;
             bookItem.dataset.bookIndex = index;
             bookItem.innerHTML = `
                 <input type="checkbox" id="book-${index}" value="${index}" ${isBlocked ? 'disabled' : ''}>
                 <div class="book-selection-info">
-                    <div class="book-selection-title">${book.title} ${stateLabel}</div>
-                    <div class="book-selection-author">${book.authors}</div>
+                    <div class="book-selection-title">${this.escapeHtml(book.title)} ${stateLabel}</div>
+                    <div class="book-selection-author">${this.escapeHtml(book.authors)}</div>
                     <div class="book-selection-meta">${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</div>
                 </div>
             `;
@@ -8085,18 +8121,20 @@ class VirtualBookshelf {
         if (!statsElement) {
             statsElement = document.createElement('div');
             statsElement.id = 'book-list-stats';
-            statsElement.style.cssText = 'margin-bottom: 1rem; padding: 0.5rem; background: #f8f9fa; border-radius: 4px; font-size: 0.9rem; color: #6c757d;';
+            statsElement.className = 'book-list-stats';
             document.getElementById('book-list').parentNode.insertBefore(statsElement, document.getElementById('book-list'));
         }
 
         const newBooks = totalBooks - existingBooks - excludedBooks;
-        const excludedPart = excludedBooks > 0 ? ` | 除外済み: ${excludedBooks}冊` : '';
-        statsElement.innerHTML = `
-            📊 総数: ${totalBooks}冊 | 新規: ${newBooks}冊 | インポート済み: ${existingBooks}冊${excludedPart} | 表示中: ${visibleBooks}冊
-        `;
+        const excludedPart = excludedBooks > 0 ? ` ／ 除外済み: ${excludedBooks}冊` : '';
+        statsElement.textContent = `全体: ${totalBooks}冊 ／ 新規: ${newBooks}冊 ／ 取り込み済み: ${existingBooks}冊${excludedPart} ／ 表示中: ${visibleBooks}冊`;
     }
     
     setupBookSelectionListeners() {
+        // モーダル DOM は静的・再生成しない前提の一度きり配線
+        // (取込のたびの重複登録 = importSelectedBooks 二重発火の防止)
+        if (this._bookSelectionBound) return;
+        this._bookSelectionBound = true;
         // フィルター変更時にリストを再描画
         document.getElementById('hide-existing-books').addEventListener('change', () => {
             const existingASINs = new Set(this.bookManager.getAllBooks().map(book => book.asin));
@@ -8155,7 +8193,7 @@ class VirtualBookshelf {
             .filter(b => b && !existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
 
         if (selectedBooks.length === 0) {
-            toast('インポートする本を選択してください');
+            toast('取り込む本を選んでください');
             return;
         }
 
@@ -8180,12 +8218,28 @@ class VirtualBookshelf {
             this.applyFilters();
             this.updateStats();
 
+            // 実取込の成功 = そのレーンの初回準備が済んでいる証拠として自動フラグ
+            if (this.importSource === 'bookmarklet' || this.importSource === 'relay') {
+                let lane;
+                if (this.importSource === 'bookmarklet') {
+                    lane = 'pc';
+                } else {
+                    try { lane = localStorage.getItem('bookshelf_import_device'); } catch (_) {}
+                    if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') lane = this._detectImportDevice();
+                }
+                const setup = this._importSetupFlags();
+                if (!setup[lane]) {
+                    setup[lane] = true;
+                    try { localStorage.setItem('bookshelf_import_setup', JSON.stringify(setup)); } catch (_) {}
+                }
+            }
+
             // 選択UIを非表示
             document.getElementById('book-selection').style.display = 'none';
 
         } catch (error) {
             console.error('選択インポートエラー:', error);
-            toast(`インポートに失敗しました: ${error.message}`);
+            toast(`取り込みに失敗しました: ${error.message}`);
         }
     }
     
@@ -8380,10 +8434,24 @@ class VirtualBookshelf {
     }
 
     /**
-     * Kindleインポートモーダルを表示
+     * Kindleインポートモーダルを表示 (開くたびに状態をリセットして必ず方式一覧から始める)
      */
     showImportModal() {
         const modal = document.getElementById('import-modal');
+        // 毎回リセット: 選択画面のまま閉じても次回は必ず方式一覧から（旧: closeImportModal が
+        // #import-results しか戻さず .import-options が display:none のまま残るバグの根治）
+        const opts = document.querySelector('.import-options');
+        if (opts) opts.style.display = '';
+        const sel = document.getElementById('book-selection');
+        if (sel) sel.style.display = 'none';
+        const res = document.getElementById('import-results');
+        if (res) { res.style.display = 'none'; res.innerHTML = ''; }
+        this.pendingImportBooks = null;
+        this.importSource = null;
+        this._renderImportLanes();
+        // 受信待ち中でなければステータスを隠す（ポーリング / PC 待機の in-flight が正）
+        const st = document.getElementById('import-relay-status');
+        if (st && !this._kindleImportInFlight) st.hidden = true;
         modal.classList.add('show');
     }
 
@@ -8397,6 +8465,81 @@ class VirtualBookshelf {
         const resultsDiv = document.getElementById('import-results');
         resultsDiv.style.display = 'none';
         resultsDiv.innerHTML = '';
+    }
+
+    /** 取込モーダルの端末レーンを UA から自動判定 ('pc' | 'ios' | 'android') */
+    _detectImportDevice() {
+        const ua = navigator.userAgent || '';
+        if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios'; // iPadOS の Mac 偽装対策
+        if (/Android/.test(ua)) return 'android';
+        return 'pc';
+    }
+
+    /** レーン別の初回準備完了フラグ ({pc:true,...})。端末固有のため localStorage (userData 同期に載せない) */
+    _importSetupFlags() {
+        try { return JSON.parse(localStorage.getItem('bookshelf_import_setup')) || {}; } catch (_) { return {}; }
+    }
+
+    /**
+     * 取込モーダルの端末タブ・レーン表示・初回準備の開閉・接続状態別文言を一括反映。
+     * 方式④ (#import-method-data) はアクティブレーンの準備完了フラグが立っている時だけ畳む
+     * (素の localStorage では常に open = E2E import-paste.spec.js 互換の要)。
+     */
+    _renderImportLanes() {
+        const detected = this._detectImportDevice();
+        let lane = null;
+        try { lane = localStorage.getItem('bookshelf_import_device'); } catch (_) {}
+        if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') lane = detected;
+        const setup = this._importSetupFlags();
+        document.querySelectorAll('.import-device-tab').forEach((btn) => {
+            const d = btn.dataset.importDevice;
+            const active = d === lane;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-selected', String(active));
+            const badge = btn.querySelector('.import-device-badge');
+            if (badge) badge.hidden = d !== detected; // 「この端末」バッジ
+        });
+        document.querySelectorAll('.import-lane').forEach((sec) => { sec.hidden = sec.id !== `import-lane-${lane}`; });
+        const setupEl = document.getElementById(`import-setup-${lane}`);
+        if (setupEl) {
+            const done = !!setup[lane];
+            setupEl.open = !done;
+            const state = setupEl.querySelector('.import-setup-state');
+            if (state) state.textContent = done ? '済み' : '';
+        }
+        // 方式④: アクティブレーンの準備が済んでいれば畳む
+        const dataEl = document.getElementById('import-method-data');
+        if (dataEl) dataEl.open = !setup[lane];
+        // Asayake ハブ接続状態を「押す前に」文言へ反映
+        const hubReady = !!((SyncConfigManager.load().hub || {}).apiBase);
+        document.querySelectorAll('#import-modal [data-hub-only]').forEach((el) => { el.hidden = !hubReady; });
+        document.querySelectorAll('#import-modal [data-nohub-only]').forEach((el) => { el.hidden = hubReady; });
+        // PC 拡張リンク (配布 URL 未確定なら代替文言)
+        const ext = document.getElementById('kindle-exporter-link');
+        const noUrl = document.getElementById('kindle-exporter-nourl');
+        if (ext) { ext.hidden = !KINDLE_EXPORTER_URL; if (KINDLE_EXPORTER_URL) ext.href = KINDLE_EXPORTER_URL; }
+        if (noUrl) noUrl.hidden = !!KINDLE_EXPORTER_URL;
+    }
+
+    /** 「準備完了にする」: レーンの初回準備を完了として記録し、以後は初回準備と方式④を畳む */
+    _markImportSetupDone(lane) {
+        if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') return;
+        const setup = this._importSetupFlags();
+        setup[lane] = true;
+        try { localStorage.setItem('bookshelf_import_setup', JSON.stringify(setup)); } catch (_) {}
+        this._renderImportLanes();
+        toast('この端末の準備完了を記録しました。次回からは毎回の操作だけで取り込めます。', { type: 'success' });
+    }
+
+    /** 受信待ち（PC postMessage 待機 / リレーポーリング）を手動で中止する */
+    _cancelKindleImportWait() {
+        if (this._kindleImportCleanup) {
+            this._kindleImportCleanup();
+        } else {
+            this._stopKindleRelayPoll();
+            this._kindleImportInFlight = false;
+        }
+        toast('受信待ちを中止しました。', { type: 'info' });
     }
 
     /**
@@ -8434,14 +8577,14 @@ class VirtualBookshelf {
         try {
             parsed = JSON.parse(raw);
         } catch (e) {
-            toast('JSON として読み取れませんでした。ブックマークレットがコピーした内容をそのまま貼り付けてください。');
+            toast('取込データとして読み取れませんでした。「コピーしました」と出た内容を、そのまま全部貼り付けてください。', { type: 'error' });
             return;
         }
         const books = Array.isArray(parsed) ? parsed
             : (Array.isArray(parsed.items) ? parsed.items
                 : (Array.isArray(parsed.books) ? parsed.books : null));
-        if (!books) { toast('取込データの形式が不正です (本の配列が見つかりません)。'); return; }
-        if (books.length === 0) { toast('取込対象の本がありませんでした。'); return; }
+        if (!books) { toast('取込データに本が見つかりませんでした。', { type: 'warn' }); return; }
+        if (books.length === 0) { toast('取込対象の本がありませんでした。', { type: 'warn' }); return; }
         this.showBookSelectionForImport(books, 'paste');
     }
 
@@ -8459,7 +8602,12 @@ class VirtualBookshelf {
             if (ta) ta.value = text;
             this.importFromPastedText(text);
         } catch (e) {
-            toast('クリップボードを読み取れませんでした。手動で貼り付けてから「貼り付けたデータを取込」を押してください。');
+            toast('クリップボードを読み取れませんでした。「取込データを直接渡す」の欄に手で貼り付けてください。', { type: 'warn' });
+            // 方式④を自動で開いて貼り付け先へフォーカス
+            const d = document.getElementById('import-method-data');
+            if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); }
+            const ta = document.getElementById('kindle-paste-input');
+            if (ta) ta.focus();
         }
     }
 
@@ -8633,7 +8781,7 @@ class VirtualBookshelf {
      * - どちらもなければクリップボードにコピー（フォールバック）
      */
     _buildKindleBookmarkletCode() {
-        const code = `(async()=>{try{var c=window.csrfToken;if(!c){alert('Amazon Kindle一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var items=[],s=0,t=Number.MAX_SAFE_INTEGER;while(items.length<t){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:s,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));var d=j.GetContentOwnershipData;t=d.numberOfItems;s+=100;items.push.apply(items,d.items);}var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「貼り付けて取込」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
+        const code = `(async()=>{try{var c=window.csrfToken;if(!c){alert('Amazon Kindle一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var items=[],s=0,t=Number.MAX_SAFE_INTEGER;while(items.length<t){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:s,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));var d=j.GetContentOwnershipData;t=d.numberOfItems;s+=100;items.push.apply(items,d.items);}var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
         return 'javascript:' + encodeURIComponent(code);
     }
 
@@ -8641,16 +8789,91 @@ class VirtualBookshelf {
         const bm = this._buildKindleBookmarkletCode();
         try {
             await navigator.clipboard.writeText(bm);
-            toast('ブックマークレットをクリップボードにコピーしました。\n\n手順:\n1. ブラウザのブックマークバーを右クリック → 「ページを追加」\n2. 名前を「Kindle取込」など\n3. URL 欄に Ctrl+V でペースト\n4. 保存\n\n以後はこのブックマークレットを Amazon ライブラリページで1クリックするだけで取込できます。');
+            toast('取込用ブックマークのコードをコピーしました。手順は上の「初回だけの準備」のとおりです。', { type: 'success' });
         } catch (e) {
-            // clipboard 失敗時は textarea で表示
-            prompt('クリップボードに自動コピーできませんでした。以下を全選択 (Ctrl+A) → コピー (Ctrl+C) してブックマークの URL に貼り付けてください:', bm);
+            // clipboard 失敗時は prompt で表示
+            prompt('自動コピーできませんでした。以下を全選択してコピーし、ブックマークのURL欄に貼り付けてください:', bm);
+        }
+    }
+
+    /**
+     * iOS ショートカット「WebページでJavaScriptを実行」アクションに貼り付けるコードを生成。
+     * docs/ios-shortcut-import.md 第1章のコードと機能一致が正
+     * (OK:N / ERROR: / JSON文字列 の3値を completion() で返す)。
+     * ※ スクレイパ本体は _buildKindleBookmarkletCode と重複 (一本化は 07_残検討事項)。
+     */
+    _buildKindleShortcutCode() {
+        return `// Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開いた状態で実行する。
+(async () => {
+  try {
+    const c = window.csrfToken;
+    if (!c) {
+      completion("ERROR:Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開いてから実行してください");
+      return;
+    }
+    let items = [], start = 0, total = Number.MAX_SAFE_INTEGER;
+    while (items.length < total) {
+      const input = JSON.stringify({
+        contentType: "Ebook", contentCategoryReference: "booksAll",
+        itemStatusList: ["Active"], showSharedContent: true,
+        fetchCriteria: { sortOrder: "DESCENDING", sortIndex: "DATE", startIndex: start, batchSize: 100, totalContentCount: -1 },
+        surfaceType: "Desktop"
+      });
+      const r = await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ activity: "GetContentOwnershipData", activityInput: input, csrfToken: c })
+      });
+      const j = await r.json();
+      if (j.success === false) throw new Error(JSON.stringify(j.error));
+      const d = j.GetContentOwnershipData;
+      total = d.numberOfItems; start += 100; items.push(...d.items);
+    }
+    const out = items.map(i => ({
+      title: i.title, authors: i.authors, acquiredTime: i.acquiredTime,
+      readStatus: i.readStatus, asin: i.asin, productImage: i.productImage
+    }));
+
+    // 自動受け渡し対応: ?bs_relay=UUID&bs_hub=URL があれば直接送信（クリップボード不要）
+    const p = new URLSearchParams(location.search);
+    const rid = p.get('bs_relay');
+    const hub = p.get('bs_hub');
+    if (rid && hub) {
+      try {
+        await fetch(hub + '/kindle/relay', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: rid, items: out })
+        });
+        completion("OK:" + out.length);
+        return;
+      } catch (_) {
+        // Amazon のページが外部送信をブロックした場合はクリップボードフォールバックへ
+      }
+    }
+
+    // フォールバック: JSON をそのまま返す（ショートカットがクリップボードにコピー）
+    completion(JSON.stringify(out));
+  } catch (e) {
+    completion("ERROR:" + (e && e.message ? e.message : e));
+  }
+})();`;
+    }
+
+    /** iOS ショートカット用コードをクリップボードへコピー */
+    async copyKindleShortcutCode() {
+        const code = this._buildKindleShortcutCode();
+        try {
+            await navigator.clipboard.writeText(code);
+            toast('取込用コードをコピーしました。ショートカットAppの「WebページでJavaScriptを実行」に貼り付けてください。', { type: 'success' });
+        } catch (e) {
+            prompt('自動コピーできませんでした。以下を全選択してコピーしてください:', code);
         }
     }
 
     openAmazonForBookmarklet({ mobile = false } = {}) {
         if (this._kindleImportInFlight) {
-            toast('既に取込中です。完了を待ってください。');
+            toast('すでに取込の受信待ちです。「待機をやめる」で中断できます。', { type: 'warn' });
             return;
         }
 
@@ -8674,21 +8897,28 @@ class VirtualBookshelf {
         this._kindleImportInFlight = true;
 
         if (mobile) {
-            // スマホ向け: window.open が使えないケースが多いためリンクをコピーして案内
+            // スマホ向け: window.open は試みず「リンクをコピー + 画面に表示」で受け渡す
+            const statusEl = document.getElementById('import-relay-status');
+            const showStatus = (waiting) => {
+                if (!statusEl) return;
+                statusEl.hidden = false;
+                statusEl.querySelectorAll('[data-relay-waiting]').forEach((n) => { n.hidden = !waiting; });
+                const row = statusEl.querySelector('.relay-url-row');
+                if (row) row.hidden = false;
+                const a = statusEl.querySelector('.relay-url-copy');
+                if (a) { a.textContent = url; a.href = url; } // タップでも開ける <a>
+            };
+            navigator.clipboard.writeText(url)
+                .then(() => toast('取込リンクをコピーしました。下のリンクからも開けます。', { type: 'success' }))
+                .catch(() => toast('リンクを自動コピーできませんでした。下のリンクをタップして開くか、長押しでコピーしてください。', { type: 'warn' }));
             if (!relayId) {
-                // Hub 未接続ならポーリング不可 → フラグをすぐに解放し通常クリップボードフローへ案内
-                this._kindleImportInFlight = false;
-                toast('Asayake アカウントに接続していないため自動受信できません。\nリンクをスマホで開き、ブックマークレット実行後は「貼り付けて取込」をご利用ください。');
-                navigator.clipboard.writeText(url).catch(() => {});
+                // 接続未設定: 自動受信なし (エラー扱いしない。経路はレーン内の [data-nohub-only] 文言で案内済み)
+                this._kindleImportInFlight = false; // フラグ解放 (commit 40ef855 踏襲)
+                showStatus(false);
                 return;
             }
             this._startKindleRelayPoll(relayId, apiBase);
-            navigator.clipboard.writeText(url).catch(() => {});
-            const el = document.getElementById('import-relay-status');
-            if (el) {
-                el.hidden = false;
-                el.querySelector('.relay-url-copy').textContent = url;
-            }
+            showStatus(true);
             return;
         }
 
@@ -8703,6 +8933,15 @@ class VirtualBookshelf {
         // リレーポーリング（hub 接続時）と window.opener 待機を並走させる
         if (relayId) this._startKindleRelayPoll(relayId, apiBase);
 
+        // PC 側でも「受信待ち」を可視化する (リンク行は不要なので隠す)
+        const statusEl = document.getElementById('import-relay-status');
+        if (statusEl) {
+            statusEl.hidden = false;
+            statusEl.querySelectorAll('[data-relay-waiting]').forEach((n) => { n.hidden = false; });
+            const row = statusEl.querySelector('.relay-url-row');
+            if (row) row.hidden = true;
+        }
+
         const allowedOrigins = new Set([
             'https://www.amazon.co.jp',
             ...((this.userData && this.userData.settings && this.userData.settings.extensionImportOrigins) || [])
@@ -8714,7 +8953,9 @@ class VirtualBookshelf {
             if (timer) clearTimeout(timer);
             this._stopKindleRelayPoll();
             this._kindleImportInFlight = false;
+            this._kindleImportCleanup = null;
         };
+        this._kindleImportCleanup = cleanup;
 
         const handler = (event) => {
             if (!allowedOrigins.has(event.origin)) return;
@@ -8731,7 +8972,7 @@ class VirtualBookshelf {
         window.addEventListener('message', handler);
         timer = setTimeout(() => {
             cleanup();
-            toast('Kindle 取込タイムアウト（15分）。\n\nブックマークレット登録は「ブックマークレットをコピー」から行えます。');
+            toast('受信待ちを終了しました（15分経過）。Amazonタブで取込が完了しなかった可能性があります。もう一度「Amazonから取り込む」からやり直してください。', { type: 'warn' });
         }, 15 * 60 * 1000);
     }
 
@@ -8740,17 +8981,23 @@ class VirtualBookshelf {
         if (!relayId || !apiBase) return;
 
         const el = document.getElementById('import-relay-status');
-        if (el) el.hidden = false;
+        if (el) {
+            el.hidden = false;
+            el.querySelectorAll('[data-relay-waiting]').forEach((n) => { n.hidden = false; });
+        }
 
-        let elapsed = 0;
         const INTERVAL = 3000;
         const TIMEOUT = 15 * 60 * 1000;
+        const startedAt = Date.now(); // 実時刻基準 (visibilitychange の追加呼び出しでタイムアウトが縮まないように)
 
-        this._kindleRelayPollId = setInterval(async () => {
-            elapsed += INTERVAL;
-            if (elapsed > TIMEOUT) {
-                this._stopKindleRelayPoll();
-                this._kindleImportInFlight = false;
+        const tick = async () => {
+            if (Date.now() - startedAt > TIMEOUT) {
+                // 共有 cleanup があれば postMessage handler と 15分 setTimeout も畳む
+                // (PC でリレーと postMessage を並走させた場合の二重トースト/誤タイムアウト防止)
+                if (this._kindleImportCleanup) { this._kindleImportCleanup(); }
+                else { this._stopKindleRelayPoll(); this._kindleImportInFlight = false; }
+                // ポーリングタイムアウトは必ず通知する (旧: 無通知で停止していた)
+                toast('15分たっても届かなかったため、受信待ちを終了しました。スマホ側で「コピーしました」と出ていた場合は「取込データを直接渡す」から取り込めます。', { type: 'warn' });
                 return;
             }
             try {
@@ -8758,14 +9005,18 @@ class VirtualBookshelf {
                 if (!r.ok) return;
                 const d = await r.json();
                 if (!Array.isArray(d.items)) return; // まだ届いていない
-                this._stopKindleRelayPoll();
-                this._kindleImportInFlight = false;
-                const items = d.items;
-                if (items.length === 0) { toast('取込対象の本がありませんでした。'); return; }
+                // 共有 cleanup があれば postMessage handler と 15分 setTimeout も畳む
+                // (受信成功後に PC 側の 15分 setTimeout が誤タイムアウトを出さないように)
+                if (this._kindleImportCleanup) { this._kindleImportCleanup(); }
+                else { this._stopKindleRelayPoll(); this._kindleImportInFlight = false; }
+                if (d.items.length === 0) { toast('取込対象の本がありませんでした。', { type: 'warn' }); return; }
+                toast(`${d.items.length}冊の一覧を受信しました。取り込む本を選んでください。`, { type: 'success' });
                 this.showImportModal();
-                this.showBookSelectionForImport(items, 'relay');
+                this.showBookSelectionForImport(d.items, 'relay');
             } catch (_) { /* ネットワークエラーは無視してリトライ */ }
-        }, INTERVAL);
+        };
+        this._kindleRelayTick = tick;
+        this._kindleRelayPollId = setInterval(tick, INTERVAL);
     }
 
     _stopKindleRelayPoll() {
@@ -8773,6 +9024,7 @@ class VirtualBookshelf {
             clearInterval(this._kindleRelayPollId);
             this._kindleRelayPollId = null;
         }
+        this._kindleRelayTick = null;
         const el = document.getElementById('import-relay-status');
         if (el) el.hidden = true;
     }
@@ -8784,7 +9036,7 @@ class VirtualBookshelf {
         const resultsDiv = document.getElementById('import-results');
         resultsDiv.innerHTML = `
             <div class="import-summary">
-                <h3>📊 インポート結果</h3>
+                <h3>取込結果</h3>
                 <div class="import-stats">
                     <div class="stat-item">
                         <span class="stat-value">${results.total}</span>
@@ -8804,7 +9056,7 @@ class VirtualBookshelf {
                     </div>
                 </div>
                 <p class="import-note">
-                    インポートが完了しました。新規追加: ${results.added}冊、更新: ${results.updated}冊
+                    取り込みが完了しました。新規追加: ${results.added}冊、更新: ${results.updated}冊
                 </p>
             </div>
         `;
