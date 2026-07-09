@@ -4,6 +4,10 @@ const DEBUG = false; // Set to false for production
 
 // kindle_bookshelf_exporter 拡張の配布URL。未確定の間は空文字（取込モーダルではリンク非表示・代替文言を表示）
 const KINDLE_EXPORTER_URL = '';
+// iOS 完成版「Kindle取込ショートカット」の配布URL。未確定の間は空文字（追加ボタン非表示・代替文言を表示）
+const KINDLE_SHORTCUT_URL = '';
+// 各レーンの毎回操作に添える操作GIFのURL。空のレーンはスロットを描画しない（空箱を出さない）
+const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 
 // --- Obsidian Folder Sync: IndexedDB helpers ---
 function openSyncDB() {
@@ -534,8 +538,13 @@ class VirtualBookshelf {
                     const kind = action.dataset.importAction;
                     if (kind === 'copy-shortcut-code') this.copyKindleShortcutCode();
                     else if (kind === 'open-amazon-mobile') this.openAmazonForBookmarklet({ mobile: true });
-                    else if (kind === 'read-clipboard') this.readClipboardForImport();
-                    else if (kind === 'open-sync-settings') { this.closeImportModal(); this._openSettingsModal('sync-section'); }
+                    else if (kind === 'add-shortcut') { if (KINDLE_SHORTCUT_URL) window.open(KINDLE_SHORTCUT_URL, '_blank', 'noopener'); }
+                    else if (kind === 'open-paste') {
+                        const d = document.getElementById('import-method-data');
+                        if (d) d.open = true;
+                        const ta = document.getElementById('kindle-paste-input');
+                        if (ta) { ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); ta.focus(); }
+                    }
                     return;
                 }
                 if (e.target.closest('#cancel-relay-wait')) this._cancelKindleImportWait();
@@ -5306,8 +5315,8 @@ class VirtualBookshelf {
     static SETTINGS_CATEGORIES = [
         { id: 'account-section',  icon: 'user-circle',      label: 'アカウント',        desc: 'ログイン・プラン・使用量' },
         { id: 'sync-section',     icon: 'folder-cog',       label: '同期',              desc: '保存先: この端末 / GitHub / ハブ' },
-        { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
         { id: 'library-section',  icon: 'library',          label: '蔵書',              desc: '取り込み・手動追加・除外一覧' },
+        { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
         { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: 'インストール・マーケット' },
         { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: '詳細メモの設定' },
         { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
@@ -8519,6 +8528,32 @@ class VirtualBookshelf {
         const noUrl = document.getElementById('kindle-exporter-nourl');
         if (ext) { ext.hidden = !KINDLE_EXPORTER_URL; if (KINDLE_EXPORTER_URL) ext.href = KINDLE_EXPORTER_URL; }
         if (noUrl) noUrl.hidden = !!KINDLE_EXPORTER_URL;
+        // iOS 完成版ショートカット「追加」ボタン (配布 URL 未確定なら代替文言)
+        const addSc = document.getElementById('add-shortcut-btn');
+        const scNoUrl = document.getElementById('kindle-shortcut-nourl');
+        const scLead = document.getElementById('kindle-shortcut-lead');
+        if (addSc) addSc.hidden = !KINDLE_SHORTCUT_URL;
+        if (scNoUrl) scNoUrl.hidden = !!KINDLE_SHORTCUT_URL;
+        // リード文「1回だけ追加」は追加ボタンが実在する (配布 URL 設定済み) 時だけ出す。
+        // URL 未設定時は上の kindle-shortcut-nourl (配布準備中) が主メッセージになる。
+        if (scLead) scLead.hidden = !KINDLE_SHORTCUT_URL;
+        // GIF スロット: media URL が非空のレーンだけ <img> を描画 (空なら空箱を出さない)
+        document.querySelectorAll('#import-modal [data-import-media]').forEach((slot) => {
+            const src = (KINDLE_IMPORT_MEDIA && KINDLE_IMPORT_MEDIA[slot.dataset.importMedia]) || '';
+            if (src) {
+                slot.hidden = false;
+                if (slot.dataset.mediaSrc !== src) {
+                    slot.dataset.mediaSrc = src;
+                    slot.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = src; img.alt = ''; img.loading = 'lazy'; img.className = 'import-media-gif';
+                    slot.appendChild(img);
+                }
+            } else {
+                slot.hidden = true;
+                if (slot.firstChild) { slot.innerHTML = ''; delete slot.dataset.mediaSrc; }
+            }
+        });
     }
 
     /** 「準備完了にする」: レーンの初回準備を完了として記録し、以後は初回準備と方式④を畳む */
