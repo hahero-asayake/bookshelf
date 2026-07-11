@@ -8833,13 +8833,35 @@ class VirtualBookshelf {
 
     /**
      * iOS ショートカット「WebページでJavaScriptを実行」アクションに貼り付けるコードを生成。
-     * docs/ios-shortcut-import.md 第1章のコードと機能一致が正
-     * (OK:N / ERROR: / JSON文字列 の3値を completion() で返す)。
+     * docs/ios-shortcut-import.md 第1章のコードと機能一致が正。
+     * 結果の表示もクリップボードへのコピーも Amazon ページ上のパネルで完結する (v3)。
+     * ショートカット側は本アクション 1 個だけでよく、completion() には短い状態文字列しか返さない
+     * （大きな JSON を Shortcuts ブリッジに渡さない・分岐/通知アクション不要。ADR-049 追記参照）。
      * ※ スクレイパ本体は _buildKindleBookmarkletCode と重複 (一本化は 07_残検討事項)。
      */
     _buildKindleShortcutCode() {
-        return `// Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開いた状態で実行する。
+        return `// Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開き、共有シートから実行する。
+// 結果表示もコピーもこのスクリプトがページ上に出すパネルで完結する。ショートカット側はこのアクション1個だけでよい。
 (async () => {
+  // ページ上に結果パネルを出す（ショートカット側の通知・分岐に依存しない）
+  const panel = (msg, isError) => {
+    const old = document.getElementById("bs-import-panel");
+    if (old) old.remove();
+    const ov = document.createElement("div");
+    ov.id = "bs-import-panel";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;font-family:sans-serif";
+    const p = document.createElement("div");
+    p.style.cssText = "color:" + (isError ? "#fca5a5" : "#fff") + ";font-size:17px;line-height:1.7;text-align:center;max-width:520px;word-break:break-word";
+    p.textContent = msg;
+    ov.appendChild(p);
+    const x = document.createElement("button");
+    x.textContent = "閉じる";
+    x.style.cssText = "font-size:14px;padding:10px 24px;border:0;border-radius:8px;background:#475569;color:#fff";
+    x.onclick = () => ov.remove();
+    ov.appendChild(x);
+    document.body.appendChild(ov);
+    return { ov: ov, p: p, x: x };
+  };
   try {
     // csrfToken はページのグローバル変数に無いレイアウト（モバイル表示等）があるため、
     // inline script と input/meta もフォールバック探索する
@@ -8854,7 +8876,9 @@ class VirtualBookshelf {
     };
     const c = findToken();
     if (!c) {
-      completion("ERROR:Amazonの蔵書一覧ページで実行してください（今のページ: " + location.hostname + location.pathname + "）。蔵書一覧を開いているのにこれが出る場合は、Safariのアドレスバー左の「ぁあ」→「デスクトップ用Webサイトを表示」に切り替えてからもう一度実行してください");
+      const msg = "Amazonの蔵書一覧ページで実行してください（今のページ: " + location.hostname + location.pathname + "）。蔵書一覧を開いているのにこれが出る場合は、Safariのアドレスバー左の「ぁあ」→「デスクトップ用Webサイトを表示」に切り替えてからもう一度実行してください。";
+      panel(msg, true);
+      completion("ERROR:" + msg);
       return;
     }
     const fetchPage = async (start) => {
@@ -8885,6 +8909,7 @@ class VirtualBookshelf {
       title: i.title, authors: i.authors, acquiredTime: i.acquiredTime,
       readStatus: i.readStatus, asin: i.asin, productImage: i.productImage
     }));
+    const json = JSON.stringify(out);
 
     // 自動受け渡し対応: ?bs_relay=UUID&bs_hub=URL があれば直接送信（クリップボード不要）
     const p = new URLSearchParams(location.search);
@@ -8897,17 +8922,39 @@ class VirtualBookshelf {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: rid, items: out })
         });
+        panel(out.length + "冊を bookshelf に自動送信しました。bookshelf のタブに戻ってください。", false);
         completion("OK:" + out.length);
         return;
       } catch (_) {
-        // Amazon のページが外部送信をブロックした場合はクリップボードフォールバックへ
+        // Amazon のページが外部送信をブロックした場合はページ上コピーへフォールバック
       }
     }
 
-    // フォールバック: JSON をそのまま返す（ショートカットがクリップボードにコピー）
-    completion(JSON.stringify(out));
+    // ページ上のボタンからコピーする（fetch 完了後はユーザー操作なしのクリップボード書込が
+    // 許可されないことがあるため、ボタンのタップを新しいユーザー操作として使う）
+    const ui = panel(out.length + "冊の一覧を取得しました。ボタンを押してコピーしてください。", false);
+    const btn = document.createElement("button");
+    btn.textContent = "クリップボードにコピー";
+    btn.style.cssText = "font-size:18px;padding:14px 32px;border:0;border-radius:10px;background:#2563eb;color:#fff";
+    btn.onclick = () => {
+      const done = () => { ui.p.textContent = "コピーしました。bookshelf の設定 → 取込 → 「取込データを直接渡す」に貼り付けてください。"; btn.remove(); };
+      const manual = () => {
+        ui.p.textContent = "自動コピーできませんでした。下の欄を長押し →「すべてを選択」→ コピーしてください。";
+        const ta = document.createElement("textarea");
+        ta.value = json;
+        ta.readOnly = true;
+        ta.style.cssText = "width:92%;max-width:520px;height:140px;font-size:11px;background:#fff;color:#111;border-radius:8px;padding:8px";
+        ui.ov.insertBefore(ta, ui.x);
+        btn.remove();
+      };
+      try { navigator.clipboard.writeText(json).then(done, manual); } catch (e2) { manual(); }
+    };
+    ui.ov.insertBefore(btn, ui.x);
+    completion("OK:" + out.length + "冊");
   } catch (e) {
-    completion("ERROR:" + (e && e.message ? e.message : e));
+    const msg = (e && e.message ? e.message : String(e));
+    panel("取得に失敗しました: " + msg, true);
+    completion("ERROR:" + msg);
   }
 })();`;
     }
