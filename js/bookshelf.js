@@ -8816,7 +8816,7 @@ class VirtualBookshelf {
      * - どちらもなければクリップボードにコピー（フォールバック）
      */
     _buildKindleBookmarkletCode() {
-        const code = `(async()=>{try{var c=window.csrfToken;if(!c){alert('Amazon Kindle一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var items=[],s=0,t=Number.MAX_SAFE_INTEGER;while(items.length<t){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:s,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));var d=j.GetContentOwnershipData;t=d.numberOfItems;s+=100;items.push.apply(items,d.items);}var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
+        const code = `(async()=>{try{var c=window.csrfToken;if(!c){for(var si=0;si<document.scripts.length;si++){var mm=(document.scripts[si].textContent||"").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);if(mm){c=mm[1];break;}}}if(!c){var te=document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');c=te?(te.value||te.content||null):null;}if(!c){alert('Amazonの蔵書一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var fp=async function(st){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:st,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));return j.GetContentOwnershipData;};var f0=await fp(0);var t=f0.numberOfItems||0;var ss=[];for(var s2=100;s2<t;s2+=100)ss.push(s2);var rest=await Promise.all(ss.map(fp));var items=f0.items;for(var ri=0;ri<rest.length;ri++)items=items.concat(rest[ri].items);var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
         return 'javascript:' + encodeURIComponent(code);
     }
 
@@ -8841,13 +8841,23 @@ class VirtualBookshelf {
         return `// Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開いた状態で実行する。
 (async () => {
   try {
-    const c = window.csrfToken;
+    // csrfToken はページのグローバル変数に無いレイアウト（モバイル表示等）があるため、
+    // inline script と input/meta もフォールバック探索する
+    const findToken = () => {
+      if (window.csrfToken) return window.csrfToken;
+      for (const s of document.scripts) {
+        const m = (s.textContent || "").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);
+        if (m) return m[1];
+      }
+      const el = document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');
+      return el ? (el.value || el.content || null) : null;
+    };
+    const c = findToken();
     if (!c) {
-      completion("ERROR:Amazon Kindle 一覧ページ (mycd/digital-console/contentlist/booksAll) を Safari で開いてから実行してください");
+      completion("ERROR:Amazonの蔵書一覧ページで実行してください（今のページ: " + location.hostname + location.pathname + "）。蔵書一覧を開いているのにこれが出る場合は、Safariのアドレスバー左の「ぁあ」→「デスクトップ用Webサイトを表示」に切り替えてからもう一度実行してください");
       return;
     }
-    let items = [], start = 0, total = Number.MAX_SAFE_INTEGER;
-    while (items.length < total) {
+    const fetchPage = async (start) => {
       const input = JSON.stringify({
         contentType: "Ebook", contentCategoryReference: "booksAll",
         itemStatusList: ["Active"], showSharedContent: true,
@@ -8861,9 +8871,16 @@ class VirtualBookshelf {
       });
       const j = await r.json();
       if (j.success === false) throw new Error(JSON.stringify(j.error));
-      const d = j.GetContentOwnershipData;
-      total = d.numberOfItems; start += 100; items.push(...d.items);
-    }
+      return j.GetContentOwnershipData;
+    };
+    // ショートカットのJS実行には時間制限があるため、1ページ目で総数を得て残りは並列取得
+    // （2,000冊超でも直列25回→並列1波で数秒に収まる）
+    const first = await fetchPage(0);
+    const total = first.numberOfItems || 0;
+    const starts = [];
+    for (let s = 100; s < total; s += 100) starts.push(s);
+    const rest = await Promise.all(starts.map(fetchPage));
+    const items = first.items.concat(...rest.map(d => d.items));
     const out = items.map(i => ({
       title: i.title, authors: i.authors, acquiredTime: i.acquiredTime,
       readStatus: i.readStatus, asin: i.asin, productImage: i.productImage
