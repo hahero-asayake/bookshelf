@@ -24,10 +24,10 @@ id = "d429572547b4434486d44ee0159f46ae"
 #   wrangler d1 create asayake-community          # 出力の database_id を下に貼る
 #   下の3行のコメントを外す → wrangler deploy -c wrangler.hub.toml
 #   wrangler d1 execute asayake-community --remote --file=community-schema.sql
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "asayake-community"
-# database_id = "<REPLACE_WITH_D1_DATABASE_ID>"
+[[d1_databases]]
+binding = "DB"
+database_name = "asayake-community"
+database_id = "4512f08b-abeb-4a4e-93a0-65fadcee697a"
 
 # --- 環境変数 (いずれも公開値。client secret は持たない) ---
 [vars]
