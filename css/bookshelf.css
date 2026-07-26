@@ -6837,3 +6837,7 @@ body.select-mode .drag-handle { display: none; }
 .usage-alert-close:hover { opacity: 1; }
 /* hidden 属性を尊重 (.btn の display 明示が UA の [hidden] を上書きするため, ADR-049 と同型) */
 .usage-alert-actions .btn[hidden] { display: none; }
+/* 同期衝突ダイアログ (3択・WP-B2): 2択想定の cfm-box 幅ではボタンが全て2行に折り返すため拡幅＋折返し許容 */
+#sync-conflict-dialog { max-width: 600px; }
+#sync-conflict-dialog .cfm-actions { flex-wrap: wrap; }
+#sync-conflict-dialog .cfm-actions .btn { white-space: nowrap; }
