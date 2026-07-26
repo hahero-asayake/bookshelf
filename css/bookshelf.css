@@ -6835,3 +6835,5 @@ body.select-mode .drag-handle { display: none; }
     opacity: .6;
 }
 .usage-alert-close:hover { opacity: 1; }
+/* hidden 属性を尊重 (.btn の display 明示が UA の [hidden] を上書きするため, ADR-049 と同型) */
+.usage-alert-actions .btn[hidden] { display: none; }
