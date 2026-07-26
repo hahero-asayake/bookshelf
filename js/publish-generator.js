@@ -171,6 +171,8 @@ class PublishGenerator {
         const canonical = opts.canonical || '';
         const updated = PublishGenerator._fmtDate(opts.updatedAt);
         const year = PublishGenerator._year(opts.updatedAt);
+        // 通報 mailto: ハブ公開なら siteId、GitHub 公開ならサイトURLを件名に入れて特定可能にする (WP-B5 / HUB-SETUP Phase D-1)
+        const reportSubject = encodeURIComponent(`[通報] AsayakeBookshelf 公開ページ ${opts.reportRef || ''}`.trim());
 
         // 景表法 (ステマ規制): 実アフィリンクを含むページは、クリック前に「広告」と分かるよう
         // 本文冒頭に控えめなラベルを 1 行だけ出す (景観を損ねない最小限の明示)。
@@ -227,6 +229,7 @@ ${head}
   <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
   ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
   <p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
+  <p class="pub-legal"><a href="https://hahero-asayake.github.io/bookshelf/legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="https://hahero-asayake.github.io/bookshelf/legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">このページを通報</a></p>
 </div></footer>
 </body>
 </html>`;
@@ -247,7 +250,8 @@ ${head}
             siteHasAffiliate: !!opts.siteHasAffiliate,
             canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
             updatedAt,
-            pluginFooter: opts.pluginFooter || ''
+            pluginFooter: opts.pluginFooter || '',
+            reportRef: opts.reportRef || ''
         });
     }
 
@@ -331,6 +335,8 @@ ${head}
         //   github … 自分のタグがある時だけ収益化。
         const monetized = useGo ? true : (target === 'github' ? !!ownTag : false);
         const siteHasAffiliate = monetized;
+        // 通報の特定子 (footer mailto の件名へ)。ハブ=siteId / GitHub=サイトURL / どちらも無ければ空
+        const reportRef = siteId ? `siteId=${siteId}` : siteBaseUrl;
 
         // プラグインの公開スナップショット (純データ) を所定スロット用の HTML 片へ。コアが esc して組む
         // (ADR-042: コード非実行・純データのみ・サイト単位の加算スロット)。footerNote だけを受け付け、
@@ -401,14 +407,15 @@ ${head}
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${page.slug}/` : '',
                 noindex: !!page.noindex,
                 updatedAt: page.updatedAt || page.lastBuiltAt || 0,
-                pluginFooter
+                pluginFooter,
+                reportRef
             });
             files.push({ path: `${page.slug}/index.html`, content: html });
             built.push({ id: page.id, slug: page.slug, title: page.title, url: `${page.slug}/`, books: bookCount, updatedAt: page.updatedAt || 0 });
         }
 
         // トップ index
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, pluginFooter }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, pluginFooter, reportRef }) });
 
         const leak = this._detectLeak(files, state);
         // ownTag: ハブ公開時に Worker へ送り、Plus 時に /go が解決して使う本人タグ (ADR-034追補)。

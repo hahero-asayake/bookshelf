@@ -233,6 +233,26 @@ describe('公開サイトの体裁 (footer / OGP / 常時アフィ表明)', () =
         expect(html).toContain('最終更新 2026-06-01');
     });
 
+    it('フッターに規約/プライバシーのリンクと通報 mailto が出る (WP-B5・全ページ+index)', async () => {
+        const r = await gen.build([mkPage()]);
+        for (const path of ['p/index.html', 'index.html']) {
+            const html = r.files.find(f => f.path === path).content;
+            expect(html).toContain('legal/terms.html');
+            expect(html).toContain('legal/privacy.html');
+            expect(html).toContain('mailto:asayake.hahero@gmail.com?subject=');
+            expect(html).toContain('このページを通報');
+        }
+    });
+
+    it('通報 mailto の件名: hub 公開なら siteId、GitHub 公開なら siteBaseUrl が入る', async () => {
+        const hub = await gen.build([mkPage()], { target: 'hub', siteId: 'site99' });
+        expect(hub.files.find(f => f.path === 'p/index.html').content)
+            .toContain(encodeURIComponent('siteId=site99'));
+        const gh = await gen.build([mkPage()], { target: 'github', siteBaseUrl: 'https://x.example/shelf' });
+        expect(gh.files.find(f => f.path === 'p/index.html').content)
+            .toContain(encodeURIComponent('https://x.example/shelf'));
+    });
+
     it('サイトが収益化していれば常時アフィ表明を全ページに出す (プラン非依存)', async () => {
         const g = new PublishGenerator(makeApp(makeState(), 'plus'), createPublishStyleRegistry());
         const html = (await g.build([mkPage()])).files.find(f => f.path === 'p/index.html').content;
