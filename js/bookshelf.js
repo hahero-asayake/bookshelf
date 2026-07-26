@@ -4391,9 +4391,10 @@ class VirtualBookshelf {
                     message: `chore(bookshelf): sync ${entries.length} file(s)`
                 });
             } catch (err) {
-                if (err && err.name === 'GitHubConflictError') {
+                // GitHub (Trees API) と Asayake ハブ (412/HubConflictError) の衝突を同じダイアログに合流させる (WP-B2)
+                if (err && (err.name === 'GitHubConflictError' || err.name === 'HubConflictError')) {
                     this.updateSyncStatus('reconnect', this._syncLabel());
-                    this._handleSyncConflict();
+                    this._handleSyncConflict(err.name === 'HubConflictError' ? 'Asayake ハブ' : 'GitHub');
                     return;
                 }
                 throw err;
@@ -4417,21 +4418,58 @@ class VirtualBookshelf {
         }
     }
 
-    _handleSyncConflict() {
+    async _handleSyncConflict(source = 'GitHub') {
         if (this._conflictNotified) return;
         this._conflictNotified = true;
-        const ok = confirm(
-            '同期先 (GitHub) のデータが他の場所から更新されています。\n\n' +
-            'このセッションでの直近の編集はまだ GitHub に反映されていません。\n\n' +
-            'OK : 最新版を取得するためにページを再読込 (未反映の編集は失われます)\n' +
-            'キャンセル: 何もしない (次回保存時にまた衝突する可能性)'
-        );
-        if (ok) {
-            location.reload();
-        } else {
-            // ユーザがキャンセルしたら一定時間後にもう一度知らせる余地を残す
-            setTimeout(() => { this._conflictNotified = false; }, 60000);
+        const choice = await this._showConflictDialog(source);
+        if (choice === 'export') {
+            // リロード前のローカル状態を JSON で退避 (データ破壊防止・WP-B2)。退避後は改めて選び直せる
+            try { this.exportUnifiedData(); toast('現在の編集内容を書き出しました。', { type: 'success' }); }
+            catch (e) { toast(`書き出しに失敗しました: ${e.message}`, { type: 'error' }); }
+            this._conflictNotified = false;
+            return this._handleSyncConflict(source);
         }
+        if (choice === 'reload') { location.reload(); return; }
+        // 何もしない: 一定時間後にもう一度知らせる余地を残す
+        setTimeout(() => { this._conflictNotified = false; }, 60000);
+    }
+
+    // 衝突時の3択ダイアログ (confirmDialog は2択専用のため cfm-* スタイルを流用して自前構築)
+    _showConflictDialog(source) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'cfm-overlay';
+            const box = document.createElement('div');
+            box.className = 'cfm-box';
+            box.setAttribute('role', 'dialog');
+            box.setAttribute('aria-modal', 'true');
+            box.id = 'sync-conflict-dialog';
+            box.innerHTML = `
+                <div class="cfm-title"></div>
+                <div class="cfm-message"></div>
+                <div class="cfm-actions">
+                    <button type="button" class="btn btn-secondary cfm-cancel"></button>
+                    <button type="button" class="btn btn-secondary cfm-export"></button>
+                    <button type="button" class="btn btn-primary cfm-ok"></button>
+                </div>`;
+            box.querySelector('.cfm-title').textContent = '同期の衝突';
+            box.querySelector('.cfm-message').textContent =
+                `同期先 (${source}) のデータが他の場所から更新されています。このセッションの直近の編集はまだ同期先に反映されていません。` +
+                '「再読込」を選ぶと最新版を取得しますが、未反映の編集は失われます。心配なときは先に「編集内容を書き出す」で退避してください。';
+            box.querySelector('.cfm-cancel').textContent = '何もしない';
+            box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
+            box.querySelector('.cfm-ok').textContent = '再読込して最新版を取得';
+            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(r); };
+            const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
+            box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
+            box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
+            box.querySelector('.cfm-cancel').addEventListener('click', () => done('cancel'));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) done('cancel'); });
+            document.addEventListener('keydown', onKey, true);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            box.querySelector('.cfm-ok').focus();
+        });
     }
 
     _syncLabel() {
