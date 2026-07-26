@@ -37,6 +37,18 @@
         </div>
     </div>
 
+    <!-- ハブ容量アラート (使用率 80%↑ / 95%↑ / 降格後の超過。WP-B3/B4) -->
+    <div id="usage-alert-banner" class="usage-alert-banner" hidden>
+        <div class="usage-alert-inner">
+            <div class="usage-alert-msg" id="usage-alert-msg"></div>
+            <div class="usage-alert-actions">
+                <button type="button" class="btn-secondary" id="usage-alert-export" hidden>全データを書き出す</button>
+                <button type="button" class="btn-primary" id="usage-alert-upgrade" hidden>Plus にする</button>
+            </div>
+            <button class="usage-alert-close" id="usage-alert-close" title="閉じる">×</button>
+        </div>
+    </div>
+
     <!-- Phase C2: グローバル上部ヘッダーは撤去。ヘッダーはビュー文脈で変わる。
          brand → サイドバー上部 / 設定・本棚管理等 → サイドバー下部ユーティリティ /
          検索 → ⌘K のみ (全画面共通、ホームにもバーは置かない) /

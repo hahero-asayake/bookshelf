@@ -755,6 +755,7 @@ class VirtualBookshelf {
         // 起動時はチップ反映のみ (GIS の外部読込はしない)。ログインボタンの描画は設定を開いた時だけ。
         this._setupAccountUI();
         this._reflectAccountChip();
+        this._initUsageAlert();
 
         // Event delegation for modal content
         document.addEventListener('click', (e) => {
@@ -3620,6 +3621,63 @@ class VirtualBookshelf {
         if (chip) chip.classList.toggle('is-connected', connected);
     }
 
+    // ===== ハブ容量アラート (WP-B3/B4) =====
+    // 使用率のしきい値判定 (純関数・E2E とロジックを共有するため static)
+    //   null=非表示 / 'warn'=80%↑ / 'strong'=95%↑ / 'over'=Free で上限超過 (降格後の保存不能状態)
+    static usageAlertLevel(used, quota, plan) {
+        if (!(quota > 0)) return null;
+        if (used > quota && plan !== 'plus') return 'over';
+        const ratio = used / quota;
+        if (ratio >= 0.95) return 'strong';
+        if (ratio >= 0.8) return 'warn';
+        return null;
+    }
+
+    _initUsageAlert() {
+        const close = document.getElementById('usage-alert-close');
+        if (close) close.addEventListener('click', () => {
+            this._usageAlertDismissed = this._usageAlertLevelRank(this._usageAlertLevel);
+            const banner = document.getElementById('usage-alert-banner');
+            if (banner) banner.hidden = true;
+        });
+        const upgrade = document.getElementById('usage-alert-upgrade');
+        if (upgrade) upgrade.addEventListener('click', () => this._openSettingsModal('account-section'));
+        const exp = document.getElementById('usage-alert-export');
+        if (exp) exp.addEventListener('click', () => this.exportUnifiedData());
+        this._renderUsageAlert();   // 起動時はキャッシュ (bookshelf_sync の hub) から描画
+    }
+
+    _usageAlertLevelRank(level) { return { warn: 1, strong: 2, over: 3 }[level] || 0; }
+
+    _renderUsageAlert(hub) {
+        const banner = document.getElementById('usage-alert-banner');
+        if (!banner) return;
+        hub = hub || (SyncConfigManager.load().hub) || {};
+        const connected = !!(hub.key && hub.apiBase);
+        const used = Number(hub.usedBytes) || 0;
+        const quota = Number(hub.quotaBytes) || 0;
+        const plus = hub.plan === 'plus';
+        const level = connected ? VirtualBookshelf.usageAlertLevel(used, quota, hub.plan) : null;
+        this._usageAlertLevel = level;
+        // 閉じた後は、より深刻な段階に上がった時だけ再表示する
+        if (!level || this._usageAlertLevelRank(level) <= (this._usageAlertDismissed || 0)) { banner.hidden = true; return; }
+        const msg = document.getElementById('usage-alert-msg');
+        const upgrade = document.getElementById('usage-alert-upgrade');
+        const exp = document.getElementById('usage-alert-export');
+        const pct = quota > 0 ? Math.round((used / quota) * 100) : 0;
+        if (level === 'over') {
+            if (msg) msg.textContent = `ハブの容量を超過しています（${this._formatBytes(used)} / 上限 ${this._formatBytes(quota)}）。新しい保存はできません。データを削減するか、全データを書き出して退避するか、再アップグレードしてください。`;
+        } else if (level === 'strong') {
+            if (msg) msg.textContent = `ハブ容量の残りがわずかです（${pct}% 使用）。このままでは保存に失敗します。空きを作るか Plus へのアップグレードを検討してください。`;
+        } else {
+            if (msg) msg.textContent = `ハブ容量の 80% を使用中です（${this._formatBytes(used)} / ${this._formatBytes(quota)}・残り ${this._formatBytes(Math.max(0, quota - used))}）。`;
+        }
+        if (upgrade) upgrade.hidden = plus;
+        if (exp) exp.hidden = (level !== 'over');
+        banner.classList.toggle('is-critical', level === 'over' || level === 'strong');
+        banner.hidden = false;
+    }
+
     _logoutAccount() {
         if (!confirm('ログアウトしますか？\nこの端末からハブの接続情報を消します（ハブ上のデータは残ります）。\nOK を押すとページを再読み込みします。')) return;
         this._disconnectHub();   // 切断 + 同期=hub なら local に戻す + reload
@@ -3658,6 +3716,7 @@ class VirtualBookshelf {
                 this._renderHubUsageBar(hub);
                 this._renderAccountUsageBar(hub);
                 this._reflectAccountChip(hub, true);
+                this._renderUsageAlert(hub);
                 if (notify) toast('使用量を更新しました。', { type: 'success' });
             }
         } catch (e) {
@@ -3717,6 +3776,26 @@ class VirtualBookshelf {
         }
     }
 
+    // 決済直後のプラン反映を指数バックオフで確認 (WP-B4)。全滅時は案内を出して黙って諦めない
+    async _pollPlusActivation() {
+        const delays = [2000, 4000, 8000, 16000, 30000];
+        for (const ms of delays) {
+            await new Promise(r => setTimeout(r, ms));
+            try {
+                if (typeof HubAuth === 'undefined') break;
+                const hub = await HubAuth.refreshUsage();
+                if (hub) {
+                    this._renderHubUsageBar(hub);
+                    this._renderAccountUsageBar(hub);
+                    this._reflectAccountChip(hub, true);
+                    this._renderUsageAlert(hub);
+                    if (hub.plan === 'plus') { toast('Plus が有効になりました。', { type: 'success' }); return; }
+                }
+            } catch (_) { /* 一時失敗は次の試行へ */ }
+        }
+        toast('Plus の反映を確認できませんでした。数分後にページを再読み込みしてください。それでも反映されない場合は asayake.hahero@gmail.com へご連絡ください。', { type: 'warn' });
+    }
+
     // 決済からの戻り (?billing=success|cancel)。プラン反映は Webhook 経由なので使用量を再取得
     _handleBillingReturn() {
         if (this._billingReturnHandled) return;
@@ -3733,8 +3812,8 @@ class VirtualBookshelf {
         } catch (_) {}
         if (billing === 'success') {
             toast('お支払いが完了しました。Plus を反映しています…', { type: 'success' });
-            // Webhook 反映に数秒かかることがあるので少し遅らせて使用量を再取得
-            setTimeout(() => this._refreshHubUsage({ notify: false }), 2500);
+            // Webhook 反映の遅れを指数バックオフで最大 ~60 秒待つ (WP-B4)
+            this._pollPlusActivation();
         } else if (billing === 'cancel') {
             toast('アップグレードはキャンセルされました。', { type: 'info' });
         }
