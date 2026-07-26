@@ -92,7 +92,7 @@ wrangler deploy -c wrangler.hub.toml
 
 1. **ToS / プライバシーポリシー** (平文で私的個人データを預かる = hahero が管理者)。削除・エクスポート要求の窓口、通報導線。
 2. **バックアップ** (A-2 の方針を実装 or 明文化)。
-3. **通報→停止**: KV `report:<siteId>` を `suspended` にすると `/public/<siteId>/` が 451。
+3. **通報→停止**: KV `report:<siteId>` に JSON `{"status":"suspended"}` を置くと `/public/<siteId>/` が 451（コードは `rep.status === 'suspended'` で判定＝素の文字列 `suspended` では効かない）。具体コマンドは Phase G。
 
 ---
 
@@ -207,7 +207,7 @@ wrangler deploy -c wrangler.hub.toml
 4. **登録** (各 plugin に共通の repoUrl/sha/author を付与して 12 回 POST):
    ```bash
    cd cf-worker
-   KEY=hk_xxxxx   # 手順3で控えた管理者キー
+   export KEY=hk_xxxxx   # 手順3で控えた管理者キー (下の node は process.env.KEY を参照するため export 必須。PowerShell は $env:KEY='hk_…')
    node -e '
      const s=require("./market-seed.json");
      (async()=>{ for(const p of s.plugins){
@@ -248,3 +248,39 @@ wrangler deploy -c wrangler.hub.toml
 5. コード内の絶対参照 (publish-generator の footer リンク `https://hahero-asayake.github.io/bookshelf`、`storage.js` の `extensionImportOrigins`) は動くが旧ドメイン指す → 落ち着いたら `asayake.org/bookshelf` に更新 (任意)。
 
 > ハブだけ先に立てる場合、この節は飛ばしてよい。
+
+---
+
+## Phase G. 監視・停止運用 (WP-B6 / WP-A9)
+
+公開後に「気づける」ための最低線と、通報を受けたときの停止手順。
+
+### G-1. Workers Logs (observability)
+
+- `wrangler.hub.toml` の `[observability] enabled = true` を deploy に同乗させる (WP-A1)。
+- 確認: Cloudflare ダッシュボード → Workers & Pages → `asayake-hub` → **Logs** タブにリクエストログ/例外が流れていること。sampling はデフォルト 1.0 (全件)。
+
+### G-2. 外形監視 (UptimeRobot・無料枠)
+
+- 監視 URL は **未認証で 200 が返る具体パス**に固定する: `https://hub.asayake.org/public/<自分のsiteId>/`
+  (ルート `/` はハンドラ無しで 404 のため監視に使わない。siteId は publish 済みのものを使う)。
+- 通知先: asayake.hahero@gmail.com。ステータス up を確認して完了 (§1-#7)。
+
+### G-3. Stripe webhook 失敗通知
+
+- Stripe ダッシュボード → 開発者 → Webhook → 対象エンドポイント → 失敗時のメール通知を ON。
+
+### G-4. 通報→停止/解除 (Phase D-3 の具体コマンド)
+
+値は JSON (`asayake-hub.js` は `rep.status === 'suspended'` で判定)。KV namespace id は `wrangler.hub.toml` の `d429572547b4434486d44ee0159f46ae`。
+
+```powershell
+# 停止 (451 化)
+wrangler kv key put "report:<siteId>" '{"status":"suspended","reason":"<通報概要>","at":"<ISO日時>"}' --namespace-id d429572547b4434486d44ee0159f46ae --remote
+# 確認: https://hub.asayake.org/public/<siteId>/ が 451 (キャッシュヒット中は最大 60 秒遅れ)
+# 解除
+wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0159f46ae --remote
+```
+
+- 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
+- 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。

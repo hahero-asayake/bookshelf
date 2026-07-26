@@ -64,6 +64,11 @@ type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 60, period = 60 }
 
+# --- 運用監視 (Workers Logs, ローンチ計画 WP-B6 / HUB-SETUP Phase G) ---
+# head_sampling_rate は書かない (デフォルト 1.0 = 全リクエスト記録)
+[observability]
+enabled = true
+
 # --- ルート: hub.asayake.org を Worker 専用ホストに ---
 # custom_domain=true なら wrangler が DNS レコードと TLS 証明書も自動作成する
 # (手動の A レコード追加は不要)。
