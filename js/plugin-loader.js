@@ -212,6 +212,7 @@ class BookshelfPluginLoader {
 
         const confirmMsg =
             `インストールしますか？\n\n` +
+            `⚠️ プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。\n\n` +
             `id: ${manifest.id}\n` +
             `name: ${manifest.name || '(未指定)'}\n` +
             `version: ${manifest.version || '(未指定)'}\n` +

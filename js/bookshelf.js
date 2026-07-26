@@ -5418,7 +5418,7 @@ class VirtualBookshelf {
         { id: 'sync-section',     icon: 'folder-cog',       label: '同期',              desc: '保存先: この端末 / GitHub / ハブ' },
         { id: 'library-section',  icon: 'library',          label: '蔵書',              desc: '取り込み・手動追加・除外一覧' },
         { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
-        { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: 'インストール・マーケット' },
+        { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: 'インストールと管理' },
         { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: '詳細メモの設定' },
         { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
         { id: 'about-section',    icon: 'info',             label: 'このアプリについて',  desc: 'バージョン・各種ポリシー' },
@@ -5480,10 +5480,10 @@ class VirtualBookshelf {
         }
     }
 
-    // 開いたカテゴリだけ重い描画 (毎回の market+プラグイン一覧の再描画を回避)。
+    // 開いたカテゴリだけ重い描画 (毎回のプラグイン一覧の再描画を回避)。
+    // マーケット描画は C-251 で撤去 (_renderMarketSection は温存・呼ばないだけ)
     _renderSettingsCategory(id) {
         if (id === 'plugins-section') {
-            this._renderMarketSection().catch(e => console.warn('market render failed', e));
             this._renderPluginListSection().catch(e => console.warn('plugin list render failed', e));
         } else if (id === 'account-section') {
             this._setupAccountUI();
@@ -5997,6 +5997,8 @@ class VirtualBookshelf {
     }
 
     // ===== マーケット (公式カタログ。ADR-040 Phase1) =====
+    // ⚠️ C-251 (2026-07-27) でマーケット UI は撤去 (アプリ内カタログ非表示・#plugin-market-section も index.html から削除済み)。
+    //    以下の描画コードと hub 側カタログ API・seed 12 個は「将来の再追加」に備えて温存 — 呼び出し側が無いだけ。
     // ハブの公開レジストリ GET /plugins を読み、カード一覧 + ワンタップ導入 (SHA ピン) を出す。
     // 認証不要 (公開) なのでハブ未接続でも閲覧可。導入は同期先の接続が必要。
     async _renderMarketSection() {

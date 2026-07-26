@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026070801">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072701">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -550,18 +550,19 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="puzzle" data-icon-size="16"></span>プラグイン</summary>
                     <div class="settings-section-body">
 
-                    <h4 class="settings-subsection-title"><span class="h-icon" data-icon="store" data-icon-size="16"></span>マーケット（公式カタログ）</h4>
-                    <div id="plugin-market-section" class="plugin-grid">
-                        <p style="color:#888;">設定を開くと公式カタログが表示されます…</p>
-                    </div>
-
-                    <h4 class="settings-subsection-title">GitHub からインストール</h4>
+                    <!-- マーケット (公式カタログ) は C-251 (2026-07-27) で撤去。hub カタログ API・seed・_renderMarketSection は温存 (再追加時に戻す) -->
+                    <h4 class="settings-subsection-title">リポジトリURLからインストール</h4>
                     <div class="plugin-install-card">
                         <div class="plugin-install-input-group">
                             <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
                             <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
                         </div>
-                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code></small>
+                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code><br>⚠️ プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。</small>
+                    </div>
+
+                    <h4 class="settings-subsection-title">手動でインストール</h4>
+                    <div class="plugin-install-card">
+                        <small class="plugin-install-hint">同期フォルダの <code>plugins/&lt;プラグインid&gt;/</code> に <code>manifest.json</code> と <code>index.js</code> を置くと、次回読み込み時に自動で認識されます。</small>
                     </div>
 
                     <h4 class="settings-subsection-title">インストール済みプラグイン</h4>
@@ -1101,14 +1102,14 @@
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
     <script src="js/publish-page-store.js?v=2026061508"></script>
     <script src="js/publish-styles.js?v=2026061509"></script>
-    <script src="js/publish-generator.js?v=2026062201"></script>
+    <script src="js/publish-generator.js?v=2026072701"></script>
     <script src="js/exporter.js?v=2026062201"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
-    <script src="js/plugin-loader.js?v=2026062202"></script>
+    <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026071102"></script>
+    <script src="js/bookshelf.js?v=2026072701"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
