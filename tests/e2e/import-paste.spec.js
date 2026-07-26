@@ -30,6 +30,22 @@ const PASTE_JSON = JSON.stringify([
     { title: '貼り付けの本B', authors: '著者B', acquiredTime: 1700000001000, readStatus: 'READ', asin: 'B0PASTE002', productImage: '' }
 ]);
 
+test('取込モーダルは PC 専用 (端末タブ・モバイルレーンが存在しない, C-248)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => window.bookshelf.showImportModal());
+    await expect(page.locator('#import-modal')).toHaveClass(/show/);
+    // PC レーンだけが見えて、モバイル系導線は DOM ごと無い
+    await expect(page.locator('#import-lane-pc')).toBeVisible();
+    await expect(page.locator('.import-device-tab')).toHaveCount(0);
+    await expect(page.locator('#import-lane-ios')).toHaveCount(0);
+    await expect(page.locator('#import-lane-android')).toHaveCount(0);
+    await expect(page.locator('#add-shortcut-btn')).toHaveCount(0);
+    await expect(page.locator('#copy-bookmarklet')).toHaveCount(0);
+    // フォールバックの直接貼付は残る
+    await expect(page.locator('#import-method-data')).toBeVisible();
+    expect(errors).toEqual([]);
+});
+
 test('貼り付け取込: JSON を貼って取込むと本選択リストに出る', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => window.bookshelf.showImportModal());

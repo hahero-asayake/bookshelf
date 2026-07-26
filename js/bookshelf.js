@@ -503,31 +503,18 @@ class VirtualBookshelf {
             installPluginBtn.addEventListener('click', () => this.installPluginFromInput());
         }
 
-        // Bookmarklet-based import (no extension required)
-        const copyBookmarkletBtn = document.getElementById('copy-bookmarklet');
-        if (copyBookmarkletBtn) {
-            copyBookmarkletBtn.addEventListener('click', () => this.copyKindleBookmarklet());
-        }
+        // Kindle 取込 (PC 拡張のみ・C-248)。モバイル導線 (ショートカット/ブックマークレット) の UI は撤去、
+        // リレー機構と copyKindleBookmarklet 等のコアは温存 (UI から到達しないだけ)
         const openAmazonBtn = document.getElementById('open-amazon-for-import');
         if (openAmazonBtn) {
             openAmazonBtn.addEventListener('click', () => this.openAmazonForBookmarklet());
         }
-        const openAmazonMobileBtn = document.getElementById('open-amazon-relay');
-        if (openAmazonMobileBtn) {
-            openAmazonMobileBtn.addEventListener('click', () => this.openAmazonForBookmarklet({ mobile: true }));
-        }
 
-        // Kindle 取込モーダル: 端末タブ・レーン内アクションの delegation (2026-07 端末ファースト改修)
+        // Kindle 取込モーダル: レーン内アクションの delegation
         const importModalEl = document.getElementById('import-modal');
         if (importModalEl && !this._importModalDelegationBound) {
             this._importModalDelegationBound = true;
             importModalEl.addEventListener('click', (e) => {
-                const tab = e.target.closest('.import-device-tab');
-                if (tab) {
-                    try { localStorage.setItem('bookshelf_import_device', tab.dataset.importDevice); } catch (_) {}
-                    this._renderImportLanes();
-                    return;
-                }
                 const setupDone = e.target.closest('[data-import-setup-done]');
                 if (setupDone) {
                     this._markImportSetupDone(setupDone.dataset.importSetupDone);
@@ -536,10 +523,7 @@ class VirtualBookshelf {
                 const action = e.target.closest('[data-import-action]');
                 if (action) {
                     const kind = action.dataset.importAction;
-                    if (kind === 'copy-shortcut-code') this.copyKindleShortcutCode();
-                    else if (kind === 'open-amazon-mobile') this.openAmazonForBookmarklet({ mobile: true });
-                    else if (kind === 'add-shortcut') { if (KINDLE_SHORTCUT_URL) window.open(KINDLE_SHORTCUT_URL, '_blank', 'noopener'); }
-                    else if (kind === 'open-paste') {
+                    if (kind === 'open-paste') {
                         const d = document.getElementById('import-method-data');
                         if (d) d.open = true;
                         const ta = document.getElementById('kindle-paste-input');
@@ -549,7 +533,7 @@ class VirtualBookshelf {
                 }
                 if (e.target.closest('#cancel-relay-wait')) this._cancelKindleImportWait();
             });
-            // iOS PWA のタイマー凍結対策: 画面復帰時にリレーポーリングを即 1 回実行
+            // タイマー凍結対策: 画面復帰時にリレーポーリングを即 1 回実行
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible' && this._kindleRelayTick) this._kindleRelayTick();
             });
@@ -8344,18 +8328,11 @@ class VirtualBookshelf {
             this.applyFilters();
             this.updateStats();
 
-            // 実取込の成功 = そのレーンの初回準備が済んでいる証拠として自動フラグ
+            // 実取込の成功 = 初回準備 (PC 拡張) が済んでいる証拠として自動フラグ (PC 専用化 C-248)
             if (this.importSource === 'bookmarklet' || this.importSource === 'relay') {
-                let lane;
-                if (this.importSource === 'bookmarklet') {
-                    lane = 'pc';
-                } else {
-                    try { lane = localStorage.getItem('bookshelf_import_device'); } catch (_) {}
-                    if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') lane = this._detectImportDevice();
-                }
                 const setup = this._importSetupFlags();
-                if (!setup[lane]) {
-                    setup[lane] = true;
+                if (!setup.pc) {
+                    setup.pc = true;
                     try { localStorage.setItem('bookshelf_import_setup', JSON.stringify(setup)); } catch (_) {}
                 }
             }
@@ -8612,48 +8589,23 @@ class VirtualBookshelf {
      * (素の localStorage では常に open = E2E import-paste.spec.js 互換の要)。
      */
     _renderImportLanes() {
-        const detected = this._detectImportDevice();
-        let lane = null;
-        try { lane = localStorage.getItem('bookshelf_import_device'); } catch (_) {}
-        if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') lane = detected;
+        // PC 専用 (C-248)。レーンは import-lane-pc の 1 本のみ・端末タブなし
         const setup = this._importSetupFlags();
-        document.querySelectorAll('.import-device-tab').forEach((btn) => {
-            const d = btn.dataset.importDevice;
-            const active = d === lane;
-            btn.classList.toggle('active', active);
-            btn.setAttribute('aria-selected', String(active));
-            const badge = btn.querySelector('.import-device-badge');
-            if (badge) badge.hidden = d !== detected; // 「この端末」バッジ
-        });
-        document.querySelectorAll('.import-lane').forEach((sec) => { sec.hidden = sec.id !== `import-lane-${lane}`; });
-        const setupEl = document.getElementById(`import-setup-${lane}`);
+        const setupEl = document.getElementById('import-setup-pc');
         if (setupEl) {
-            const done = !!setup[lane];
+            const done = !!setup.pc;
             setupEl.open = !done;
             const state = setupEl.querySelector('.import-setup-state');
             if (state) state.textContent = done ? '済み' : '';
         }
-        // 方式④: アクティブレーンの準備が済んでいれば畳む
+        // 方式② (直接貼付): 初回準備が済んでいれば畳む (拡張不具合時のフォールバック位置づけ)
         const dataEl = document.getElementById('import-method-data');
-        if (dataEl) dataEl.open = !setup[lane];
-        // Asayake ハブ接続状態を「押す前に」文言へ反映
-        const hubReady = !!((SyncConfigManager.load().hub || {}).apiBase);
-        document.querySelectorAll('#import-modal [data-hub-only]').forEach((el) => { el.hidden = !hubReady; });
-        document.querySelectorAll('#import-modal [data-nohub-only]').forEach((el) => { el.hidden = hubReady; });
+        if (dataEl) dataEl.open = !setup.pc;
         // PC 拡張リンク (配布 URL 未確定なら代替文言)
         const ext = document.getElementById('kindle-exporter-link');
         const noUrl = document.getElementById('kindle-exporter-nourl');
         if (ext) { ext.hidden = !KINDLE_EXPORTER_URL; if (KINDLE_EXPORTER_URL) ext.href = KINDLE_EXPORTER_URL; }
         if (noUrl) noUrl.hidden = !!KINDLE_EXPORTER_URL;
-        // iOS 完成版ショートカット「追加」ボタン (配布 URL 未確定なら代替文言)
-        const addSc = document.getElementById('add-shortcut-btn');
-        const scNoUrl = document.getElementById('kindle-shortcut-nourl');
-        const scLead = document.getElementById('kindle-shortcut-lead');
-        if (addSc) addSc.hidden = !KINDLE_SHORTCUT_URL;
-        if (scNoUrl) scNoUrl.hidden = !!KINDLE_SHORTCUT_URL;
-        // リード文「1回だけ追加」は追加ボタンが実在する (配布 URL 設定済み) 時だけ出す。
-        // URL 未設定時は上の kindle-shortcut-nourl (配布準備中) が主メッセージになる。
-        if (scLead) scLead.hidden = !KINDLE_SHORTCUT_URL;
         // GIF スロット: media URL が非空のレーンだけ <img> を描画 (空なら空箱を出さない)
         document.querySelectorAll('#import-modal [data-import-media]').forEach((slot) => {
             const src = (KINDLE_IMPORT_MEDIA && KINDLE_IMPORT_MEDIA[slot.dataset.importMedia]) || '';
@@ -8675,7 +8627,7 @@ class VirtualBookshelf {
 
     /** 「準備完了にする」: レーンの初回準備を完了として記録し、以後は初回準備と方式④を畳む */
     _markImportSetupDone(lane) {
-        if (lane !== 'pc' && lane !== 'ios' && lane !== 'android') return;
+        if (lane !== 'pc') return;   // PC 専用化 (C-248)。ios/android レーンは撤去済み
         const setup = this._importSetupFlags();
         setup[lane] = true;
         try { localStorage.setItem('bookshelf_import_setup', JSON.stringify(setup)); } catch (_) {}

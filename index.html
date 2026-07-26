@@ -885,16 +885,10 @@
             </div>
             <div class="modal-body">
                 <div class="import-options"><!-- クラス名維持必須: showBookSelectionForImport / cancelImport が querySelector('.import-options') 参照 -->
-                    <p class="pp-hint">Amazonで買った本を取り込みます。端末ごとに手順が違います（お使いの端末を自動で選択済み）。</p>
+                    <p class="pp-hint">Amazonで買った本を、PCのブラウザ（Chrome / Edge）から取り込みます。取込はPC専用です（取り込んだ後の閲覧・同期はスマホでも使えます）。</p>
 
-                    <div class="import-device-tabs" role="tablist" aria-label="端末を選ぶ">
-                        <button type="button" class="import-device-tab" role="tab" data-import-device="pc" aria-selected="false"><span class="h-icon" data-icon="monitor" data-icon-size="14"></span>PC<span class="import-device-badge" hidden>この端末</span></button>
-                        <button type="button" class="import-device-tab" role="tab" data-import-device="ios" aria-selected="false"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>iPhone / iPad<span class="import-device-badge" hidden>この端末</span></button>
-                        <button type="button" class="import-device-tab" role="tab" data-import-device="android" aria-selected="false"><span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>Android<span class="import-device-badge" hidden>この端末</span></button>
-                    </div>
-
-                    <!-- 方式① PC（拡張機能） -->
-                    <section class="import-lane" id="import-lane-pc" hidden>
+                    <!-- 取込 = PC 拡張機能 (主) ＋ 直接貼付 (拡張不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Androidブックマークレット) は撤去。リレー機構のコードは温存 -->
+                    <section class="import-lane" id="import-lane-pc">
                         <details class="pp-advanced import-setup" id="import-setup-pc">
                             <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（拡張機能を追加）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                             <div class="pp-advanced-body">
@@ -916,71 +910,7 @@
                         </div>
                     </section>
 
-                    <!-- 方式② iPhone / iPad（ショートカット） -->
-                    <section class="import-lane" id="import-lane-ios" hidden>
-                        <details class="pp-advanced import-setup" id="import-setup-ios">
-                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                            <div class="pp-advanced-body">
-                                <p class="pp-hint" id="kindle-shortcut-lead" hidden>取込用のショートカットを1回だけ追加します。以後はボタンひとつで取り込めます。</p>
-                                <div class="import-option-actions">
-                                    <button type="button" id="add-shortcut-btn" class="btn btn-secondary" data-import-action="add-shortcut" hidden><span class="h-icon" data-icon="plus" data-icon-size="14"></span>Kindle取込ショートカットを追加</button>
-                                    <span class="pp-hint" id="kindle-shortcut-nourl" hidden>完成版ショートカットは配布準備中です。今は下の「取り込みデータを直接渡す」で取り込めます。</span>
-                                    <button type="button" class="btn btn-secondary" data-import-setup-done="ios"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
-                                </div>
-                                <details class="pp-advanced import-shortcut-manual">
-                                    <summary><span class="h-icon" data-icon="wrench" data-icon-size="13"></span>自分で作る場合は作り方ガイド</summary>
-                                    <div class="pp-advanced-body">
-                                        <p class="pp-hint">上級者向け。作り方ガイドの手順どおりに、コードを貼り付けて作成してください。</p>
-                                        <div class="import-option-actions">
-                                            <a class="btn btn-secondary" href="docs/ios-shortcut-import.md" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>作り方ガイドを開く</a>
-                                            <button type="button" class="btn btn-secondary" data-import-action="copy-shortcut-code"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込用コードをコピー</button>
-                                        </div>
-                                    </div>
-                                </details>
-                            </div>
-                        </details>
-                        <div class="import-lane-steps">
-                            <p class="pp-hint">開いた画面で「共有」→「Kindle取込」をタップするだけです。</p>
-                            <div class="import-option-actions">
-                                <button id="open-amazon-relay" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonのライブラリを開く</button>
-                            </div>
-                            <div class="import-media-slot" data-import-media="ios" hidden></div>
-                            <p class="pp-hint" data-hub-only hidden>実行して「取込完了！」と出ると、自動でこの画面に一覧が出ます。</p>
-                            <p class="pp-hint" data-nohub-only hidden>実行して「コピーしました」と出たら、下の貼り付けから取り込んでください。</p>
-                            <p class="import-fallback-note">うまくいかないときは → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取り込みデータを貼り付ける</button></p>
-                        </div>
-                    </section>
-
-                    <!-- 方式③ Android（取込用ブックマーク） -->
-                    <section class="import-lane" id="import-lane-android" hidden>
-                        <details class="pp-advanced import-setup" id="import-setup-android">
-                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（取込用ブックマーク）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                            <div class="pp-advanced-body">
-                                <ol class="import-option-list">
-                                    <li>下の「取込用ブックマークのコードをコピー」を押す</li>
-                                    <li>Chromeで任意のページを☆でブックマークに登録する</li>
-                                    <li>そのブックマークを「編集」→URL欄を全部消す→コードを貼り付ける</li>
-                                    <li>名前を「Kindle取込」にして保存する</li>
-                                </ol>
-                                <div class="import-option-actions">
-                                    <button id="copy-bookmarklet" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込用ブックマークのコードをコピー</button>
-                                    <button type="button" class="btn btn-secondary" data-import-setup-done="android"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
-                                </div>
-                            </div>
-                        </details>
-                        <div class="import-lane-steps">
-                            <p class="pp-hint">開いた画面で、アドレスバーに「Kindle取込」と入力し、候補のブックマークをタップするだけです。</p>
-                            <div class="import-option-actions">
-                                <button type="button" class="btn btn-primary" data-import-action="open-amazon-mobile"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonのライブラリを開く</button>
-                            </div>
-                            <div class="import-media-slot" data-import-media="android" hidden></div>
-                            <p class="pp-hint" data-hub-only hidden>実行して「送信しました」と出ると、自動でこの画面に一覧が出ます。</p>
-                            <p class="pp-hint" data-nohub-only hidden>実行して「コピーしました」と出たら、下の貼り付けから取り込んでください。</p>
-                            <p class="import-fallback-note">うまくいかないときは → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取り込みデータを貼り付ける</button></p>
-                        </div>
-                    </section>
-
-                    <!-- 受信待ちステータス（全レーン共有・ID維持） -->
+                    <!-- 受信待ちステータス（ID維持・PC拡張の受信待ちに使用） -->
                     <div id="import-relay-status" class="import-relay-status" hidden>
                         <div class="import-relay-waiting" data-relay-waiting hidden>
                             <span class="h-icon" data-icon="loader" data-icon-size="14"></span>
@@ -997,9 +927,9 @@
 
                     <!-- 方式④ 取込データを直接渡す（貼り付け＋ファイル統合） -->
                     <details class="pp-advanced" id="import-method-data" open><!-- 静的HTMLはopen固定。閉じるのはJS（アクティブレーンの準備完了フラグが立っている時だけ）。E2E互換の要 -->
-                        <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">「コピーしました」と出たときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                        <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">拡張機能が使えないときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                         <div class="pp-advanced-body">
-                            <p class="pp-hint">「Kindle取込」の実行後に「コピーしました」と出た内容を貼り付けるか、保存してある取込データファイルから取り込めます。</p>
+                            <p class="pp-hint">拡張機能がうまく動かないときの代替手段です。「コピーしました」と出た取込データを貼り付けるか、保存してある取込データファイルから取り込めます。</p>
                             <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データを貼り付け"></textarea>
                             <div class="import-option-actions">
                                 <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
