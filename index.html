@@ -657,6 +657,9 @@
                         <a href="https://github.com/hahero-asayake/bookshelf" target="_blank" rel="noopener">GitHub Repository</a>
                         ｜ Forked from <a href="https://github.com/karaage0703/karaage-virtual-bookshelf" target="_blank" rel="noopener">karaage0703/karaage-virtual-bookshelf</a>
                     </p>
+                    <p class="about-links">
+                        <span class="h-icon" data-icon="mail" data-icon-size="14"></span><a href="mailto:asayake.hahero@gmail.com?subject=AsayakeBookshelf%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B">お問い合わせ（メール）</a>
+                    </p>
                     </div>
                 </details>
 
@@ -887,22 +890,24 @@
             <div class="modal-body">
                 <div class="import-options"><!-- クラス名維持必須: showBookSelectionForImport / cancelImport が querySelector('.import-options') 参照 -->
                     <p class="pp-hint">Amazonで買った本を、PCのブラウザ（Chrome / Edge）から取り込みます。取込はPC専用です（取り込んだ後の閲覧・同期はスマホでも使えます）。</p>
+                    <p class="pp-hint" id="import-mobile-note" hidden>この端末では取込の操作はできません。PCのブラウザでこのアプリを開いて取り込んでください。取り込んだ本は、このままスマホでも見られます。</p>
 
-                    <!-- 取込 = PC 拡張機能 (主) ＋ 直接貼付 (拡張不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Androidブックマークレット) は撤去。リレー機構のコードは温存 -->
+                    <!-- 取込 = 取込ブックマーク (主・ADR-054。拡張機能は配布しない) ＋ 直接貼付 (ブックマーク不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Android用UI) は撤去。リレー機構のコードは温存 -->
                     <section class="import-lane" id="import-lane-pc">
                         <details class="pp-advanced import-setup" id="import-setup-pc">
-                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（拡張機能を追加）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（取込ブックマークを登録）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                             <div class="pp-advanced-body">
-                                <p class="pp-hint">取込用の拡張機能をChrome / Edgeに1回だけ追加します。Amazon.co.jp にはログインしておいてください。</p>
+                                <p class="pp-hint">下のボタンをブラウザのブックマークバーへドラッグして登録します（1回だけ）。ブックマークバーが見えないときは Ctrl+Shift+B で表示できます。</p>
                                 <div class="import-option-actions">
-                                    <a id="kindle-exporter-link" class="btn btn-secondary" href="#" target="_blank" rel="noopener" hidden><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>拡張機能の入手ページを開く</a>
-                                    <span class="pp-hint" id="kindle-exporter-nourl" hidden>拡張機能は配布準備中です。今は下の「取込データを直接渡す」で取り込めます。</span>
+                                    <a id="kindle-bookmarklet-link" class="btn btn-secondary" href="#" draggable="true"><span class="h-icon" data-icon="bookmark" data-icon-size="14"></span>Kindle取込</a>
+                                    <button type="button" class="btn btn-secondary" data-import-action="copy-bookmarklet"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コードをコピーして手動で登録</button>
                                     <button type="button" class="btn btn-secondary" data-import-setup-done="pc"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
                                 </div>
+                                <p class="pp-hint">ドラッグできないときは「コードをコピーして手動で登録」を押し、ブックマークを新規作成してURL欄に貼り付けてください。</p>
                             </div>
                         </details>
                         <div class="import-lane-steps">
-                            <p class="pp-hint">押すとAmazonの一覧が新しいタブで開き、自動で読み取ってこの画面に戻ります。</p>
+                            <p class="pp-hint">押すとAmazonの蔵書一覧が新しいタブで開きます。開いたページで、登録した「Kindle取込」ブックマークをクリックすると、この画面に戻って本の一覧が出ます。</p>
                             <div class="import-option-actions">
                                 <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonから取り込む</button>
                             </div>
@@ -911,7 +916,7 @@
                         </div>
                     </section>
 
-                    <!-- 受信待ちステータス（ID維持・PC拡張の受信待ちに使用） -->
+                    <!-- 受信待ちステータス（ID維持・取込ブックマークの受信待ちに使用） -->
                     <div id="import-relay-status" class="import-relay-status" hidden>
                         <div class="import-relay-waiting" data-relay-waiting hidden>
                             <span class="h-icon" data-icon="loader" data-icon-size="14"></span>
@@ -928,9 +933,9 @@
 
                     <!-- 方式④ 取込データを直接渡す（貼り付け＋ファイル統合） -->
                     <details class="pp-advanced" id="import-method-data" open><!-- 静的HTMLはopen固定。閉じるのはJS（アクティブレーンの準備完了フラグが立っている時だけ）。E2E互換の要 -->
-                        <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">拡張機能が使えないときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                        <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">ブックマークが使えないときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                         <div class="pp-advanced-body">
-                            <p class="pp-hint">拡張機能がうまく動かないときの代替手段です。「コピーしました」と出た取込データを貼り付けるか、保存してある取込データファイルから取り込めます。</p>
+                            <p class="pp-hint">取込ブックマークがうまく動かないときの代替手段です。「コピーしました」と出た取込データを貼り付けるか、保存してある取込データファイルから取り込めます。</p>
                             <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データを貼り付け"></textarea>
                             <div class="import-option-actions">
                                 <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
@@ -1109,7 +1114,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072707"></script>
+    <script src="js/bookshelf.js?v=2026072708"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

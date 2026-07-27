@@ -3,7 +3,6 @@
 const DEBUG = false; // Set to false for production
 
 // kindle_bookshelf_exporter 拡張の配布URL。未確定の間は空文字（取込モーダルではリンク非表示・代替文言を表示）
-const KINDLE_EXPORTER_URL = '';
 // iOS 完成版「Kindle取込ショートカット」の配布URL。未確定の間は空文字（追加ボタン非表示・代替文言を表示）
 const KINDLE_SHORTCUT_URL = '';
 // 各レーンの毎回操作に添える操作GIFのURL。空のレーンはスロットを描画しない（空箱を出さない）
@@ -463,8 +462,8 @@ class VirtualBookshelf {
             installPluginBtn.addEventListener('click', () => this.installPluginFromInput());
         }
 
-        // Kindle 取込 (PC 拡張のみ・C-248)。モバイル導線 (ショートカット/ブックマークレット) の UI は撤去、
-        // リレー機構と copyKindleBookmarklet 等のコアは温存 (UI から到達しないだけ)
+        // Kindle 取込 (PC 専用・C-248)。主経路は取込ブックマーク (ADR-054)。
+        // モバイル導線 (ショートカット/リレー) の UI は撤去、リレー機構のコアは温存 (UI から到達しないだけ)
         const openAmazonBtn = document.getElementById('open-amazon-for-import');
         if (openAmazonBtn) {
             openAmazonBtn.addEventListener('click', () => this.openAmazonForBookmarklet());
@@ -489,6 +488,14 @@ class VirtualBookshelf {
                         const ta = document.getElementById('kindle-paste-input');
                         if (ta) { ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); ta.focus(); }
                     }
+                    if (kind === 'copy-bookmarklet') this.copyKindleBookmarklet();
+                    return;
+                }
+                // 取込ブックマークはドラッグ登録用 (クリックで実行するとこのページ上で動いてしまう)
+                const bml = e.target.closest('#kindle-bookmarklet-link');
+                if (bml) {
+                    e.preventDefault();
+                    toast('このボタンは押すのではなく、ブックマークバーへドラッグして登録してください。', { type: 'warn' });
                     return;
                 }
                 if (e.target.closest('#cancel-relay-wait')) this._cancelKindleImportWait();
@@ -8569,7 +8576,13 @@ class VirtualBookshelf {
      * (素の localStorage では常に open = E2E import-paste.spec.js 互換の要)。
      */
     _renderImportLanes() {
-        // PC 専用 (C-248)。レーンは import-lane-pc の 1 本のみ・端末タブなし
+        // PC 専用 (C-248)。レーンは import-lane-pc の 1 本のみ・端末タブなし。
+        // 主経路は取込ブックマーク (ADR-054・拡張機能は配布しない)。スマホは案内文のみ表示。
+        const isPc = this._detectImportDevice() === 'pc';
+        const laneEl = document.getElementById('import-lane-pc');
+        if (laneEl) laneEl.hidden = !isPc;
+        const mobileNote = document.getElementById('import-mobile-note');
+        if (mobileNote) mobileNote.hidden = isPc;
         const setup = this._importSetupFlags();
         const setupEl = document.getElementById('import-setup-pc');
         if (setupEl) {
@@ -8578,14 +8591,12 @@ class VirtualBookshelf {
             const state = setupEl.querySelector('.import-setup-state');
             if (state) state.textContent = done ? '済み' : '';
         }
-        // 方式② (直接貼付): 初回準備が済んでいれば畳む (拡張不具合時のフォールバック位置づけ)
+        // 方式② (直接貼付): 初回準備が済んでいれば畳む (ブックマーク不具合時のフォールバック位置づけ)
         const dataEl = document.getElementById('import-method-data');
         if (dataEl) dataEl.open = !setup.pc;
-        // PC 拡張リンク (配布 URL 未確定なら代替文言)
-        const ext = document.getElementById('kindle-exporter-link');
-        const noUrl = document.getElementById('kindle-exporter-nourl');
-        if (ext) { ext.hidden = !KINDLE_EXPORTER_URL; if (KINDLE_EXPORTER_URL) ext.href = KINDLE_EXPORTER_URL; }
-        if (noUrl) noUrl.hidden = !!KINDLE_EXPORTER_URL;
+        // 取込ブックマーク: ドラッグ登録用に href へ javascript: コードを注入
+        const bml = document.getElementById('kindle-bookmarklet-link');
+        if (bml) bml.href = this._buildKindleBookmarkletCode();
         // GIF スロット: media URL が非空のレーンだけ <img> を描画 (空なら空箱を出さない)
         document.querySelectorAll('#import-modal [data-import-media]').forEach((slot) => {
             const src = (KINDLE_IMPORT_MEDIA && KINDLE_IMPORT_MEDIA[slot.dataset.importMedia]) || '';
@@ -8873,7 +8884,7 @@ class VirtualBookshelf {
         const bm = this._buildKindleBookmarkletCode();
         try {
             await navigator.clipboard.writeText(bm);
-            toast('取込用ブックマークのコードをコピーしました。手順は上の「初回だけの準備」のとおりです。', { type: 'success' });
+            toast('取込ブックマークのコードをコピーしました。ブックマークを新規作成して、URL欄に貼り付けてください。', { type: 'success' });
         } catch (e) {
             // clipboard 失敗時は prompt で表示
             prompt('自動コピーできませんでした。以下を全選択してコピーし、ブックマークのURL欄に貼り付けてください:', bm);
