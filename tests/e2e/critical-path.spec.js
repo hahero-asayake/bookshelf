@@ -38,23 +38,21 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         return route.fulfill({ status: 404, json: {} });
     });
 
-    // --- 起動 (真の初回: 蔵書ゼロ・ガード付きシードでリロード後も状態維持) ---
-    // 注: ローカル保存が空だと data/ のフォールバック (公開モード用サンプル) が読まれるのが現仕様。
-    //     welcome は QW4 と同じ方法 (蔵書ゼロ化) で成立させる。
+    // --- 起動 (真の初回: ローカル保存なし。ADR-053 で data/ フォールバック撤去済み → 蔵書0で welcome が出る) ---
     await page.addInitScript(() => {
         if (!localStorage.getItem('bs_e2e_journey')) {
             localStorage.setItem('bs_e2e_journey', '1');
             localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-            localStorage.setItem('virtualBookshelf_library', '[]');   // 真の初回 (data/ フォールバックを無効化)
         }
     });
     await page.goto('/index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
-    // ⚠️ 発見 (2026-07-27 シナリオ打鍵): ローカル保存が空の初回訪問では data/library.json (公開フォールバック・
-    //    2400冊超のフルエクスポート) が読み込まれるため、蔵書0の welcome オンボーディングは本番では出ない。
-    //    フォールバックの扱い (撤去/縮小/維持) は本人判断待ち。本テストは現仕様 (フォールバックあり) を前提に走る。
+    await test.step('初回訪問: 蔵書0で welcome オンボーディングが表示される (ADR-053 回帰ガード)', async () => {
+        await expect(page.locator('#dashboard-welcome')).toBeVisible();
+    });
     const baseline = await page.evaluate(() => (window.bookshelf.books || []).length);
+    expect(baseline).toBe(0);   // data/ フォールバックが復活したらここで検知
 
     await test.step('取込: 貼り付け→全選択→確定を二度押ししても重複しない', async () => {
         await page.evaluate(() => window.bookshelf.showImportModal());
@@ -80,6 +78,20 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         const count = await page.evaluate(() => (window.bookshelf.books || []).length);
         expect(count).toBe(baseline + 2);
+    });
+
+    await test.step('本棚作成: 新しい本棚を作り、取り込んだ本を入れる', async () => {
+        await page.evaluate(() => window.bookshelf.addBookshelf());
+        await expect(page.locator('#bookshelf-form-modal')).toHaveClass(/show/);
+        await page.locator('#bookshelf-name').fill('旅の本棚');
+        await page.click('#save-bookshelf-form');
+        await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
+        // 本の投入は API で (詳細画面からの操作は standard-ops 側で担保)
+        await page.evaluate(() => {
+            const bm = window.bookshelf.bookshelfManager;
+            const shelf = bm.getBookshelves().find(b => !b.isSpecial);
+            for (const b of window.bookshelf.books) bm.addBookToBookshelf(bm._keyOf(shelf), b.asin);
+        });
     });
 
     await test.step('公開: ページ新規作成→プレビュー生成', async () => {

@@ -280,48 +280,8 @@ class VirtualBookshelf {
             // Use localStorage data as primary source
             this.userData = JSON.parse(savedUserData);
         } else {
-            // Fallback to file if localStorage is empty
-            try {
-                const libraryResponse = await fetch('data/library.json');
-                if (!libraryResponse.ok) {
-                    throw new Error('library.json not found');
-                }
-                
-                const text = await libraryResponse.text();
-                if (!text.trim()) {
-                    // 空ファイルの場合はデフォルトデータを使用
-                    console.log('Empty library.json detected, using defaults');
-                    this.userData = this.createDefaultUserData();
-                } else {
-                    const libraryData = JSON.parse(text);
-                    // 新しい統合データから必要な部分を抽出
-                    this.userData = {
-                        exportDate: libraryData.exportDate || new Date().toISOString(),
-                        bookshelves: libraryData.bookshelves || [],
-                        notes: {},
-                        settings: libraryData.settings || this.getDefaultSettings(),
-                        bookOrder: libraryData.bookOrder || {},
-                        stats: libraryData.stats || { totalBooks: 0, notesCount: 0 },
-                        version: libraryData.version || '2.0'
-                    };
-                    // 書籍データからnotesを再構築
-                    if (libraryData.books) {
-                        Object.keys(libraryData.books).forEach(asin => {
-                            const book = libraryData.books[asin];
-                            if (book.memo || book.rating) {
-                                this.userData.notes[asin] = {
-                                    memo: book.memo || '',
-                                    rating: book.rating || 0
-                                };
-                            }
-                        });
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load library.json:', error);
-                console.log('Using default user data');
-                this.userData = this.createDefaultUserData();
-            }
+            // ローカル保存が無ければ既定値 (サーバー側サンプルの自動読込はしない: ADR-053)
+            this.userData = this.createDefaultUserData();
         }
         
         // Merge config into userData settings

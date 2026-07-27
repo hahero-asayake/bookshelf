@@ -36,138 +36,16 @@ class BookManager {
             }
         }
         
-        // LocalStorageにない場合はlibrary.jsonを確認
-        try {
-            const response = await fetch('data/library.json');
-            const libraryData = await response.json();
-            // 新しいデータ構造から古い形式に変換
-            this.library = {
-                books: Object.entries(libraryData.books).map(([asin, book]) => ({
-                    title: book.title,
-                    authors: book.authors,
-                    acquiredTime: book.acquiredTime,
-                    readStatus: book.readStatus,
-                    asin: asin,
-                    productImage: book.productImage,
-                    source: book.source,
-                    addedDate: book.addedDate,
-                    // 追加フィールドも含める
-                    ...(book.memo && { memo: book.memo }),
-                    ...(book.rating && { rating: book.rating }),
-                    ...(book.updatedAsin && { updatedAsin: book.updatedAsin })
-                })),
-                metadata: {
-                    totalBooks: libraryData.stats.totalBooks,
-                    manuallyAdded: 0,
-                    importedFromKindle: libraryData.stats.totalBooks,
-                    lastImportDate: libraryData.exportDate
-                }
-            };
-            // Data loaded from library.json
-        } catch (error) {
-            // ファイルが存在しない場合は空の蔵書で初期化（自動インポートしない）
-            // Initializing empty library (no library.json found)
-            this.library = {
-                books: [],
-                metadata: {
-                    totalBooks: 0,
-                    manuallyAdded: 0,
-                    importedFromKindle: 0,
-                    lastImportDate: null
-                }
-            };
-        }
-    }
-
-    /**
-     * kindle.jsonから初回データを移行
-     */
-    async initializeFromKindleData() {
-        try {
-            const response = await fetch('data/kindle.json');
-            const kindleBooks = await response.json();
-            
-            this.library.books = kindleBooks.map(book => ({
-                ...book,
-                source: 'kindle_import',
-                addedDate: Date.now()
-            }));
-            
-            this.library.metadata = {
-                lastImportDate: Date.now(),
-                totalBooks: kindleBooks.length,
+        // ローカル保存が無ければ空の蔵書 (初回は welcome を出す。サーバー側サンプルの自動読込はしない: ADR-053)
+        this.library = {
+            books: [],
+            metadata: {
+                totalBooks: 0,
                 manuallyAdded: 0,
-                importedFromKindle: kindleBooks.length
-            };
-            
-            await this.saveLibrary();
-            // Kindle import completed
-        } catch (error) {
-            // Kindle.json loading error
-        }
-    }
-
-    /**
-     * kindle.jsonから新しいデータをインポート（重複チェック付き）
-     */
-    async importFromKindle(fileInput = null) {
-        let kindleBooks;
-        
-        if (fileInput) {
-            // ファイル入力からインポート
-            const fileContent = await this.readFileContent(fileInput);
-            kindleBooks = JSON.parse(fileContent);
-        } else {
-            // data/kindle.json からインポート
-            const response = await fetch('data/kindle.json');
-            kindleBooks = await response.json();
-        }
-
-        const importResults = {
-            total: kindleBooks.length,
-            added: 0,
-            updated: 0,
-            skipped: 0
-        };
-
-        for (const kindleBook of kindleBooks) {
-            const existingBook = this.library.books.find(book => book.asin === kindleBook.asin);
-            
-            if (existingBook) {
-                // 既存書籍の更新（新しい情報で上書き）
-                if (this.shouldUpdateBook(existingBook, kindleBook)) {
-                    Object.assign(existingBook, {
-                        title: kindleBook.title,
-                        authors: kindleBook.authors,
-                        acquiredTime: kindleBook.acquiredTime,
-                        readStatus: kindleBook.readStatus,
-                        productImage: kindleBook.productImage
-                    });
-                    importResults.updated++;
-                }
-                else {
-                    importResults.skipped++;
-                }
-            } else {
-                // 新規書籍の追加
-                this.library.books.push({
-                    ...kindleBook,
-                    source: 'kindle_import',
-                    addedDate: Date.now()
-                });
-                importResults.added++;
+                importedFromKindle: 0,
+                lastImportDate: null
             }
-        }
-
-        // メタデータ更新
-        this.library.metadata.lastImportDate = Date.now();
-        this.library.metadata.totalBooks = this.library.books.length;
-        this.library.metadata.importedFromKindle = this.library.books.filter(book => book.source === 'kindle_import').length;
-
-        await this.saveLibrary();
-        
-        console.log('インポート結果:', importResults);
-        return importResults;
+        };
     }
 
     async importSelectedBooks(selectedBooks) {
@@ -235,16 +113,6 @@ class BookManager {
         };
     }
 
-
-    /**
-     * 書籍更新が必要かチェック
-     */
-    shouldUpdateBook(existingBook, newBook) {
-        return existingBook.acquiredTime !== newBook.acquiredTime ||
-               existingBook.readStatus !== newBook.readStatus ||
-               existingBook.title !== newBook.title ||
-               existingBook.productImage !== newBook.productImage;
-    }
 
     /**
      * AmazonリンクからASINを抽出
@@ -558,18 +426,6 @@ class BookManager {
      */
     isValidASIN(asin) {
         return /^[A-Z0-9]{10}$/.test(asin);
-    }
-
-    /**
-     * ファイル内容を読み取り
-     */
-    readFileContent(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = e => resolve(e.target.result);
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
     }
 
     /**
