@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072704">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072801">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -63,18 +63,14 @@
                     <span class="brand-text">AsayakeBookshelf</span>
                 </div>
                 <nav class="sidebar-nav" id="sidebar-nav">
-                    <!-- 左ペインは PC/モバイル 共通構成 (ADR-047 P5)。上段=機能ページ (公開 / プラグイン)、
+                    <!-- 左ペインは PC/モバイル 共通構成 (ADR-047 P5)。上段=機能ページ (公開)、
                          その下に区切りを挟んでユーティリティ (検索 / 設定)。PC のフッターは廃止し、ここへ集約。
                          モバイルのみ下部フッターを別途残す。
-                         遷移先は当面: 公開→公開ページ管理 / プラグイン→設定のプラグイン節 (P3 で専用ページへ)。 -->
+                         プラグインは設定内のみ (ADR-051 で導入経路が上級者向けに絞られたため一等地から降格・2026-07-28)。 -->
                     <div class="sidebar-section">
                         <button class="sidebar-nav-item" id="sidebar-publish" type="button" title="公開ページを管理・公開する">
                             <span class="nav-icon" data-icon="globe" data-icon-size="16"></span>
                             <span class="nav-label">公開</span>
-                        </button>
-                        <button class="sidebar-nav-item" id="sidebar-plugins" type="button" title="プラグインを管理する">
-                            <span class="nav-icon" data-icon="puzzle" data-icon-size="16"></span>
-                            <span class="nav-label">プラグイン</span>
                         </button>
                     </div>
                     <div class="sidebar-section sidebar-section-utility">
@@ -289,7 +285,7 @@
                     <div class="settings-section-body">
                     <div class="path-card">
                         <div id="account-disconnected" class="path-card-body">
-                            <p class="github-auth-msg">Asayake アカウント（Google ログイン）に接続すると、ハブへの保存・公開やプラン管理ができます。<strong>保存先の選択（同期）とは別に、いつでもここからログインできます。</strong></p>
+                            <p class="github-auth-msg">Google でログインすると、Asayake ハブ（このアプリの保存サーバー）への保存・公開ページ・プラン管理が使えます。</p>
                             <label class="account-consent"><input type="checkbox" id="account-consent-check"><span><a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a>と<a href="legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>に同意します</span></label>
                             <div id="account-gsi-button" class="hub-gsi-button" hidden></div>
                             <p id="account-consent-hint" class="account-legal-note">同意にチェックすると、Google ログインボタンが表示されます。</p>
@@ -349,11 +345,10 @@
                     <div class="sync-method-row">
                         <label for="sync-method-select">本のデータの保存先:</label>
                         <select id="sync-method-select">
-                            <option value="local">この端末のフォルダに保存（PC の Chrome / Edge 専用）</option>
-                            <option value="github">GitHub に保存（複数の端末で同期できます）</option>
-                            <option value="hub">Asayake ハブに保存（Google ログインだけ・無料 100MB / Plus 3GB）</option>
+                            <option value="local">この端末のフォルダに保存（PC専用）</option>
+                            <option value="github">GitHub に保存（複数端末で同期）</option>
+                            <option value="hub">Asayake ハブに保存（Google ログインだけ）</option>
                         </select>
-                        <span class="sync-method-hint">GitHub は下の枠で接続。端末保存へ戻すときは上の選択を切り替え。</span>
                     </div>
 
                     <div id="sync-config-local" class="sync-config-panel">
@@ -501,6 +496,7 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
                     <div class="settings-section-body">
                     <div class="publish-config">
+                        <small class="publish-config-hint">公開ページの作成・公開は、PC 画面左の「公開」ボタンから行います。ここではその公開の設定をします。</small>
                         <label class="form-label" for="setting-public-name"><span class="h-icon" data-icon="user" data-icon-size="14"></span>公開名義（発行者名）</label>
                         <input id="setting-public-name" type="text" placeholder="例: あなたの名前 / ハンドル" autocomplete="off">
                         <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
@@ -512,26 +508,31 @@
                         <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
 
                         <div id="publish-config-github" class="publish-target-config">
-                            <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
+                            <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ</label>
                             <select id="publish-repo-select">
                                 <option value="">（GitHub 接続後に選べます）</option>
                             </select>
-                            <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
+                            <small class="publish-config-hint">公開ページ（HTML）の書き出し先です。中身は誰でも見られるので、公開専用の空 public リポジトリを選んでください。</small>
+                            <details class="pp-advanced">
+                                <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>リポジトリの作り方と公開URL<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                                <div class="pp-advanced-body">
+                                    <small class="publish-config-hint">空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加すると、ここで選べるようになります。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で見られます。</small>
+                                </div>
+                            </details>
                             <span id="publish-repo-status" class="path-status"></span>
                         </div>
 
                         <div id="publish-config-hub" class="publish-target-config" hidden>
-                            <small class="publish-config-hint">公開ページを Asayake ハブ（hahero 運営）へ直接公開します。GitHub リポジトリは不要で、Google ログインだけで公開 URL が手に入ります。中身は誰でも読めます。</small>
+                            <small class="publish-config-hint">Asayake ハブ（hahero 運営）へ直接公開します。GitHub は不要で、Google ログインだけで公開 URL が手に入ります（中身は誰でも読めます）。</small>
                             <span id="publish-hub-status" class="path-status"></span>
                         </div>
 
                         <div id="publish-affiliate" class="publish-target-config" hidden>
                             <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
                             <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
-                            <small class="publish-config-hint">設定すると、公開ページの商品リンクがあなたの収益になります。<strong>空にすると広告（アフィリエイトリンク）を付けません</strong>。<br>自分の GitHub Pages 公開ではプランを問わず使えます。ハブ公開は Plus 限定で、無料プランは運営（hahero）のタグが付きます。</small>
+                            <small class="publish-config-hint">Amazon アソシエイト参加者向けの設定です（お持ちでなければ空欄のままで大丈夫です）。設定すると公開ページの商品リンクがあなたの収益になり、<strong>空なら広告（アフィリエイトリンク）を付けません</strong>。</small>
                         </div>
                     </div>
-                    <small class="publish-config-hint">公開ページの作成・編集・公開は、左ペインの <strong>「公開」</strong> ボタンから行います。</small>
                     </div>
                 </details>
 
@@ -551,20 +552,8 @@
                     <div class="settings-section-body">
 
                     <!-- マーケット (公式カタログ) は C-251 (2026-07-27) で撤去。hub カタログ API・seed・_renderMarketSection は温存 (再追加時に戻す) -->
-                    <h4 class="settings-subsection-title">リポジトリURLからインストール</h4>
-                    <div class="plugin-install-card">
-                        <div class="plugin-install-input-group">
-                            <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
-                            <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
-                        </div>
-                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code><br>プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。</small>
-                    </div>
-
-                    <h4 class="settings-subsection-title">手動でインストール</h4>
-                    <div class="plugin-install-card">
-                        <small class="plugin-install-hint">同期フォルダの <code>plugins/&lt;プラグインid&gt;/</code> に <code>manifest.json</code> と <code>index.js</code> を置くと、次回読み込み時に自動で認識されます。</small>
-                    </div>
-
+                    <!-- 導入済み一覧が主役。導入手段 (URL/手動) は上級者向けに畳む (2026-07-28・使うときの気持ち改修) -->
+                    <p class="pp-hint">プラグインは開発者向けの機能です。通常の利用に設定は不要です。</p>
                     <h4 class="settings-subsection-title">インストール済みプラグイン</h4>
                     <details class="plugin-cat-help">
                         <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>各プラグインの「分類」マークの意味</summary>
@@ -577,6 +566,25 @@
                         <p style="color:#888;">設定を開くと一覧が表示されます…</p>
                     </div>
 
+                    <details class="pp-advanced" id="plugin-add-advanced">
+                        <summary><span class="h-icon" data-icon="download" data-icon-size="14"></span>新しいプラグインを追加<span class="pp-advanced-note">上級者向け</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                        <div class="pp-advanced-body">
+                            <h4 class="settings-subsection-title">リポジトリURLからインストール</h4>
+                            <div class="plugin-install-card">
+                                <div class="plugin-install-input-group">
+                                    <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
+                                    <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
+                                </div>
+                                <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code><br>プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。</small>
+                            </div>
+
+                            <h4 class="settings-subsection-title">手動でインストール</h4>
+                            <div class="plugin-install-card">
+                                <small class="plugin-install-hint">同期フォルダの <code>plugins/&lt;プラグインid&gt;/</code> に <code>manifest.json</code> と <code>index.js</code> を置くと、次回読み込み時に自動で認識されます。</small>
+                            </div>
+                        </div>
+                    </details>
+
                     <!-- 内部用 hidden プラグイン UI ボタン受け皿 -->
                     <div id="plugin-buttons" class="plugin-buttons-host" hidden></div>
                     <!-- 旧プラグイン管理 UI コンテナ (互換: 一部 legacy 呼び出しが #plugins-list を参照) -->
@@ -588,7 +596,7 @@
                     <summary class="settings-section-title"><span class="h-icon" data-icon="notebook-pen" data-icon-size="16"></span>長文メモ</summary>
                     <div class="settings-section-body">
                         <div class="memo-config-row">
-                            <label for="book-memo-open-with">「詳細メモを書く」で開くエディタ:</label>
+                            <label for="book-memo-open-with">「長文メモを書く」で開くエディタ:</label>
                             <select id="book-memo-open-with">
                                 <option value="app-editor">アプリ内エディタ（おすすめ）</option>
                                 <option value="obsidian">Obsidian で開く（この端末保存のときだけ）</option>
@@ -636,7 +644,7 @@
                                 <option value="web">ブラウザ（その本が開く・おすすめ）</option>
                                 <option value="app">アプリ（Kindle アプリで開く）</option>
                             </select>
-                            <p class="memo-config-hint">スマホでアプリ選択時はライブラリ起動止まり（Amazon 仕様）。スマホはブラウザ推奨。</p>
+                            <p class="memo-config-hint">スマホの Kindle アプリでは本を直接開けず、ライブラリまでしか開きません（Amazon の仕様）。スマホでは「ブラウザ」がおすすめです。</p>
                         </div>
                     </div>
                 </details>
@@ -646,7 +654,7 @@
                     <div class="settings-section-body">
                     <p class="about-credit"><span class="h-icon" data-icon="library" data-icon-size="14"></span><strong>AsayakeBookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
                     <p class="about-affiliate">
-                        <span class="h-icon" data-icon="alert-triangle" data-icon-size="14" style="color: var(--warning);"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイトとして適格販売により収入を得ています。無料プランで公開したページの商品リンクには運営のアフィリエイト ID が付きます（公開ページにもその旨が控えめに表示されます）。
+                        <span class="h-icon" data-icon="info" data-icon-size="14"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイトとして適格販売により収入を得ています。無料プランで公開したページの商品リンクには運営のアフィリエイト ID が付きます（公開ページにもその旨が控えめに表示されます）。
                     </p>
                     <p class="about-links">
                         <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a>
@@ -785,10 +793,10 @@
             <!-- 一覧ビュー -->
             <div id="pp-list-view">
                 <div class="pp-list-head">
-                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開はページごとに行い、公開中のページには公開 URL が表示されます。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
+                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
-                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランでは、公開ページの商品リンクに運営（Asayake）のアフィリエイト ID が付きます（収益は運営に入ります）。自分の収益にする・広告を付けないようにするには <strong>Plus</strong> をご利用ください。</span></p>
+                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開ページは、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
                 <ul id="pp-list" class="pp-list"></ul>
                 <div class="pp-list-foot">
                     <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
@@ -889,30 +897,35 @@
             </div>
             <div class="modal-body">
                 <div class="import-options"><!-- クラス名維持必須: showBookSelectionForImport / cancelImport が querySelector('.import-options') 参照 -->
-                    <p class="pp-hint">Amazonで買った本を、PCのブラウザ（Chrome / Edge）から取り込みます。取込はPC専用です（取り込んだ後の閲覧・同期はスマホでも使えます）。</p>
-                    <p class="pp-hint" id="import-mobile-note" hidden>この端末では取込の操作はできません。PCのブラウザでこのアプリを開いて取り込んでください。取り込んだ本は、このままスマホでも見られます。</p>
+                    <p class="pp-hint" id="import-pc-lead">Amazonで買った本を取り込みます（PC の Chrome / Edge 専用）。</p>
+                    <p class="pp-hint" id="import-mobile-note" hidden>取込は PC 専用です。PC のブラウザでこのアプリを開いて取り込んでください。取り込んだ本はこのスマホでも見られます。</p>
 
                     <!-- 取込 = 取込ブックマーク (主・ADR-054。拡張機能は配布しない) ＋ 直接貼付 (ブックマーク不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Android用UI) は撤去。リレー機構のコードは温存 -->
                     <section class="import-lane" id="import-lane-pc">
                         <details class="pp-advanced import-setup" id="import-setup-pc">
                             <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（取込ブックマークを登録）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                             <div class="pp-advanced-body">
-                                <p class="pp-hint">下のボタンをブラウザのブックマークバーへドラッグして登録します（1回だけ）。ブックマークバーが見えないときは Ctrl+Shift+B で表示できます。</p>
+                                <p class="pp-hint">下の「Kindle取込」を、ブラウザのブックマークバーへドラッグして登録してください。</p>
                                 <div class="import-option-actions">
-                                    <a id="kindle-bookmarklet-link" class="btn btn-secondary" href="#" draggable="true"><span class="h-icon" data-icon="bookmark" data-icon-size="14"></span>Kindle取込</a>
-                                    <button type="button" class="btn btn-secondary" data-import-action="copy-bookmarklet"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コードをコピーして手動で登録</button>
-                                    <button type="button" class="btn btn-secondary" data-import-setup-done="pc"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする（次回から畳みます）</button>
+                                    <a id="kindle-bookmarklet-link" class="bml-chip" href="#" draggable="true"><span class="h-icon" data-icon="bookmark" data-icon-size="14"></span>Kindle取込<span class="bml-chip-note">←これをドラッグ</span></a>
+                                    <button type="button" class="btn btn-secondary btn-small" data-import-setup-done="pc"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする</button>
                                 </div>
-                                <p class="pp-hint">ドラッグできないときは「コードをコピーして手動で登録」を押し、ブックマークを新規作成してURL欄に貼り付けてください。</p>
+                                <details class="pp-advanced">
+                                    <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>うまく登録できないとき<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                                    <div class="pp-advanced-body">
+                                        <p class="pp-hint">ブックマークバーが見えないときは Ctrl+Shift+B で表示できます。ドラッグできないときは下のボタンでコードをコピーし、ブックマークを新規作成して URL 欄に貼り付けてください。</p>
+                                        <button type="button" class="btn btn-secondary btn-small" data-import-action="copy-bookmarklet"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コードをコピー</button>
+                                    </div>
+                                </details>
                             </div>
                         </details>
                         <div class="import-lane-steps">
-                            <p class="pp-hint">押すとAmazonの蔵書一覧が新しいタブで開きます。開いたページで、登録した「Kindle取込」ブックマークをクリックすると、この画面に戻って本の一覧が出ます。</p>
+                            <p class="pp-hint">下のボタンで Amazon の蔵書一覧が開きます。そのページで「Kindle取込」ブックマークを押すと、本の一覧がこの画面に届きます。</p>
                             <div class="import-option-actions">
                                 <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonから取り込む</button>
                             </div>
                             <div class="import-media-slot" data-import-media="pc" hidden></div>
-                            <p class="import-fallback-note">反応がないとき: ポップアップの許可を確認、または → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取り込みデータを貼り付ける</button></p>
+                            <p class="import-fallback-note">反応がないとき: ポップアップの許可を確認、または → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを貼り付ける</button></p>
                         </div>
                     </section>
 
@@ -1114,7 +1127,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072708"></script>
+    <script src="js/bookshelf.js?v=2026072801"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

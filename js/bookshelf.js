@@ -274,7 +274,7 @@ class VirtualBookshelf {
         
         // Check localStorage first for user data
         const savedUserData = localStorage.getItem('virtualBookshelf_userData');
-        
+
         if (savedUserData) {
             // Use localStorage data as primary source
             this.userData = JSON.parse(savedUserData);
@@ -282,9 +282,10 @@ class VirtualBookshelf {
             // ローカル保存が無ければ既定値 (サーバー側サンプルの自動読込はしない: ADR-053)
             this.userData = this.createDefaultUserData();
         }
-        
-        // Merge config into userData settings
-        this.userData.settings = { ...this.userData.settings, ...config };
+
+        // config は「未設定項目の既定値」。ユーザーが保存した設定を上書きしてはいけない
+        // (旧: config が後勝ちで、表示形式などが再読み込みのたび既定に戻っていた)
+        this.userData.settings = { ...config, ...this.userData.settings };
         
         this.currentView = this.userData.settings.defaultView || 'covers';
 
@@ -595,10 +596,6 @@ class VirtualBookshelf {
 
         // 左ペイン「プラグイン」ボタン (ADR-047 P1)。当面は設定のプラグイン節を開く
         // (P3 で #/plugins 専用ページへ差し替え予定)。
-        const pluginsBtn = document.getElementById('sidebar-plugins');
-        if (pluginsBtn) {
-            pluginsBtn.addEventListener('click', () => this._openSettingsModal('plugins-section'));
-        }
 
         // 左ペイン「検索」ボタン → ⌘K パレット
         const searchSideBtn = document.getElementById('sidebar-search');
@@ -5385,8 +5382,8 @@ class VirtualBookshelf {
         { id: 'sync-section',     icon: 'folder-cog',       label: '同期',              desc: '保存先: この端末 / GitHub / ハブ' },
         { id: 'library-section',  icon: 'library',          label: '蔵書',              desc: '取り込み・手動追加・除外一覧' },
         { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
-        { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: 'インストールと管理' },
-        { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: '詳細メモの設定' },
+        { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: '開発者向け・導入と管理' },
+        { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: 'エディタの選択' },
         { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
         { id: 'about-section',    icon: 'info',             label: 'このアプリについて',  desc: 'バージョン・各種ポリシー' },
     ];
@@ -6565,7 +6562,7 @@ class VirtualBookshelf {
             rows.push(`<div class="status-row status-update">${ico('refresh-cw')}<span class="status-msg">新しいバージョンがあります</span><button class="status-btn" data-status-action="update" type="button">更新</button></div>`);
         }
         if (!this._isSyncReady()) {
-            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">同期先が未設定です。変更が保存されません。</span><button class="status-btn" data-status-action="open-sync" type="button">設定</button></div>`);
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">保存先が未設定です。今はこの端末の中だけに保存されています。</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
         } else if (this._syncError) {
             const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${this._escapeHtml ? this._escapeHtml(msg) : msg}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
@@ -8581,6 +8578,8 @@ class VirtualBookshelf {
         const isPc = this._detectImportDevice() === 'pc';
         const laneEl = document.getElementById('import-lane-pc');
         if (laneEl) laneEl.hidden = !isPc;
+        const pcLead = document.getElementById('import-pc-lead');
+        if (pcLead) pcLead.hidden = !isPc;   // スマホでは案内文 (#import-mobile-note) と重複するため片方だけ出す
         const mobileNote = document.getElementById('import-mobile-note');
         if (mobileNote) mobileNote.hidden = isPc;
         const setup = this._importSetupFlags();
@@ -8591,9 +8590,15 @@ class VirtualBookshelf {
             const state = setupEl.querySelector('.import-setup-state');
             if (state) state.textContent = done ? '済み' : '';
         }
-        // 方式② (直接貼付): 初回準備が済んでいれば畳む (ブックマーク不具合時のフォールバック位置づけ)
+        // 方式② (直接貼付): 初回準備が済んでいれば畳む (ブックマーク不具合時のフォールバック位置づけ)。
+        // スマホでは常に畳み、見出し注記も「PCで保存したデータがあるとき」向けに差し替える
+        // (「取込はPC専用」の案内と矛盾して見えないように)
         const dataEl = document.getElementById('import-method-data');
-        if (dataEl) dataEl.open = !setup.pc;
+        if (dataEl) {
+            dataEl.open = isPc && !setup.pc;
+            const note = dataEl.querySelector('.pp-advanced-note');
+            if (note) note.textContent = isPc ? 'ブックマークが使えないときはこちら' : 'PCで保存した取込データがあるときはこちら';
+        }
         // 取込ブックマーク: ドラッグ登録用に href へ javascript: コードを注入
         const bml = document.getElementById('kindle-bookmarklet-link');
         if (bml) bml.href = this._buildKindleBookmarkletCode();

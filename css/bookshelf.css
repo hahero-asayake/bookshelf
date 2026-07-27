@@ -5375,6 +5375,17 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .import-device-tab.active { color: var(--accent-strong); border-bottom-color: var(--accent); }
 .import-device-badge { font-size: 0.68rem; font-weight: 700; color: var(--accent-strong); background: var(--accent-bg); border-radius: 999px; padding: 0.1rem 0.45rem; }
 .import-lane-steps { margin-top: 0.9rem; display: flex; flex-direction: column; gap: 0.6rem; }
+/* 取込ブックマークのドラッグチップ: ボタンでなく「つまめるタグ」に見せる (ADR-054) */
+.bml-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.45rem 0.8rem;
+    border: 2px dashed var(--accent, #5b5bd6); border-radius: 8px;
+    color: var(--accent, #5b5bd6); background: rgba(91, 91, 214, 0.06);
+    font-size: 0.9rem; font-weight: 600; text-decoration: none;
+    cursor: grab; user-select: none;
+}
+.bml-chip:active { cursor: grabbing; }
+.bml-chip-note { font-size: 0.75rem; font-weight: 400; color: var(--muted, #888); }
 .import-setup { margin-bottom: 0.9rem; }
 .import-option-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .import-fallback-note { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.3rem 0 0; }

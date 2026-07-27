@@ -28,10 +28,11 @@ async function bootApp(page) {
     return errors;
 }
 
-test('P5: 左ペインは 公開/プラグイン + 検索/設定 (撤去要素は無い)', async ({ page }) => {
+test('P5: 左ペインは 公開 + 検索/設定 (撤去要素は無い)', async ({ page }) => {
     const errors = await bootApp(page);
     await expect(page.locator('#sidebar-publish')).toBeVisible();
-    await expect(page.locator('#sidebar-plugins')).toBeVisible();
+    // プラグインは設定内のみ (2026-07-28 降格。導入経路が上級者向けに絞られたため)
+    await expect(page.locator('#sidebar-plugins')).toHaveCount(0);
     // 検索・設定は左ペインに集約 (PC フッター廃止の受け皿)
     await expect(page.locator('#sidebar-search')).toBeVisible();
     await expect(page.locator('#sidebar-settings')).toBeVisible();
@@ -81,10 +82,11 @@ test('P5: モバイル下部ナビの現在地ハイライト (.is-active) が�
     await expect(homeItem).not.toHaveClass(/is-active/);
 });
 
-test('P1: 「プラグイン」ボタンで設定のプラグイン節が開く', async ({ page }) => {
+test('P1: プラグインは設定の一覧から開ける (左ペイン降格後の到達経路)', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.locator('#sidebar-plugins').click();
+    await page.locator('#sidebar-settings').click();
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+    await page.locator('.settings-cat[data-cat="plugins-section"]').click();
     await expect(page.locator('#plugins-section')).toHaveJSProperty('open', true);
     expect(errors).toEqual([]);
 });
