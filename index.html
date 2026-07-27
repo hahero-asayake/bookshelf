@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072801">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072802">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -502,8 +502,8 @@
                         <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
                         <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
                         <select id="publish-target-select">
-                            <option value="github">自分の GitHub リポジトリ（GitHub Pages で配信）</option>
-                            <option value="hub">Asayake ハブ（共有・Google ログインだけで公開）</option>
+                            <option value="hub">Asayake ハブ（Google ログインだけ・おすすめ）</option>
+                            <option value="github">自分の GitHub リポジトリ（上級者向け）</option>
                         </select>
                         <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
 
@@ -798,9 +798,9 @@
                 </div>
                 <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開ページは、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
                 <ul id="pp-list" class="pp-list"></ul>
-                <div class="pp-list-foot">
+                <div class="pp-list-foot" hidden><!-- 公開中ページが1件以上あるときだけ表示 (_renderPublishPagesList) -->
                     <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
-                    <span class="pp-foot-hint">公開中のページをまとめて公開先サイトへ再反映します。</span>
+                    <span class="pp-foot-hint">公開中のページをまとめて再反映します。</span>
                     <span id="pp-url" class="pp-url"></span>
                 </div>
             </div>
@@ -1127,7 +1127,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072801"></script>
+    <script src="js/bookshelf.js?v=2026072802"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

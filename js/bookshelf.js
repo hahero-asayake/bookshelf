@@ -299,7 +299,8 @@ class VirtualBookshelf {
         }
         
         // Phase H2-5: ページネーション廃止につき booksPerPage 設定は読み込まない (全件表示)
-        this.showImagesInOverview = this.userData.settings.showImagesInOverview !== false; // Default true
+        // 常に表示 (変更 UI のない遺産設定。古い保存値 false が残っていても無視する — 2026-07-28)
+        this.showImagesInOverview = true;
 
         this.applyFilters();
     }
@@ -2653,7 +2654,7 @@ class VirtualBookshelf {
 
         const publishTargetSel = document.getElementById('publish-target-select');
         if (publishTargetSel) {
-            publishTargetSel.value = (SyncConfigManager.load().publish || {}).target || 'github';
+            publishTargetSel.value = (SyncConfigManager.load().publish || {}).target || 'hub';   // 既定=ハブ (かんたん公開・2026-07-28)
             publishTargetSel.addEventListener('change', () => this._onPublishTargetSelected());
             this._reflectPublishTargetPanels(publishTargetSel.value);
         }
@@ -3318,7 +3319,7 @@ class VirtualBookshelf {
         if (!affInput || !affWrap) return;
         const cfg = SyncConfigManager.load();
         const plan = (cfg.hub || {}).plan || 'free';
-        const target = (cfg.publish || {}).target === 'hub' ? 'hub' : 'github';
+        const target = (cfg.publish || {}).target === 'github' ? 'github' : 'hub';   // 既定=ハブに追随
         // 自前 GitHub Pages はユーザの自己責任サイト → プラン不問で自分のタグ可 (運営タグは入れない)。
         // ハブは運営ホスト → 自分のタグは Plus 特典 (無料は運営タグ)。
         affWrap.hidden = !((target === 'github') || (plan === 'plus'));
@@ -7374,7 +7375,7 @@ class VirtualBookshelf {
     // 公開先=github (自前 GitHub Pages) は運営タグを入れないので同意不要(true)。
     async _ensureFreeAffiliateConsent() {
         const cfg = SyncConfigManager.load();
-        const target = (cfg.publish || {}).target === 'hub' ? 'hub' : 'github';
+        const target = (cfg.publish || {}).target === 'github' ? 'github' : 'hub';   // 既定=ハブに追随
         if (target !== 'hub') return true; // 自前サイトには運営タグを入れない
         const plan = (cfg.hub || {}).plan || 'free';
         if (plan === 'plus') return true;
@@ -7456,11 +7457,14 @@ class VirtualBookshelf {
     _ppShowList() {
         document.getElementById('pp-list-view').hidden = false;
         document.getElementById('pp-edit-view').hidden = true;
-        // C2: 無料プランのときだけ、運営アフィリエイトタグが付く旨の注記を出す
+        // C2: ハブ公開かつ無料プランのときだけ、運営アフィリエイトタグが付く旨の注記を出す
+        // (自分の GitHub 公開には運営タグを入れない = 注記も不要)
         const notice = document.getElementById('pp-free-notice');
         if (notice) {
-            const plan = (SyncConfigManager.load().hub || {}).plan || 'free';
-            notice.hidden = (plan === 'plus');
+            const cfg = SyncConfigManager.load();
+            const target = (cfg.publish || {}).target === 'github' ? 'github' : 'hub';
+            const plan = (cfg.hub || {}).plan || 'free';
+            notice.hidden = !(target === 'hub' && plan !== 'plus');
         }
         this._renderPublishPagesList();
     }
@@ -7474,6 +7478,9 @@ class VirtualBookshelf {
         if (!ul) return;
         const esc = PublishGenerator.esc;
         const pages = this.publishPageStore.pages();
+        // 一括更新の行は公開中ページが 1 件以上あるときだけ出す (0 件時のノイズ削減)
+        const foot = document.querySelector('#pp-list-view .pp-list-foot');
+        if (foot) foot.hidden = !pages.some(p => p.published);
         if (!pages.length) {
             ul.innerHTML = '<li class="pp-empty">まだ公開ページがありません。「新規作成」から作ってください。</li>';
         } else {
@@ -7710,11 +7717,19 @@ class VirtualBookshelf {
     async _ppRepublishAll() {
         const published = this.publishPageStore.pages().filter(p => p.published);
         if (!published.length) { toast('公開中のページがありません。各ページの「公開」または「保存して公開」で公開してください。', { type: 'warn' }); return; }
-        const r = await this._runPublishExport();
-        if (!r.ok) return;
-        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-        toast(`公開中の ${r.result.published} ページを更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
-        this._renderPublishPagesList();
+        // 進行表示 (ui-standards §2-5: 1秒以上かかる操作は必ず合図を出す)
+        const btn = document.getElementById('pp-republish-all');
+        const orig = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = `<span class="h-icon" data-icon="loader" data-icon-size="13"></span>更新中…`; if (window.applyIcons) window.applyIcons(btn); }
+        try {
+            const r = await this._runPublishExport();
+            if (!r.ok) return;
+            const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
+            toast(`公開中の ${r.result.published} ページを更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+            this._renderPublishPagesList();
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = orig; if (window.applyIcons) window.applyIcons(btn); }
+        }
     }
 
     async _ppDelete(id) {

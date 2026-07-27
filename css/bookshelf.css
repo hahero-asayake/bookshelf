@@ -3530,6 +3530,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 @media (max-width: 768px) {
     .settings-modal-content[data-settings-view="master"] .settings-detail { display: none; }
     .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
+    /* 縦スクロールの受け皿。無指定だと .settings-modal-content の overflow:hidden で
+       中身が切り捨てられ、スクロールできない (2026-07-28 本人実機報告) */
+    .settings-md-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 /* ===== 設定画面 整列 (ADR-047 P5) =====
@@ -4171,6 +4179,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-status-on { color: #1f7a4d; background: #e3f5ec; }
 .pp-status-off { color: var(--muted); background: var(--line2); }
 .pp-list-foot { display: flex; align-items: center; gap: 0.6rem 0.9rem; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pp-list-foot[hidden] { display: none; }
 .pp-foot-hint { font-size: 0.78rem; color: var(--muted); flex: 1; min-width: 12rem; }
 .pp-url { font-size: 0.78rem; color: var(--muted); word-break: break-all; width: 100%; }
 .pp-url:empty { display: none; }

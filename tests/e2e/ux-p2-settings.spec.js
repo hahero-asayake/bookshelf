@@ -92,3 +92,29 @@ test('P2: ターゲット直開きで該当カテゴリが開きフォーカス�
     await expect(page.locator('#sync-method-select')).toBeVisible();
     expect(errors).toEqual([]);
 });
+
+// スマホで設定の中身が画面より長いときスクロールできる (2026-07-28 実機報告の回帰ガード。
+// .settings-modal-content が overflow:hidden のため、モバイルは .settings-md-body に
+// overflow-y:auto が無いと中身が切り捨てられて届かなくなる)
+test.describe('スマホ 設定スクロール', () => {
+    test.use({
+        viewport: { width: 390, height: 480 },
+        hasTouch: true,
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    });
+
+    test('P2: 設定詳細が画面より長いときスクロールが効く', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('publish-section'); });
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        const diag = await page.evaluate(() => {
+            const el = document.querySelector('.settings-md-body');
+            const over = el.scrollHeight - el.clientHeight;
+            el.scrollTop = 150;
+            return { over, scrolledTo: el.scrollTop };
+        });
+        expect(diag.over).toBeGreaterThan(50);      // 前提: この viewport では中身がはみ出す
+        expect(diag.scrolledTo).toBeGreaterThan(0); // はみ出した分をスクロールで送れる
+        expect(errors).toEqual([]);
+    });
+});

@@ -59,7 +59,8 @@ beforeEach(() => {
     captured.entries = []; captured.deletes = []; captured.commits = [];
     hubCaptured.files = null; hubCaptured.deleteMissing = null; hubCaptured.affiliateTag = null;
     listThrow = false;
-    mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
+    mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { target: 'github', owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
+    // target 明示が必要 (未設定の既定は 2026-07-28 に github → hub へ変更。この一連のテストは GitHub 公開経路の検証)
     listing = {
         '': { files: ['index.html', 'README.md'], dirs: ['stale'] },
         'stale': { files: ['index.html'], dirs: [] }
@@ -177,7 +178,7 @@ describe('削除同期の安全性 (ADR-033 監査)', () => {
 
 describe('ガード', () => {
     it('公開先 repo 未設定なら中止', async () => {
-        mockConfig.publish = { owner: '', repo: '', branch: 'main' };
+        mockConfig.publish = { target: 'github', owner: '', repo: '', branch: 'main' };
         const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
         await expect(exporter.export()).rejects.toThrow(/公開先リポジトリ/);
     });
@@ -195,7 +196,7 @@ describe('ガード', () => {
 
 describe('Pages URL の特例', () => {
     it('repo が <owner>.github.io ならルート', async () => {
-        mockConfig.publish = { owner: 'hahero-asayake', repo: 'hahero-asayake.github.io', branch: 'main' };
+        mockConfig.publish = { target: 'github', owner: 'hahero-asayake', repo: 'hahero-asayake.github.io', branch: 'main' };
         const exporter = new BookshelfExporter(makeApp({ pages: [{ id: 'p1', published: true }] }));
         const r = await exporter.export();
         expect(r.siteUrl).toBe('https://hahero-asayake.github.io/');

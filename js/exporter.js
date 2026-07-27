@@ -23,7 +23,7 @@ class BookshelfExporter {
         const cfg = SyncConfigManager.load();
         const gh = cfg.github || {};
         const pub = cfg.publish || {};
-        const target = pub.target === 'hub' ? 'hub' : 'github';
+        const target = pub.target === 'github' ? 'github' : 'hub';   // 未設定はハブ (かんたん公開・2026-07-28)
         const owner = pub.owner || gh.login || gh.owner || '';
         const repo = pub.repo || '';
         const branch = pub.branch || 'main';
