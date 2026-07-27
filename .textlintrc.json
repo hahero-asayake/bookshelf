@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "preset-jtf-style": {
+      "1.1.1.本文": false,
+      "1.1.3.箇条書き": false,
+      "4.1.3.ピリオド(.)、カンマ(,)": false,
+      "4.2.7.コロン(：)": false,
+      "3.1.1.全角文字と半角文字の間": false
+    },
+    "@textlint-ja/preset-ai-writing": true
+  }
+}

@@ -5,11 +5,15 @@
   "description": "AsayakeBookshelf のテスト用 devDependencies (アプリ本体はビルドレス。<script> 構成に node は不要)",
   "scripts": {
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@textlint-ja/textlint-rule-preset-ai-writing": "^1.7.0",
     "jsdom": "^25.0.0",
+    "textlint": "^15.7.1",
+    "textlint-rule-preset-jtf-style": "^3.0.3",
     "vitest": "^2.1.0"
   }
 }

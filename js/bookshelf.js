@@ -5555,6 +5555,13 @@ class VirtualBookshelf {
         const backBtn = document.getElementById('settings-back');
         if (backBtn) backBtn.addEventListener('click', () => history.back());
         window.addEventListener('popstate', () => {
+            // 取込モーダル (スマホで履歴に積んである場合): 戻る = 閉じてアプリに留まる
+            const im = document.getElementById('import-modal');
+            if (im && im.classList.contains('show') && this._importHist) {
+                this._importHist = false;
+                this.closeImportModal({ fromHistory: true });
+                return;
+            }
             const modal = document.getElementById('settings-modal');
             if (!modal || !modal.classList.contains('show')) return; // 閉じている間は無視 (× の go(-n) 吸収)
             if (this._settingsHist >= 2) { this._settingsHist = 1; this._showSettingsMaster(); }       // 詳細→一覧
@@ -8558,18 +8565,29 @@ class VirtualBookshelf {
         const st = document.getElementById('import-relay-status');
         if (st && !this._kindleImportInFlight) st.hidden = true;
         modal.classList.add('show');
+        // スマホ: 物理戻る/ブラウザバックで「アプリ離脱でなくモーダルを閉じる」ため履歴に積む (設定モーダルと同作法・ui-standards §1)
+        // popstate 配線は設定モーダル初回オープン時だけだったので、取込単独オープンでも配線する
+        if (this._isSettingsMobile()) {
+            this._bindSettingsPopstate();
+            history.pushState({ bsImport: 'open' }, '');
+            this._importHist = true;
+        }
     }
 
     /**
      * Kindleインポートモーダルを閉じる
+     * @param {{fromHistory?: boolean}} [opts] popstate 起点なら履歴を消費済みのため back しない
      */
-    closeImportModal() {
+    closeImportModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('import-modal');
         modal.classList.remove('show');
         // 結果表示をリセット
         const resultsDiv = document.getElementById('import-results');
         resultsDiv.style.display = 'none';
         resultsDiv.innerHTML = '';
+        // 自前で積んだ履歴を掃除 (×/ESC で閉じた場合)。popstate 経由なら不要
+        if (this._importHist && !fromHistory) { this._importHist = false; try { history.back(); } catch (_) {} }
+        this._importHist = false;
     }
 
     /** 取込モーダルの端末レーンを UA から自動判定 ('pc' | 'ios' | 'android') */

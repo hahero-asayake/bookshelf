@@ -241,6 +241,10 @@ bookshelf は **同期先フォルダを 1 つだけ指定** する。中身は 
   - 設計書のみ: `docs: ...`
   - スタイル: `style: ...`
 
+## UI標準 (最重要・2026-07-27 制定)
+
+**UI を実装・変更するセッションは [docs/ui-standards.md](docs/ui-standards.md) を冒頭で必ず Read する**。標準操作の期待表 (全モーダル/シートの ESC・スマホ戻る・枠外クリック)・実装規約 (btn 基底クラス・[hidden] 罠・ダイアログ幅)・文言規約 (用語表・トーン)・導線の対称性原則の正本。検証は `tests/e2e/standard-ops.spec.js` と `npm run lint:copy` (textlint) が自動打鍵する。新しいモーダル/シートを作ったら期待表と standard-ops.spec.js に行を足すこと。
+
 ## デザインの方向性 (確定済み — 2026-05-29)
 
 PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀development/bookshelf/04_画面設計書.md) に従う:
