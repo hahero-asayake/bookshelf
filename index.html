@@ -78,7 +78,7 @@
                         </button>
                     </div>
                     <div class="sidebar-section sidebar-section-utility">
-                        <button class="sidebar-nav-item" id="sidebar-search" type="button" title="検索 (⌘K)">
+                        <button class="sidebar-nav-item" id="sidebar-search" type="button" title="検索（⌘K）">
                             <span class="nav-icon" data-icon="search" data-icon-size="16"></span>
                             <span class="nav-label">検索</span>
                             <kbd class="nav-kbd">⌘K</kbd>
@@ -112,7 +112,7 @@
             </aside>
 
             <!-- 左ペイン折りたたみタブ (ペイン端から少しだけ飛び出す) -->
-            <button class="pane-tab pane-tab-left" id="sidebar-toggle-btn" type="button" title="左ペインの開閉 (⌘[)" data-icon="chevron-left" data-icon-size="16"></button>
+            <button class="pane-tab pane-tab-left" id="sidebar-toggle-btn" type="button" title="左ペインの開閉（⌘[）" data-icon="chevron-left" data-icon-size="16"></button>
 
             <!-- ===== 中央ペイン (本棚 or ホーム) ===== -->
             <section class="bookshelf-container app-main-pane">
@@ -152,7 +152,7 @@
                                 <span class="popover-host">
                                     <button id="toggle-search" class="btn-icon-square" title="この本棚を検索" data-icon="search"></button>
                                     <div class="popover popover-search" id="search-popover" hidden>
-                                        <input type="text" id="search-input" placeholder="タイトル/著者で検索...">
+                                        <input type="text" id="search-input" placeholder="タイトル/著者で検索…">
                                     </div>
                                 </span>
                                 <span class="popover-host">
@@ -244,7 +244,7 @@
             </section>
 
             <!-- 右ペイン折りたたみタブ (ペイン端から少しだけ飛び出す) -->
-            <button class="pane-tab pane-tab-right" id="detail-toggle-btn" type="button" title="右ペインの開閉 (⌘])" data-icon="chevron-right" data-icon-size="16"></button>
+            <button class="pane-tab pane-tab-right" id="detail-toggle-btn" type="button" title="右ペインの開閉（⌘]）" data-icon="chevron-right" data-icon-size="16"></button>
 
             <!-- ===== 右ペイン (本詳細) ===== -->
             <aside class="app-detail" id="app-detail">
@@ -323,7 +323,7 @@
                             </div>
                             <div id="account-admin" class="account-admin" hidden>
                                 <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>管理者: プラン手動切替</p>
-                                <p class="account-admin-hint">対象アカウントのメールを指定して、Stripe を経由せず 無料↔Plus を切替えます（優待・検証用）。対象が一度ログイン済みである必要があります。</p>
+                                <p class="account-admin-hint">対象アカウントのメールを指定して、Stripe を経由せず無料↔Plus を切替えます（優待・検証用）。対象が一度ログイン済みである必要があります。</p>
                                 <div class="account-admin-row">
                                     <input id="account-admin-email" type="email" placeholder="対象のメール" autocomplete="off" spellcheck="false">
                                     <button id="account-admin-plus" class="btn btn-primary btn-small" type="button">Plus にする</button>
@@ -363,7 +363,7 @@
                                 <span class="path-card-label">保存フォルダ</span>
                             </div>
                             <div class="path-card-body">
-                                <code class="path-display" id="obsidian-sync-path" title="">(まだ選んでいません)</code>
+                                <code class="path-display" id="obsidian-sync-path" title="">（まだ選んでいません）</code>
                             </div>
                             <div class="path-card-footer">
                                 <button id="obsidian-sync-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>フォルダを選ぶ</button>
@@ -395,7 +395,7 @@
                                 <p class="github-auth-msg">
                                     <a id="github-verification-link" href="#" target="_blank" rel="noopener noreferrer"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>GitHub 認証ページを開く</a>
                                 </p>
-                                <p class="github-auth-status" id="github-auth-pending-status"><span class="h-icon" data-icon="loader" data-icon-size="14"></span>認証待ち...</p>
+                                <p class="github-auth-status" id="github-auth-pending-status"><span class="h-icon" data-icon="loader" data-icon-size="14"></span>認証待ち…</p>
                                 <button id="github-cancel-auth-btn" class="btn btn-secondary btn-small">キャンセル</button>
                             </div>
 
@@ -416,14 +416,14 @@
                                 </div>
 
                                 <div class="github-form">
-                                    <label><span class="form-label">保存先 (リポジトリ)</span>
+                                    <label><span class="form-label">保存先（リポジトリ）</span>
                                         <select id="github-repo-select">
-                                            <option value="">(接続後に選べます)</option>
+                                            <option value="">（接続後に選べます）</option>
                                         </select>
                                     </label>
                                     <label><span class="form-label">ブランチ</span>
                                         <select id="github-branch-select">
-                                            <option value="">(保存先を選ぶと出ます)</option>
+                                            <option value="">（保存先を選ぶと出ます）</option>
                                         </select>
                                     </label>
                                     <label><span class="form-label">フォルダ（リポジトリ内の保存場所）</span>
@@ -514,7 +514,7 @@
                         <div id="publish-config-github" class="publish-target-config">
                             <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ（必ず <strong>public</strong> リポジトリ）</label>
                             <select id="publish-repo-select">
-                                <option value="">(GitHub 接続後に選べます)</option>
+                                <option value="">（GitHub 接続後に選べます）</option>
                             </select>
                             <small class="publish-config-hint">公開ページの静的サイト（HTML）をここへ書き出します。中身は誰でも読めます。空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加してから選んでください。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で閲覧できます。</small>
                             <span id="publish-repo-status" class="path-status"></span>
@@ -557,7 +557,7 @@
                             <input type="url" id="plugin-repo-url" placeholder="https://github.com/owner/repo" />
                             <button id="install-plugin-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="download" data-icon-size="14"></span>インストール</button>
                         </div>
-                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code><br>⚠️ プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。</small>
+                        <small class="plugin-install-hint">プラグインのファイル（manifest.json と index.js）が置かれた GitHub の場所を貼り付けます。例: <code>https://github.com/owner/repo/tree/main/plugins/foo</code><br>プラグインは外部のコードとして実行されます。信頼できる配布元のものだけを導入してください。</small>
                     </div>
 
                     <h4 class="settings-subsection-title">手動でインストール</h4>
@@ -571,7 +571,7 @@
                         <div id="plugin-cat-legend" class="plugin-cat-legend"></div>
                     </details>
                     <div class="plugin-search-row">
-                        <input type="text" id="plugin-search" placeholder="名前 / 説明で絞り込み..." />
+                        <input type="text" id="plugin-search" placeholder="名前 / 説明で絞り込み…" />
                     </div>
                     <div id="plugin-list-section" class="plugin-grid">
                         <p style="color:#888;">設定を開くと一覧が表示されます…</p>
@@ -682,12 +682,12 @@
                 <!-- Tab: Lucide -->
                 <section class="icon-picker-tab-content" data-tab-content="lucide">
                     <div class="icon-picker-direct-row">
-                        <input type="text" id="icon-picker-lucide-input" placeholder="Lucide 名で検索 (例: rocket, calendar-days)" autocomplete="off" />
+                        <input type="text" id="icon-picker-lucide-input" placeholder="Lucide 名で検索（例: rocket, calendar-days）" autocomplete="off" />
                         <span class="icon-picker-direct-preview" id="icon-picker-lucide-preview"></span>
                         <button class="btn btn-primary btn-small" id="icon-picker-lucide-use" type="button" disabled>使う</button>
                     </div>
                     <p class="icon-picker-direct-hint">
-                        1500+ の <a href="https://lucide.dev/icons/" target="_blank" rel="noopener">Lucide</a> から選択。入力 → Enter or 「使う」で確定 (初回は CDN 取得)。
+                        1500+ の <a href="https://lucide.dev/icons/" target="_blank" rel="noopener">Lucide</a> から選択。入力 → Enter か「使う」で確定（初回は CDN 取得）。
                     </p>
                     <div class="icon-picker-grid" id="icon-picker-grid">
                         <!-- 履歴 + おすすめは JS で描画 -->
@@ -710,7 +710,7 @@
                 </section>
 
                 <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
-                    <button id="icon-picker-clear" class="btn btn-secondary btn-small" type="button">クリア (デフォルト)</button>
+                    <button id="icon-picker-clear" class="btn btn-secondary btn-small" type="button">クリア（デフォルト）</button>
                     <button id="icon-picker-cancel" class="btn btn-secondary" type="button">キャンセル</button>
                 </div>
             </div>
@@ -977,7 +977,7 @@
         <div class="modal-content book-memo-modal-content">
             <button class="modal-close" id="book-memo-modal-close" type="button">×</button>
             <div class="modal-header">
-                <h2><span class="h-icon" data-icon="notebook-pen" data-icon-size="20"></span>長文メモ: <span id="book-memo-modal-title">(未選択)</span></h2>
+                <h2><span class="h-icon" data-icon="notebook-pen" data-icon-size="20"></span>長文メモ: <span id="book-memo-modal-title">（未選択）</span></h2>
             </div>
             <div class="modal-body book-memo-modal-body">
                 <textarea id="book-memo-textarea"></textarea>
@@ -1053,7 +1053,7 @@
                         </div>
                         <div class="form-group">
                             <label for="manual-image-url">画像URL</label>
-                            <input type="url" id="manual-image-url" placeholder="https://... (空欄なら ASIN から推測)" />
+                            <input type="url" id="manual-image-url" placeholder="https://...（空欄なら ASIN から推測）" />
                         </div>
                         <div class="form-group">
                             <label for="manual-acquired-date">取得日 / 読んだ日付</label>
@@ -1109,7 +1109,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072705"></script>
+    <script src="js/bookshelf.js?v=2026072706"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

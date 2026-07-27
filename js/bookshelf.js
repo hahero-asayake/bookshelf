@@ -3170,7 +3170,7 @@ class VirtualBookshelf {
                     const base = state === 'slow'
                         ? 'GitHub が混雑中、間隔を伸ばします'
                         : 'GitHub で承認されるのを待っています';
-                    statusEl.textContent = `${base} (${elapsedSec}秒経過)`;
+                    statusEl.textContent = `${base}（${elapsedSec}秒経過）`;
                 }
             });
 
@@ -4394,7 +4394,7 @@ class VirtualBookshelf {
             const isHandleStale = e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError');
             if (isHandleStale && this.syncMethod === 'local' && !this._syncReconnectNotified) {
                 this._syncReconnectNotified = true;
-                toast('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 → 「同期」 → 「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
+                toast('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 →「同期」→「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
                 if (this.storage && this.storage.adapter && typeof this.storage.adapter.setDirHandle === 'function') {
                     this.storage.adapter.setDirHandle(null);
                 }
@@ -4438,7 +4438,7 @@ class VirtualBookshelf {
                 </div>`;
             box.querySelector('.cfm-title').textContent = '同期の衝突';
             box.querySelector('.cfm-message').textContent =
-                `同期先 (${source}) のデータが他の場所から更新されています。このセッションの直近の編集はまだ同期先に反映されていません。` +
+                `同期先（${source}）のデータが他の場所から更新されています。このセッションの直近の編集はまだ同期先に反映されていません。` +
                 '「再読込」を選ぶと最新版を取得しますが、未反映の編集は失われます。心配なときは先に「編集内容を書き出す」で退避してください。';
             box.querySelector('.cfm-cancel').textContent = '何もしない';
             box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
@@ -4485,13 +4485,13 @@ class VirtualBookshelf {
             status.textContent = '読み込み中...';
             status.style.color = '#888';
         } else if (state === 'reconnect') {
-            pathEl.textContent = `${folderName || ''} (要再接続)`;
+            pathEl.textContent = `${folderName || ''}（要再接続）`;
             pathEl.title = folderName || '';
             pathEl.style.color = '#f44336';
             status.textContent = '「フォルダを選ぶ」を押してフォルダを選び直してください';
             status.style.color = '#f44336';
         } else {
-            pathEl.textContent = '(未接続)';
+            pathEl.textContent = '（未接続）';
             pathEl.title = '';
             pathEl.style.color = '#888';
             status.textContent = '';
@@ -5940,7 +5940,7 @@ class VirtualBookshelf {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください。</p>';
+            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -7169,7 +7169,7 @@ class VirtualBookshelf {
         }
         // 特殊本棚（all）からの削除は permanent でないため excludeBook を案内
         if (bookshelf.isSpecial) {
-            toast('🚫 「全ての本」から本を外すには「all から除外」ボタンを使ってください');
+            toast('「全ての本」から本を外すには「all から除外」ボタンを使ってください');
             return;
         }
 
@@ -7435,7 +7435,7 @@ class VirtualBookshelf {
         if (!page) return;
         const ok = await confirmDialog({
             title: '公開を取り消す',
-            message: `「${page.title}」を公開サイトから削除します。\n(他の公開中ページはそのまま残ります)`,
+            message: `「${page.title}」を公開サイトから削除します。\n（他の公開中ページはそのまま残ります）`,
             okLabel: '公開を取り消す', danger: true
         });
         if (!ok) return;
@@ -7755,7 +7755,7 @@ class VirtualBookshelf {
 
     async _ppDelete(id) {
         const page = this.publishPageStore.get(id);
-        const ok = await confirmDialog({ title: '公開ページを削除', message: `「${page ? page.title : ''}」を削除します。\n(次回の公開で実際のサイトからも消えます)`, okLabel: '削除', danger: true });
+        const ok = await confirmDialog({ title: '公開ページを削除', message: `「${page ? page.title : ''}」を削除します。\n（次回の公開で実際のサイトからも消えます）`, okLabel: '削除', danger: true });
         if (!ok) return false;
         await this.publishPageStore.remove(id);
         this._renderPublishPagesList();
@@ -7857,7 +7857,7 @@ class VirtualBookshelf {
      */
     async openOrCreateBookMemo(asin) {
         if (!this._isSyncReady()) {
-            toast('先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください。');
+            toast('先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
@@ -7927,7 +7927,7 @@ class VirtualBookshelf {
                     window.location.href = obsidianUrl;
                 }
             } else {
-                toast(`${folderName}/${fullPath}\n（パスをクリップボードにコピー済）\n\nvault 名が未設定です。設定 → 長文メモ から「アプリ内エディタ」に切り替えるか、再度この操作で設定してください。`);
+                toast(`${folderName}/${fullPath}\n（パスをクリップボードにコピー済）\n\nvault 名が未設定です。設定 → 長文メモから「アプリ内エディタ」に切り替えるか、再度この操作で設定してください。`);
             }
         } else if (openWith === 'system') {
             toast(`同期フォルダの ${fullPath} を OS のエクスプローラ等で開いてください。\n（パスはクリップボードにコピー済み）`);
@@ -7975,7 +7975,7 @@ class VirtualBookshelf {
         modal.classList.add('show');
 
         if (typeof EasyMDE === 'undefined') {
-            if (statusEl) statusEl.textContent = 'エディタライブラリが読み込まれていません (CDN 接続を確認)';
+            if (statusEl) statusEl.textContent = 'エディタライブラリが読み込まれていません（CDN 接続を確認）';
             return;
         }
         this._bookMemoEditor = new EasyMDE({
@@ -8847,7 +8847,7 @@ class VirtualBookshelf {
             return;
         }
         if (!this._isSyncReady()) {
-            toast('先に「同期」で保存先（この端末のフォルダ または GitHub）を設定してください');
+            toast('先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください');
             return;
         }
         try {
@@ -8905,7 +8905,7 @@ class VirtualBookshelf {
      * - どちらもなければクリップボードにコピー（フォールバック）
      */
     _buildKindleBookmarkletCode() {
-        const code = `(async()=>{try{var c=window.csrfToken;if(!c){for(var si=0;si<document.scripts.length;si++){var mm=(document.scripts[si].textContent||"").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);if(mm){c=mm[1];break;}}}if(!c){var te=document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');c=te?(te.value||te.content||null):null;}if(!c){alert('Amazonの蔵書一覧ページ (digital-console/contentlist/booksAll) で実行してください');return;}var fp=async function(st){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:st,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));return j.GetContentOwnershipData;};var f0=await fp(0);var t=f0.numberOfItems||0;var ss=[];for(var s2=100;s2<t;s2+=100)ss.push(s2);var rest=await Promise.all(ss.map(fp));var items=f0.items;for(var ri=0;ri<rest.length;ri++)items=items.concat(rest[ri].items);var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
+        const code = `(async()=>{try{var c=window.csrfToken;if(!c){for(var si=0;si<document.scripts.length;si++){var mm=(document.scripts[si].textContent||"").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);if(mm){c=mm[1];break;}}}if(!c){var te=document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');c=te?(te.value||te.content||null):null;}if(!c){alert('Amazonの蔵書一覧ページ（digital-console/contentlist/booksAll）で実行してください');return;}var fp=async function(st){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:st,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));return j.GetContentOwnershipData;};var f0=await fp(0);var t=f0.numberOfItems||0;var ss=[];for(var s2=100;s2<t;s2+=100)ss.push(s2);var rest=await Promise.all(ss.map(fp));var items=f0.items;for(var ri=0;ri<rest.length;ri++)items=items.concat(rest[ri].items);var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
         return 'javascript:' + encodeURIComponent(code);
     }
 

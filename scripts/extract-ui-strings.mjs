@@ -8,9 +8,14 @@ import { JSDOM } from 'jsdom';
 const out = [];
 const seen = new Set();
 function add(src, text) {
-    const t = String(text).replace(/\s+/g, ' ').trim();
+    if (/\n|\\n/.test(String(text))) { for (const line of String(text).split(/\n|\\n/)) addOne(src, line); return; } return addOne(src, text);
+}
+function addOne(src, text) {
+    let t = String(text).replace(/\s+/g, ' ').trim();
+    if (t.includes('${')) t = t.slice(0, t.indexOf('${')).trim();   // 途中切断テンプレは前半のみ
+    const jpBody = t.replace(/〈値〉/g, '');
     if (t.length < 2) return;
-    if (!/[ぁ-んァ-ン一-龥a-zA-Z]/.test(t)) return;          // 記号・数字のみは除外
+    if (!/[ぁ-んァ-ン一-龥]/.test(jpBody)) return;      // 日本語を含む文字列のみ（〈値〉は除いて判定）
     const key = `${t}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -37,13 +42,13 @@ for (const f of readdirSync('js').filter(f => f.endsWith('.js'))) {
     const src = readFileSync(`js/${f}`, 'utf-8');
     const re = /(?:toast|confirm|alert)\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
     let m;
-    while ((m = re.exec(src))) add(`js:${f}`, m[2].replace(/\\n/g, ' ').replace(/\$\{[^}]*\}/g, '〈値〉'));
+    while ((m = re.exec(src))) add(`js:${f}`, m[2].replace(/\$\{[^}]*\}/g, "〈値〉"));
     const re2 = /(?:title|message|okLabel|cancelLabel):\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
-    while ((m = re2.exec(src))) add(`js:${f}`, m[2].replace(/\\n/g, ' ').replace(/\$\{[^}]*\}/g, '〈値〉'));
+    while ((m = re2.exec(src))) add(`js:${f}`, m[2].replace(/\$\{[^}]*\}/g, '〈値〉'));
 }
 
 mkdirSync('_local', { recursive: true });
 const md = ['# UI 文字列インベントリ (自動生成・lint:copy)', ''];
-for (const { src, t } of out) md.push(`- ${t}　\`←${src}\``);
+for (const { src, t } of out) md.push(`- ${t}<!-- ${src} -->`);
 writeFileSync('_local/ui-strings.md', md.join('\n') + '\n');
 console.log(`extracted ${out.length} strings -> _local/ui-strings.md`);
