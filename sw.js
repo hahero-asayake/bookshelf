@@ -34,7 +34,7 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith((async () => {
         // ?v= 付き資産 (js/css) はキャッシュ優先。バージョンは URL で変わるため安全で、
-        // 毎回の全ダウンロードによる更新の遅さを無くす (2026-07-28 C-267)。
+        // 毎回の全ダウンロードによる更新の遅さを無くす (2026-07-28 C-271)。
         // HTML (ナビゲーション) と ?v= 無しはネットワーク優先のまま = 新しい ?v= は即座に届く。
         if (url.searchParams.has('v')) {
             const hit = await caches.match(req, { ignoreSearch: false });

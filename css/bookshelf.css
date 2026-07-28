@@ -3681,7 +3681,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 /* 同期方式セレクタ */
-/* 統一方針 (C-267): ラベル→コントロールの縦積み。説明をカード枠で囲わない */
+/* 統一方針 (C-271): ラベル→コントロールの縦積み。説明をカード枠で囲わない */
 .sync-method-row {
     display: block;
     margin-bottom: 1.1rem;
@@ -4256,7 +4256,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     .pp-edit-actions { flex-wrap: wrap; }
 }
 
-/* 統一方針 (C-267): ボタンは内容幅・横並び (全幅積みは他セクションと不揃いになる) */
+/* 統一方針 (C-271): ボタンは内容幅・横並び (全幅積みは他セクションと不揃いになる) */
 .settings-action-row .btn,
 .settings-action-list .btn {
     width: auto;
@@ -6858,7 +6858,7 @@ body.select-mode .drag-handle { display: none; }
 #sync-conflict-dialog .cfm-actions { flex-wrap: wrap; }
 #sync-conflict-dialog .cfm-actions .btn { white-space: nowrap; }
 
-/* ===== 設定画面の統一方針 (2026-07-28 C-267 / ui-standards §6) =====
+/* ===== 設定画面の統一方針 (2026-07-28 C-271 / ui-standards §6) =====
    1) 1設定 = ラベル → コントロール → ヒント の縦積み
    2) コントロール (select / テキスト系 input) の幅は 420px 上限・スマホは 100%
    3) 設定内のボタンはすべて小サイズ。主従は色 (btn-primary / btn-secondary) で示す
