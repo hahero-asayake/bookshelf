@@ -53,8 +53,8 @@ class SyncConfigManager {
             hub: { apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
                    plan: 'free', quotaBytes: 0, usedBytes: 0, publicBase: '' },
             // 公開先 (T09 / ADR-033)。target='github'(自分の repo) | 'hub'(共有ハブ)。
-            // owner 未設定なら GitHub login にフォールバック
-            publish: { target: 'github', owner: '', repo: 'bookshelf-public', branch: 'main' }
+            // owner 未設定なら GitHub login にフォールバック。既定=ハブ (かんたん公開・ADR-056)
+            publish: { target: 'hub', owner: '', repo: 'bookshelf-public', branch: 'main' }
         };
     }
 

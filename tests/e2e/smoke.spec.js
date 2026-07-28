@@ -159,19 +159,19 @@ test('公開: 新規作成→本棚選択→プレビューが生成される (s
     expect(errors).toEqual([]);
 });
 
-test('設定→公開: 公開先をハブに切替えるとハブ公開ブロックが出る (ADR-033)', async ({ page }) => {
+test('設定→公開: 公開先の既定はハブ・GitHub に切替えるとリポジトリブロックが出る (ADR-033/056)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
     await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
-    // 公開セクションを開く (既定折りたたみ)。既定は GitHub ブロック表示、ハブブロックは隠れている
-    await expect(page.locator('#publish-config-github')).toBeVisible();
-    await expect(page.locator('#publish-config-hub')).toBeHidden();
-    // 公開先=ハブ → ハブブロック表示・GitHub ブロック非表示
-    await page.selectOption('#publish-target-select', 'hub');
+    // 既定 = ハブ (ADR-056)。ハブブロック表示、GitHub ブロックは隠れている
     await expect(page.locator('#publish-config-hub')).toBeVisible();
     await expect(page.locator('#publish-config-github')).toBeHidden();
-    // 設定に target=hub が保存される
+    // 公開先=GitHub → リポジトリブロック表示・ハブブロック非表示
+    await page.selectOption('#publish-target-select', 'github');
+    await expect(page.locator('#publish-config-github')).toBeVisible();
+    await expect(page.locator('#publish-config-hub')).toBeHidden();
+    // 設定に target=github が保存される
     const target = await page.evaluate(() => JSON.parse(localStorage.getItem('bookshelf_sync')).publish.target);
-    expect(target).toBe('hub');
+    expect(target).toBe('github');
     expect(errors).toEqual([]);
 });

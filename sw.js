@@ -1,11 +1,11 @@
 // bookshelf Service Worker
-// 方針: ネットワーク優先 + キャッシュフォールバック (runtime cache)。
-//   - オンライン時は常に最新を取得 → 開発中の ?v= キャッシュバストと衝突しない
+// 方針: ?v= 付き資産はキャッシュ優先 (URL がバージョンを持つ=不変)、それ以外はネットワーク優先。
+//   - HTML は常に最新を取得 → 新しい ?v= 参照は即座に届き、資産はキャッシュから瞬時に出る
 //   - 成功した同一オリジン GET は実行時キャッシュに保存 → オフラインでも前回取得分が動く
 //   - CDN 等のクロスオリジンは素通し (SW は介在しない)
 //   - ナビゲーション時のオフラインは index.html にフォールバック
 
-const CACHE = 'bookshelf-runtime-v2';
+const CACHE = 'bookshelf-runtime-v3';
 
 self.addEventListener('install', () => {
     // skipWaiting は呼ばない。新 SW は待機させ、UI の「更新」ボタン (skipWaiting メッセージ) で適用する。
@@ -33,6 +33,13 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return; // クロスオリジンは介在しない
 
     event.respondWith((async () => {
+        // ?v= 付き資産 (js/css) はキャッシュ優先。バージョンは URL で変わるため安全で、
+        // 毎回の全ダウンロードによる更新の遅さを無くす (2026-07-28 C-267)。
+        // HTML (ナビゲーション) と ?v= 無しはネットワーク優先のまま = 新しい ?v= は即座に届く。
+        if (url.searchParams.has('v')) {
+            const hit = await caches.match(req, { ignoreSearch: false });
+            if (hit) return hit;
+        }
         try {
             const fresh = await fetch(req);
             if (fresh && fresh.status === 200 && fresh.type === 'basic') {

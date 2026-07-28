@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072802">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072901">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -530,7 +530,7 @@
                         <div id="publish-affiliate" class="publish-target-config" hidden>
                             <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
                             <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
-                            <small class="publish-config-hint">Amazon アソシエイト参加者向けの設定です（お持ちでなければ空欄のままで大丈夫です）。設定すると公開ページの商品リンクがあなたの収益になり、<strong>空なら広告（アフィリエイトリンク）を付けません</strong>。</small>
+                            <small class="publish-config-hint" id="affiliate-hint">Amazon アソシエイトに参加している方向けの設定です。</small><!-- 状態別の続き文は _reflectAffiliateField が出す -->
                         </div>
                     </div>
                     </div>
@@ -1113,7 +1113,7 @@
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
-    <script src="js/sync-config.js?v=2026061601"></script>
+    <script src="js/sync-config.js?v=2026072901"></script>
     <script src="js/hub-auth.js?v=2026061605"></script>
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026072707"></script>
@@ -1127,7 +1127,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072802"></script>
+    <script src="js/bookshelf.js?v=2026072901"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

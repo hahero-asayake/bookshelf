@@ -3323,6 +3323,13 @@ class VirtualBookshelf {
         // 自前 GitHub Pages はユーザの自己責任サイト → プラン不問で自分のタグ可 (運営タグは入れない)。
         // ハブは運営ホスト → 自分のタグは Plus 特典 (無料は運営タグ)。
         affWrap.hidden = !((target === 'github') || (plan === 'plus'));
+        // ヒントは表示状態に合わせて出し分け (全状態で事実と一致させる: ハブ無料=運営タグ固定は欄ごと非表示)
+        const hint = document.getElementById('affiliate-hint');
+        if (hint) {
+            hint.textContent = (target === 'github')
+                ? 'Amazon アソシエイトに参加している方向けの設定です。設定すると、GitHub 公開ページの商品リンクがあなたの収益になります。空欄なら広告を付けません。'
+                : 'Amazon アソシエイトに参加している方向けの設定です。Plus プランでは、ハブ公開ページの商品リンクにこのタグが使われます。空欄なら広告を付けません。';
+        }
         // 入力中はユーザの編集を尊重して上書きしない
         if (document.activeElement !== affInput) {
             affInput.value = (this.userData && this.userData.settings && this.userData.settings.affiliateId) || '';

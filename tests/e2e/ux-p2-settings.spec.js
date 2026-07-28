@@ -105,7 +105,14 @@ test.describe('スマホ 設定スクロール', () => {
 
     test('P2: 設定詳細が画面より長いときスクロールが効く', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('publish-section'); });
+        // 中身が確実に長くなる状態 (公開先=GitHub のリポジトリブロック表示) にして開く
+        await page.evaluate(() => {
+            const cfg = SyncConfigManager.load();
+            cfg.publish = { ...(cfg.publish || {}), target: 'github' };
+            SyncConfigManager.save(cfg);
+            window.HubAuth.renderSignInButton = () => {};
+            window.bookshelf._openSettingsModal('publish-section');
+        });
         await expect(page.locator('#settings-modal')).toHaveClass(/show/);
         const diag = await page.evaluate(() => {
             const el = document.querySelector('.settings-md-body');
