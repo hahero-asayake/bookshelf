@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072901">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072902">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -351,9 +351,9 @@
                     <div class="sync-method-row">
                         <label for="sync-method-select">本のデータの保存先:</label>
                         <select id="sync-method-select">
+                            <option value="hub">Asayake ハブに保存（Google ログインだけ・おすすめ）</option>
                             <option value="local">この端末のフォルダに保存（PC専用）</option>
-                            <option value="github">GitHub に保存（複数端末で同期）</option>
-                            <option value="hub">Asayake ハブに保存（Google ログインだけ）</option>
+                            <option value="github">自分の GitHub リポジトリに保存（上級者向け）</option>
                         </select>
                     </div>
 
@@ -545,10 +545,21 @@
                 <details class="settings-section" id="library-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="library" data-icon-size="16"></span>蔵書</summary>
                     <div class="settings-section-body">
-                    <div class="settings-action-list">
-                        <button id="import-kindle" class="btn btn-primary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>Kindleの本を取り込む</button>
-                        <button id="add-book-manually" class="btn btn-secondary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>手動追加</button>
-                        <button id="show-exclusions" class="btn btn-secondary"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>除外一覧</button>
+                    <!-- アクション中心のセクションは「ボタン + 一言説明」の縦積み (C-277)。
+                         ボタンだけの横並びは何をするものか伝わらず、スマホで折り返して不揃いになる -->
+                    <div class="settings-action-stack">
+                        <div class="action-stack-item">
+                            <button id="import-kindle" class="btn btn-primary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>Kindleの本を取り込む</button>
+                            <p class="action-stack-desc">Amazon の蔵書一覧から、持っている本をまとめて登録します。</p>
+                        </div>
+                        <div class="action-stack-item">
+                            <button id="add-book-manually" class="btn btn-secondary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>手動で追加</button>
+                            <p class="action-stack-desc">Kindle 以外の本や紙の本を、1 冊ずつ入力して追加します。</p>
+                        </div>
+                        <div class="action-stack-item">
+                            <button id="show-exclusions" class="btn btn-secondary"><span class="h-icon" data-icon="ban" data-icon-size="14"></span>除外した本</button>
+                            <p class="action-stack-desc">本棚に置かないことにした本の確認と、元に戻す操作ができます。</p>
+                        </div>
                     </div>
                     </div>
                 </details>
@@ -590,6 +601,8 @@
                             </div>
                         </div>
                     </details>
+
+                    <p class="pp-hint plugin-dev-link"><span class="h-icon" data-icon="book-open" data-icon-size="13"></span>プラグインを自作したい方へ: <a href="https://github.com/hahero-asayake/bookshelf/blob/main/docs/plugin-dev.md" target="_blank" rel="noopener noreferrer">プラグイン開発ガイド</a>（最小構成・API・イベント・配布方法）</p>
 
                     <!-- 内部用 hidden プラグイン UI ボタン受け皿 -->
                     <div id="plugin-buttons" class="plugin-buttons-host" hidden></div>
@@ -1037,10 +1050,10 @@
         <div class="modal-content">
             <button class="modal-close" id="exclusions-modal-close">×</button>
             <div class="modal-header">
-                <h2><span class="h-icon" data-icon="ban" data-icon-size="20"></span>除外中の本</h2>
+                <h2><span class="h-icon" data-icon="ban" data-icon-size="20"></span>除外した本</h2>
             </div>
             <div class="modal-body">
-                <p class="muted-hint">「全ての本」から除外している本の一覧。Kindle 再取込時もここにある本はスキップされます。</p>
+                <p class="muted-hint">本棚に置かないことにした本の一覧です。Kindle 取込のときも、ここにある本は追加されません。</p>
                 <div id="exclusions-list">
                     <!-- 除外中の本がここに -->
                 </div>
@@ -1056,36 +1069,35 @@
                 <h2><span class="h-icon" data-icon="plus" data-icon-size="20"></span>手動で本を追加</h2>
             </div>
             <div class="modal-body">
-                <div class="add-book-options">
-                    <div class="add-option">
-                        <h3>本の情報を入力</h3>
-                        <div class="form-group">
-                            <label for="manual-asin">ASIN</label>
-                            <div class="asin-input-container">
-                                <input type="text" id="manual-asin" placeholder="B012345678" maxlength="10" />
-                                <button type="button" id="fetch-book-info" class="btn btn-small btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>自動取得</button>
-                            </div>
-                            <div class="asin-status" id="asin-status" style="display: none;"></div>
-                        </div>
-                        <div class="form-group">
-                            <label for="manual-title">タイトル</label>
-                            <input type="text" id="manual-title" placeholder="書籍タイトル" />
-                        </div>
-                        <div class="form-group">
-                            <label for="manual-authors">著者</label>
-                            <input type="text" id="manual-authors" placeholder="著者名" />
-                        </div>
-                        <div class="form-group">
-                            <label for="manual-image-url">画像URL</label>
-                            <input type="url" id="manual-image-url" placeholder="https://...（空欄なら ASIN から推測）" />
-                        </div>
-                        <div class="form-group">
-                            <label for="manual-acquired-date">取得日 / 読んだ日付</label>
-                            <input type="date" id="manual-acquired-date" />
-                        </div>
-
-                        <button id="add-manually" class="btn btn-primary">手動追加</button>
+                <!-- 灰色カード枠と見出しは廃止 (C-277)。設定と同じ「ラベル→入力→ヒント」の縦積みに -->
+                <div class="form-group">
+                    <label for="manual-asin">ASIN（Amazon の商品番号）</label>
+                    <div class="asin-input-container">
+                        <input type="text" id="manual-asin" placeholder="B0XXXXXXXX" maxlength="10" />
+                        <button type="button" id="fetch-book-info" class="btn btn-small btn-secondary"><span class="h-icon" data-icon="download" data-icon-size="14"></span>自動取得</button>
                     </div>
+                    <p class="memo-config-hint">Amazon の商品ページの URL に入っている 10 桁の英数字です。入力して「自動取得」を押すと、タイトルなどが自動で埋まります。</p>
+                    <div class="asin-status" id="asin-status" style="display: none;"></div>
+                </div>
+                <div class="form-group">
+                    <label for="manual-title">タイトル</label>
+                    <input type="text" id="manual-title" placeholder="書籍タイトル" />
+                </div>
+                <div class="form-group">
+                    <label for="manual-authors">著者（空欄可）</label>
+                    <input type="text" id="manual-authors" placeholder="著者名" />
+                </div>
+                <div class="form-group">
+                    <label for="manual-image-url">表紙画像の URL（空欄可）</label>
+                    <input type="url" id="manual-image-url" placeholder="空欄なら ASIN から自動で表示します" />
+                </div>
+                <div class="form-group">
+                    <label for="manual-acquired-date">読み終えた日（任意）</label>
+                    <input type="date" id="manual-acquired-date" />
+                    <p class="memo-config-hint">入れると読了として登録します。空欄なら「追加した日」で並びます。</p>
+                </div>
+                <div class="modal-footer-actions">
+                    <button id="add-manually" class="btn btn-primary"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>追加する</button>
                 </div>
                 <div id="add-book-results" class="add-results" style="display: none;">
                     <!-- Addition results will be shown here -->
@@ -1119,7 +1131,7 @@
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
-    <script src="js/sync-config.js?v=2026072901"></script>
+    <script src="js/sync-config.js?v=2026072902"></script>
     <script src="js/hub-auth.js?v=2026061605"></script>
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026072707"></script>
@@ -1133,7 +1145,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072901"></script>
+    <script src="js/bookshelf.js?v=2026072902"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

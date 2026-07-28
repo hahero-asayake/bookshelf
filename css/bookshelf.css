@@ -2441,28 +2441,30 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     box-shadow: 0 2px 10px var(--shadow-color);
 }
 
+/* 起動ローディング: C-277 で「初回・新端末のときだけ出る」ものになった。
+   出る場面でも控えめに (小さめスピナー・普通ウェイト)。 */
 .loading {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.85rem;
+    gap: 0.7rem;
     text-align: center;
     padding: 4rem 2rem;
     color: var(--fg2);
 }
 .loading-spinner {
-    width: 38px;
-    height: 38px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    border: 3px solid var(--line);
+    border: 2.5px solid var(--line);
     border-top-color: var(--accent);
     animation: bs-spin 0.8s linear infinite;
 }
 .loading-text {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--fg);
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--fg2);
 }
 .loading-sub {
     font-size: 0.82rem;
@@ -2949,20 +2951,10 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     flex: 1;
 }
 
+/* 色は .btn-secondary の規約色に任せる (旧 #007bff 直指定は C-277 で撤去) */
 .asin-input-container .btn {
     white-space: nowrap;
-    min-width: 100px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: white;
-    background-color: #007bff;
-    border: 2px solid #007bff;
-    padding: 0.5rem 1rem;
-}
-
-.asin-input-container .btn:hover {
-    background-color: #0056b3;
-    border-color: #0056b3;
+    flex-shrink: 0;
 }
 
 .asin-status {
@@ -4074,6 +4066,34 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     flex-wrap: wrap;
     gap: 0.5rem;
 }
+
+/* アクション中心セクション (蔵書): ボタン + 一言説明の縦積み (C-277)。
+   横並びボタン羅列はスマホで折り返して不揃いになり、用途も伝わらない */
+.settings-action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+}
+.action-stack-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.action-stack-item .btn {
+    width: auto;
+    align-self: flex-start;
+}
+.action-stack-desc {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+/* プラグイン開発ガイドへの誘導 (設定プラグイン節の末尾)。
+   文中リンクを含むため flex にしない (テキストが折り返しで分断される) */
+.plugin-dev-link { margin-top: 1rem; }
+.plugin-dev-link .h-icon { display: inline-flex; vertical-align: -0.15em; margin-right: 0.3rem; }
 
 .publish-config {
     display: flex;
@@ -5469,25 +5489,37 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     margin-bottom: 0;
 }
 
-/* Add Book Modal Styles */
-.add-book-options {
+/* Add Book Modal: 灰色カード枠 (.add-book-options/.add-option) は C-277 で廃止。
+   form-group の縦積み + 右寄せアクションのみ。 */
+.modal-footer-actions {
     display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    margin-bottom: 2rem;
+    justify-content: flex-end;
+    margin-top: 1.2rem;
 }
 
-.add-option {
-    padding: 1.5rem;
-    border: 2px solid var(--line);
-    border-radius: 10px;
-    background: var(--line2);
+/* 除外一覧 (C-277: インラインスタイルからクラス化) */
+.exclusion-item {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.55rem 0.15rem;
+    border-bottom: 1px solid var(--line);
 }
+.exclusion-cover {
+    width: 40px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: var(--line);
+}
+.exclusion-meta { flex: 1; min-width: 0; }
+.exclusion-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exclusion-authors { color: var(--muted); font-size: 0.85rem; }
+.exclusion-asin { color: var(--muted); font-size: 0.72rem; }
 
-.add-option h3 {
-    margin-bottom: 1rem;
-    color: var(--fg);
-}
+/* モーダル冒頭の補足 (除外一覧など)。pp-hint と同格 */
+.muted-hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.9rem; line-height: 1.5; }
 
 .form-group {
     margin-bottom: 1rem;
@@ -5569,13 +5601,11 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
 
 /* Responsive Modal Improvements */
 @media (max-width: 768px) {
-    .import-options,
-    .add-book-options {
+    .import-options {
         gap: 1rem;
     }
-    
-    .import-option,
-    .add-option {
+
+    .import-option {
         padding: 1rem;
     }
     
@@ -6221,6 +6251,9 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
 .status-row .status-btn:hover { background: rgba(0, 0, 0, 0.06); }
 .status-row.status-warn   { background: #fff8e1; color: #9a6a00; }
 .status-row.status-update { background: var(--accent-bg); color: var(--accent-strong, var(--accent)); }
+/* 裏同期の確認中 (C-277): 目立たせない。ニュートラル色 + アイコンだけ回す */
+.status-row.status-checking { background: transparent; color: var(--muted); }
+.status-row.status-checking .status-ico { animation: bs-spin 1.2s linear infinite; }
 body.plugin-dark .status-row.status-warn   { background: rgba(212, 145, 0, 0.16); color: #f0c869; }
 body.plugin-dark .status-row.status-update { background: var(--accent-bg); }
 

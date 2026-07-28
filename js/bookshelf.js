@@ -199,8 +199,7 @@ class VirtualBookshelf {
             this._renderSidebarTree();
 
 
-            // 同期 (LocalFS / GitHub / Asayake ハブ)
-            await this.initSync();
+            // 同期 (LocalFS / GitHub / Asayake ハブ) は下の finishStartup へ (起動2段化, C-277)
             // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
             // 重要な同期は flushSync() を明示的に呼ぶ運用とする
             window.addEventListener('beforeunload', () => {
@@ -224,29 +223,58 @@ class VirtualBookshelf {
 
             // 公開エクスポート先 handle の復元は廃止 (出力先は同期先 public/ に統合)
 
-            // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
-            if (this.pluginLoader) {
+            // 後段: 同期 (ネットワーク) → プラグイン。届いた差分は initSync 内の再描画で反映される
+            const finishStartup = async () => {
                 try {
-                    this._setLoadingSub('プラグインを読み込み中…');
-                    // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
-                    this.pluginLoader.onProgress = (done, total) => {
-                        if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
-                    };
-                    await this.pluginLoader.loadEnabledPlugins();
+                    await this.initSync();
                 } catch (e) {
-                    console.warn('プラグイン読み込み中にエラー:', e);
-                } finally {
-                    this.pluginLoader.onProgress = null;
+                    // initSync 内で拾えなかった想定外エラー。裏実行時も全画面エラーにはせず帯で知らせる
+                    console.error('initSync:', e);
+                    this._syncError = true;
+                    if (!this._syncErrorMsg) this._syncErrorMsg = '同期の初期化に失敗しました。設定から接続を確認してください。';
+                    this._updateStatusBar();
                 }
-            }
+                // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
+                if (this.pluginLoader) {
+                    try {
+                        this._setLoadingSub('プラグインを読み込み中…');
+                        // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
+                        this.pluginLoader.onProgress = (done, total) => {
+                            if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
+                        };
+                        await this.pluginLoader.loadEnabledPlugins();
+                    } catch (e) {
+                        console.warn('プラグイン読み込み中にエラー:', e);
+                    } finally {
+                        this.pluginLoader.onProgress = null;
+                    }
+                }
+            };
+            const startRouter = () => {
+                if (this.router) {
+                    this.router.onChange((route) => this._applyRoute(route));
+                    this.router.start();
+                }
+            };
 
-            // Router 起動（最後に行うことでデータ・プラグインがすべて準備済みになる）
-            if (this.router) {
-                this.router.onChange((route) => this._applyRoute(route));
-                this.router.start();
+            // ===== 起動の2段化 (C-277) =====
+            // この端末にデータがあるなら、ローカル描画が済んだ時点で即操作可能にする。
+            // 同期とプラグインは裏で続け、確認中は細い帯だけ出す (全画面スピナーで待たせない)。
+            // データが無い端末 (初回起動・新端末での再ログイン) だけは、空の本棚や welcome を
+            // 一瞬見せないよう従来どおり同期完了までローディングを出す。
+            if (this._hasLocalUserData) {
+                startRouter();
+                this.hideLoading();
+                const checking = (this.syncMethod === 'hub' || this.syncMethod === 'github') && this._isSyncReady();
+                if (checking) { this._syncChecking = true; this._updateStatusBar(); }
+                finishStartup().finally(() => {
+                    if (checking) { this._syncChecking = false; this._updateStatusBar(); }
+                });
+            } else {
+                await finishStartup();
+                startRouter();
+                this.hideLoading();
             }
-
-            this.hideLoading();
         } catch (error) {
             console.error('初期化エラー:', error);
             this.showError('データの読み込みに失敗しました。');
@@ -274,6 +302,8 @@ class VirtualBookshelf {
         
         // Check localStorage first for user data
         const savedUserData = localStorage.getItem('virtualBookshelf_userData');
+        // 起動2段化 (C-277) の分岐材料: この端末に描画できるデータがあるか
+        this._hasLocalUserData = !!savedUserData;
 
         if (savedUserData) {
             // Use localStorage data as primary source
@@ -2601,9 +2631,11 @@ class VirtualBookshelf {
 
         const config = this.syncConfig || SyncConfigManager.load();
         let viewMethod = config.method || 'local';
-        // 非対応環境で local が既定だと、機能しないフォルダ画面に着地して混乱する。
-        // 実 method (キャッシュ動作) は据え置きつつ、表示は最初の有効方式 (GitHub) へ寄せる。
-        if (localUnsupported && viewMethod === 'local') viewMethod = 'github';
+        // まだ保存先を決めていない人には、いちばん簡単なハブを最初に見せる (ADR-056 ハブ推し。
+        // GitHub は上級者向け)。実 method (この端末だけのキャッシュ動作) は据え置き。
+        // local 非対応環境 (モバイル等) で local 表示になる場合も同様にハブへ寄せる。
+        if (!SyncConfigManager.isConfigured()) viewMethod = 'hub';
+        else if (localUnsupported && viewMethod === 'local') viewMethod = 'hub';
         selector.value = viewMethod;
         showPanel(viewMethod);
 
@@ -3274,10 +3306,13 @@ class VirtualBookshelf {
             if (msg) msg.textContent = 'Google でログインすると、この端末でハブの保存データを使えます。';
             if (host) {
                 host.hidden = false;
-                // 外部 GIS スクリプトの実体化はハブパネルが実際に開いている時だけ。
+                // 外部 GIS スクリプトの実体化はハブパネルが実際に見えている時だけ。
                 // ブート時 (_setupSyncMethodUI→_renderHubAuthState) の先読みを避ける (遅延読込方針)。
+                // 未設定時はハブパネルが hidden=false のままブートするため (ADR-056 ハブ推し表示)、
+                // 「設定モーダルが開いているか」も併せて確認する。
                 const hubPanel = document.getElementById('sync-config-hub');
-                if (hubPanel && !hubPanel.hidden) this._ensureHubSignInButton();
+                const settingsOpen = document.getElementById('settings-modal')?.classList.contains('show');
+                if (hubPanel && !hubPanel.hidden && settingsOpen) this._ensureHubSignInButton();
             }
         } else {
             if (host) host.hidden = true;
@@ -5463,6 +5498,10 @@ class VirtualBookshelf {
         } else if (id === 'publish-section') {
             this._reflectAffiliateField();
             this._reflectPublicNameField();
+        } else if (id === 'sync-section') {
+            // ハブパネルが表示中ならここで GIS ボタンを実体化する (ブート時は先読みしないため、
+            // セレクト変更なしで同期節を開いた場合の受け皿がここになる)
+            this._renderHubAuthState();
         }
     }
 
@@ -5912,7 +5951,7 @@ class VirtualBookshelf {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください。</p>';
+            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（Asayake ハブ・この端末のフォルダ・GitHub のどれか）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
@@ -6568,6 +6607,9 @@ class VirtualBookshelf {
         const rows = [];
         if (this._pwaUpdateReady) {
             rows.push(`<div class="status-row status-update">${ico('refresh-cw')}<span class="status-msg">新しいバージョンがあります</span><button class="status-btn" data-status-action="update" type="button">更新</button></div>`);
+        }
+        if (this._syncChecking) {
+            rows.push(`<div class="status-row status-checking">${ico('refresh-cw')}<span class="status-msg">最新のデータを確認しています…</span></div>`);
         }
         if (!this._isSyncReady()) {
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">保存先が未設定です。今はこの端末の中だけに保存されています。</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
@@ -7843,7 +7885,7 @@ class VirtualBookshelf {
      */
     async openOrCreateBookMemo(asin) {
         if (!this._isSyncReady()) {
-            toast('先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください。');
+            toast('先に「同期」で保存先（Asayake ハブ・この端末のフォルダ・GitHub のどれか）を設定してください。');
             return;
         }
         const book = this.books.find(b => b.asin === asin);
@@ -8047,14 +8089,11 @@ class VirtualBookshelf {
         const listDiv = document.getElementById('exclusions-list');
         if (!listDiv) return;
 
-        if (!this._isSyncReady()) {
-            listDiv.innerHTML = '<p style="color: #888;">同期先 (ローカルフォルダ or GitHub) を接続すると除外一覧を管理できます。</p>';
-            return;
-        }
-
+        // 除外は localStorage (userData._storage.exclusions) で完結する。
+        // 旧「同期先を接続すると管理できます」ガードは同期必須時代の名残で撤去 (C-277)。
         const exclusions = (this.userData._storage && this.userData._storage.exclusions) || [];
         if (exclusions.length === 0) {
-            listDiv.innerHTML = '<p style="color: #888;">除外中の本はありません。</p>';
+            listDiv.innerHTML = '<p class="muted-hint">除外した本はありません。本の詳細メニューの「除外」を使うと、ここに入ります。</p>';
             return;
         }
 
@@ -8066,14 +8105,14 @@ class VirtualBookshelf {
             const authors = escapeHtml(book.authors || '');
             const image = book.productImage ? escapeHtml(book.productImage) : '';
             return `
-                <div class="exclusion-item" style="display: flex; align-items: center; padding: 0.5rem; border-bottom: 1px solid #eee; gap: 1rem;">
-                    ${image ? `<img src="${image}" alt="" style="width: 40px; height: 60px; object-fit: cover;">` : '<div style="width: 40px; height: 60px; background: #eee; display: flex; align-items: center; justify-content: center;"></div>'}
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="font-weight: bold; overflow: hidden; text-overflow: ellipsis;">${title}</div>
-                        <div style="color: #888; font-size: 0.85rem;">${authors}</div>
-                        <div style="color: #aaa; font-size: 0.75rem;">${escapeHtml(asin)}</div>
+                <div class="exclusion-item">
+                    ${image ? `<img class="exclusion-cover" src="${image}" alt="">` : '<div class="exclusion-cover exclusion-cover-empty"></div>'}
+                    <div class="exclusion-meta">
+                        <div class="exclusion-title">${title}</div>
+                        <div class="exclusion-authors">${authors}</div>
+                        <div class="exclusion-asin">${escapeHtml(asin)}</div>
                     </div>
-                    <button class="btn btn-small btn-primary unexclude-btn" data-asin="${escapeHtml(asin)}">✓ 解除</button>
+                    <button class="btn btn-small btn-secondary unexclude-btn" data-asin="${escapeHtml(asin)}">元に戻す</button>
                 </div>
             `;
         }).join('');
@@ -8845,7 +8884,7 @@ class VirtualBookshelf {
             return;
         }
         if (!this._isSyncReady()) {
-            toast('先に「同期」で保存先（この端末のフォルダまたは GitHub）を設定してください');
+            toast('先に「同期」で保存先（Asayake ハブ・この端末のフォルダ・GitHub のどれか）を設定してください');
             return;
         }
         try {

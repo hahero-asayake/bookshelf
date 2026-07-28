@@ -44,6 +44,11 @@ class SyncConfigManager {
         localStorage.removeItem(SYNC_CONFIG_KEY);
     }
 
+    /** 保存先を一度でも自分で決めた (保存した) ことがあるか。未設定なら UI はハブ推し表示にする (ADR-056) */
+    static isConfigured() {
+        return !!localStorage.getItem(SYNC_CONFIG_KEY);
+    }
+
     static defaults() {
         return {
             method: 'local',
