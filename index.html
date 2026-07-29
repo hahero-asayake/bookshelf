@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072903">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072904">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -695,58 +695,6 @@
         </div>
     </div>
 
-    <!-- Icon Picker Modal (Lucide + 任意文字) -->
-    <div id="icon-picker-modal" class="modal icon-picker-modal">
-        <div class="modal-content icon-picker-modal-content">
-            <button class="modal-close" id="icon-picker-modal-close" type="button">×</button>
-            <div class="modal-header">
-                <h2 id="icon-picker-title">アイコンを選択</h2>
-            </div>
-            <div class="modal-body">
-
-                <div class="icon-picker-tabs" role="tablist">
-                    <button type="button" class="icon-picker-tab is-active" data-tab="lucide" role="tab"><span class="h-icon" data-icon="search" data-icon-size="14"></span>Lucide アイコン</button>
-                    <button type="button" class="icon-picker-tab" data-tab="text" role="tab"><span class="h-icon" data-icon="pencil" data-icon-size="14"></span>文字アイコン</button>
-                </div>
-
-                <!-- Tab: Lucide -->
-                <section class="icon-picker-tab-content" data-tab-content="lucide">
-                    <div class="icon-picker-direct-row">
-                        <input type="text" id="icon-picker-lucide-input" placeholder="Lucide 名で検索（例: rocket, calendar-days）" autocomplete="off" />
-                        <span class="icon-picker-direct-preview" id="icon-picker-lucide-preview"></span>
-                        <button class="btn btn-primary btn-small" id="icon-picker-lucide-use" type="button" disabled>使う</button>
-                    </div>
-                    <p class="icon-picker-direct-hint">
-                        1500+ の <a href="https://lucide.dev/icons/" target="_blank" rel="noopener">Lucide</a> から選択。入力 → Enter か「使う」で確定（初回は CDN 取得）。
-                    </p>
-                    <div class="icon-picker-grid" id="icon-picker-grid">
-                        <!-- 履歴 + おすすめは JS で描画 -->
-                    </div>
-                </section>
-
-                <!-- Tab: 任意文字 -->
-                <section class="icon-picker-tab-content" data-tab-content="text" hidden>
-                    <div class="icon-picker-direct-row">
-                        <input type="text" id="icon-picker-text-input" placeholder="例: ★  📕  A  漢" autocomplete="off" maxlength="6" />
-                        <span class="icon-picker-direct-preview" id="icon-picker-text-preview"></span>
-                        <button class="btn btn-primary btn-small" id="icon-picker-text-use" type="button" disabled>使う</button>
-                    </div>
-                    <p class="icon-picker-direct-hint">
-                        絵文字 / 漢字 / 任意 1〜4 文字。フォントサイズは文字数に応じて自動調整されます。
-                    </p>
-                    <div class="icon-picker-grid" id="icon-picker-text-grid">
-                        <!-- 文字履歴 (任意文字のみ) は JS で描画 -->
-                    </div>
-                </section>
-
-                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
-                    <button id="icon-picker-clear" class="btn btn-secondary btn-small" type="button">クリア（デフォルト）</button>
-                    <button id="icon-picker-cancel" class="btn btn-secondary" type="button">キャンセル</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Bookshelf Management Modal -->
     <div id="bookshelf-modal" class="modal">
         <div class="modal-content">
@@ -1118,6 +1066,61 @@
         </div>
     </div>
 
+    <!-- Icon Picker Modal (Lucide + 任意文字)。
+         DOM 位置は親になり得るモーダル (bookshelf-form-modal 等) より後ろに置く:
+         共通 ESC ハンドラは「.modal.show の最後」を最前面とみなすため、前に置くと
+         ピッカーの上で ESC したとき親の × が押される (C-281 で発見・修正) -->
+    <div id="icon-picker-modal" class="modal icon-picker-modal">
+        <div class="modal-content icon-picker-modal-content">
+            <button class="modal-close" id="icon-picker-modal-close" type="button">×</button>
+            <div class="modal-header">
+                <h2 id="icon-picker-title">アイコンを選択</h2>
+            </div>
+            <div class="modal-body">
+
+                <div class="icon-picker-tabs" role="tablist">
+                    <button type="button" class="icon-picker-tab is-active" data-tab="lucide" role="tab"><span class="h-icon" data-icon="search" data-icon-size="14"></span>Lucide アイコン</button>
+                    <button type="button" class="icon-picker-tab" data-tab="text" role="tab"><span class="h-icon" data-icon="pencil" data-icon-size="14"></span>文字アイコン</button>
+                </div>
+
+                <!-- Tab: Lucide -->
+                <section class="icon-picker-tab-content" data-tab-content="lucide">
+                    <div class="icon-picker-direct-row">
+                        <input type="text" id="icon-picker-lucide-input" placeholder="Lucide 名で検索（例: rocket, calendar-days）" autocomplete="off" />
+                        <span class="icon-picker-direct-preview" id="icon-picker-lucide-preview"></span>
+                        <button class="btn btn-primary btn-small" id="icon-picker-lucide-use" type="button" disabled>使う</button>
+                    </div>
+                    <p class="icon-picker-direct-hint">
+                        1500+ の <a href="https://lucide.dev/icons/" target="_blank" rel="noopener">Lucide</a> から選択。入力 → Enter か「使う」で確定（初回は CDN 取得）。
+                    </p>
+                    <div class="icon-picker-grid" id="icon-picker-grid">
+                        <!-- 履歴 + おすすめは JS で描画 -->
+                    </div>
+                </section>
+
+                <!-- Tab: 任意文字 -->
+                <section class="icon-picker-tab-content" data-tab-content="text" hidden>
+                    <div class="icon-picker-direct-row">
+                        <input type="text" id="icon-picker-text-input" placeholder="例: ★  📕  A  漢" autocomplete="off" maxlength="6" />
+                        <span class="icon-picker-direct-preview" id="icon-picker-text-preview"></span>
+                        <button class="btn btn-primary btn-small" id="icon-picker-text-use" type="button" disabled>使う</button>
+                    </div>
+                    <p class="icon-picker-direct-hint">
+                        絵文字 / 漢字 / 任意 1〜4 文字。フォントサイズは文字数に応じて自動調整されます。
+                    </p>
+                    <div class="icon-picker-grid" id="icon-picker-text-grid">
+                        <!-- 文字履歴 (任意文字のみ) は JS で描画 -->
+                    </div>
+                </section>
+
+                <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button id="icon-picker-clear" class="btn btn-secondary btn-small" type="button">クリア（デフォルト）</button>
+                    <button id="icon-picker-cancel" class="btn btn-secondary" type="button">キャンセル</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ⌘K コマンドパレット -->
     <div id="command-palette" class="cmdk" hidden>
         <div class="cmdk-backdrop" id="cmdk-backdrop"></div>
@@ -1143,7 +1146,7 @@
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
-    <script src="js/sync-config.js?v=2026072903"></script>
+    <script src="js/sync-config.js?v=2026072904"></script>
     <script src="js/hub-auth.js?v=2026061605"></script>
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026072707"></script>
@@ -1157,7 +1160,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072903"></script>
+    <script src="js/bookshelf.js?v=2026072904"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

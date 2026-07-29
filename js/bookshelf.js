@@ -449,7 +449,11 @@ class VirtualBookshelf {
                 const top = open[open.length - 1];
                 const closeBtn = top.querySelector('.modal-close');
                 if (closeBtn) closeBtn.click();
-                else top.classList.remove('show');
+                else {
+                    top.classList.remove('show');
+                    // .modal-close を持たない面 (プレビュー等) でも履歴を残留させない (汎用モーダル履歴)
+                    if (top.id) this._modalHistPop(top.id, {});
+                }
                 e.preventDefault();
             });
         }
@@ -875,15 +879,17 @@ class VirtualBookshelf {
         document.body.classList.add('cmdk-open');
         input.value = '';
         this._renderPaletteResults('');
+        this._modalHistPush('command-palette', (o) => this._closePalette(o));
         setTimeout(() => { input.focus(); input.select(); }, 0);
     }
 
-    _closePalette() {
+    _closePalette({ fromHistory = false } = {}) {
         const pal = document.getElementById('command-palette');
         if (!pal) return;
         pal.hidden = true;
         document.body.classList.remove('cmdk-open');
         this._paletteItems = null;
+        this._modalHistPop('command-palette', { fromHistory });
     }
 
     /**
@@ -4591,7 +4597,7 @@ class VirtualBookshelf {
         document.body.classList.remove('app-view-main', 'app-view-bookshelf');
         document.body.classList.add(`app-view-${view}`);
         // モバイル: ビュー切替時はドロワーを閉じる
-        document.body.classList.remove('drawer-open');
+        this._closeDrawer();   // ビュー切替でドロワーを畳む (開いていなければ no-op)
         // ホームに戻ったら右ペインのピン留めも解除
         if (view === 'main') {
             document.body.classList.remove('book-detail-pinned');
@@ -4669,6 +4675,20 @@ class VirtualBookshelf {
     }
 
     // ===== モバイル UI (<=768px): ドロワー + 下部ナビ + 詳細フルシート =====
+
+    // ドロワー開閉 (C-281 で関数に集約。旧: classList 直接操作が7箇所に散在し履歴統合が不可能だった)
+    _openDrawer() {
+        document.body.classList.add('drawer-open');
+        this._modalHistPush('drawer', (o) => this._closeDrawer(o));
+    }
+
+    _closeDrawer({ fromHistory = false } = {}) {
+        // ビュー切替 (_setBodyView) から無条件に呼ばれるため、開いていない時は何もしない
+        if (!document.body.classList.contains('drawer-open')) return;
+        document.body.classList.remove('drawer-open');
+        this._modalHistPop('drawer', { fromHistory });
+    }
+
     _initMobileNav() {
         if (this._mobileNavBound) return;
         this._mobileNavBound = true;
@@ -4676,7 +4696,7 @@ class VirtualBookshelf {
 
         // スクリム: タップでドロワーを閉じる
         const scrim = document.getElementById('mobile-scrim');
-        if (scrim) scrim.addEventListener('click', () => body.classList.remove('drawer-open'));
+        if (scrim) scrim.addEventListener('click', () => this._closeDrawer());
 
         // 下部ナビ
         const nav = document.getElementById('mobile-bottom-nav');
@@ -4685,15 +4705,15 @@ class VirtualBookshelf {
             if (!btn) return;
             const action = btn.dataset.mobileNav;
             if (action === 'home') {
-                body.classList.remove('drawer-open');
+                this._closeDrawer();
                 if (this.router) this.router.navigateMain(); else this._setBodyView('main');
             } else if (action === 'shelves') {
-                body.classList.toggle('drawer-open');
+                if (body.classList.contains('drawer-open')) this._closeDrawer(); else this._openDrawer();
             } else if (action === 'search') {
-                body.classList.remove('drawer-open');
+                this._closeDrawer();
                 this._openPalette();
             } else if (action === 'settings') {
-                body.classList.remove('drawer-open');
+                this._closeDrawer();
                 this._openSettingsModal();
             }
         });
@@ -4707,7 +4727,7 @@ class VirtualBookshelf {
             this._mobileEscBound = true;
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && body.classList.contains('drawer-open')) {
-                    body.classList.remove('drawer-open');
+                    this._closeDrawer();
                 }
             });
         }
@@ -5346,8 +5366,9 @@ class VirtualBookshelf {
             };
 
             // ===== イベントハンドラ =====
-            const cleanup = () => {
+            const cleanup = ({ fromHistory = false } = {}) => {
                 modal.classList.remove('show');
+                this._modalHistPop('icon-picker-modal', { fromHistory });
                 lucideGrid.removeEventListener('click', onLucideGridClick);
                 textGrid.removeEventListener('click', onTextGridClick);
                 lucideInput.removeEventListener('input', updateLucidePreview);
@@ -5406,6 +5427,8 @@ class VirtualBookshelf {
             clearBtn.addEventListener('click', onClear);
 
             modal.classList.add('show');
+            // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
+            this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); });
         });
     }
 
@@ -5560,12 +5583,18 @@ class VirtualBookshelf {
         this._settingsPopstateBound = true;
         const backBtn = document.getElementById('settings-back');
         if (backBtn) backBtn.addEventListener('click', () => history.back());
-        window.addEventListener('popstate', () => {
-            // 汎用モーダル履歴 (除外一覧・手動追加など): 戻る = 最前面のモーダルを閉じてアプリに留まる
+        window.addEventListener('popstate', async () => {
+            // 汎用モーダル履歴: 戻る = 最前面のモーダルを閉じてアプリに留まる
             const mhs = this._modalHistStack;
             if (mhs && mhs.length) {
                 const top = mhs.pop();
-                top.close({ fromHistory: true });
+                const res = await top.close({ fromHistory: true });
+                // close が false = 閉じなかった (長文メモの未保存確認でキャンセル等)。
+                // 消費された履歴を積み直して「まだ開いている」状態と揃える
+                if (res === false) {
+                    history.pushState({ bsModal: top.id }, '');
+                    mhs.push(top);
+                }
                 return;
             }
             // 取込モーダル (スマホで履歴に積んである場合): 戻る = 閉じてアプリに留まる
@@ -6206,10 +6235,22 @@ class VirtualBookshelf {
                     <div class="psm-body"></div>
                 </div>`;
             document.body.appendChild(modal);
-            const close = () => modal.classList.remove('show');
-            modal.querySelector('.psm-backdrop').addEventListener('click', close);
-            modal.querySelector('.psm-close').addEventListener('click', close);
+            const close = ({ fromHistory = false } = {}) => {
+                modal.classList.remove('show');
+                this._modalHistPop('plugin-settings-modal', { fromHistory });
+            };
+            modal.querySelector('.psm-backdrop').addEventListener('click', () => close());
+            modal.querySelector('.psm-close').addEventListener('click', () => close());
             this._pluginSettingsModalClose = close;
+            // ESC: .modal でない独自実装のため共通ハンドラの対象外 → 自前で閉じる。
+            // 上にアイコンピッカー等の .modal が開いているときはそちら優先 (最前面だけ閉じる)
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || e.defaultPrevented) return;
+                if (!modal.classList.contains('show')) return;
+                if (document.querySelector('.modal.show')) return;
+                close();
+                e.preventDefault();
+            });
         }
         modal.querySelector('.psm-close').innerHTML = window.renderIcon('x', { size: 18 });
 
@@ -6331,6 +6372,7 @@ class VirtualBookshelf {
 
         if (typeof window.applyIcons === 'function') window.applyIcons(body);
         modal.classList.add('show');
+        this._modalHistPush('plugin-settings-modal', (o) => this._pluginSettingsModalClose(o));
     }
 
     _applyPluginSearchFilter() {
@@ -6769,11 +6811,13 @@ class VirtualBookshelf {
         const modal = document.getElementById('bookshelf-modal');
         modal.classList.add('show');
         this.renderBookshelfList();
+        this._modalHistPush('bookshelf-modal', (o) => this.closeBookshelfModal(o));
     }
 
-    closeBookshelfModal() {
+    closeBookshelfModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('bookshelf-modal');
         modal.classList.remove('show');
+        this._modalHistPop('bookshelf-modal', { fromHistory });
     }
 
     renderBookshelfList() {
@@ -6928,13 +6972,15 @@ class VirtualBookshelf {
         this.currentEditingBookshelf = bookshelfToEdit;
 
         modal.classList.add('show');
+        this._modalHistPush('bookshelf-form-modal', (o) => this.closeBookshelfForm(o));
         nameInput.focus();
     }
 
-    closeBookshelfForm() {
+    closeBookshelfForm({ fromHistory = false } = {}) {
         const modal = document.getElementById('bookshelf-form-modal');
         modal.classList.remove('show');
         this.currentEditingBookshelf = null;
+        this._modalHistPop('bookshelf-form-modal', { fromHistory });
     }
 
     async saveBookshelfForm() {
@@ -7155,8 +7201,9 @@ class VirtualBookshelf {
 
             modal.classList.add('show');
 
-            const cleanup = () => {
+            const cleanup = ({ fromHistory = false } = {}) => {
                 modal.classList.remove('show');
+                this._modalHistPop('descendants-pick-modal', { fromHistory });
                 confirmBtn.removeEventListener('click', onConfirm);
                 skipBtn.removeEventListener('click', onSkip);
                 closeBtn.removeEventListener('click', onSkip);
@@ -7174,6 +7221,8 @@ class VirtualBookshelf {
             confirmBtn.addEventListener('click', onConfirm);
             skipBtn.addEventListener('click', onSkip);
             closeBtn.addEventListener('click', onSkip);
+            // スマホ戻る: スキップ扱いで閉じる (Promise を必ず resolve する)
+            this._modalHistPush('descendants-pick-modal', (o) => { cleanup(o); resolve([]); });
         });
     }
 
@@ -7327,8 +7376,9 @@ class VirtualBookshelf {
     async _confirmOpenSettings(message, targetId) {
         const ok = await confirmDialog({ title: '設定が必要です', message, okLabel: '設定を開く', cancelLabel: '閉じる' });
         if (!ok) return;
-        // 公開モーダルが開いていれば閉じてから設定を開く (モーダルの積み重なりを避ける)
-        document.getElementById('publish-pages-modal')?.classList.remove('show');
+        // 公開モーダルが開いていれば閉じてから設定を開く (モーダルの積み重なりを避ける)。
+        // close 関数経由で閉じる (raw remove だと push 済み履歴が残留し、次の戻るが食われる)
+        this.closePublishPagesModal();
         await this._openSettingsModal(targetId);
     }
 
@@ -7478,13 +7528,20 @@ class VirtualBookshelf {
         this._ppShowList();
         modal.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
+        this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o));
+    }
+
+    closePublishPagesModal({ fromHistory = false } = {}) {
+        const modal = document.getElementById('publish-pages-modal');
+        if (modal) modal.classList.remove('show');
+        this._modalHistPop('publish-pages-modal', { fromHistory });
     }
 
     _setupPublishPagesUI() {
         if (this._ppBound) return;
         this._ppBound = true;
         const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
-        on('publish-pages-close', 'click', () => document.getElementById('publish-pages-modal').classList.remove('show'));
+        on('publish-pages-close', 'click', () => this.closePublishPagesModal());
         on('pp-new', 'click', () => this._openPublishPageEditor(null));
         on('pp-back', 'click', () => this._ppShowList());
         on('pp-save', 'click', () => this._ppSave());
@@ -7861,10 +7918,12 @@ class VirtualBookshelf {
         if (stage) stage.classList.remove('pp-stage-mobile');
         m.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(m);
+        this._modalHistPush('pp-preview-modal', (o) => this._ppClosePreviewModal(o));
     }
-    _ppClosePreviewModal() {
+    _ppClosePreviewModal({ fromHistory = false } = {}) {
         const m = document.getElementById('pp-preview-modal');
         if (m) m.classList.remove('show');
+        this._modalHistPop('pp-preview-modal', { fromHistory });
     }
     _ppTogglePreviewDevice() {
         const btn = document.getElementById('pp-preview-device');
@@ -8003,6 +8062,7 @@ class VirtualBookshelf {
         textareaEl.value = body;
 
         modal.classList.add('show');
+        this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
 
         if (typeof EasyMDE === 'undefined') {
             if (statusEl) statusEl.textContent = 'エディタライブラリが読み込まれていません（CDN 接続を確認）';
@@ -8051,7 +8111,7 @@ class VirtualBookshelf {
         }
     }
 
-    async closeBookMemoModal() {
+    async closeBookMemoModal({ fromHistory = false } = {}) {
         // 未保存の変更があれば破棄確認 (このメモは明示保存・自動保存なしのため、黙って消さない)
         const editor = this._bookMemoEditor;
         if (editor && this._bookMemoInitial != null && editor.value() !== this._bookMemoInitial) {
@@ -8062,10 +8122,11 @@ class VirtualBookshelf {
                 cancelLabel: '編集に戻る',
                 danger: true
             });
-            if (!ok) return;
+            if (!ok) return false; // 閉じなかった (popstate 経由なら履歴が積み直される)
         }
         const modal = document.getElementById('book-memo-modal');
         if (modal) modal.classList.remove('show');
+        this._modalHistPop('book-memo-modal', { fromHistory });
         if (this._bookMemoEditor) {
             try { this._bookMemoEditor.toTextArea(); } catch (_) {}
             this._bookMemoEditor = null;
@@ -8082,6 +8143,7 @@ class VirtualBookshelf {
         if (!this._isSettingsMobile()) return;
         this._bindSettingsPopstate();
         this._modalHistStack = this._modalHistStack || [];
+        if (this._modalHistStack.some((e) => e.id === id)) return; // 二重オープンで積み増さない
         history.pushState({ bsModal: id }, '');
         this._modalHistStack.push({ id, close });
     }

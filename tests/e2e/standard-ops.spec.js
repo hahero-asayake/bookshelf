@@ -151,4 +151,105 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(page.url()).toContain('index.html');
         expect(errors).toEqual([]);
     });
+
+    // ===== C-281 全面棚卸しで統合した面 =====
+
+    test('公開管理モーダル: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('公開管理→プレビュー: 戻るはプレビューだけ閉じ、公開管理は残る (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#pp-new');
+        await page.selectOption('#pp-style', 'shelf-sections');
+        await page.click('#pp-shelves .bs-pick-row');
+        await page.click('#pp-preview');
+        await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚管理→フォーム: 戻るはフォーム→管理→閉の順に1段ずつ (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.showBookshelfManager());
+        await expect(page.locator('#bookshelf-modal')).toHaveClass(/show/);
+        await page.click('#add-bookshelf');
+        await expect(page.locator('#bookshelf-form-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
+        await expect(page.locator('#bookshelf-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#bookshelf-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('コマンドパレット: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf._openPalette());
+        await expect(page.locator('#command-palette')).toBeVisible();
+        await page.goBack();
+        await expect(page.locator('#command-palette')).toBeHidden();
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('ドロワー: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf._openDrawer());
+        await expect(page.locator('body')).toHaveClass(/drawer-open/);
+        await page.goBack();
+        await expect(page.locator('body')).not.toHaveClass(/drawer-open/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('プラグイン設定モーダル: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf._openPluginSettings('dark-theme'));
+        await expect(page.locator('#plugin-settings-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#plugin-settings-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('長文メモ: 変更なしは戻るで閉じる・未保存変更は確認→キャンセルで残り履歴も積み直る (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        const openMemo = () => page.evaluate(() => {
+            const b = window.bookshelf.books[0];
+            return window.bookshelf._openBookMemoInAppEditor(b.asin, b);
+        });
+        await openMemo();
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
+        // 変更なし → 戻るで閉じる
+        await page.goBack();
+        await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+        // 変更あり → 戻る → 破棄確認 → キャンセル → モーダルは残り、履歴も積み直される
+        await openMemo();
+        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('未保存の変更テスト'));
+        await page.goBack();
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.locator('.cfm-cancel').click();
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        // もう一度戻ると再び確認が出る (= 履歴の積み直しが効いている)。破棄して閉じる
+        await page.goBack();
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.locator('.cfm-ok').click();
+        await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+        expect(errors.filter(e => !/easymde|fontawesome|cdn|net::ERR/i.test(e))).toEqual([]);
+    });
 });
