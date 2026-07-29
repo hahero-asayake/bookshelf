@@ -5399,7 +5399,51 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .import-device-tab { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.9rem; border: none; background: none; color: var(--muted); font-weight: 600; font-size: 0.9rem; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
 .import-device-tab.active { color: var(--accent-strong); border-bottom-color: var(--accent); }
 .import-device-badge { font-size: 0.68rem; font-weight: 700; color: var(--accent-strong); background: var(--accent-bg); border-radius: 999px; padding: 0.1rem 0.45rem; }
-.import-lane-steps { margin-top: 0.9rem; display: flex; flex-direction: column; gap: 0.6rem; }
+/* 取込モーダルの番号つき手順 (C-281: 「1→2→3 でやれば終わる」を見た目で示す) */
+.import-steps {
+    list-style: none;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+}
+.import-step-head,
+.import-step-details > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 600;
+    color: var(--fg);
+    font-size: 0.92rem;
+}
+.import-step-details > summary { cursor: pointer; list-style: none; }
+.import-step-details > summary::-webkit-details-marker { display: none; }
+.import-step-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.import-step-title { min-width: 0; }
+.import-step-details > summary .pp-advanced-note { margin-left: 0.1rem; }
+.import-step-details > summary .pp-advanced-caret { margin-left: auto; transition: transform 0.15s ease; }
+.import-step-details[open] > summary .pp-advanced-caret { transform: rotate(180deg); }
+.import-step-body {
+    /* 番号バッジの下に本文を揃える (22px バッジ + 0.55rem gap) */
+    margin: 0.45rem 0 0 calc(22px + 0.55rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+.import-step-body .pp-hint { margin: 0; }
 /* 取込ブックマークのドラッグチップ: ボタンでなく「つまめるタグ」に見せる (ADR-054) */
 .bml-chip {
     display: inline-flex; align-items: center; gap: 0.4rem;
@@ -5411,7 +5455,6 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 .bml-chip:active { cursor: grabbing; }
 .bml-chip-note { font-size: 0.75rem; font-weight: 400; color: var(--muted, #888); }
-.import-setup { margin-bottom: 0.9rem; }
 .import-option-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .import-fallback-note { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.3rem 0 0; }
 .import-file-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }

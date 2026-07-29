@@ -506,11 +506,6 @@ class VirtualBookshelf {
         if (importModalEl && !this._importModalDelegationBound) {
             this._importModalDelegationBound = true;
             importModalEl.addEventListener('click', (e) => {
-                const setupDone = e.target.closest('[data-import-setup-done]');
-                if (setupDone) {
-                    this._markImportSetupDone(setupDone.dataset.importSetupDone);
-                    return;
-                }
                 const action = e.target.closest('[data-import-action]');
                 if (action) {
                     const kind = action.dataset.importAction;
@@ -5566,6 +5561,13 @@ class VirtualBookshelf {
         const backBtn = document.getElementById('settings-back');
         if (backBtn) backBtn.addEventListener('click', () => history.back());
         window.addEventListener('popstate', () => {
+            // 汎用モーダル履歴 (除外一覧・手動追加など): 戻る = 最前面のモーダルを閉じてアプリに留まる
+            const mhs = this._modalHistStack;
+            if (mhs && mhs.length) {
+                const top = mhs.pop();
+                top.close({ fromHistory: true });
+                return;
+            }
             // 取込モーダル (スマホで履歴に積んである場合): 戻る = 閉じてアプリに留まる
             const im = document.getElementById('import-modal');
             if (im && im.classList.contains('show') && this._importHist) {
@@ -8073,16 +8075,39 @@ class VirtualBookshelf {
         this._bookMemoInitial = null;
     }
 
+    // スマホ: モーダルを履歴に積む (物理戻る/スワイプバック = アプリ離脱でなくモーダルを閉じる)。
+    // 設定・取込は個別実装 (_settingsHist/_importHist)。それ以外の単純モーダルはこの汎用版を使う。
+    // 新しいモーダルを作ったら show で _modalHistPush、close で _modalHistPop を呼ぶ (ui-standards §1)。
+    _modalHistPush(id, close) {
+        if (!this._isSettingsMobile()) return;
+        this._bindSettingsPopstate();
+        this._modalHistStack = this._modalHistStack || [];
+        history.pushState({ bsModal: id }, '');
+        this._modalHistStack.push({ id, close });
+    }
+
+    _modalHistPop(id, { fromHistory = false } = {}) {
+        const st = this._modalHistStack;
+        if (!st) return;
+        const i = st.findIndex((e) => e.id === id);
+        if (i === -1) return;
+        st.splice(i, 1);
+        // × や ESC で閉じたときは自前で積んだ履歴を掃除する。popstate 経由なら消費済み
+        if (!fromHistory) { try { history.back(); } catch (_) {} }
+    }
+
     showExclusionsModal() {
         const modal = document.getElementById('exclusions-modal');
         if (!modal) return;
         modal.classList.add('show');
         this.renderExclusionsList();
+        this._modalHistPush('exclusions-modal', (o) => this.closeExclusionsModal(o));
     }
 
-    closeExclusionsModal() {
+    closeExclusionsModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('exclusions-modal');
         if (modal) modal.classList.remove('show');
+        this._modalHistPop('exclusions-modal', { fromHistory });
     }
 
     renderExclusionsList() {
@@ -8648,8 +8673,9 @@ class VirtualBookshelf {
         if (setupEl) {
             const done = !!setup.pc;
             setupEl.open = !done;
+            // 手順1の注記: 未登録=「最初の1回だけ」/ 登録済み (実取込成功で自動記録)=「登録済み」
             const state = setupEl.querySelector('.import-setup-state');
-            if (state) state.textContent = done ? '済み' : '';
+            if (state) state.textContent = done ? '登録済み' : '最初の1回だけ';
         }
         // 方式② (直接貼付): 初回準備が済んでいれば畳む (ブックマーク不具合時のフォールバック位置づけ)。
         // スマホでは常に畳み、見出し注記も「PCで保存したデータがあるとき」向けに差し替える
@@ -8683,14 +8709,7 @@ class VirtualBookshelf {
     }
 
     /** 「準備完了にする」: レーンの初回準備を完了として記録し、以後は初回準備と方式④を畳む */
-    _markImportSetupDone(lane) {
-        if (lane !== 'pc') return;   // PC 専用化 (C-248)。ios/android レーンは撤去済み
-        const setup = this._importSetupFlags();
-        setup[lane] = true;
-        try { localStorage.setItem('bookshelf_import_setup', JSON.stringify(setup)); } catch (_) {}
-        this._renderImportLanes();
-        toast('この端末の準備完了を記録しました。次回からは毎回の操作だけで取り込めます。', { type: 'success' });
-    }
+    // 旧「準備完了にする」ボタンは C-281 で廃止 (ステップ形式化)。フラグは実取込成功時に自動で立つ
 
     /** 受信待ち（PC postMessage 待機 / リレーポーリング）を手動で中止する */
     _cancelKindleImportWait() {
@@ -9299,15 +9318,17 @@ class VirtualBookshelf {
     showAddBookModal() {
         const modal = document.getElementById('add-book-modal');
         modal.classList.add('show');
+        this._modalHistPush('add-book-modal', (o) => this.closeAddBookModal(o));
     }
 
     /**
      * 手動追加モーダルを閉じる
      */
-    closeAddBookModal() {
+    closeAddBookModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('add-book-modal');
         modal.classList.remove('show');
-        
+        this._modalHistPop('add-book-modal', { fromHistory });
+
         // フォームをリセット（存在する要素のみ）
         const amazonUrlInput = document.getElementById('amazon-url-input');
         if (amazonUrlInput) amazonUrlInput.value = '';

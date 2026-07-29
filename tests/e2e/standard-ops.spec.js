@@ -103,6 +103,44 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(errors).toEqual([]);
     });
 
+    test('除外一覧モーダル: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.showExclusionsModal());
+        await expect(page.locator('#exclusions-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#exclusions-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('設定→除外一覧: 戻るは除外一覧だけ閉じ、設定は残る (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf._openSettingsModal('library-section'));
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await page.evaluate(() => window.bookshelf.showExclusionsModal());
+        await expect(page.locator('#exclusions-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#exclusions-modal')).not.toHaveClass(/show/);
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+
+    test('手動追加モーダル: 戻るで閉じる・×で閉じても履歴が汚れない (C-281)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.showAddBookModal());
+        await expect(page.locator('#add-book-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#add-book-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        // × で閉じたときは自前で積んだ履歴を掃除する (直後の戻るでアプリ離脱しない)
+        await page.evaluate(() => window.bookshelf.showAddBookModal());
+        await page.locator('#add-book-modal-close').click();
+        await expect(page.locator('#add-book-modal')).not.toHaveClass(/show/);
+        await page.waitForTimeout(200);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
     test('本詳細シート: 戻るで閉じてアプリに留まる', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.switchBookshelf('fixshelf'));

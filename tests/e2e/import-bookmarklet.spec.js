@@ -36,8 +36,8 @@ test('PC: 初回準備はブックマーク登録 (ドラッグ用リンクに j
     // 旧・拡張機能 UI は DOM ごと無い
     await expect(page.locator('#kindle-exporter-link')).toHaveCount(0);
     await expect(page.locator('#kindle-exporter-nourl')).toHaveCount(0);
-    // 初回準備 = ブックマーク登録
-    await expect(page.locator('#import-setup-pc > summary')).toContainText('取込ブックマークを登録');
+    // 手順1 = ブックマーク登録 (番号つきステップ形式・C-281)
+    await expect(page.locator('#import-setup-pc > summary')).toContainText('ブックマークバーに登録');
     const href = await page.locator('#kindle-bookmarklet-link').getAttribute('href');
     expect(href.startsWith('javascript:')).toBe(true);
     expect(decodeURIComponent(href)).toContain('GetContentOwnershipData');

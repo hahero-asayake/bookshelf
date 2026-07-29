@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026072902">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026072903">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -916,36 +916,48 @@
             </div>
             <div class="modal-body">
                 <div class="import-options"><!-- クラス名維持必須: showBookSelectionForImport / cancelImport が querySelector('.import-options') 参照 -->
-                    <p class="pp-hint" id="import-pc-lead">Amazonで買った本を取り込みます（PC の Chrome / Edge 専用）。</p>
+                    <p class="pp-hint" id="import-pc-lead">Amazonで買った本を、3つの手順でまとめて取り込みます（PC の Chrome / Edge 専用）。</p>
                     <p class="pp-hint" id="import-mobile-note" hidden>取込は PC 専用です。PC のブラウザでこのアプリを開いて取り込んでください。取り込んだ本はこのスマホでも見られます。</p>
 
-                    <!-- 取込 = 取込ブックマーク (主・ADR-054。拡張機能は配布しない) ＋ 直接貼付 (ブックマーク不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Android用UI) は撤去。リレー機構のコードは温存 -->
+                    <!-- 取込 = 取込ブックマーク (主・ADR-054。拡張機能は配布しない) ＋ 直接貼付 (ブックマーク不具合時のフォールバック)。C-248/C-251 でモバイル導線 (iOSショートカット/Android用UI) は撤去。リレー機構のコードは温存。
+                         見せ方 = 1・2・3 の番号つき手順 (C-281「わかりにくい」)。手順1だけ details (登録済みなら畳む・「準備完了にする」ボタンは廃止=実取込成功で自動記録) -->
                     <section class="import-lane" id="import-lane-pc">
-                        <details class="pp-advanced import-setup" id="import-setup-pc">
-                            <summary><span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>初回だけの準備（取込ブックマークを登録）<span class="pp-advanced-note import-setup-state"></span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                            <div class="pp-advanced-body">
-                                <p class="pp-hint">下の「Kindle取込」を、ブラウザのブックマークバーへドラッグして登録してください。</p>
-                                <div class="import-option-actions">
-                                    <a id="kindle-bookmarklet-link" class="bml-chip" href="#" draggable="true"><span class="h-icon" data-icon="bookmark" data-icon-size="14"></span>Kindle取込<span class="bml-chip-note">←これをドラッグ</span></a>
-                                    <button type="button" class="btn btn-secondary btn-small" data-import-setup-done="pc"><span class="h-icon" data-icon="check" data-icon-size="14"></span>準備完了にする</button>
-                                </div>
-                                <details class="pp-advanced">
-                                    <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>うまく登録できないとき<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                                    <div class="pp-advanced-body">
-                                        <p class="pp-hint">ブックマークバーが見えないときは Ctrl+Shift+B で表示できます。ドラッグできないときは下のボタンでコードをコピーし、ブックマークを新規作成して URL 欄に貼り付けてください。</p>
-                                        <button type="button" class="btn btn-secondary btn-small" data-import-action="copy-bookmarklet"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コードをコピー</button>
+                        <ol class="import-steps">
+                            <li class="import-step">
+                                <details class="import-step-details" id="import-setup-pc">
+                                    <summary><span class="import-step-num">1</span><span class="import-step-title">「Kindle取込」ボタンをブックマークバーに登録する</span><span class="pp-advanced-note import-setup-state">最初の1回だけ</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                                    <div class="import-step-body">
+                                        <p class="pp-hint">下の点線のボタンを、ブラウザ上部のブックマークバーへそのままドラッグします。</p>
+                                        <div class="import-option-actions">
+                                            <a id="kindle-bookmarklet-link" class="bml-chip" href="#" draggable="true"><span class="h-icon" data-icon="bookmark" data-icon-size="14"></span>Kindle取込<span class="bml-chip-note">←これをドラッグ</span></a>
+                                        </div>
+                                        <details class="pp-advanced">
+                                            <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>ドラッグできない・ブックマークバーが見えないとき<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                                            <div class="pp-advanced-body">
+                                                <p class="pp-hint">ブックマークバーは Ctrl+Shift+B で表示できます。ドラッグできないときは下のボタンでコードをコピーし、ブックマークを新規作成して URL 欄に貼り付けてください（名前は「Kindle取込」がおすすめ）。</p>
+                                                <button type="button" class="btn btn-secondary btn-small" data-import-action="copy-bookmarklet"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>コードをコピー</button>
+                                            </div>
+                                        </details>
                                     </div>
                                 </details>
-                            </div>
-                        </details>
-                        <div class="import-lane-steps">
-                            <p class="pp-hint">下のボタンで Amazon の蔵書一覧が開きます。そのページで「Kindle取込」ブックマークを押すと、本の一覧がこの画面に届きます。</p>
-                            <div class="import-option-actions">
-                                <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonから取り込む</button>
-                            </div>
-                            <div class="import-media-slot" data-import-media="pc" hidden></div>
-                            <p class="import-fallback-note">反応がないとき: ポップアップの許可を確認、または → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを貼り付ける</button></p>
-                        </div>
+                            </li>
+                            <li class="import-step">
+                                <div class="import-step-head"><span class="import-step-num">2</span><span class="import-step-title">Amazon の蔵書一覧を開く</span></div>
+                                <div class="import-step-body">
+                                    <div class="import-option-actions">
+                                        <button id="open-amazon-for-import" class="btn btn-primary"><span class="h-icon" data-icon="external-link" data-icon-size="14"></span>Amazonから取り込む</button>
+                                    </div>
+                                    <div class="import-media-slot" data-import-media="pc" hidden></div>
+                                </div>
+                            </li>
+                            <li class="import-step">
+                                <div class="import-step-head"><span class="import-step-num">3</span><span class="import-step-title">開いた Amazon のページで、登録した「Kindle取込」を押す</span></div>
+                                <div class="import-step-body">
+                                    <p class="pp-hint">本の一覧が自動でこの画面に届き、取り込む本を選べます。</p>
+                                    <p class="import-fallback-note">反応がないとき: ポップアップの許可を確認、または → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを貼り付ける</button></p>
+                                </div>
+                            </li>
+                        </ol>
                     </section>
 
                     <!-- 受信待ちステータス（ID維持・取込ブックマークの受信待ちに使用） -->
@@ -1131,7 +1143,7 @@
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
-    <script src="js/sync-config.js?v=2026072902"></script>
+    <script src="js/sync-config.js?v=2026072903"></script>
     <script src="js/hub-auth.js?v=2026061605"></script>
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026072707"></script>
@@ -1145,7 +1157,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026062502"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026072902"></script>
+    <script src="js/bookshelf.js?v=2026072903"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
