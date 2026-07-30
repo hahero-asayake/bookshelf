@@ -319,6 +319,17 @@ class VirtualBookshelf {
         
         this.currentView = this.userData.settings.defaultView || 'covers';
 
+        // 並び順の復元 (D-2)。保存値が不正なら既定 (custom/desc) に落とす
+        const savedSort = this.userData.settings.sortOrder;
+        if (['custom', 'acquiredTime', 'title', 'authors'].includes(savedSort)) {
+            this.sortOrder = savedSort;
+            const sortSel = document.getElementById('sort-order');
+            if (sortSel) sortSel.value = savedSort;
+        }
+        if (['asc', 'desc'].includes(this.userData.settings.sortDirection)) {
+            this.sortDirection = this.userData.settings.sortDirection;
+        }
+
         // Load cover size setting
         const coverSize = this.userData.settings.coverSize || 'medium';
         document.getElementById('cover-size').value = coverSize;
@@ -336,6 +347,7 @@ class VirtualBookshelf {
     }
 
     setupEventListeners() {
+        this._setupCoverFallback();
         // 表示形式セグメント (表紙/画像/リスト)。popover は閉じない (連続で試せる)
         const viewSeg = document.getElementById('view-seg');
         if (viewSeg) {
@@ -386,6 +398,7 @@ class VirtualBookshelf {
             this.updateSortDirectionButton();
             this.applySorting();
             this._updateBulkBar(); // 「先頭に移動」ボタンの表示可否を更新
+            this._saveSortPrefs();
         });
 
         document.getElementById('sort-direction').addEventListener('click', () => {
@@ -1235,6 +1248,44 @@ class VirtualBookshelf {
         this.applyFilters();
     }
 
+    /**
+     * 表紙画像の共通フォールバック。data-cover-fallback 属性を持つ <img> が
+     * 読み込み失敗 (404) または「200 だが 1x1 の透明 GIF」(/images/P/ 旧エンドポイントが
+     * 画像なしの ASIN に返す) だったとき、属性値のタイトルを載せた生成表紙に差し替える。
+     * img の error/load は bubble しないため document の capture で全面を一括して受ける。
+     */
+    _setupCoverFallback() {
+        const swap = (img) => {
+            const title = img.dataset ? img.dataset.coverFallback : undefined;
+            if (title === undefined) return;
+            const div = document.createElement('div');
+            div.className = 'book-cover-placeholder cover-fallback';
+            div.textContent = title; // 空文字なら無地グラデ (小さいセル用)
+            img.replaceWith(div);
+        };
+        document.addEventListener('error', (e) => {
+            if (e.target instanceof HTMLImageElement) swap(e.target);
+        }, true);
+        document.addEventListener('load', (e) => {
+            if (e.target instanceof HTMLImageElement && e.target.naturalWidth <= 1) swap(e.target);
+        }, true);
+    }
+
+    /**
+     * 検索・評価・プラグイン由来の絞り込みをまとめて解除する共通ヘルパ。
+     * 状態クリアと入力欄/インジケータの同期のみで、再描画は呼び出し側の applyFilters() に任せる。
+     * 利用元: 本棚切替 (switchBookshelf) / 空状態の「絞り込みを解除」ボタン。
+     */
+    _resetFilters() {
+        this.searchQuery = '';
+        if (this.ratingFilter) this.ratingFilter.clear();
+        const si = document.getElementById('search-input');
+        if (si) si.value = '';
+        if (typeof this._updateRatingFilterUI === 'function') this._updateRatingFilterUI();
+        // プラグイン由来のフィルタ (registerActiveFilter) も解除。各 reset は状態クリアのみの契約。
+        if (this.pluginAPI && typeof this.pluginAPI.resetActiveFilters === 'function') this.pluginAPI.resetActiveFilters();
+    }
+
     applyFilters() {
         if (!Array.isArray(this.books)) {
             this.filteredBooks = [];
@@ -1311,6 +1362,17 @@ class VirtualBookshelf {
         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
         this.updateSortDirectionButton();
         this.applySorting();
+        this._saveSortPrefs();
+    }
+
+    // 並び順・昇降を設定として永続化 (D-2)。設定の保存経路は saveUserData が唯一の正
+    // (storage.saveSettings というメソッドは存在しない。旧 paneState がこの空振りパターンだった)
+    _saveSortPrefs() {
+        if (!this.userData) return;
+        if (!this.userData.settings) this.userData.settings = {};
+        this.userData.settings.sortOrder = this.sortOrder;
+        this.userData.settings.sortDirection = this.sortDirection;
+        this.saveUserData();
     }
 
     setBooksPerPage(value) {
@@ -1488,13 +1550,7 @@ class VirtualBookshelf {
         if (filterActive) {
             head('search-x', '条件に合う本がありません', '検索や評価の絞り込みを外すと表示されます。');
             action('絞り込みを解除', false, () => {
-                this.searchQuery = '';
-                if (this.ratingFilter) this.ratingFilter.clear();
-                const si = document.getElementById('search-input'); if (si) si.value = '';
-                if (typeof this._updateRatingFilterUI === 'function') this._updateRatingFilterUI();
-                // プラグイン由来のフィルタ (registerActiveFilter) も解除する。各 reset は状態クリアのみで
-                // 再描画はしない契約なので、最後の applyFilters() 1 回でまとめて反映する。
-                if (this.pluginAPI && typeof this.pluginAPI.resetActiveFilters === 'function') this.pluginAPI.resetActiveFilters();
+                this._resetFilters();
                 this.applyFilters();
             });
         } else if (isAll) {
@@ -1578,8 +1634,8 @@ class VirtualBookshelf {
                     <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
                     <div class="book-select-check" aria-hidden="true">${window.renderIcon('check', { size: 13 })}</div>
                     <div class="book-cover-link">
-                        ${book.productImage ?
-                            `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}">` :
+                        ${this.bookManager.hasCoverImage(book) ?
+                            `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}" data-cover-fallback="${this.escapeHtml(book.title)}">` :
                             placeholderHtml
                         }
                     </div>
@@ -1807,6 +1863,8 @@ class VirtualBookshelf {
         this.sortOrder = 'custom';
         const sortSel = document.getElementById('sort-order');
         if (sortSel) sortSel.value = 'custom';
+        // 直後の saveUserData() が settings ごと保存するので、ここでは値の更新だけ
+        if (this.userData.settings) this.userData.settings.sortOrder = 'custom';
 
         // Save and refresh display
         this.saveUserData();
@@ -1828,10 +1886,7 @@ class VirtualBookshelf {
     async _saveDetailSectionOrder(order) {
         if (!this.userData.settings) this.userData.settings = {};
         this.userData.settings.detailSectionOrder = order;
-        if (this.storage && typeof this.storage.saveSettings === 'function') {
-            try { await this.storage.saveSettings(this.userData.settings); }
-            catch (e) { console.warn('detailSectionOrder 保存失敗', e); }
-        }
+        await this.saveUserData();
     }
 
     // 編集モード時のセクション drag&drop 並び替え
@@ -2058,8 +2113,8 @@ class VirtualBookshelf {
 
                 <div class="bd-cover-wrap">
                     <div class="bd-cover">
-                        ${book.productImage
-                            ? `<img src="${esc(this.bookManager.getProductImageUrl(book))}" alt="${esc(book.title)}">`
+                        ${this.bookManager.hasCoverImage(book)
+                            ? `<img src="${esc(this.bookManager.getProductImageUrl(book))}" alt="${esc(book.title)}" data-cover-fallback="${esc(book.title)}">`
                             : `<span class="bd-cover-placeholder">${window.renderIcon('book-open', { size: 40 })}</span>`}
                         ${showOverlay ? `<div class="bd-cover-stars stars-overlay">${starWidget}</div>` : ''}
                     </div>
@@ -4573,6 +4628,9 @@ class VirtualBookshelf {
     }
 
     switchBookshelf(bookshelfId) {
+        // 別の本棚へ移るときは前の本棚の絞り込みを持ち越さない
+        // (見えない検索/評価フィルタが効き続けて「この本棚は空?」に見える事故の防止)
+        if (bookshelfId !== this.currentBookshelf) this._resetFilters();
         this.currentBookshelf = bookshelfId;
         this.applyFilters();
         // 本棚ビューに切替
@@ -4815,9 +4873,7 @@ class VirtualBookshelf {
             left:  document.body.classList.contains('left-collapsed'),
             right: document.body.classList.contains('right-collapsed')
         };
-        if (this.storage && typeof this.storage.saveSettings === 'function') {
-            this.storage.saveSettings(this.userData.settings).catch(err => console.warn('paneState 保存失敗', err));
-        }
+        this.saveUserData();
     }
 
     // ===== PC v2: 本棚ツリー (UI-1 + UI-2) =====
@@ -8532,16 +8588,22 @@ class VirtualBookshelf {
                 updateData.acquiredTime = new Date(newAcquiredTime).getTime();
             }
 
-            // 変更後ASINの処理
+            // 変更後ASINの処理。productImage は ASIN が実際に変わったときだけ更新する
+            // (タイトル等の編集のたびに Kindle 取込の恒久 CDN URL を組み立て URL で潰していた事故の防止)
+            const currentBook = this.books.find(b => b.asin === asin) || {};
             if (newUpdatedAsin) {
                 updateData.updatedAsin = newUpdatedAsin;
-                // 新しいASINで画像URLも更新 (URL 形式は getProductImageUrl が唯一の正)
-                updateData.productImage = this.bookManager.getProductImageUrl({ asin: newUpdatedAsin });
+                if (newUpdatedAsin !== currentBook.updatedAsin) {
+                    // 新しいASINで画像URLも更新 (URL 形式は getProductImageUrl が唯一の正)
+                    updateData.productImage = this.bookManager.getProductImageUrl({ asin: newUpdatedAsin });
+                }
             } else {
                 // 変更後ASINが削除された場合、プロパティを削除
                 updateData.updatedAsin = undefined;
-                // 元のASIN（変更された可能性がある）で画像URLを復元
-                updateData.productImage = this.bookManager.getProductImageUrl({ asin: newOriginalAsin });
+                if (currentBook.updatedAsin) {
+                    // 差し替え解除: 保存 URL は差し替え先のものになっているので、元 ASIN の組み立て URL に戻す
+                    updateData.productImage = this.bookManager.getProductImageUrl({ asin: newOriginalAsin });
+                }
             }
 
             const success = await this.bookManager.updateBook(asin, updateData);
@@ -9724,8 +9786,8 @@ class VirtualBookshelf {
         const previewBooks = previewAsins.slice(0, 8);
         const previewHtml = previewBooks.map(asin => {
             const book = (this.books || []).find(b => b.asin === asin);
-            if (book && book.productImage) {
-                return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}"></div>`;
+            if (book && this.bookManager.hasCoverImage(book)) {
+                return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}" data-cover-fallback=""></div>`;
             }
             return `<div class="bookshelf-preview-book bookshelf-preview-placeholder">${window.renderIcon('book-open', { size: 20 })}</div>`;
         }).join('');

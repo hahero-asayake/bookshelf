@@ -1788,6 +1788,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .dashboard-welcome .dw-body strong { font-size: 0.92rem; }
 .dashboard-welcome .dw-body span { font-size: 0.8rem; color: var(--muted, #6b6675); }
 .dashboard-welcome .dw-step .btn { flex: 0 0 auto; }
+.dashboard-welcome .dw-step .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (max-width: 560px) {
     .dashboard-welcome .dw-step { flex-wrap: wrap; }
     .dashboard-welcome .dw-step .btn { margin-left: 36px; }
@@ -2589,6 +2590,17 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 1rem;
     font-size: 0.9rem;
     line-height: 1.3;
+}
+
+/* 読み込み失敗時に JS (_setupCoverFallback) が差し込む生成表紙。
+   グリッド以外の小さい面 (ウィジェット・本棚カード等) でも収まるよう控えめに */
+.cover-fallback {
+    padding: 0.4rem;
+    font-size: 0.72rem;
+    overflow: hidden;
+    min-height: 40px;
+    aspect-ratio: 2 / 3;
+    box-sizing: border-box;
 }
 
 /* Book Info */

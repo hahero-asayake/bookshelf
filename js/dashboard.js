@@ -268,31 +268,43 @@ class BookshelfDashboard {
     }
 
     // ===== 初回オンボーディング (蔵書0のときだけ出す3ステップ案内) =====
+    // × で閉じてもそのセッション限り (sessionStorage)。蔵書 0 の間は次回起動でまた出す。
+    // 恒久非表示は「本を1冊でも入れる」ことで達成される (showWelcome の books.length 条件)。
     _welcomeDismissed() {
-        try { return localStorage.getItem('bookshelf_welcome_dismissed') === '1'; } catch (_) { return false; }
+        try { return sessionStorage.getItem('bookshelf_welcome_dismissed') === '1'; } catch (_) { return false; }
     }
 
     _welcomeHtml() {
         const ico = (n, s = 16) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        // step1 の「設定済み」は実際に使える状態のときだけ:
+        // 一度も保存していなければ未設定。保存済みでも hub は認証キー・github はトークン・
+        // local はフォルダハンドル復元まで揃って初めて done (method だけ見ると嘘になる)。
         let syncDone = false;
         try {
-            const m = (window.SyncConfigManager && window.SyncConfigManager.load().method) || 'local';
-            syncDone = m !== 'local' || !!(this.app && this.app.obsidianDirHandle);
+            const SCM = window.SyncConfigManager;
+            if (SCM && SCM.isConfigured()) {
+                const cfg = SCM.load();
+                if (cfg.method === 'hub') syncDone = !!(cfg.hub && cfg.hub.key);
+                else if (cfg.method === 'github') syncDone = !!(cfg.github && cfg.github.token);
+                else if (cfg.method === 'local') syncDone = !!(this.app && this.app.obsidianDirHandle);
+            }
         } catch (_) {}
-        const step = (n, done, title, desc, label, primary, act) =>
+        const step = (n, done, title, desc, label, primary, act, disabled = false) =>
             `<li class="dw-step${done ? ' is-done' : ''}">
                 <span class="dw-num">${done ? window.renderIcon('check', { size: 14 }) : n}</span>
                 <div class="dw-body"><strong>${title}</strong><span>${desc}</span></div>
-                <button class="btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-small" data-dw="${act}" type="button">${label}</button>
+                <button class="btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-small" data-dw="${act}" type="button"${disabled ? ' disabled' : ''}>${label}</button>
             </li>`;
+        // welcome は蔵書 0 のときしか出ないので、step3 (公開) は常に無効。
+        // 奥まで進んでから「本がありません」で弾くのではなく、入口で条件を示す。
         return `<div class="dashboard-welcome" id="dashboard-welcome">
             <button class="dw-close" id="dw-close" type="button" title="閉じる">${window.renderIcon('x', { size: 16 })}</button>
             <h3 class="dw-title">${ico('sparkles', 18)}AsayakeBookshelf へようこそ</h3>
             <p class="dw-sub">3 ステップで本棚を作って公開できます。</p>
             <ol class="dw-steps">
-                ${step(1, syncDone, '保存先を選ぶ', '本のデータの保存場所（この端末／GitHub／ハブ 等）', syncDone ? '設定済み' : '保存先を選ぶ', false, 'sync')}
+                ${step(1, syncDone, '保存先を選ぶ', '本のデータの保存場所（Asayake ハブ／この端末／GitHub）', syncDone ? '設定済み' : '保存先を選ぶ', false, 'sync')}
                 ${step(2, false, '本を取り込む', 'Kindle から取り込むか、ASIN を手動で追加', '本を追加・取り込み', true, 'import')}
-                ${step(3, false, '公開ページを作る', '本棚を選んでスタイルを選び、Web サイトとして公開', '公開を開く', false, 'publish')}
+                ${step(3, false, '公開ページを作る', '本を取り込むと公開できるようになります', '公開を開く', false, 'publish', true)}
             </ol>
         </div>`;
     }
@@ -302,7 +314,7 @@ class BookshelfDashboard {
         if (!wel) return;
         const close = document.getElementById('dw-close');
         if (close) close.addEventListener('click', () => {
-            try { localStorage.setItem('bookshelf_welcome_dismissed', '1'); } catch (_) {}
+            try { sessionStorage.setItem('bookshelf_welcome_dismissed', '1'); } catch (_) {}
             wel.remove();
         });
         wel.querySelectorAll('[data-dw]').forEach((b) => {
@@ -565,8 +577,8 @@ class BookshelfDashboard {
             <div class="widget-book-row">
                 ${sorted.map(b => `
                     <button type="button" class="widget-book-cell" data-asin="${this._escape(b.asin)}" title="${this._escape(b.title)}">
-                        ${b.productImage
-                            ? `<img src="${this._escape(app.bookManager.getProductImageUrl(b))}" alt="">`
+                        ${app.bookManager.hasCoverImage(b)
+                            ? `<img src="${this._escape(app.bookManager.getProductImageUrl(b))}" alt="" data-cover-fallback="">`
                             : `<div class="widget-book-cell-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`}
                         <div class="widget-book-cell-title">${this._escape(b.title)}</div>
                     </button>
@@ -593,8 +605,8 @@ class BookshelfDashboard {
         const pick = books[seed % books.length];
         host.innerHTML = `
             <button type="button" class="widget-today-pick" data-asin="${this._escape(pick.asin)}">
-                ${pick.productImage
-                    ? `<img src="${this._escape(app.bookManager.getProductImageUrl(pick))}" alt="">`
+                ${app.bookManager.hasCoverImage(pick)
+                    ? `<img src="${this._escape(app.bookManager.getProductImageUrl(pick))}" alt="" data-cover-fallback="${this._escape(pick.title)}">`
                     : `<div class="widget-today-pick-placeholder">${window.renderIcon('book-open', { size: 32 })}</div>`}
                 <div class="widget-today-pick-title">${this._escape(pick.title)}</div>
                 <div class="widget-today-pick-author">${this._escape(pick.authors || '')}</div>

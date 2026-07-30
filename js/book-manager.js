@@ -258,11 +258,27 @@ class BookManager {
     }
 
     /**
-     * Amazon商品画像URLを取得
+     * Amazon商品画像URLを取得。
+     * Kindle 取込が保存した恒久 CDN URL (m.media-amazon.com/images/I/…) を最優先で使う。
+     * /images/P/<ASIN> の組み立ては旧エンドポイントで、Kindle の B0… ASIN だと画像を
+     * 持たないことがある (200 で 1x1 GIF が返る) ため、保存 URL が無い本のフォールバック。
+     * updatedAsin (版差し替え) があるときは差し替え先の表紙を出すため組み立てを優先する。
      */
     getProductImageUrl(book) {
+        if (!book.updatedAsin && typeof book.productImage === 'string' && /^https:\/\//.test(book.productImage)) {
+            return book.productImage;
+        }
         const effectiveAsin = this.getEffectiveASIN(book);
         return `https://images-na.ssl-images-amazon.com/images/P/${effectiveAsin}.01.L.jpg`;
+    }
+
+    /**
+     * 表紙の <img> を出すべきか (出し分け条件の唯一の正)。
+     * productImage が空でも ASIN があれば組み立て URL で表示を試みる。
+     * 読み込みに失敗した場合は共通フォールバック (_setupCoverFallback) が生成表紙に差し替える。
+     */
+    hasCoverImage(book) {
+        return !!(book.productImage || this.getEffectiveASIN(book));
     }
 
     /**

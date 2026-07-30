@@ -84,7 +84,8 @@ class PublishGenerator {
             cover: (b) => {
                 if (!fields.cover) return '';
                 if (b.productImage) return `<img class="cover" loading="lazy" src="${esc(b.productImage)}" alt="${esc(b.title)}">`;
-                return `<div class="cover-ph">No Image</div>`;
+                // 書影なしはタイトル入りの生成表紙 (No Image の穴あき棚にしない)
+                return `<div class="cover-ph">${esc(b.title)}</div>`;
             },
             author: (b) => (fields.author && b.authors) ? `<p class="author">${esc(b.authors)}</p>` : '',
             stars: (b) => (fields.rating && b.rating > 0) ? `<p class="stars">${PublishGenerator._starHtml(b.rating)}</p>` : '',

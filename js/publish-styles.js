@@ -57,7 +57,8 @@ a{ color:var(--accent) }
 .pub-hero .intro{ margin:0 auto; max-width:640px; opacity:.92 }
 .pub-hero .by{ margin-top:12px; font-size:.85rem; opacity:.8 }
 .cover-ph{ aspect-ratio:2/3; background:linear-gradient(160deg,#efe9f1,#ddd4e2);
-  display:flex; align-items:center; justify-content:center; color:#9b93a6; font-size:.75rem; border-radius:6px }
+  display:flex; align-items:center; justify-content:center; color:#6f6680; font-size:.75rem; border-radius:6px;
+  padding:8px; box-sizing:border-box; text-align:center; line-height:1.35; overflow:hidden }
 .stars{ color:var(--glow); letter-spacing:1px; margin:.2rem 0; font-size:.95rem }
 .stars .off{ color:#d8d2dd }
 .memo{ color:#473f50; white-space:pre-wrap; margin:.4rem 0 }
