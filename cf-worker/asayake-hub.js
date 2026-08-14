@@ -168,7 +168,9 @@ async function handleGo(request, env, pathname) {
             'Location': dest,
             // プラン変更に追従させるためキャッシュさせない (クリックは低頻度・コスト無視可)
             'Cache-Control': 'no-store',
-            'Referrer-Policy': 'no-referrer'
+            // Amazon アソシエイト規約 (ADR-058 §11.10): Referrer を落とすと流入元が判別できず
+            // アフィリエイトが無効化されうる。no-referrer は不採用、origin までは渡す既定値にする。
+            'Referrer-Policy': 'strict-origin-when-cross-origin'
         }
     });
 }
@@ -1089,7 +1091,7 @@ async function handleCommunityReport(request, env) {
     return json({ ok: true });
 }
 
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

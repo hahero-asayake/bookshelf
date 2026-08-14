@@ -9,6 +9,7 @@
     "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.49.0",
     "@textlint-ja/textlint-rule-preset-ai-writing": "^1.7.0",
     "jsdom": "^25.0.0",
