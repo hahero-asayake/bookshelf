@@ -67,8 +67,11 @@ class VirtualBookshelf {
         // 同期方式に応じた storage 構築 (LocalFS / GitHub / ...)
         this.syncConfig = SyncConfigManager.load();
         let initialAdapter = SyncConfigManager.buildAdapter(this.syncConfig);
+        // GitHub/ハブ設定が不完全 (未ログイン等) なフォールバック。元は何に繋ごうとしていたかを記録し、
+        // 「保存先が未設定です」を出す場面で状況に合った文言 (例:「ハブにログインしていません」) に出し分ける。
+        this._syncFallbackFrom = null;
         if (!initialAdapter) {
-            // GitHub 設定が不完全等のフォールバック
+            this._syncFallbackFrom = this.syncConfig.method;
             this.syncConfig = { ...this.syncConfig, method: 'local' };
             initialAdapter = new LocalFSAdapter();
         }
@@ -6734,7 +6737,10 @@ class VirtualBookshelf {
             rows.push(`<div class="status-row status-checking">${ico('refresh-cw')}<span class="status-msg">最新のデータを確認しています…</span></div>`);
         }
         if (!this._isSyncReady()) {
-            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">保存先が未設定です。今はこの端末の中だけに保存されています。</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
+            const msg = this._syncFallbackFrom === 'hub'
+                ? 'Asayake ハブにログインしていません。設定からログインしてください。'
+                : '保存先が未設定です。今はこの端末の中だけに保存されています。';
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${msg}</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
         } else if (this._syncError) {
             const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${this._escapeHtml ? this._escapeHtml(msg) : msg}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
@@ -7556,7 +7562,18 @@ class VirtualBookshelf {
         if (!modal) return;
         if (!this.publishArticleStore) { toast('公開システムが未初期化です。リロードしてください。', { type: 'error' }); return; }
         this._artSetupUI();
-        await this.publishArticleStore.load();
+        // 未接続なら読込を試みない (dirHandle 未設定等の内部エラーをそのまま出さず、
+        // 「未接続」の専用通知に任せる。§#art-store-notice)。接続済みでの読込失敗は
+        // 「0件」と区別するため _artLoadError に保持し、一覧側でエラー行として出す。
+        this._artLoadError = null;
+        if (this._isSyncReady()) {
+            try {
+                await this.publishArticleStore.load();
+            } catch (e) {
+                this._artLoadError = e;
+                console.error('公開記事の読込に失敗:', e);
+            }
+        }
         this._artShowList();
         modal.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
@@ -7580,6 +7597,7 @@ class VirtualBookshelf {
             this._artDrawerQuery = e.target.value.trim().toLowerCase();
             this._artRenderDrawer();
         });
+        on('art-save-retry', 'click', () => this._artFlushSave());
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
         on('art-theme-color', 'change', () => this._artOnThemeChange());
@@ -7640,6 +7658,32 @@ class VirtualBookshelf {
         const ul = document.getElementById('art-list');
         if (!ul) return;
         const esc = PublishArticleGenerator.esc;
+
+        this._artRenderStoreNotice();
+
+        const notConnected = !this._isSyncReady();
+        const newBtn = document.getElementById('art-new');
+        if (newBtn) newBtn.disabled = notConnected;
+
+        // 保存先には接続しているが articles.json の読込自体に失敗した (通信/認証/権限エラー)。
+        // 「0件」と取り違えないよう、空一覧ではなくエラー行に差し替える。
+        if (!notConnected && this._artLoadError) {
+            const isAuthErr = this._artLoadError.name === 'HubAuthError';
+            const msg = isAuthErr
+                ? 'Asayake ハブの認証が切れました。設定から再ログインしてください。'
+                : '保存先から記事を読み込めませんでした。接続を確認して開き直してください。';
+            const actionBtn = isAuthErr
+                ? `<button class="btn btn-secondary btn-small" data-act="open-settings" type="button">設定を開く</button>`
+                : '';
+            ul.innerHTML = `<li class="pp-empty pp-error"><span class="h-icon" data-icon="alert-triangle" data-icon-size="14"></span>${esc(msg)}${actionBtn}</li>`;
+            const openBtn = ul.querySelector('[data-act="open-settings"]');
+            if (openBtn) openBtn.addEventListener('click', () => this._openSettingsModal('sync-method-select'));
+            const foot = document.getElementById('art-list-foot'); if (foot) foot.hidden = true;
+            if (newBtn) newBtn.disabled = true;
+            if (typeof window.applyIcons === 'function') window.applyIcons(ul);
+            return;
+        }
+
         const articles = this.publishArticleStore.articles();
         const foot = document.getElementById('art-list-foot');
         if (foot) foot.hidden = !articles.some(a => a.published);
@@ -7678,9 +7722,56 @@ class VirtualBookshelf {
                 bind('publish', () => this._artPublishFromList(id));
                 bind('republish', () => this._artPublishFromList(id));
                 bind('edit', () => this._artOpenEditor(id));
+                if (notConnected) row.querySelectorAll('button').forEach(b => { b.disabled = true; });
             });
             if (typeof window.applyIcons === 'function') window.applyIcons(ul);
         }
+    }
+
+    // 一覧上部の状態通知 (#art-store-notice)。未接続 (最優先・編集不可) ／ 保存できていない変更あり ／
+    // 同期エラーの併記、の優先度で1つにまとめる。ui-standards §3 (です・ます、専門用語なし)。
+    _artRenderStoreNotice() {
+        const el = document.getElementById('art-store-notice');
+        if (!el) return;
+        const textEl = document.getElementById('art-store-notice-text');
+        const btn = document.getElementById('art-store-notice-btn');
+        const lines = [];
+        let btnLabel = '';
+        let onClick = null;
+
+        if (!this._isSyncReady()) {
+            lines.push(this._syncFallbackFrom === 'hub'
+                ? 'Asayake ハブにログインしていません。設定からログインしてください。'
+                : '保存先に接続していないため、記事を作成・編集できません。');
+            btnLabel = '保存先を選ぶ';
+            onClick = () => this._openSettingsModal('sync-method-select');
+        } else if (this.publishArticleStore && this.publishArticleStore.hasUnsavedChanges()) {
+            lines.push('保存できていない変更があります。');
+            btnLabel = 'もう一度保存';
+            onClick = () => this._artRetryStorePersist();
+        }
+        if (this._syncError && this._syncErrorMsg) lines.push(this._syncErrorMsg);
+
+        if (!lines.length) { el.hidden = true; return; }
+        el.hidden = false;
+        if (textEl) textEl.textContent = lines.join(' ');
+        if (btn) {
+            btn.hidden = !btnLabel;
+            btn.textContent = btnLabel;
+            btn.onclick = onClick;
+        }
+    }
+
+    // 一覧側の「もう一度保存」: どの記事の persist が失敗したか (編集中の記事とは限らない) を
+    // 気にせず、ストアがメモリ上に保持している未反映の変更をそのまま書き直す。
+    async _artRetryStorePersist() {
+        try {
+            await this.publishArticleStore.retryPersist();
+            toast('保存しました。', { type: 'success' });
+        } catch (e) {
+            toast('保存できませんでした: ' + (e && e.message ? e.message : ''), { type: 'error' });
+        }
+        this._artRenderList();
     }
 
     // 公開先の公開ベース URL (target=hub なら publicBase、github なら Pages URL)。未確定なら ''
@@ -8306,14 +8397,38 @@ class VirtualBookshelf {
             }
             this._artSetSaveStatus('保存しました');
         } catch (e) {
-            this._artSetSaveStatus('保存に失敗しました');
+            // create() の書込 (persist) が失敗しても、記事オブジェクト自体は id/slug 確定済みで
+            // メモリ上の store には既に積まれている (store.create() は persist 前に push するため)。
+            // ここで id を拾っておかないと、次の保存 (「もう一度保存」や継続入力での再試行) が
+            // create() をもう一度呼んでしまい、同じ記事が重複作成される。
+            if (!this._artEditingId && this.publishArticleStore.hasUnsavedChanges()) {
+                const pending = this.publishArticleStore.articles().slice(-1)[0];
+                if (pending) {
+                    this._artEditingId = pending.id;
+                    this._artDraft.id = pending.id;
+                    this._artDraft.slug = pending.slug;
+                    const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
+                }
+            }
+            const isAuthErr = e && e.name === 'HubAuthError';
+            this._artSetSaveStatus(
+                isAuthErr
+                    ? '保存できませんでした。ハブの認証が切れています。設定から再ログインしてください。'
+                    : '保存できませんでした。保存先への接続を確認してください。',
+                { error: true, retry: true }
+            );
             console.error('記事の保存に失敗:', e);
         }
     }
 
-    _artSetSaveStatus(text) {
+    _artSetSaveStatus(text, { error = false, retry = false } = {}) {
         const el = document.getElementById('art-save-status');
-        if (el) el.textContent = text;
+        if (el) {
+            el.textContent = text;
+            el.classList.toggle('is-error', error);
+        }
+        const retryBtn = document.getElementById('art-save-retry');
+        if (retryBtn) retryBtn.hidden = !retry;
     }
 
     // 記事を公開する (published=true にして全公開中記事を push)。更新(republish)もここを通る。
@@ -8333,7 +8448,12 @@ class VirtualBookshelf {
         const r = await this._runPublishExport();
         if (!r.ok) {
             // 失敗時は「元の状態」へ戻す (更新の取り消しで実サイトからの誤消去を防ぐ)
-            try { await this.publishArticleStore.update(id, { published: wasPublished }); } catch (_) {}
+            try {
+                await this.publishArticleStore.update(id, { published: wasPublished });
+            } catch (e) {
+                toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                console.error('公開失敗時のロールバックに失敗:', e);
+            }
             if (this._artEditingId === id) {
                 this._artDraft.published = wasPublished;
                 const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !wasPublished;
@@ -8341,7 +8461,7 @@ class VirtualBookshelf {
             this._artRenderList();
             return;
         }
-        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (_) {}
+        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.warn('公開日時の記録に失敗 (公開自体は成功):', e); }
         const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
         toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
         this._artRenderList();
@@ -8372,7 +8492,12 @@ class VirtualBookshelf {
         catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
         const r = await this._runPublishExport();
         if (!r.ok) {
-            try { await this.publishArticleStore.update(id, { published: true }); } catch (_) {}
+            try {
+                await this.publishArticleStore.update(id, { published: true });
+            } catch (e) {
+                toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                console.error('公開取消失敗時のロールバックに失敗:', e);
+            }
             this._artRenderList();
             return;
         }
@@ -8388,12 +8513,23 @@ class VirtualBookshelf {
         const a = this.publishArticleStore.get(id);
         const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。`, okLabel: '削除', danger: true });
         if (!ok) return false;
-        await this.publishArticleStore.remove(id);
+        try {
+            await this.publishArticleStore.remove(id);
+        } catch (e) {
+            toast('削除できませんでした。保存先への接続を確認してください。', { type: 'error' });
+            console.error('記事の削除に失敗:', e);
+            return false;
+        }
         return true;
     }
 
     async _artDuplicate(id) {
-        await this.publishArticleStore.duplicate(id);
+        try {
+            await this.publishArticleStore.duplicate(id);
+        } catch (e) {
+            toast('複製できませんでした。保存先への接続を確認してください。', { type: 'error' });
+            console.error('記事の複製に失敗:', e);
+        }
     }
 
     // 一括更新: 公開中記事をまとめて再 push (公開状態は変えない・一括「公開」ではない)
@@ -8613,7 +8749,16 @@ class VirtualBookshelf {
         try {
             existing = await this.storage.readBookMemo(asin, book.title);
         } catch (e) {
-            console.warn('長文メモ読み込み失敗:', e);
+            // 読込失敗 (通信/認証/権限エラー等) は「まだ書いていない」と取り違えない。
+            // テンプレートで開いて保存すると、既存の長文メモを空/テンプレで上書きしてしまうため、
+            // ここで止めてエディタを作らない (保存導線の _bookMemoEditorContext も張らない)。
+            console.error('長文メモ読み込みに失敗:', e);
+            this._bookMemoEditorContext = null;
+            textareaEl.value = '';
+            modal.classList.add('show');
+            this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
+            if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
+            return;
         }
         if (existing == null) {
             existing = this.storage.buildBookMemoTemplate(book);

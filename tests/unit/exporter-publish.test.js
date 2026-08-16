@@ -176,6 +176,23 @@ describe('削除同期の安全性 (ADR-033 監査)', () => {
     });
 });
 
+describe('記事一覧の読込失敗 (例外の握り潰し防止)', () => {
+    it('publishArticleStore.load() が失敗したら公開を中止し push しない', async () => {
+        const app = makeApp({ articles: [{ id: 'p1', published: true }] });
+        app.publishArticleStore.load = async () => { throw new Error('ハブの認証が失効しました'); };
+        const exporter = new BookshelfExporter(app);
+        await expect(exporter.export()).rejects.toThrow('ハブの認証が失効しました');
+        expect(captured.commits.length).toBe(0);
+    });
+
+    it('dryRun でも load() 失敗時は write 一覧を返さず中止する', async () => {
+        const app = makeApp({ articles: [{ id: 'p1', published: true }] });
+        app.publishArticleStore.load = async () => { throw new Error('read failed'); };
+        const exporter = new BookshelfExporter(app);
+        await expect(exporter.export({ dryRun: true })).rejects.toThrow('read failed');
+    });
+});
+
 describe('ガード', () => {
     it('公開先 repo 未設定なら中止', async () => {
         mockConfig.publish = { target: 'github', owner: '', repo: '', branch: 'main' };

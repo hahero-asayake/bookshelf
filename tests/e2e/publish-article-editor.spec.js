@@ -28,6 +28,10 @@ async function bootApp(page) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        // イシュー#35: 未接続のまま記事を編集させないガードを追加した。この E2E は dirHandle を持たない
+        // LocalFS のまま記事ストアだけメモリ差替で動かす都合上、実際には「未接続」判定になってしまうため、
+        // 接続済み相当にモックする (bootAppForPublish 等で既に使われているのと同じパターン)。
+        window.bookshelf._isSyncReady = () => true;
     });
     return errors;
 }
@@ -686,5 +690,88 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await expect(drawerItems).toHaveCount(0);
         await expect(page.locator('.art-drawer-empty')).toBeVisible();
         expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#35: 同期先への保存・読込の失敗を握り潰さず画面に出す (例外の握り潰し修正)。
+// この describe の各テストは意図的に adapter を失敗させるため、console.error が出ることを許容する
+// (errors 配列を捕捉はするが空であることは assert しない)。
+test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () => {
+    test('保存に失敗すると #art-save-status がエラー表示になり、直ると「保存しました」に変わる', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        // writeJSON を必ず失敗させる (通信/認証/権限エラー等を想定)
+        await page.evaluate(() => {
+            window.bookshelf.storage.adapter.writeJSON = async () => { throw new Error('write failed'); };
+        });
+        await page.fill('#art-title', '保存できるはずのタイトル');
+        await expect(page.locator('#art-save-status')).toHaveClass(/is-error/, { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toContainText('保存できませんでした');
+        await expect(page.locator('#art-save-retry')).toBeVisible();
+
+        // 復旧: writeJSON を成功に戻して「もう一度保存」を押すと表示が変わる (成功/失敗で表示が変わることの検証)
+        await page.evaluate(() => {
+            const mem = new Map();
+            window.bookshelf.storage.adapter.writeJSON = async (path, data) => { mem.set(path, data); };
+        });
+        await page.click('#art-save-retry');
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).not.toHaveClass(/is-error/);
+        await expect(page.locator('#art-save-retry')).toBeHidden();
+    });
+
+    test('記事一覧の読込に失敗すると異常行が出て「0件」とは区別される・新規作成もできない', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => {
+            window.bookshelf.storage.adapter.readJSON = async () => { throw new Error('read failed'); };
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        await expect(page.locator('#art-list .pp-error')).toBeVisible();
+        await expect(page.locator('#art-list')).not.toContainText('まだ公開記事がありません');
+        await expect(page.locator('#art-new')).toBeDisabled();
+    });
+
+    test('読込失敗がハブの認証切れのときは再ログイン文言＋「設定を開く」で設定モーダルが開く', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => {
+            window.bookshelf.storage.adapter.readJSON = async () => { throw new window.HubAuthError('認証切れ'); };
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        await expect(page.locator('#art-list .pp-error')).toContainText('認証が切れました');
+        await page.click('#art-list [data-act="open-settings"]');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+    });
+
+    test('保存先に未接続のまま開くと通知が出て新規作成できない (編集させない)', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => { window.bookshelf._isSyncReady = () => false; });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        await expect(page.locator('#art-store-notice')).toBeVisible();
+        await expect(page.locator('#art-store-notice-text')).toContainText('接続していない');
+        await expect(page.locator('#art-new')).toBeDisabled();
+    });
+
+    // 記事以外の握り潰し (B-1): 長文メモの読込失敗がテンプレートと取り違えられ、保存すると
+    // 既存メモを上書きしてしまう事故を防ぐ。
+    test('長文メモの読込に失敗すると、テンプレートで開かず読み込めなかった旨が出て保存が止まる', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => {
+            window.bookshelf.storage.adapter.readText = async () => { throw new Error('read failed'); };
+        });
+        await page.evaluate(() => {
+            const b = window.bookshelf.books[0];
+            return window.bookshelf._openBookMemoInAppEditor(b.asin, b);
+        });
+
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        await expect(page.locator('#book-memo-status')).toContainText('読み込めませんでした');
+        // エディタは作られず、保存導線 (_bookMemoEditorContext) も張られていない (保存を止める)
+        expect(await page.evaluate(() => !!window.bookshelf._bookMemoEditor)).toBe(false);
+        expect(await page.evaluate(() => window.bookshelf._bookMemoEditorContext)).toBeNull();
     });
 });

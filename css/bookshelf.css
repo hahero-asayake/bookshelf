@@ -4192,9 +4192,16 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-free-notice[hidden] { display: none; }
 .pp-free-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; color: var(--warning, #d49100); }
 .pp-free-notice-text { flex: 1 1 auto; min-width: 0; }
+.pp-store-notice { align-items: center; }
+.pp-store-notice #art-store-notice-btn { flex: 0 0 auto; }
+/* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2。
+   通知本体は表示のままボタンだけ隠す状態がある = 親の .pp-free-notice[hidden] では救えない) */
+#art-store-notice-btn[hidden] { display: none; }
 .pp-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
 .pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 52vh; overflow: auto; }
 .pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
+.pp-empty.pp-error { color: var(--danger); border-color: var(--danger); display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+.pp-empty.pp-error .h-icon { color: var(--danger); }
 .pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
 .pp-row-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -4293,6 +4300,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-theme-sel { flex: 0 0 auto; width: auto; max-width: 8.5rem; padding: 0.4rem 0.55rem; border: 1px solid var(--line); border-radius: 6px;
     background: var(--panel); color: var(--fg2); font-size: 0.82rem; }
 .art-save-status { font-size: 0.78rem; color: var(--muted); }
+.art-save-status.is-error { color: var(--danger); font-weight: 600; }
+/* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
+#art-save-retry[hidden] { display: none; }
 
 /* --- タグ行 --- */
 .art-tagbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; padding: 0.6rem 0.1rem 0.9rem; border-bottom: 1px solid var(--line); margin-bottom: 0.9rem; position: relative; }

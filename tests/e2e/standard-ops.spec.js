@@ -22,6 +22,24 @@ async function bootApp(page) {
     await page.goto('/index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    // イシュー#35: 未接続のまま記事を編集させないガードを追加した。この E2E は dirHandle を持たない
+    // LocalFS のまま動かすため実際には「未接続」判定になってしまい、#art-new 等が disabled になって
+    // 打鍵できなくなる。接続済み相当にモックし (publish-article-editor.spec.js と同じパターン)、
+    // 記事ストアの読み書きもメモリ上のマップへ差し替える (実 dirHandle が無いままだと
+    // openPublishPagesModal() の load() が本当に失敗し、console.error が漏れて誤検知するため)。
+    await page.evaluate(() => {
+        const mem = new Map();
+        const adapter = window.bookshelf.storage.adapter;
+        adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+        adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        // イシュー#35 (B-1): 長文メモの読込失敗を握り潰さなくしたため、実 dirHandle が無いこの E2E では
+        // readText が「LocalFSAdapter: dirHandle not set」で本当に失敗し、テンプレート表示に落ちず
+        // エディタが作られなくなる (修正後の正しい挙動)。長文メモを開く既存/新規テストが動くよう
+        // readText/writeText もメモリ上のマップへ差し替える。
+        adapter.readText = async (path) => (mem.has(path) ? mem.get(path) : null);
+        adapter.writeText = async (path, text) => { mem.set(path, text); };
+        window.bookshelf._isSyncReady = () => true;
+    });
     return errors;
 }
 

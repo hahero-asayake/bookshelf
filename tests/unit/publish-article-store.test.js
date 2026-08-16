@@ -204,6 +204,86 @@ describe('テーマ = レイアウト × 配色の直交2軸 (§11.3)', () => {
 const ARTICLE_LAYOUTS_TEST = ['wall', 'count', 'card'];
 const ARTICLE_COLORS_TEST = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
 
+describe('読込失敗と未作成の区別 (例外の握り潰し防止)', () => {
+    function makeFailingStorage({ failRead = false, failWrite = false } = {}) {
+        const store = new Map();
+        return {
+            async readJSON(path) {
+                if (failRead) throw new Error('network error');
+                return store.has(path) ? store.get(path) : null;
+            },
+            async writeJSON(path, data) {
+                if (failWrite) throw new Error('write failed');
+                store.set(path, JSON.parse(JSON.stringify(data)));
+            }
+        };
+    }
+
+    it('readJSON が例外を投げたら load() は握り潰さず reject する', async () => {
+        const failing = makeFailingStorage({ failRead: true });
+        const fresh = new PublishArticleStore(failing);
+        await expect(fresh.load()).rejects.toThrow('network error');
+        expect(fresh.lastLoadError).toBeInstanceOf(Error);
+    });
+
+    it('readJSON が null (未作成) なら例外にせず空配列で解決する', async () => {
+        const fresh = new PublishArticleStore(makeStorage());
+        await expect(fresh.load()).resolves.toEqual([]);
+        expect(fresh.lastLoadError).toBeNull();
+    });
+
+    it('load() で読込に失敗したら create() はその失敗をそのまま伝える (_ensure() が毎回再試行するため)', async () => {
+        const failing = makeFailingStorage({ failRead: true });
+        const fresh = new PublishArticleStore(failing);
+        await expect(fresh.create({ title: 'x' })).rejects.toThrow('network error');
+        expect(fresh.lastLoadError).toBeInstanceOf(Error);
+    });
+
+    it('未ロードのまま _persist() を直接呼ぶと空リストで上書きせず拒否する (不変条件そのものの確認)', async () => {
+        const fresh = new PublishArticleStore(makeStorage());
+        await expect(fresh._persist()).rejects.toThrow(/未読込/);
+    });
+
+    it('writeJSON が失敗したら update() が reject し、lastPersistError / hasUnsavedChanges が立つ', async () => {
+        const failing = makeFailingStorage();
+        const fresh = new PublishArticleStore(failing);
+        await fresh.load();
+        const a = await fresh.create({ title: 'x' });
+        expect(fresh.hasUnsavedChanges()).toBe(false);
+
+        failing.writeJSON = async () => { throw new Error('quota exceeded'); };
+        await expect(fresh.update(a.id, { title: '新題' })).rejects.toThrow('quota exceeded');
+        expect(fresh.lastPersistError).toBeInstanceOf(Error);
+        expect(fresh.hasUnsavedChanges()).toBe(true);
+        // メモリ上には変更が残っている (失わない)
+        expect(fresh.get(a.id).title).toBe('新題');
+    });
+
+    it('retryPersist() は書込が復旧すれば成功し hasUnsavedChanges が消える', async () => {
+        const store = new Map();
+        let failNext = false;
+        const flaky = {
+            async readJSON(path) { return store.has(path) ? store.get(path) : null; },
+            async writeJSON(path, data) {
+                if (failNext) { failNext = false; throw new Error('temporary'); }
+                store.set(path, JSON.parse(JSON.stringify(data)));
+            }
+        };
+        const fresh = new PublishArticleStore(flaky);
+        await fresh.load();
+        const a = await fresh.create({ title: 'x' });
+        failNext = true;
+        await expect(fresh.update(a.id, { title: '失敗する更新' })).rejects.toThrow('temporary');
+        expect(fresh.hasUnsavedChanges()).toBe(true);
+
+        await fresh.retryPersist();
+        expect(fresh.hasUnsavedChanges()).toBe(false);
+        expect(fresh.lastPersistError).toBeNull();
+        const dumped = await flaky.readJSON('private/publish/articles.json');
+        expect(dumped.articles[0].title).toBe('失敗する更新');
+    });
+});
+
 describe('移行: 旧 pages.json → 記事モデル (非破壊, §11.1)', () => {
     it('1ページ→1記事の機械変換: intro→文章ブロック、shelves→本棚ブロック(スナップショット)、books→本ブロック', () => {
         const pages = [{
@@ -252,6 +332,23 @@ describe('移行: 旧 pages.json → 記事モデル (非破壊, §11.1)', () =>
 
         const legacyStillThere = await storage.readJSON('private/publish/pages.json');
         expect(legacyStillThere.pages).toHaveLength(1); // 非破壊
+    });
+
+    it('articles.json の読込に失敗したときは pages.json から再移行しない (上書き事故の防止)', async () => {
+        const store = new Map();
+        store.set('private/publish/pages.json', { pages: [{ id: 'p1', title: 'x', select: {} }] });
+        let failRead = true;
+        const failing = {
+            async readJSON(path) {
+                if (path === 'private/publish/articles.json' && failRead) throw new Error('read failed');
+                return store.has(path) ? store.get(path) : null;
+            },
+            async writeJSON(path, data) { store.set(path, JSON.parse(JSON.stringify(data))); }
+        };
+        const broken = new PublishArticleStore(failing);
+        await expect(broken.migrateFromLegacyIfNeeded(() => [])).rejects.toThrow('read failed');
+        // pages.json はまだ articles.json へ書き込まれていない (再移行していない)
+        expect(store.has('private/publish/articles.json')).toBe(false);
     });
 
     it('migrateFromLegacyIfNeeded は既に記事があれば何もしない (idempotent)', async () => {

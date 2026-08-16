@@ -105,7 +105,8 @@ class LocalFSAdapter extends StorageAdapter {
             await dir.getFileHandle(fileName);
             return true;
         } catch (e) {
-            return false;
+            if (e.name === 'NotFoundError') return false;
+            throw e;
         }
     }
 

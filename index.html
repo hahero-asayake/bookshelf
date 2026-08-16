@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026081605">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026081701">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -764,6 +764,7 @@
                     <button id="art-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
                 <p id="art-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開記事は、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
+                <p id="art-store-notice" class="pp-free-notice pp-store-notice" hidden><span class="h-icon" data-icon="alert-triangle" data-icon-size="13"></span><span id="art-store-notice-text" class="pp-free-notice-text"></span><button id="art-store-notice-btn" class="btn btn-secondary btn-small" type="button" hidden></button></p>
                 <ul id="art-list" class="pp-list"></ul>
                 <div class="pp-list-foot" id="art-list-foot" hidden><!-- 公開中記事が1件以上あるときだけ表示 -->
                     <button id="art-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
@@ -809,6 +810,7 @@
                 <div class="form-actions pp-edit-actions">
                     <span class="pp-actions-spacer"></span>
                     <span id="art-save-status" class="art-save-status"></span>
+                    <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
                     <div class="pp-page-ops" id="art-page-ops" hidden>
                         <button id="art-dup" class="btn btn-secondary btn-small" type="button">複製</button>
                         <button id="art-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
@@ -1136,7 +1138,7 @@
     <script src="js/icons.js?v=2026061002"></script>
     <script src="js/ui-feedback.js?v=2026061506"></script>
     <script src="js/storage-adapter.js?v=2026061601"></script>
-    <script src="js/local-fs-adapter.js?v=2026061002"></script>
+    <script src="js/local-fs-adapter.js?v=2026081706"></script>
     <script src="js/github-adapter.js?v=2026061201"></script>
     <script src="js/github-auth.js?v=2026061201"></script>
     <script src="js/hub-adapter.js?v=2026061515"></script>
@@ -1145,16 +1147,16 @@
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026073001"></script>
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
-    <script src="js/publish-article-store.js?v=2026081602"></script>
+    <script src="js/publish-article-store.js?v=2026081702"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script src="js/publish-article-generator.js?v=2026081502"></script>
-    <script src="js/exporter.js?v=2026081503"></script>
+    <script src="js/exporter.js?v=2026081703"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026073001"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026081604"></script>
+    <script src="js/bookshelf.js?v=2026081705"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

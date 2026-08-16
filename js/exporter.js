@@ -65,6 +65,8 @@ class BookshelfExporter {
         }
         // 公開は記事単位 (ADR-058 §11): サイトは「published=true の記事」の集合。
         // 公開中 0 件 (=全記事未公開) も許容し、index のみ push + 削除同期でサイトをクリアする。
+        // ただし store.load() 自体の失敗 (通信/認証/権限エラー) は「0件」と区別し、ここで throw して
+        // 公開を中止する (握り潰すと、読めなかっただけの記事が削除同期で公開サイトから消える)。
         const allArticles = await store.load();
         const articles = allArticles.filter(a => a.published);
 

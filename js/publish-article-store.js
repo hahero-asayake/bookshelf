@@ -45,7 +45,10 @@ const ARTICLE_DEFAULT_THEME = { layout: 'card', color: 'white' };
 class PublishArticleStore {
     constructor(storage) {
         this.storage = storage;
-        this._articles = null; // 未ロード
+        this._articles = null; // 未ロード (読込成功まで null。読込失敗時も null のまま = 空リストと区別する)
+        this.lastLoadError = null;   // 直近の load() 失敗 (成功時は null)
+        this.lastPersistError = null; // 直近の _persist() 失敗 (成功時は null)
+        this._dirty = false; // true = メモリ上の変更が同期先へ未反映 (persist 失敗時に立つ)
     }
 
     static slugify(s) {
@@ -114,9 +117,18 @@ class PublishArticleStore {
         return null; // 未知の種別は捨てる (文章/本/本棚の3種のみ・§11.2)
     }
 
+    // storage.readJSON の規約 (StorageAdapter): 「ファイルが無い」は null を返し、通信/認証/権限等の
+    // 実失敗は例外を投げる。ここではその区別をそのまま保つ ("まだ articles.json が無い" = null → [] /
+    // "読めなかった" = 例外 → 握り潰さず rethrow、this._articles は前の状態のまま更新しない)。
     async load() {
-        let data = null;
-        try { data = await this.storage.readJSON(PUBLISH_ARTICLES_PATH); } catch (_) { data = null; }
+        let data;
+        try {
+            data = await this.storage.readJSON(PUBLISH_ARTICLES_PATH);
+        } catch (e) {
+            this.lastLoadError = e;
+            throw e;
+        }
+        this.lastLoadError = null;
         this._articles = (data && Array.isArray(data.articles)) ? data.articles : [];
         return this._articles;
     }
@@ -126,9 +138,28 @@ class PublishArticleStore {
     articles() { return this._articles || []; }
     get(id) { return (this._articles || []).find(a => a.id === id) || null; }
 
+    // 未読込 (=一度も load() に成功していない。読込失敗直後も含む) のまま書き込むと、
+    // 実データが存在するのに空リストで上書きしてしまう恐れがあるため拒否する。
     async _persist() {
-        await this.storage.writeJSON(PUBLISH_ARTICLES_PATH, { articles: this._articles || [] });
+        if (!this._articles) {
+            throw new Error('記事データが未読込のため保存できません (読込に失敗している可能性があります)');
+        }
+        try {
+            await this.storage.writeJSON(PUBLISH_ARTICLES_PATH, { articles: this._articles });
+        } catch (e) {
+            this.lastPersistError = e;
+            this._dirty = true;
+            throw e;
+        }
+        this.lastPersistError = null;
+        this._dirty = false;
     }
+
+    // 直近の persist が失敗し、メモリ上の変更が同期先へ未反映か
+    hasUnsavedChanges() { return this._dirty; }
+
+    // 直近の失敗を、メモリ上の状態 (変更済み) のまま保存し直す
+    async retryPersist() { return this._persist(); }
 
     _uniqueSlug(base, exceptId) {
         const slug = PublishArticleStore.slugify(base);
@@ -272,10 +303,11 @@ class PublishArticleStore {
     // 旧 pages.json を読み、記事モデルへ変換して articles.json へ書き込む (非破壊: pages.json 自体は消さない)。
     // 既に articles.json に記事が1件以上あるなら二重移行を避けるため何もしない (idempotent)。
     async migrateFromLegacyIfNeeded(resolveShelfBooks) {
+        // _ensure() が失敗 (読込エラー) すればここで throw する。articles.json を「0件」と
+        // 誤認して legacy から再移行し、読めなかっただけの既存記事を上書きする事故を防ぐ。
         await this._ensure();
         if (this._articles.length > 0) return { migrated: 0, skipped: true };
-        let legacy = null;
-        try { legacy = await this.storage.readJSON(PUBLISH_PAGES_LEGACY_PATH); } catch (_) { legacy = null; }
+        const legacy = await this.storage.readJSON(PUBLISH_PAGES_LEGACY_PATH);
         const pages = (legacy && Array.isArray(legacy.pages)) ? legacy.pages : [];
         if (!pages.length) return { migrated: 0, skipped: false };
         const migrated = PublishArticleStore.migrateFromPages(pages, resolveShelfBooks);

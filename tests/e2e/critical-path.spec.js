@@ -102,6 +102,9 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
             const adapter = window.bookshelf.storage.adapter;
             adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
             adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+            // イシュー#35: 未接続のまま記事を編集させないガードを追加した。dirHandle を持たない LocalFS の
+            // ままなので実際には「未接続」判定になってしまうため、接続済み相当にモックする。
+            window.bookshelf._isSyncReady = () => true;
         });
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
