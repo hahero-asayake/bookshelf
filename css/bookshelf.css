@@ -4414,6 +4414,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-add-btn:hover { border-color: var(--accent); color: var(--accent-strong); }
 .art-add-menu { position: absolute; top: 2.1rem; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line);
     border-radius: 9px; box-shadow: 0 10px 28px rgba(0,0,0,.14); padding: 0.3rem; width: 15.5rem; text-align: left; z-index: 20; }
+.art-add-menu.is-up { top: auto; bottom: 2.1rem; }
 .art-add-menu-item { width: 100%; display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.5rem 0.6rem; border-radius: 6px; border: none; background: none; cursor: pointer; text-align: left; }
 .art-add-menu-item:hover { background: var(--accent-bg); }
 .art-add-menu-item em { font-style: normal; font-size: 1rem; line-height: 1; width: 1.1rem; text-align: center; padding-top: 0.05rem; color: var(--fg2); }

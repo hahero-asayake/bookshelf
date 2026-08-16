@@ -775,3 +775,55 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
         expect(await page.evaluate(() => window.bookshelf._bookMemoEditorContext)).toBeNull();
     });
 });
+
+// イシュー#42: ブロックが増えるほど末尾の「+ ブロックを追加」メニューが画面外に出て選べなくなる回帰。
+// toBeVisible() は DOM 上可視なだけで通ってしまうため使わず、getBoundingClientRect() で
+// ビューポート内に収まっているかを実測する。
+async function addTextBlocks(page, count) {
+    for (let i = 0; i < count; i++) {
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+    }
+}
+
+async function expectMenuWithinViewport(page, btnLocator) {
+    await btnLocator.click();
+    const menu = page.locator('.art-add-menu:not([hidden])');
+    await expect(menu).toHaveCount(1);
+    const box = await menu.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    // 次のケースに影響しないよう閉じる
+    await btnLocator.click();
+}
+
+function registerAddMenuViewportTests() {
+    for (const blockCount of [0, 3, 10]) {
+        test(`ブロック${blockCount}個: 先頭・末尾の追加メニューがビューポート内に収まる`, async ({ page }) => {
+            const errors = await bootApp(page);
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.click('#art-new');
+
+            await addTextBlocks(page, blockCount);
+            await expect(page.locator('.art-block')).toHaveCount(blockCount);
+
+            await expectMenuWithinViewport(page, page.locator('.art-add-btn').first());
+            await expectMenuWithinViewport(page, page.locator('.art-add-btn').last());
+            expect(errors).toEqual([]);
+        });
+    }
+}
+
+test.describe('記事エディタ: ブロック追加メニューがビューポート内に収まる (PC幅・1280x720, イシュー#42)', () => {
+    test.use({ viewport: { width: 1280, height: 720 } });
+    registerAddMenuViewportTests();
+});
+
+test.describe('記事エディタ: ブロック追加メニューがビューポート内に収まる (スマホ幅・390x844・タッチ有効, イシュー#42)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    registerAddMenuViewportTests();
+});

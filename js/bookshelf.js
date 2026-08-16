@@ -8047,6 +8047,33 @@ class VirtualBookshelf {
         </div>`;
     }
 
+    // アンカー要素 (position:relative) 直下の絶対配置メニューをビューポート内に収める。
+    // 下に入らず上には入る→上開きへフリップ (is-up)。上下どちらにも入らない→下開きのまま scrollIntoView で収める。
+    // 呼ぶたびに向きをリセットするので、開くたびに呼び直せば前回の is-up は残らない。
+    _placeAnchoredMenu(anchorEl, menuEl) {
+        menuEl.classList.remove('is-up');
+        menuEl.style.left = '';
+        menuEl.style.transform = '';
+        const margin = 8;
+        const anchorRect = anchorEl.getBoundingClientRect();
+        const menuRect = menuEl.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - anchorRect.bottom;
+        const spaceAbove = anchorRect.top;
+        if (spaceBelow < menuRect.height + margin && spaceAbove >= menuRect.height + margin) {
+            menuEl.classList.add('is-up');
+        } else if (spaceBelow < menuRect.height + margin) {
+            requestAnimationFrame(() => menuEl.scrollIntoView({ block: 'nearest' }));
+        }
+        const afterRect = menuEl.getBoundingClientRect();
+        if (afterRect.left < margin) {
+            menuEl.style.left = `${margin - anchorRect.left}px`;
+            menuEl.style.transform = 'none';
+        } else if (afterRect.right > window.innerWidth - margin) {
+            menuEl.style.left = `${window.innerWidth - margin - anchorRect.left - menuRect.width}px`;
+            menuEl.style.transform = 'none';
+        }
+    }
+
     _artBindBlocksEvents() {
         const host = document.getElementById('art-blocks');
         if (!host) return;
@@ -8147,8 +8174,9 @@ class VirtualBookshelf {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const wasHidden = menu.hidden;
-                host.querySelectorAll('.art-add-menu').forEach(m => { m.hidden = true; });
+                host.querySelectorAll('.art-add-menu').forEach(m => { m.hidden = true; m.classList.remove('is-up'); });
                 menu.hidden = !wasHidden;
+                if (!menu.hidden) this._placeAnchoredMenu(addEl, menu);
             });
             menu.querySelectorAll('.art-add-menu-item').forEach(item => {
                 item.addEventListener('click', () => {
