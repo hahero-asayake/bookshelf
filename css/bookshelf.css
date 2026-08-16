@@ -4413,8 +4413,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 .art-drawer-note { padding: 0.5rem 0.7rem; background: var(--side); border-bottom: 1px solid var(--line2); margin: 0; flex: 0 0 auto; }
-.art-drawer-grid { padding: 0.6rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; overflow: auto; flex: 1 1 auto; }
-.art-drawer-item { position: relative; cursor: grab; border-radius: 6px; }
+/* ⚠️ 1fr でなく minmax(0,1fr)。1fr の最小は auto なので、下の -title が white-space:nowrap の分だけ
+   トラックを押し広げ、表紙が aspect-ratio:5/7 で高さまで連動して巨大化する (実測 655x1106px)。
+   min-width:0 も併せて要る (grid item 自体の最小サイズも auto のため)。 */
+.art-drawer-grid { padding: 0.6rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; overflow: auto; flex: 1 1 auto; }
+.art-drawer-item { position: relative; cursor: grab; border-radius: 6px; min-width: 0; }
 .art-drawer-item:hover .art-cover { outline: 2px solid var(--accent); }
 .art-drawer-item-badge { position: absolute; top: -0.2rem; right: -0.2rem; background: var(--accent); color: #fff; border-radius: 999px; font-size: 0.6rem; padding: 0.05rem 0.35rem; font-weight: 700; }
 .art-drawer-item-title { font-size: 0.66rem; margin-top: 0.25rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4423,7 +4426,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 @media (max-width: 900px) {
     .art-wrap { grid-template-columns: 1fr; }
     .art-side { position: static; max-height: none; }
-    .art-drawer-grid { grid-template-columns: repeat(3, 1fr); }
+    .art-drawer-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
     .art-hd { flex-wrap: wrap; }
