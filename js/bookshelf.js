@@ -7576,6 +7576,10 @@ class VirtualBookshelf {
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => this._artShowList());
+        on('art-drawer-search', 'input', (e) => {
+            this._artDrawerQuery = e.target.value.trim().toLowerCase();
+            this._artRenderDrawer();
+        });
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
         on('art-theme-color', 'change', () => this._artOnThemeChange());
@@ -7719,6 +7723,8 @@ class VirtualBookshelf {
         this._artEditingId = id;
         this._artPendingBookBlockId = null;
         this._artActiveShelfBlockId = null;
+        this._artDrawerQuery = '';
+        const drawerSearch = document.getElementById('art-drawer-search'); if (drawerSearch) drawerSearch.value = '';
         if (id) {
             const a = this.publishArticleStore.get(id);
             this._artDraft = JSON.parse(JSON.stringify(a));
@@ -8215,14 +8221,25 @@ class VirtualBookshelf {
         const esc = PublishArticleGenerator.esc;
         const newCount = asins.filter(a => !usedAsins.has(a)).length;
         if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
-        listHost.innerHTML = asins.map(asin => {
+        const query = this._artDrawerQuery || '';
+        const filteredAsins = query ? asins.filter(asin => {
+            const book = this.books.find(b => b.asin === asin);
+            const searchText = `${book ? book.title : asin} ${book ? book.authors : ''}`.toLowerCase();
+            return searchText.includes(query);
+        }) : asins;
+        if (!filteredAsins.length) {
+            listHost.innerHTML = '<div class="art-drawer-empty">条件に合う本がありません</div>';
+            return;
+        }
+        listHost.innerHTML = filteredAsins.map(asin => {
             const book = this.books.find(b => b.asin === asin);
             const title = book ? book.title : asin;
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
             const isNew = !usedAsins.has(asin);
             return `<div class="art-drawer-item" data-asin="${esc(asin)}" title="クリックで記事に追加">
-                <div class="art-cover">${cover}${isNew ? '<span class="art-drawer-item-badge">NEW</span>' : ''}</div>
+                <div class="art-cover">${cover}</div>
                 <div class="art-drawer-item-title">${esc(title)}</div>
+                ${isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>'}
             </div>`;
         }).join('');
         listHost.querySelectorAll('.art-drawer-item').forEach(el => {

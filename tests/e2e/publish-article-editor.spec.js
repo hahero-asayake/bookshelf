@@ -639,4 +639,52 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(note.length).toBeLessThanOrEqual(20);
         expect(errors).toEqual([]);
     });
+
+    test('本の引き出しはコンパクトリスト (1行1冊・34pxサムネ、イシュー#34)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        await expect(page.locator('.art-drawer-grid')).toHaveCount(0);
+        const item = page.locator('#art-drawer-list .art-drawer-item').first();
+        const box = await item.boundingBox();
+        expect(box.height).toBeLessThanOrEqual(48);
+        const coverBox = await item.locator('.art-cover').boundingBox();
+        expect(Math.round(coverBox.width)).toBe(34);
+        expect(Math.round(coverBox.height)).toBe(34);
+        // fixture の全冊は未配置なので NEW バッジが出る
+        await expect(item.locator('.art-drawer-item-badge')).toHaveText('NEW');
+        expect(errors).toEqual([]);
+    });
+
+    test('引き出しの検索でタイトル/著者を絞り込み、絞り込んだままでも配置できる (イシュー#34)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        const search = page.locator('#art-drawer-search');
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+
+        await expect(drawerItems).toHaveCount(5);
+
+        await search.fill('3');
+        await expect(drawerItems).toHaveCount(1);
+
+        await search.fill('著者C');
+        await expect(drawerItems).toHaveCount(2);
+
+        // 絞り込んだ状態から本棚ブロックを追加し、同じ本を複数回配置できる (多重配置, ADR-058 §11.1)
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await drawerItems.first().click();
+        await drawerItems.first().click();
+        await expect(page.locator('.art-shelf-item')).toHaveCount(2);
+
+        await search.fill('');
+        await expect(drawerItems).toHaveCount(5);
+
+        await search.fill('zzz');
+        await expect(drawerItems).toHaveCount(0);
+        await expect(page.locator('.art-drawer-empty')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
 });
