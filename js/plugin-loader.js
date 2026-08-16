@@ -15,6 +15,10 @@
 //   userData._storage.main.appliedPlugins → 全本棚共通で適用（無効化されていれば除外）
 
 class BookshelfPluginLoader {
+    // 標準機能5個 (2026-08-14 ハヘロ確定・ADR-059)。初回シード + 起動時の欠損復元で
+    // 「削除不可」を「消しても戻る」で達成する。UI からの削除操作は出さず、無効化 (disabledPlugins) のみ許す。
+    static STANDARD_PLUGIN_IDS = ['author-grouping', 'dark-theme', 'highlights-builtin', 'series-grouping', 'memo-templates'];
+
     constructor(app) {
         this.app = app;
         this.loaded = new Map();        // id → { manifest, deactivate, module }
@@ -118,6 +122,73 @@ class BookshelfPluginLoader {
             }
         }
         return ok;
+    }
+
+    // ===== 標準機能5個の初回シード・欠損復元 (ADR-059) =====
+    // plugins-sample/<id>/ (リポジトリ同梱・本番配信にもそのまま含まれる静的ファイル) から
+    // 同期先 plugins/<id>/ へ「欠けていれば書く」。初回起動 (plugins/ が空) も
+    // 2回目以降の起動 (一部欠損) も同じ処理で扱う＝別実装は持たない。
+    // disabledPlugins (無効化) は尊重して対象から除外する。在るファイルには一切触らない (非破壊)。
+    // 配布時ハッシュを plugins/<id>/.seed に記録する (将来の更新 UI がユーザー編集を検出するため。今回は記録のみ)。
+    async ensureStandardPlugins() {
+        if (!this._isReady()) return;
+        const settings = (this.app.userData && this.app.userData.settings) || {};
+        const disabledIds = new Set(settings.disabledPlugins || []);
+
+        let installed;
+        try {
+            installed = await this.listInstalledPlugins({ refresh: true });
+        } catch (e) {
+            console.warn('[pluginLoader] 標準機能シード: インストール済み一覧の取得に失敗:', e);
+            return;
+        }
+        const installedIds = new Set(installed.map(p => p.manifest.id || p.id));
+        const missing = BookshelfPluginLoader.STANDARD_PLUGIN_IDS.filter(
+            id => !installedIds.has(id) && !disabledIds.has(id)
+        );
+        if (missing.length === 0) return;
+
+        const entries = [];
+        for (const id of missing) {
+            try {
+                const [manifestText, indexText] = await Promise.all([
+                    this._fetchSeedFile(id, 'manifest.json'),
+                    this._fetchSeedFile(id, 'index.js')
+                ]);
+                const [manifestHash, indexHash] = await Promise.all([
+                    _sha256Hex(manifestText),
+                    _sha256Hex(indexText)
+                ]);
+                let version = '';
+                try { version = JSON.parse(manifestText).version || ''; } catch (_) {}
+                const seed = JSON.stringify({
+                    version,
+                    files: {
+                        'manifest.json': `sha256:${manifestHash}`,
+                        'index.js': `sha256:${indexHash}`
+                    }
+                }, null, 2);
+                entries.push({ op: 'put', path: `plugins/${id}/manifest.json`, data: manifestText, kind: 'text' });
+                entries.push({ op: 'put', path: `plugins/${id}/index.js`, data: indexText, kind: 'text' });
+                entries.push({ op: 'put', path: `plugins/${id}/.seed`, data: seed, kind: 'text' });
+            } catch (e) {
+                console.warn(`[pluginLoader] 標準機能 "${id}" のシード取得に失敗:`, e);
+            }
+        }
+        if (entries.length === 0) return;
+
+        try {
+            await this.app.storage.syncBatch(entries, { message: 'chore(plugin): seed standard plugins' });
+            this._installed = null; // キャッシュ無効化 → 直後の listInstalledPlugins/loadEnabledPlugins が新規分を拾う
+        } catch (e) {
+            console.warn('[pluginLoader] 標準機能シードの書き込みに失敗:', e);
+        }
+    }
+
+    async _fetchSeedFile(id, filename) {
+        const r = await fetch(`plugins-sample/${id}/${filename}`);
+        if (!r.ok) throw new Error(`plugins-sample/${id}/${filename} 取得失敗: HTTP ${r.status}`);
+        return await r.text();
     }
 
     // 単体読み込み (installFromGitHub から使用)。読み込み + activate。
@@ -318,6 +389,13 @@ class BookshelfPluginLoader {
         await this.app.saveUserData();
         this._installed = null;
     }
+}
+
+// SHA-256 の16進ダイジェストを返す (ensureStandardPlugins の .seed ハッシュ記録用)
+async function _sha256Hex(text) {
+    const data = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 window.BookshelfPluginLoader = BookshelfPluginLoader;

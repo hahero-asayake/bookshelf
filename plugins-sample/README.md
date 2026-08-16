@@ -1,31 +1,31 @@
 # bookshelf プラグインサンプル
 
-bookshelf アプリ用プラグインの参考実装集（本体には組み込まれない）。
-プラットフォーム化された新プラグインAPI (registerCommand / registerWidget /
-registerDetailSection / injectCSS / registerBookFilter / イベント) の使用例。
+標準同梱の5機能と、ウィジェットパッケージの核となる `reading-goal` の実装（本体コアには組み込まれず、プラグイン機構の上で動く）。
+プラットフォーム化されたプラグインAPI (registerCommand / registerWidget /
+registerDetailSection / injectCSS / registerBookFilter / イベント) の実例でもある。
 
 ## 収録プラグイン一覧
 
 | id | 使う拡張点 | 説明 |
 |---|---|---|
-| [hello-bookshelf](hello-bookshelf/) | command + button + injectCSS + event | API 入門。一通りの拡張点を最小コードで |
-| [reading-stats](reading-stats/) | **registerWidget** | 蔵書数 / 年別取得 / 評価分布 / 本棚別Top5 をダッシュボードに |
-| [reading-goal](reading-goal/) | **registerWidget** | 年間読書目標と進捗バー（★4以上・今年取得を読了とみなす） |
-| [highlights-builtin](highlights-builtin/) | **registerDetailSection** | 本詳細ペインに Kindle ハイライトを表示 |
 | [author-grouping](author-grouping/) | **registerDetailSection** | 本詳細に「この著者の他の蔵書」 |
-| [memo-templates](memo-templates/) | **registerDetailSection** | メモ欄にテンプレ挿入ボタン |
-| [random-pick](random-pick/) | **registerCommand** | ⌘K からランダムに1冊開く（未読のみ版も） |
-| [csv-export](csv-export/) | **registerCommand** | 蔵書を CSV (UTF-8 BOM) でダウンロード |
-| [export-markdown](export-markdown/) | **registerCommand** | 本棚別セクション付き Markdown でダウンロード |
 | [dark-theme](dark-theme/) | **injectCSS** + command | CSS 変数を上書きして暗色テーマに |
-| [view-spines](view-spines/) | **injectCSS** + ui:books-rendered | 本棚を物理本棚風（背表紙）に。ビュー系の例 |
+| [highlights-builtin](highlights-builtin/) | **registerDetailSection** | 本詳細ペインに Kindle ハイライトを表示 |
 | [series-grouping](series-grouping/) | **registerBookFilter** + **registerActiveFilter** | シリーズの第2巻以降を折りたたむ。属性プロバイダで「フィルタ中」を申告し、0件時の空状態・解除導線を正す |
-| [publish-credit](publish-credit/) | **registerSettings** + 公開スナップショット | 公開ページのフッターに一文を表示。`data/publish.json` の純データを公開ビルドが読み反映 (ADR-042 dogfood) |
+| [memo-templates](memo-templates/) | **registerDetailSection** | メモ欄にテンプレ挿入ボタン |
+| [reading-goal](reading-goal/) | **registerWidget** | 年間読書目標と進捗バー（★4以上・今年取得を読了とみなす） |
 
+> `author-grouping` / `dark-theme` / `highlights-builtin` / `series-grouping` / `memo-templates` の5個は
+> 標準機能として同期フォルダ初期化時に自動配置され、消しても次回起動で復元される（無効化は可能）。
+> `reading-goal` はウィジェットパッケージの核として同梱。
+>
 > 旧 `quick-switcher` は本体の ⌘K コマンドパレットに置き換わったため廃止。
-> `view-coverflow / view-mosaic / view-compact / view-timeline`（view-spines と同方式の派生）と
+> `view-coverflow / view-mosaic / view-compact / view-timeline`（ビュー系の派生）と
 > `acquisition-heatmap / last-acquired / unrated-list / duplicate-detector` は整理のため
 > リポジトリ外（`_trash/`）に退避。必要なら新APIで復活可能。
+> `csv-export` / `export-markdown` / `hello-bookshelf` / `random-pick` / `view-spines` /
+> `per-shelf-memo` / `publish-credit` は標準機能5個への絞り込みに伴い repo から削除
+> （git 履歴から復元可）。`hello-bookshelf` の最小例は [docs/plugin-dev.md](../docs/plugin-dev.md) に直書き。
 
 ## インストールして試す
 

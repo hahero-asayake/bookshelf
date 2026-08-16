@@ -1,7 +1,14 @@
 // per-shelf-memo プラグインのフルアプリ実機スモーク (headless chromium)。
-// localStorage フィクスチャで本体を起動 (同期フォルダ不要) し、実コードのプラグインを
-// 動的 import して有効化。本棚から本を開いたときに detailSection の ctx.bookshelf が
-// 実アプリから正しく配線されること (今回の追加点) と、合成表示・保存・本棚文脈なしの分岐を検証する。
+// localStorage フィクスチャで本体を起動 (同期フォルダ不要) し、
+// per-shelf-memo/index.js の activate ロジック (ADR-041 疎結合加算モデルの dogfood) を
+// このテストファイル自身に inline 実装して有効化する。
+//
+// plugins-sample/per-shelf-memo は repo から削除される予定 (標準機能5個への絞り込み) のため、
+// 動的 import ('/plugins-sample/per-shelf-memo/index.js') には依存しない。実体が消えても
+// このテストが拡張点契約 (registerDetailSection の ctx.bookshelf を使った本棚別メモの
+// 合成表示・保存) を検証し続けられるようにするため (実体は git 履歴に残る)。
+// 本棚から本を開いたときに detailSection の ctx.bookshelf が実アプリから正しく配線され、
+// 合成表示・保存・本棚文脈なしの分岐が動くことを検証する。
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +40,87 @@ async function boot(page) {
         };
         window.bookshelf._isSyncReady = () => true;
     });
-    // プラグインを実コードのまま動的 import して有効化 (webServer がリポジトリを配信)
-    await page.evaluate(async () => {
-        const mod = await import('/plugins-sample/per-shelf-memo/index.js');
-        mod.activate(window.bookshelf.pluginAPI.forPlugin('per-shelf-memo'), { id: 'per-shelf-memo' });
+    // per-shelf-memo/index.js の activate ロジックを inline 実装して有効化
+    // (plugins-sample/per-shelf-memo/index.js と同一ロジック。動的 import はしない)
+    await page.evaluate(() => {
+        const api = window.bookshelf.pluginAPI.forPlugin('per-shelf-memo');
+        const cache = new Map();   // shelfSlug -> { asin: memo } (書込成功した断面のみ保持)
+        const corrupt = new Set(); // JSON 破損で読めなかった slug
+        const timers = new Map();
+
+        async function loadShelf(slug) {
+            if (cache.has(slug)) return cache.get(slug);
+            let text = null;
+            try { text = await api.readPluginFile(`${slug}.json`); }
+            catch (e) { return {}; }
+            if (!text) return {};
+            let data = {};
+            try { data = JSON.parse(text) || {}; }
+            catch (e) { corrupt.add(slug); return {}; }
+            cache.set(slug, data);
+            return data;
+        }
+        async function saveShelf(slug, data) {
+            try {
+                await api.writePluginFile(`${slug}.json`, JSON.stringify(data, null, 2));
+                cache.set(slug, data);
+                return true;
+            } catch (e) { return false; }
+        }
+        function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+        api.registerDetailSection({
+            id: 'per-shelf-memo',
+            async render(host, book, ctx) {
+                if (!book) { host.innerHTML = ''; return; }
+                const token = (host.__psmToken = (host.__psmToken || 0) + 1);
+                const asin = book.asin;
+                const shelf = ctx && ctx.bookshelf;
+
+                const note = api.getNote(asin);
+                const allMemo = (note && note.memo) || '';
+
+                if (!shelf || shelf.isSpecial) {
+                    host.innerHTML = `<h3 class="pds-title">本棚別メモ</h3>
+                        <p class="pds-empty">本棚を開いた状態でこの本を開くと、その本棚専用のメモを書けます。</p>`;
+                    return;
+                }
+
+                const data = await loadShelf(shelf.id);
+                if (host.__psmToken !== token) return;
+
+                if (corrupt.has(shelf.id)) {
+                    host.innerHTML = `<h3 class="pds-title">本棚別メモ</h3>
+                        <p class="pds-empty">この本棚のメモデータが壊れているため、安全のため編集を停止しています。</p>`;
+                    return;
+                }
+
+                const shelfMemo = data[asin] || '';
+                host.innerHTML = `
+                    <h3 class="pds-title">「${escapeHtml(shelf.name || shelf.id)}」のメモ</h3>
+                    <textarea class="psm-textarea" rows="3" placeholder="この本棚だけのメモ…">${escapeHtml(shelfMemo)}</textarea>
+                    <div class="psm-status" aria-live="polite"></div>
+                    ${allMemo ? `<p class="psm-all"><span class="psm-all-label">共通メモ</span>${escapeHtml(allMemo)}</p>` : ''}
+                `;
+
+                const ta = host.querySelector('.psm-textarea');
+                const status = host.querySelector('.psm-status');
+                ta.addEventListener('input', () => {
+                    status.textContent = '入力中…';
+                    const key = `${shelf.id}::${asin}`;
+                    if (timers.has(key)) clearTimeout(timers.get(key));
+                    timers.set(key, setTimeout(async () => {
+                        timers.delete(key);
+                        const next = { ...(await loadShelf(shelf.id)) };
+                        const raw = ta.value;
+                        if (raw.trim()) next[asin] = raw; else delete next[asin];
+                        const ok = await saveShelf(shelf.id, next);
+                        status.textContent = ok ? '保存しました' : '保存に失敗 (同期先が未接続)';
+                        if (ok) setTimeout(() => { if (status.textContent === '保存しました') status.textContent = ''; }, 1500);
+                    }, 400));
+                });
+            }
+        });
     });
     return errors;
 }
