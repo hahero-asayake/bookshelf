@@ -412,6 +412,67 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
     });
 });
 
+// 実機報告「ドラッグが効かない」(2026-08-16) の再現用。上のドラッグ2件は 390x844+hasTouch
+// でしか打っておらず、本人が触っているのは PC 幅のマウス操作なので同じ経路を素の viewport
+// (1280x720・タッチ無し) でも打つ。pointerType が touch と mouse で分岐する余地を潰す。
+test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', () => {
+    test('ブロックのドラッグ並び替えが機能する (Pointer Events)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').first().fill('block-A');
+        await page.locator('.art-add-btn').last().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').last().click();
+        await page.locator('.art-block-text textarea').last().fill('block-B');
+
+        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.markdown));
+        await expect.poll(orderOf).toEqual(['block-A', 'block-B']);
+
+        const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
+        const blockB = page.locator('.art-block').nth(1);
+        const gripBox = await gripA.boundingBox();
+        const targetBox = await blockB.boundingBox();
+        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
+        await page.mouse.up();
+
+        await expect.poll(orderOf).toEqual(['block-B', 'block-A']);
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚ブロック内の本のドラッグ並び替えが機能する', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').nth(0).click();
+        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
+
+        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => it.asin));
+        const before = await orderOf();
+        expect(before).toHaveLength(2);
+
+        const items = page.locator('.art-shelf-item');
+        const gripA = items.nth(0).locator('.art-shelf-item-grip');
+        const itemB = items.nth(1);
+        const gripBox = await gripA.boundingBox();
+        const targetBox = await itemB.boundingBox();
+        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
+        await page.mouse.up();
+
+        await expect.poll(orderOf).toEqual([before[1], before[0]]);
+        expect(errors).toEqual([]);
+    });
+});
+
 test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', () => {
     test('3種のブロックすべてに操作バー(グリップ/複製/削除)が付く (A-2回帰)', async ({ page }) => {
         const errors = await bootApp(page);
