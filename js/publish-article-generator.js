@@ -8,11 +8,12 @@
 //   3. 文章ブロック・長文メモは Markdown → HTML (js/vendor/marked.umd.js。CDN 不使用・vendor 同梱, §11.4)
 //   4. 長文メモ埋め込み時は見出しレベルを差分シフトする (固定 +1 にしない・h6 打ち止め・§11.5)
 //   5. プライバシーガード: 出力に個人情報 (obsidian vault 名等) が混入していないか検査 (_detectLeak)
+//   6. プラグインの公開スナップショット (純データ) をサイト単位の加算スロットとしてフッターへ反映
+//      (ADR-042。opts.publishData = [{id, footerNote}]。コード非実行・footerNote のみ受付・必ず esc)
 //
 // ※ 旧 PublishGenerator (js/publish-generator.js, ページ=1スタイルモデル) とは別モデル・別ファイル。
-//    bookshelf.js の公開ページ管理 UI (~L7500-7970) との結合はエディタUI (S3、別イシュー) の領分のため
-//    本イシューでは変更しない。_amazonUrl / _detectLeak は旧クラスと同じロジックをここに複製している
-//    (旧モデル終息時にどちらかへ統合すること)。
+//    esc/FAVICON/_fmtDate/_year/stripFrontmatter/_amazonUrl/_detectLeak/プラグイン公開スナップショットは
+//    旧クラスへ依存せず本ファイルに複製し自己完結させている (公開v2 S3・旧経路撤去に備えた依存切り離し)。
 //
 // 依存: app.storage.loadAll() / app.storage.readBookMemo(asin,title) / js/vendor/marked.umd.js (grobalThis.marked)
 
@@ -127,6 +128,35 @@ class PublishArticleGenerator {
         this.app = app;
     }
 
+    // ===== 旧 PublishGenerator から複製した純粋ユーティリティ (依存切り離し・公開v2 S3) =====
+    // 旧モデル撤去後も本ファイル単体で完結させるため、esc/日付整形/favicon を自前で持つ。
+    static esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    static get FAVICON() {
+        return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232d2638'/%3E%3Ccircle cx='16' cy='21' r='8' fill='%23ff9e7d'/%3E%3Crect x='5' y='21' width='22' height='6' fill='%232d2638'/%3E%3C/svg%3E";
+    }
+
+    static _fmtDate(ms) {
+        if (!ms) return '';
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '';
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    static _year(ms) {
+        const d = ms ? new Date(ms) : new Date();
+        return isNaN(d.getTime()) ? new Date().getFullYear() : d.getFullYear();
+    }
+
+    static stripFrontmatter(text) {
+        return String(text || '').replace(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/, '').trim();
+    }
+
     // ===== Markdown → HTML (js/vendor/marked.umd.js, CDN不使用・§11.4) =====
     //
     // 生 HTML の混入 (<script> 等) は renderer.html でエスケープし、リンク/画像は http(s):/mailto: の
@@ -136,7 +166,7 @@ class PublishArticleGenerator {
         if (!src.trim()) return '';
         const g = (typeof globalThis !== 'undefined' && globalThis.marked) ||
                   (typeof window !== 'undefined' && window.marked);
-        const esc = PublishGenerator.esc;
+        const esc = PublishArticleGenerator.esc;
         if (!g || typeof g.parse !== 'function' || typeof g.Renderer !== 'function') {
             // vendor 未ロード時のフォールバック (テスト環境の取りこぼし対策)。素の段落として escape する。
             return `<p>${esc(src)}</p>`;
@@ -203,7 +233,7 @@ class PublishArticleGenerator {
     }
 
     _helpers() {
-        const esc = PublishGenerator.esc;
+        const esc = PublishArticleGenerator.esc;
         return {
             esc, attr: esc,
             cover: (b) => {
@@ -276,7 +306,7 @@ class PublishArticleGenerator {
         for (const bookData of detailTargets) {
             try {
                 const text = await this.app.storage.readBookMemo(bookData.asin, bookData.title);
-                if (text != null) bookData.detailMemo = PublishGenerator.stripFrontmatter(text);
+                if (text != null) bookData.detailMemo = PublishArticleGenerator.stripFrontmatter(text);
             } catch (_) { /* 読み込み失敗はそのブロックのメモを空のままにする (ページ全体は落とさない) */ }
         }
 
@@ -342,15 +372,18 @@ ${h.longMemo(longMemoHtml)}
     // ===== HTML シェル =====
 
     _wrapDoc(article, publisher, body, opts = {}) {
-        const esc = PublishGenerator.esc;
+        const esc = PublishArticleGenerator.esc;
         const theme = PublishArticleStore.normalizeTheme(article.theme);
         const pageHasAds = !!opts.pageHasAds;
         const siteHasAffiliate = !!opts.siteHasAffiliate;
         const ogImage = opts.ogImage || '';
         const canonical = opts.canonical || '';
-        const updated = PublishGenerator._fmtDate(opts.updatedAt);
-        const year = PublishGenerator._year(opts.updatedAt);
+        const updated = PublishArticleGenerator._fmtDate(opts.updatedAt);
+        const year = PublishArticleGenerator._year(opts.updatedAt);
         const reportSubject = encodeURIComponent(`[通報] AsayakeBookshelf 公開記事 ${opts.reportRef || ''}`.trim());
+        // プラグインの公開スナップショット (純データ) をコアが esc 済み HTML 片にしたもの (ADR-042)。
+        // サイト単位の加算スロット。全記事 + index (この _wrapDoc 経由) に一括で出る。
+        const pluginFooter = opts.pluginFooter || '';
 
         const tagsHtml = (article.tags || []).length
             ? `<ul class="tags">${article.tags.map(t => `<li class="tag">${esc(t)}</li>`).join('')}</ul>` : '';
@@ -370,7 +403,7 @@ ${h.longMemo(longMemoHtml)}
             `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:; base-uri 'none'; form-action 'none'">`,
             `<title>${esc(article.title)} — ${esc(publisher)}</title>`,
             `<meta name="robots" content="${opts.noindex ? 'noindex,nofollow' : 'index,follow'}">`,
-            `<link rel="icon" href="${PublishGenerator.FAVICON}">`,
+            `<link rel="icon" href="${PublishArticleGenerator.FAVICON}">`,
             canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
             `<meta property="og:title" content="${esc(article.title)}">`,
             `<meta property="og:type" content="article">`,
@@ -397,6 +430,7 @@ ${body}
 </article>
 <footer class="pub-footer">
 ${affiliateStanding}
+${pluginFooter}
 <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
 ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
 <p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
@@ -407,7 +441,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
     }
 
     _indexHtml(publisher, articleLinks, opts = {}) {
-        const esc = PublishGenerator.esc;
+        const esc = PublishArticleGenerator.esc;
         const items = articleLinks.map(a =>
             `<li><a href="./${esc(a.slug)}/">${esc(a.title)}</a></li>`
         ).join('\n');
@@ -422,7 +456,8 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             siteHasAffiliate: !!opts.siteHasAffiliate,
             canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
             updatedAt,
-            reportRef: opts.reportRef || ''
+            reportRef: opts.reportRef || '',
+            pluginFooter: opts.pluginFooter || ''
         });
         // index には記事別テーマの CSS だけでなく一覧用の css を追加で差し込む
         return doc.replace('</style>', `${css}</style>`);
@@ -491,6 +526,15 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const siteHasAffiliate = monetized;
         const reportRef = siteId ? `siteId=${siteId}` : siteBaseUrl;
 
+        // プラグインの公開スナップショット (純データ) を所定スロット用の HTML 片へ。コアが esc して組む
+        // (ADR-042: コード非実行・純データのみ・サイト単位の加算スロット)。footerNote だけを受け付け、
+        // 文字列値は必ず esc するので、Amazon リンク等の能動的 HTML は構造的に注入できない。
+        const pluginFooter = (Array.isArray(opts.publishData) ? opts.publishData : [])
+            .map(d => (d && typeof d.footerNote === 'string' && d.footerNote.trim())
+                ? `<p class="pub-plugin-note">${PublishArticleGenerator.esc(d.footerNote.trim())}</p>` : '')
+            .filter(Boolean)
+            .join('');
+
         const files = [];
         const built = [];
         const errors = [];
@@ -528,13 +572,13 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${article.slug}/` : '',
                 noindex: !article.published,
                 updatedAt: article.updatedAt || article.lastBuiltAt || 0,
-                reportRef
+                reportRef, pluginFooter
             });
             files.push({ path: `${article.slug}/index.html`, content: html });
             built.push({ id: article.id, slug: article.slug, title: article.title, url: `${article.slug}/`, books: bookCount, updatedAt: article.updatedAt || 0 });
         }
 
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });
 
         const leak = this._detectLeak(files, state);
         return { files, articles: built, leak, errors, ownTag };

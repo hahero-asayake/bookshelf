@@ -30,9 +30,9 @@
 //   表示設定の持ち主は「本」ではなく「配置」。
 //
 // ※ 旧 PublishPage (private/publish/pages.json, publish-page-store.js) とは別モデル・別ファイル。
-//    旧モデルへの UI 結合 (bookshelf.js の公開ページ管理画面, ~L7500-7970) はエディタUI (S3、別イシュー) の
-//    領分のため本イシューでは変更しない。旧データからの移行は migrateFromPages() / migrateFromLegacyIfNeeded()
-//    で行う (非破壊: pages.json 自体は書き換えない)。
+//    bookshelf.js の公開ページ管理 UI は公開v2 S3 でこのストアへ配線し直した (旧ファイル自体はまだ
+//    残置・撤去は別イシュー)。旧データからの移行は migrateFromPages() / migrateFromLegacyIfNeeded() で行う
+//    (非破壊: pages.json 自体は書き換えない)。
 //
 // ※ ストアは storage ({ readJSON(path), writeJSON(path,data) }) に依存。
 

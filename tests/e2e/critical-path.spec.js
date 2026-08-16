@@ -94,14 +94,25 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         });
     });
 
-    await test.step('公開: ページ新規作成→プレビュー生成', async () => {
+    await test.step('公開: 記事を新規作成→本棚ブロックに本を配置→プレビューを開ける (公開v2 S3)', async () => {
+        // LocalFSAdapter は実 dirHandle を持たない (picker 未操作) ため、記事ストアの読み書きだけ
+        // メモリ上のマップへ差し替える (公開v2 S3・記事エディタの自動保存を成立させるため)
+        await page.evaluate(() => {
+            const mem = new Map();
+            const adapter = window.bookshelf.storage.adapter;
+            adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+            adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        });
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#pp-new');
-        await expect(page.locator('#pp-edit-view')).toBeVisible();
-        await page.selectOption('#pp-style', 'shelf-sections');
-        await page.click('#pp-shelves .bs-pick-row');
-        await page.click('#pp-preview');
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+        await page.click('#art-preview');
+        await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).not.toContain('生成できませんでした');
         expect(srcdoc).not.toContain('プレビュー失敗');

@@ -5,7 +5,7 @@ export default defineConfig({
     timeout: 60_000,
     // 開発サーバー。ローカルで既に :8000 が立っていればそれを使う
     webServer: {
-        command: 'python -m http.server 8000',
+        command: 'python3 -m http.server 8000',
         port: 8000,
         reuseExistingServer: true
     },

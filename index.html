@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026073001">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026081601">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
@@ -751,92 +751,85 @@
 
     <!-- 公開ページ管理モーダル (P1 静的SSG, ADR-030) -->
     <div id="publish-pages-modal" class="modal">
-        <div class="modal-content publish-pages-content">
+        <div class="modal-content publish-pages-content art-modal-content">
             <button class="modal-close" id="publish-pages-close">×</button>
             <div class="modal-header">
-                <h2><span class="h-icon" data-icon="globe" data-icon-size="20"></span>公開ページを管理</h2>
+                <h2><span class="h-icon" data-icon="globe" data-icon-size="20"></span>公開記事</h2>
             </div>
 
             <!-- 一覧ビュー -->
-            <div id="pp-list-view">
+            <div id="art-list-view">
                 <div class="pp-list-head">
-                    <p class="pp-hint">公開したい本棚や本を「公開ページ」にまとめ、スタイルを選んで公開します。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
-                    <button id="pp-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
+                    <p class="pp-hint">本棚を素材にした記事を作り、公開します。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
+                    <button id="art-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
-                <p id="pp-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開ページは、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
-                <ul id="pp-list" class="pp-list"></ul>
-                <div class="pp-list-foot" hidden><!-- 公開中ページが1件以上あるときだけ表示 (_renderPublishPagesList) -->
-                    <button id="pp-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
-                    <span class="pp-foot-hint">公開中のページをまとめて再反映します。</span>
-                    <span id="pp-url" class="pp-url"></span>
+                <p id="art-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開記事は、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
+                <ul id="art-list" class="pp-list"></ul>
+                <div class="pp-list-foot" id="art-list-foot" hidden><!-- 公開中記事が1件以上あるときだけ表示 -->
+                    <button id="art-republish-all" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>一括更新</button>
+                    <span class="pp-foot-hint">公開中の記事をまとめて再反映します。</span>
+                    <span id="art-url" class="pp-url"></span>
                 </div>
             </div>
 
-            <!-- 編集ビュー -->
-            <div id="pp-edit-view" hidden>
-                <div class="pp-editor">
-                    <!-- 1. スタイル選択（先頭） -->
-                    <section class="pp-section">
-                        <h3 class="pp-section-title"><span class="pp-step">1</span>スタイルを選ぶ</h3>
-                        <select id="pp-style" class="pp-style-select"></select>
-                        <small id="pp-style-desc" class="pp-style-desc"></small>
-                    </section>
+            <!-- 記事エディタ -->
+            <div id="art-edit-view" hidden>
+                <div class="art-hd">
+                    <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
+                    <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
+                    <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
+                    <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
+                    <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
+                    <button id="art-publish" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
+                </div>
 
-                    <!-- スタイル選択後に出てくる設定 -->
-                    <div id="pp-config" hidden>
-                        <section class="pp-section">
-                            <h3 class="pp-section-title"><span class="pp-step">2</span>基本情報</h3>
-                            <div class="form-group"><label for="pp-title">タイトル</label><input id="pp-title" type="text" placeholder="例: お気に入りの漫画"></div>
-                            <div class="form-group"><label for="pp-intro">紹介文（任意）</label><textarea id="pp-intro" rows="2" placeholder="ページ冒頭に表示される説明文"></textarea></div>
-                        </section>
+                <div class="art-tagbar">
+                    <span class="art-tag-label">タグ</span>
+                    <ul id="art-tags" class="art-tags"></ul>
+                    <div class="art-tag-input-wrap">
+                        <input id="art-tag-input" class="art-tag-input" type="text" placeholder="タグを追加…" autocomplete="off">
+                        <div id="art-tag-sugg" class="art-sugg" hidden></div>
+                    </div>
+                </div>
 
-                        <section class="pp-section" id="pp-shelves-group">
-                            <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本棚</h3>
-                            <div id="pp-shelves" class="bs-pick-tree"></div>
-                        </section>
+                <div class="art-wrap">
+                    <div class="art-col">
+                        <div id="art-blocks" class="art-blocks"></div>
+                    </div>
 
-                        <section class="pp-section" id="pp-books-group">
-                            <h3 class="pp-section-title"><span class="pp-step">3</span>載せる本</h3>
-                            <input id="pp-book-search" type="text" placeholder="タイトル / 著者で検索して追加…">
-                            <ul id="pp-book-results" class="pp-book-results"></ul>
-                            <ul id="pp-book-chosen" class="pp-book-chosen"></ul>
-                        </section>
-
-                        <section class="pp-section" id="pp-style-params-section" hidden>
-                            <h3 class="pp-section-title"><span class="pp-step">4</span>スタイル設定</h3>
-                            <div id="pp-style-params"></div>
-                        </section>
-
-                        <!-- 詳細設定（普段は折りたたみ）: 公開パス＋ページ操作 -->
-                        <details class="pp-advanced" id="pp-advanced">
-                            <summary class="pp-advanced-summary">
-                                <span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="15"></span>
-                                <span class="h-icon" data-icon="settings-2" data-icon-size="14"></span>
-                                詳細設定
-                                <span class="pp-advanced-note">複製・削除など</span>
-                            </summary>
-                            <div class="pp-advanced-body">
-                                <div class="pp-page-ops" id="pp-page-ops" hidden>
-                                    <span class="pp-page-ops-label">このページ</span>
-                                    <button id="pp-dup" class="btn btn-secondary btn-small" type="button">複製</button>
-                                    <button id="pp-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
-                                    <button id="pp-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
-                                </div>
-                            </div>
-                        </details>
+                    <!-- 本の引き出し -->
+                    <div class="art-side" id="art-drawer">
+                        <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span></h3>
+                        <div class="pp-hint art-drawer-note">同じ本も何度でも配置可</div>
+                        <div id="art-drawer-list" class="art-drawer-grid"></div>
                     </div>
                 </div>
 
                 <div class="form-actions pp-edit-actions">
-                    <button id="pp-back" class="btn btn-secondary">← 一覧へ</button>
                     <span class="pp-actions-spacer"></span>
-                    <button id="pp-preview" class="btn btn-secondary"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                    <button id="pp-save" class="btn btn-secondary"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
-                    <button id="pp-save-publish" class="btn btn-primary"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>保存して公開</button>
+                    <span id="art-save-status" class="art-save-status"></span>
+                    <div class="pp-page-ops" id="art-page-ops" hidden>
+                        <button id="art-dup" class="btn btn-secondary btn-small" type="button">複製</button>
+                        <button id="art-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
+                        <button id="art-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- ブロック追加メニュー (文章/本/本棚) : art-blocks 内へ JS が挿入 -->
+    <template id="art-add-menu-tpl">
+        <div class="art-add">
+            <div class="art-add-line"></div>
+            <button type="button" class="art-add-btn">＋ ブロックを追加</button>
+            <div class="art-add-menu" hidden>
+                <button type="button" class="art-add-menu-item" data-block-type="text"><em>¶</em><span><b>文章</b><small>Markdownで書く（長文メモと同じ記法）</small></span></button>
+                <button type="button" class="art-add-menu-item" data-block-type="shelf"><em>▦</em><span><b>本棚</b><small>複数の本をグリッドで並べる</small></span></button>
+                <button type="button" class="art-add-menu-item" data-block-type="book"><em>▉</em><span><b>本</b><small>1冊を大きく見せる（長文メモ向き）</small></span></button>
+            </div>
+        </div>
+    </template>
 
     <!-- 公開ページ プレビュー（別画面） -->
     <div id="pp-preview-modal" class="modal pp-preview-modal">
@@ -1151,19 +1144,16 @@
     <script src="js/storage.js?v=2026061601"></script>
     <script src="js/book-manager.js?v=2026073001"></script>
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
-    <script src="js/publish-page-store.js?v=2026061508"></script>
-    <script src="js/publish-article-store.js?v=2026081501"></script>
-    <script src="js/publish-styles.js?v=2026073001"></script>
-    <script src="js/publish-generator.js?v=2026073001"></script>
+    <script src="js/publish-article-store.js?v=2026081602"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
-    <script src="js/publish-article-generator.js?v=2026081501"></script>
-    <script src="js/exporter.js?v=2026062201"></script>
+    <script src="js/publish-article-generator.js?v=2026081502"></script>
+    <script src="js/exporter.js?v=2026081503"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026073001"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026073001"></script>
+    <script src="js/bookshelf.js?v=2026081603"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

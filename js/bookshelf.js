@@ -75,10 +75,9 @@ class VirtualBookshelf {
         this.syncMethod = this.syncConfig.method;
         this.storage = new BookshelfStorage(initialAdapter);
         this.bookshelfManager = new BookshelfManager(this);
-        // 公開システム (P1 静的SSG, ADR-030): 公開ページ定義 + スタイル + 生成
-        if (window.PublishPageStore) this.publishPageStore = new PublishPageStore(this.storage);
-        if (window.createPublishStyleRegistry) this.publishStyles = createPublishStyleRegistry();
-        if (window.PublishGenerator) this.publishGenerator = new PublishGenerator(this, this.publishStyles);
+        // 公開システム (公開v2「記事」モデル, ADR-058 §11): 本棚を素材にした記事の定義 + 生成
+        if (window.PublishArticleStore) this.publishArticleStore = new PublishArticleStore(this.storage);
+        if (window.PublishArticleGenerator) this.publishArticleGenerator = new PublishArticleGenerator(this);
         this.exporter = new BookshelfExporter(this);
         // プラグインAPI とローダを早期に生成（plugins から window.bookshelfAPI を参照可能に）
         if (window.BookshelfPluginAPI) {
@@ -234,10 +233,26 @@ class VirtualBookshelf {
                     if (!this._syncErrorMsg) this._syncErrorMsg = '同期の初期化に失敗しました。設定から接続を確認してください。';
                     this._updateStatusBar();
                 }
+                // 公開v2「記事」モデルへの初回移行 (非破壊・冪等・ADR-058 §11)。同期フォルダ接続済みのタイミングで
+                // 旧 pages.json → articles.json を機械変換する (articles.json に既に記事があれば何もしない)。
+                if (this.publishArticleStore && this._isSyncReady()) {
+                    try {
+                        await this.publishArticleStore.migrateFromLegacyIfNeeded((shelfKey) => {
+                            const shelf = this.bookshelfManager.getById(shelfKey);
+                            return (shelf && shelf.books) || [];
+                        });
+                    } catch (e) {
+                        console.warn('公開記事モデルへの移行に失敗:', e);
+                    }
+                }
                 // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
                 if (this.pluginLoader) {
                     try {
                         this._setLoadingSub('プラグインを読み込み中…');
+                        // 標準機能5個の初回シード・欠損復元 (ADR-059)。読み込み前に済ませ、同じ起動サイクルで反映する
+                        if (this._isSyncReady()) {
+                            await this.pluginLoader.ensureStandardPlugins();
+                        }
                         // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
                         this.pluginLoader.onProgress = (done, total) => {
                             if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
@@ -6060,7 +6075,11 @@ class VirtualBookshelf {
                 <span class="toggle-switch-track"><span class="toggle-switch-thumb"></span></span>
             </label>`;
             const settingsBtn = `<button type="button" class="btn btn-small plugin-card-settings" data-settings-plugin="${id}" title="このプラグインの設定（アイコン変更等）">${icoBtn('settings')}設定</button>`;
-            const uninstallBtn = `<button type="button" class="btn btn-small btn-icon-only btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}</button>`;
+            // 標準機能5個 (ADR-059) は削除操作を出さない。トグルでの無効化のみ許す
+            const isStandard = BookshelfPluginLoader.STANDARD_PLUGIN_IDS.includes(id);
+            const uninstallBtn = isStandard
+                ? ''
+                : `<button type="button" class="btn btn-small btn-icon-only btn-danger plugin-card-uninstall" data-uninstall-plugin="${id}" title="アンインストール">${icoBtn('trash-2')}</button>`;
             // 状態ラベル: 読み込み失敗 / 無効のみ表示。有効はトグル ON で自明なので出さない (情報量を減らす)
             let stateLabel = '';
             if (enabled && !loaded)  stateLabel = `<span class="plugin-state warn">${icoBtn('alert-triangle', 12)}読み込み失敗</span>`;
@@ -6079,13 +6098,16 @@ class VirtualBookshelf {
             const publishableBadge = m.publishable
                 ? `<span class="plugin-publishable-badge" title="公開エクスポート対象">${window.renderIcon('globe', { size: 12 })}</span>`
                 : '';
+            const standardBadge = isStandard
+                ? `<span class="plugin-standard-badge" title="標準機能: トグルで無効化できます">${window.renderIcon('lock', { size: 12 })}</span>`
+                : '';
             // 縦型カード: 1行目=アイコン+名前+メタ+トグル / 分類バッジ / 説明(2行省略) / 設定・削除
             return `
                 <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
                     <div class="pcard-head">
                         ${iconChip}
                         <div class="pcard-headtext">
-                            <div class="pcard-name"><strong>${m.name || id}</strong>${publishableBadge}</div>
+                            <div class="pcard-name"><strong>${m.name || id}</strong>${publishableBadge}${standardBadge}</div>
                             <div class="pcard-meta"><span class="pcard-version">v${m.version || '?'}</span>${stateLabel}</div>
                         </div>
                         <div class="pcard-toggle">${toggle}</div>
@@ -7503,30 +7525,6 @@ class VirtualBookshelf {
         }
     }
 
-    // ページを公開する (published=true にして全公開中ページを push)。更新(republish)もここを通る
-    async _ppPublishPage(id) {
-        const page = this.publishPageStore.get(id);
-        if (!page) return;
-        // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
-        // 更新(再公開)も含め published=true にする操作の前で行う。Plus は自分のタグ/広告なしなので不要。
-        if (!(await this._ensureFreeAffiliateConsent())) return;
-        const wasPublished = !!page.published;   // 元の状態 (更新=true / 新規公開=false)
-        try { await this.publishPageStore.update(id, { published: true }); }
-        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        const r = await this._runPublishExport();
-        if (!r.ok) {
-            // 失敗時は「元の状態」へ戻す。更新(元 true=ライブ)を未公開化して次回公開で実サイトから
-            // 消してしまう事故を防ぐ。新規公開(元 false)のみ未公開へロールバックする。
-            try { await this.publishPageStore.update(id, { published: wasPublished }); } catch (_) {}
-            this._renderPublishPagesList();
-            return;
-        }
-        try { await this.publishPageStore.update(id, { lastBuiltAt: Date.now() }); } catch (_) {}
-        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-        toast(`「${page.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
-        this._renderPublishPagesList();
-    }
-
     // C2: ハブ無料プランで初めて公開する時、運営アフィリエイトタグが付く旨を明示し同意を取る。
     // 同意は settings.ackFreeAffiliate に記録し、以後は出さない。Plus は不要(true を返す)。
     // 公開先=github (自前 GitHub Pages) は運営タグを入れないので同意不要(true)。
@@ -7551,37 +7549,15 @@ class VirtualBookshelf {
         return true;
     }
 
-    // ページの公開を取り消す (published=false にして再 push → 削除同期で実サイトから消える)
-    async _ppUnpublishPage(id) {
-        const page = this.publishPageStore.get(id);
-        if (!page) return;
-        const ok = await confirmDialog({
-            title: '公開を取り消す',
-            message: `「${page.title}」を公開サイトから削除します。\n（他の公開中ページはそのまま残ります）`,
-            okLabel: '公開を取り消す', danger: true
-        });
-        if (!ok) return;
-        try { await this.publishPageStore.update(id, { published: false }); }
-        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        const r = await this._runPublishExport();
-        if (!r.ok) {
-            try { await this.publishPageStore.update(id, { published: true }); } catch (_) {}
-            this._renderPublishPagesList();
-            return;
-        }
-        toast(`「${page.title}」の公開を取り消しました。`, { type: 'success' });
-        this._renderPublishPagesList();
-    }
-
-    // ===== 公開ページ管理 UI (P1 静的SSG, ADR-030) =====
+    // ===== 記事エディタ (公開v2 S3, ADR-058 §11) =====
 
     async openPublishPagesModal() {
         const modal = document.getElementById('publish-pages-modal');
         if (!modal) return;
-        if (!this.publishPageStore) { toast('公開システムが未初期化です。リロードしてください。', { type: 'error' }); return; }
-        this._setupPublishPagesUI();
-        await this.publishPageStore.load();
-        this._ppShowList();
+        if (!this.publishArticleStore) { toast('公開システムが未初期化です。リロードしてください。', { type: 'error' }); return; }
+        this._artSetupUI();
+        await this.publishArticleStore.load();
+        this._artShowList();
         modal.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
         this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o));
@@ -7593,85 +7569,97 @@ class VirtualBookshelf {
         this._modalHistPop('publish-pages-modal', { fromHistory });
     }
 
-    _setupPublishPagesUI() {
-        if (this._ppBound) return;
-        this._ppBound = true;
+    _artSetupUI() {
+        if (this._artBound) return;
+        this._artBound = true;
         const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
-        on('pp-new', 'click', () => this._openPublishPageEditor(null));
-        on('pp-back', 'click', () => this._ppShowList());
-        on('pp-save', 'click', () => this._ppSave());
-        on('pp-save-publish', 'click', () => this._ppSavePublish());
-        on('pp-preview', 'click', () => this._ppPreview());
-        on('pp-style', 'change', () => this._ppOnStyleChange());
-        on('pp-book-search', 'input', (e) => this._ppRenderBookResults(e.target.value));
-        // 一括更新: 公開中ページをまとめて再 push (一括「公開」ではない)
-        on('pp-republish-all', 'click', () => this._ppRepublishAll());
-        // 詳細設定: ページ操作 (複製/公開取消/削除 はエディタへ集約)。公開パスは自動採番 (UI なし)
-        on('pp-dup', 'click', async () => { if (!this._ppEditingId) return; await this._ppDuplicate(this._ppEditingId); this._ppShowList(); });
-        on('pp-unpublish', 'click', async () => { if (!this._ppEditingId) return; await this._ppUnpublishPage(this._ppEditingId); this._ppShowList(); });
-        on('pp-del', 'click', async () => { if (!this._ppEditingId) return; const did = await this._ppDelete(this._ppEditingId); if (did) this._ppShowList(); });
-        // プレビュー別画面
-        on('pp-preview-close', 'click', () => this._ppClosePreviewModal());
-        on('pp-preview-device', 'click', () => this._ppTogglePreviewDevice());
+        on('art-new', 'click', () => this._artOpenEditor(null));
+        on('art-back', 'click', () => this._artShowList());
+        on('art-title', 'input', () => this._artOnTitleInput());
+        on('art-theme-layout', 'change', () => this._artOnThemeChange());
+        on('art-theme-color', 'change', () => this._artOnThemeChange());
+        on('art-preview', 'click', () => this._artPreview());
+        on('art-publish', 'click', () => this._artPublish());
+        on('art-republish-all', 'click', () => this._artRepublishAll());
+        on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
+        on('art-unpublish', 'click', async () => { if (!this._artEditingId) return; await this._artUnpublish(this._artEditingId); });
+        on('art-del', 'click', async () => { if (!this._artEditingId) return; const did = await this._artDelete(this._artEditingId); if (did) this._artShowList(); });
+        // タグ入力: サジェスト表示・Enter で確定・外側クリックで閉じる
+        on('art-tag-input', 'input', () => this._artRenderTagSuggest());
+        on('art-tag-input', 'focus', () => this._artRenderTagSuggest());
+        on('art-tag-input', 'keydown', (e) => this._artOnTagInputKeydown(e));
+        document.addEventListener('click', (e) => {
+            const wrap = document.querySelector('.art-tag-input-wrap');
+            if (wrap && !wrap.contains(e.target)) this._artHideTagSuggest();
+            document.querySelectorAll('.art-add-menu').forEach(m => { if (!m.parentElement.contains(e.target)) m.hidden = true; });
+        });
+        // プレビュー別画面 (開閉のみ。生成本体はプレビュー機能のステップで実装)
+        on('pp-preview-close', 'click', () => this._artClosePreviewModal());
+        on('pp-preview-device', 'click', () => this._artTogglePreviewDevice());
         const pm = document.getElementById('pp-preview-modal');
-        if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._ppClosePreviewModal(); });
+        if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._artClosePreviewModal(); });
     }
 
-    _ppShowList() {
-        document.getElementById('pp-list-view').hidden = false;
-        document.getElementById('pp-edit-view').hidden = true;
+    _artShowList() {
+        document.getElementById('art-list-view').hidden = false;
+        document.getElementById('art-edit-view').hidden = true;
+        const content = document.querySelector('.art-modal-content');
+        if (content) content.classList.remove('art-editing');
         // C2: ハブ公開かつ無料プランのときだけ、運営アフィリエイトタグが付く旨の注記を出す
-        // (自分の GitHub 公開には運営タグを入れない = 注記も不要)
-        const notice = document.getElementById('pp-free-notice');
+        const notice = document.getElementById('art-free-notice');
         if (notice) {
             const cfg = SyncConfigManager.load();
             const target = (cfg.publish || {}).target === 'github' ? 'github' : 'hub';
             const plan = (cfg.hub || {}).plan || 'free';
             notice.hidden = !(target === 'hub' && plan !== 'plus');
         }
-        this._renderPublishPagesList();
-    }
-    _ppShowEditor() {
-        document.getElementById('pp-list-view').hidden = true;
-        document.getElementById('pp-edit-view').hidden = false;
+        this._artRenderList();
     }
 
-    _renderPublishPagesList() {
-        const ul = document.getElementById('pp-list');
+    _artShowEditor() {
+        document.getElementById('art-list-view').hidden = true;
+        document.getElementById('art-edit-view').hidden = false;
+        const content = document.querySelector('.art-modal-content');
+        if (content) content.classList.add('art-editing');
+    }
+
+    _artCountBooks(blocks) {
+        return (blocks || []).reduce((n, b) => {
+            if (b.type === 'book') return n + (b.asin ? 1 : 0);
+            if (b.type === 'shelf') return n + (b.items || []).length;
+            return n;
+        }, 0);
+    }
+
+    _artRenderList() {
+        const ul = document.getElementById('art-list');
         if (!ul) return;
-        const esc = PublishGenerator.esc;
-        const pages = this.publishPageStore.pages();
-        // 一括更新の行は公開中ページが 1 件以上あるときだけ出す (0 件時のノイズ削減)
-        const foot = document.querySelector('#pp-list-view .pp-list-foot');
-        if (foot) foot.hidden = !pages.some(p => p.published);
-        if (!pages.length) {
-            ul.innerHTML = '<li class="pp-empty">まだ公開ページがありません。「新規作成」から作ってください。</li>';
+        const esc = PublishArticleGenerator.esc;
+        const articles = this.publishArticleStore.articles();
+        const foot = document.getElementById('art-list-foot');
+        if (foot) foot.hidden = !articles.some(a => a.published);
+        if (!articles.length) {
+            ul.innerHTML = '<li class="pp-empty">まだ公開記事がありません。「新規作成」から作ってください。</li>';
         } else {
-            ul.innerHTML = pages.map(p => {
-                const style = this.publishStyles && this.publishStyles.get(p.styleId);
-                const styleName = style ? style.name : '(スタイル未選択)';
-                const cnt = (p.select.shelves.length ? `本棚${p.select.shelves.length}` : '') +
-                    (p.select.books.length ? `${p.select.shelves.length ? ' / ' : ''}本${p.select.books.length}` : '');
-                const pub = !!p.published;
+            ul.innerHTML = articles.map(a => {
+                const pub = !!a.published;
                 const badge = pub
                     ? '<span class="pp-status pp-status-on">● 公開中</span>'
                     : '<span class="pp-status pp-status-off">○ 未公開</span>';
-                // 公開はページ単位 (ADR-030)。行はスッキリさせ、主操作だけ置く:
-                //   未公開→[公開]  公開中→[更新]  ＋ 共通[編集]。
-                //   複製/削除/公開取消 はエディタの「詳細設定」へ集約 (行のボタン過多を解消)
+                const bookCount = this._artCountBooks(a.blocks);
+                const tagsMeta = (a.tags || []).length ? ' ・ ' + a.tags.map(esc).join(', ') : '';
                 const publishActions = pub
                     ? `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>`
                     : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
-                // 公開中ページは公開 URL を行に出す (開く + コピー)
-                const url = pub ? this._ppPageUrl(p) : '';
+                const url = pub ? this._artPageUrl(a) : '';
                 const urlRow = url
-                    ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a><button type="button" class="pp-url-copy" data-url="${esc(url)}" title="URL をコピー"><span class="h-icon" data-icon="clipboard" data-icon-size="12"></span></button></span>`
+                    ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a></span>`
                     : '';
-                return `<li class="pp-row" data-id="${esc(p.id)}">
+                return `<li class="pp-row" data-id="${esc(a.id)}">
                   <div class="pp-row-main">
-                    <span class="pp-row-title">${esc(p.title)} ${badge}</span>
-                    <span class="pp-row-meta">${esc(styleName)}${cnt ? ' ・ ' + esc(cnt) : ''}</span>
+                    <span class="pp-row-title">${esc(a.title)} ${badge}</span>
+                    <span class="pp-row-meta">本 ${bookCount} 冊${tagsMeta}</span>
                     ${urlRow}
                   </div>
                   <div class="pp-row-actions">
@@ -7683,23 +7671,16 @@ class VirtualBookshelf {
             ul.querySelectorAll('.pp-row').forEach(row => {
                 const id = row.dataset.id;
                 const bind = (act, fn) => { const b = row.querySelector(`[data-act=${act}]`); if (b) b.addEventListener('click', fn); };
-                bind('publish', () => this._ppPublishPage(id));
-                bind('republish', () => this._ppPublishPage(id));
-                bind('edit', () => this._openPublishPageEditor(id));
-                const copyBtn = row.querySelector('.pp-url-copy');
-                if (copyBtn) copyBtn.addEventListener('click', async () => {
-                    try { await navigator.clipboard.writeText(copyBtn.dataset.url || ''); toast('公開 URL をコピーしました', { type: 'success' }); }
-                    catch (_) { toast('コピーできませんでした', { type: 'warn' }); }
-                });
+                bind('publish', () => this._artPublishFromList(id));
+                bind('republish', () => this._artPublishFromList(id));
+                bind('edit', () => this._artOpenEditor(id));
             });
             if (typeof window.applyIcons === 'function') window.applyIcons(ul);
         }
-        const urlEl = document.getElementById('pp-url');
-        if (urlEl) urlEl.textContent = this._lastPublishUrl ? `公開URL: ${this._lastPublishUrl}` : '';
     }
 
     // 公開先の公開ベース URL (target=hub なら publicBase、github なら Pages URL)。未確定なら ''
-    _ppPagePublicBase() {
+    _artPublicBase() {
         const cfg = SyncConfigManager.load();
         const pub = cfg.publish || {};
         if (pub.target === 'hub') {
@@ -7714,207 +7695,718 @@ class VirtualBookshelf {
         return `https://${o}.github.io/${repo}/`;
     }
 
-    // 公開ページ 1 つの公開 URL (ベース + slug/)。ベース未確定なら ''
-    _ppPageUrl(p) {
-        const base = this._ppPagePublicBase();
-        if (!base || !p || !p.slug) return '';
-        return `${base.replace(/\/?$/, '/')}${p.slug}/`;
+    // 記事 1 つの公開 URL (ベース + slug/)。ベース未確定なら ''
+    _artPageUrl(a) {
+        const base = this._artPublicBase();
+        if (!base || !a || !a.slug) return '';
+        return `${base.replace(/\/?$/, '/')}${a.slug}/`;
     }
 
-    _openPublishPageEditor(id) {
-        this._ppEditingId = id;
-        const page = id ? this.publishPageStore.get(id) : null;
-        document.getElementById('pp-title').value = page ? page.title : '';
-        document.getElementById('pp-intro').value = page ? page.intro : '';
-        // 詳細設定: 既存ページのみページ操作を出す。公開取消は公開中のときだけ。新規はたたんでおく。
-        const ops = document.getElementById('pp-page-ops'); if (ops) ops.hidden = !id;
-        const unpub = document.getElementById('pp-unpublish'); if (unpub) unpub.hidden = !(page && page.published);
-        const adv = document.getElementById('pp-advanced'); if (adv) adv.open = false;
-        this._ppChosenBooks = new Set(page ? page.select.books : []);
-        this._ppStyleParams = page ? { ...page.styleParams } : {};
-        this._ppRenderStyleSelect(page ? page.styleId : '');
-        this._ppRenderShelves(page ? page.select.shelves : []);
-        this._ppRenderBookChosen();
-        document.getElementById('pp-book-search').value = '';
-        document.getElementById('pp-book-results').innerHTML = '';
-        this._ppOnStyleChange();
-        this._ppSetPreview('');
-        this._ppShowEditor();
+    _artFindBlock(id) {
+        return (this._artDraft.blocks || []).find(b => b.id === id) || null;
     }
 
-    _ppRenderStyleSelect(selectedId) {
-        const sel = document.getElementById('pp-style');
-        const esc = PublishGenerator.esc;
-        const styles = this.publishStyles ? this.publishStyles.list() : [];
-        sel.innerHTML = '<option value="">— スタイルを選択 —</option>' +
-            styles.map(s => `<option value="${esc(s.id)}"${s.id === selectedId ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+    _artUsedAsins() {
+        const set = new Set();
+        for (const b of (this._artDraft.blocks || [])) {
+            if (b.type === 'book' && b.asin) set.add(b.asin);
+            if (b.type === 'shelf') for (const it of (b.items || [])) set.add(it.asin);
+        }
+        return set;
     }
 
-    _ppOnStyleChange() {
-        const sel = document.getElementById('pp-style');
-        const style = this.publishStyles && this.publishStyles.get(sel.value);
-        const desc = document.getElementById('pp-style-desc');
-        const req = style ? style.declare().requires : { shelves: 'optional', books: 'optional' };
-        desc.textContent = style ? style.description : 'スタイルを選ぶと設定項目が表示されます。';
-        // スタイル未選択のうちは設定セクションを隠す（スタイル先行フロー）
-        document.getElementById('pp-config').hidden = !style;
-        document.getElementById('pp-shelves-group').hidden = (req.shelves === 'none');
-        document.getElementById('pp-books-group').hidden = (req.books === 'none');
-        this._ppRenderStyleParams(style);
+    _artOpenEditor(id) {
+        this._artEditingId = id;
+        this._artPendingBookBlockId = null;
+        this._artActiveShelfBlockId = null;
+        if (id) {
+            const a = this.publishArticleStore.get(id);
+            this._artDraft = JSON.parse(JSON.stringify(a));
+        } else {
+            const shelves = this.bookshelfManager.getBookshelves();
+            const allShelf = shelves.find(s => s.isSpecial) || shelves[0] || null;
+            this._artDraft = {
+                title: '', tags: [], blocks: [],
+                theme: { layout: 'card', color: 'white' },
+                sourceShelfId: allShelf ? (allShelf.internalId || allShelf.id) : null,
+                published: false
+            };
+        }
+        const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = !id;
+        const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !this._artDraft.published;
+        document.getElementById('art-title').value = this._artDraft.title || '';
+        this._artRenderThemeSelects();
+        this._artRenderTags();
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        this._artSetSaveStatus('');
+        this._artShowEditor();
     }
 
-    _ppRenderStyleParams(style) {
-        const host = document.getElementById('pp-style-params');
-        const section = document.getElementById('pp-style-params-section');
-        const esc = PublishGenerator.esc;
-        const fields = (style && style.declare().fields) || [];
-        if (!fields.length) { section.hidden = true; host.innerHTML = ''; return; }
-        section.hidden = false;
-        host.innerHTML = fields.map(fd => {
-            const val = this._ppStyleParams[fd.key] != null ? this._ppStyleParams[fd.key] : (fd.default || '');
-            const lbl = fd.label ? `<label class="pp-param-label">${esc(fd.label)}</label>` : '';
-            if (fd.type === 'textarea') return `<div class="form-group">${lbl}<textarea data-param="${esc(fd.key)}" rows="2" placeholder="${esc(fd.placeholder || '')}">${esc(val)}</textarea></div>`;
-            return `<div class="form-group">${lbl}<input data-param="${esc(fd.key)}" type="text" value="${esc(val)}" placeholder="${esc(fd.placeholder || '')}"></div>`;
-        }).join('');
+    _artRenderThemeSelects() {
+        const layoutSel = document.getElementById('art-theme-layout');
+        const colorSel = document.getElementById('art-theme-color');
+        if (!layoutSel || !colorSel) return;
+        const LAYOUT_LABELS = { wall: 'ウォール', count: 'カウントダウン', card: 'カード' };
+        const COLOR_LABELS = { red: '赤', orange: '橙', pink: 'ピンク', purple: '紫', yellow: '黄', brown: '茶', green: '緑', blue: '青', black: '黒', white: '白' };
+        const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
+        layoutSel.innerHTML = ARTICLE_LAYOUTS.map(l => `<option value="${l}"${l === theme.layout ? ' selected' : ''}>${LAYOUT_LABELS[l] || l}</option>`).join('');
+        colorSel.innerHTML = ARTICLE_COLORS.map(c => `<option value="${c}"${c === theme.color ? ' selected' : ''}>${COLOR_LABELS[c] || c}</option>`).join('');
     }
 
-    _ppRenderShelves(selectedIds) {
-        const host = document.getElementById('pp-shelves');
-        const set = new Set(selectedIds || []);
-        const shelves = this.bookshelfManager.getBookshelves();
-        // 本棚は**階層を保ったまま**選択させる (サイドバーのツリーと同じ親子・見た目)
-        host.innerHTML = window.BookshelfUI.tree(shelves, { selectedSet: set });
-        host.querySelectorAll('.bs-pick-row').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const on = btn.getAttribute('aria-pressed') !== 'true';
-                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-                btn.classList.toggle('is-selected', on);
+    _artOnThemeChange() {
+        const layout = document.getElementById('art-theme-layout').value;
+        const color = document.getElementById('art-theme-color').value;
+        this._artDraft.theme = PublishArticleStore.normalizeTheme({ layout, color });
+        this._artScheduleSave();
+    }
+
+    _artOnTitleInput() {
+        this._artDraft.title = document.getElementById('art-title').value;
+        this._artScheduleSave();
+    }
+
+    // ===== タグ (入力サジェスト + 使用数表示・新規作成は候補の最下段, §11.6) =====
+
+    _artRenderTags() {
+        const ul = document.getElementById('art-tags');
+        if (!ul) return;
+        const esc = PublishArticleGenerator.esc;
+        ul.innerHTML = (this._artDraft.tags || []).map((t, i) =>
+            `<li class="art-tag" data-idx="${i}">${esc(t)}<button type="button" class="art-tag-x" title="削除">×</button></li>`
+        ).join('');
+        ul.querySelectorAll('.art-tag').forEach(li => {
+            li.querySelector('.art-tag-x').addEventListener('click', () => {
+                this._artDraft.tags.splice(Number(li.dataset.idx), 1);
+                this._artRenderTags();
+                this._artScheduleSave();
             });
         });
+    }
+
+    _artRenderTagSuggest() {
+        const input = document.getElementById('art-tag-input');
+        const box = document.getElementById('art-tag-sugg');
+        if (!input || !box) return;
+        const q = input.value.trim();
+        const qKey = PublishArticleStore.normalizeTagKey(q);
+        const existingKeys = new Set((this._artDraft.tags || []).map(t => PublishArticleStore.normalizeTagKey(t)));
+        const all = this.publishArticleStore.allTags().filter(t => !existingKeys.has(t.key));
+        const matched = q ? all.filter(t => PublishArticleStore.normalizeTagKey(t.label).includes(qKey)) : all;
+        const esc = PublishArticleGenerator.esc;
+        const items = matched.slice(0, 8).map(t =>
+            `<div class="art-sugg-item" data-label="${esc(t.label)}"><span>${esc(t.label)}</span><span class="art-sugg-count">使用 ${t.count}</span></div>`
+        ).join('');
+        const canCreate = q && !existingKeys.has(qKey) && !all.some(t => t.key === qKey);
+        const newItem = canCreate ? `<div class="art-sugg-item art-sugg-new" data-label="${esc(q)}">＋「${esc(q)}」を新しいタグにする</div>` : '';
+        if (!items && !newItem) { box.hidden = true; box.innerHTML = ''; return; }
+        box.innerHTML = items + newItem;
+        box.hidden = false;
+        box.querySelectorAll('.art-sugg-item').forEach(el => {
+            el.addEventListener('mousedown', (e) => { e.preventDefault(); this._artAddTag(el.dataset.label); });
+        });
+    }
+
+    _artHideTagSuggest() {
+        const box = document.getElementById('art-tag-sugg');
+        if (box) { box.hidden = true; box.innerHTML = ''; }
+        const input = document.getElementById('art-tag-input');
+        if (input) input.value = '';
+    }
+
+    _artAddTag(label) {
+        const l = String(label || '').trim();
+        if (!l) return;
+        const key = PublishArticleStore.normalizeTagKey(l);
+        if (!this._artDraft.tags) this._artDraft.tags = [];
+        if (this._artDraft.tags.some(t => PublishArticleStore.normalizeTagKey(t) === key)) { this._artHideTagSuggest(); return; }
+        this._artDraft.tags.push(l);
+        this._artRenderTags();
+        this._artHideTagSuggest();
+        this._artScheduleSave();
+    }
+
+    _artOnTagInputKeydown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const input = document.getElementById('art-tag-input');
+            const box = document.getElementById('art-tag-sugg');
+            const first = box && !box.hidden && box.querySelector('.art-sugg-item');
+            if (first) { this._artAddTag(first.dataset.label); return; }
+            if (input.value.trim()) this._artAddTag(input.value.trim());
+        } else if (e.key === 'Escape') {
+            this._artHideTagSuggest();
+        }
+    }
+
+    // ===== ブロック列 (文章/本/本棚の3種のみ, §11.2) =====
+
+    _artRenderBlocks() {
+        const host = document.getElementById('art-blocks');
+        if (!host) return;
+        const tpl = document.getElementById('art-add-menu-tpl');
+        const addHtml = tpl ? tpl.innerHTML : '';
+        const blocks = this._artDraft.blocks || [];
+        let html = addHtml;
+        blocks.forEach((b, i) => { html += this._artRenderBlock(b, i); html += addHtml; });
+        host.innerHTML = html;
+        this._artBindBlocksEvents();
         if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
-    _ppRenderBookResults(query) {
-        const host = document.getElementById('pp-book-results');
-        const esc = PublishGenerator.esc;
-        const q = (query || '').trim().toLowerCase();
-        if (!q) { host.innerHTML = ''; return; }
-        const matches = (this.books || []).filter(b =>
-            (b.title && b.title.toLowerCase().includes(q)) || (b.authors && String(b.authors).toLowerCase().includes(q))
-        ).slice(0, 20);
-        host.innerHTML = matches.length
-            ? matches.map(b => `<li data-asin="${esc(b.asin)}">${esc(b.title)} <span class="pp-bk-author">${esc(b.authors || '')}</span></li>`).join('')
-            : '<li class="pp-empty">該当なし</li>';
-        host.querySelectorAll('li[data-asin]').forEach(li => {
-            li.addEventListener('click', () => { this._ppChosenBooks.add(li.dataset.asin); this._ppRenderBookChosen(); });
-        });
-    }
-
-    _ppRenderBookChosen() {
-        const host = document.getElementById('pp-book-chosen');
-        const esc = PublishGenerator.esc;
-        const byAsin = new Map((this.books || []).map(b => [b.asin, b]));
-        host.innerHTML = [...this._ppChosenBooks].map(a => {
-            const b = byAsin.get(a);
-            return `<li data-asin="${esc(a)}"><span>${esc(b ? b.title : a)}</span><button type="button" class="pp-chip-x" title="外す">×</button></li>`;
-        }).join('');
-        host.querySelectorAll('li[data-asin]').forEach(li => {
-            li.querySelector('.pp-chip-x').addEventListener('click', () => { this._ppChosenBooks.delete(li.dataset.asin); this._ppRenderBookChosen(); });
-        });
-    }
-
-    _ppCollectForm() {
-        const shelves = [...document.querySelectorAll('#pp-shelves .bs-pick-row[aria-pressed="true"]')].map(el => el.dataset.value);
-        const params = {};
-        document.querySelectorAll('#pp-style-params [data-param]').forEach(el => { params[el.dataset.param] = el.value; });
-        // 公開項目はスタイル固定 (declare().shows)・公開パスは自動採番のため、ここでは集めない。
-        return {
-            title: document.getElementById('pp-title').value.trim() || '無題の公開ページ',
-            intro: document.getElementById('pp-intro').value.trim(),
-            styleId: document.getElementById('pp-style').value,
-            styleParams: params,
-            select: { shelves, books: [...this._ppChosenBooks] }
-        };
-    }
-
-    // フォーム値の検証 (保存系で共通)。OK なら data、NG なら null
-    _ppValidatedForm() {
-        const data = this._ppCollectForm();
-        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return null; }
-        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
-            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return null;
+    _artRenderBlock(b, index) {
+        const esc = PublishArticleGenerator.esc;
+        const barCommon = `
+            <span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14"></span>
+            <span class="art-block-bar-sp"></span>
+            <button type="button" class="art-block-ic art-block-dup" title="複製"><span class="h-icon" data-icon="copy" data-icon-size="14"></span></button>
+            <button type="button" class="art-block-ic art-block-del" title="削除"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span></button>`;
+        if (b.type === 'text') {
+            return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
+                <div class="art-block-bar"><span class="art-block-kind">文章</span>${barCommon}</div>
+                <div class="art-block-body art-block-text">
+                    <textarea class="art-text-input" placeholder="見出しや本文をMarkdownで書く…">${esc(b.markdown || '')}</textarea>
+                </div>
+            </div>`;
         }
-        // 公開パス (slug) は data に含めない → create はタイトル由来で自動採番 / update は既存 slug を維持。
-        return data;
+        if (b.type === 'book') {
+            if (!b.asin) {
+                return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
+                    <div class="art-block-bar"><span class="art-block-kind">本</span>${barCommon}</div>
+                    <div class="art-block-body"><p class="pp-empty">右の「本の引き出し」から本をクリックして選んでください。</p></div>
+                </div>`;
+            }
+            const book = this.books.find(x => x.asin === b.asin);
+            const title = book ? book.title : b.asin;
+            const author = book ? (book.authors || '') : '';
+            const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
+            const show = b.show || { shortMemo: false, longMemo: false };
+            return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
+                <div class="art-block-bar"><span class="art-block-kind">本</span>${barCommon}</div>
+                <div class="art-block-body art-block-book-body">
+                    <div class="art-cover">${cover}</div>
+                    <div class="art-block-book-info">
+                        <div class="art-item-title">${esc(title)}</div>
+                        <div class="art-item-author">${esc(author)}</div>
+                        <div class="art-shelf-item-toggles">
+                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo">短文メモ</button>
+                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo">長文メモ</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+        if (b.type === 'shelf') return this._artRenderShelfBlock(b, index, barCommon);
+        return '';
     }
 
-    // 保存して書き込み、ページ ID を返す (新規は作成して _ppEditingId を更新)
-    async _ppPersistForm(data) {
-        if (this._ppEditingId) { await this.publishPageStore.update(this._ppEditingId, data); return this._ppEditingId; }
-        const p = await this.publishPageStore.create(data);
-        this._ppEditingId = p.id;
-        return p.id;
+    // 密度は既定コンパクト (B: エディタ表示密度改善)。b.density === 'card' のときだけカード表示に切替。
+    _artRenderShelfBlock(b, index, barCommon) {
+        const esc = PublishArticleGenerator.esc;
+        const density = b.density === 'card' ? 'card' : 'compact';
+        const collapsed = !!b.collapsed;
+        const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
+        const shortLabel = density === 'compact' ? '短' : '短文';
+        const longLabel = density === 'compact' ? '長' : '長文';
+        const itemsHtml = items.map((it, i) => {
+            const book = this.books.find(x => x.asin === it.asin);
+            const title = book ? book.title : it.asin;
+            const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
+            const show = it.show || { shortMemo: false, longMemo: false };
+            return `<div class="art-shelf-item" data-item-id="${esc(it.id)}">
+                <span class="art-shelf-item-grip h-icon" data-icon="grip-vertical" data-icon-size="12"></span>
+                <div class="art-cover">${cover}</div>
+                <div class="art-shelf-item-title">${esc(title)}</div>
+                <div class="art-shelf-item-toggles">
+                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo">${shortLabel}</button>
+                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo">${longLabel}</button>
+                </div>
+                <div class="art-shelf-item-order-btns">
+                    <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
+                    <button type="button" class="art-shelf-item-ic art-item-to-last" title="末尾へ"${i === items.length - 1 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-down" data-icon-size="12"></span></button>
+                </div>
+                <button type="button" class="art-shelf-item-remove" title="外す">×</button>
+            </div>`;
+        }).join('');
+        const toolbarHtml = collapsed ? '' : `
+                <button type="button" class="art-chip-toggle art-bulk-toggle" data-show-key="shortMemo">短文一括</button>
+                <button type="button" class="art-chip-toggle art-bulk-toggle" data-show-key="longMemo">長文一括</button>
+                <select class="art-shelf-sort-sel" title="並び順で一括指定">
+                    <option value="">並び順で揃える…</option>
+                    <option value="added">追加順</option>
+                    <option value="rating">評価順</option>
+                    <option value="title">タイトル順</option>
+                </select>
+                <button type="button" class="art-chip-toggle art-density-toggle" title="表示密度を切替">${density === 'compact' ? 'コンパクト' : 'カード'}</button>`;
+        return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
+            <div class="art-block-bar">
+                <span class="art-block-kind">本棚</span><span style="color:var(--muted)">${items.length}冊</span>${toolbarHtml}
+                <button type="button" class="art-chip-toggle art-collapse-toggle" title="${collapsed ? '展開' : '畳む'}">${collapsed ? '展開' : '畳む'}</button>
+                ${barCommon}
+            </div>
+            <div class="art-block-body"${collapsed ? ' hidden' : ''}>
+                <div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml || '<p class="pp-empty">右の「本の引き出し」から本を追加してください。</p>'}</div>
+            </div>
+        </div>`;
     }
 
-    async _ppSave() {
-        const data = this._ppValidatedForm();
-        if (!data) return;
+    _artBindBlocksEvents() {
+        const host = document.getElementById('art-blocks');
+        if (!host) return;
+
+        host.querySelectorAll('.art-block').forEach(el => {
+            const blockId = el.dataset.blockId;
+            const block = this._artFindBlock(blockId);
+            if (!block) return;
+
+            const ta = el.querySelector('.art-text-input');
+            if (ta) ta.addEventListener('input', () => { block.markdown = ta.value; this._artScheduleSave(); });
+
+            const dup = el.querySelector('.art-block-dup');
+            if (dup) dup.addEventListener('click', () => this._artDuplicateBlock(blockId));
+            const del = el.querySelector('.art-block-del');
+            if (del) del.addEventListener('click', () => this._artRemoveBlock(blockId));
+
+            const densityBtn = el.querySelector('.art-density-toggle');
+            if (densityBtn) densityBtn.addEventListener('click', () => {
+                block.density = (block.density === 'card') ? 'compact' : 'card';
+                this._artRenderBlocks();
+                this._artScheduleSave();
+            });
+            const collapseBtn = el.querySelector('.art-collapse-toggle');
+            if (collapseBtn) collapseBtn.addEventListener('click', () => {
+                block.collapsed = !block.collapsed;
+                this._artRenderBlocks();
+                this._artScheduleSave();
+            });
+            const sortSel = el.querySelector('.art-shelf-sort-sel');
+            if (sortSel) sortSel.addEventListener('change', () => {
+                const mode = sortSel.value;
+                if (mode) this._artSortShelfItems(block, mode);
+            });
+
+            el.querySelectorAll('.art-book-show-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const key = btn.dataset.showKey;
+                    block.show = block.show || { shortMemo: false, longMemo: false };
+                    block.show[key] = !block.show[key];
+                    this._artRenderBlocks();
+                    this._artScheduleSave();
+                });
+            });
+
+            el.querySelectorAll('.art-bulk-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const key = btn.dataset.showKey;
+                    const items = block.items || [];
+                    const allOn = items.length > 0 && items.every(it => it.show && it.show[key]);
+                    items.forEach(it => { it.show = it.show || { shortMemo: false, longMemo: false }; it.show[key] = !allOn; });
+                    this._artRenderBlocks();
+                    this._artScheduleSave();
+                });
+            });
+
+            el.querySelectorAll('.art-shelf-item').forEach(itemEl => {
+                const itemId = itemEl.dataset.itemId;
+                const item = (block.items || []).find(it => it.id === itemId);
+                if (!item) return;
+                itemEl.querySelectorAll('.art-item-show-toggle').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const key = btn.dataset.showKey;
+                        item.show = item.show || { shortMemo: false, longMemo: false };
+                        item.show[key] = !item.show[key];
+                        this._artRenderBlocks();
+                        this._artScheduleSave();
+                    });
+                });
+                const rm = itemEl.querySelector('.art-shelf-item-remove');
+                if (rm) rm.addEventListener('click', () => {
+                    block.items = (block.items || []).filter(it => it.id !== itemId);
+                    this._artRenderBlocks();
+                    this._artRenderDrawer();
+                    this._artScheduleSave();
+                });
+                const toFirst = itemEl.querySelector('.art-item-to-first');
+                if (toFirst) toFirst.addEventListener('click', (e) => { e.stopPropagation(); this._artMoveShelfItem(block, itemId, 'first'); });
+                const toLast = itemEl.querySelector('.art-item-to-last');
+                if (toLast) toLast.addEventListener('click', (e) => { e.stopPropagation(); this._artMoveShelfItem(block, itemId, 'last'); });
+                this._artBindDrag(itemEl.querySelector('.art-shelf-item-grip'), itemEl, '.art-shelf-item', (fromEl, toEl) => {
+                    this._artReorderShelfItems(block, fromEl.dataset.itemId, toEl.dataset.itemId);
+                });
+            });
+
+            this._artBindDrag(el.querySelector('.art-block-grip'), el, '.art-block', (fromEl, toEl) => {
+                this._artReorderBlocks(fromEl.dataset.blockId, toEl.dataset.blockId);
+            });
+            if (block.type === 'shelf') {
+                el.addEventListener('click', () => { this._artActiveShelfBlockId = blockId; });
+            }
+        });
+
+        host.querySelectorAll('.art-add').forEach(addEl => {
+            const btn = addEl.querySelector('.art-add-btn');
+            const menu = addEl.querySelector('.art-add-menu');
+            if (!btn || !menu) return;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasHidden = menu.hidden;
+                host.querySelectorAll('.art-add-menu').forEach(m => { m.hidden = true; });
+                menu.hidden = !wasHidden;
+            });
+            menu.querySelectorAll('.art-add-menu-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const type = item.dataset.blockType;
+                    const index = [...host.querySelectorAll('.art-add')].indexOf(addEl);
+                    this._artInsertBlock(type, index);
+                    menu.hidden = true;
+                });
+            });
+        });
+    }
+
+    // ドラッグハンドルからの簡易 D&D (Pointer Events, ADR-011 のポインタ方式を踏襲)。
+    // itemSelector に一致する祖先へドロップすると onDrop(fromEl, toEl) を呼ぶ。
+    // pointermove/pointerup は handle ではなく document へ登録する (C-293系の教訓: 数px の
+    // グリップ要素だけに登録すると、setPointerCapture が効かない環境でドラッグが即終了する)。
+    // is-dragging 中は CSS 側で pointer-events:none にし、elementFromPoint が自分自身ではなく
+    // 真下の要素を返すようにする (A-1 回帰修正)。
+    _artBindDrag(handle, itemEl, itemSelector, onDrop) {
+        if (!handle) { console.warn('[_artBindDrag] handle 要素が見つからないため D&D を無効化しました:', itemSelector, itemEl); return; }
+        handle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+            itemEl.classList.add('is-dragging');
+            const clearOver = () => document.querySelectorAll(itemSelector + '.is-drag-over').forEach(el => el.classList.remove('is-drag-over'));
+            const onMove = (ev) => {
+                const under = document.elementFromPoint(ev.clientX, ev.clientY);
+                const target = under && under.closest(itemSelector);
+                clearOver();
+                if (target && target !== itemEl) target.classList.add('is-drag-over');
+            };
+            const onUp = (ev) => {
+                itemEl.classList.remove('is-dragging');
+                clearOver();
+                const under = document.elementFromPoint(ev.clientX, ev.clientY);
+                const target = under && under.closest(itemSelector);
+                if (target && target !== itemEl) onDrop(itemEl, target);
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
+            };
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
+        });
+    }
+
+    _artInsertBlock(type, index) {
+        let newBlock;
+        if (type === 'text') newBlock = { id: PublishArticleStore._newId('blk'), type: 'text', markdown: '' };
+        else if (type === 'book') {
+            newBlock = { id: PublishArticleStore._newId('blk'), type: 'book', asin: null, show: { shortMemo: false, longMemo: false } };
+            this._artPendingBookBlockId = newBlock.id;
+        } else if (type === 'shelf') {
+            newBlock = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
+            // 追加直後は「本の引き出し」からの追加先として即アクティブにする (ブロックをクリックしなくても使える)
+            this._artActiveShelfBlockId = newBlock.id;
+        } else return;
+        if (!this._artDraft.blocks) this._artDraft.blocks = [];
+        this._artDraft.blocks.splice(index, 0, newBlock);
+        this._artRenderBlocks();
+        // 本ブロックは asin 確定まで保存しない (normalizeBlocks が asin 無しを捨てるため)
+        if (type !== 'book') this._artScheduleSave();
+    }
+
+    _artDuplicateBlock(blockId) {
+        const blocks = this._artDraft.blocks || [];
+        const i = blocks.findIndex(b => b.id === blockId);
+        if (i < 0) return;
+        const copy = JSON.parse(JSON.stringify(blocks[i]));
+        copy.id = PublishArticleStore._newId('blk');
+        if (copy.type === 'shelf') {
+            copy.items = (copy.items || []).map(it => ({ ...it, id: PublishArticleStore._newId('pl'), blockId: copy.id }));
+        }
+        blocks.splice(i + 1, 0, copy);
+        this._artRenderBlocks();
+        this._artScheduleSave();
+    }
+
+    _artRemoveBlock(blockId) {
+        const blocks = this._artDraft.blocks || [];
+        const i = blocks.findIndex(b => b.id === blockId);
+        if (i < 0) return;
+        blocks.splice(i, 1);
+        if (this._artActiveShelfBlockId === blockId) this._artActiveShelfBlockId = null;
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        this._artScheduleSave();
+    }
+
+    _artReorderBlocks(fromId, toId) {
+        const blocks = this._artDraft.blocks || [];
+        const fromI = blocks.findIndex(b => b.id === fromId);
+        const toI = blocks.findIndex(b => b.id === toId);
+        if (fromI < 0 || toI < 0 || fromI === toI) return;
+        const [moved] = blocks.splice(fromI, 1);
+        blocks.splice(toI, 0, moved);
+        this._artRenderBlocks();
+        this._artScheduleSave();
+    }
+
+    _artReorderShelfItems(block, fromId, toId) {
+        const items = block.items || [];
+        const fromI = items.findIndex(it => it.id === fromId);
+        const toI = items.findIndex(it => it.id === toId);
+        if (fromI < 0 || toI < 0 || fromI === toI) return;
+        const [moved] = items.splice(fromI, 1);
+        items.splice(toI, 0, moved);
+        items.forEach((it, i) => { it.order = i; });
+        this._artRenderBlocks();
+        this._artScheduleSave();
+    }
+
+    // 並び替え支援 (B): 個別アイテムを先頭/末尾へ即移動。
+    _artMoveShelfItem(block, itemId, toEdge) {
+        const items = block.items || [];
+        const i = items.findIndex(it => it.id === itemId);
+        if (i < 0) return;
+        const [moved] = items.splice(i, 1);
+        if (toEdge === 'first') items.unshift(moved); else items.push(moved);
+        items.forEach((it, idx) => { it.order = idx; });
+        this._artRenderBlocks();
+        this._artScheduleSave();
+    }
+
+    // 並び替え支援 (B): 追加順(addedAt)/評価順(高い順)/タイトル順(50音)で並べ直してから手で微調整できる。
+    _artSortShelfItems(block, mode) {
+        const items = block.items || [];
+        if (mode === 'added') {
+            items.sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+        } else if (mode === 'rating') {
+            items.sort((a, b) => (this.userData.notes[b.asin]?.rating || 0) - (this.userData.notes[a.asin]?.rating || 0));
+        } else if (mode === 'title') {
+            const titleOf = (it) => (this.books.find(x => x.asin === it.asin) || {}).title || '';
+            items.sort((a, b) => titleOf(a).localeCompare(titleOf(b), 'ja'));
+        } else {
+            return;
+        }
+        items.forEach((it, i) => { it.order = i; });
+        this._artRenderBlocks();
+        this._artScheduleSave();
+    }
+
+    // ===== 右ペイン: 本の引き出し (この本棚の全部の本・多重配置可・新規バッジ・0件で畳む, §11.1) =====
+
+    _artRenderDrawer() {
+        const wrap = document.querySelector('.art-wrap');
+        const listHost = document.getElementById('art-drawer-list');
+        const badgeEl = document.getElementById('art-drawer-badge');
+        if (!listHost) return;
+        const shelf = this.bookshelfManager.getById(this._artDraft.sourceShelfId);
+        const asins = (shelf && shelf.books) || [];
+        if (!asins.length) {
+            if (wrap) wrap.classList.add('art-drawer-collapsed');
+            listHost.innerHTML = '';
+            if (badgeEl) badgeEl.hidden = true;
+            return;
+        }
+        if (wrap) wrap.classList.remove('art-drawer-collapsed');
+        const usedAsins = this._artUsedAsins();
+        const esc = PublishArticleGenerator.esc;
+        const newCount = asins.filter(a => !usedAsins.has(a)).length;
+        if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
+        listHost.innerHTML = asins.map(asin => {
+            const book = this.books.find(b => b.asin === asin);
+            const title = book ? book.title : asin;
+            const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
+            const isNew = !usedAsins.has(asin);
+            return `<div class="art-drawer-item" data-asin="${esc(asin)}" title="クリックで記事に追加">
+                <div class="art-cover">${cover}${isNew ? '<span class="art-drawer-item-badge">NEW</span>' : ''}</div>
+                <div class="art-drawer-item-title">${esc(title)}</div>
+            </div>`;
+        }).join('');
+        listHost.querySelectorAll('.art-drawer-item').forEach(el => {
+            el.addEventListener('click', () => this._artOnDrawerBookClick(el.dataset.asin));
+        });
+    }
+
+    _artOnDrawerBookClick(asin) {
+        if (this._artPendingBookBlockId) {
+            const block = this._artFindBlock(this._artPendingBookBlockId);
+            this._artPendingBookBlockId = null;
+            if (block && block.type === 'book') {
+                block.asin = asin;
+                this._artRenderBlocks();
+                this._artRenderDrawer();
+                this._artScheduleSave();
+                return;
+            }
+        }
+        this._artAddBookToShelf(asin);
+    }
+
+    _artAddBookToShelf(asin) {
+        let block = this._artFindBlock(this._artActiveShelfBlockId);
+        if (!block || block.type !== 'shelf') {
+            block = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
+            if (!this._artDraft.blocks) this._artDraft.blocks = [];
+            this._artDraft.blocks.push(block);
+            this._artActiveShelfBlockId = block.id;
+        }
+        block.items = block.items || [];
+        block.items.push({ id: PublishArticleStore._newId('pl'), blockId: block.id, asin, order: block.items.length, show: { shortMemo: false, longMemo: false }, addedAt: Date.now() });
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        this._artScheduleSave();
+    }
+
+    // ===== 保存 (autosave, debounce) / 公開 =====
+
+    _artScheduleSave() {
+        this._artSetSaveStatus('編集中…');
+        if (this._artSaveTimer) clearTimeout(this._artSaveTimer);
+        this._artSaveTimer = setTimeout(() => this._artFlushSave(), 600);
+    }
+
+    async _artFlushSave() {
+        if (this._artSaveTimer) { clearTimeout(this._artSaveTimer); this._artSaveTimer = null; }
+        const patch = {
+            title: this._artDraft.title || '無題の記事',
+            tags: this._artDraft.tags || [],
+            blocks: this._artDraft.blocks || [],
+            theme: this._artDraft.theme,
+            sourceShelfId: this._artDraft.sourceShelfId
+        };
         try {
-            await this._ppPersistForm(data);
-            toast('公開ページを保存しました。', { type: 'success' });
-            this._ppShowList();
-        } catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); }
+            if (this._artEditingId) {
+                await this.publishArticleStore.update(this._artEditingId, patch);
+            } else {
+                const created = await this.publishArticleStore.create(patch);
+                this._artEditingId = created.id;
+                this._artDraft.id = created.id;
+                this._artDraft.slug = created.slug;
+                const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
+            }
+            this._artSetSaveStatus('保存しました');
+        } catch (e) {
+            this._artSetSaveStatus('保存に失敗しました');
+            console.error('記事の保存に失敗:', e);
+        }
     }
 
-    // 保存して公開: 保存 → published=true → push (エディタから 1 アクションで公開)
-    async _ppSavePublish() {
-        const data = this._ppValidatedForm();
-        if (!data) return;
-        let id;
-        try { id = await this._ppPersistForm(data); }
+    _artSetSaveStatus(text) {
+        const el = document.getElementById('art-save-status');
+        if (el) el.textContent = text;
+    }
+
+    // 記事を公開する (published=true にして全公開中記事を push)。更新(republish)もここを通る。
+    // エディタ内「公開する」・一覧の「公開/更新」の共通実体 (旧 _ppPublishPage と同じ役割分担)。
+    async _artPublishArticle(id) {
+        const article = this.publishArticleStore.get(id);
+        if (!article) return;
+        // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
+        if (!(await this._ensureFreeAffiliateConsent())) return;
+        const wasPublished = !!article.published;   // 元の状態 (更新=true / 新規公開=false)
+        try { await this.publishArticleStore.update(id, { published: true }); }
         catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        await this._ppPublishPage(id);  // published=true + export + toast (失敗時は published を戻す)
-        this._ppShowList();
+        if (this._artEditingId === id) {
+            this._artDraft.published = true;
+            const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = false;
+        }
+        const r = await this._runPublishExport();
+        if (!r.ok) {
+            // 失敗時は「元の状態」へ戻す (更新の取り消しで実サイトからの誤消去を防ぐ)
+            try { await this.publishArticleStore.update(id, { published: wasPublished }); } catch (_) {}
+            if (this._artEditingId === id) {
+                this._artDraft.published = wasPublished;
+                const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !wasPublished;
+            }
+            this._artRenderList();
+            return;
+        }
+        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (_) {}
+        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
+        toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+        this._artRenderList();
     }
 
-    // 一括更新: 公開中ページをまとめて再 push (公開状態は変えない・一括「公開」ではない)
-    async _ppRepublishAll() {
-        const published = this.publishPageStore.pages().filter(p => p.published);
-        if (!published.length) { toast('公開中のページがありません。各ページの「公開」または「保存して公開」で公開してください。', { type: 'warn' }); return; }
+    async _artPublish() {
+        if (this._artSaveTimer) await this._artFlushSave();
+        if (!this._artEditingId) await this._artFlushSave();
+        if (!this._artEditingId) { toast('保存に失敗したため公開できません。', { type: 'error' }); return; }
+        await this._artPublishArticle(this._artEditingId);
+    }
+
+    async _artPublishFromList(id) {
+        await this._artPublishArticle(id);
+    }
+
+    // 記事の公開を取り消す (published=false にして再 push → 削除同期で実サイトから消える)
+    async _artUnpublish(id) {
+        const article = this.publishArticleStore.get(id);
+        if (!article) return;
+        const ok = await confirmDialog({
+            title: '公開を取り消す',
+            message: `「${article.title}」を公開サイトから削除します。\n（他の公開中記事はそのまま残ります）`,
+            okLabel: '公開を取り消す', danger: true
+        });
+        if (!ok) return;
+        try { await this.publishArticleStore.update(id, { published: false }); }
+        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+        const r = await this._runPublishExport();
+        if (!r.ok) {
+            try { await this.publishArticleStore.update(id, { published: true }); } catch (_) {}
+            this._artRenderList();
+            return;
+        }
+        if (this._artEditingId === id) {
+            this._artDraft.published = false;
+            const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = true;
+        }
+        toast(`「${article.title}」の公開を取り消しました。`, { type: 'success' });
+        this._artRenderList();
+    }
+
+    async _artDelete(id) {
+        const a = this.publishArticleStore.get(id);
+        const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。`, okLabel: '削除', danger: true });
+        if (!ok) return false;
+        await this.publishArticleStore.remove(id);
+        return true;
+    }
+
+    async _artDuplicate(id) {
+        await this.publishArticleStore.duplicate(id);
+    }
+
+    // 一括更新: 公開中記事をまとめて再 push (公開状態は変えない・一括「公開」ではない)
+    async _artRepublishAll() {
+        const published = this.publishArticleStore.articles().filter(a => a.published);
+        if (!published.length) { toast('公開中の記事がありません。各記事の「公開」で公開してください。', { type: 'warn' }); return; }
         // 進行表示 (ui-standards §2-5: 1秒以上かかる操作は必ず合図を出す)
-        const btn = document.getElementById('pp-republish-all');
+        const btn = document.getElementById('art-republish-all');
         const orig = btn ? btn.innerHTML : '';
         if (btn) { btn.disabled = true; btn.innerHTML = `<span class="h-icon" data-icon="loader" data-icon-size="13"></span>更新中…`; if (window.applyIcons) window.applyIcons(btn); }
         try {
             const r = await this._runPublishExport();
             if (!r.ok) return;
             const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-            toast(`公開中の ${r.result.published} ページを更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
-            this._renderPublishPagesList();
+            toast(`公開中の ${r.result.published} 記事を更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+            this._artRenderList();
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = orig; if (window.applyIcons) window.applyIcons(btn); }
         }
     }
 
-    async _ppDelete(id) {
-        const page = this.publishPageStore.get(id);
-        const ok = await confirmDialog({ title: '公開ページを削除', message: `「${page ? page.title : ''}」を削除します。\n（次回の公開で実際のサイトからも消えます）`, okLabel: '削除', danger: true });
-        if (!ok) return false;
-        await this.publishPageStore.remove(id);
-        this._renderPublishPagesList();
-        return true;
-    }
+    // ===== プレビュー (ボタン式・ステップ1の判断: PublishArticleGenerator.build() の readBookMemo IO が
+    // 本の冊数に比例するため、キー入力ごとのリアルタイム反映は避ける。旧 _ppPreview/_buildPreviewState と
+    // 同じパターンで、メモリ上データ (未保存の編集も含む) から state を組み IO を最小化する) =====
 
-    async _ppDuplicate(id) {
-        await this.publishPageStore.duplicate(id);
-        this._renderPublishPagesList();
-    }
-
-    // プレビュー用の state をメモリ上のデータから組む (未保存編集も反映・未接続でも動く)
-    _buildPreviewState() {
+    // プレビュー用の state をメモリ上のデータから組む (未保存編集も反映・未接続でも動く)。
+    // 旧 _buildPreviewState (公開ページ管理 UI) と同一ロジック。
+    _artBuildPreviewState() {
         const ud = this.userData || {};
         const shelves = ud.bookshelves || [];
-        // メモリ上の本棚は internalId を持たないことがある → key = internalId || id(slug) に統一
         const metas = shelves.map(b => {
             const key = b.internalId || b.id;
             return {
@@ -7939,57 +8431,54 @@ class VirtualBookshelf {
         };
     }
 
-    async _ppPreview() {
-        const data = this._ppCollectForm();
-        if (!data.styleId) { toast('スタイルを選んでください。', { type: 'warn' }); return; }
-        if (data.select.shelves.length === 0 && data.select.books.length === 0) {
-            toast('載せる本棚か本を 1 つ以上選んでください。', { type: 'warn' }); return;
+    async _artPreview() {
+        if (!this._artDraft || !(this._artDraft.blocks || []).length) {
+            toast('ブロックを1つ以上追加してください。', { type: 'warn' });
+            return;
         }
-        this._ppSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
-        this._ppOpenPreviewModal();
-        // slug は固定 'preview' を後勝ちで（...data が slug を持つため順序が重要）。出力パスとルックアップを一致させる
-        const tempPage = { ...data, id: '_preview', slug: 'preview' };
+        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
+        this._artOpenPreviewModal();
+        // slug は固定 'preview' を後勝ちで (...this._artDraft が slug を持つため順序が重要)。
+        // 出力パスとルックアップを一致させる (旧 _ppPreview と同じ規約)。
+        const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview' };
         try {
-            const result = await this.publishGenerator.build([tempPage], { state: this._buildPreviewState() });
+            const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState() });
             const file = result.files.find(f => f.path === 'preview/index.html');
-            if (file) this._ppSetPreview(file.content);
-            else this._ppSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishGenerator.esc(result.errors[0] || '')}</p>`);
+            if (file) this._artSetPreview(file.content);
+            else this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
         } catch (e) {
-            this._ppSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishGenerator.esc(e.message)}</p>`);
+            this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishArticleGenerator.esc(e.message)}</p>`);
         }
     }
 
-    _ppSetPreview(html) {
+    _artSetPreview(html) {
         const frame = document.getElementById('pp-preview-frame');
         if (frame) frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
     }
 
-    _ppOpenPreviewModal() {
+    _artOpenPreviewModal() {
         const m = document.getElementById('pp-preview-modal');
         if (!m) return;
-        // 開くたびに PC 幅へ初期化 (前回のモバイル幅トグルが残らないように)
         const btn = document.getElementById('pp-preview-device');
         const stage = m.querySelector('.pp-preview-stage');
         if (btn) { btn.dataset.mode = 'desktop'; btn.innerHTML = '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅'; }
         if (stage) stage.classList.remove('pp-stage-mobile');
         m.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(m);
-        this._modalHistPush('pp-preview-modal', (o) => this._ppClosePreviewModal(o));
+        this._modalHistPush('pp-preview-modal', (o) => this._artClosePreviewModal(o));
     }
-    _ppClosePreviewModal({ fromHistory = false } = {}) {
+    _artClosePreviewModal({ fromHistory = false } = {}) {
         const m = document.getElementById('pp-preview-modal');
         if (m) m.classList.remove('show');
         this._modalHistPop('pp-preview-modal', { fromHistory });
     }
-    _ppTogglePreviewDevice() {
+    _artTogglePreviewDevice() {
         const btn = document.getElementById('pp-preview-device');
         const stage = document.querySelector('#pp-preview-modal .pp-preview-stage');
         if (!btn || !stage) return;
         const toMobile = btn.dataset.mode === 'desktop';
         btn.dataset.mode = toMobile ? 'mobile' : 'desktop';
         stage.classList.toggle('pp-stage-mobile', toMobile);
-        const lbl = btn.querySelector('span:last-child') || btn;
-        // ラベルとアイコンを切替（PC幅 ⇄ モバイル幅）
         btn.innerHTML = toMobile
             ? '<span class="h-icon" data-icon="monitor" data-icon-size="14"></span>PC 幅'
             : '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅';

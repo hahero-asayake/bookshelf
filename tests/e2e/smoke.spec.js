@@ -141,17 +141,27 @@ test('設定→アカウント: 同期方式と独立してログイン面が出
     expect(errors).toEqual([]);
 });
 
-test('公開: 新規作成→本棚選択→プレビューが生成される (slug上書きバグ回帰)', async ({ page }) => {
+test('公開: 記事を新規作成→本棚ブロックに本を配置→プレビューを開ける (公開v2 S3)', async ({ page }) => {
     const errors = await bootApp(page);
+    await page.evaluate(() => {
+        // LocalFSAdapter は実 dirHandle を持たない (picker 未操作) ため、記事ストアの読み書きだけ
+        // メモリ上のマップへ差し替える (公開v2 S3・記事エディタの自動保存を成立させるため)
+        const mem = new Map();
+        const adapter = window.bookshelf.storage.adapter;
+        adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+        adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+    });
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-    await page.click('#pp-new');
-    await expect(page.locator('#pp-edit-view')).toBeVisible();
-    await page.selectOption('#pp-style', 'shelf-sections'); // selectOption は option の attach を待つ
-    // 本棚を1つ選ぶ (最初の行=「すべて」)
-    await page.click('#pp-shelves .bs-pick-row');
-    await page.click('#pp-preview');
-    // iframe srcdoc に本のタイトルが入り、失敗メッセージは出ない
+    await page.click('#art-new');
+    await expect(page.locator('#art-edit-view')).toBeVisible();
+    // ブロックを追加 → 本棚。引き出し (all 本棚) から本を1冊配置する
+    await page.locator('.art-add-btn').first().click();
+    await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+    await page.locator('#art-drawer-list .art-drawer-item').first().click();
+    await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+    await page.click('#art-preview');
+    await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
     const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
     expect(srcdoc).toContain('フィクスチャの本');
     expect(srcdoc).not.toContain('生成できませんでした');

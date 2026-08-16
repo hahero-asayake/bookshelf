@@ -169,10 +169,11 @@ test.describe('スマホ戻る (履歴統合)', () => {
         const errors = await bootApp(page);
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#pp-new');
-        await page.selectOption('#pp-style', 'shelf-sections');
-        await page.click('#pp-shelves .bs-pick-row');
-        await page.click('#pp-preview');
+        await page.click('#art-new');
+        // プレビューはブロックが1つ以上ないと警告のみで開かない (公開v2 S3) ため、文章ブロックを1つ追加する
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.click('#art-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);

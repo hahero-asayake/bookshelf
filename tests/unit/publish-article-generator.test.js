@@ -2,10 +2,7 @@
 // (S2 記事モデル生成器, ADR-058・09_公開システム設計 §11.3〜11.6)
 import { describe, it, expect, beforeEach } from 'vitest';
 
-await import('../../js/publish-page-store.js');
 await import('../../js/publish-article-store.js');
-await import('../../js/publish-styles.js');
-await import('../../js/publish-generator.js');
 await import('../../js/vendor/marked.umd.js');
 await import('../../js/publish-article-generator.js');
 const { PublishArticleGenerator, PublishArticleStore, ARTICLE_HEADING_LEVEL, ARTICLE_COLOR_TOKENS } = globalThis;
@@ -302,6 +299,34 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     });
 });
 
+describe('プラグインの公開スナップショット (opts.publishData, サイト単位の加算スロット・ADR-042)', () => {
+    it('footerNote が全記事 + index の所定スロットへ esc 済みで出力される', async () => {
+        const article = makeArticle();
+        const r = await gen.build([article], { publishData: [{ id: 'publish-credit', footerNote: '<script>x</script> & 手作りの一言' }] });
+        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const index = r.files.find(f => f.path === 'index.html').content;
+        for (const doc of [html, index]) {
+            expect(doc).toContain('class="pub-plugin-note"');
+            expect(doc).toContain('&lt;script&gt;x&lt;/script&gt; &amp; 手作りの一言');
+            expect(doc).not.toContain('<script>x</script>');
+        }
+    });
+
+    it('footerNote が無い/空の publishData は何も出力しない', async () => {
+        const article = makeArticle();
+        const r = await gen.build([article], { publishData: [{ id: 'a' }, { id: 'b', footerNote: '   ' }] });
+        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        expect(html).not.toContain('pub-plugin-note');
+    });
+
+    it('publishData 未指定でも壊れない (空スロット)', async () => {
+        const article = makeArticle();
+        const r = await gen.build([article]);
+        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        expect(html).not.toContain('pub-plugin-note');
+    });
+});
+
 describe('Amazon リンク方式 (旧 PublishGenerator と同じ規約を踏襲, ADR-033/034追補)', () => {
     it('GitHub 公開は自分のタグを焼き込み、広告ラベルが出る', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
@@ -356,20 +381,21 @@ describe('index.html (記事一覧)', () => {
     });
 });
 
-describe('一気通貫: 旧 pages.json (PublishPageStore) → 記事モデル移行 → 生成 (完了条件)', () => {
+describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完了条件)', () => {
     it('旧公開ページを PublishArticleStore.migrateFromPages で変換し、PublishArticleGenerator.build がそのまま通る', async () => {
-        // 実運用に近い形: 旧ストアで公開ページを作る → 移行関数へ渡す → 新生成器でビルドする、を通しで確認する
+        // 実運用に近い形: 旧 pages.json 形式のページ (旧 PublishPageStore.create() が返す形と同じ構造の
+        // プレーンオブジェクト。旧ストア自体は公開v2 S3 で撤去済みのためクラスは使わずリテラルで再現する)
+        // → 移行関数へ渡す → 新生成器でビルドする、を通しで確認する
+        const legacyPage = {
+            id: 'legacy1', slug: 'manga-shelf', title: '漫画の本棚', intro: 'よろしくお願いします',
+            styleId: 'shelf-sections', styleParams: {}, select: { shelves: ['mid'], books: ['M1'] },
+            published: true, createdAt: 1, updatedAt: 1, lastBuiltAt: null
+        };
         const legacyStorage = {
-            _data: null,
+            _data: { pages: [legacyPage] },
             async readJSON(path) { return path === 'private/publish/pages.json' ? this._data : null; },
             async writeJSON(path, data) { if (path === 'private/publish/pages.json') this._data = data; }
         };
-        const pageStore = new globalThis.PublishPageStore(legacyStorage);
-        await pageStore.load();
-        const legacyPage = await pageStore.create({
-            title: '漫画の本棚', intro: 'よろしくお願いします',
-            styleId: 'shelf-sections', select: { shelves: ['mid'], books: ['M1'] }, published: true
-        });
 
         // 移行時点の本棚の中身を解決する関数 (呼び出し側=蔵書 state を知っている側が注入する契約)
         const state = makeState();
@@ -379,7 +405,8 @@ describe('一気通貫: 旧 pages.json (PublishPageStore) → 記事モデル移
             const file = state.bookshelfFiles[meta.internalId];
             return (file && file.books) || [];
         };
-        const articles = PublishArticleStore.migrateFromPages(pageStore.pages(), resolveShelfBooks);
+        const rawPages = (await legacyStorage.readJSON('private/publish/pages.json')).pages;
+        const articles = PublishArticleStore.migrateFromPages(rawPages, resolveShelfBooks);
         expect(articles).toHaveLength(1);
         expect(articles[0].slug).toBe(legacyPage.slug);
         expect(articles[0].published).toBe(true);

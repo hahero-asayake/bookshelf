@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "check:version": "node scripts/check-version-bump.mjs",
     "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md"
   },
   "devDependencies": {
