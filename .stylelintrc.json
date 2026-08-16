@@ -1,0 +1,8 @@
+{
+  "_comment": "単一ルールのみで導入 (config-standard 等の拡張は当てない)。既存 6000 行超の css/bookshelf.css に標準ルールを当てると大量エラーで本題が埋もれるため。段階的な拡張は別イシューで扱う。U-4 (罫線色トークンの文字色流用の再発防止)。",
+  "rules": {
+    "declaration-property-value-disallowed-list": {
+      "/^color$/": ["/^var\\(--line2?\\s*[,)]/"]
+    }
+  }
+}

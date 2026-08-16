@@ -844,7 +844,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .strip-label {
     writing-mode: vertical-rl;
     font-size: 0.7rem;
-    color: var(--line);
+    color: var(--muted);
     letter-spacing: 0.1em;
     margin-top: 0.5rem;
 }
@@ -866,7 +866,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 
 .detail-placeholder {
     text-align: center;
-    color: var(--line);
+    color: var(--muted);
     padding: 3rem 1rem;
     font-size: 0.9rem;
 }
@@ -1529,7 +1529,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 
 .icon-picker-direct-hint {
     font-size: 0.75rem;
-    color: var(--line);
+    color: var(--muted);
     margin-bottom: 0.5rem;
 }
 
@@ -1616,7 +1616,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 
 .icon-picker-cell-name {
     font-size: 0.6rem;
-    color: var(--line);
+    /* hover(--line2)・selected(--accent-bg)面で --muted だと 4.23:1/4.27:1 に沈むため --fg2 (実測 6.7 以上) */
+    color: var(--fg2);
     text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1860,7 +1861,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 .widget-grip {
-    color: var(--line);
+    color: var(--muted);
     cursor: grab;
     user-select: none;
     font-weight: bold;
@@ -2494,7 +2495,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 0.4rem; padding: 56px 20px; text-align: center; color: var(--muted, #6b6675); min-height: 32vh;
 }
-.bookshelf-empty .bse-icon { color: var(--line2, #cfc8d6); line-height: 0; margin-bottom: 0.3rem; }
+/* 純装飾アイコンだが視認性のため罫線色(--line2)は使わない。--muted は薄さを残しつつ AA 装飾基準(3:1)を満たす */
+.bookshelf-empty .bse-icon { color: var(--muted, #6b7280); line-height: 0; margin-bottom: 0.3rem; }
 .bookshelf-empty .bse-icon svg { width: 32px; height: 32px; }
 .bookshelf-empty .bse-title { font-size: 1rem; font-weight: 600; color: var(--text, #241f2b); margin: 0; }
 .bookshelf-empty .bse-sub { font-size: 0.85rem; margin: 0; max-width: 26rem; line-height: 1.6; }

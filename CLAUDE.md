@@ -262,6 +262,7 @@ PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀developme
   - `.btn-danger`: ghost + danger color (#e25555) — 削除系
   - `.btn-warning`: ghost + warning color (#d49100) — 注意系
   - 色を直接指定するボタン上書きは禁止 (旧 `#007bff` `#dc3545` 等)
+  - 罫線トークン (`--line`/`--line2`) は `color:` 禁止 (stylelint で CI 強制) → 詳細は [ui-standards §2-10](docs/ui-standards.md)
 
 スマホ向け・公開モードは未確定。
 

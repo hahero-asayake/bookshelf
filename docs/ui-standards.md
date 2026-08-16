@@ -48,6 +48,8 @@
 7. E2E 緑は代理指標。**「初見で使えるか」の判定は本人**（ADR-049 の教訓）。UI の新設・大改修は本人スクショレビューを完了条件に含める。
 8. **`data/config.json` は「未設定項目の既定値」**。マージは前勝ち（`{...config, ...userData.settings}`）で、ユーザーが保存した設定を上書きしない（再発事例: 後勝ちマージで運営アフィタグが全ユーザーに注入・表示設定が毎回リセット。ADR-055 `ca48eef`）。
 9. **スクショ検証は静止画の限界を明示する**: スクロール・ドラッグ等の動きは実測（scrollHeight/canScroll 計測・打鍵）で補う（2026-07-28 本人指摘）。
+10. **`--line`/`--line2` は罫線専用**（border/outline/区切り背景）。`color:` には使わない。文字色は `--fg`（本文）/`--fg2`（副）/`--muted`（補助・AA下限 4.83:1 on white）から選ぶ。装飾アイコンも同様。stylelint `declaration-property-value-disallowed-list` で `color:` への `var(--line)`/`var(--line2)` 直接指定は CI が落ちる（`npm run lint:css`）。
+    - 再発事例: ADR-047 P0 で左ペイン3箇所のみ個別修正→規約化せず他画面（アイコンピッカー等6箇所）に残存（2026-08-16 U-4）
 
 ## §3 文言規約
 
@@ -93,6 +95,8 @@
 | 標準操作マトリクス打鍵 | `tests/e2e/standard-ops.spec.js` | `npx playwright test` |
 | 文言 lint | `.textlintrc.json` + `scripts/extract-ui-strings.mjs` | `npm run lint:copy` |
 | アクセシビリティ | （未導入・axe-core 予定） | — |
+| CSS lint（罫線色トークンの文字色流用禁止） | `.stylelintrc.json` | `npm run lint:css` |
+| 罫線色トークン流用の回帰・コントラスト実測 | `tests/e2e/ux-u4-contrast.spec.js` | `npx playwright test` |
 | 回帰 E2E / unit | `tests/e2e/` / `tests/unit/` | `npm run test:e2e` / `npm test` |
 
 ## §7 更新履歴
@@ -102,3 +106,4 @@
 - 2026-07-29 §5 設定画面の設計方針を新設（C-271）
 - 2026-07-29 §1 に除外一覧・手動追加を追加＋履歴統合の汎用ヘルパー規約（C-281。手順 UI は番号つきステップで「上から順にやれば終わる」形に）
 - 2026-08-15 §1「公開ページ管理モーダル」を「公開記事モーダル」に改称（公開v2 S3、ADR-058 §11。DOM ID・開閉関数は不変のため履歴統合の実装は無変更）
+- 2026-08-16 §2-10 に罫線色トークン (`--line`/`--line2`) の文字色流用禁止を追加＋§6 に stylelint・回帰テストを追記（U-4。ADR-047 P0 の個別修正が規約化されず再発したための帰納）

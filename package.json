@@ -7,13 +7,15 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check:version": "node scripts/check-version-bump.mjs",
-    "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md"
+    "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md",
+    "lint:css": "stylelint \"css/**/*.css\""
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.49.0",
     "@textlint-ja/textlint-rule-preset-ai-writing": "^1.7.0",
     "jsdom": "^25.0.0",
+    "stylelint": "^16.26.1",
     "textlint": "^15.7.1",
     "textlint-rule-preset-jtf-style": "^3.0.3",
     "vitest": "^2.1.0"
