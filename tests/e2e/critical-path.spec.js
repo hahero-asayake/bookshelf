@@ -2,7 +2,7 @@
 //  初回訪問 → 取込 (貼り付け) → リロード耐性 → 評価 → 公開プレビュー → ハブ接続 → 課金 → Plus 反映 → 退会
 //  ハブ API (usage / billing / account) は route モック。意地悪ステップ (二度押し・リロード) を混ぜる。
 //  ローンチ判定: この1本が緑 = 主要導線が通しで壊れていない。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 
 const HUB = 'https://mockhub.test';
 const MB = 1024 * 1024;
@@ -160,6 +160,7 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         await expect(page.locator('#sidebar-account-label')).toHaveText('ログイン');
     });
 
-    // 通し中に console エラーゼロ (GIS 外部スクリプト等の環境要因は除外)
-    expect(errors.filter(e => !/accounts\.google|gsi|net::ERR/.test(e))).toEqual([]);
+    // 通し中に console エラーゼロ (GIS は tests/e2e/helpers/test-base.js で遮断済み。
+    // net::ERR は Amazon 連携ボタン等オフライン環境依存の要因のみ除外)
+    expect(errors.filter(e => !/net::ERR/.test(e))).toEqual([]);
 });

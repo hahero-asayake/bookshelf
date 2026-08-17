@@ -1,7 +1,7 @@
 // registerActiveFilter (属性プロバイダ) の実機検証。
 // プラグインが bookFilter で 0 件に絞り込み、registerActiveFilter で「フィルタ中」を申告すると、
 // コアの空状態が「条件に合う本がありません」+「絞り込みを解除」を出し、解除でフィルタが OFF になる。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

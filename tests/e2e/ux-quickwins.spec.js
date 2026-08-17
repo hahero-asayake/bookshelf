@@ -1,6 +1,6 @@
 // UX 監査 (2026-06-25) の Quick Wins の回帰テスト
 //  QW2 評価フィルタ中の星変更で再フィルタ / QW3 ⌘K 起動ボタン / QW4 空状態・welcome の取込直行
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

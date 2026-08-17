@@ -4,7 +4,7 @@
 //  - ブランド (アプリ名) クリックでホームへ遷移
 //  - 下部ナビ (モバイル) の現在地ハイライト (.is-active) を配線
 //  - 「プラグイン」ボタンは設定のプラグイン節を開く (P3 で専用ページへ)
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

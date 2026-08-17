@@ -1,6 +1,6 @@
 // ハブ容量アラートバナー (WP-B3/B4) の回帰テスト
 //  0.79 = 非表示 / 0.81 = 警告 / 0.96 = 強警告 / Free 超過 = 書き出し導線つき危機表示
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

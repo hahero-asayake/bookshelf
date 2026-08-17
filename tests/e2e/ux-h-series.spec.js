@@ -1,7 +1,7 @@
 // UX 監査 (2026-06-25) の High 項目の回帰テスト
 //  H-1 モバイルセットアップバナー: ローカル前提の旧案内を廃し PWA+クラウド同期へ誘導
 //  H-3 ハブ再ログイン: 「ログイン済み」と「保存先として使用中」を明示 + 節内ログイン導線
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

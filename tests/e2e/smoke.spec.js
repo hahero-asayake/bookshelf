@@ -1,7 +1,7 @@
 // スモークテスト: 起動・基本操作のリグレッション網
 // フィクスチャを localStorage に注入して起動する (同期フォルダ不要の localStorage フォールバック経路)。
 // ⚠️ 大量冊数の描画テストは書かない (ヘッドレス + content-visibility の制約、COMMON 参照)
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

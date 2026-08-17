@@ -3,7 +3,7 @@
 //  - PC は左レール + 右ペイン。既定はアカウント、レールで切替
 //  - × = 閉じる / フッターの「閉じる」(#settings-modal-done) は廃止 (二重クローズ解消)
 //  - ターゲット直開き (_openSettingsModal('sync-method-select')) で該当カテゴリが開く
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

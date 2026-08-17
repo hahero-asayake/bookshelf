@@ -1,6 +1,6 @@
 // 貼り付け/クリップボード取込 (スマホ向け。ブックマークレットがコピーした JSON を取込む経路)
 // 拡張・ファイル不要で、テキストエリアに JSON を貼って取込 → 本選択リストに出ることを確認する。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

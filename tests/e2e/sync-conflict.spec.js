@@ -1,6 +1,6 @@
 // 同期衝突ダイアログ (WP-B2) の回帰テスト
 //  3択 (何もしない / JSON書き出し / 再読込) + 書き出し後に選び直せること
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

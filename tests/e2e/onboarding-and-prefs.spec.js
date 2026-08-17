@@ -3,7 +3,7 @@
 // - 本棚切替で検索・評価の絞り込みを持ち越さない
 // - 並び順は保存され、リロード後に復元される
 // - 表紙画像の読み込み失敗はタイトル入り生成表紙に差し替わる
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

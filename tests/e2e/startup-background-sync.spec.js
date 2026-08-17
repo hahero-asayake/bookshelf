@@ -1,7 +1,7 @@
 // 起動の2段化 (C-277) の回帰テスト
 //  ローカルデータがある端末では、クラウド同期 (ハブ) の完了を待たずに
 //  ローディングが消えて操作可能になり、確認中は細い帯だけが出る。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

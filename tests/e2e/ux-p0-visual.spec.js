@@ -1,7 +1,7 @@
 // UI再設計 P0 (見た目の安全な改善) の回帰テスト
 //  - 本棚の編集(⋯)ボタンを常時表示 (hover限定をやめる)
 //  - モバイルでフォーム入力を16px以上にしてiOS自動ズームを防ぐ
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

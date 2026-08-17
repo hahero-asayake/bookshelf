@@ -2,7 +2,7 @@
 //  PC: 初回準備 = ブックマーク登録 UI・postMessage 受信で本選択リストが開く
 //  スマホ: PC レーンを出さず案内文のみ (デッドエンド解消)
 //  about: 問い合わせ導線 (ui-standards §4 導線対称性)
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -71,7 +71,8 @@ test('PC: 受信待ち中に postMessage が届くと本選択リストが開く
     });
     await expect(page.locator('#book-selection')).toBeVisible();
     await expect(page.locator('#book-list .book-selection-item')).toHaveCount(2);
-    expect(errors.filter(e => !/accounts\.google|gsi|net::ERR/.test(e))).toEqual([]);
+    // GIS は tests/e2e/helpers/test-base.js で遮断済み。net::ERR は環境依存の外部到達要因のみ除外
+    expect(errors.filter(e => !/net::ERR/.test(e))).toEqual([]);
 });
 
 test.describe('スマホ表示', () => {

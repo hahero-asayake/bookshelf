@@ -3,7 +3,7 @@
 // 「検証は全数でなく代表チェック」の方針: 3レイアウト(wall/count/card) × ライト1色・黒1色 = 代表6通りで
 // PublishArticleGenerator が実際に生成した自己完結HTMLをブラウザで開き、レイアウト破綻がないかを機械的に
 // 確認する (全30通りの目視は不要)。テーマ追加時にもこのテストを流せば回帰確認できる (最後の describe)。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import AxeBuilder from '@axe-core/playwright';
 
 // 1x1 の重さを避けた軽量 data: URI 表紙 (外部ネットワークに依存しない・CSP img-src の data: を使う)

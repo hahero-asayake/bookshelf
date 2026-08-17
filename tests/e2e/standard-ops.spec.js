@@ -1,7 +1,7 @@
 // 標準操作マトリクス打鍵 (docs/ui-standards.md §1 が正)
 // 「閉じたい/戻りたい」の標準操作 (ESC / スマホ戻る=履歴統合 / 枠外クリック) が
 // 全モーダル・シートで効くことを担保する。新しい面を作ったらここに行を足す。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

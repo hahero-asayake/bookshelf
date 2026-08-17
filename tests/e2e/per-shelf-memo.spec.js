@@ -9,7 +9,7 @@
 // 合成表示・保存) を検証し続けられるようにするため (実体は git 履歴に残る)。
 // 本棚から本を開いたときに detailSection の ctx.bookshelf が実アプリから正しく配線され、
 // 合成表示・保存・本棚文脈なしの分岐が動くことを検証する。
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

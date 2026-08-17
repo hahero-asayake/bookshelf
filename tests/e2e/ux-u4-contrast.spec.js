@@ -1,7 +1,7 @@
 // U-4: 罫線色トークン (--line/--line2) を文字色に流用していた6箇所の再発防止回帰テスト
 //  - コントラスト比は目視ではなく getComputedStyle(実背景/実文字色) から WCAG 相対輝度式で実測する
 //  - ライト(既定)とダーク(dark-theme プラグイン)の両方で検証する (片方だけ通る配色が典型的な穴)
-import { test, expect } from '@playwright/test';
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
