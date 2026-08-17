@@ -13,11 +13,18 @@
 
     // ===== toast =====
 
+    // 既存バグ (イシュー#55・②実機指摘): success/error は LUCIDE_ICONS (js/icons.js) に
+    // 未登録の名前 ('check-circle-2'/'alert-octagon') を指しており、CDN解決後の差し替えも
+    // renderIconSafe 側が data-icon-value を付けていないため効かず、テキストフォールバック
+    // (例: 'check-circle-2'.split('-')[0].slice(0,2) = 'ch') が出続けていた (保存失敗等の
+    // 既存 error トーストも含め、js/ 内で type:'error' を使う18箇所すべてが対象)。
+    // success は登録済みの同義アイコン 'check-circle' に、error は登録済みの 'alert-triangle'
+    // (warn と共用) に差し替えて解消。本来の 'alert-octagon' 用 path 追加は 07_残検討事項.md に起票済み。
     const TYPE_ICON = {
         info: 'info',
-        success: 'check-circle-2',
+        success: 'check-circle',
         warn: 'alert-triangle',
-        error: 'alert-octagon'
+        error: 'alert-triangle'
     };
 
     // 先頭絵文字 → type (null = 装飾のみ: 除去するが type は推論に回す)
@@ -49,7 +56,10 @@
         return (typeof window.renderIcon === 'function') ? window.renderIcon(name, { size }) : '';
     }
 
-    window.toast = function toast(message, { type } = {}) {
+    // opts.action = { label, onClick } で Undo 等のボタンをトーストに1つ付けられる (押下で onClick→自身を閉じる)。
+    // opts.duration (ms) で自動消去までの時間を上書きできる (Undo 付きは既定より長めに呼び出し側で指定する)。
+    window.toast = function toast(message, opts = {}) {
+        const { type, action, duration } = opts;
         let msg = String(message ?? '');
         let resolved = type || null;
         for (const [re, t] of EMOJI_TYPE) {
@@ -74,6 +84,14 @@
             item.classList.add('toast-out');
             setTimeout(() => item.remove(), 180);
         };
+        if (action && action.label && typeof action.onClick === 'function') {
+            const actionBtn = document.createElement('button');
+            actionBtn.type = 'button';
+            actionBtn.className = 'btn btn-small btn-secondary toast-action';
+            actionBtn.textContent = action.label;
+            actionBtn.addEventListener('click', () => { action.onClick(); remove(); });
+            item.appendChild(actionBtn);
+        }
         if (resolved === 'error') {
             const close = document.createElement('button');
             close.type = 'button';
@@ -82,9 +100,9 @@
             close.innerHTML = renderIconSafe('x', 14) || '×';
             close.addEventListener('click', remove);
             item.appendChild(close);
-            setTimeout(remove, 6000);
+            setTimeout(remove, duration ?? 6000);
         } else {
-            setTimeout(remove, 4000);
+            setTimeout(remove, duration ?? 4000);
         }
         container.appendChild(item);
         return item;

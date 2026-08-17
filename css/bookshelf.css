@@ -4331,11 +4331,16 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; }
 .art-block.is-drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .art-block.is-dragging, .art-shelf-item.is-dragging { opacity: 0.45; pointer-events: none; }
-.art-block-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--line2); color: var(--muted); font-size: 0.72rem; }
+.art-block-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--line2); color: var(--muted); font-size: 0.72rem; }
+/* 狭幅で文字単位に縦割れするのを防ぐ (CJK は単語境界が無いため folding 対象になりやすい, イシュー#55 差し戻し)。
+   スペーサーだけ .art-block-bar-sp { flex: 1 } で個別に上書きするので、このルールより後ろに置くこと。 */
+.art-block-bar > * { flex-shrink: 0; white-space: nowrap; }
 .art-block-grip { cursor: grab; color: var(--muted); touch-action: none; padding: 0.1rem 0.2rem; }
 .art-block-grip:active { cursor: grabbing; }
 .art-block-kind { background: var(--line2); border-radius: 4px; padding: 0.1rem 0.45rem; color: var(--fg2); font-weight: 600; }
+.art-block-count { color: var(--muted); }
 .art-block-bar-sp { flex: 1; }
+.art-block-bar-sep { width: 1px; align-self: stretch; background: var(--line2); margin: 0 0.1rem; }
 .art-block-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 0.2rem; display: inline-flex; align-items: center; }
 .art-block-ic:hover { color: var(--accent); }
 .art-block-ic.art-block-del:hover { color: var(--danger); }
@@ -4353,16 +4358,33 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block-book-info .art-item-title { font-size: 0.92rem; font-weight: 700; }
 .art-block-book-info .art-item-author { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
 
-/* --- 本棚ブロック: バー(一括設定+密度+畳む) + カード/コンパクトリスト --- */
+/* --- 本棚ブロック: バー(密度+畳む) + カード/コンパクトリスト --- */
+/* ブロックバーの枠つき/塗りチップはここまで (コンパクト/カードの2つのみ、Polaris Common actions の上限, イシュー#55) */
 .art-chip-toggle { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 0.2rem 0.6rem; font-size: 0.74rem; color: var(--fg2); cursor: pointer; }
 .art-chip-toggle.is-on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
-.art-shelf-sort-sel { border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.72rem; color: var(--fg2); background: var(--panel); }
+.art-shelf-sort-sel, .art-sel-show-sel { border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.72rem; color: var(--fg2); background: var(--panel); }
+
+/* 行内トグル (短/長): 枠なし tertiary icon button。色だけに頼らず太字+下線バーも併用 (WCAG) */
+.art-icon-toggle { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--muted); cursor: pointer; line-height: 1.3; }
+.art-icon-toggle:hover { color: var(--accent); }
+.art-icon-toggle.is-on { color: var(--accent-strong); font-weight: 600; border-bottom-color: var(--accent); }
+
+/* 選択バー (1件以上選択したときだけ表示、イシュー#55) */
+.art-shelf-selbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0.65rem; border-bottom: 1px solid var(--line2); background: var(--side); font-size: 0.76rem; }
+/* 狭幅で文字単位に縦割れするのを防ぐ (.art-block-bar と同じ理由)。要素ごと次の行に落ちるのは許容する。 */
+.art-shelf-selbar > * { flex-shrink: 0; white-space: nowrap; }
+.art-shelf-selbar-master { padding: 0.1rem 0.3rem; font-size: 0.76rem; font-weight: 600; color: var(--fg); }
+.art-shelf-selbar .art-block-bar-sp { flex: 1; }
+.art-sel-all-btn, .art-sel-clear-btn { border: none; background: none; color: var(--accent); cursor: pointer; padding: 0.1rem 0.2rem; font-size: 0.74rem; }
+.art-sel-all-btn:hover, .art-sel-clear-btn:hover { text-decoration: underline; }
 
 /* カード表示 (密度=card) */
 .art-shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr)); gap: 0.6rem; }
 .art-shelf-grid .art-shelf-item { border: 1px solid var(--line2); border-radius: 7px; padding: 0.4rem; position: relative; background: var(--side); }
+.art-shelf-grid .art-shelf-item.is-selected { border-color: var(--accent); background: var(--accent-bg); }
 .art-shelf-grid .art-shelf-item .art-cover { aspect-ratio: 5/7; max-height: 6.5rem; }
-.art-shelf-grid .art-shelf-item-grip { position: absolute; top: 0.3rem; left: 0.4rem; color: var(--muted); font-size: 0.7rem; cursor: grab; touch-action: none; }
+.art-shelf-grid .art-item-check { position: absolute; top: 0.25rem; left: 0.3rem; z-index: 1; }
+.art-shelf-grid .art-shelf-item-grip { position: absolute; top: 0.3rem; left: 1.5rem; color: var(--muted); font-size: 0.7rem; cursor: grab; touch-action: none; }
 .art-shelf-grid .art-shelf-item-title { font-size: 0.7rem; font-weight: 600; margin-top: 0.3rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .art-shelf-grid .art-shelf-item-toggles { display: flex; gap: 0.25rem; margin-top: 0.3rem; }
 .art-shelf-grid .art-shelf-item-order-btns { display: flex; gap: 0.15rem; margin-top: 0.25rem; }
@@ -4372,7 +4394,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-list { display: flex; flex-direction: column; }
 .art-shelf-list .art-shelf-item {
     display: grid;
-    grid-template-columns: 14px 34px 1fr auto auto auto;
+    grid-template-columns: 16px 14px 34px 1fr auto auto auto;
     align-items: center;
     gap: 0.5rem;
     padding: 0.3rem 0.3rem;
@@ -4383,6 +4405,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 }
 .art-shelf-list .art-shelf-item:last-child { border-bottom: none; }
 .art-shelf-list .art-shelf-item:hover { background: var(--side); }
+.art-shelf-list .art-shelf-item.is-selected { background: var(--accent-bg); }
 .art-shelf-list .art-shelf-item-grip { color: var(--muted); font-size: 0.65rem; cursor: grab; touch-action: none; }
 .art-shelf-list .art-shelf-item .art-cover { width: 34px; height: 34px; aspect-ratio: unset; max-height: none; border-radius: 3px; }
 .art-shelf-list .art-shelf-item-title { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4391,7 +4414,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* 個別アイテム共通 */
 .art-shelf-item.is-drag-over { border: 1px dashed var(--accent); background: var(--accent-bg); }
-.art-shelf-item-toggles .art-chip-toggle { font-size: 0.62rem; padding: 0.05rem 0.3rem; }
+.art-shelf-item-toggles .art-icon-toggle { font-size: 0.62rem; padding: 0.05rem 0.3rem; }
 .art-shelf-item-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; }
 .art-shelf-item-ic:hover { color: var(--accent); }
 .art-shelf-item-ic:disabled { opacity: 0.3; cursor: default; }
@@ -6128,7 +6151,9 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
 
 /* カスタムチェックボックス — accent カラー + アニメーション */
 .checkbox-label input[type="checkbox"],
-.account-consent input[type="checkbox"] {
+.account-consent input[type="checkbox"],
+.art-item-check,
+.art-shelf-select-all {
     appearance: none;
     -webkit-appearance: none;
     margin: 0;
@@ -6143,16 +6168,22 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     transition: border-color 0.12s, background 0.12s;
 }
 .checkbox-label input[type="checkbox"]:hover,
-.account-consent input[type="checkbox"]:hover {
+.account-consent input[type="checkbox"]:hover,
+.art-item-check:hover,
+.art-shelf-select-all:hover {
     border-color: var(--accent);
 }
 .checkbox-label input[type="checkbox"]:checked,
-.account-consent input[type="checkbox"]:checked {
+.account-consent input[type="checkbox"]:checked,
+.art-item-check:checked,
+.art-shelf-select-all:checked {
     background: var(--accent);
     border-color: var(--accent);
 }
 .checkbox-label input[type="checkbox"]:checked::after,
-.account-consent input[type="checkbox"]:checked::after {
+.account-consent input[type="checkbox"]:checked::after,
+.art-item-check:checked::after,
+.art-shelf-select-all:checked::after {
     content: '';
     position: absolute;
     left: 4px;
@@ -6164,9 +6195,30 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     transform: rotate(45deg);
 }
 .checkbox-label input[type="checkbox"]:focus-visible,
-.account-consent input[type="checkbox"]:focus-visible {
+.account-consent input[type="checkbox"]:focus-visible,
+.art-item-check:focus-visible,
+.art-shelf-select-all:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+}
+/* Mixed (部分選択) 表示: 選択バーのマスターチェック (イシュー#55)。
+   :indeterminate 疑似クラスは動的に el.indeterminate を切り替えても再描画がトリガーされない
+   ことがある (実測・Chromium) ため、JS側で明示的に付け外しする .is-mixed クラスで見た目を決める。
+   詳細度は input.art-shelf-select-all.is-mixed まで上げる (.checkbox-label input[type="checkbox"] が
+   祖先 .art-shelf-selbar-master にも .checkbox-label が付いているせいでマッチしてしまい、
+   型セレクタ込みの詳細度で .art-shelf-select-all.is-mixed 単体より勝ってしまうため, 実測で判明)。 */
+input.art-shelf-select-all.is-mixed {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+input.art-shelf-select-all.is-mixed::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 6.5px;
+    width: 8px;
+    height: 2px;
+    background: #fff;
 }
 
 /* Phase B-1 短文メモ用の小さい flag-label にも適用 */
@@ -6829,6 +6881,7 @@ body.select-mode .drag-handle { display: none; }
 .toast-warn .toast-icon { color: var(--warning); }
 .toast-error { border-left-color: var(--danger); }
 .toast-error .toast-icon { color: var(--danger); }
+.toast-action { flex: 0 0 auto; margin-left: 0.2rem; }
 .toast-close {
     flex: 0 0 auto;
     display: inline-flex;

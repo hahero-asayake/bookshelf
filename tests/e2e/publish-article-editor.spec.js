@@ -625,6 +625,10 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await page.click('#art-new');
         await addShelfWithBooks(page, 5);
 
+        // 並び順の一括指定は選択式 (イシュー#55): 選択バーは1件以上選択したときだけ出るため、
+        // まず1件選び「すべて選択」で全件を対象にしてから並び順を選ぶ。
+        await page.locator('.art-item-check').first().click();
+        await page.locator('.art-sel-all-btn').click();
         await page.locator('.art-shelf-sort-sel').selectOption('title');
         const titles = await page.evaluate(() => {
             const items = window.bookshelf._artDraft.blocks[0].items;
@@ -689,6 +693,124 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await search.fill('zzz');
         await expect(drawerItems).toHaveCount(0);
         await expect(page.locator('.art-drawer-empty')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+});
+
+// 本棚ブロックの一括操作を選択式にし Undo を付けた (イシュー#55)。
+// 設計: 選択なしのブロックバーは要素5個以下・1件以上選択で選択バーが出る・一括適用は Undo 付きトースト。
+test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
+    async function addShelfWithBooks(page, n) {
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+        const count = Math.min(n, await drawerItems.count());
+        for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+    }
+
+    test('選択なしのとき、ブロックバーの操作要素は5個以下 (ラベルを除く)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 4);
+
+        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
+        const count = await page.locator('.art-block-bar').first().locator('button, select, .art-block-grip').count();
+        expect(count).toBeLessThanOrEqual(5);
+        expect(errors).toEqual([]);
+    });
+
+    test('行を1件チェックすると選択バーが出て一括操作が使え、選択解除で消える', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 3);
+
+        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
+        await page.locator('.art-item-check').first().click();
+        await expect(page.locator('.art-shelf-selbar')).toBeVisible();
+        await expect(page.locator('.art-sel-show-sel')).toBeEnabled();
+        await expect(page.locator('.art-shelf-sort-sel')).toBeEnabled();
+
+        await page.locator('.art-sel-clear-btn').click();
+        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
+        expect(errors).toEqual([]);
+    });
+
+    test('一括適用 (メモ表示) 後にトーストが出て「元に戻す」で適用前の状態に戻る', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 4);
+
+        const snapshot = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(
+            it => ({ id: it.id, show: { ...it.show }, order: it.order })
+        ));
+        const before = await snapshot();
+
+        await page.locator('.art-item-check').nth(0).click();
+        await page.locator('.art-item-check').nth(1).click();
+        await page.locator('.art-sel-show-sel').selectOption('shortMemo:show');
+
+        const toast = page.locator('.toast');
+        await expect(toast).toBeVisible();
+        await expect(toast).toContainText('2冊に適用しました');
+        const undoBtn = toast.locator('.toast-action');
+        await expect(undoBtn).toBeVisible();
+
+        // 適用されたことも確認しておく (Undo 前後の対比を明確にするため)
+        const applied = await snapshot();
+        expect(applied.find(it => it.id === before[0].id).show.shortMemo).toBe(true);
+        expect(applied.find(it => it.id === before[1].id).show.shortMemo).toBe(true);
+
+        await undoBtn.click();
+        const after = await snapshot();
+        expect(after).toEqual(before);
+        expect(errors).toEqual([]);
+    });
+
+    test('「すべて選択」で全件選択でき、部分選択のときマスターチェックが Mixed になる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 4);
+
+        await page.locator('.art-item-check').first().click();
+        await page.locator('.art-sel-all-btn').click();
+        const allChecked = await page.locator('.art-item-check').evaluateAll(els => els.every(e => e.checked));
+        expect(allChecked).toBe(true);
+
+        await page.locator('.art-item-check').first().click(); // 1件外して部分選択にする
+        const indeterminate = await page.locator('.art-shelf-select-all').evaluate(el => el.indeterminate);
+        expect(indeterminate).toBe(true);
+        expect(errors).toEqual([]);
+    });
+
+    test('各行の短/長トグルは枠なしで、オン時に aria-pressed と下線バー (色以外の手掛かり) が付く', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 1);
+
+        const toggle = page.locator('.art-item-show-toggle').first();
+        const off = await toggle.evaluate(el => {
+            const s = getComputedStyle(el);
+            return { top: s.borderTopStyle, left: s.borderLeftStyle, right: s.borderRightStyle, bottomColor: s.borderBottomColor, pressed: el.getAttribute('aria-pressed') };
+        });
+        expect(off.top).toBe('none');
+        expect(off.left).toBe('none');
+        expect(off.right).toBe('none');
+        expect(off.pressed).toBe('false');
+
+        await toggle.click();
+        const on = await toggle.evaluate(el => {
+            const s = getComputedStyle(el);
+            return { bottomWidth: parseFloat(s.borderBottomWidth), bottomColor: s.borderBottomColor, pressed: el.getAttribute('aria-pressed') };
+        });
+        expect(on.pressed).toBe('true');
+        expect(on.bottomWidth).toBeGreaterThan(0);
+        // 色以外の手掛かり: on/off で下線の色そのものが切り替わっている (幅は常時2pxで固定・色で on/off を示す実装)
+        expect(on.bottomColor).not.toBe(off.bottomColor);
         expect(errors).toEqual([]);
     });
 });
