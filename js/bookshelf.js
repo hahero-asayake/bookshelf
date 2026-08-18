@@ -8930,12 +8930,12 @@ class VirtualBookshelf {
         this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
 
         if (typeof EasyMDE === 'undefined') {
-            if (statusEl) statusEl.textContent = 'エディタライブラリが読み込まれていません（CDN 接続を確認）';
+            if (statusEl) statusEl.textContent = 'エディタライブラリの読み込みに失敗しました';
             return;
         }
         this._bookMemoEditor = new EasyMDE({
             element: textareaEl,
-            autoDownloadFontAwesome: true,
+            autoDownloadFontAwesome: false,
             spellChecker: false,
             autosave: { enabled: false },
             status: ['lines', 'words'],

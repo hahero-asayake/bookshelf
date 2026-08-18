@@ -43,9 +43,43 @@
 // 読み込まれて googleads.g.doubleclick.net への通信が残ることを実測した。context.addInitScript/
 // context.route はその context から newPage() で作られる全 page に効くため、こちらを使う。
 //
+// E2E は easymde/lucide/Amazon 書影の実ネットワークにも出ない (イシュー#57)
+//
+// なぜ: #53 で GIS/AdSense を遮断した後も、フルスイート並列実行 (既定 8 workers) だけで
+// 毎回違うテストがランダムに落ちるフレークが残っていた。trace で追ったところ、直列実行や
+// 単体テストの反復では再現せず、フルスイート規模でのみ発生することを実測 (同一テストを
+// --repeat-each 30 で単独反復しても 0/30、フルスイート4回中1回で再現)。dev server
+// (bookshelf-dev.service) は失敗時間帯も全リクエスト 200 でエラー無し (journalctl 実測)
+// のため、dev server の輻輳が原因ではない。
+//
+// trace のネットワークログを実測すると、GIS/AdSense 遮断後も bootApp() のたびに
+// 3つの実外部通信が残っていた:
+//   (1) index.html に直書きの EasyMDE (cdn.jsdelivr.net) — <link>/<script> が静的に
+//       全ページで読み込まれ、<head> 内 <link rel=stylesheet> はレンダーブロッキング
+//   (2) js/icons.js の Lucide アイコン CDN フォールバック (unpkg.com) — ローカルの
+//       LUCIDE_ICONS に無いアイコン名は icon() が同期で空文字を返しつつ裏で fetch する
+//       設計のため、1 ページ内で十数件の個別リクエストが飛ぶ
+//   (3) js/book-manager.js の書影フォールバック URL (images-na.ssl-images-amazon.com)
+// これらは js/vendor/README.md に明記された ADR-001 (ビルドレス・CDN 不使用) にも反する。
+// フルスイート×8 workers ではこの実通信が短時間に集中し、単体反復ではブラウザキャッシュが
+// 効いて再現しない、という差が「なぜ並列でだけ落ちるか」の実測に基づく最有力説明 (完全な
+// 因果証明はできていないが、該当外部通信の遮断後にクリーンな10連続実行で確認する運用とする。
+// 詳細は 08_意思決定記録.md ADR-066)。
+//
+// EasyMDE 本体 (cdn.jsdelivr.net) は route で潰さず js/vendor/easymde.min.js へ vendor 化した
+// (marked.umd.js と同じ方針)。空スタブにすると `typeof EasyMDE === 'undefined'` の早期 return に
+// 落ちて _bookMemoEditor が生成されず、standard-ops.spec.js の長文メモテストが壊れるため。
+// 残る unpkg.com (Lucide) と images-na.ssl-images-amazon.com (書影) は E2E の見た目にしか
+// 影響しない (アイコン SVG の中身・書影の画素を検証しているテストは無い) ため、ここで
+// route.fulfill する。route.abort() は使わない (#53 の教訓: net::ERR_FAILED が新しい
+// console error を生む)。
+//
 // 全 tests/e2e/*.spec.js はこのファイルから test/expect を import すること
 // (@playwright/test を直接 import すると遮断が効かない)。
 import { test as base, expect } from '@playwright/test';
+
+// 1x1 透明 PNG (書影スタブ用)
+const TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 function installGisMock() {
     window.google = window.google || {};
@@ -83,6 +117,25 @@ export const test = base.extend({
             status: 200,
             contentType: 'application/javascript',
             body: '// adsbygoogle.js stubbed out for E2E (issue #53)'
+        }));
+        // Lucide アイコン CDN フォールバック (未収録アイコンの svg 個別取得。イシュー#57)
+        // 中身が空の <svg></svg> を返すと js/icons.js の _extractInner() が空文字列を
+        // 返し、resolveIcon() の !inner チェックに引っかかって「取得失敗」扱いになる。
+        // すると icon() は該当アイコンをずっと空文字列で返し続け、.h-icon が中身ゼロ→
+        // 高さゼロになり、それを含むボタン (.art-block-ic 等、高さをアイコンに委ねている
+        // 要素) ごと Playwright の toBeVisible() から hidden 判定される新規リグレッションを
+        // 実測した (publish-article-editor.spec.js の A-2回帰テストが軒並み失敗)。
+        // 中身に最小限の shape を1つ入れて「取得成功」扱いにする。
+        await context.route('https://unpkg.com/lucide-static@*/icons/**', (route) => route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" fill="none"/></svg>'
+        }));
+        // Amazon 書影フォールバック URL (イシュー#57)
+        await context.route('https://images-na.ssl-images-amazon.com/**', (route) => route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
         }));
         await use(context);
     }

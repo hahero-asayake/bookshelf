@@ -107,7 +107,7 @@
 | アクセシビリティ | （未導入・axe-core 予定） | — |
 | CSS lint（罫線色トークンの文字色流用禁止） | `.stylelintrc.json` | `npm run lint:css` |
 | 罫線色トークン流用の回帰・コントラスト実測 | `tests/e2e/ux-u4-contrast.spec.js` | `npx playwright test` |
-| E2E 共通 fixture（GIS モック・外部ネットワーク遮断） | `tests/e2e/helpers/test-base.js` | 全 spec が import |
+| E2E 共通 fixture（GIS モック・外部ネットワーク遮断: AdSense/Lucide CDN/Amazon 書影） | `tests/e2e/helpers/test-base.js` | 全 spec が import |
 | 回帰 E2E / unit | `tests/e2e/` / `tests/unit/` | `npm run test:e2e` / `npm test` |
 
 ## §7 更新履歴
@@ -120,4 +120,5 @@
 - 2026-08-16 §2-10 に罫線色トークン (`--line`/`--line2`) の文字色流用禁止を追加＋§6 に stylelint・回帰テストを追記（U-4。ADR-047 P0 の個別修正が規約化されず再発したための帰納）
 - 2026-08-17 §2-11 に「保存・読込の失敗を無言にしない」を新設＋§2-2 の再発事例に3回目（記事エディタの保存失敗・保存先未接続の再試行/通知ボタン）を追記（イシュー#35・ADR-063）
 - 2026-08-17 §2-12 に「アンカー付きメニュー/ポップオーバーはビューポート内に収める」を新設（イシュー#42。記事エディタのブロック追加メニューが固定方向で開くためブロック数個以上で画面外に出て選べなくなっていたことの帰納）
+- 2026-08-18 §6 の E2E 共通 fixture の説明に Lucide CDN・Amazon 書影の遮断を追記（イシュー#57・ADR-066。詳細な経緯・教訓は ADR-066 参照）
 - 2026-08-18 §6 に E2E 共通 fixture（`tests/e2e/helpers/test-base.js`）を追記（イシュー#53・ADR-065。GIS・AdSense を実ネットワークから読んでいたことが CI の断続的な赤の原因だったため、E2E 起動時に両方をモック/遮断する共通口を新設し、全 spec をそこへ寄せた）
