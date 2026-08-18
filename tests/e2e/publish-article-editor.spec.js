@@ -36,6 +36,54 @@ async function bootApp(page) {
     return errors;
 }
 
+// イシュー#59: 実データ相当(783冊)の引き出しでビューポート収まりを検証するため、userData の
+// "all" 特殊本棚(books配列)と library の両方に count 冊のダミーを注入する。_artRenderDrawer は
+// shelf.books を直接参照するため、library だけ増やしても引き出しには反映されない (実測済み)。
+function buildManyBooksFixtures(count) {
+    const userData = JSON.parse(fixtureUserData);
+    const library = JSON.parse(fixtureLibrary);
+    const books = [];
+    const asins = [];
+    for (let i = 1; i <= count; i++) {
+        const asin = `B${String(i).padStart(9, '0')}`;
+        asins.push(asin);
+        books.push({
+            asin, title: `ダミー本 ${i} 〜長めのタイトルで折返しも確認する用〜`, authors: `著者${i % 37}`,
+            acquiredTime: 1700000000000 + i * 1000, readStatus: 'READ',
+            productImage: '', source: 'fixture', addedDate: 1700000000000 + i * 1000
+        });
+    }
+    library.books = books;
+    library.metadata = { ...library.metadata, totalBooks: books.length };
+    const allShelf = userData.bookshelves.find(s => s.isSpecial);
+    allShelf.books = asins;
+    return { userData: JSON.stringify(userData), library: JSON.stringify(library) };
+}
+
+async function bootAppWithManyBooks(page, count = 800) {
+    const errors = [];
+    page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const { userData, library } = buildManyBooksFixtures(count);
+    await page.addInitScript(([u, l]) => {
+        localStorage.setItem('virtualBookshelf_userData', u);
+        localStorage.setItem('virtualBookshelf_library', l);
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+    }, [userData, library]);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+    await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await page.evaluate(() => {
+        const mem = new Map();
+        const adapter = window.bookshelf.storage.adapter;
+        adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+        adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        window.bookshelf._isSyncReady = () => true;
+    });
+    return errors;
+}
+
 test.describe('記事エディタ: 作成→編集の基本経路', () => {
     test('新規作成→タイトル/タグ入力→自動保存され一覧に反映される', async ({ page }) => {
         const errors = await bootApp(page);
@@ -353,6 +401,9 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
         const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.markdown));
         await expect.poll(orderOf).toEqual(['block-A', 'block-B']);
 
+        // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
+        // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
+        await page.evaluate(() => { const col = document.querySelector('.art-col'); if (col) col.scrollTop = 0; });
         const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
         const blockB = page.locator('.art-block').nth(1);
         const gripBox = await gripA.boundingBox();
@@ -435,6 +486,9 @@ test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', ()
         const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.markdown));
         await expect.poll(orderOf).toEqual(['block-A', 'block-B']);
 
+        // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
+        // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
+        await page.evaluate(() => { const col = document.querySelector('.art-col'); if (col) col.scrollTop = 0; });
         const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
         const blockB = page.locator('.art-block').nth(1);
         const gripBox = await gripA.boundingBox();
@@ -948,4 +1002,82 @@ test.describe('記事エディタ: ブロック追加メニューがビューポ
 test.describe('記事エディタ: ブロック追加メニューがビューポート内に収まる (スマホ幅・390x844・タッチ有効, イシュー#42)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
     registerAddMenuViewportTests();
+});
+
+// イシュー#59: 新規作成直後 (ブロック0個・実データ相当800冊の引き出し) にモーダルがビューポートに
+// 収まらず外側スクロールが要る回帰。toBeVisible() は DOM 上可視なだけで通ってしまうため使わず、
+// scrollHeight/clientHeight と getBoundingClientRect() を実測して判定する。
+async function rectOf(page, selector) {
+    return page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+    }, selector);
+}
+
+test.describe('記事エディタ: 新規作成直後がビューポートに収まる (実データ相当800冊, イシュー#59)', () => {
+    for (const vp of [{ width: 1280, height: 720 }, { width: 1024, height: 600 }]) {
+        test(`${vp.width}x${vp.height}: モーダルが外側スクロール無しで収まり、引き出しだけが内側スクロールする`, async ({ page }) => {
+            await page.setViewportSize(vp);
+            const errors = await bootAppWithManyBooks(page);
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.click('#art-new');
+            await page.waitForSelector('#art-edit-view:not([hidden])');
+
+            const modal = await rectOf(page, '.modal-content');
+            expect(modal.scrollHeight).toBeLessThanOrEqual(modal.clientHeight);
+
+            const editView = await rectOf(page, '#art-edit-view');
+            expect(editView.top).toBeGreaterThanOrEqual(0);
+            expect(editView.bottom).toBeLessThanOrEqual(vp.height);
+
+            const side = await rectOf(page, '.art-side');
+            expect(side.top).toBeGreaterThanOrEqual(0);
+            expect(side.bottom).toBeLessThanOrEqual(vp.height);
+
+            // 内側スクロールが引き出しリストの1箇所だけであること (二重スクロールにしない)
+            const drawerList = await rectOf(page, '.art-drawer-list');
+            expect(drawerList.scrollHeight).toBeGreaterThan(drawerList.clientHeight);
+
+            expect(errors).toEqual([]);
+        });
+    }
+});
+
+test.describe('記事エディタ: 新規作成直後のスマホ幅が横スクロールせず引き出しに到達できる (390x844・タッチ有効, イシュー#59)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('横スクロールが発生せず、下へスクロールすれば引き出しの本が見える', async ({ page }) => {
+        const errors = await bootAppWithManyBooks(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.waitForSelector('#art-edit-view:not([hidden])');
+
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+        expect(scrollWidth).toBeLessThanOrEqual(390);
+
+        await page.locator('.art-side').scrollIntoViewIfNeeded();
+        await expect(page.locator('#art-drawer-list .art-drawer-item').first()).toBeVisible();
+
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 空状態の案内 (イシュー#59)', () => {
+    test('ブロック0個のとき案内が表示され、ブロックを1個追加すると消える', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        await expect(page.locator('.art-empty')).toHaveCount(1);
+        await expect(page.locator('.art-empty')).toContainText('ブロックがありません');
+
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+
+        await expect(page.locator('.art-block')).toHaveCount(1);
+        await expect(page.locator('.art-empty')).toHaveCount(0);
+
+        expect(errors).toEqual([]);
+    });
 });

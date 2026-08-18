@@ -4287,9 +4287,14 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-page-ops .btn[hidden] { display: none; }
 
 /* ===== 記事エディタ (公開v2 S3, ADR-058 §11 / mock-editor.html に準拠) ===== */
-.art-modal-content.art-editing { max-width: 1080px; }
+/* 編集モードはモーダルの残り高さを .art-wrap に配分する縦積み (900px 超・イシュー#59, ADR-067)。
+   外側 (.modal-content) のスクロールを無くし、.art-col と .art-drawer-list の内側だけがスクロールする。 */
+.art-modal-content.art-editing { max-width: 1080px; display: flex; flex-direction: column; }
 .publish-pages-content > #art-list-view,
 .publish-pages-content > #art-edit-view { padding: 0.25rem 2rem 1.85rem; }
+/* hidden 属性を尊重 (display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
+#art-edit-view[hidden] { display: none; }
+.publish-pages-content > #art-edit-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 
 /* --- ヘッダー: 戻る/タイトル/テーマ/プレビュー/公開 --- */
 .art-hd { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; }
@@ -4322,10 +4327,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-sugg-new { border-top: 1px solid var(--line2); margin-top: 0.25rem; padding-top: 0.45rem; color: var(--fg2); }
 
 /* --- 本体 2 ペイン --- */
-.art-wrap { display: grid; grid-template-columns: 1fr 17rem; gap: 1rem; align-items: start; }
+.art-wrap { display: grid; grid-template-columns: 1fr 17rem; gap: 1rem; align-items: start; flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .art-wrap.art-drawer-collapsed { grid-template-columns: 1fr; }
 .art-wrap.art-drawer-collapsed .art-side { display: none; }
-.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-height: 58vh; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
+.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
 
 /* --- ブロック共通 --- */
 .art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; }
@@ -4445,7 +4450,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-add-menu-item small { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
 
 /* --- 右ペイン: 本の引き出し --- */
-.art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 58vh; display: flex; flex-direction: column; }
+.art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 100%; display: flex; flex-direction: column; }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 .art-drawer-search { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
@@ -4474,7 +4479,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-drawer-empty { padding: 1rem 0.7rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 900px) {
-    .art-wrap { grid-template-columns: 1fr; }
+    /* 900px以下は既存のシート全体スクロール設計を変えない (残り高さ配分は900px超のみ, イシュー#59)。
+       .art-wrap を明示的に元の暗黙 auto 行に戻し、.art-col も従来の 58vh 上限に固定する。 */
+    .art-wrap { grid-template-columns: 1fr; grid-template-rows: none; }
+    .art-col { max-height: 58vh; }
     .art-side { position: static; max-height: none; }
 }
 @media (max-width: 760px) {

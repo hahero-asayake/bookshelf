@@ -7947,6 +7947,9 @@ class VirtualBookshelf {
         const addHtml = tpl ? tpl.innerHTML : '';
         const blocks = this._artDraft.blocks || [];
         let html = addHtml;
+        if (!blocks.length) {
+            html += '<p class="pp-empty art-empty">まだブロックがありません。「＋ ブロックを追加」から文章・本棚・本を選んで積み上げ、本は「本の引き出し」から配置できます。</p>';
+        }
         blocks.forEach((b, i) => { html += this._artRenderBlock(b, i); html += addHtml; });
         host.innerHTML = html;
         this._artBindBlocksEvents();
