@@ -57,8 +57,9 @@ class BookManager {
         // 既存の本を asin で引けるように (再取込時のステータス更新用)
         const existingByAsin = new Map(this.library.books.map(book => [book.asin, book]));
 
-        // Amazon 生値のステータス系フィールドのみ (イシュー#41)。書誌・addedDate・並び順・メモは触らない。
-        const STATUS_FIELDS = ['readStatus', 'originType', 'statusFromPlatformSearch', 'lendingType', 'lendingStatus'];
+        // Amazon 生値のステータス系フィールドのみ (イシュー#41)。書誌・addedDate・並び順・メモ・readStatus は触らない
+        // (readStatus は選択の有無と無関係に自動更新される対象のため、ユーザーの読書記録を上書きしない)。
+        const STATUS_FIELDS = ['originType', 'statusFromPlatformSearch', 'lendingType', 'lendingStatus'];
 
         for (const book of selectedBooks) {
             try {

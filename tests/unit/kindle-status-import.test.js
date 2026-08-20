@@ -44,7 +44,7 @@ describe('importSelectedBooks: 新フィールドの保存 (イシュー#41)', (
         expect('lendingStatus' in saved).toBe(false);
     });
 
-    it('同一 ASIN 再取込: ステータス系だけ Amazon 最新値で更新し、書誌・addedDate は維持する', async () => {
+    it('同一 ASIN 再取込: ステータス系だけ Amazon 最新値で更新し、書誌・addedDate・readStatus は維持する', async () => {
         // 1回目: 借用中 (Ku/OnLoan) として取込
         const first = makePayloadBook({
             title: '旧タイトル', originType: 'Ku', statusFromPlatformSearch: 'Active', lendingType: 'KU', lendingStatus: 'OnLoan'
@@ -53,6 +53,7 @@ describe('importSelectedBooks: 新フィールドの保存 (イシュー#41)', (
         const beforeUpdate = bm.library.books.find(b => b.asin === 'B000000001');
         const originalAddedDate = beforeUpdate.addedDate;
         const originalTitle = beforeUpdate.title;
+        const originalReadStatus = beforeUpdate.readStatus;
 
         // 少し時間が経ってから返却済みとして再取込 (Amazon側の readStatus/statusFromPlatformSearch/lendingStatus が変化)
         const second = makePayloadBook({
@@ -64,15 +65,39 @@ describe('importSelectedBooks: 新フィールドの保存 (イシュー#41)', (
         expect(result.added).toBe(0);
         expect(result.updated).toBe(1);
         const after = bm.library.books.find(b => b.asin === 'B000000001');
-        // 書誌・addedDate は維持
+        // 書誌・addedDate・readStatus は維持 (readStatus はアプリ内に手動編集UIが無いが、
+        // 選択有無と無関係な自動更新の対象からは意図的に外している＝ユーザー入力を破壊するリスクをゼロにする)
         expect(after.title).toBe(originalTitle);
         expect(after.addedDate).toBe(originalAddedDate);
+        expect(after.readStatus).toBe(originalReadStatus);
         // ステータス系のみ更新
         expect(after.statusFromPlatformSearch).toBe('Revoked');
         expect(after.lendingStatus).toBe('Terminated');
-        expect(after.readStatus).toBe('UNKNOWN');
         // 書籍数は増えない (1件のまま)
         expect(bm.library.books.length).toBe(1);
+    });
+
+    it('選択されていない既存ASIN分でもステータス系だけ反映される (VirtualBookshelf層が選択有無と無関係に合成して渡す設計、イシュー#41差し戻し)', async () => {
+        // 借用中として取込済み
+        await bm.importSelectedBooks([makePayloadBook({
+            asin: 'B0KUONLOAN', title: '借用中の本', originType: 'Ku', statusFromPlatformSearch: 'Active', lendingType: 'KU', lendingStatus: 'OnLoan'
+        })]);
+        const before = bm.library.books.find(b => b.asin === 'B0KUONLOAN');
+
+        // VirtualBookshelf.importSelectedBooks() は選択されなかった既存ASIN本も
+        // selectedBooks に合成して BookManager へ渡す (js/bookshelf.js #importSelectedBooks 参照)。
+        // ここではその合成後の配列を模して直接呼び、ユーザーが選択しなくても反映されることを検証する。
+        const result = await bm.importSelectedBooks([makePayloadBook({
+            asin: 'B0KUONLOAN', title: '借用中の本(Amazon側タイトル変化・無視すべき)',
+            originType: 'Ku', statusFromPlatformSearch: 'Revoked', lendingType: 'KU', lendingStatus: 'Terminated'
+        })]);
+
+        expect(result.updated).toBe(1);
+        const after = bm.library.books.find(b => b.asin === 'B0KUONLOAN');
+        expect(after.title).toBe(before.title);
+        expect(after.addedDate).toBe(before.addedDate);
+        expect(after.statusFromPlatformSearch).toBe('Revoked');
+        expect(after.lendingStatus).toBe('Terminated');
     });
 
     it('同一 ASIN 再取込で並び順に影響する books 配列の位置が変わらない (先頭に移動しない)', async () => {

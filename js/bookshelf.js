@@ -9400,13 +9400,20 @@ class VirtualBookshelf {
             .map(index => this.pendingImportBooks[index])
             .filter(b => b && !existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
 
-        if (selectedBooks.length === 0) {
+        // 既存ASIN分は選択の有無と無関係に、Amazon側のステータス系属性だけ自動更新する (イシュー#41)。
+        // 取込モーダルの disabled 判定 (新規追加の可否) とは別の話: ユーザーが選ばなくても
+        // 「Amazon から取得できた=最新の借用/返却状態」は反映してよい。除外済み ASIN は対象外
+        // (ユーザーが明示的に除外した本の属性まで書き換えない)。
+        const existingStatusUpdates = (this.pendingImportBooks || [])
+            .filter(b => b && existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
+
+        if (selectedBooks.length === 0 && existingStatusUpdates.length === 0) {
             toast('取り込む本を選んでください');
             return;
         }
 
         try {
-            const results = await this.bookManager.importSelectedBooks(selectedBooks);
+            const results = await this.bookManager.importSelectedBooks([...selectedBooks, ...existingStatusUpdates]);
             this.showImportResults(results);
 
             // 表示を更新
