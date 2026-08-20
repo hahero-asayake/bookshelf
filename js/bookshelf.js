@@ -9335,7 +9335,7 @@ class VirtualBookshelf {
         const excludedPart = excludedBooks > 0 ? ` ／ 除外済み: ${excludedBooks}冊` : '';
         const kindleStatusPart = (revokedBooks > 0 || kuPrimeBooks > 0)
             ? ` ／ うち利用終了: ${revokedBooks}冊・KU/Prime: ${kuPrimeBooks}冊` : '';
-        statsElement.textContent = `全体: ${totalBooks}冊 ／ 新規: ${newBooks}冊 ／ 取り込み済み: ${existingBooks}冊${excludedPart} ／ 表示中: ${visibleBooks}冊${kindleStatusPart}`;
+        statsElement.textContent = `全体: ${totalBooks}冊 ／ 新規: ${newBooks}冊 ／ 取り込み済み: ${existingBooks}冊（自動更新対象）${excludedPart} ／ 表示中: ${visibleBooks}冊${kindleStatusPart}`;
     }
     
     setupBookSelectionListeners() {

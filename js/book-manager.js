@@ -67,8 +67,11 @@ class BookManager {
                 if (existing) {
                     // 同一 ASIN の再取込: ステータス系だけ Amazon 最新値で更新。
                     // 値が無いフィールドは既存のキーごと削除 (Amazon 側で無くなった = 未設定に戻す)。
+                    // ただし payload 自体にそのキーの概念が無い (旧形式 exporter・貼り付け/ファイル取込等で
+                    // ステータス系フィールドを持たないデータが来た場合) は削除しない (イシュー#68)。
                     let changed = false;
                     for (const key of STATUS_FIELDS) {
+                        if (!(key in book)) continue;
                         const newVal = book[key];
                         if (newVal) {
                             if (existing[key] !== newVal) { existing[key] = newVal; changed = true; }
