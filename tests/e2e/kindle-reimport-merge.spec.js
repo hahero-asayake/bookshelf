@@ -2,10 +2,29 @@
 // #41 で BookManager 側にマージ実装を入れたが、renderBookList/importSelectedBooks の
 // 二重フィルタで実UIから一度も呼ばれずデッドコードだった。bbc068f (#41差し戻し) で
 // VirtualBookshelf.importSelectedBooks() が選択の有無と無関係に既存ASIN分を合成して
-// BookManager へ渡す方式に直り、イシュー#68 では空値キー削除の防御を追加した。
-// ここでは内部メソッド直呼びではなく、取込モーダルの実DOM操作 (postMessage 注入 →
-// #select-all-books → #import-selected-books、および #kindle-paste-input →
+// BookManager へ渡す方式に直り、イシュー#68 では空値キー削除の防御 (`key in book` 判定、
+// 案F) を追加した。ここでは内部メソッド直呼びではなく、取込モーダルの実DOM操作 (postMessage
+// 注入 → #select-all-books → #import-selected-books、および #kindle-paste-input →
 // #import-from-paste) で更新経路を通し、その結果をカード/絞り込み/結果表示/内部状態で検証する。
+//
+// transport によるキー保持の違い (②差し戻し指摘・重要):
+// postMessage (structured clone) は値が undefined のプロパティでもキー自体を保持するが、
+// #kindle-paste-input 経由 (JSON.stringify → JSON.parse) は値が undefined のプロパティを
+// キーごと落とす。つまり「Amazon 実データは常にキー自体を明示的に持つ」が成り立つのは
+// bookmarklet の postMessage 経路だけで、貼り付け/ファイル/relay の3経路には当てはまらない
+// (Step2 コミット 8629673 の説明文はこの区別が無く不正確だった。ADR にはこの文言を持ち込まない)。
+// 案F (`key in book` 判定) を採用した理由は「JSON 転送で undefined キーが落ちて削除が効かず
+// 古い値が残る」害より「STATUS_FIELDS を持たない旧形式 payload で既存本のバッジが黙って消える」
+// 害の方が大きいため、安全側に倒す判断であり、この副作用自体は許容する。
+// 実測での裏取り (②差し戻し指摘): ハヘロの Amazon 実データ 860冊ダンプ
+// (`_local/probe-ownership-result-20260818.json`・#41 Step1 実測) の fieldSummary を見ると
+// originType の内訳 (Ku:39/Purchase:717/Prime:39/Sample:21/KindleDictionary:44) の合計は
+// 860、statusFromPlatformSearch の内訳 (Active:790/Revoked:70) の合計も 860 で、いずれも
+// 総数と一致する＝実測範囲では860件全件が両フィールドの値を持ち、undefined になるケースは
+// 無かった。バッジ表示に使うのはこの2フィールドのみのため、案Fの副作用 (JSON経由でundefined
+// キーが落ちて削除が効かない) は実測データの範囲では不可視。ただしこれは「今回実測した
+// 860件では」という限定つきの裏取りであり、将来 Amazon 側の応答が変わって undefined を
+// 返すケースが出ないことまでは保証しない。
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +67,8 @@ async function importViaBookmarklet(page, items) {
     // 選択できるのは新規分だけだが、bbc068f の設計により既存ASIN分は選択と無関係に
     // 「取り込む」ボタンで自動的にマージされる。
     await page.locator('#select-all-books').click();
+    // 新規0件・既存ASINの自動更新のみでもボタンが押せること (updateSelectedCount 修正の回帰、イシュー#68)
+    await expect(page.locator('#import-selected-books')).toBeEnabled();
     await page.locator('#import-selected-books').click();
 }
 
@@ -65,6 +86,8 @@ async function importViaPaste(page, items) {
     await page.locator('#import-from-paste').click();
     await expect(page.locator('#book-selection')).toBeVisible();
     await page.locator('#select-all-books').click();
+    // 新規0件・既存ASINの自動更新のみでもボタンが押せること (updateSelectedCount 修正の回帰、イシュー#68)
+    await expect(page.locator('#import-selected-books')).toBeEnabled();
     await page.locator('#import-selected-books').click();
 }
 
@@ -157,6 +180,32 @@ test('回帰: ステータス系フィールドを持たない取込ソース(�
     expect(after3.statusFromPlatformSearch).toBe('Active');
     expect(after3.lendingType).toBe('KU');
     expect(after3.lendingStatus).toBe('OnLoan');
+
+    // 3回目: 貼り付け取込 (JSON.stringify を経由する transport) でも、STATUS_FIELDS キーを
+    // 持つ新形式 payload なら正しく更新されることを検証する。ここまでの新形式取込は全て
+    // postMessage (structured clone) 経由だったため、JSON transport を1本も踏んでいなかった
+    // (②差し戻し指摘)。返却済みに変化させる。
+    await importViaPaste(page, [
+        { title: 'フィクスチャの本 3', authors: '著者B', acquiredTime: 1700000002000, asin: 'B000000003', originType: 'Ku', statusFromPlatformSearch: 'Revoked', lendingType: 'KU', lendingStatus: 'Terminated' }
+    ]);
+    await page.evaluate(() => window.bookshelf.closeImportModal());
+    await expect(b3.locator('.book-badge').filter({ hasText: '利用終了' })).toHaveCount(1);
+    const after3b = await page.evaluate(() => window.bookshelf.books.find(b => b.asin === 'B000000003'));
+    expect(after3b.statusFromPlatformSearch).toBe('Revoked');
+    expect(after3b.lendingStatus).toBe('Terminated');
+
+    // 4回目: 新形式 payload でも、値が undefined のフィールドは JSON.stringify がキーごと
+    // 落とすため、案F (`key in book` 判定) では「payload 自体にこの概念が無い」旧形式と
+    // 区別できず削除が効かない (古い値が残る)。これはバグではなく案Fの既知の副作用であり、
+    // 仕様として固定する (②差し戻し指摘)。statusFromPlatformSearch だけ undefined にし、
+    // lendingStatus は明示的に別の値へ変えて対比する。
+    await importViaPaste(page, [
+        { title: 'フィクスチャの本 3', authors: '著者B', acquiredTime: 1700000002000, asin: 'B000000003', originType: 'Ku', statusFromPlatformSearch: undefined, lendingType: 'KU', lendingStatus: 'Active' }
+    ]);
+    await page.evaluate(() => window.bookshelf.closeImportModal());
+    const after3c = await page.evaluate(() => window.bookshelf.books.find(b => b.asin === 'B000000003'));
+    expect(after3c.statusFromPlatformSearch).toBe('Revoked'); // undefined → JSON化でキー消失 → 古い値のまま (案Fの既知の副作用)
+    expect(after3c.lendingStatus).toBe('Active'); // 明示的な値は正しく更新される
 });
 
 test('回帰: 手動追加由来の readStatus は再取込で Amazon 値に黙って戻らない', async ({ page }) => {
