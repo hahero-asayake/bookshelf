@@ -2633,6 +2633,40 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     overflow: hidden;
 }
 
+/* Kindle 取込のステータスバッジ (イシュー#41)。「利用終了」= 中立、KU/Prime = accent。
+   flex 子要素は日本語の文字単位折返しを防ぐため white-space: nowrap を必須にする (ui-standards §2-15) */
+.book-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    justify-content: center;
+    margin-top: 0.25rem;
+}
+
+.book-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 8px;
+    background: var(--line2);
+    color: var(--fg2);
+    white-space: nowrap;
+}
+
+.book-badge-accent {
+    background: var(--accent-bg);
+    color: var(--accent);
+}
+
+.cover-badges-layer {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.3rem;
+    z-index: 2;
+    display: flex;
+    gap: 0.2rem;
+}
+
 .book-memo {
     font-size: 0.74rem;
     color: var(--fg2);

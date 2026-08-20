@@ -64,6 +64,9 @@ class VirtualBookshelf {
         // 評価でしぼり込み (案A 連結セグメント)。Set に入れた評価値(0=未評価,1..5)だけ表示。
         // 空 = 絞り込みなし(全部表示)。セッション中のみ保持 (永続化しない)。
         this.ratingFilter = new Set();
+        // Kindle区分でしぼり込み (イシュー#41)。'purchase'/'kuprime'/'revoked' を Set に入れた区分だけ表示。
+        // 空 = 絞り込みなし(全部表示)。ratingFilter と同じくセッション中のみ保持 (永続化しない)。
+        this.kindleFilter = new Set();
         // 同期方式に応じた storage 構築 (LocalFS / GitHub / ...)
         this.syncConfig = SyncConfigManager.load();
         let initialAdapter = SyncConfigManager.buildAdapter(this.syncConfig);
@@ -409,6 +412,29 @@ class VirtualBookshelf {
             });
         }
         this._updateRatingFilterUI();
+
+        // Kindle区分でしぼり込み (連結セグメント): 評価と同じ複数選択パターン (イシュー#41)
+        const kindleSeg = document.getElementById('kindle-seg');
+        if (kindleSeg) {
+            kindleSeg.addEventListener('click', (e) => {
+                const cell = e.target.closest('.rseg');
+                if (!cell) return;
+                const k = cell.dataset.kindle;
+                if (this.kindleFilter.has(k)) this.kindleFilter.delete(k);
+                else this.kindleFilter.add(k);
+                this._updateKindleFilterUI();
+                this.applyFilters();
+            });
+        }
+        const kindleReset = document.getElementById('kindle-filter-reset');
+        if (kindleReset) {
+            kindleReset.addEventListener('click', () => {
+                this.kindleFilter.clear();
+                this._updateKindleFilterUI();
+                this.applyFilters();
+            });
+        }
+        this._updateKindleFilterUI();
 
         // Sort
         document.getElementById('sort-order').addEventListener('change', (e) => {
@@ -1297,11 +1323,25 @@ class VirtualBookshelf {
     _resetFilters() {
         this.searchQuery = '';
         if (this.ratingFilter) this.ratingFilter.clear();
+        if (this.kindleFilter) this.kindleFilter.clear();
         const si = document.getElementById('search-input');
         if (si) si.value = '';
         if (typeof this._updateRatingFilterUI === 'function') this._updateRatingFilterUI();
+        if (typeof this._updateKindleFilterUI === 'function') this._updateKindleFilterUI();
         // プラグイン由来のフィルタ (registerActiveFilter) も解除。各 reset は状態クリアのみの契約。
         if (this.pluginAPI && typeof this.pluginAPI.resetActiveFilters === 'function') this.pluginAPI.resetActiveFilters();
+    }
+
+    // book が該当する Kindle 区分の集合を返す ('purchase'/'kuprime'/'revoked')。
+    // origin(購入/KU・Prime) と status(有効/利用終了) は独立した軸のため、KU で借りて返却した本は
+    // 'kuprime' と 'revoked' の両方に該当しうる (排他分類ではない、複数タグ)。
+    // フィールドが無い本 (既存データ・未取得の本) は既定で 'purchase' のみ扱い (イシュー#41)。
+    _kindleCategoriesOf(book) {
+        const cats = new Set();
+        if (book.originType === 'Ku' || book.originType === 'Prime') cats.add('kuprime');
+        else cats.add('purchase');
+        if (book.statusFromPlatformSearch === 'Revoked') cats.add('revoked');
+        return cats;
     }
 
     applyFilters() {
@@ -1326,7 +1366,16 @@ class VirtualBookshelf {
                     return false;
                 }
             }
-            
+
+            // Kindle区分でしぼり込み: 選ばれた区分のいずれかに該当すれば通す(OR)。空なら絞り込みなし。
+            if (this.kindleFilter && this.kindleFilter.size > 0) {
+                const categories = this._kindleCategoriesOf(book);
+                const matches = [...this.kindleFilter].some(k => categories.has(k));
+                if (!matches) {
+                    return false;
+                }
+            }
+
             // Search filter
             if (this.searchQuery) {
                 const searchText = `${book.title} ${book.authors}`.toLowerCase();
@@ -1445,8 +1494,29 @@ class VirtualBookshelf {
         }
         const reset = document.getElementById('rating-filter-reset');
         if (reset) reset.hidden = this.ratingFilter.size === 0;
+        this._updateFilterButtonIndicator();
+    }
+
+    // Kindle区分でしぼり込みセグメントの表示更新 (イシュー#41)。_updateRatingFilterUI と対の実装。
+    _updateKindleFilterUI() {
+        const seg = document.getElementById('kindle-seg');
+        if (seg) {
+            seg.querySelectorAll('.rseg').forEach(cell => {
+                cell.classList.toggle('on', this.kindleFilter.has(cell.dataset.kindle));
+            });
+        }
+        const reset = document.getElementById('kindle-filter-reset');
+        if (reset) reset.hidden = this.kindleFilter.size === 0;
+        this._updateFilterButtonIndicator();
+    }
+
+    // ツールバーのフィルターボタンに「いずれかの絞り込みが適用中」インジケータを付ける。
+    // 評価・Kindle区分のどちらかが非空なら on にする (どちらか一方だけの排他ではない)。
+    _updateFilterButtonIndicator() {
         const fbtn = document.getElementById('toggle-filter');
-        if (fbtn) fbtn.classList.toggle('has-active-filter', this.ratingFilter.size > 0);
+        if (!fbtn) return;
+        const active = (this.ratingFilter && this.ratingFilter.size > 0) || (this.kindleFilter && this.kindleFilter.size > 0);
+        fbtn.classList.toggle('has-active-filter', active);
     }
 
     updateSortDirectionButton() {
@@ -1549,7 +1619,7 @@ class VirtualBookshelf {
         // 本棚が元から空のケース ((a) が false) は通常の空状態に落とす。
         const pluginFilterActive = (this._countBeforePluginFilters || 0) > 0
             && !!(this.pluginAPI && typeof this.pluginAPI.isAnyFilterActive === 'function' && this.pluginAPI.isAnyFilterActive());
-        const filterActive = !!this.searchQuery || (this.ratingFilter && this.ratingFilter.size > 0) || pluginFilterActive;
+        const filterActive = !!this.searchQuery || (this.ratingFilter && this.ratingFilter.size > 0) || (this.kindleFilter && this.kindleFilter.size > 0) || pluginFilterActive;
         const shelf = this.userData.bookshelves?.find(b => b.id === this.currentBookshelf);
         const isAll = !this.currentBookshelf || (shelf && shelf.isSpecial);
 
@@ -1579,6 +1649,21 @@ class VirtualBookshelf {
             action('すべての本を見る', false, () => this.switchBookshelf('all'));
         }
         return wrap;
+    }
+
+    // Kindle 取込のステータス系フィールドからバッジ HTML を組み立てる (イシュー#41)。
+    // 「利用終了」は必ず出す。KU/Prime は購入と区別できれば十分 (増やしすぎない)。
+    _kindleBadgesHtml(book) {
+        const badges = [];
+        if (book.statusFromPlatformSearch === 'Revoked') {
+            badges.push('<span class="book-badge">利用終了</span>');
+        }
+        if (book.originType === 'Ku') {
+            badges.push('<span class="book-badge book-badge-accent">KU</span>');
+        } else if (book.originType === 'Prime') {
+            badges.push('<span class="book-badge book-badge-accent">Prime</span>');
+        }
+        return badges.length ? `<div class="book-badges">${badges.join('')}</div>` : '';
     }
 
     createBookElement(book, displayType) {
@@ -1640,13 +1725,18 @@ class VirtualBookshelf {
             bookElement.classList.add('selected');
         }
         // 画像のみビューは book-info (タイトル・著者・星・メモ) を出力しない
+        const kindleBadges = this._kindleBadgesHtml(book);
         const infoHtml = isImagesView ? '' : `
                 <div class="book-info">
                     <div class="book-title">${this.escapeHtml(book.title)}</div>
                     <div class="book-author">${this.escapeHtml(book.authors)}</div>
+                    ${kindleBadges}
                     ${belowAlwaysStars}
                     ${alwaysMemo}
                 </div>`;
+        // 画像のみビューは book-info を出さないため、バッジは表紙に重ねる小さなオーバーレイにする
+        const imagesBadges = (isImagesView && kindleBadges)
+            ? `<div class="cover-badges-layer">${kindleBadges}</div>` : '';
         bookElement.innerHTML = `
                 <div class="book-cover-container">
                     <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
@@ -1658,6 +1748,7 @@ class VirtualBookshelf {
                         }
                     </div>
                     ${overlayAlwaysStars}
+                    ${imagesBadges}
                     ${coverHoverPop}
                 </div>${infoHtml}
                 ${rowHoverPop}
@@ -2140,6 +2231,7 @@ class VirtualBookshelf {
 
                 <h3 class="bd-title">${esc(book.title)}</h3>
                 <div class="bd-author">${esc(book.authors)}</div>
+                ${this._kindleBadgesHtml(book)}
 
                 ${kindleReadHtml}
 
@@ -9191,10 +9283,14 @@ class VirtualBookshelf {
 
         let visibleCount = 0;
         let excludedCount = 0;
+        let revokedCount = 0;
+        let kuPrimeCount = 0;
         books.forEach((book, index) => {
             const isExisting = existingASINs.has(book.asin);
             const isExcluded = !isExisting && excludedASINs.has(book.asin);
             if (isExcluded) excludedCount++;
+            if (book.statusFromPlatformSearch === 'Revoked') revokedCount++;
+            if (book.originType === 'Ku' || book.originType === 'Prime') kuPrimeCount++;
             // 既存・除外はどちらも取り込み不可 (チェックボックス無効)
             const isBlocked = isExisting || isExcluded;
 
@@ -9215,16 +9311,17 @@ class VirtualBookshelf {
                     <div class="book-selection-title">${this.escapeHtml(book.title)} ${stateLabel}</div>
                     <div class="book-selection-author">${this.escapeHtml(book.authors)}</div>
                     <div class="book-selection-meta">${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</div>
+                    ${this._kindleBadgesHtml(book)}
                 </div>
             `;
             bookList.appendChild(bookItem);
         });
 
         // 表示件数を更新
-        this.updateBookListStats(books.length, visibleCount, existingASINs.size, excludedCount);
+        this.updateBookListStats(books.length, visibleCount, existingASINs.size, excludedCount, revokedCount, kuPrimeCount);
     }
 
-    updateBookListStats(totalBooks, visibleBooks, existingBooks, excludedBooks = 0) {
+    updateBookListStats(totalBooks, visibleBooks, existingBooks, excludedBooks = 0, revokedBooks = 0, kuPrimeBooks = 0) {
         // 統計情報を表示する要素を追加/更新
         let statsElement = document.getElementById('book-list-stats');
         if (!statsElement) {
@@ -9236,7 +9333,9 @@ class VirtualBookshelf {
 
         const newBooks = totalBooks - existingBooks - excludedBooks;
         const excludedPart = excludedBooks > 0 ? ` ／ 除外済み: ${excludedBooks}冊` : '';
-        statsElement.textContent = `全体: ${totalBooks}冊 ／ 新規: ${newBooks}冊 ／ 取り込み済み: ${existingBooks}冊${excludedPart} ／ 表示中: ${visibleBooks}冊`;
+        const kindleStatusPart = (revokedBooks > 0 || kuPrimeBooks > 0)
+            ? ` ／ うち利用終了: ${revokedBooks}冊・KU/Prime: ${kuPrimeBooks}冊` : '';
+        statsElement.textContent = `全体: ${totalBooks}冊 ／ 新規: ${newBooks}冊 ／ 取り込み済み: ${existingBooks}冊${excludedPart} ／ 表示中: ${visibleBooks}冊${kindleStatusPart}`;
     }
     
     setupBookSelectionListeners() {

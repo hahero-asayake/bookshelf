@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026081803">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026081804">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -173,6 +173,18 @@
                                                 <button type="button" class="rseg" data-rating="3"><span class="h-icon" data-icon="star" data-icon-size="12"></span>3</button>
                                                 <button type="button" class="rseg" data-rating="4"><span class="h-icon" data-icon="star" data-icon-size="12"></span>4</button>
                                                 <button type="button" class="rseg" data-rating="5"><span class="h-icon" data-icon="star" data-icon-size="12"></span>5</button>
+                                            </div>
+                                        </div>
+                                        <div class="fp-section">
+                                            <div class="fp-section-titlerow">
+                                                <div class="fp-section-title">Kindle区分でしぼり込み</div>
+                                                <button type="button" id="kindle-filter-reset" class="fp-reset" title="絞り込みを解除" hidden><span class="h-icon" data-icon="rotate-ccw" data-icon-size="13"></span></button>
+                                            </div>
+                                            <!-- 選んだ区分だけ表示 / 無選択=全部。評価セグメントと同じ複数選択パターン -->
+                                            <div class="rating-seg" id="kindle-seg" role="group" aria-label="Kindle区分でしぼり込み">
+                                                <button type="button" class="rseg" data-kindle="purchase">購入</button>
+                                                <button type="button" class="rseg" data-kindle="kuprime">KU/Prime</button>
+                                                <button type="button" class="rseg" data-kindle="revoked">利用終了</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1156,7 +1168,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026073001"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026081804"></script>
+    <script src="js/bookshelf.js?v=2026081805"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
