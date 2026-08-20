@@ -9385,9 +9385,17 @@ class VirtualBookshelf {
         const checkboxes = document.querySelectorAll('#book-list input[type="checkbox"]:checked');
         const count = checkboxes.length;
         document.getElementById('selected-count').textContent = count;
-        
+
+        // 既存ASIN分は選択と無関係に自動更新される (イシュー#41差し戻し)。新規の選択が0件でも
+        // 自動更新対象が1件でもあればボタンを押せるようにする (イシュー#68: 新規0件・既存の
+        // ステータス変化のみの再取込で「取り込む」ボタンが disabled のまま押せない穴があった)。
+        const existingASINs = new Set(this.bookManager.getAllBooks().map(b => b.asin));
+        const excludedASINs = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
+        const hasStatusUpdates = (this.pendingImportBooks || [])
+            .some(b => b && existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
+
         const importButton = document.getElementById('import-selected-books');
-        importButton.disabled = count === 0;
+        importButton.disabled = count === 0 && !hasStatusUpdates;
     }
     
     async importSelectedBooks() {
