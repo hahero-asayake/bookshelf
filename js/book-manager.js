@@ -50,34 +50,54 @@ class BookManager {
 
     async importSelectedBooks(selectedBooks) {
         const importedBooks = [];
+        const updatedBooks = [];
         const duplicateBooks = [];
         const errorBooks = [];
-        
-        // 既存の本のASINを取得
-        const existingASINs = new Set(this.library.books.map(book => book.asin));
-        
+
+        // 既存の本を asin で引けるように (再取込時のステータス更新用)
+        const existingByAsin = new Map(this.library.books.map(book => [book.asin, book]));
+
+        // Amazon 生値のステータス系フィールドのみ (イシュー#41)。書誌・addedDate・並び順・メモは触らない。
+        const STATUS_FIELDS = ['readStatus', 'originType', 'statusFromPlatformSearch', 'lendingType', 'lendingStatus'];
+
         for (const book of selectedBooks) {
             try {
-                // 重複チェック
-                if (existingASINs.has(book.asin)) {
-                    duplicateBooks.push({
-                        title: book.title,
-                        asin: book.asin,
-                        reason: '既に存在'
-                    });
+                const existing = existingByAsin.get(book.asin);
+                if (existing) {
+                    // 同一 ASIN の再取込: ステータス系だけ Amazon 最新値で更新。
+                    // 値が無いフィールドは既存のキーごと削除 (Amazon 側で無くなった = 未設定に戻す)。
+                    let changed = false;
+                    for (const key of STATUS_FIELDS) {
+                        const newVal = book[key];
+                        if (newVal) {
+                            if (existing[key] !== newVal) { existing[key] = newVal; changed = true; }
+                        } else if (key in existing) {
+                            delete existing[key];
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        updatedBooks.push(existing);
+                    } else {
+                        duplicateBooks.push({
+                            title: book.title,
+                            asin: book.asin,
+                            reason: '既に存在'
+                        });
+                    }
                     continue;
                 }
-                
+
                 // 本を追加
                 const bookToAdd = {
                     ...book,
                     source: 'kindle_import',
                     addedDate: Date.now()
                 };
-                
+
                 this.library.books.push(bookToAdd);
                 importedBooks.push(bookToAdd);
-                
+
             } catch (error) {
                 console.error(`本の処理エラー: ${book.title}`, error);
                 errorBooks.push({
@@ -87,7 +107,7 @@ class BookManager {
                 });
             }
         }
-        
+
         // メタデータを更新
         this.library.metadata = {
             totalBooks: this.library.books.length,
@@ -95,19 +115,20 @@ class BookManager {
             importedFromKindle: this.library.books.filter(b => b.source === 'kindle_import').length,
             lastImportDate: Date.now()
         };
-        
+
         // ライブラリを保存
         await this.saveLibrary();
-        
-        console.log(`選択インポート完了: ${importedBooks.length}件追加`);
-        
+
+        console.log(`選択インポート完了: ${importedBooks.length}件追加, ${updatedBooks.length}件ステータス更新`);
+
         return {
             success: true,
             total: selectedBooks.length,
             added: importedBooks.length,
-            updated: 0, // 選択インポートでは更新なし
+            updated: updatedBooks.length,
             skipped: duplicateBooks.length + errorBooks.length,
             imported: importedBooks,
+            statusUpdated: updatedBooks,
             duplicates: duplicateBooks,
             errors: errorBooks
         };
@@ -343,7 +364,11 @@ class BookManager {
             readStatus: bookData.readStatus || 'UNKNOWN',
             productImage: bookData.productImage || `https://images-na.ssl-images-amazon.com/images/P/${asin}.01.L.jpg`,
             source: 'manual_add',
-            addedDate: Date.now()
+            addedDate: Date.now(),
+            ...(bookData.originType ? { originType: bookData.originType } : {}),
+            ...(bookData.statusFromPlatformSearch ? { statusFromPlatformSearch: bookData.statusFromPlatformSearch } : {}),
+            ...(bookData.lendingType ? { lendingType: bookData.lendingType } : {}),
+            ...(bookData.lendingStatus ? { lendingStatus: bookData.lendingStatus } : {})
         };
 
         this.library.books.push(newBook);

@@ -4338,7 +4338,13 @@ class VirtualBookshelf {
                 productImage: b.productImage || '',
                 source: b.source || 'unknown',
                 addedDate: b.addedDate || Date.now(),
-                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {}),
+                // Amazon 生値をそのまま保持 (イシュー#41)。無い場合はキー自体を持たせない
+                // (= 未設定 = 「購入・有効」扱い。既存の本の表示・分類を変えないため既定値は入れない)
+                ...(b.originType ? { originType: b.originType } : {}),
+                ...(b.statusFromPlatformSearch ? { statusFromPlatformSearch: b.statusFromPlatformSearch } : {}),
+                ...(b.lendingType ? { lendingType: b.lendingType } : {}),
+                ...(b.lendingStatus ? { lendingStatus: b.lendingStatus } : {})
             });
             const libraryBooks = [
                 ...Array.from(currentBooksByAsin.values()).map(normalize),
@@ -7376,7 +7382,11 @@ class VirtualBookshelf {
                 productImage: b.productImage || '',
                 source: b.source || 'unknown',
                 addedDate: b.addedDate || Date.now(),
-                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {}),
+                ...(b.originType ? { originType: b.originType } : {}),
+                ...(b.statusFromPlatformSearch ? { statusFromPlatformSearch: b.statusFromPlatformSearch } : {}),
+                ...(b.lendingType ? { lendingType: b.lendingType } : {}),
+                ...(b.lendingStatus ? { lendingStatus: b.lendingStatus } : {})
             }));
         }
         if (!this.userData._storage.exclusions.includes(asin)) {
@@ -9897,7 +9907,11 @@ class VirtualBookshelf {
      * - どちらもなければクリップボードにコピー（フォールバック）
      */
     _buildKindleBookmarkletCode() {
-        const code = `(async()=>{try{var c=window.csrfToken;if(!c){for(var si=0;si<document.scripts.length;si++){var mm=(document.scripts[si].textContent||"").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);if(mm){c=mm[1];break;}}}if(!c){var te=document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');c=te?(te.value||te.content||null):null;}if(!c){alert('Amazonの蔵書一覧ページ（digital-console/contentlist/booksAll）で実行してください');return;}var fp=async function(st){var p=JSON.stringify({contentType:"Ebook",contentCategoryReference:"booksAll",itemStatusList:["Active"],showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:st,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"});var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));return j.GetContentOwnershipData;};var f0=await fp(0);var t=f0.numberOfItems||0;var ss=[];for(var s2=100;s2<t;s2+=100)ss.push(s2);var rest=await Promise.all(ss.map(fp));var items=f0.items;for(var ri=0;ri<rest.length;ri++)items=items.concat(rest[ri].items);var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
+        // 2026-08-18 実測(イシュー#41): itemStatusList は "Active"/"Expired" の2値のみ意味を持ち、
+        // それ以外は無視される。明示指定では最大846件までしか取れず取りこぼしが出るため、
+        // itemStatusList を渡さず全件取得する(kindle_bookshelf_exporter content.js と同じ方針)。
+        // 安全弁: Active のみの件数(ao)を基準に、全件取得(items)がそれを下回ったら失敗させる。
+        const code = `(async()=>{try{var c=window.csrfToken;if(!c){for(var si=0;si<document.scripts.length;si++){var mm=(document.scripts[si].textContent||"").match(/csrfToken['"]?\\s*[:=]\\s*['"]([^'"]{8,})['"]/);if(mm){c=mm[1];break;}}}if(!c){var te=document.querySelector('input[name="csrfToken"], meta[name="csrfToken"]');c=te?(te.value||te.content||null):null;}if(!c){alert('Amazonの蔵書一覧ページ（digital-console/contentlist/booksAll）で実行してください');return;}var fp=async function(st,isl){var body={contentType:"Ebook",contentCategoryReference:"booksAll",showSharedContent:true,fetchCriteria:{sortOrder:"DESCENDING",sortIndex:"DATE",startIndex:st,batchSize:100,totalContentCount:-1},surfaceType:"Desktop"};if(isl)body.itemStatusList=isl;var p=JSON.stringify(body);var r=await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax",{headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({activity:"GetContentOwnershipData",activityInput:p,csrfToken:c}),method:"POST",credentials:"include"});var j=await r.json();if(j.success===false)throw new Error(JSON.stringify(j.error));return j.GetContentOwnershipData;};var ao=await fp(0,["Active"]);var aoc=ao.numberOfItems||0;var f0=await fp(0);var t=f0.numberOfItems||0;var ss=[];for(var s2=100;s2<t;s2+=100)ss.push(s2);var rest=await Promise.all(ss.map(function(s3){return fp(s3);}));var items=f0.items;for(var ri=0;ri<rest.length;ri++)items=items.concat(rest[ri].items);if(items.length===0)throw new Error('取得件数が0件でした。Amazon側の仕様が変わった可能性があります。');if(items.length<aoc)throw new Error('取得件数('+items.length+'件)が「Active」のみの件数('+aoc+'件)を下回りました。');var pl=items.map(function(i){return{title:i.title,authors:i.authors,acquiredTime:i.acquiredTime,readStatus:i.readStatus,asin:i.asin,productImage:i.productImage,originType:i.originType,statusFromPlatformSearch:i.statusFromPlatformSearch,lendingType:i.lendingType,lendingStatus:i.lendingStatus};});var u=new URLSearchParams(location.search);var rid=u.get('bs_relay');var hub=u.get('bs_hub');if(rid&&hub){try{await fetch(hub+'/kindle/relay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rid,items:pl})});alert(''+pl.length+'冊を bookshelf に送信しました。bookshelf タブに戻ってください。');return;}catch(re){console.warn('relay failed:',re);}}if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:true,items:pl},'*');try{window.close();}catch(_){alert(''+pl.length+'冊を bookshelf に送信しました。このタブは閉じてください。');}return;}await navigator.clipboard.writeText(JSON.stringify(pl));alert(''+pl.length+'冊取得。クリップボードにコピーしました。bookshelf の「取込データを直接渡す」に貼り付けてください。');}catch(e){console.error(e);if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'kindleBookshelfExport',ok:false,error:e.message||String(e)},'*');}else{alert('失敗: '+(e.message||e));}}})();`;
         return 'javascript:' + encodeURIComponent(code);
     }
 
@@ -9967,13 +9981,17 @@ class VirtualBookshelf {
       completion("ERROR:" + msg);
       return;
     }
-    const fetchPage = async (start) => {
-      const input = JSON.stringify({
-        contentType: "Ebook", contentCategoryReference: "booksAll",
-        itemStatusList: ["Active"], showSharedContent: true,
+    // 2026-08-18 実測(イシュー#41): itemStatusList は "Active"/"Expired" の2値のみ意味を持ち、
+    // それ以外は無視される。明示指定では最大846件までしか取れず取りこぼしが出るため、
+    // itemStatusList を渡さず全件取得する(kindle_bookshelf_exporter content.js と同じ方針)。
+    const fetchPage = async (start, itemStatusList) => {
+      const body = {
+        contentType: "Ebook", contentCategoryReference: "booksAll", showSharedContent: true,
         fetchCriteria: { sortOrder: "DESCENDING", sortIndex: "DATE", startIndex: start, batchSize: 100, totalContentCount: -1 },
         surfaceType: "Desktop"
-      });
+      };
+      if (itemStatusList) body.itemStatusList = itemStatusList;
+      const input = JSON.stringify(body);
       const r = await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -9983,17 +10001,28 @@ class VirtualBookshelf {
       if (j.success === false) throw new Error(JSON.stringify(j.error));
       return j.GetContentOwnershipData;
     };
+    // 安全弁: Active のみの件数を基準に、全件取得がそれを下回ったら失敗させる(黙って取りこぼさない)
+    const activeOnly = await fetchPage(0, ["Active"]);
+    const activeOnlyCount = activeOnly.numberOfItems || 0;
     // ショートカットのJS実行には時間制限があるため、1ページ目で総数を得て残りは並列取得
     // （2,000冊超でも直列25回→並列1波で数秒に収まる）
     const first = await fetchPage(0);
     const total = first.numberOfItems || 0;
     const starts = [];
     for (let s = 100; s < total; s += 100) starts.push(s);
-    const rest = await Promise.all(starts.map(fetchPage));
+    const rest = await Promise.all(starts.map(s => fetchPage(s)));
     const items = first.items.concat(...rest.map(d => d.items));
+    if (items.length === 0) {
+      throw new Error("取得件数が0件でした。Amazon側の仕様が変わった可能性があります。");
+    }
+    if (items.length < activeOnlyCount) {
+      throw new Error("取得件数(" + items.length + "件)が「Active」のみの件数(" + activeOnlyCount + "件)を下回りました。");
+    }
     const out = items.map(i => ({
       title: i.title, authors: i.authors, acquiredTime: i.acquiredTime,
-      readStatus: i.readStatus, asin: i.asin, productImage: i.productImage
+      readStatus: i.readStatus, asin: i.asin, productImage: i.productImage,
+      originType: i.originType, statusFromPlatformSearch: i.statusFromPlatformSearch,
+      lendingType: i.lendingType, lendingStatus: i.lendingStatus
     }));
     const json = JSON.stringify(out);
 

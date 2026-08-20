@@ -89,7 +89,11 @@ class BookshelfStorage {
                 productImage: b.productImage || '',
                 source: b.source || 'unknown',
                 addedDate: b.addedDate || Date.now(),
-                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {})
+                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {}),
+                ...(b.originType ? { originType: b.originType } : {}),
+                ...(b.statusFromPlatformSearch ? { statusFromPlatformSearch: b.statusFromPlatformSearch } : {}),
+                ...(b.lendingType ? { lendingType: b.lendingType } : {}),
+                ...(b.lendingStatus ? { lendingStatus: b.lendingStatus } : {})
             });
             allBooks.push(asin);
             if (b.memo || b.rating) {

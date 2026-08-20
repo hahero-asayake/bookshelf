@@ -368,6 +368,34 @@ describe('プライバシーガード (_detectLeak, 旧 PublishGenerator と同�
     });
 });
 
+describe('公開出力に Kindle 取込のステータス系フィールドが載らない (イシュー#41)', () => {
+    it('originType/statusFromPlatformSearch/lendingType/lendingStatus は _resolveBookData の whitelist に無い', () => {
+        const state = makeState();
+        state.library.books[0].originType = 'Ku';
+        state.library.books[0].statusFromPlatformSearch = 'Revoked';
+        state.library.books[0].lendingType = 'KU';
+        state.library.books[0].lendingStatus = 'Terminated';
+        const resolved = gen._resolveBookData('M1', new Map(state.library.books.map(b => [b.asin, b])), state, {});
+        expect(resolved).not.toHaveProperty('originType');
+        expect(resolved).not.toHaveProperty('statusFromPlatformSearch');
+        expect(resolved).not.toHaveProperty('lendingType');
+        expect(resolved).not.toHaveProperty('lendingStatus');
+    });
+
+    it('本ブロックの HTML 出力にも Amazon の生値文字列が混入しない', async () => {
+        const state = makeState();
+        state.library.books[0].originType = 'Ku';
+        state.library.books[0].statusFromPlatformSearch = 'Revoked';
+        state.library.books[0].lendingStatus = 'Terminated';
+        const localGen = new PublishArticleGenerator(makeApp(state));
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
+        const r = await localGen.build([article]);
+        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        expect(html).not.toContain('Revoked');
+        expect(html).not.toContain('Terminated');
+    });
+});
+
 describe('index.html (記事一覧)', () => {
     it('公開記事へのリンク一覧を生成する', async () => {
         const a1 = makeArticle({ id: 'a1', slug: 'aaa', title: '記事A' });

@@ -63,13 +63,17 @@ iPhone/iPad の **ショートカット** App を使うと、拡張機能の無�
       completion("ERROR:" + msg);
       return;
     }
-    const fetchPage = async (start) => {
-      const input = JSON.stringify({
-        contentType: "Ebook", contentCategoryReference: "booksAll",
-        itemStatusList: ["Active"], showSharedContent: true,
+    // 2026-08-18 実測(イシュー#41): itemStatusList は "Active"/"Expired" の2値のみ意味を持ち、
+    // それ以外は無視される。明示指定では最大846件までしか取れず取りこぼしが出るため、
+    // itemStatusList を渡さず全件取得する(kindle_bookshelf_exporter content.js と同じ方針)。
+    const fetchPage = async (start, itemStatusList) => {
+      const body = {
+        contentType: "Ebook", contentCategoryReference: "booksAll", showSharedContent: true,
         fetchCriteria: { sortOrder: "DESCENDING", sortIndex: "DATE", startIndex: start, batchSize: 100, totalContentCount: -1 },
         surfaceType: "Desktop"
-      });
+      };
+      if (itemStatusList) body.itemStatusList = itemStatusList;
+      const input = JSON.stringify(body);
       const r = await fetch("https://www.amazon.co.jp/hz/mycd/digital-console/ajax", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -79,17 +83,28 @@ iPhone/iPad の **ショートカット** App を使うと、拡張機能の無�
       if (j.success === false) throw new Error(JSON.stringify(j.error));
       return j.GetContentOwnershipData;
     };
+    // 安全弁: Active のみの件数を基準に、全件取得がそれを下回ったら失敗させる(黙って取りこぼさない)
+    const activeOnly = await fetchPage(0, ["Active"]);
+    const activeOnlyCount = activeOnly.numberOfItems || 0;
     // ショートカットのJS実行には時間制限があるため、1ページ目で総数を得て残りは並列取得
     // （2,000冊超でも直列25回→並列1波で数秒に収まる）
     const first = await fetchPage(0);
     const total = first.numberOfItems || 0;
     const starts = [];
     for (let s = 100; s < total; s += 100) starts.push(s);
-    const rest = await Promise.all(starts.map(fetchPage));
+    const rest = await Promise.all(starts.map(s => fetchPage(s)));
     const items = first.items.concat(...rest.map(d => d.items));
+    if (items.length === 0) {
+      throw new Error("取得件数が0件でした。Amazon側の仕様が変わった可能性があります。");
+    }
+    if (items.length < activeOnlyCount) {
+      throw new Error("取得件数(" + items.length + "件)が「Active」のみの件数(" + activeOnlyCount + "件)を下回りました。");
+    }
     const out = items.map(i => ({
       title: i.title, authors: i.authors, acquiredTime: i.acquiredTime,
-      readStatus: i.readStatus, asin: i.asin, productImage: i.productImage
+      readStatus: i.readStatus, asin: i.asin, productImage: i.productImage,
+      originType: i.originType, statusFromPlatformSearch: i.statusFromPlatformSearch,
+      lendingType: i.lendingType, lendingStatus: i.lendingStatus
     }));
     const json = JSON.stringify(out);
 
