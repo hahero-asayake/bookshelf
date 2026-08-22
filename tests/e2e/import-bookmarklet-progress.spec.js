@@ -81,6 +81,14 @@ async function waitForMidProgress(targetPage) {
         const m = el.textContent.match(/（(\d+)\/(\d+)件）/);
         return !!m && parseInt(m[1], 10) < parseInt(m[2], 10);
     }, null, { timeout: 30000 });
+    // 進捗中 (closable=false) はページ操作を奪わない固定バナーであること (全画面暗幕ではない・
+    // pointer-events:none でクリックを妨げない) を確認する。②レビュー指摘の是正:
+    // fetch はタイムアウトしないため、全画面暗幕のままだと Amazon 側が無応答の時に
+    // リロードするまで操作不能になっていた。
+    const box = await targetPage.locator('#bs-import-progress').boundingBox();
+    expect(box.height).toBeLessThan(120);
+    const pointerEvents = await targetPage.locator('#bs-import-progress').evaluate((el) => getComputedStyle(el).pointerEvents);
+    expect(pointerEvents).toBe('none');
 }
 
 test('hub relay 経由: 中間表示(n<total)→完了パネル、relay に POST された内容を確認', async ({ page, context }) => {
@@ -106,12 +114,14 @@ test('hub relay 経由: 中間表示(n<total)→完了パネル、relay に POST
     await expect(mockPage.locator('#bs-import-progress button')).toBeVisible();
 });
 
-test('postMessage(opener)経由: window.close() 前に完了表示が出て、opener が4フィールド付きデータを受信する', async ({ page, context }) => {
+test('postMessage(opener)経由: window.close() 前に完了表示が出て、opener が4フィールド付きデータを受信する。close が黙って無視された場合は1秒後に閉じるボタン付きパネルへ切り替わる', async ({ page, context }) => {
     await bootApp(page);
     await installAmazonAjaxMock(context);
 
-    // window.close() を「呼ばれたこと + 呼ばれた時点のパネル本文」を記録するだけにフックする。
-    // 実際に閉じてしまうと popup.evaluate で close 前の DOM を読めなくなるため。
+    // window.close() を「呼ばれたこと + 呼ばれた時点のパネル本文」を記録するだけにし、実際には
+    // 閉じない。Chrome は script が開いていないウィンドウの close() を呼んでも例外を投げず
+    // 黙って無視するため、この「呼ばれたが閉じない」状態こそが②レビューで指摘された実運用の
+    // 詰まりパターン (旧実装は try/catch の catch に頼っており、この無視ケースを検出できなかった)。
     await context.addInitScript(() => {
         window.__bsCloseCalled = false;
         window.__bsPanelTextAtClose = null;
@@ -141,6 +151,14 @@ test('postMessage(opener)経由: window.close() 前に完了表示が出て、op
 
     const panelTextAtClose = await popup.evaluate(() => window.__bsPanelTextAtClose);
     expect(panelTextAtClose).toContain('冊を bookshelf に送信しました');
+
+    // close が (テストのフックにより) 無視され続ける状況で、1秒後にパネルが閉じるボタン付きの
+    // 全画面パネルへ自動的に切り替わることを確認する。切り替わらなければ、閉じるボタンの無い
+    // 暗幕がリロードするまで残り続ける旧実装のバグが再発している。
+    await popup.waitForFunction(() => {
+        const el = document.getElementById('bs-import-progress');
+        return !!el && !!el.querySelector('button') && el.textContent.includes('このタブは閉じてください');
+    }, null, { timeout: 3000 });
 
     await page.waitForFunction(() => window.__received && window.__received.ok === true, null, { timeout: 5000 });
     const received = await page.evaluate(() => window.__received);
