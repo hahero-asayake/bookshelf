@@ -966,13 +966,21 @@ async function expectMenuWithinViewport(page, btnLocator) {
     await btnLocator.click();
     const menu = page.locator('.art-add-menu:not([hidden])');
     await expect(menu).toHaveCount(1);
-    const box = await menu.boundingBox();
     const viewport = page.viewportSize();
-    expect(box).not.toBeNull();
-    expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    const expectBoxWithin = (box) => {
+        expect(box).not.toBeNull();
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    };
+    expectBoxWithin(await menu.boundingBox());
+    // アンカー(ボタン)自身も画面内にあること (イシュー#82 完了条件)
+    expectBoxWithin(await btnLocator.boundingBox());
+    // メニュー全3項目 (文章/本棚/本) それぞれが画面内にあること (イシュー#82 完了条件)
+    const items = menu.locator('.art-add-menu-item');
+    await expect(items).toHaveCount(3);
+    for (let i = 0; i < 3; i++) expectBoxWithin(await items.nth(i).boundingBox());
     // 次のケースに影響しないよう閉じる
     await btnLocator.click();
 }
@@ -1077,6 +1085,109 @@ test.describe('記事エディタ: 空状態の案内 (イシュー#59)', () => 
 
         await expect(page.locator('.art-block')).toHaveCount(1);
         await expect(page.locator('.art-empty')).toHaveCount(0);
+
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#82 回帰1: #art-edit-view[hidden] が同詳細度の後勝ちルールで無効化され、一覧と編集が
+// 同時に表示されていた。toBeVisible() は DOM 上可視なだけで通ってしまう (hidden が効いていなくても
+// display:flex で表示されていれば true になる) ため使わず、getComputedStyle().display で実測する。
+async function displayOf(page, selector) {
+    return page.evaluate((sel) => getComputedStyle(document.querySelector(sel)).display, selector);
+}
+
+test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示 (イシュー#82)', () => {
+    test('記事2件以上ある状態で 新規作成→編集→←で一覧 を通しても、一覧に戻った時点で編集ビューが非表示になる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        // 記事を2件作る (依頼に沿って「記事が既に存在する状態」を再現する)
+        await page.click('#art-new');
+        await page.fill('#art-title', '記事1');
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-back');
+
+        await page.click('#art-new');
+        await page.fill('#art-title', '記事2');
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-back');
+
+        await expect(page.locator('#art-list .pp-row')).toHaveCount(2);
+        // 一覧表示中は編集ビューが非表示であること
+        expect(await displayOf(page, '#art-edit-view')).toBe('none');
+
+        // 一覧の行から編集を開く (逆方向: 開いたら一覧が非表示になること)
+        await page.locator('#art-list .pp-row').first().locator('[data-act="edit"]').click();
+        await page.waitForSelector('#art-edit-view:not([hidden])');
+        expect(await displayOf(page, '#art-list-view')).toBe('none');
+
+        // ← で一覧へ戻ると、編集ビューが非表示に戻ること (回帰1本体)
+        await page.click('#art-back');
+        await page.waitForSelector('#art-list-view:not([hidden])');
+        expect(await displayOf(page, '#art-edit-view')).toBe('none');
+        expect(await displayOf(page, '#art-list-view')).not.toBe('none');
+
+        // 再度編集へ入っても同じく一覧側が非表示になること (往復で崩れないことの確認)
+        await page.locator('#art-list .pp-row').last().locator('[data-act="edit"]').click();
+        await page.waitForSelector('#art-edit-view:not([hidden])');
+        expect(await displayOf(page, '#art-list-view')).toBe('none');
+        expect(await displayOf(page, '#art-edit-view')).not.toBe('none');
+
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#82 回帰2: .art-col が overflow:auto のスクロールコンテナ化 (イシュー#59) した結果、
+// position:absolute だった .art-add-menu が中間スクロール位置でクリップされ、3項目目が見切れていた。
+// 先頭/末尾のアンカーだけでは再現しない (フリップ判定で回避されるため)。中間までスクロールした
+// 状態で開いたときも、既存の expectMenuWithinViewport と同じ基準 (getBoundingClientRect() で
+// top>=0 && bottom<=innerHeight, 横も同様) で全項目+アンカーが収まることを検証する。
+test.describe('記事エディタ: スクロールコンテナ中間位置でもブロック追加メニューがクリップされない (イシュー#82, 1280x720)', () => {
+    test.use({ viewport: { width: 1280, height: 720 } });
+
+    test('10ブロックで .art-col を中間までスクロールした位置の追加ボタンでも、メニュー全3項目+アンカーが画面内に収まる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addTextBlocks(page, 10);
+        await expect(page.locator('.art-block')).toHaveCount(10);
+
+        // Playwright の自動 scrollIntoView に頼ると端に寄ってしまい再現しないため、
+        // .art-col を明示的に中間スクロールしてから force click する。
+        await page.evaluate(() => {
+            const col = document.querySelector('.art-col');
+            col.scrollTop = (col.scrollHeight - col.clientHeight) / 2;
+        });
+        const btns = page.locator('.art-add-btn');
+        const count = await btns.count();
+        const artColRect = await page.evaluate(() => document.querySelector('.art-col').getBoundingClientRect().toJSON());
+        let targetIdx = Math.floor(count / 2);
+        for (let i = 0; i < count; i++) {
+            const r = await btns.nth(i).boundingBox();
+            if (r && r.y > artColRect.top + 40 && r.y < artColRect.top + artColRect.height / 2 + 40) { targetIdx = i; break; }
+        }
+        const targetBtn = btns.nth(targetIdx);
+        await targetBtn.click({ force: true });
+
+        const menu = page.locator('.art-add-menu:not([hidden])');
+        await expect(menu).toHaveCount(1);
+        // 祖先 (.art-col) の overflow:auto に影響されない position:fixed であることも確認する
+        // (position:absolute へ戻す退行が起きると、このアサーションだけが検知できる)
+        expect(await page.evaluate(() => getComputedStyle(document.querySelector('.art-add-menu:not([hidden])')).position)).toBe('fixed');
+
+        const viewport = page.viewportSize();
+        const expectBoxWithin = (box) => {
+            expect(box).not.toBeNull();
+            expect(box.y).toBeGreaterThanOrEqual(0);
+            expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+            expect(box.x).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+        };
+        expectBoxWithin(await targetBtn.boundingBox());
+        const items = menu.locator('.art-add-menu-item');
+        await expect(items).toHaveCount(3);
+        for (let i = 0; i < 3; i++) expectBoxWithin(await items.nth(i).boundingBox());
 
         expect(errors).toEqual([]);
     });

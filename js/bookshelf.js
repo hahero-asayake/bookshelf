@@ -8223,31 +8223,32 @@ class VirtualBookshelf {
         </div>`;
     }
 
-    // アンカー要素 (position:relative) 直下の絶対配置メニューをビューポート内に収める。
-    // 下に入らず上には入る→上開きへフリップ (is-up)。上下どちらにも入らない→下開きのまま scrollIntoView で収める。
+    // アンカー要素の直下にメニューを position:fixed (ビューポート基準の絶対座標) で配置する。
+    // menuEl は祖先の position/DOM構造を問わず fixed なので、祖先が overflow:auto の
+    // スクロールコンテナ化していてもクリップされない (position:absolute だとクリップされる。
+    // ui-standards §2-12・イシュー#82 で #59 の .art-col スクロールコンテナ化により再発)。
+    // 下に入らず上には入る→上開きへフリップ (is-up)。上下どちらにも入らなければ margin だけ
+    // 空けて画面内へ収める (fixed のため scrollIntoView は効かない＝クランプのみで保証する)。
     // 呼ぶたびに向きをリセットするので、開くたびに呼び直せば前回の is-up は残らない。
     _placeAnchoredMenu(anchorEl, menuEl) {
         menuEl.classList.remove('is-up');
-        menuEl.style.left = '';
-        menuEl.style.transform = '';
         const margin = 8;
         const anchorRect = anchorEl.getBoundingClientRect();
         const menuRect = menuEl.getBoundingClientRect();
         const spaceBelow = window.innerHeight - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
+        let top;
         if (spaceBelow < menuRect.height + margin && spaceAbove >= menuRect.height + margin) {
             menuEl.classList.add('is-up');
-        } else if (spaceBelow < menuRect.height + margin) {
-            requestAnimationFrame(() => menuEl.scrollIntoView({ block: 'nearest' }));
+            top = anchorRect.top - menuRect.height;
+        } else {
+            top = anchorRect.bottom;
         }
-        const afterRect = menuEl.getBoundingClientRect();
-        if (afterRect.left < margin) {
-            menuEl.style.left = `${margin - anchorRect.left}px`;
-            menuEl.style.transform = 'none';
-        } else if (afterRect.right > window.innerWidth - margin) {
-            menuEl.style.left = `${window.innerWidth - margin - anchorRect.left - menuRect.width}px`;
-            menuEl.style.transform = 'none';
-        }
+        top = Math.max(margin, Math.min(top, window.innerHeight - menuRect.height - margin));
+        let left = anchorRect.left + anchorRect.width / 2 - menuRect.width / 2;
+        left = Math.max(margin, Math.min(left, window.innerWidth - menuRect.width - margin));
+        menuEl.style.top = `${top}px`;
+        menuEl.style.left = `${left}px`;
     }
 
     _artBindBlocksEvents() {
