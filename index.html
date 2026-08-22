@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026082201">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026082303">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -936,15 +936,22 @@
                         <summary><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを直接渡す（貼り付け・ファイル）<span class="pp-advanced-note">ブックマークが使えないときはこちら</span><span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
                         <div class="pp-advanced-body">
                             <p class="pp-hint">取込ブックマークがうまく動かないときの代替手段です。「コピーしました」と出た取込データを貼り付けるか、保存してある取込データファイルから取り込めます。</p>
-                            <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データを貼り付け"></textarea>
-                            <div class="import-option-actions">
-                                <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
-                                <button id="import-from-paste" class="btn btn-primary">貼り付けたデータを取り込む</button>
+                            <div class="import-method-block">
+                                <h4 class="import-method-block-title">貼り付けて取り込む</h4>
+                                <textarea id="kindle-paste-input" class="kindle-paste-input" rows="4" placeholder="ここに取込データを貼り付け"></textarea>
+                                <div class="import-option-actions">
+                                    <button id="read-clipboard-import" class="btn btn-secondary"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>クリップボードから読み取り</button>
+                                    <button id="import-from-paste" class="btn btn-primary">貼り付けたデータを取り込む</button>
+                                </div>
                             </div>
-                            <hr class="settings-divider">
-                            <div class="import-file-row">
-                                <input type="file" id="kindle-file-input" accept=".json" />
-                                <button id="import-from-file" class="btn btn-secondary">ファイルから取り込む</button>
+                            <div class="import-method-block">
+                                <h4 class="import-method-block-title">ファイルから取り込む</h4>
+                                <div class="import-file-row">
+                                    <input type="file" id="kindle-file-input" accept=".json" hidden>
+                                    <label for="kindle-file-input" class="btn btn-secondary">ファイルを選択</label>
+                                    <span id="kindle-file-name" class="import-file-name">選択されていません</span>
+                                    <button id="import-from-file" class="btn btn-primary" disabled>ファイルから取り込む</button>
+                                </div>
                             </div>
                         </div>
                     </details>
@@ -1168,7 +1175,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026073001"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026082302"></script>
+    <script src="js/bookshelf.js?v=2026082304"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

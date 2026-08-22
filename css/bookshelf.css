@@ -289,6 +289,10 @@ body {
     color: var(--text-color);
 }
 
+/* 押せるのに何も起きないボタンを見た目で示す (イシュー#89・②レビュー指摘)。
+   従来 disabled 初期状態のボタン (#import-selected-books・IconPicker「使う」等) にも波及して統一される。 */
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .btn-primary {
     background-color: var(--accent);
     color: #fff;
@@ -5731,8 +5735,18 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .bml-chip:active { cursor: grabbing; }
 .bml-chip-note { font-size: 0.75rem; font-weight: 400; color: var(--muted, #888); }
 .import-option-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+.import-option-actions > * { white-space: nowrap; }
 .import-fallback-note { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.3rem 0 0; }
+/* 「取込データを直接渡す」節: 「貼り付けて取り込む」/「ファイルから取り込む」の2系統を
+   視覚的に分割するブロック (イシュー#89)。細い区切り線だけでは2系統が伝わらなかった。 */
+.import-method-block { padding: 0.85rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 0.6rem; }
+.import-method-block + .import-method-block { margin-top: 0.9rem; }
+.import-method-block-title { margin: 0; font-size: 0.85rem; font-weight: 700; color: var(--fg); }
 .import-file-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.import-file-row > label, .import-file-row > button { white-space: nowrap; }
+/* ファイル名は可変長 (ユーザのファイル名依存) のため nowrap にしない。
+   min-width:0 で flex アイテムとして縮小可能にし、単語境界の無い長い名前も折り返す (②レビュー指摘)。 */
+.import-file-name { font-size: 0.85rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .import-relay-waiting { display: flex; align-items: center; gap: 0.5rem; }
 .import-media-slot { margin: 0.2rem 0; }
 .import-media-gif { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }

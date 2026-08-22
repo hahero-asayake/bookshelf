@@ -543,6 +543,20 @@ class VirtualBookshelf {
             this.importFromFile();
         });
 
+        // ファイル選択名の自前表示 (ブラウザ既定の Choose File/No file chosen を隠すため。イシュー#89)。
+        // 未選択のまま押せる primary ボタンは「押しても何も起きない」ため、選択済みの時だけ有効化する
+        // (エラーで弾くより先に、押せない状態で見せる方が上位。②レビュー指摘)。
+        const kindleFileInput = document.getElementById('kindle-file-input');
+        if (kindleFileInput) {
+            kindleFileInput.addEventListener('change', () => {
+                const nameEl = document.getElementById('kindle-file-name');
+                const hasFile = !!(kindleFileInput.files && kindleFileInput.files.length > 0);
+                if (nameEl) nameEl.textContent = hasFile ? kindleFileInput.files[0].name : '選択されていません';
+                const importBtn = document.getElementById('import-from-file');
+                if (importBtn) importBtn.disabled = !hasFile;
+            });
+        }
+
         // 貼り付け / クリップボード取込 (スマホ向け。ブックマークレットがコピーした JSON を取込む)
         const importFromPasteBtn = document.getElementById('import-from-paste');
         if (importFromPasteBtn) importFromPasteBtn.addEventListener('click', () => this.importFromPasteInput());
