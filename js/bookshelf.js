@@ -7709,6 +7709,7 @@ class VirtualBookshelf {
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => this._artShowList());
+        on('art-drawer-shelf', 'change', () => this._artOnDrawerShelfChange());
         on('art-drawer-search', 'input', (e) => {
             this._artDrawerQuery = e.target.value.trim().toLowerCase();
             this._artRenderDrawer();
@@ -7953,6 +7954,7 @@ class VirtualBookshelf {
         this._artRenderThemeSelects();
         this._artRenderTags();
         this._artRenderBlocks();
+        this._artRenderDrawerShelfSelect();
         this._artRenderDrawer();
         this._artSetSaveStatus('');
         this._artShowEditor();
@@ -7967,12 +7969,23 @@ class VirtualBookshelf {
         const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
         layoutSel.innerHTML = ARTICLE_LAYOUTS.map(l => `<option value="${l}"${l === theme.layout ? ' selected' : ''}>${LAYOUT_LABELS[l] || l}</option>`).join('');
         colorSel.innerHTML = ARTICLE_COLORS.map(c => `<option value="${c}"${c === theme.color ? ' selected' : ''}>${COLOR_LABELS[c] || c}</option>`).join('');
+        this._artUpdateThemeSwatch(theme);
+    }
+
+    // 選択中の配色を小さな丸スウォッチで示す (レイアウト×配色の2軸である旨をラベルで、
+    // 実際の色をこの丸で伝える。ARTICLE_COLOR_TOKENS はプレビュー/公開と同じ配色定義=単一の正本、イシュー#99)。
+    _artUpdateThemeSwatch(theme) {
+        const swatchEl = document.getElementById('art-theme-swatch');
+        if (!swatchEl) return;
+        const tokens = (typeof ARTICLE_COLOR_TOKENS !== 'undefined' && ARTICLE_COLOR_TOKENS[theme.color]) || null;
+        swatchEl.style.background = tokens ? tokens.acc : 'transparent';
     }
 
     _artOnThemeChange() {
         const layout = document.getElementById('art-theme-layout').value;
         const color = document.getElementById('art-theme-color').value;
         this._artDraft.theme = PublishArticleStore.normalizeTheme({ layout, color });
+        this._artUpdateThemeSwatch(this._artDraft.theme);
         this._artScheduleSave();
     }
 
@@ -8572,12 +8585,61 @@ class VirtualBookshelf {
 
     // ===== 右ペイン: 本の引き出し (この本棚の全部の本・多重配置可・新規バッジ・0件で畳む, §11.1) =====
 
+    // 選択中の引き出し元本棚IDを解決する。削除済み等で参照先が無ければ all 本棚へフォールバックし、
+    // ドラフトの sourceShelfId 自体もその場で補正する (次回保存時に自然と永続化される)。
+    _artResolveSourceShelfId() {
+        const bm = this.bookshelfManager;
+        if (bm.getById(this._artDraft.sourceShelfId)) return this._artDraft.sourceShelfId;
+        const allShelf = bm.getBookshelves().find(s => s.isSpecial);
+        const fallback = allShelf ? bm._keyOf(allShelf) : null;
+        this._artDraft.sourceShelfId = fallback;
+        return fallback;
+    }
+
+    // 引き出し上部の本棚セレクタを構築する。既存の #bookshelf-parent と同じ「フラットな <select>」の型
+    // (index.html:733-738) を踏襲し、左ペインツリーと同じ深さ優先順 (renderBookshelfList と同じロジック)
+    // で並べる。ALL は特殊本棚として先頭固定・既定値のまま (仕様どおり既存挙動を変えない)。
+    _artRenderDrawerShelfSelect() {
+        const sel = document.getElementById('art-drawer-shelf');
+        if (!sel) return;
+        const bm = this.bookshelfManager;
+        const shelves = bm.getBookshelves();
+        const allShelf = shelves.find(s => s.isSpecial);
+        // renderBookshelfList (7026行) と同じグルーピング: ALL も byParent に含めておかないと、
+        // ALL 直下 (=実質トップ階層) の本棚が「parent===ALLのinternalId」で拾えなくなる。
+        const byParent = new Map();
+        shelves.forEach(bs => {
+            const key = bs.parent || null;
+            if (!byParent.has(key)) byParent.set(key, []);
+            byParent.get(key).push(bs);
+        });
+        const rows = [];
+        const walk = (bs) => {
+            if (!bs.isSpecial) rows.push(bs);
+            (byParent.get(bm._keyOf(bs)) || []).forEach(c => walk(c));
+        };
+        (byParent.get(null) || []).forEach(r => walk(r));
+        const esc = PublishArticleGenerator.esc;
+        const optionsHtml = (allShelf ? `<option value="${esc(bm._keyOf(allShelf))}">${esc(allShelf.name)}</option>` : '')
+            + rows.map(bs => `<option value="${esc(bm._keyOf(bs))}">${esc(bs.name)}</option>`).join('');
+        sel.innerHTML = optionsHtml;
+        sel.value = this._artResolveSourceShelfId();
+    }
+
+    _artOnDrawerShelfChange() {
+        const sel = document.getElementById('art-drawer-shelf');
+        if (!sel) return;
+        this._artDraft.sourceShelfId = sel.value || null;
+        this._artScheduleSave();
+        this._artRenderDrawer();
+    }
+
     _artRenderDrawer() {
         const wrap = document.querySelector('.art-wrap');
         const listHost = document.getElementById('art-drawer-list');
         const badgeEl = document.getElementById('art-drawer-badge');
         if (!listHost) return;
-        const shelf = this.bookshelfManager.getById(this._artDraft.sourceShelfId);
+        const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
         const asins = (shelf && shelf.books) || [];
         if (!asins.length) {
             if (wrap) wrap.classList.add('art-drawer-collapsed');

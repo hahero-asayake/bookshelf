@@ -751,6 +751,62 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
     });
 });
 
+// 引き出しに本棚セレクタを付け、all固定だった引き出しを本棚で絞れるようにした (イシュー#99)。
+// 設計: #bookshelf-parent と同じフラットな select・ALL先頭固定/既定・検索と直列合成・配置済みブロックは無影響。
+test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュー#99)', () => {
+    test('本棚を選ぶとその本だけが並び、検索と併用でき、配置できる。本棚を切り替えても配置済みブロックは変化しない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        const shelfSel = page.locator('#art-drawer-shelf');
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+        const search = page.locator('#art-drawer-search');
+
+        // 既定は all (5冊, 既存の使い方を変えない)
+        await expect(shelfSel).toHaveValue('fixall001');
+        await expect(drawerItems).toHaveCount(5);
+
+        // 本棚Bを選ぶ→Bの本だけが並ぶ (テスト本棚=3冊)
+        await shelfSel.selectOption('fixshelf01');
+        await expect(drawerItems).toHaveCount(3);
+
+        // 検索と併用できる (本棚内でさらにタイトルで絞る)
+        await search.fill('3');
+        await expect(drawerItems).toHaveCount(1);
+        await expect(drawerItems.first()).toContainText('フィクスチャの本 3');
+
+        // 絞り込んだ状態からクリックで配置できる
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await drawerItems.first().click();
+        await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+        await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
+
+        // 本棚を切り替えても、既に配置済みのブロックは変化しない
+        await search.fill('');
+        await shelfSel.selectOption('fixall001');
+        await expect(drawerItems).toHaveCount(5);
+        await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+        await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
+
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚セレクタは #bookshelf-parent と同じ型 (フラットな select) で、ALL が先頭かつ既定値', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        const options = await page.locator('#art-drawer-shelf option').allTextContents();
+        expect(options[0]).toBe('すべての本');
+        expect(options).toContain('テスト本棚');
+        await expect(page.locator('#art-drawer-shelf')).toHaveValue('fixall001');
+        expect(errors).toEqual([]);
+    });
+});
+
 // 本棚ブロックの一括操作を選択式にし Undo を付けた (イシュー#55)。
 // 設計: 選択なしのブロックバーは要素5個以下・1件以上選択で選択バーが出る・一括適用は Undo 付きトースト。
 test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {

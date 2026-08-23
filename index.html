@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026082303">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026082401">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -790,10 +790,6 @@
                 <div class="art-hd">
                     <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
                     <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
-                    <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
-                    <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
-                    <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                    <button id="art-publish" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
                 </div>
 
                 <div class="art-tagbar">
@@ -813,6 +809,7 @@
                     <!-- 本の引き出し -->
                     <div class="art-side" id="art-drawer">
                         <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span></h3>
+                        <select id="art-drawer-shelf" class="sel art-drawer-shelf-sel" title="本棚"></select>
                         <input type="search" id="art-drawer-search" class="art-drawer-search" placeholder="タイトル/著者で検索…" autocomplete="off">
                         <div class="pp-hint art-drawer-note">同じ本も何度でも配置可</div>
                         <div id="art-drawer-list" class="art-drawer-list"></div>
@@ -820,12 +817,20 @@
                 </div>
 
                 <div class="form-actions pp-edit-actions">
+                    <span class="art-tag-label">レイアウト</span>
+                    <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
+                    <span class="art-tag-label">配色</span>
+                    <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
+                    <span id="art-theme-swatch" class="art-theme-swatch" title="選択中の配色"></span>
+                    <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
+                    <button id="art-publish" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
                     <span class="pp-actions-spacer"></span>
                     <span id="art-save-status" class="art-save-status"></span>
                     <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
                     <div class="pp-page-ops" id="art-page-ops" hidden>
                         <button id="art-dup" class="btn btn-secondary btn-small" type="button">複製</button>
                         <button id="art-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
+                        <span class="pp-del-spacer"></span>
                         <button id="art-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
                     </div>
                 </div>
@@ -1175,7 +1180,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026073001"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026082304"></script>
+    <script src="js/bookshelf.js?v=2026082401"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

@@ -4343,6 +4343,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-title-input:focus { outline: none; border-color: var(--accent); background: var(--panel); box-shadow: 0 0 0 3px rgba(91, 108, 255, 0.15); }
 .art-theme-sel { flex: 0 0 auto; width: auto; max-width: 8.5rem; padding: 0.4rem 0.55rem; border: 1px solid var(--line); border-radius: 6px;
     background: var(--panel); color: var(--fg2); font-size: 0.82rem; }
+/* 選択中の配色が一目で分かる手掛かり (過剰にしない=色だけの小さな丸、イシュー#99・指摘3) */
+.art-theme-swatch { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--line); flex: 0 0 auto; }
 .art-save-status { font-size: 0.78rem; color: var(--muted); }
 .art-save-status.is-error { color: var(--danger); font-weight: 600; }
 /* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
@@ -4372,10 +4374,15 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
 
 /* --- ブロック共通 --- */
-.art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; }
+/* 区切りの視認性 (イシュー#99): 罫線トークンの濃さで押すのではなく、影で「面として浮いている」ことを
+   示す。.dashboard-widget と同じ影の値を再利用 (新しい値を発明しない)。 */
+.art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); }
 .art-block.is-drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .art-block.is-dragging, .art-shelf-item.is-dragging { opacity: 0.45; pointer-events: none; }
-.art-block-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--line2); color: var(--muted); font-size: 0.72rem; }
+/* バーの背景を本体(--panel)と差のある --side にし、罫線だけでなく面でバー/本体を分ける
+   (.art-shelf-selbar・.art-drawer-item:hover と同じ既存トークンの再利用)。角丸はブロック本体(10px)に
+   揃えて、四角いバー背景が丸角の外にはみ出さないようにする。 */
+.art-block-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.45rem 0.65rem; background: var(--side); border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; color: var(--muted); font-size: 0.72rem; }
 /* 狭幅で文字単位に縦割れするのを防ぐ (CJK は単語境界が無いため folding 対象になりやすい, イシュー#55 差し戻し)。
    スペーサーだけ .art-block-bar-sp { flex: 1 } で個別に上書きするので、このルールより後ろに置くこと。 */
 .art-block-bar > * { flex-shrink: 0; white-space: nowrap; }
@@ -4414,7 +4421,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-icon-toggle.is-on { color: var(--accent-strong); font-weight: 600; border-bottom-color: var(--accent); }
 
 /* 選択バー (1件以上選択したときだけ表示、イシュー#55) */
-.art-shelf-selbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0.65rem; border-bottom: 1px solid var(--line2); background: var(--side); font-size: 0.76rem; }
+/* 選択バーは「選択中」を示す面なので、他の選択状態(drag-over・選択カード等)と同じ --accent-bg を
+   再利用して背景差をはっきりさせる (--side は他の非選択バーと見分けがつきにくかった、イシュー#99)。 */
+.art-shelf-selbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0.65rem; border-bottom: 1px solid var(--line); background: var(--accent-bg); font-size: 0.76rem; }
 /* 狭幅で文字単位に縦割れするのを防ぐ (.art-block-bar と同じ理由)。要素ごと次の行に落ちるのは許容する。 */
 .art-shelf-selbar > * { flex-shrink: 0; white-space: nowrap; }
 .art-shelf-selbar-master { padding: 0.1rem 0.3rem; font-size: 0.76rem; font-weight: 600; color: var(--fg); }
@@ -4424,7 +4433,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* カード表示 (密度=card) */
 .art-shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr)); gap: 0.6rem; }
-.art-shelf-grid .art-shelf-item { border: 1px solid var(--line2); border-radius: 7px; padding: 0.4rem; position: relative; background: var(--side); }
+.art-shelf-grid .art-shelf-item { border: 1px solid var(--line); border-radius: 7px; padding: 0.4rem; position: relative; background: var(--side); }
 .art-shelf-grid .art-shelf-item.is-selected { border-color: var(--accent); background: var(--accent-bg); }
 .art-shelf-grid .art-shelf-item .art-cover { aspect-ratio: 5/7; max-height: 6.5rem; }
 .art-shelf-grid .art-item-check { position: absolute; top: 0.25rem; left: 0.3rem; z-index: 1; }
@@ -4443,7 +4452,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     gap: 0.5rem;
     padding: 0.3rem 0.3rem;
     border: none;
-    border-bottom: 1px solid var(--line2);
+    border-bottom: 1px solid var(--line);
     border-radius: 0;
     background: transparent;
 }
@@ -4466,7 +4475,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-item-remove:hover { color: var(--danger); }
 
 /* 畳む (B): 見出しバーだけ残して本文を隠す */
-.art-block.is-collapsed .art-block-bar { border-bottom: none; }
+.art-block.is-collapsed .art-block-bar { border-bottom: none; border-radius: 10px; }
 
 /* --- 表紙 (プレースホルダ) --- */
 .art-cover { aspect-ratio: 5/7; border-radius: 4px; background: linear-gradient(150deg, var(--line2), var(--line)); display: flex;
@@ -4495,6 +4504,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 100%; display: flex; flex-direction: column; }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
+.art-drawer-shelf-sel { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
 .art-drawer-search { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
 .art-drawer-search:focus { outline: none; border-color: var(--accent); }
 .art-drawer-note { padding: 0.5rem 0.7rem; background: var(--side); border-bottom: 1px solid var(--line2); margin: 0.5rem 0 0; flex: 0 0 auto; }
@@ -4508,8 +4518,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     grid-template-columns: 34px minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.15rem 0.7rem;
-    border-bottom: 1px solid var(--line2);
+    /* 余白を広げて行間を「面の隙間」で分ける (罫線だけに頼らない、イシュー#99)。
+       34pxサムネ+padding 0.3rem*2 = 約43.6px、既存の48px上限(イシュー#34)には収まる。 */
+    padding: 0.3rem 0.7rem;
+    border-bottom: 1px solid var(--line);
     cursor: pointer;
     min-width: 0;
 }
