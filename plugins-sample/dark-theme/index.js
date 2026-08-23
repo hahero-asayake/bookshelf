@@ -18,6 +18,10 @@ body.${BODY_CLASS} {
     color-scheme: dark;
 }
 body.${BODY_CLASS} img.book-cover { box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+/* 3ペイン境界(イシュー#103): ダークは --line が --panel より明るく、ライトと逆向きの構図になる。
+   中央(--panel)より暗い --bg を左右ペインへ当てて面差を作る (ライトの案B=左右--line/中央--panelと対応)。 */
+body.${BODY_CLASS} .app-sidebar,
+body.${BODY_CLASS} .app-detail { background: var(--bg); }
 `;
 
 export function activate(api, manifest) {
