@@ -564,7 +564,9 @@ class BookshelfDashboard {
     }
 
     _renderRecentBooks(host, app, config) {
-        const limit = (config && config.limit) || 8;
+        // 幅がいくつでも overflow-x:auto で埋まるよう常に溢れる件数を取る (U-8)。
+        // 実測ピッチ88px(cell80px+gap8px)基準、xl(span12)・左右ペイン畳み・5120px幅でも埋まる件数
+        const limit = (config && config.limit) || 80;
         const sorted = (app.books || [])
             .slice()
             .sort((a, b) => (b.acquiredTime || 0) - (a.acquiredTime || 0))
@@ -578,7 +580,7 @@ class BookshelfDashboard {
                 ${sorted.map(b => `
                     <button type="button" class="widget-book-cell" data-asin="${this._escape(b.asin)}" title="${this._escape(b.title)}">
                         ${app.bookManager.hasCoverImage(b)
-                            ? `<img src="${this._escape(app.bookManager.getProductImageUrl(b))}" alt="" data-cover-fallback="">`
+                            ? `<img src="${this._escape(app.bookManager.getProductImageUrl(b))}" alt="" loading="lazy" data-cover-fallback="">`
                             : `<div class="widget-book-cell-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`}
                         <div class="widget-book-cell-title">${this._escape(b.title)}</div>
                     </button>
