@@ -4534,8 +4534,12 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 @media (max-width: 900px) {
     /* 900px以下は既存のシート全体スクロール設計を変えない (残り高さ配分は900px超のみ, イシュー#59)。
-       .art-wrap を明示的に元の暗黙 auto 行に戻し、.art-col も従来の 58vh 上限に固定する。 */
-    .art-wrap { grid-template-columns: 1fr; grid-template-rows: none; }
+       .art-wrap を明示的に元の暗黙 auto 行に戻し、.art-col も従来の 58vh 上限に固定する。
+       .art-wrap は 900px超用の flex:1 1 auto; min-height:0; (残り高さぶん縮む指定) を継承したままなので、
+       ここで明示的に自然な高さへ戻さないと、.art-side (max-height:none) の実コンテンツ量が増えたとき
+       (今回のフッター拡張でモーダル内の兄弟要素の必要高さが増えた) に .art-wrap 側が圧縮され、
+       .art-side が overflow:visible ではみ出て後続の .pp-edit-actions と重なる (イシュー#99・CI回帰)。 */
+    .art-wrap { grid-template-columns: 1fr; grid-template-rows: none; flex: none; min-height: auto; }
     .art-col { max-height: 58vh; }
     .art-side { position: static; max-height: none; }
 }
