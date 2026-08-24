@@ -122,6 +122,8 @@
 | E2E 共通 fixture（GIS モック・外部ネットワーク遮断: AdSense/Lucide CDN/Amazon 書影） | `tests/e2e/helpers/test-base.js` | 全 spec が import |
 | 回帰 E2E / unit | `tests/e2e/` / `tests/unit/` | `npm run test:e2e` / `npm test` |
 
+`locator.evaluate(fn)`で`getComputedStyle`等を読むテスト(`contrastOf`型)は、「セレクタ解決→pageFunction実行」の2段階CDP通信の間にアプリ側の非同期な再レンダーが割り込みうる。`expect(locator).toBeVisible()`成功直後でも要素がdetachされる可能性は否定できない＝アプリ側でDOM再構築を伴う操作(本棚切替・一覧再描画等)の直後に計測するテストは、低CPU環境(CI)でのみ顕在化するrace conditionを前提に書くこと(イシュー#104・ADR-075)。CI相当のCPU制約(`taskset -c N,M npx playwright test --workers=<CIの実workers数>`)で反復再現できるか確認してから「テストの待ち方の問題」か「アプリの非決定的挙動」かを切り分ける。
+
 ## §7 更新履歴
 
 - 2026-07-27 制定（接地指示 = ledger C-256。初期内容は 2026-07-27 UI監査の検出事例＋既存規約の集約）
@@ -136,3 +138,4 @@
 - 2026-08-18 §6 に E2E 共通 fixture（`tests/e2e/helpers/test-base.js`）を追記（イシュー#53・ADR-065。GIS・AdSense を実ネットワークから読んでいたことが CI の断続的な赤の原因だったため、E2E 起動時に両方をモック/遮断する共通口を新設し、全 spec をそこへ寄せた）
 - 2026-08-24 §2-18 に「区切り（境目）は罫線トークンを濃くせず面差・余白・影の複合で作る」を新設（イシュー#103。#99で記事エディタ限定に留めた「面で分ける」判断をアプリ全体へ拡張し、罫線トークン(`--line`/`--line2`)自体は据え置いたまま3ペイン・モーダル・リスト等の区切りを改善した際の帰納。設計判断の詳細はADR-073）
 - 2026-08-24 §2-19 に「横並び（横スクロール型）ウィジェットは表示件数を固定値で持たない」を新設（イシューU-8。`recent-books` の件数固定8件が大画面で余白を生んでいた指摘から、ウィジェットの幅3段階可変（`allowedSizes`）に対し中身の件数が追随しない枠組みの穴を帰納。縦積みウィジェットは対象外の但し書き付き。設計判断の詳細はADR-074）
+- 2026-08-24 §6 に `locator.evaluate` で `getComputedStyle` 等を読む系テストの書き方規約を追加（イシュー#104。並列/CI限定フレークの真因が「DOM再構築を伴う操作の直後に計測する」構造にあったことの帰納。設計判断の詳細はADR-075）

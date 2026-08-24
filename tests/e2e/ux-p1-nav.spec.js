@@ -70,6 +70,47 @@ test('P5: ブランド (アプリ名) クリックでホームへ遷移', async 
     await expect(page.locator('body')).toHaveClass(/app-view-main/);
 });
 
+test('本棚を選び直しても戻る操作の hashchange が握り潰されない (イシュー#104 回帰防止)', async ({ page }) => {
+    // switchBookshelf() は router.navigateBookshelf() 経由で hashchange の自己反射を1回だけ
+    // 無視する (selfHandled) が、同一 slug への再ナビゲーションでは window.location.hash が
+    // 変化せず hashchange 自体が発火しない。この場合フラグを無条件で立てると消費されずに
+    // 残留し、次に来る本物の hashchange (戻る/進む) を誤って握り潰していた (②レビュー実測)。
+    const errors = await bootApp(page);
+    // ①②③ を同一 evaluate 内で同期的に連続実行する。ブラウザの hashchange は非同期
+    // (マクロタスク) のため、①のイベントが発火する前に②③まで同期的に進むタイミングでのみ
+    // race condition が再現する (page.evaluate を分けて await を挟むと、その間に①の
+    // hashchange が先に処理されてしまい再現しない)。
+    await page.evaluate(() => {
+        window.bookshelf.switchBookshelf('fixshelf'); // ① 本棚 fixshelf を開く
+        window.bookshelf.switchBookshelf('fixshelf'); // ② 同じ本棚を選び直す (同一ID呼び出し)
+        window.bookshelf.switchBookshelf('all');       // ③ 別の本棚 all へ移動
+    });
+    await expect.poll(() => page.evaluate(() => window.bookshelf.currentBookshelf)).toBe('all');
+    // ④ ブラウザの戻る → fixshelf の表示に戻ること (hashchange が握り潰されていれば all のまま残る)
+    await page.goBack();
+    await expect.poll(() => page.evaluate(() => window.bookshelf.currentBookshelf)).toBe('fixshelf');
+    expect(errors).toEqual([]);
+});
+
+test('_setHash: hash が同じ時は selfHandled でも router._suppressNext を立てない (イシュー#104・ホワイトボックス契約テスト)', async ({ page }) => {
+    // ホワイトボックスでの Red→Green 実証を試みたが、②が指摘したバグ発生箇所 (_setHash の
+    // else ブランチ) には「hash が同じなら else-if 分岐で明示 dispatch する」という既存の
+    // ガードがあり、②が示した再現手順 (同一本棚を選び直す = hash 不変の操作) は常にこの
+    // else-if 分岐を通るため、else ブランチには到達しないことが実測で判明した (②レビュー
+    // 実測との差異)。つまりこの操作単体では Red→Green を再現できない。ここでは代わりに
+    // _setHash の契約 (hash 不変なら selfHandled=true でも _suppressNext に触れない) を
+    // 直接固定し、将来 else-if の条件が崩れた場合の安全網とする。
+    await bootApp(page);
+    const result = await page.evaluate(() => {
+        const r = window.bookshelf.router;
+        window.bookshelf.switchBookshelf('fixshelf');
+        r._suppressNext = false; // ①のフラグ消費を模して既知の状態に初期化
+        r._setHash(window.location.hash, false, true); // 現在と同じ hash を selfHandled=true で再設定
+        return r._suppressNext;
+    });
+    expect(result).toBe(false);
+});
+
 test('P5: モバイル下部ナビの現在地ハイライト (.is-active) が配線されている', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await bootApp(page);

@@ -58,7 +58,7 @@ class BookshelfRouter {
 
     navigateBookshelf(slug, { replace = false } = {}) {
         if (!slug) return this.navigateMain({ replace });
-        this._setHash(`#/bookshelf/${encodeURIComponent(slug)}`, replace);
+        this._setHash(`#/bookshelf/${encodeURIComponent(slug)}`, replace, true);
     }
 
     navigateBook(asin, fromInternalId, { replace = false } = {}) {
@@ -103,7 +103,12 @@ class BookshelfRouter {
     }
 
     // ===== 内部 =====
-    _setHash(hash, replace) {
+    // selfHandled: true の場合のみ、このナビゲーションで発火する hashchange 由来の
+    // _applyRoute 再実行を1回だけ無視する (イシュー#104)。navigateBookshelf (switchBookshelf
+    // が呼ぶ) は呼び出し元が既に画面を同期更新済みなので二重実行が無駄だが、navigateMain/
+    // navigateBook は呼び出し元 (goHome 等) が画面更新をせず _applyRoute に委ねる設計のため
+    // 対象外 (selfHandled を渡さない = 常に _applyRoute を実行させる)。
+    _setHash(hash, replace, selfHandled = false) {
         const target = hash || ' '; // 空文字だと history が機能しないので半角空白
         if (replace) {
             const url = `${window.location.pathname}${window.location.search}${hash}`;
@@ -113,11 +118,20 @@ class BookshelfRouter {
             // すでに同じ hash の場合 hashchange が発火しないので明示 dispatch
             this._dispatch(this.parse(hash));
         } else {
+            // selfHandled でも、hash が実際に変わらないケース (同一 slug への再ナビゲーション等)
+            // では window.location.hash 代入で hashchange 自体が発火しない。この場合フラグを
+            // 立てると消費されずに残留し、次に来る本物の hashchange (戻る/進む等) を誤って
+            // 握り潰す (②レビュー実測・イシュー#104)。hash が実際に変わる時だけ立てる。
+            if (selfHandled && (window.location.hash || '') !== hash) this._suppressNext = true;
             window.location.hash = hash;
         }
     }
 
     _onHashChange() {
+        if (this._suppressNext) {
+            this._suppressNext = false;
+            return;
+        }
         this._dispatch(this.parse(window.location.hash));
     }
 

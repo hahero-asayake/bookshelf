@@ -329,7 +329,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const id = await page.evaluate(() => window.bookshelf._artEditingId);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.published).toBe(true);
-        expect(article.lastBuiltAt).toBeTruthy();
+        // lastBuiltAt 更新はエラーを握り潰す実装 (js/exporter.js) のため、失敗時は errors 側に
+        // console.error が残る (イシュー#104)。ここで一緒に出して真因を一発で追えるようにする。
+        expect(article.lastBuiltAt, `lastBuiltAt is falsy. console errors: ${JSON.stringify(errors)}`).toBeTruthy();
         await expect(page.locator('#art-unpublish')).toBeVisible();
         expect(errors).toEqual([]);
     });

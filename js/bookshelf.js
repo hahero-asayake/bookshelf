@@ -8801,7 +8801,10 @@ class VirtualBookshelf {
             this._artRenderList();
             return;
         }
-        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.warn('公開日時の記録に失敗 (公開自体は成功):', e); }
+        // console.warn だと E2E の page.on('console') error 収集 (type()==='error') に載らず
+        // 握り潰しと同じ結果になっていた。console.error に変更しテストから真因が追える形にする
+        // (イシュー#104)。
+        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.error('公開日時の記録に失敗 (公開自体は成功):', e); }
         const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
         toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
         this._artRenderList();

@@ -171,7 +171,9 @@ class BookshelfExporter {
         // 各記事の lastBuiltAt を更新
         const now = Date.now();
         for (const a of result.articles) {
-            try { await store.update(a.id, { lastBuiltAt: now }); } catch (_) {}
+            // 公開自体は成功しているため握り潰すが、テストから真因が追えるよう console.error は残す
+            // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
+            try { await store.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); }
         }
 
         return {
@@ -218,7 +220,9 @@ class BookshelfExporter {
 
         const now = Date.now();
         for (const a of result.articles) {
-            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now }); } catch (_) {}
+            // 公開自体は成功しているため握り潰すが、テストから真因が追えるよう console.error は残す
+            // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
+            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); }
         }
         const url = (resp && resp.siteUrl) || siteUrl;
         return {
