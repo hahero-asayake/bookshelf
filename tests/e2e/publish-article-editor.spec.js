@@ -273,9 +273,15 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             localStorage.setItem('virtualBookshelf_library', library);
             // method は local のまま (adapter 差し替えのタイミング問題を避ける)。
             // 公開先だけハブに向け、_isSyncReady() をテスト側でモックして「保存先未設定」ガードを通す。
+            // username は設定済みにしておく (S6・ADR-076: 未設定だと公開ボタンがブロックされる。
+            // その挙動自体は tests/e2e/username-publish-gate.spec.js が別途検証する)。
             localStorage.setItem('bookshelf_sync', JSON.stringify({
                 method: 'local',
-                hub: { key: 'hk_test', apiBase: hub, email: 'test@example.com', plan: 'free', publicBase: `${hub}/public/sid/`, siteId: 'sid' },
+                hub: {
+                    key: 'hk_test', apiBase: hub, email: 'test@example.com', plan: 'free',
+                    publicBase: `${hub}/public/sid/`, siteId: 'sid',
+                    username: 'hahero', bookshelfBase: 'https://bookshelf.asayake.org/hahero/'
+                },
                 publish: { target: 'hub' }
             }));
         }, [fixtureUserData, fixtureLibrary, HUB]);

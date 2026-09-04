@@ -3872,6 +3872,17 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-admin-row input { flex: 1 1 12rem; min-width: 0; padding: 0.35rem 0.5rem; border: 1px solid var(--line, #ece7ef); border-radius: 7px; font-size: 0.85rem; }
 .account-admin-result { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--fg2, #4b5460); }
 
+/* 公開URLのユーザー名 (S6・ADR-076) */
+.account-username { margin: 0.7rem 0; }
+.account-username-label { margin: 0 0 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--fg2, #4b5460); display: flex; align-items: center; gap: 0.35rem; }
+.account-username-current { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--fg2, #4b5460); }
+.account-username-current.is-unset { color: var(--warning, #d49100); }
+.account-username-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.account-username-row input { flex: 1 1 12rem; min-width: 0; padding: 0.35rem 0.5rem; border: 1px solid var(--line, #ece7ef); border-radius: 7px; font-size: 0.85rem; }
+.account-username-error { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--danger, #e25555); }
+.account-username-hint { margin: 0.4rem 0 0; font-size: 0.76rem; color: var(--fg2, #4b5460); line-height: 1.5; }
+.account-username-hint code { font-size: 0.75rem; }
+
 /* サイドバー: アカウント状態チップ */
 .sidebar-account-chip {
     display: flex; align-items: center; gap: 0.5rem; width: 100%;

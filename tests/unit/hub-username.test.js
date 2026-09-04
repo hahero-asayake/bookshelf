@@ -86,6 +86,43 @@ describe('handleUsername (POST /username)', () => {
         const bad = new Request('https://hub.test/username', { method: 'POST', body: JSON.stringify({ username: 'taro' }) });
         await expect(handleUsername(bad, env(KV))).rejects.toMatchObject({ status: 401 });
     });
+
+    describe('A→B→A の復帰 (301 ループ防止・#126 ②指摘)', () => {
+        it('元の名前に戻すと movedTo がクリアされ、旧・新レコードの向きが入れ替わる (無限ループにならない)', async () => {
+            const KV = makeKV({
+                'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { siteId: 's1' }
+            });
+            // A → B (通常の改名)
+            await handleUsername(req({ username: 'name-a' }), env(KV));
+            await handleUsername(req({ username: 'name-b' }), env(KV));
+            expect((await KV.get('uname:name-a', 'json')).movedTo).toBe('name-b');
+            expect((await KV.get('uname:name-b', 'json')).movedTo).toBeUndefined();
+            expect((await KV.get('uid:u1', 'json')).username).toBe('name-b');
+
+            // B → A (元に戻す)
+            const res = await handleUsername(req({ username: 'name-a' }), env(KV));
+            expect(res.status).toBe(200);
+
+            const recA = await KV.get('uname:name-a', 'json');
+            const recB = await KV.get('uname:name-b', 'json');
+            // A は現用 (movedTo クリア済み)、B が旧名として A へ向く (向きが入れ替わる)
+            expect(recA.movedTo).toBeUndefined();
+            expect(recA.uid).toBe('u1');
+            expect(recB.movedTo).toBe('name-a');
+            expect((await KV.get('uid:u1', 'json')).username).toBe('name-a');
+        });
+
+        it('他人の movedTo 付き旧名は横取りできない (uid 不一致は 409)', async () => {
+            const KV = makeKV({
+                'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { siteId: 's1' },
+                // 他人 (other-uid) が過去に使っていて今は別名に移動済みの旧名
+                'uname:someones-old-name': { uid: 'other-uid', siteId: 's9', movedTo: 'someones-new-name' }
+            });
+            await expect(handleUsername(req({ username: 'someones-old-name' }), env(KV))).rejects.toMatchObject({ status: 409 });
+            // 横取りされていないこと (レコードが変更されていない)
+            expect(await KV.get('uname:someones-old-name', 'json')).toEqual({ uid: 'other-uid', siteId: 's9', movedTo: 'someones-new-name' });
+        });
+    });
 });
 
 describe('handleUsage / handlePublish の username/bookshelfBase 追従 (S6・ADR-076)', () => {

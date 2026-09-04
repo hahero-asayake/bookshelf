@@ -10,7 +10,7 @@
 //
 //   出力構造 (公開 repo のルート):
 //     index.html              # 公開記事一覧 (トップ)
-//     <slug>/index.html       # 各公開記事
+//     <publicId>/index.html   # 各公開記事 (URL は publicId・初回公開時に1回だけ発番し以後不変, S6・ADR-076)
 //   README.md はルートに残す (削除同期の対象外)。
 //   配信は公開 repo の GitHub Pages を想定 (https://<owner>.github.io/<repo>/)。
 
@@ -69,6 +69,15 @@ class BookshelfExporter {
         // 公開を中止する (握り潰すと、読めなかっただけの記事が削除同期で公開サイトから消える)。
         const allArticles = await store.load();
         const articles = allArticles.filter(a => a.published);
+
+        // publicId は公開の入口 (_artPublishArticle) で発番するのが基本経路だが、移行データ等で
+        // published のまま publicId 未発番の記事が残っていた場合の安全網としてビルド前にも発番する
+        // (S6・ADR-076: 既存記事にも publicId が発番されることの担保)。
+        for (const a of articles) {
+            if (a.publicId) continue;
+            try { await store.ensurePublicId(a.id); }
+            catch (e) { console.error('公開ID (publicId) の発番に失敗:', a.id, e); }
+        }
 
         // 公開先の絶対 URL (canonical / og:url 用)。hub=bookshelfBase(新)/publicBase(旧)、GitHub=Pages URL。
         // hub のときは siteId も渡す (generator が /go/<siteId>/ アフィリンクを組むのに使う, ADR-034追補)。

@@ -33,7 +33,7 @@ function buildState() {
 
 function buildArticle(theme) {
     return {
-        id: 'a1', slug: 'my-article', title: 'わたしを構成する本',
+        id: 'a1', slug: 'my-article', publicId: 'themetest01', title: 'わたしを構成する本',
         tags: ['SF', '私を構成する10冊'],
         blocks: [
             { id: 'b1', type: 'text', markdown: '# はじめに\n\n本棚をそのまま見せるのは、部屋を片付けずに人を上げるのに似ている。' },
@@ -65,7 +65,7 @@ async function renderArticleHtml(page, state, article) {
         };
         const gen = new window.PublishArticleGenerator(app);
         const r = await gen.build([article], {});
-        return r.files.find((f) => f.path === `${article.slug}/index.html`).content;
+        return r.files.find((f) => f.path === `${article.publicId}/index.html`).content;
     }, { state, article });
 }
 

@@ -443,7 +443,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
     _indexHtml(publisher, articleLinks, opts = {}) {
         const esc = PublishArticleGenerator.esc;
         const items = articleLinks.map(a =>
-            `<li><a href="./${esc(a.slug)}/">${esc(a.title)}</a></li>`
+            `<li><a href="./${esc(a.publicId)}/">${esc(a.title)}</a></li>`
         ).join('\n');
         const body = `<ul class="index-list">${items || '<li>公開記事がありません</li>'}</ul>`;
         const css = `.index-list{list-style:none;padding:0;margin:32px 0}
@@ -540,6 +540,9 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const errors = [];
 
         for (const article of articles) {
+            // publicId は公開の入口 (PublishArticleStore.ensurePublicId) で発番される契約。
+            // 未発番のまま渡ってきた記事は URL を確定できないため生成対象から外す (S6・ADR-076)。
+            if (!article.publicId) { errors.push(`公開IDが未発番です: ${article.title}`); continue; }
             let resolvedBlocks, body;
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts);
@@ -569,13 +572,13 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
 
             const html = this._wrapDoc(article, publisher, body, {
                 pageHasAds, siteHasAffiliate, ogImage,
-                canonical: siteBaseUrl ? `${siteBaseUrl}/${article.slug}/` : '',
+                canonical: siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '',
                 noindex: !article.published,
                 updatedAt: article.updatedAt || article.lastBuiltAt || 0,
                 reportRef, pluginFooter
             });
-            files.push({ path: `${article.slug}/index.html`, content: html });
-            built.push({ id: article.id, slug: article.slug, title: article.title, url: `${article.slug}/`, books: bookCount, updatedAt: article.updatedAt || 0 });
+            files.push({ path: `${article.publicId}/index.html`, content: html });
+            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0 });
         }
 
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });

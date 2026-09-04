@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026082403">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026090501">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -320,6 +320,16 @@
                                     <button id="account-usage-refresh" class="btn btn-secondary btn-small" type="button"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>
                                 </div>
                                 <div class="hub-usage-bar"><div id="account-usage-fill" class="hub-usage-fill"></div></div>
+                            </div>
+                            <div id="account-username" class="account-username">
+                                <p class="account-username-label"><span class="h-icon" data-icon="link" data-icon-size="13"></span>公開URLのユーザー名</p>
+                                <p id="account-username-current" class="account-username-current">未設定（本棚を公開する前に設定してください）</p>
+                                <div class="account-username-row">
+                                    <input id="account-username-input" type="text" placeholder="例: taro-books" autocomplete="off" spellcheck="false" maxlength="30">
+                                    <button id="account-username-save" class="btn btn-primary btn-small" type="button">設定する</button>
+                                </div>
+                                <p id="account-username-error" class="account-username-error" hidden></p>
+                                <p class="account-username-hint">半角英数字とハイフンのみ・3〜30文字。<code>bookshelf.asayake.org/&lt;ユーザー名&gt;/</code> で公開されます（変更後は前のURLからも自動転送されます）。</p>
                             </div>
                             <div id="account-billing" class="account-billing" hidden>
                                 <div id="account-plan-detail" class="account-plan-detail" hidden>
@@ -1171,16 +1181,16 @@
     <script src="js/storage.js?v=2026081801"></script>
     <script src="js/book-manager.js?v=2026081803"></script>
     <script src="js/bookshelf-manager.js?v=2026061508"></script>
-    <script src="js/publish-article-store.js?v=2026081702"></script>
+    <script src="js/publish-article-store.js?v=2026090501"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
-    <script src="js/publish-article-generator.js?v=2026081502"></script>
-    <script src="js/exporter.js?v=2026090501"></script>
+    <script src="js/publish-article-generator.js?v=2026090501"></script>
+    <script src="js/exporter.js?v=2026090502"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026082401"></script>
+    <script src="js/bookshelf.js?v=2026090502"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

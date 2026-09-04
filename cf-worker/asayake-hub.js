@@ -250,11 +250,14 @@ async function handleUsername(request, env) {
     if (!isValidUsername(username)) throw httpError(400, 'invalid or reserved username');
 
     const existing = await env.KV.get(`uname:${username}`, 'json');
-    if (existing && existing.uid === sess.uid) {
-        // 冪等: 自分が既に持っている username への再送
+    // 冪等: 自分が「現在使用中」として持っている username への再送 (movedTo が無い = 現用のレコード)。
+    // movedTo 付きの自分のレコードは「元の名前に戻す」再取得なので冪等扱いにせず、下の改名ロジックへ
+    // 通して movedTo をクリアする (A→B→A で 301 ループになるのを防ぐ、#126 ②指摘)。
+    if (existing && existing.uid === sess.uid && !existing.movedTo) {
         return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
     }
-    if (existing) throw httpError(409, 'username taken');
+    // 他人が現用 or 他人の movedTo 記録 (=他人が過去に使っていた名前) は横取り不可
+    if (existing && existing.uid !== sess.uid) throw httpError(409, 'username taken');
 
     const uidRec = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (!uidRec) throw httpError(401, 'unknown session');

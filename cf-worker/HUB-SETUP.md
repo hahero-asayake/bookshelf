@@ -287,15 +287,15 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 
 ---
 
-## Phase H. 公開URL移設 (S6・ADR-076・イシュー#124)
+## Phase H. 公開URL移設 (S6・ADR-076・イシュー#124/#126)
 
-> 公開記事の配信URLを `hub.asayake.org/public/<siteId>/` から `bookshelf.asayake.org/<username>/` へ移す。設計は [09_公開システム設計] §10.3-v2 / §11.7、決定記録は 08 ADR-076。**ローンチ前に実施**(公開後は既出URLの301維持コストが乗るため)。
+> 公開記事の配信URLを `hub.asayake.org/public/<siteId>/` から `bookshelf.asayake.org/<username>/<publicId>/` へ移す。設計は [09_公開システム設計] §10.3-v2 / §11.7、決定記録は 08 ADR-076。**ローンチ前に実施**(公開後は既出URLの301維持コストが乗るため)。
 > コード実装・単体テスト・E2E・ローカル (`wrangler dev`) での実機検証は完了済み。以下は**ハヘロが実行する Cloudflare 本番操作**。
 
-### H-0. 着手前に把握しておくこと (既知のギャップ)
+### H-0. 着手前に把握しておくこと
 
-- ⚠️ **記事ID (`publicId`) のコード実装は未完了**。今回のデプロイ内容は「(A) ドメイン移行＋username 化＋301」のみで、「(B) 記事URLを短縮ID化する」部分はまだコードに入っていない。デプロイ後も記事の公開パスは引き続き `${article.slug}` (タイトル由来 kebab、日本語タイトルは %エンコードで肥大・タイトル変更でURLが変わる既知の欠陥あり) のまま `bookshelf.asayake.org/<username>/<slug>/` として配信される。publicId 化は別途後続イシューで対応する想定 — **先に (B) を待ってから H-1 以降に進むか、(A) だけ先にデプロイするかはハヘロの判断**。
-- ⚠️ **username 設定 UI は未実装**。アプリの設定画面にはまだ username 入力欄が無い。H-4 の curl 手順で手動設定する。
+- ✅ **記事ID (`publicId`) のコード実装は完了済み** (イシュー#126)。記事の公開パスは `bookshelf.asayake.org/<username>/<publicId>/` (base62 10文字・初回公開時に1回だけ発番し以後不変)。旧 `${article.slug}` ベースの欠陥 (タイトル変更でURLが変わる・日本語タイトルの%エンコード肥大) は解消済み。既存記事にも公開時に自動発番される。旧slug→publicId の301マッピングは新設していない (09 §10.3-v2「slugmapは新設しない」・ADR-006整合)。
+- ✅ **username 設定 UI は実装済み** (イシュー#126)。アプリの設定画面「アカウント」節から表示・設定・変更ができる。公開ボタン押下時に username 未設定ならブロックし設定を促す (ハブ公開のみ・GitHub/ローカル書き出しは対象外)。curl 手動設定 (H-4) は他ユーザ対応・UI障害時の復旧経路として引き続き有効。
 - Worker は **`bookshelf-cdn` (新設) と `asayake-hub` (既存・要再デプロイ) の2本**。役割分離のため別 Worker にした (09 §11.7「Worker構成」/ ADR-076 決定5)。
 
 ### H-1. `bookshelf-cdn` Worker を新規デプロイ
@@ -338,26 +338,38 @@ curl -s -o /dev/null -w "status=%{http_code}\n" "https://hub.asayake.org/public/
 
 ### H-4. 既存ユーザ (ハヘロ本人) へ username を割り当てる
 
-username 設定 UI が無いため (H-0)、`POST /username` を curl で直接叩く。
+**UI から設定する (主手順)**:
+
+1. アプリで Asayake アカウントにログイン → 設定 → 「アカウント」節を開く。
+2. 「公開URLのユーザー名」欄に割り当てたい username (`[a-z0-9-]{3,30}`・先頭末尾ハイフン不可・予約語不可) を入力し「設定する」。
+3. 現在値表示が新しい username に切り替わり、`https://bookshelf.asayake.org/<username>/` が表示されれば成功。以後の公開はこの新URLで行われる (`hub.bookshelfBase` が自動保存される)。
+4. **確認**:
+   ```bash
+   # 新URLで配信されているか (200)
+   curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/hahero/
+   # 公開済み記事も publicId パスで見えるか (200、<publicId> は記事一覧の公開URLから控える)
+   curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/hahero/<publicId>/
+   # 旧URLが新URLへ301しているか
+   curl -s -D - -o /dev/null "https://hub.asayake.org/public/<自分のsiteId>/" | grep -iE "^(HTTP|location)"
+   ```
+
+<details>
+<summary>予備手順: curl で直接叩く (UI が使えない障害時・他ユーザへの個別案内用)</summary>
 
 1. アプリでハブにログイン済みの状態で、ブラウザ DevTools → `localStorage['bookshelf_sync']` を開き `hub.key` (`hk_…`) を控える。
-2. 割り当てたい username (`[a-z0-9-]{3,30}`・予約語不可) を決めて実行:
+2. 割り当てたい username を決めて実行:
    ```bash
    curl -s -X POST -H "Authorization: Bearer hk_xxxxx" -H "Content-Type: application/json" \
      -d '{"username":"hahero"}' -w "\nstatus=%{http_code}\n" \
      https://hub.asayake.org/username
    ```
    成功なら `{"username":"hahero","bookshelfBase":"https://bookshelf.asayake.org/hahero/"}` と `status=200`。
-3. **確認**:
-   ```bash
-   # 新URLで配信されているか (200)
-   curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/hahero/
-   # 旧URLが新URLへ301しているか
-   curl -s -D - -o /dev/null "https://hub.asayake.org/public/<自分のsiteId>/" | grep -iE "^(HTTP|location)"
-   ```
-4. アプリで再度ログイン (または `/usage` 相当のリロード) すると `hub.bookshelfBase` が設定へ反映され、次回公開からは新URLで公開される。
+3. 確認は上記「UI から設定する」の手順4と同じ。
+4. アプリで再度ログイン (または `/usage` 相当のリロード) すると `hub.bookshelfBase` が設定へ反映される。
 
-> 他の既存ユーザがいる場合も同じ手順を個別に案内する (KV への直接 `wrangler kv key put` での一括投入も技術的には可能だが、username の重複チェック・movedTo 整合を手で管理するのは事故りやすいため、**必ず `POST /username` 経由で1人ずつ設定**することを推奨)。
+</details>
+
+> 他の既存ユーザがいる場合も同じ手順 (UI 優先) を個別に案内する (KV への直接 `wrangler kv key put` での一括投入も技術的には可能だが、username の重複チェック・movedTo 整合を手で管理するのは事故りやすいため、**必ず `POST /username` 経由で1人ずつ設定**することを推奨)。
 
 ### H-5. UptimeRobot 監視URLの切替 (Phase G-2 の更新)
 

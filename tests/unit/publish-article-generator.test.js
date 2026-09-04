@@ -40,7 +40,9 @@ function makeApp(state, detailMemoText = '# なぜ手元に置くか\n\n本文�
 
 function makeArticle(partial = {}) {
     return {
-        id: partial.id || 'art1', slug: partial.slug || 'my-article', title: partial.title || 'わたしを構成する10冊',
+        id: partial.id || 'art1', slug: partial.slug || 'my-article',
+        publicId: partial.publicId !== undefined ? partial.publicId : 'pub-test01',
+        title: partial.title || 'わたしを構成する10冊',
         tags: partial.tags || [], blocks: partial.blocks || [],
         theme: partial.theme || { layout: 'card', color: 'white' },
         published: partial.published !== undefined ? partial.published : true,
@@ -174,7 +176,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     it('文章ブロックは Markdown→HTML に変換され、見出しは h2 から始まる (targetLevel=textBlock)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'text', markdown: '# はじめに\n\n本文。' }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('<h2>はじめに</h2>');
         expect(ARTICLE_HEADING_LEVEL.textBlock).toBe(2);
     });
@@ -182,7 +184,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     it('本ブロックは表紙/タイトル/著者/短文メモ/Amazonリンクを安定クラス名で出力する', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: true, longMemo: false } }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('class="bk-cover"');
         expect(html).toContain('class="bk-title"');
         expect(html).toContain('漫画1');
@@ -197,7 +199,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     it('本ブロックの長文メモは h4 から始まる見出しシフトが適用される (targetLevel=detailMemo=4)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: true } }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('<h4>なぜ手元に置くか</h4>');
         expect(html).toContain('<h5>読み返す場所</h5>');
         expect(html).toContain('class="bk-detail"');
@@ -207,7 +209,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     it('show.shortMemo=false のときは短文メモを出さない (表示設定の持ち主は本ではなく配置)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('短文メモM1');
     });
 
@@ -222,7 +224,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
             }]
         });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('class="blk blk-shelf"');
         expect(html).toContain('class="shelf"');
         expect(html).toContain('漫画1');
@@ -240,7 +242,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
             }]
         });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         // M1 のタイトルが2回出現し (2つの配置)、片方だけ短文メモが出る
         expect((html.match(/漫画1/g) || []).length).toBeGreaterThanOrEqual(2);
         expect(html).toContain('短文メモM1');
@@ -249,7 +251,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     it('書影が無い本はタイトル入りのプレースホルダを出す (穴あきにしない)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'N1', show: { shortMemo: false, longMemo: false } }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('class="bk-cover cover-ph"');
         expect(html).toContain('小説1');
     });
@@ -258,8 +260,31 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'NOPE', show: { shortMemo: false, longMemo: false } }] });
         const r = await gen.build([article]);
         expect(r.errors).toEqual([]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('class="blk-book"');
+    });
+});
+
+describe('公開URLは publicId (S6・ADR-076・09 §11.7: タイトル/slug 変更で URL が変わらないことの担保)', () => {
+    it('出力パス・canonical・og:url・index リンクはすべて publicId ベース (slug は使わない)', async () => {
+        const article = makeArticle({ slug: 'この-slug-は-url-に出ない', publicId: 'stableid01' });
+        const r = await gen.build([article], { siteBaseUrl: 'https://bookshelf.asayake.org/hahero' });
+        expect(r.files.some(f => f.path === 'stableid01/index.html')).toBe(true);
+        expect(r.files.some(f => f.path.includes('この-slug-は-url-に出ない'))).toBe(false);
+        const html = r.files.find(f => f.path === 'stableid01/index.html').content;
+        expect(html).toContain('<link rel="canonical" href="https://bookshelf.asayake.org/hahero/stableid01/">');
+        expect(html).toContain('<meta property="og:url" content="https://bookshelf.asayake.org/hahero/stableid01/">');
+        const idx = r.files.find(f => f.path === 'index.html').content;
+        expect(idx).toContain('href="./stableid01/"');
+    });
+
+    it('publicId が未発番 (null) の記事はビルド対象から除外され、errors に積まれる (URL 未確定のまま出力しない)', async () => {
+        const article = makeArticle({ publicId: null });
+        const r = await gen.build([article]);
+        expect(r.files.some(f => f.path.endsWith('/index.html') && f.path !== 'index.html')).toBe(false);
+        expect(r.articles).toEqual([]);
+        expect(r.errors.length).toBe(1);
+        expect(r.errors[0]).toMatch(/公開ID/);
     });
 });
 
@@ -267,7 +292,7 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     it('ルート要素に data-layout / data-color が記事テーマ通りに設定される', async () => {
         const article = makeArticle({ theme: { layout: 'wall', color: 'black' } });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('data-layout="wall"');
         expect(html).toContain('data-color="black"');
     });
@@ -275,7 +300,7 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     it('CSP は script-src を許可しない (default-src \'none\' で包括的にブロック・§10.7/11.10)', async () => {
         const article = makeArticle();
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain("default-src 'none'");
         expect(html).not.toMatch(/script-src\s+'unsafe/);
     });
@@ -283,7 +308,7 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     it('記事の h1 はタイトルのみ (本文中に別の h1 を作らない)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'text', markdown: '# 本文中の見出し' }] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         const h1Count = (html.match(/<h1>/g) || []).length;
         expect(h1Count).toBe(1);
         expect(html).toContain('<h1>わたしを構成する10冊</h1>');
@@ -292,7 +317,7 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     it('タグは一覧として出力される', async () => {
         const article = makeArticle({ tags: ['SF', '私を構成する10冊'] });
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('class="tags"');
         expect(html).toContain('SF');
         expect(html).toContain('私を構成する10冊');
@@ -303,7 +328,7 @@ describe('プラグインの公開スナップショット (opts.publishData, �
     it('footerNote が全記事 + index の所定スロットへ esc 済みで出力される', async () => {
         const article = makeArticle();
         const r = await gen.build([article], { publishData: [{ id: 'publish-credit', footerNote: '<script>x</script> & 手作りの一言' }] });
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         const index = r.files.find(f => f.path === 'index.html').content;
         for (const doc of [html, index]) {
             expect(doc).toContain('class="pub-plugin-note"');
@@ -315,14 +340,14 @@ describe('プラグインの公開スナップショット (opts.publishData, �
     it('footerNote が無い/空の publishData は何も出力しない', async () => {
         const article = makeArticle();
         const r = await gen.build([article], { publishData: [{ id: 'a' }, { id: 'b', footerNote: '   ' }] });
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('pub-plugin-note');
     });
 
     it('publishData 未指定でも壊れない (空スロット)', async () => {
         const article = makeArticle();
         const r = await gen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('pub-plugin-note');
     });
 });
@@ -331,7 +356,7 @@ describe('Amazon リンク方式 (旧 PublishGenerator と同じ規約を踏襲,
     it('GitHub 公開は自分のタグを焼き込み、広告ラベルが出る', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
         const r = await gen.build([article], { target: 'github' });
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('tag=aff-xyz');
         expect(html).toContain('class="pub-ad-top"');
     });
@@ -339,7 +364,7 @@ describe('Amazon リンク方式 (旧 PublishGenerator と同じ規約を踏襲,
     it('ハブ公開は /go リダイレクタ経由でタグを焼き込まない', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
         const r = await gen.build([article], { target: 'hub', siteId: 'site1' });
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('/go/site1/');
         expect(html).not.toContain('tag=aff-xyz');
         expect(r.ownTag).toBe('aff-xyz');
@@ -348,7 +373,7 @@ describe('Amazon リンク方式 (旧 PublishGenerator と同じ規約を踏襲,
     it('本が0件の記事には広告ラベルを出さない', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'text', markdown: '本文のみ' }] });
         const r = await gen.build([article], { target: 'github' });
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('class="pub-ad-top"');
     });
 });
@@ -390,22 +415,23 @@ describe('公開出力に Kindle 取込のステータス系フィールドが�
         const localGen = new PublishArticleGenerator(makeApp(state));
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
         const r = await localGen.build([article]);
-        const html = r.files.find(f => f.path === 'my-article/index.html').content;
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('Revoked');
         expect(html).not.toContain('Terminated');
     });
 });
 
 describe('index.html (記事一覧)', () => {
-    it('公開記事へのリンク一覧を生成する', async () => {
-        const a1 = makeArticle({ id: 'a1', slug: 'aaa', title: '記事A' });
-        const a2 = makeArticle({ id: 'a2', slug: 'bbb', title: '記事B' });
+    it('公開記事へのリンク一覧を生成する (URL は publicId・slug はタイトル変更に追従するのでURLに使わない)', async () => {
+        const a1 = makeArticle({ id: 'a1', slug: 'aaa', publicId: 'pubaaa001', title: '記事A' });
+        const a2 = makeArticle({ id: 'a2', slug: 'bbb', publicId: 'pubbbb002', title: '記事B' });
         const r = await gen.build([a1, a2]);
         const idx = r.files.find(f => f.path === 'index.html').content;
-        expect(idx).toContain('href="./aaa/"');
+        expect(idx).toContain('href="./pubaaa001/"');
         expect(idx).toContain('記事A');
-        expect(idx).toContain('href="./bbb/"');
+        expect(idx).toContain('href="./pubbbb002/"');
         expect(idx).toContain('記事B');
+        expect(idx).not.toContain('href="./aaa/"');
     });
 });
 
@@ -438,11 +464,16 @@ describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完
         expect(articles).toHaveLength(1);
         expect(articles[0].slug).toBe(legacyPage.slug);
         expect(articles[0].published).toBe(true);
+        expect(articles[0].publicId).toBeNull(); // 移行直後は未発番 (公開の入口 ensurePublicId() で発番する契約)
+
+        // 公開の入口 (PublishArticleStore.ensurePublicId 相当) で発番される publicId を、
+        // ここではストア無しでテストしているため直接セットしてから渡す
+        articles[0].publicId = 'migrated01';
 
         // 移行した記事をそのまま生成器へ渡してビルドが通ることを確認する (記事モデルでの生成が通る、が完了条件)
         const r = await gen.build(articles);
         expect(r.errors).toEqual([]);
-        const html = r.files.find(f => f.path === `${articles[0].slug}/index.html`).content;
+        const html = r.files.find(f => f.path === `${articles[0].publicId}/index.html`).content;
         expect(html).toContain(legacyPage.title);
         expect(html).toContain('よろしくお願いします'); // intro → 文章ブロックとして引き継がれる
         expect(html).toContain('漫画1'); // select.shelves → 本棚ブロックのスナップショットとして引き継がれる

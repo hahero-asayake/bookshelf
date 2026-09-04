@@ -1,6 +1,6 @@
 // PublishArticleStore の CRUD / ブロック正規化 / 配置単位レコード / タグ正規化 / テーマ2軸 / 旧pages.json移行
 // (S1 記事モデル, ADR-058・09_公開システム設計 §11)
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/publish-article-store.js');
 const PublishArticleStore = globalThis.PublishArticleStore;
@@ -27,6 +27,7 @@ describe('create / load 往復', () => {
         const a = await as.create({ title: '私を構成する10冊' });
         expect(a.id).toBeTruthy();
         expect(a.slug).toBe('私を構成する10冊');
+        expect(a.publicId).toBeNull(); // 未公開のうちは未発番 (S6・ADR-076)
         expect(a.blocks).toEqual([]);
         expect(a.tags).toEqual([]);
         expect(a.theme).toEqual({ layout: 'card', color: 'white' }); // 既定テーマ
@@ -358,5 +359,66 @@ describe('移行: 旧 pages.json → 記事モデル (非破壊, §11.1)', () =>
         expect(result.skipped).toBe(true);
         expect(as.articles()).toHaveLength(1);
         expect(as.articles()[0].title).toBe('既存記事');
+    });
+
+    it('migrateFromPages で移行した記事は publicId 未発番 (公開の入口 ensurePublicId() で発番する契約)', () => {
+        const pages = [{ id: 'p1', slug: 'my-page', title: 'x', select: {} }];
+        const [article] = PublishArticleStore.migrateFromPages(pages, () => []);
+        expect(article.publicId).toBeNull();
+    });
+});
+
+describe('publicId (公開URLの発番, S6・ADR-076・09_公開システム設計 §11.7)', () => {
+    it('_newPublicId は base62 (0-9A-Za-z) 10文字を生成する', () => {
+        const id = PublishArticleStore._newPublicId();
+        expect(id).toMatch(/^[0-9A-Za-z]{10}$/);
+    });
+
+    it('ensurePublicId は未発番の記事に1回だけ発番し、永続化される', async () => {
+        const a = await as.create({ title: 'x' });
+        const id = await as.ensurePublicId(a.id);
+        expect(id).toMatch(/^[0-9A-Za-z]{10}$/);
+        expect(as.get(a.id).publicId).toBe(id);
+
+        // 新インスタンスで読み戻しても同じ (persist されている)
+        const as2 = new PublishArticleStore(storage);
+        const articles = await as2.load();
+        expect(articles.find(x => x.id === a.id).publicId).toBe(id);
+    });
+
+    it('発番済みの記事に再度呼んでも不変 (タイトル/slug 変更で書き換わらない)', async () => {
+        const a = await as.create({ title: 'x' });
+        const id1 = await as.ensurePublicId(a.id);
+        await as.update(a.id, { title: '改題', slug: '改題' });
+        const id2 = await as.ensurePublicId(a.id);
+        expect(id2).toBe(id1);
+        expect(as.get(a.id).publicId).toBe(id1);
+    });
+
+    it('同一ストア (uid) 内で publicId が衝突したら再生成する (3回まで)', async () => {
+        const a = await as.create({ title: 'x' });
+        const b = await as.create({ title: 'y' });
+        b.publicId = 'COLLIDEID1'; // 既存記事が既にこの ID を持っている状態を作る (衝突シナリオ再現)
+        const spy = vi.spyOn(PublishArticleStore, '_newPublicId')
+            .mockReturnValueOnce('COLLIDEID1')
+            .mockReturnValueOnce('COLLIDEID1')
+            .mockReturnValueOnce('UNIQUEID01');
+        const id = await as.ensurePublicId(a.id);
+        expect(id).toBe('UNIQUEID01');
+        expect(spy).toHaveBeenCalledTimes(3);
+        spy.mockRestore();
+    });
+
+    it('3回とも衝突したら例外を投げる', async () => {
+        const a = await as.create({ title: 'x' });
+        const b = await as.create({ title: 'y' });
+        b.publicId = 'SAMEID0001';
+        const spy = vi.spyOn(PublishArticleStore, '_newPublicId').mockReturnValue('SAMEID0001');
+        await expect(as.ensurePublicId(a.id)).rejects.toThrow(/公開ID/);
+        spy.mockRestore();
+    });
+
+    it('存在しない記事IDで呼ぶとエラー', async () => {
+        await expect(as.ensurePublicId('nope')).rejects.toThrow(/見つかりません/);
     });
 });

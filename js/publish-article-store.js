@@ -5,7 +5,9 @@
 //
 // Article = {
 //   id,                      // 不変 ID
-//   slug,                    // 公開 URL のパス断片 (一意・kebab)
+//   slug,                    // OGP/内部表示用 (一意・kebab、タイトル由来)。URL には出さない (S6・ADR-076)
+//   publicId,                // 公開 URL のパス断片 (base62 10文字)。初回公開時に1回だけ発番し以後不変。
+//                             //   未公開のうちは null (ensurePublicId() が発番する, S6・ADR-076・09 §11.7)
 //   title,                   // 記事タイトル (公開ページの h1 はこれだけになる・§11.5)
 //   tags: [ '表示表記', ... ], // 自由タグ。配列は入力表記のまま保持 (表示は初出表記)。
 //                             //   同一視は normalizeTagKey() で都度判定する (§11.6)。
@@ -63,6 +65,21 @@ class PublishArticleStore {
     static _newId(prefix) {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
         return (prefix || 'a') + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    // 公開 URL のパスセグメント用 ID (base62 10文字、S6・ADR-076・09 §11.7)。
+    // crypto.getRandomValues ベース。剰余バイアスを避けるため 256 を 62 で割り切れる範囲 (248) に棄却する。
+    static _newPublicId() {
+        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+        const n = chars.length;
+        const maxUnbiased = 256 - (256 % n);
+        const buf = new Uint8Array(1);
+        let s = '';
+        while (s.length < 10) {
+            crypto.getRandomValues(buf);
+            if (buf[0] < maxUnbiased) s += chars[buf[0] % n];
+        }
+        return s;
     }
 
     // タグの同一視キー: 小文字化 + NFKC 正規化 (全角英数→半角・半角カナ→全角 等の統一で表記ゆれを吸収, §11.6)
@@ -170,6 +187,27 @@ class PublishArticleStore {
         return `${slug}-${i}`;
     }
 
+    // 同一 uid (= this._articles 全体) 内で衝突しない publicId を生成する (再試行3回まで)
+    _uniquePublicId(exceptId) {
+        const taken = new Set((this._articles || []).filter(a => a.id !== exceptId).map(a => a.publicId).filter(Boolean));
+        for (let i = 0; i < 3; i++) {
+            const id = PublishArticleStore._newPublicId();
+            if (!taken.has(id)) return id;
+        }
+        throw new Error('公開IDの生成に失敗しました (衝突が続きました)');
+    }
+
+    // 記事の publicId を発番する (初回公開時に1回だけ・以後不変)。既に発番済みなら何もせずそのまま返す。
+    async ensurePublicId(id) {
+        await this._ensure();
+        const article = this.get(id);
+        if (!article) throw new Error('記事が見つかりません: ' + id);
+        if (article.publicId) return article.publicId;
+        article.publicId = this._uniquePublicId(id);
+        await this._persist();
+        return article.publicId;
+    }
+
     // 既存タグの一覧 (入力サジェスト用)。正規化キーで集約し、表示は初出表記・使用数つき (§11.6)
     allTags() {
         const map = new Map(); // key -> { key, label, count }
@@ -191,6 +229,7 @@ class PublishArticleStore {
         const article = {
             id: PublishArticleStore._newId('art'),
             slug: this._uniqueSlug(partial.slug || title),
+            publicId: null,
             title,
             tags: Array.isArray(partial.tags) ? partial.tags.slice() : [],
             blocks: PublishArticleStore.normalizeBlocks(partial.blocks),
@@ -287,6 +326,7 @@ class PublishArticleStore {
         return {
             id: PublishArticleStore._newId('art'),
             slug: page.slug || PublishArticleStore.slugify(page.title),
+            publicId: null,
             title: page.title || '無題の記事',
             tags: [],
             blocks,

@@ -3619,6 +3619,11 @@ class VirtualBookshelf {
         if (del) del.addEventListener('click', () => this._deleteAccount());
         const refresh = document.getElementById('account-usage-refresh');
         if (refresh) refresh.addEventListener('click', () => this._refreshHubUsage({ notify: true }));
+        // 公開URLのユーザー名 (S6・ADR-076)
+        const usernameSave = document.getElementById('account-username-save');
+        if (usernameSave) usernameSave.addEventListener('click', () => this._saveAccountUsername());
+        const usernameInput = document.getElementById('account-username-input');
+        if (usernameInput) usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._saveAccountUsername(); });
         // 課金 (Stripe, ADR-035): アップグレード / 支払い管理 (解約)
         const upM = document.getElementById('account-upgrade-monthly');
         if (upM) upM.addEventListener('click', () => this._startCheckout('monthly'));
@@ -3699,6 +3704,7 @@ class VirtualBookshelf {
                 const emailEl = document.getElementById('account-email');
                 if (emailEl) emailEl.textContent = hub.email || '(ログイン済み)';
                 this._renderAccountUsageBar(hub);
+                this._renderAccountUsername(hub);
             } else {
                 this._ensureAccountSignInButton();
             }
@@ -3740,6 +3746,51 @@ class VirtualBookshelf {
         this._renderPlanDetail(hub, plus);
         const admin = document.getElementById('account-admin');   // 管理者のみ表示 (ADR-038)
         if (admin) admin.hidden = !hub.isAdmin;
+    }
+
+    // 公開URLのユーザー名 (S6・ADR-076): 現在値表示。未設定は目立たせる (公開ボタンでブロックされるため)。
+    _renderAccountUsername(hub) {
+        hub = hub || (SyncConfigManager.load().hub) || {};
+        const cur = document.getElementById('account-username-current');
+        const input = document.getElementById('account-username-input');
+        if (cur) {
+            if (hub.username) {
+                cur.textContent = `現在: ${hub.username}（${hub.bookshelfBase || ''}）`;
+                cur.classList.remove('is-unset');
+            } else {
+                cur.textContent = '未設定（本棚を公開する前に設定してください）';
+                cur.classList.add('is-unset');
+            }
+        }
+        if (input) input.placeholder = hub.username ? `変更後の名前 (現在: ${hub.username})` : '例: taro-books';
+    }
+
+    // username 設定/変更フォームの送信 (POST <hub>/username へ接続, S6・ADR-076)。
+    // バリデーション (形式・予約語・重複) は Worker 側の実装済みチェックに任せ、ここでは
+    // 入力とエラー表示だけを担当する (アプリ側で二重バリデーションはしない、brief確定事項)。
+    async _saveAccountUsername() {
+        const input = document.getElementById('account-username-input');
+        const errEl = document.getElementById('account-username-error');
+        const btn = document.getElementById('account-username-save');
+        if (!input) return;
+        const val = input.value.trim();
+        if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+        if (!val) {
+            if (errEl) { errEl.textContent = 'ユーザー名を入力してください。'; errEl.hidden = false; }
+            return;
+        }
+        if (typeof HubAuth === 'undefined') return;
+        if (btn) btn.disabled = true;
+        try {
+            const { username } = await HubAuth.setUsername(val);
+            toast(`ユーザー名を「${username}」に設定しました。`, { type: 'success' });
+            input.value = '';
+            this._renderAccountUsername();
+        } catch (e) {
+            if (errEl) { errEl.textContent = e.message; errEl.hidden = false; }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
 
     // Plus の課金状態 (周期・次回更新日・解約予約) を表示する (ADR-035 追補)。
@@ -8778,6 +8829,22 @@ class VirtualBookshelf {
         if (!article) return;
         // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
         if (!(await this._ensureFreeAffiliateConsent())) return;
+        // S6 (ADR-076): 共有ハブ公開は username が無いと公開URLが確定しない (旧 siteId ベースのまま
+        // 配信され続ける) ため、公開前にブロックして設定を促す。username はハブの概念なので、この
+        // ゲートはハブ公開時のみ (自分の GitHub repo / ローカル書き出しには適用しない)。
+        const pub = this.exporter._resolvePublishConfig();
+        if (pub.target === 'hub') {
+            const hub = (SyncConfigManager.load().hub) || {};
+            if (!hub.username) {
+                await this._confirmOpenSettings('本棚を公開するには、まずユーザー名を設定してください（公開URLに使われます）。設定の「アカウント」で設定できます。', 'account-section');
+                return;
+            }
+        }
+        // 公開 URL の publicId は初回公開時に1回だけ発番し以後不変 (S6・ADR-076)
+        if (!article.publicId) {
+            try { await this.publishArticleStore.ensurePublicId(id); }
+            catch (e) { toast('公開IDの発行に失敗しました: ' + e.message, { type: 'error' }); return; }
+        }
         const wasPublished = !!article.published;   // 元の状態 (更新=true / 新規公開=false)
         try { await this.publishArticleStore.update(id, { published: true }); }
         catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
@@ -8934,9 +9001,10 @@ class VirtualBookshelf {
         }
         this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
         this._artOpenPreviewModal();
-        // slug は固定 'preview' を後勝ちで (...this._artDraft が slug を持つため順序が重要)。
-        // 出力パスとルックアップを一致させる (旧 _ppPreview と同じ規約)。
-        const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview' };
+        // slug/publicId は固定 'preview' を後勝ちで (...this._artDraft が両方持つため順序が重要)。
+        // 出力パスとルックアップを一致させる (旧 _ppPreview と同じ規約)。publicId は generator.build() が
+        // 未発番の記事をビルド対象から除外する (S6・ADR-076) ため、プレビューでも固定値が必須。
+        const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState() });
             const file = result.files.find(f => f.path === 'preview/index.html');

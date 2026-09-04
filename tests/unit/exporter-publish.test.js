@@ -33,13 +33,22 @@ const BookshelfExporter = window.BookshelfExporter;
 
 function makeApp({ articles = [], build } = {}) {
     const updated = [];
+    const ensuredPublicIds = [];
     return {
         _isSyncReady: () => true,
         syncMethod: 'local',
         _updates: updated,
+        _ensuredPublicIds: ensuredPublicIds,
         publishArticleStore: {
             load: async () => articles,
-            update: async (id, patch) => { updated.push({ id, patch }); }
+            update: async (id, patch) => { updated.push({ id, patch }); },
+            // 既存 (移行データ等) の published のまま publicId 未発番の記事へ、ビルド前の安全網として
+            // exporter が発番する経路のモック (S6・ADR-076)。実装は PublishArticleStore.ensurePublicId 相当。
+            ensurePublicId: async (id) => {
+                const a = articles.find(x => x.id === id);
+                if (a && !a.publicId) { a.publicId = `auto-${id}`; ensuredPublicIds.push(id); }
+                return a && a.publicId;
+            }
         },
         publishArticleGenerator: {
             build: build || (async () => ({
@@ -104,6 +113,14 @@ describe('記事単位公開 (published フィルタ, ADR-058 §11)', () => {
         const r = await new BookshelfExporter(app).export();
         expect(received.map(a => a.id)).toEqual(['p1', 'p3']);
         expect(r.published).toBe(2);
+    });
+
+    it('S6 (ADR-076): published のまま publicId 未発番の (移行データ等の) 記事は、ビルド前に発番される', async () => {
+        const app = makeApp({ articles: [{ id: 'p1', published: true }, { id: 'p2', published: true, publicId: 'already01' }] });
+        await new BookshelfExporter(app).export();
+        expect(app._ensuredPublicIds).toEqual(['p1']); // 既発番の p2 は呼ばれない
+        const articles = await app.publishArticleStore.load();
+        expect(articles.find(a => a.id === 'p1').publicId).toBe('auto-p1');
     });
 
     it('公開中記事が 0 でも throw せず index のみ push (サイトをクリア)', async () => {
