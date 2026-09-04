@@ -116,7 +116,10 @@ class HubAuth {
             subStatus: data.subStatus || null,
             billingManaged: !!data.billingManaged,
             isAdmin: !!data.isAdmin,
-            publicBase: data.publicBase || ''
+            publicBase: data.publicBase || '',
+            // S6 (ADR-076): 未設定 (=旧siteIdのまま) なら null。公開ボタン押下時の未設定ガードに使う
+            username: data.username || null,
+            bookshelfBase: data.bookshelfBase || null
         };
         SyncConfigManager.save(cfg);
         return cfg.hub;
@@ -148,10 +151,36 @@ class HubAuth {
             billingManaged: !!data.billingManaged,
             isAdmin: !!data.isAdmin,
             siteId: data.siteId || (cfg.hub || {}).siteId || '',
-            publicBase: data.publicBase || (cfg.hub || {}).publicBase || ''
+            publicBase: data.publicBase || (cfg.hub || {}).publicBase || '',
+            username: data.username || (cfg.hub || {}).username || null,
+            bookshelfBase: data.bookshelfBase || (cfg.hub || {}).bookshelfBase || null
         };
         SyncConfigManager.save(cfg);
         return cfg.hub;
+    }
+
+    /**
+     * username を設定/変更する (S6・ADR-076)。成功したら設定に保存して返す。
+     * @param {string} username
+     * @returns {Promise<{username, bookshelfBase}>}
+     */
+    static async setUsername(username) {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!hub.key || !hub.apiBase) throw new HubAuthError('ハブに接続されていません');
+        const res = await fetch(`${hub.apiBase}/username`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${hub.key}` },
+            body: JSON.stringify({ username })
+        });
+        if (res.status === 401) throw new HubAuthError('ハブの認証が失効しました。再接続してください');
+        if (res.status === 400) throw new Error('このユーザー名は使えません (3〜30文字の半角英数字とハイフン、予約語不可)');
+        if (res.status === 409) throw new Error('このユーザー名は既に使われています');
+        if (!res.ok) throw new Error(`ユーザー名の設定に失敗しました (${res.status})`);
+        const data = await res.json();
+        const cfg = SyncConfigManager.load();
+        cfg.hub = { ...(cfg.hub || {}), username: data.username, bookshelfBase: data.bookshelfBase };
+        SyncConfigManager.save(cfg);
+        return { username: data.username, bookshelfBase: data.bookshelfBase };
     }
 
     static disconnect() {
@@ -160,10 +189,10 @@ class HubAuth {
             try { window.google.accounts.id.disableAutoSelect(); } catch (_) {}
         }
         cfg.hub = {
-            apiBase: '', key: '', uid: '', siteId: '', handle: '', email: null,
+            apiBase: '', key: '', uid: '', siteId: '', email: null,
             plan: 'free', quotaBytes: 0, usedBytes: 0,
             interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, billingManaged: false, isAdmin: false,
-            publicBase: ''
+            publicBase: '', username: null, bookshelfBase: null
         };
         SyncConfigManager.save(cfg);
     }

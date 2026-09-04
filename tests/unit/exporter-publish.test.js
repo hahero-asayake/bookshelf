@@ -148,6 +148,31 @@ describe('共有ハブ公開 (target=hub, ADR-033)', () => {
         expect(hubCaptured.affiliateTag).toBe('mytag-22');
     });
 
+    it('S6 (ADR-076): username 設定済み (bookshelfBase あり) ならそちらを siteBaseUrl に使う', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', bookshelfBase: 'https://bookshelf.asayake.org/taro-books/', siteId: 'sid' };
+        let captured_opts;
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true }],
+            build: async (articles, opts) => { captured_opts = opts; return { files: [{ path: 'index.html', content: 't' }], articles: [{ id: 'p1', slug: 'x' }], leak: [], errors: [] }; }
+        });
+        await new BookshelfExporter(app).export();
+        expect(captured_opts.siteBaseUrl).toBe('https://bookshelf.asayake.org/taro-books/');
+        expect(captured_opts.siteId).toBe('sid'); // /go アフィリンクは siteId ベースのまま (無改修)
+    });
+
+    it('S6 (ADR-076): username 未設定 (移行未了・bookshelfBase 無し) は従来どおり publicBase を使う', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', siteId: 'sid' };
+        let captured_opts;
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true }],
+            build: async (articles, opts) => { captured_opts = opts; return { files: [{ path: 'index.html', content: 't' }], articles: [{ id: 'p1', slug: 'x' }], leak: [], errors: [] }; }
+        });
+        await new BookshelfExporter(app).export();
+        expect(captured_opts.siteBaseUrl).toBe('https://hub.example/public/sid/');
+    });
+
     it('ハブ未ログインなら中止', async () => {
         mockConfig.publish = { target: 'hub' };
         mockConfig.hub = { key: '', apiBase: '' };

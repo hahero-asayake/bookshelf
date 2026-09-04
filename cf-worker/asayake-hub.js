@@ -314,7 +314,10 @@ async function handleUsage(request, env) {
         billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
         isAdmin: isAdminEmail(rec.email, env),
         siteId: rec.siteId,
-        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
+        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`,
+        // S6 (ADR-076): handleSession と同じフィールドを返し、使用量再取得時にも username 状態が追従する
+        username: rec.username || null,
+        bookshelfBase: rec.username ? `https://bookshelf.asayake.org/${rec.username}/` : null
     });
 }
 
@@ -560,7 +563,12 @@ async function handlePublish(request, env) {
     for (const key of deletes) await env.BUCKET.delete(key);
 
     await addUsage(env, sess.uid, delta);
-    return json({ ok: true, siteId: sess.siteId, siteUrl: `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`, published: files.length });
+    // S6 (ADR-076): username 設定済みなら新URL、未設定 (移行未了) なら従来どおり旧URLを返す。
+    // serveSite の 301 分岐と同じ判定基準 (uid:<uid>.username の有無)。
+    const siteUrl = rec && rec.username
+        ? `https://bookshelf.asayake.org/${rec.username}/`
+        : `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`;
+    return json({ ok: true, siteId: sess.siteId, siteUrl, published: files.length });
 }
 
 // ===== アカウント削除 (退会, ADR-033 / 個人情報の削除権) =====
@@ -1131,7 +1139,7 @@ async function handleCommunityReport(request, env) {
     return json({ ok: true });
 }
 
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders, handleUsername, serveSite };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders, handleUsername, serveSite, handleUsage, handlePublish, handleSession };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {

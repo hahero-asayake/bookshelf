@@ -70,13 +70,15 @@ class BookshelfExporter {
         const allArticles = await store.load();
         const articles = allArticles.filter(a => a.published);
 
-        // 公開先の絶対 URL (canonical / og:url 用)。hub=publicBase、GitHub=Pages URL。
+        // 公開先の絶対 URL (canonical / og:url 用)。hub=bookshelfBase(新)/publicBase(旧)、GitHub=Pages URL。
         // hub のときは siteId も渡す (generator が /go/<siteId>/ アフィリンクを組むのに使う, ADR-034追補)。
+        // S6 (ADR-076): username 設定済みなら bookshelf.asayake.org/<username>/、未設定 (移行未了) は
+        // 従来どおり hub.asayake.org/public/<siteId>/ 。/go は siteId ベースのまま無改修 (§10.3-v2)。
         let siteBaseUrl = '';
         let siteId = '';
         if (pub.target === 'hub') {
             const hub = SyncConfigManager.load().hub || {};
-            siteBaseUrl = hub.publicBase || '';
+            siteBaseUrl = hub.bookshelfBase || hub.publicBase || '';
             siteId = hub.siteId || '';
         } else if (pub.owner && pub.repo) {
             siteBaseUrl = this._pagesSiteUrl(pub.owner, pub.repo);

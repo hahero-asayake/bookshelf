@@ -3,7 +3,7 @@
 //  - KV は CAS 無し (last-writer-wins)。ここでは「get→put」実装の正常系・予約語・重複拒否・
 //    改名時に旧 username を movedTo で残す (解放しない) 挙動を検証する。
 import { describe, it, expect } from 'vitest';
-import { handleUsername } from '../../cf-worker/asayake-hub.js';
+import { handleUsername, handleUsage, handlePublish } from '../../cf-worker/asayake-hub.js';
 
 function makeKV(initial = {}) {
     const store = new Map(Object.entries(initial).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
@@ -85,5 +85,71 @@ describe('handleUsername (POST /username)', () => {
         const KV = makeKV({});
         const bad = new Request('https://hub.test/username', { method: 'POST', body: JSON.stringify({ username: 'taro' }) });
         await expect(handleUsername(bad, env(KV))).rejects.toMatchObject({ status: 401 });
+    });
+});
+
+describe('handleUsage / handlePublish の username/bookshelfBase 追従 (S6・ADR-076)', () => {
+    function usageReq(key = 'hk_a1') {
+        return new Request('https://hub.test/usage', { headers: { 'Authorization': `Bearer ${key}` } });
+    }
+    function publishReq(body, key = 'hk_a1') {
+        return new Request('https://hub.test/publish', { method: 'POST', headers: { 'Authorization': `Bearer ${key}` }, body: JSON.stringify(body) });
+    }
+    function makeBucket(files = {}) {
+        return {
+            async list() { return { objects: [], truncated: false }; },
+            async put(key, content) { files[key] = content; },
+            async delete(key) { delete files[key]; }
+        };
+    }
+    const hubEnv = (KV, BUCKET) => ({ KV, BUCKET, HUB_DOMAIN: 'hub.asayake.org' });
+
+    it('handleUsage: username 設定済みなら bookshelfBase も返す', async () => {
+        const KV = makeKV({
+            'key:hk_a1': { uid: 'u1', siteId: 's1' },
+            'uid:u1': { siteId: 's1', email: 'e@x', username: 'taro-books' },
+            'plan:u1': { plan: 'free', quotaBytes: 100 }
+        });
+        const res = await handleUsage(usageReq(), hubEnv(KV));
+        const body = await res.json();
+        expect(body.username).toBe('taro-books');
+        expect(body.bookshelfBase).toBe('https://bookshelf.asayake.org/taro-books/');
+    });
+
+    it('handleUsage: username 未設定なら null (旧 publicBase のまま)', async () => {
+        const KV = makeKV({
+            'key:hk_a1': { uid: 'u1', siteId: 's1' },
+            'uid:u1': { siteId: 's1', email: 'e@x' },
+            'plan:u1': { plan: 'free', quotaBytes: 100 }
+        });
+        const res = await handleUsage(usageReq(), hubEnv(KV));
+        const body = await res.json();
+        expect(body.username).toBeNull();
+        expect(body.bookshelfBase).toBeNull();
+        expect(body.publicBase).toBe('https://hub.asayake.org/public/s1/');
+    });
+
+    it('handlePublish: username 設定済みなら siteUrl は bookshelf.asayake.org/<username>/', async () => {
+        const KV = makeKV({
+            'key:hk_a1': { uid: 'u1', siteId: 's1' },
+            'uid:u1': { siteId: 's1', email: 'e@x', username: 'taro-books' },
+            'plan:u1': { plan: 'free', quotaBytes: 1000000 },
+            'usage:u1': '0'
+        });
+        const res = await handlePublish(publishReq({ files: [{ path: 'index.html', content: '<html></html>' }], deleteMissing: true }), hubEnv(KV, makeBucket()));
+        const body = await res.json();
+        expect(body.siteUrl).toBe('https://bookshelf.asayake.org/taro-books/');
+    });
+
+    it('handlePublish: username 未設定なら siteUrl は従来どおり hub.asayake.org/public/<siteId>/', async () => {
+        const KV = makeKV({
+            'key:hk_a1': { uid: 'u1', siteId: 's1' },
+            'uid:u1': { siteId: 's1', email: 'e@x' },
+            'plan:u1': { plan: 'free', quotaBytes: 1000000 },
+            'usage:u1': '0'
+        });
+        const res = await handlePublish(publishReq({ files: [{ path: 'index.html', content: '<html></html>' }], deleteMissing: true }), hubEnv(KV, makeBucket()));
+        const body = await res.json();
+        expect(body.siteUrl).toBe('https://hub.asayake.org/public/s1/');
     });
 });
