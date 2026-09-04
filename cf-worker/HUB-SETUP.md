@@ -284,3 +284,91 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 
 - 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
 - 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。
+
+---
+
+## Phase H. 公開URL移設 (S6・ADR-076・イシュー#124)
+
+> 公開記事の配信URLを `hub.asayake.org/public/<siteId>/` から `bookshelf.asayake.org/<username>/` へ移す。設計は [09_公開システム設計] §10.3-v2 / §11.7、決定記録は 08 ADR-076。**ローンチ前に実施**(公開後は既出URLの301維持コストが乗るため)。
+> コード実装・単体テスト・E2E・ローカル (`wrangler dev`) での実機検証は完了済み。以下は**ハヘロが実行する Cloudflare 本番操作**。
+
+### H-0. 着手前に把握しておくこと (既知のギャップ)
+
+- ⚠️ **記事ID (`publicId`) のコード実装は未完了**。今回のデプロイ内容は「(A) ドメイン移行＋username 化＋301」のみで、「(B) 記事URLを短縮ID化する」部分はまだコードに入っていない。デプロイ後も記事の公開パスは引き続き `${article.slug}` (タイトル由来 kebab、日本語タイトルは %エンコードで肥大・タイトル変更でURLが変わる既知の欠陥あり) のまま `bookshelf.asayake.org/<username>/<slug>/` として配信される。publicId 化は別途後続イシューで対応する想定 — **先に (B) を待ってから H-1 以降に進むか、(A) だけ先にデプロイするかはハヘロの判断**。
+- ⚠️ **username 設定 UI は未実装**。アプリの設定画面にはまだ username 入力欄が無い。H-4 の curl 手順で手動設定する。
+- Worker は **`bookshelf-cdn` (新設) と `asayake-hub` (既存・要再デプロイ) の2本**。役割分離のため別 Worker にした (09 §11.7「Worker構成」/ ADR-076 決定5)。
+
+### H-1. `bookshelf-cdn` Worker を新規デプロイ
+
+[wrangler.bookshelf.toml](wrangler.bookshelf.toml) は control 済み (`account_id`・KV/R2 は `asayake-hub` と同一 binding を参照)。**新規の値入力は不要**。
+
+```bash
+cd cf-worker
+wrangler deploy -c wrangler.bookshelf.toml
+```
+
+route は `custom_domain = true` なので、**`bookshelf.asayake.org` の DNS レコードと TLS 証明書は wrangler が自動作成**する (Phase B-3 と同様、手動 DNS 追加は不要。証明書発行に数分かかることがある)。
+
+⚠️ **推奨 (任意)**: `bookshelf-cdn` は配信専用で認証を持たないため、可能ならこの Worker をデプロイする API トークンは Workers Scripts の Edit 権限のみに絞る (`wrangler.bookshelf.toml` 冒頭コメント参照)。今回は既存の `wrangler login` セッションで問題ない。
+
+### H-2. `asayake-hub` Worker を再デプロイ (既存コードの更新分を反映)
+
+`serveSite` の username 301 分岐・`POST /username` 新設・`handlePublish`/`handleUsage` の `bookshelfBase` 追従が入っている。**route・KV/R2 の設定変更は無い**、コード更新のみ。
+
+```bash
+cd cf-worker
+wrangler deploy -c wrangler.hub.toml
+```
+
+### H-3. 動作確認 (curl)
+
+デプロイ直後、**まだ誰も username を設定していない状態**なので、まずは「予約語ガード」と「未登録 username は404」だけ確認できる。username 設定 (H-4) 後に「200配信」「301」を確認する。
+
+```bash
+# 予約語 (①②) は 404
+curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/top/
+curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/favicon.ico
+
+# 未登録 username は 404
+curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/nobody-here/
+
+# 旧 URL は今まで通り生きている (username 未設定の間は 200 のまま・移行して初めて 301 になる)
+curl -s -o /dev/null -w "status=%{http_code}\n" "https://hub.asayake.org/public/<自分のsiteId>/"
+```
+
+### H-4. 既存ユーザ (ハヘロ本人) へ username を割り当てる
+
+username 設定 UI が無いため (H-0)、`POST /username` を curl で直接叩く。
+
+1. アプリでハブにログイン済みの状態で、ブラウザ DevTools → `localStorage['bookshelf_sync']` を開き `hub.key` (`hk_…`) を控える。
+2. 割り当てたい username (`[a-z0-9-]{3,30}`・予約語不可) を決めて実行:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer hk_xxxxx" -H "Content-Type: application/json" \
+     -d '{"username":"hahero"}' -w "\nstatus=%{http_code}\n" \
+     https://hub.asayake.org/username
+   ```
+   成功なら `{"username":"hahero","bookshelfBase":"https://bookshelf.asayake.org/hahero/"}` と `status=200`。
+3. **確認**:
+   ```bash
+   # 新URLで配信されているか (200)
+   curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/hahero/
+   # 旧URLが新URLへ301しているか
+   curl -s -D - -o /dev/null "https://hub.asayake.org/public/<自分のsiteId>/" | grep -iE "^(HTTP|location)"
+   ```
+4. アプリで再度ログイン (または `/usage` 相当のリロード) すると `hub.bookshelfBase` が設定へ反映され、次回公開からは新URLで公開される。
+
+> 他の既存ユーザがいる場合も同じ手順を個別に案内する (KV への直接 `wrangler kv key put` での一括投入も技術的には可能だが、username の重複チェック・movedTo 整合を手で管理するのは事故りやすいため、**必ず `POST /username` 経由で1人ずつ設定**することを推奨)。
+
+### H-5. UptimeRobot 監視URLの切替 (Phase G-2 の更新)
+
+Phase G-2 の監視URL (`https://hub.asayake.org/public/<自分のsiteId>/`) を、H-4 で自分の username を設定した後に切り替える。
+
+1. UptimeRobot ダッシュボード → 対象モニターを編集。
+2. **監視URLを `https://bookshelf.asayake.org/<自分のusername>/` に変更** (未認証で200が返る具体パス)。
+3. ⚠️ **`/top` はまだ監視に使わない**。`/top` (全ユーザ横断一覧) は S7 (D1索引) 実装まで存在せず、現状は他の予約語と同じく404を返す。`/top` の実装後に別途この節を更新する。
+4. ステータスが up に戻ることを確認。
+
+### H-6. ロールバック (何かおかしければ)
+
+- `bookshelf-cdn` Worker を止めたいだけなら Cloudflare ダッシュボード → Workers & Pages → `bookshelf-cdn` → Delete (または route を外す)。DNS レコードは custom_domain 経由なので Worker 削除と一緒に整理される。
+- username を設定したユーザを旧URLに戻したい場合、KV `uid:<uid>` から `username` フィールドを削除すれば `serveSite`/`handlePublish` が旧URL配信に戻る (`uname:<username>` の予約自体は残るので、他人が同じ username を取れる状態にはならない=安全側)。
