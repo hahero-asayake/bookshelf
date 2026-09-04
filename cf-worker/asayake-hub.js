@@ -44,6 +44,9 @@
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
 //   ② 公開 Class B 読取テール → /public を Cache API (caches.default) でキャッシュし R2 読取を間引く。
 
+import { serveHeaders, contentType } from './serve-headers.js';
+import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
+
 const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
 
@@ -72,6 +75,7 @@ export default {
         if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }), env, request);
         try {
             if (path === '/session' && request.method === 'POST') return cors(await handleSession(request, env), env, request);
+            if (path === '/username' && request.method === 'POST') return cors(await handleUsername(request, env), env, request);
             if (path === '/usage' && request.method === 'GET') return cors(await handleUsage(request, env), env, request);
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
             if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
@@ -126,6 +130,20 @@ async function serveSite(request, env, pathname, ctx) {
     if (sub === '' || sub.endsWith('/')) sub += 'index.html';
     if (sub.split('/').some(s => s === '..')) return new Response('bad path', { status: 400 });
 
+    // S6 (ADR-076): username 移行済みなら bookshelf.asayake.org/<username>/ へ 301。
+    // 旧 slug ベースの記事個別パスへの301マッピングは新設しない (ADR-006・②承認2026-09-05 決定4) —
+    // トップ (/<username>/) への1系統のみ。username 未設定 (=移行未了) の siteId は従来どおり配信を続ける。
+    const redirectUid = await env.KV.get(`site:${siteId}`);
+    if (redirectUid) {
+        const uidRec = await env.KV.get(`uid:${redirectUid}`, 'json');
+        if (uidRec && uidRec.username) {
+            return new Response(null, {
+                status: 301,
+                headers: { 'Location': `https://bookshelf.asayake.org/${uidRec.username}/`, 'Cache-Control': 'no-store' }
+            });
+        }
+    }
+
     const rep = await env.KV.get(`report:${siteId}`, 'json');
     if (rep && rep.status === 'suspended') return new Response('This site has been suspended.', { status: 451 });
 
@@ -175,19 +193,6 @@ async function handleGo(request, env, pathname) {
     });
 }
 
-// 公開配信のセキュリティヘッダ: スクリプト無し CSP・nosniff・cookie 出さない・iframe 制限
-function serveHeaders(ct, etag) {
-    const h = {
-        'Content-Type': ct,
-        'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-        'Referrer-Policy': 'no-referrer',
-        'Cache-Control': 'public, max-age=60'
-    };
-    if (etag) h['ETag'] = etag;
-    return h;
-}
-
 // ===== 認証: Google ID トークン → ハブ公開キー =====
 async function handleSession(request, env) {
     const { idToken } = await request.json().catch(() => ({}));
@@ -226,8 +231,43 @@ async function handleSession(request, env) {
         billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
         isAdmin: isAdminEmail(rec.email || email, env),
         apiBase: `https://${env.HUB_DOMAIN}`,
-        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`
+        publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`,
+        // S6 (ADR-076): username 未設定 (=旧siteIdのまま) なら null。アプリはこれを見て設定を促す
+        username: rec.username || null,
+        bookshelfBase: rec.username ? `https://bookshelf.asayake.org/${rec.username}/` : null
     });
+}
+
+// ===== username 予約 (S6・ADR-076・09 §10.3-v2) =====
+// POST /username { username } → KV `uname:<username>` を一意予約し uid:<uid>.username を更新する。
+// 改名時、旧 username は解放しない (movedTo で 301 に使う。なりすまし防止)。
+// ⚠️ KV は CAS 無し (read-modify-write last-writer-wins)。同時登録レースでの受容根拠は 09 §10.3-v2 参照。
+// S7 で D1/Durable Object へ移行するまでの暫定実装。
+async function handleUsername(request, env) {
+    await enforceWriteLimit(request, env);
+    const sess = await requireAuth(request, env);
+    const { username } = await request.json().catch(() => ({}));
+    if (!isValidUsername(username)) throw httpError(400, 'invalid or reserved username');
+
+    const existing = await env.KV.get(`uname:${username}`, 'json');
+    if (existing && existing.uid === sess.uid) {
+        // 冪等: 自分が既に持っている username への再送
+        return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
+    }
+    if (existing) throw httpError(409, 'username taken');
+
+    const uidRec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!uidRec) throw httpError(401, 'unknown session');
+
+    // 改名: 旧 username は削除せず movedTo で残す (解放しない・なりすまし防止)
+    if (uidRec.username && uidRec.username !== username) {
+        await env.KV.put(`uname:${uidRec.username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId, movedTo: username }));
+    }
+    await env.KV.put(`uname:${username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId }));
+    uidRec.username = username;
+    await env.KV.put(`uid:${sess.uid}`, JSON.stringify(uidRec));
+
+    return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
 }
 
 // 管理者判定: ADMIN_EMAILS (secret, カンマ区切り) に含まれるメールか。未設定なら常に false。
@@ -1091,7 +1131,7 @@ async function handleCommunityReport(request, env) {
     return json({ ok: true });
 }
 
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders, handleUsername, serveSite };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {
@@ -1123,15 +1163,6 @@ async function addUsage(env, uid, delta) {
     const rec = await env.KV.get(`uid:${uid}`, 'json');
     if (!rec) return;   // アカウント無し (削除レース) は無視
     await env.KV.put(`usage:${uid}`, String(Math.max(0, (await getUsed(env, uid)) + delta)));
-}
-function contentType(path) {
-    if (path.endsWith('.html')) return 'text/html; charset=utf-8';
-    if (path.endsWith('.css')) return 'text/css; charset=utf-8';
-    if (path.endsWith('.json')) return 'application/json; charset=utf-8';
-    if (path.endsWith('.svg')) return 'image/svg+xml';
-    if (path.endsWith('.png')) return 'image/png';
-    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
-    return 'application/octet-stream';
 }
 // ===== Kindle リレー =====
 // ブックマークレットが amazon.co.jp から結果を送り付け、bookshelf 側がポーリングで受け取る。

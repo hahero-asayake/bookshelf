@@ -1,0 +1,30 @@
+# bookshelf.asayake.org 配信専用 Worker の wrangler 設定 (S6・ADR-076)
+# asayake-hub (wrangler.hub.toml) とは別 Worker。`wrangler deploy -c wrangler.bookshelf.toml` でデプロイ。
+# 配信ロジック (pathname→R2 lookup→返す、認証なし) を hub の認証・課金コードと分離するために新設。
+# KV/R2 は asayake-hub と同一の namespace/bucket を bind する (uname:/uid:/site:/report: と sites/ のみ参照)。
+# ⚠️ 実装は read-only 運用 (書込コードを一切含まない) だが、Cloudflare の binding 自体に read-only 制限機能は
+#    無いため、可能ならこの Worker のデプロイに使う API トークンは Workers Scripts の Edit のみに絞ること。
+
+name = "bookshelf-cdn"
+main = "bookshelf-cdn.js"
+compatibility_date = "2026-01-01"
+account_id = "7b1c63e99dcd20999d3d0d5de0183873"   # asayake.org のあるアカウント (wrangler.hub.toml と同一)
+
+# --- R2 (asayake-hub と同一バケット。sites/ のみ参照) ---
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "asayake-hub"
+
+# --- KV (asayake-hub と同一 namespace。uname:/uid:/site:/report: のみ参照) ---
+[[kv_namespaces]]
+binding = "KV"
+id = "d429572547b4434486d44ee0159f46ae"
+
+# --- 運用監視 ---
+[observability]
+enabled = true
+
+# --- ルート: bookshelf.asayake.org を Worker 専用ホストに ---
+[[routes]]
+pattern = "bookshelf.asayake.org"
+custom_domain = true
