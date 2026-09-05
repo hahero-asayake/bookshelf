@@ -92,6 +92,37 @@ class StorageAdapter {
     async listDirs(dirPath) {
         throw new Error('StorageAdapter.listDirs() must be implemented');
     }
+
+    /**
+     * fetch() をタイムアウト付きで実行する (イシュー#134)。
+     *
+     * なぜ: GitHubAdapter/HubStorageAdapter の素の fetch() には AbortController が無く、
+     * リモート側が応答を返さない (401/404 のような明確なエラーではなく、単に無応答) 場合、
+     * 呼び出し元の await が無期限に pending のままになる。readBookMemo() 経由でこれが起きると
+     * PublishArticleGenerator.build() 全体が完了せず、記事プレビュー/公開が「生成中…」のまま
+     * 止まって見える (実際にはハングしているだけで例外は出ない)。
+     *
+     * StorageAdapter の具象クラスは素の fetch() を直接呼ばず、これを経由すること。
+     * @param {string} url
+     * @param {RequestInit} [init]
+     * @param {number} [timeoutMs=10000] 10秒: ハブ/GitHub 双方の通常応答 (概ね数百ms〜2秒) に
+     *   対して十分な余裕を持たせつつ、無応答時に「生成中…」が体感で壊れて見えるほど長引かせない値。
+     * @returns {Promise<Response>}
+     */
+    static async fetchWithTimeout(url, init = {}, timeoutMs = 10000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...init, signal: controller.signal });
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                throw new Error(`通信がタイムアウトしました (${timeoutMs}ms): ${url}`);
+            }
+            throw e;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
 }
 
 window.StorageAdapter = StorageAdapter;

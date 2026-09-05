@@ -137,6 +137,28 @@ describe('記事単位公開 (published フィルタ, ADR-058 §11)', () => {
     });
 });
 
+describe('長文メモ読込失敗時は公開を中止する (イシュー#134・内容欠落のまま外に出さない)', () => {
+    it('generator.build に haltOnReadFailure:true を渡す', async () => {
+        let receivedOpts = null;
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true, publicId: 'pub1' }],
+            build: async (articles, opts) => { receivedOpts = opts; return { files: [{ path: 'index.html', content: 't' }, { path: 'pub1/index.html', content: 't2' }], articles: [{ id: 'p1', slug: 'p1' }], leak: [], errors: [] }; }
+        });
+        await new BookshelfExporter(app).export();
+        expect(receivedOpts.haltOnReadFailure).toBe(true);
+    });
+
+    it('読込失敗で対象記事が全滅した場合、具体的な理由を含めて公開を中止する (throw)', async () => {
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true, publicId: 'pub1', title: 'わたしを構成する10冊' }],
+            build: async () => ({ files: [{ path: 'index.html', content: 't' }], articles: [], leak: [], errors: ['長文メモを読み込めなかったため公開を中止しました: わたしを構成する10冊 (接続を確認して再実行してください)'] })
+        });
+        await expect(new BookshelfExporter(app).export()).rejects.toThrow(/長文メモを読み込めなかったため公開を中止しました/);
+        // push (commitBatch) までは進んでいないこと (中断が徹底されている)
+        expect(captured.commits.length).toBe(0);
+    });
+});
+
 describe('共有ハブ公開 (target=hub, ADR-033)', () => {
     it('target=hub なら /publish 経路で公開し GitHub には触らない', async () => {
         mockConfig.publish = { target: 'hub' };

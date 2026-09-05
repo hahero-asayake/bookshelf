@@ -9229,6 +9229,11 @@ class VirtualBookshelf {
             const file = result.files.find(f => f.path === 'preview/index.html');
             if (file) {
                 this._artSetPreview(file.content);
+                // 長文メモの読み込みに失敗があっても生成は続行する (haltOnReadFailure を渡していない)。
+                // 公開HTMLの中身は変えず、アプリ側の通知だけで気づけるようにする (イシュー#134)。
+                if (result.articles[0] && result.articles[0].memoReadFailed) {
+                    toast('一部の長文メモを読み込めませんでした（通信が不安定な可能性があります）。プレビューにはその本のメモが空欄で表示されています。', { type: 'warn' });
+                }
             } else {
                 this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
             }

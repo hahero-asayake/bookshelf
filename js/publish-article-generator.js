@@ -321,7 +321,11 @@ class PublishArticleGenerator {
             try {
                 const text = await this.app.storage.readBookMemo(bookData.asin, bookData.title);
                 if (text != null) bookData.detailMemo = PublishArticleGenerator.stripFrontmatter(text);
-            } catch (_) { /* 読み込み失敗はそのブロックのメモを空のままにする (ページ全体は落とさない) */ }
+            } catch (_) {
+                // 読み込み失敗 (タイムアウト含む, イシュー#134) はそのブロックのメモを空のままにする
+                // (ページ全体は落とさない)。失敗があったこと自体は _detailMemoFailed で呼び出し元に伝える。
+                bookData._detailMemoFailed = true;
+            }
         }
 
         return resolved;
@@ -565,6 +569,21 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 body = this._renderBlocks(resolvedBlocks);
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 
+            // 長文メモの読み込みに1件でも失敗 (タイムアウト含む) があった場合の扱い (イシュー#134)。
+            // - haltOnReadFailure (実publish, exporter.js): 内容が欠けた記事を外に出さないため、
+            //   この記事だけ生成対象から外して公開を中止する (接続を直して再実行してもらう)。
+            // - 既定 (プレビュー): 生成は続行する。呼び出し元 (_artPreview) が memoReadFailed を見て
+            //   「一部読み込めませんでした」を通知する。公開HTMLの中身には影響させない。
+            const memoReadFailed = resolvedBlocks.some(r => {
+                if (r.type === 'book') return !!(r.bookData && r.bookData._detailMemoFailed);
+                if (r.type === 'shelf') return r.items.some(i => i.bookData && i.bookData._detailMemoFailed);
+                return false;
+            });
+            if (memoReadFailed && opts.haltOnReadFailure) {
+                errors.push(`長文メモを読み込めなかったため公開を中止しました: ${article.title} (接続を確認して再実行してください)`);
+                continue;
+            }
+
             const bookCount = resolvedBlocks.reduce((n, r) => {
                 if (r.type === 'book') return n + (r.bookData ? 1 : 0);
                 if (r.type === 'shelf') return n + r.items.filter(i => i.bookData).length;
@@ -594,7 +613,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 reportRef, pluginFooter
             });
             files.push({ path: `${article.publicId}/index.html`, content: html });
-            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0 });
+            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed });
         }
 
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });

@@ -67,7 +67,7 @@ class GitHubAdapter extends StorageAdapter {
 
     async testConnection() {
         const url = `https://api.github.com/repos/${this.owner}/${this.repo}`;
-        const res = await fetch(url, { headers: this._headers() });
+        const res = await StorageAdapter.fetchWithTimeout(url, { headers: this._headers() });
         if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed (invalid token)');
         if (res.status === 404) throw new Error(`Repository not found: ${this.owner}/${this.repo}`);
         if (!res.ok) {
@@ -185,14 +185,14 @@ class GitHubAdapter extends StorageAdapter {
 
         // 1. 現在の branch ref を取得
         const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
-        const refRes = await fetch(refUrl, { headers: this._headers() });
+        const refRes = await StorageAdapter.fetchWithTimeout(refUrl, { headers: this._headers() });
         if (!refRes.ok) throw new Error(await this._ghErr(refRes, `get ref ${this.branch}`));
         const refData = await refRes.json();
         const latestCommitSha = refData.object.sha;
 
         // 2. 既存 commit の base tree sha
         const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${latestCommitSha}`;
-        const commitRes = await fetch(commitUrl, { headers: this._headers() });
+        const commitRes = await StorageAdapter.fetchWithTimeout(commitUrl, { headers: this._headers() });
         if (!commitRes.ok) throw new Error(await this._ghErr(commitRes, `get commit ${latestCommitSha}`));
         const commitData = await commitRes.json();
         const baseTreeSha = commitData.tree.sha;
@@ -204,7 +204,7 @@ class GitHubAdapter extends StorageAdapter {
             if (e.op === 'delete') {
                 treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: null });
             } else {
-                const blobRes = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/blobs`, {
+                const blobRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/blobs`, {
                     method: 'POST',
                     headers: { ...this._headers(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -219,7 +219,7 @@ class GitHubAdapter extends StorageAdapter {
         }
 
         // 4. Tree を作成
-        const treeRes = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/trees`, {
+        const treeRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/trees`, {
             method: 'POST',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -232,7 +232,7 @@ class GitHubAdapter extends StorageAdapter {
 
         // 5. Commit を作成
         const msg = message || `chore(bookshelf): batch update ${batch.length} file(s)`;
-        const newCommitRes = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/commits`, {
+        const newCommitRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/commits`, {
             method: 'POST',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -245,7 +245,7 @@ class GitHubAdapter extends StorageAdapter {
         const newCommitData = await newCommitRes.json();
 
         // 6. Ref を更新 (force: false = 楽観ロック)
-        const updateRefRes = await fetch(refUrl, {
+        const updateRefRes = await StorageAdapter.fetchWithTimeout(refUrl, {
             method: 'PATCH',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ sha: newCommitData.sha, force: false })
@@ -318,7 +318,7 @@ class GitHubAdapter extends StorageAdapter {
 
     async _getContent(path) {
         const url = `${this._apiUrl(path)}?ref=${encodeURIComponent(this.branch)}`;
-        const res = await fetch(url, { headers: this._headers() });
+        const res = await StorageAdapter.fetchWithTimeout(url, { headers: this._headers() });
         if (res.status === 404) return null;
         if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
         if (res.status === 403) {
@@ -344,7 +344,7 @@ class GitHubAdapter extends StorageAdapter {
         };
         if (sha) body.sha = sha;
 
-        const res = await fetch(url, {
+        const res = await StorageAdapter.fetchWithTimeout(url, {
             method: 'PUT',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -368,7 +368,7 @@ class GitHubAdapter extends StorageAdapter {
             sha,
             branch: this.branch
         };
-        const res = await fetch(url, {
+        const res = await StorageAdapter.fetchWithTimeout(url, {
             method: 'DELETE',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify(body)

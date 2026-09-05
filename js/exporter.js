@@ -96,9 +96,15 @@ class BookshelfExporter {
         // プラグインの公開スナップショットを収集 (コード非実行・data/publish.json を読むだけ。ADR-042)
         const publishData = await this._collectPluginPublishData();
 
-        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData });
+        // haltOnReadFailure: 長文メモが読めなかった記事は公開しない (イシュー#134・内容欠落のまま
+        // 外に出さないため)。プレビュー (bookshelf.js _artPreview) はこのオプションを渡さず、
+        // 読み込めなくても生成を続行して通知のみ行う。
+        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true });
         if (articles.length > 0 && result.articles.length === 0) {
-            throw new Error('公開できる記事がありません。各記事のブロック内容を確認してください。');
+            // result.errors には具体的な理由 (公開ID未発番・長文メモ読み込み失敗等) が入っている
+            // ため、あれば優先して見せる (イシュー#134: 汎用文言だと原因不明のまま再試行させてしまう)。
+            const detail = result.errors.length > 0 ? result.errors.join(' / ') : '各記事のブロック内容を確認してください。';
+            throw new Error(`公開できる記事がありません。${detail}`);
         }
         if (result.leak.length > 0) {
             throw new Error(`公開記事に個人情報が混入している可能性があります: ${result.leak.join(', ')}`);

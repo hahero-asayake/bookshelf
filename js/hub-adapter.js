@@ -235,7 +235,7 @@ class HubStorageAdapter extends StorageAdapter {
     async _fetch(method, url, init = {}) {
         const key = await this._key();
         const headers = { ...(init.headers || {}), 'Authorization': `Bearer ${key}` };
-        const res = await fetch(url, { method: init.method || method, headers, body: init.body });
+        const res = await StorageAdapter.fetchWithTimeout(url, { method: init.method || method, headers, body: init.body });
         if (res.status === 401) throw new HubAuthError('Asayake ハブの認証が失効しました。再接続してください');
         return res;
     }

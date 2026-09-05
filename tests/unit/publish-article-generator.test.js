@@ -265,6 +265,41 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
     });
 });
 
+describe('長文メモ読込失敗時の扱い (イシュー#134・HubStorageAdapter._fetch にタイムアウトが無く build() が無限に待っていた不具合の修正)', () => {
+    function makeAppWithFailingMemo(state) {
+        return { storage: { loadAll: async () => state, readBookMemo: async () => { throw new Error('通信がタイムアウトしました (10000ms): https://example.test/data/private/books/x.md'); } } };
+    }
+
+    it('既定 (プレビュー相当・haltOnReadFailure 未指定) では読込失敗があっても生成を継続し、その本のメモは空のまま完了する', async () => {
+        const localGen = new PublishArticleGenerator(makeAppWithFailingMemo(makeState()));
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: true } }] });
+        const r = await localGen.build([article]);
+        // 生成が完了する (await が返ってくる) こと自体が、無限待ちが解消されたことの検証。
+        expect(r.files.find(f => f.path === 'pub-test01/index.html')).toBeTruthy();
+        expect(r.articles).toHaveLength(1);
+        expect(r.articles[0].memoReadFailed).toBe(true);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toContain('class="bk-detail"');
+    });
+
+    it('haltOnReadFailure:true (実publish) では読込失敗した記事を生成対象から外し、理由付きで errors に積む', async () => {
+        const localGen = new PublishArticleGenerator(makeAppWithFailingMemo(makeState()));
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: true } }] });
+        const r = await localGen.build([article], { haltOnReadFailure: true });
+        expect(r.articles).toHaveLength(0);
+        expect(r.files.find(f => f.path === 'pub-test01/index.html')).toBeUndefined();
+        expect(r.errors.some(e => e.includes('長文メモを読み込めなかったため公開を中止しました'))).toBe(true);
+    });
+
+    it('show.longMemo=false の本では読込失敗の影響を受けない (そもそも readBookMemo を呼ばない)', async () => {
+        const localGen = new PublishArticleGenerator(makeAppWithFailingMemo(makeState()));
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }] });
+        const r = await localGen.build([article], { haltOnReadFailure: true });
+        expect(r.articles).toHaveLength(1);
+        expect(r.articles[0].memoReadFailed).toBe(false);
+    });
+});
+
 describe('星(評価)描画 (show.rating・イシュー#135・短文/長文メモと同じ配置単位の仕組み)', () => {
     function makeGenWithRating(rating) {
         const state = makeState();
