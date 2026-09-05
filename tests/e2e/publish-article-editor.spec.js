@@ -359,11 +359,16 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
 
         // published 状態・lastBuiltAt・「公開を取り消す」ボタンが反映される
         const id = await page.evaluate(() => window.bookshelf._artEditingId);
-        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
-        expect(article.published).toBe(true);
+        const readArticle = () => page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         // lastBuiltAt 更新はエラーを握り潰す実装 (js/exporter.js) のため、失敗時は errors 側に
         // console.error が残る (イシュー#104)。ここで一緒に出して真因を一発で追えるようにする。
-        expect(article.lastBuiltAt, `lastBuiltAt is falsy. console errors: ${JSON.stringify(errors)}`).toBeTruthy();
+        // commitBatch 完了 (hubCaptured.files が埋まる) の後に非同期で更新されるため、1回読みだと
+        // 更新完了前を読む窓がある (イシュー#139) → poll で読み直す。
+        await expect.poll(async () => (await readArticle()).lastBuiltAt, {
+            message: `lastBuiltAt is falsy. console errors: ${JSON.stringify(errors)}`
+        }).toBeTruthy();
+        const article = await readArticle();
+        expect(article.published).toBe(true);
         await expect(page.locator('#art-unpublish')).toBeVisible();
         expect(errors).toEqual([]);
     });
