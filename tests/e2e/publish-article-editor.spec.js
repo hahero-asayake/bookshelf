@@ -280,6 +280,94 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         expect(errors).toEqual([]);
     });
 
+    test('build()が永久pendingでも、一定時間で必ずストール表示に落ちる (回帰テスト・イシュー#143)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+
+        await page.evaluate(() => {
+            window.bookshelf._artPreviewStallMs = 200; // 実時間20秒を待たないよう短く注入
+            window.bookshelf.publishArticleGenerator.build = () => new Promise(() => {}); // 永久pending
+        });
+
+        await page.click('#art-preview'); // 公開メソッド経由 (内部関数を直接叩かない)
+        await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('#pp-preview-stall-msg')).toContainText('止まっているようです');
+        await expect(page.locator('#pp-preview-retry')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    test('ストール表示から「再試行」を押すと新しい build が始まり、成功すれば結果に差し替わる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '再試行テスト');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+
+        await page.evaluate(() => {
+            window.bookshelf._artPreviewStallMs = 200;
+            const origBuild = window.bookshelf.publishArticleGenerator.build.bind(window.bookshelf.publishArticleGenerator);
+            let calls = 0;
+            window.bookshelf.publishArticleGenerator.build = (...args) => {
+                calls++;
+                return calls === 1 ? new Promise(() => {}) : origBuild(...args); // 1回目だけ永久pending
+            };
+        });
+
+        await page.click('#art-preview');
+        await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
+        await page.click('#pp-preview-retry');
+        await expect(page.locator('#pp-preview-stall')).toBeHidden();
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        expect(srcdoc).toContain('再試行テスト');
+        expect(srcdoc).not.toContain('生成できませんでした');
+        expect(srcdoc).not.toContain('プレビュー失敗');
+        expect(errors).toEqual([]);
+    });
+
+    test('長文メモ読込中は「生成中…」に進捗(N/M)が反映される', async ({ page }) => {
+        const errors = await bootApp(page);
+        // 長文メモ表示条件 (_hasDetail) は notes[asin].hasDetailMemo。fixture は既定で持たないため注入する。
+        await page.evaluate(() => {
+            window.bookshelf.userData.notes = window.bookshelf.userData.notes || {};
+            window.bookshelf.userData.notes['B000000001'] = { ...(window.bookshelf.userData.notes['B000000001'] || {}), hasDetailMemo: true };
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // 長文メモ表示をON (既定でON想定だが、明示的に押して確実にする)
+        const longToggle = page.locator('.art-item-show-toggle[data-show-key="longMemo"]').first();
+        if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
+
+        await page.evaluate(() => {
+            let release;
+            window.bookshelf.__releaseRead = () => release && release();
+            window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => {
+                release = () => resolve('# 長文メモ本文');
+            });
+        });
+
+        page.click('#art-preview'); // await しない (進捗中の途中状態を見るため)
+        await expect.poll(async () => {
+            const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+            return srcdoc;
+        }, { timeout: 5000 }).toContain('長文メモ 0/1 読込中');
+
+        await page.evaluate(() => window.bookshelf.__releaseRead());
+        await expect.poll(async () => {
+            const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+            return srcdoc;
+        }, { timeout: 5000 }).not.toContain('生成中');
+        expect(errors).toEqual([]);
+    });
+
     test('テーマ変更 (レイアウト/配色) がプレビューの data-layout/data-color に反映される', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());

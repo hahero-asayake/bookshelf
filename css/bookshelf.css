@@ -4616,10 +4616,13 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); background: var(--side); }
 .pp-preview-bar-title { display: inline-flex; align-items: center; font-weight: 700; font-size: 0.92rem; }
 .pp-preview-bar-actions { display: flex; gap: 0.5rem; }
-.pp-preview-stage { flex: 1; overflow: auto; background: #e9e7ee; display: flex; justify-content: center; }
+.pp-preview-stage { position: relative; flex: 1; overflow: auto; background: #e9e7ee; display: flex; justify-content: center; }
 .pp-preview-stage #pp-preview-frame { width: 100%; max-width: 100%; height: 100%; border: none; background: #fff; }
 .pp-preview-stage.pp-stage-mobile { padding: 18px 0; }
 .pp-preview-stage.pp-stage-mobile #pp-preview-frame { width: 390px; max-width: 390px; height: 100%; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18); background: #fff; }
+.pp-preview-stall { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.9rem; padding: 1.5rem; background: rgba(255,255,255,.94); text-align: center; }
+.pp-preview-stall[hidden] { display: none; }
+.pp-preview-stall-msg { margin: 0; color: var(--fg2); font-size: 0.92rem; max-width: 32em; white-space: pre-line; }
 @media (max-width: 760px) {
     .pp-preview-dialog { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
     .pp-edit-actions { flex-wrap: wrap; }

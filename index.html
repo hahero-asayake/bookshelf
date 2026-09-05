@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026090502">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026090606">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -886,6 +886,10 @@
             </div>
             <div class="pp-preview-stage">
                 <iframe id="pp-preview-frame" title="公開ページ プレビュー" sandbox="allow-same-origin"></iframe>
+                <div id="pp-preview-stall" class="pp-preview-stall" hidden>
+                    <p id="pp-preview-stall-msg" class="pp-preview-stall-msg"></p>
+                    <button id="pp-preview-retry" class="btn btn-primary btn-small" type="button">再試行</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1196,14 +1200,14 @@
     <script src="js/bookshelf-manager.js?v=2026090501"></script>
     <script src="js/publish-article-store.js?v=2026090603"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
-    <script src="js/publish-article-generator.js?v=2026090602"></script>
+    <script src="js/publish-article-generator.js?v=2026090606"></script>
     <script src="js/exporter.js?v=2026090601"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026090605"></script>
+    <script src="js/bookshelf.js?v=2026090606"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

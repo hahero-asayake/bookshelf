@@ -13,6 +13,14 @@ const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 
+// 記事プレビューのストール検知 (イシュー#143)。build() が失敗も成功もせず無期限に pending した場合、
+// 「生成中…」が永久に残ってしまう (根本原因はfetchWithTimeoutの設計欠陥・ADR-081で根治したが、原因を
+// 問わず「無言の無限スピナー」を見せないための最後の砦として独立に実装する)。一律の全体上限ではなく、
+// 「進捗 (長文メモの読込完了) が一定時間まったく進まない」ことで発火する＝10冊×遅い回線のような
+// 正常系(遅いだけ)を誤ってストール扱いしない。テストから注入できるよう VirtualBookshelf インスタンスの
+// _artPreviewStallMs を優先し、無ければこの既定値を使う。
+const ART_PREVIEW_STALL_MS = 20000; // 20秒: 目安値 (issue依頼のとおり)
+
 // アプリ本体の新バージョン検知 (イシュー#143・仮説a-1対策)。
 // SW の updatefound は「load 時に reg.update() を1回呼ぶ」だけで、開きっぱなしのタブに新しい
 // ?v= が届く経路が無かった (SW 自身のバイトが変わらない限り updatefound は発火しない)。
@@ -7857,6 +7865,7 @@ class VirtualBookshelf {
         // プレビュー別画面 (開閉のみ。生成本体はプレビュー機能のステップで実装)
         on('pp-preview-close', 'click', () => this._artClosePreviewModal());
         on('pp-preview-device', 'click', () => this._artTogglePreviewDevice());
+        on('pp-preview-retry', 'click', () => this._artRetryPreview());
         const pm = document.getElementById('pp-preview-modal');
         if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._artClosePreviewModal(); });
     }
@@ -9402,14 +9411,66 @@ class VirtualBookshelf {
             toast('ブロックを1つ以上追加してください。', { type: 'warn' });
             return;
         }
+        this._artHidePreviewStall();
         this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
         this._artOpenPreviewModal();
-        // slug/publicId は固定 'preview' を後勝ちで (...this._artDraft が両方持つため順序が重要)。
-        // 出力パスとルックアップを一致させる (旧 _ppPreview と同じ規約)。publicId は generator.build() が
-        // 未発番の記事をビルド対象から除外する (S6・ADR-076) ため、プレビューでも固定値が必須。
+        await this._artRunPreviewBuild();
+    }
+
+    /** ストール表示の「再試行」ボタンから呼ばれる。新しい試行として _artPreview と同じ経路を再実行する。 */
+    _artRetryPreview() {
+        this._artHidePreviewStall();
+        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
+        this._artRunPreviewBuild();
+    }
+
+    /**
+     * generator.build() を実行し、進捗表示＋ストール検知を伴って結果をプレビューへ反映する (イシュー#143)。
+     * 世代カウンタ (_artPreviewGeneration) で「このビルドが最新の試行か」を判定し、再試行で新しい
+     * ビルドが始まった後に古いビルドの結果が遅れて到着しても表示を上書きしない。
+     */
+    async _artRunPreviewBuild() {
+        const generation = (this._artPreviewGeneration || 0) + 1;
+        this._artPreviewGeneration = generation;
+        const isCurrent = () => this._artPreviewGeneration === generation;
+
         const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
+        const startedAt = Date.now();
+        let lastProgress = { done: 0, total: 0 };
+        let stalled = false;
+        let stallTimer = null;
+        const stallMs = this._artPreviewStallMs || ART_PREVIEW_STALL_MS;
+
+        const renderGenerating = () => {
+            const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+            const progressText = lastProgress.total > 0 ? `長文メモ ${lastProgress.done}/${lastProgress.total} 読込中・` : '';
+            this._artSetPreview(`<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（${progressText}${elapsed}秒経過）</p>`);
+        };
+        const tickTimer = setInterval(() => {
+            if (!isCurrent()) { clearInterval(tickTimer); return; }
+            if (!stalled) renderGenerating();
+        }, 1000);
+        const scheduleStall = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                if (!isCurrent() || stalled) return;
+                stalled = true;
+                const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+                this._artShowPreviewStall(lastProgress, elapsed);
+            }, stallMs);
+        };
+        scheduleStall();
+
+        const finish = () => { clearTimeout(stallTimer); clearInterval(tickTimer); };
+
         try {
-            const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState() });
+            const result = await this.publishArticleGenerator.build([tempArticle], {
+                state: this._artBuildPreviewState(),
+                onProgress: (p) => { lastProgress = p; if (isCurrent() && !stalled) scheduleStall(); }
+            });
+            finish();
+            if (!isCurrent()) return; // 再試行で新しい世代が始まっている＝この結果は古い
+            this._artHidePreviewStall();
             const file = result.files.find(f => f.path === 'preview/index.html');
             if (file) {
                 this._artSetPreview(file.content);
@@ -9422,8 +9483,28 @@ class VirtualBookshelf {
                 this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
             }
         } catch (e) {
+            finish();
+            if (!isCurrent()) return;
+            this._artHidePreviewStall();
             this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishArticleGenerator.esc(e.message)}</p>`);
         }
+    }
+
+    /** ストール検知の発火時表示 (ui-standards §2-11: 何が起きたか＋次にどうすればよいか)。 */
+    _artShowPreviewStall(lastProgress, elapsedSec) {
+        const el = document.getElementById('pp-preview-stall');
+        const msgEl = document.getElementById('pp-preview-stall-msg');
+        if (!el || !msgEl) return;
+        const progressText = lastProgress.total > 0
+            ? `（最後の進捗: 長文メモ ${lastProgress.done}/${lastProgress.total} 読込中）`
+            : '';
+        msgEl.textContent = `プレビューの生成が止まっているようです（${elapsedSec}秒経過${progressText}）。\n通信が不安定な可能性があります。`;
+        el.hidden = false;
+    }
+
+    _artHidePreviewStall() {
+        const el = document.getElementById('pp-preview-stall');
+        if (el) el.hidden = true;
     }
 
     _artSetPreview(html) {
@@ -9446,6 +9527,9 @@ class VirtualBookshelf {
         const m = document.getElementById('pp-preview-modal');
         if (m) m.classList.remove('show');
         this._modalHistPop('pp-preview-modal', { fromHistory });
+        // 進行中のビルド (進捗表示/ストール検知タイマー) を無効化する。build() 自体は裏で続いてよいが、
+        // 結果が来ても閉じた後のプレビューへは反映しない (イシュー#143)。
+        this._artPreviewGeneration = (this._artPreviewGeneration || 0) + 1;
     }
     _artTogglePreviewDevice() {
         const btn = document.getElementById('pp-preview-device');

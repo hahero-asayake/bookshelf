@@ -543,6 +543,57 @@ describe('index.html (記事一覧)', () => {
     });
 });
 
+describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143)', () => {
+    it('長文メモ表示ブロックが1件なら {done:0,total:1} → {done:1,total:1} の順に呼ばれる', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
+        ] });
+        const calls = [];
+        await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
+        expect(calls).toEqual([{ done: 0, total: 1 }, { done: 1, total: 1 }]);
+    });
+
+    it('長文メモ表示ブロックが無ければ一度も呼ばれない', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'text', markdown: '本文のみ' }
+        ] });
+        const calls = [];
+        await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
+        expect(calls).toEqual([]);
+    });
+
+    it('複数冊 (shelf内訳含む) なら total が合計件数になり、doneが単調増加する', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'shelf', items: [
+                { asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } },
+                { asin: 'N1', show: { longMemo: false, shortMemo: false, rating: false } }
+            ] },
+            { type: 'book', asin: 'M2', show: { longMemo: true, shortMemo: false, rating: false } }
+        ] });
+        // M2 は state.notes に hasDetailMemo が無いため対象外、M1 のみ対象 (total=1) になる想定を
+        // 崩さないよう、M2 にも hasDetailMemo を立てた state を明示的に使う。
+        const state = makeState();
+        state.notes.M2 = { hasDetailMemo: true };
+        const app = makeApp(state);
+        const g2 = new PublishArticleGenerator(app);
+        const calls = [];
+        await g2.build([article], { state, onProgress: (p) => calls.push({ ...p }) });
+        expect(calls[0]).toEqual({ done: 0, total: 2 });
+        expect(calls[calls.length - 1]).toEqual({ done: 2, total: 2 });
+        expect(calls.map(c => c.done)).toEqual([0, 1, 2]);
+    });
+
+    it('onProgress を渡しても渡さなくても、公開HTML出力は完全一致する (可観測性のための変更が公開物に影響しない)', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: true, rating: false } }
+        ] });
+        const without = await gen.build([{ ...article }], { state: makeState() });
+        const with_ = await gen.build([{ ...article }], { state: makeState(), onProgress: () => {} });
+        expect(JSON.stringify(with_.files)).toBe(JSON.stringify(without.files));
+        expect(JSON.stringify(with_.articles)).toBe(JSON.stringify(without.articles));
+    });
+});
+
 describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完了条件)', () => {
     it('旧公開ページを PublishArticleStore.migrateFromPages で変換し、PublishArticleGenerator.build がそのまま通る', async () => {
         // 実運用に近い形: 旧 pages.json 形式のページ (旧 PublishPageStore.create() が返す形と同じ構造の

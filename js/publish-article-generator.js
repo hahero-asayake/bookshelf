@@ -292,7 +292,9 @@ class PublishArticleGenerator {
     }
 
     // 記事のブロック列を蔵書データへ解決する。detailMemo (長文メモ) は表示対象のものだけ非同期で埋める。
-    async _resolveBlocks(article, state, libMap, linkOpts) {
+    // onProgress({done,total}) は長文メモを1冊読むごとに呼ばれる (イシュー#143・プレビューの進捗表示用)。
+    // 副作用のみで戻り値・出力HTMLには影響しない (実publish側で渡さなければ従来どおり)。
+    async _resolveBlocks(article, state, libMap, linkOpts, onProgress) {
         const resolved = [];
         const detailTargets = []; // { bookData, needed:bool } を async 読み込み後に埋める
 
@@ -317,6 +319,10 @@ class PublishArticleGenerator {
             }
         }
 
+        const total = detailTargets.length;
+        const report = (done) => { if (typeof onProgress === 'function') onProgress({ done, total }); };
+        if (total > 0) report(0);
+        let done = 0;
         for (const bookData of detailTargets) {
             try {
                 const text = await this.app.storage.readBookMemo(bookData.asin, bookData.title);
@@ -326,6 +332,8 @@ class PublishArticleGenerator {
                 // (ページ全体は落とさない)。失敗があったこと自体は _detailMemoFailed で呼び出し元に伝える。
                 bookData._detailMemoFailed = true;
             }
+            done++;
+            report(done);
         }
 
         return resolved;
@@ -565,7 +573,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             if (!article.publicId) { errors.push(`公開IDが未発番です: ${article.title}`); continue; }
             let resolvedBlocks, body;
             try {
-                resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts);
+                resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
                 body = this._renderBlocks(resolvedBlocks);
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 
