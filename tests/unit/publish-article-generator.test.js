@@ -164,7 +164,7 @@ describe('テーマ CSS (レイアウト3 × 配色10 の直交, §11.3)', () =>
         // 本ブロックの表紙が意図しない位置に飛ぶ・タイトル/著者が消えるという壊れ方をしていた。
         for (const layout of ['wall', 'count', 'card']) {
             const css = PublishArticleGenerator.layoutCss(layout);
-            for (const cls of ['bk-cover', 'bk-title', 'bk-author', 'bk-memo', 'bk-detail']) {
+            for (const cls of ['bk-cover', 'bk-title', 'bk-author', 'bk-rating', 'bk-memo', 'bk-detail']) {
                 const bare = new RegExp(`[^ .]\\.${cls}\\{`); // ".bk " 抜きの直書きセレクタが残っていないこと
                 expect(css, `${layout}: .${cls} が .bk 抜きの単体セレクタで指定されていないこと`).not.toMatch(bare);
             }
@@ -262,6 +262,79 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         expect(r.errors).toEqual([]);
         const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).not.toContain('class="blk-book"');
+    });
+});
+
+describe('星(評価)描画 (show.rating・イシュー#135・短文/長文メモと同じ配置単位の仕組み)', () => {
+    function makeGenWithRating(rating) {
+        const state = makeState();
+        state.notes.M1 = { ...state.notes.M1, rating };
+        return new PublishArticleGenerator(makeApp(state));
+    }
+
+    it('show.rating=true かつ評価ありの本は ★★★☆☆ 形式で塗り分けて出す (評価3なら★3+☆2)', async () => {
+        const g = makeGenWithRating(3);
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false, rating: true } }] });
+        const r = await g.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).toContain('class="bk-rating"');
+        expect(html).toContain('aria-label="評価 3/5"');
+        expect(html).toContain('<span class="bk-star-filled">★︎★︎★︎</span>');
+        expect(html).toContain('<span class="bk-star-empty">☆︎☆︎</span>');
+        expect(r.errors).toEqual([]);
+    });
+
+    it('星文字自体は aria-hidden で隠し、数値は aria-label でだけ伝える (5個読み上げさせない)', async () => {
+        const g = makeGenWithRating(4);
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false, rating: true } }] });
+        const r = await g.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).toMatch(/<p class="bk-rating" aria-label="評価 4\/5"><span aria-hidden="true">/);
+    });
+
+    it('show.rating=false のときは評価があっても星を出さない (表示設定の持ち主は配置)', async () => {
+        const g = makeGenWithRating(5);
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false, rating: false } }] });
+        const r = await g.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toContain('class="bk-rating"');
+    });
+
+    it('未評価本 (rating 未設定) は show.rating=true でも何も描画しない (評価0と未評価を区別・②承認済み)', async () => {
+        const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'N1', show: { shortMemo: false, longMemo: false, rating: true } }] });
+        const r = await gen.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toContain('class="bk-rating"');
+    });
+
+    it('本棚ブロックの配置単位でも同じ経路で星が出る (多重集合でも配置ごとに独立)', async () => {
+        const g = makeGenWithRating(2);
+        const article = makeArticle({
+            blocks: [{
+                id: 'b1', type: 'shelf', shelfId: 'mid',
+                items: [
+                    { id: 'p1', blockId: 'b1', asin: 'M1', order: 0, show: { shortMemo: false, longMemo: false, rating: true } },
+                    { id: 'p2', blockId: 'b1', asin: 'M1', order: 1, show: { shortMemo: false, longMemo: false, rating: false } }
+                ]
+            }]
+        });
+        const r = await g.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect((html.match(/class="bk-rating"/g) || []).length).toBe(1);
+        expect(html).toContain('aria-label="評価 2/5"');
+    });
+
+    it('wall レイアウトの CSS は .bk-rating も非表示リストに含む (書影以外を隠す既存設計の一貫性)', () => {
+        const css = PublishArticleGenerator.layoutCss('wall');
+        expect(css).toMatch(/\.bk-rating\{display:none\}|\.bk-rating,/);
+    });
+
+    it('色は配色トークンのみ (塗り var(--acc)・空 var(--sub))。直書きの16進色を含まない', async () => {
+        const article = makeArticle({ blocks: [] });
+        const r = await gen.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).toMatch(/\.bk-star-filled\{color:var\(--acc\)\}/);
+        expect(html).toMatch(/\.bk-star-empty\{color:var\(--sub\)\}/);
     });
 });
 

@@ -98,7 +98,7 @@ class PublishArticleStore {
 
     static _normalizeShow(show) {
         const s = show || {};
-        return { shortMemo: !!s.shortMemo, longMemo: !!s.longMemo };
+        return { shortMemo: !!s.shortMemo, longMemo: !!s.longMemo, rating: !!s.rating };
     }
 
     // ブロック列を検証・正規化する (未知 type は落とす・id や配置単位レコードの id/blockId/order を補完)
@@ -316,12 +316,12 @@ class PublishArticleStore {
                 id: blockId, type: 'shelf', shelfId: shelfKey,
                 items: asins.map((asin, i) => ({
                     id: PublishArticleStore._newId('pl'), blockId, asin, order: i,
-                    show: { shortMemo: false, longMemo: false }
+                    show: { shortMemo: false, longMemo: false, rating: false }
                 }))
             });
         }
         for (const asin of (sel.books || [])) {
-            blocks.push({ id: PublishArticleStore._newId('blk'), type: 'book', asin, show: { shortMemo: false, longMemo: false } });
+            blocks.push({ id: PublishArticleStore._newId('blk'), type: 'book', asin, show: { shortMemo: false, longMemo: false, rating: false } });
         }
         return {
             id: PublishArticleStore._newId('art'),

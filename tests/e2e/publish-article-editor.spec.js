@@ -8,7 +8,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
 
-async function bootApp(page) {
+// initialArticlesJSON: page.reload() 後の再接続を模すため articles.json 相当の初期値を注入したい
+// ときだけ渡す (イシュー#135「オン→保存→リロード→オンのまま」検証、bootApp の Map は reload で消えるため
+// 前回の writeJSON 結果を Node 側で退避→再注入する必要がある)。
+async function bootApp(page, initialArticlesJSON) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
@@ -23,8 +26,9 @@ async function bootApp(page) {
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     // LocalFSAdapter は実 dirHandle を持たない (picker 未操作) ため、記事ストアの読み書きだけ
     // メモリ上のマップへ差し替える (userData/library とは独立した private/publish/articles.json のみ対象)。
-    await page.evaluate(() => {
+    await page.evaluate((initial) => {
         const mem = new Map();
+        if (initial) mem.set('private/publish/articles.json', initial);
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
@@ -32,7 +36,7 @@ async function bootApp(page) {
         // LocalFS のまま記事ストアだけメモリ差替で動かす都合上、実際には「未接続」判定になってしまうため、
         // 接続済み相当にモックする (bootAppForPublish 等で既に使われているのと同じパターン)。
         window.bookshelf._isSyncReady = () => true;
-    });
+    }, initialArticlesJSON || null);
     return errors;
 }
 
@@ -192,6 +196,25 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         expect(errors).toEqual([]);
     });
 
+    test('星(評価)トグルをオンにするとプレビューに ★★★☆☆ と aria-label が反映される (イシュー#135)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
+
+        await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
+
+        await page.click('#art-preview');
+        await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        expect(srcdoc).toContain('class="bk-rating"');
+        expect(srcdoc).toContain('aria-label="評価 5/5"');
+        expect(srcdoc).not.toContain('生成できませんでした');
+        expect(errors).toEqual([]);
+    });
+
     test('未保存の編集 (自動保存の debounce 中) もプレビューへ反映される', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
@@ -288,18 +311,21 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.goto('/index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
-        await page.evaluate((library) => {
+        await page.evaluate(([library, notes]) => {
             const mem = new Map();
             // export() は state を渡さず app.storage.loadAll() を使う実経路なので、蔵書データも仕込む
+            // (notes.json も渡さないと build() 側の評価/短文メモが読めず、localStorage の userData とは
+            // 別経路のため揃わない・イシュー#135 で星の生成HTML検証時に判明)。
             mem.set('private/library.json', library);
             mem.set('private/bookshelves.json', { bookshelves: [{ internalId: 'fixall001', slug: 'all', name: 'すべて', isSpecial: true }] });
             mem.set('private/bookshelves/all.json', { books: library.books.map(b => b.asin) });
+            mem.set('private/notes.json', { notes });
             const adapter = window.bookshelf.storage.adapter;
             adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
             adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
             window.bookshelf.flushSync = async () => {};
             window.bookshelf._isSyncReady = () => true;
-        }, JSON.parse(fixtureLibrary));
+        }, [JSON.parse(fixtureLibrary), JSON.parse(fixtureUserData).notes]);
         return { errors, hubCaptured };
     }
 
@@ -339,6 +365,29 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // console.error が残る (イシュー#104)。ここで一緒に出して真因を一発で追えるようにする。
         expect(article.lastBuiltAt, `lastBuiltAt is falsy. console errors: ${JSON.stringify(errors)}`).toBeTruthy();
         await expect(page.locator('#art-unpublish')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    test('星(評価)トグルをオンにすると生成HTMLに★★★☆☆とaria-labelが含まれる (イシュー#135)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '評価つき記事');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
+
+        await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        const articleHtml = hubCaptured.files.find(f => f.path !== 'index.html').content;
+        expect(articleHtml).toContain('class="bk-rating"');
+        expect(articleHtml).toContain('aria-label="評価 5/5"');
         expect(errors).toEqual([]);
     });
 
@@ -1184,6 +1233,82 @@ test.describe('記事エディタ: 短/長トグルのツールチップ タッ�
         // 一定時間後に自動で消える (タッチには hover/focusout に相当する「離れる」操作が無いため)
         await expect(tip).toBeHidden({ timeout: 4000 });
 
+        expect(errors).toEqual([]);
+    });
+});
+
+// 星(評価)トグル: 短文/長文メモと同じ仕組みに show.rating を乗せた (イシュー#135)。
+test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () => {
+    async function addShelfWithBooks(page, n) {
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+        const count = Math.min(n, await drawerItems.count());
+        for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+    }
+
+    test('アイテムの星トグルはオン→保存→リロード→オンのまま (articles.json 永続化)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 1);
+
+        const ratingToggle = page.locator('.art-item-show-toggle[data-show-key="rating"]').first();
+        await expect(ratingToggle).not.toHaveClass(/is-on/);
+        await ratingToggle.click();
+        await expect(ratingToggle).toHaveClass(/is-on/);
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        // articles.json 相当の書込結果を退避し、reload 後の新しい adapter へ再注入する
+        // (bootApp の Map はブラウザコンテキストごと消えるため、reload では自動的に持ち越されない)。
+        const persisted = await page.evaluate(() => window.bookshelf.storage.adapter.readJSON('private/publish/articles.json'));
+        expect(persisted).toBeTruthy();
+
+        const errors2 = await bootApp(page, persisted);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('.pp-row')).toHaveCount(1);
+        await page.locator('.pp-row [data-act="edit"]').first().click();
+
+        const ratingToggleAfter = page.locator('.art-item-show-toggle[data-show-key="rating"]').first();
+        await expect(ratingToggleAfter).toHaveClass(/is-on/);
+        await expect(ratingToggleAfter).toHaveAttribute('aria-pressed', 'true');
+        expect(errors).toEqual([]);
+        expect(errors2).toEqual([]);
+    });
+
+    test('ブロック単位の星トグルも同じ操作感でオン/オフでき、短文/長文メモと並ぶ', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+
+        const toggles = page.locator('.art-book-show-toggle');
+        await expect(toggles).toHaveCount(3);
+        const ratingToggle = page.locator('.art-book-show-toggle[data-show-key="rating"]');
+        await expect(ratingToggle).toHaveText('評価');
+        await expect(ratingToggle).not.toHaveClass(/is-on/);
+        await ratingToggle.click();
+        await expect(ratingToggle).toHaveClass(/is-on/);
+        expect(errors).toEqual([]);
+    });
+
+    test('一括操作セレクトに評価の表示/非表示が6択目として入り、選択した本にだけ適用される', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 2);
+
+        await page.locator('.art-item-check').first().click();
+        const options = await page.locator('.art-sel-show-sel option').allTextContents();
+        expect(options).toEqual(['表示の一括変更…', '短文メモを表示', '短文メモを隠す', '長文メモを表示', '長文メモを隠す', '評価を表示', '評価を隠す']);
+
+        await page.locator('.art-sel-show-sel').selectOption('rating:show');
+        await expect(page.locator('.toast')).toContainText('1冊に適用しました');
+
+        const shows = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => !!(it.show && it.show.rating)));
+        expect(shows).toEqual([true, false]);
         expect(errors).toEqual([]);
     });
 });

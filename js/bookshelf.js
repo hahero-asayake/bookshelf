@@ -8174,7 +8174,7 @@ class VirtualBookshelf {
             const title = book ? book.title : b.asin;
             const author = book ? (book.authors || '') : '';
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
-            const show = b.show || { shortMemo: false, longMemo: false };
+            const show = b.show || { shortMemo: false, longMemo: false, rating: false };
             return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
                 <div class="art-block-bar"><span class="art-block-kind">本</span>${barCommon}</div>
                 <div class="art-block-body art-block-book-body">
@@ -8185,6 +8185,7 @@ class VirtualBookshelf {
                         <div class="art-shelf-item-toggles">
                             <button type="button" class="art-chip-toggle art-book-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo">短文メモ</button>
                             <button type="button" class="art-chip-toggle art-book-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo">長文メモ</button>
+                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating">評価</button>
                         </div>
                     </div>
                 </div>
@@ -8206,7 +8207,7 @@ class VirtualBookshelf {
     _artSnapshotBulk(blockId, block) {
         this._artBulkUndo = {
             blockId,
-            items: (block.items || []).map(it => ({ id: it.id, order: it.order, show: { ...(it.show || { shortMemo: false, longMemo: false }) } }))
+            items: (block.items || []).map(it => ({ id: it.id, order: it.order, show: { ...(it.show || { shortMemo: false, longMemo: false, rating: false }) } }))
         };
     }
 
@@ -8253,13 +8254,14 @@ class VirtualBookshelf {
         </span>`;
         const shortLabel = density === 'compact' ? '短' : '短文';
         const longLabel = density === 'compact' ? '長' : '長文';
+        const ratingLabel = density === 'compact' ? '評' : '評価';
         const sel = this._artShelfSelSet(b.id);
         for (const id of [...sel]) { if (!items.some(it => it.id === id)) sel.delete(id); }
         const itemsHtml = items.map((it, i) => {
             const book = this.books.find(x => x.asin === it.asin);
             const title = book ? book.title : it.asin;
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
-            const show = it.show || { shortMemo: false, longMemo: false };
+            const show = it.show || { shortMemo: false, longMemo: false, rating: false };
             const checked = sel.has(it.id);
             return `<div class="art-shelf-item${checked ? ' is-selected' : ''}" data-item-id="${esc(it.id)}">
                 <input type="checkbox" class="art-item-check" aria-label="${esc(title)}を選択"${checked ? ' checked' : ''}>
@@ -8269,6 +8271,7 @@ class VirtualBookshelf {
                 <div class="art-shelf-item-toggles">
                     <button type="button" class="art-icon-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.shortMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${shortLabel}</button>
                     <button type="button" class="art-icon-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.longMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${longLabel}</button>
+                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating" data-asin="${esc(it.asin)}" aria-pressed="${show.rating ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${ratingLabel}</button>
                 </div>
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
@@ -8288,11 +8291,13 @@ class VirtualBookshelf {
                     <span>${selCount}冊を選択中</span>
                 </label>
                 <select class="art-sel-show-sel">
-                    <option value="">メモの表示…</option>
+                    <option value="">表示の一括変更…</option>
                     <option value="shortMemo:show">短文メモを表示</option>
                     <option value="shortMemo:hide">短文メモを隠す</option>
                     <option value="longMemo:show">長文メモを表示</option>
                     <option value="longMemo:hide">長文メモを隠す</option>
+                    <option value="rating:show">評価を表示</option>
+                    <option value="rating:hide">評価を隠す</option>
                 </select>
                 <select class="art-shelf-sort-sel" title="選択した本の並び順を揃える">
                     <option value="">並び順で揃える…</option>
@@ -8365,10 +8370,14 @@ class VirtualBookshelf {
             title = `短文メモを${isOn ? '非表示にする' : '表示する'}`;
             const memo = this.bookshelfManager.resolveMemo(asin);
             body = memo ? memo : '短文メモなし';
-        } else {
+        } else if (key === 'longMemo') {
             title = `長文メモを${isOn ? '非表示にする' : '表示する'}`;
             const rec = this.userData.notes[asin] || {};
             body = rec.hasDetailMemo ? '長文メモあり' : '長文メモなし';
+        } else {
+            title = `評価を${isOn ? '非表示にする' : '表示する'}`;
+            const rating = this.bookshelfManager.resolveRating(asin);
+            body = rating ? `評価: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}` : '評価なし';
         }
         tip.innerHTML = `<div class="art-item-tooltip-title">${esc(title)}</div><div class="art-item-tooltip-body">${esc(body)}</div>`;
         tip.hidden = false;
@@ -8424,7 +8433,7 @@ class VirtualBookshelf {
             el.querySelectorAll('.art-book-show-toggle').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const key = btn.dataset.showKey;
-                    block.show = block.show || { shortMemo: false, longMemo: false };
+                    block.show = block.show || { shortMemo: false, longMemo: false, rating: false };
                     block.show[key] = !block.show[key];
                     this._artRenderBlocks();
                     this._artScheduleSave();
@@ -8467,7 +8476,7 @@ class VirtualBookshelf {
                 const targets = (block.items || []).filter(it => ids.has(it.id));
                 this._artSnapshotBulk(blockId, block);
                 targets.forEach(it => {
-                    it.show = it.show || { shortMemo: false, longMemo: false };
+                    it.show = it.show || { shortMemo: false, longMemo: false, rating: false };
                     it.show[key] = (action === 'show');
                 });
                 this._artRenderBlocks();
@@ -8488,7 +8497,7 @@ class VirtualBookshelf {
                 itemEl.querySelectorAll('.art-item-show-toggle').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const key = btn.dataset.showKey;
-                        item.show = item.show || { shortMemo: false, longMemo: false };
+                        item.show = item.show || { shortMemo: false, longMemo: false, rating: false };
                         item.show[key] = !item.show[key];
                         // タッチ操作 (touchstart→click) はツールチップをタイマーで併表示し続ける設計のため、
                         // click 側では即座に消さない (即座に消すと PC でクリック直後にツールチップだけ消え、
@@ -8605,7 +8614,7 @@ class VirtualBookshelf {
         let newBlock;
         if (type === 'text') newBlock = { id: PublishArticleStore._newId('blk'), type: 'text', markdown: '' };
         else if (type === 'book') {
-            newBlock = { id: PublishArticleStore._newId('blk'), type: 'book', asin: null, show: { shortMemo: false, longMemo: false } };
+            newBlock = { id: PublishArticleStore._newId('blk'), type: 'book', asin: null, show: { shortMemo: false, longMemo: false, rating: false } };
             this._artPendingBookBlockId = newBlock.id;
         } else if (type === 'shelf') {
             newBlock = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
@@ -8962,7 +8971,7 @@ class VirtualBookshelf {
         block.items = block.items || [];
         let order = block.items.length;
         asins.forEach(asin => {
-            block.items.push({ id: PublishArticleStore._newId('pl'), blockId: block.id, asin, order: order++, show: { shortMemo: false, longMemo: false }, addedAt: Date.now() });
+            block.items.push({ id: PublishArticleStore._newId('pl'), blockId: block.id, asin, order: order++, show: { shortMemo: false, longMemo: false, rating: false }, addedAt: Date.now() });
         });
         this._artRenderBlocks();
         this._artRenderDrawer();
@@ -9218,8 +9227,11 @@ class VirtualBookshelf {
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState() });
             const file = result.files.find(f => f.path === 'preview/index.html');
-            if (file) this._artSetPreview(file.content);
-            else this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
+            if (file) {
+                this._artSetPreview(file.content);
+            } else {
+                this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
+            }
         } catch (e) {
             this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishArticleGenerator.esc(e.message)}</p>`);
         }

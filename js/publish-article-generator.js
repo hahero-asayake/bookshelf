@@ -62,6 +62,9 @@ a{color:var(--acc)}
 .bk-cover.cover-ph{display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;font-size:11px;font-weight:600;line-height:1.35;color:var(--sub);overflow:hidden}
 .bk-title{font-size:13px;margin:8px 0 2px;font-weight:700}
 .bk-author{font-size:11px;color:var(--sub)}
+.bk-rating{font-size:13px;margin-top:4px;letter-spacing:.05em}
+.bk-star-filled{color:var(--acc)}
+.bk-star-empty{color:var(--sub)}
 .bk-memo{font-size:12px;margin-top:6px;color:var(--sub);line-height:1.6;white-space:pre-wrap}
 .bk-detail{font-size:12px;margin-top:8px;color:var(--sub);line-height:1.7}
 .bk-detail h2,.bk-detail h3,.bk-detail h4,.bk-detail h5,.bk-detail h6{color:var(--txt);margin:1em 0 .4em;font-size:1em}
@@ -91,20 +94,21 @@ const ARTICLE_LAYOUT_CSS = {
 [data-layout="wall"] .shelf{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}
 [data-layout="wall"] .bk{display:grid;grid-template-areas:"cov"}
 [data-layout="wall"] .bk .bk-cover{grid-area:cov;font-size:9px;border-color:var(--sub);border-radius:2px}
-[data-layout="wall"] .bk .bk-title,[data-layout="wall"] .bk .bk-author,[data-layout="wall"] .bk .bk-memo,[data-layout="wall"] .bk .bk-detail{display:none}
+[data-layout="wall"] .bk .bk-title,[data-layout="wall"] .bk .bk-author,[data-layout="wall"] .bk .bk-rating,[data-layout="wall"] .bk .bk-memo,[data-layout="wall"] .bk .bk-detail{display:none}
 @media(max-width:640px){[data-layout="wall"] .shelf{grid-template-columns:repeat(3,1fr)}}
 `,
     // G: カウントダウン — 番号つき縦リスト。表紙小・メモは引用線つき
     count: `
 [data-layout="count"] .shelf{display:flex;flex-direction:column;counter-reset:n}
 [data-layout="count"] .bk{display:grid;grid-template-columns:66px 66px 1fr;gap:2px 16px;align-content:start;
-  grid-template-areas:"num cov ttl" "num cov auth" "num cov memo";
+  grid-template-areas:"num cov ttl" "num cov auth" "num cov rating" "num cov memo";
   padding:22px 0;border-top:1px solid var(--line)}
 [data-layout="count"] .bk::before{grid-area:num;counter-increment:n;
   content:counter(n,decimal-leading-zero);font-size:44px;line-height:.95;font-weight:800;color:var(--line)}
 [data-layout="count"] .bk .bk-cover{grid-area:cov;align-self:start;font-size:8px}
 [data-layout="count"] .bk .bk-title{grid-area:ttl;font-size:16px;margin:0 0 2px}
 [data-layout="count"] .bk .bk-author{grid-area:auth}
+[data-layout="count"] .bk .bk-rating{grid-area:rating}
 [data-layout="count"] .bk .bk-memo,[data-layout="count"] .bk .bk-detail{grid-area:memo;margin-top:8px;padding-left:11px;border-left:2px solid var(--line)}
 @media(max-width:560px){[data-layout="count"] .bk{grid-template-columns:52px 52px 1fr}}
 `,
@@ -113,11 +117,12 @@ const ARTICLE_LAYOUT_CSS = {
 [data-layout="card"] .article{max-width:860px}
 [data-layout="card"] .blk-text{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 22px;box-shadow:var(--elev)}
 [data-layout="card"] .shelf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-[data-layout="card"] .bk{display:grid;grid-template-areas:"cov" "ttl" "auth" "memo";background:var(--surface);
+[data-layout="card"] .bk{display:grid;grid-template-areas:"cov" "ttl" "auth" "rating" "memo";background:var(--surface);
   border:1px solid var(--line);border-radius:12px;padding:13px;box-shadow:var(--elev)}
 [data-layout="card"] .bk .bk-cover{grid-area:cov;border-radius:7px}
 [data-layout="card"] .bk .bk-title{grid-area:ttl}
 [data-layout="card"] .bk .bk-author{grid-area:auth}
+[data-layout="card"] .bk .bk-rating{grid-area:rating}
 [data-layout="card"] .bk .bk-memo,[data-layout="card"] .bk .bk-detail{grid-area:memo;background:var(--bg);border-radius:7px;padding:7px 9px;margin-top:8px}
 @media(max-width:560px){[data-layout="card"] .shelf{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `
@@ -245,6 +250,12 @@ class PublishArticleGenerator {
             author: (b) => b.authors ? `<p class="bk-author">${esc(b.authors)}</p>` : '',
             shortMemo: (b) => b.shortMemo ? `<p class="bk-memo">${esc(b.shortMemo)}</p>` : '',
             longMemo: (html) => html ? `<div class="bk-detail">${html}</div>` : '',
+            // 星は文字記号 (★U+2605/☆U+2606)。末尾に text presentation selector (U+FE0E) を付け、
+            // 環境依存でカラー絵文字フォントに差し替わる (配色トークンが効かず黒/黄配色で浮く) のを抑止する。
+            // 塗り/空を別 span にして配色トークンで塗り分ける (var(--acc) 塗り・var(--sub) 空)。
+            // 数値は aria-label で伝え、星文字自体は装飾として隠す (スクリーンリーダーが
+            // 「星、星、星、星なし星…」と5個読み上げるのを避ける)。評価0(未評価)は描画しない。
+            rating: (b) => b.rating ? `<p class="bk-rating" aria-label="評価 ${b.rating}/5"><span aria-hidden="true"><span class="bk-star-filled">${'★︎'.repeat(b.rating)}</span><span class="bk-star-empty">${'☆︎'.repeat(5 - b.rating)}</span></span></p>` : '',
             amazon: (b, label) => `<a class="amz" href="${esc(b.amazonUrl)}" target="_blank" rel="nofollow sponsored noopener">${esc(label || 'Amazon で見る')}</a>`
         };
     }
@@ -258,10 +269,13 @@ class PublishArticleGenerator {
         const note = (state.notes && state.notes[asin]) || {};
         // 短文メモ: ALL のみ (2026-06-20: 本棚 override 廃止, ADR-007)。hideMemo は ALL memo の opt-out
         const shortMemo = note.hideMemo ? '' : (note.memo || '');
+        // 評価は ALL のみで本棚スコープを持たない (ADR-007)。短文メモと同じ note から読む。
+        const rating = Number.isInteger(note.rating) && note.rating >= 1 && note.rating <= 5 ? note.rating : 0;
         return {
             asin, title: lib.title || '', authors: lib.authors || '',
             productImage: lib.productImage || '',
             shortMemo,
+            rating,
             detailMemo: '', // 後で async 解決
             _hasDetail: !!(note.hasDetailMemo && !note.hideDetailMemo),
             amazonUrl: this._amazonUrl(effAsin, linkOpts)
@@ -333,6 +347,7 @@ ${h.cover(bookData)}
 <div class="blk-book-body">
 ${h.title(bookData)}
 ${h.author(bookData)}
+${block.show.rating ? h.rating(bookData) : ''}
 ${block.show.shortMemo ? h.shortMemo(bookData) : ''}
 ${h.longMemo(longMemoHtml)}
 ${h.amazon(bookData)}
@@ -352,6 +367,7 @@ ${h.amazon(bookData)}
 ${h.cover(bookData)}
 ${h.title(bookData)}
 ${h.author(bookData)}
+${placement.show.rating ? h.rating(bookData) : ''}
 ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
 ${h.longMemo(longMemoHtml)}
 </div>`;

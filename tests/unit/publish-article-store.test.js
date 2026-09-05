@@ -108,7 +108,7 @@ describe('ブロック列は文章/本/本棚の3種のみ (§11.2)', () => {
 
     it('本ブロックは単一配置なのでブロック自身が show を持つ', async () => {
         const a = await as.create({ title: 'x', blocks: [{ type: 'book', asin: 'B001', show: { shortMemo: true, longMemo: false } }] });
-        expect(a.blocks[0].show).toEqual({ shortMemo: true, longMemo: false });
+        expect(a.blocks[0].show).toEqual({ shortMemo: true, longMemo: false, rating: false });
     });
 
     it('全ブロックに id が補完される', async () => {
@@ -134,8 +134,8 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
         expect(items[0].asin).toBe('B001');
         expect(items[1].asin).toBe('B001');
         // 表示設定の持ち主は「本」ではなく「配置」= 同じ本でも配置ごとに独立して on/off できる
-        expect(items[0].show).toEqual({ shortMemo: false, longMemo: false });
-        expect(items[1].show).toEqual({ shortMemo: true, longMemo: true });
+        expect(items[0].show).toEqual({ shortMemo: false, longMemo: false, rating: false });
+        expect(items[1].show).toEqual({ shortMemo: true, longMemo: true, rating: false });
     });
 
     it('各配置は {id, blockId, asin, order, show} を持ち、blockId は親ブロックを指す', async () => {
@@ -149,7 +149,7 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
             expect(item.blockId).toBe(block.id);
             expect(item.asin).toBeTruthy();
             expect(typeof item.order).toBe('number');
-            expect(item.show).toEqual({ shortMemo: false, longMemo: false });
+            expect(item.show).toEqual({ shortMemo: false, longMemo: false, rating: false });
         }
     });
 
