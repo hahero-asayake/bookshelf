@@ -8810,12 +8810,18 @@ class VirtualBookshelf {
                 btn.setAttribute('aria-expanded', 'false');
             }
         });
+        // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
+        // フェーズ・アプリ起動時に1回だけ登録され必ずこれより先に存在する) がモーダル自体を閉じてしまう
+        // 前に、ポップオーバーだけを閉じて消費する (#art-item-tooltip の Esc ハンドラと同じ理由・CI実行で
+        // 実際に競合し `btn.focus()` が効かない回帰を検出・修正した)。
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape' || pop.hidden) return;
             pop.hidden = true;
             btn.setAttribute('aria-expanded', 'false');
             btn.focus();
-        });
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
     }
 
     _artOnDrawerShelfChange(shelfInternalId) {
