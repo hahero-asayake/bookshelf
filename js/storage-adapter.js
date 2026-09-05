@@ -94,26 +94,30 @@ class StorageAdapter {
     }
 
     /**
-     * fetch() をタイムアウト付きで実行する (イシュー#134)。
+     * fetch() をタイムアウト付きで実行し、レスポンス本文まで読み切って返す (イシュー#134/#143)。
      *
-     * なぜ: GitHubAdapter/HubStorageAdapter の素の fetch() には AbortController が無く、
-     * リモート側が応答を返さない (401/404 のような明確なエラーではなく、単に無応答) 場合、
-     * 呼び出し元の await が無期限に pending のままになる。readBookMemo() 経由でこれが起きると
-     * PublishArticleGenerator.build() 全体が完了せず、記事プレビュー/公開が「生成中…」のまま
-     * 止まって見える (実際にはハングしているだけで例外は出ない)。
+     * なぜ: #134 では Response をそのまま返す fetchWithTimeout を実装したが、これは「ヘッダ受信まで」
+     * しかタイムアウトを保証しない欠陥があった。fetch() の Promise はレスポンスヘッダを受信した時点で
+     * resolve するため、finally の clearTimeout もそこで実行されてしまい、以後どれだけ本文の送信が
+     * 遅延・停止しても abort は発火しない (イシュー#143 で実機再現・特定)。
      *
-     * StorageAdapter の具象クラスは素の fetch() を直接呼ばず、これを経由すること。
+     * このメソッドは「ヘッダ受信から本文読了まで」を1つのタイマーで覆う。加えて、Response を返さず
+     * 本文まで読み切った結果を返すことで、呼び出し側が res.text()/res.json() を無防備に書いて
+     * 同じ穴を再現する余地を構造的に無くす。StorageAdapter の具象クラスは素の fetch() は勿論、
+     * Response を直接扱う実装もせず、これ (または fetchJSON) を経由すること。
      * @param {string} url
      * @param {RequestInit} [init]
      * @param {number} [timeoutMs=10000] 10秒: ハブ/GitHub 双方の通常応答 (概ね数百ms〜2秒) に
      *   対して十分な余裕を持たせつつ、無応答時に「生成中…」が体感で壊れて見えるほど長引かせない値。
-     * @returns {Promise<Response>}
+     * @returns {Promise<{status:number, ok:boolean, statusText:string, headers:Headers, body:string}>}
      */
-    static async fetchWithTimeout(url, init = {}, timeoutMs = 10000) {
+    static async fetchText(url, init = {}, timeoutMs = 10000) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            return await fetch(url, { ...init, signal: controller.signal });
+            const res = await fetch(url, { ...init, signal: controller.signal });
+            const body = await res.text();
+            return { status: res.status, ok: res.ok, statusText: res.statusText, headers: res.headers, body };
         } catch (e) {
             if (e.name === 'AbortError') {
                 throw new Error(`通信がタイムアウトしました (${timeoutMs}ms): ${url}`);
@@ -122,6 +126,21 @@ class StorageAdapter {
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    /**
+     * fetchText の結果を JSON.parse する。本文が空、または JSON として不正な場合は
+     * 例外を投げず json:null を返す (呼び出し側は status/ok で成否判定してから json を使う設計のため、
+     * エラーレスポンスの本文が非JSONでも呼び出し側の分岐を壊さない)。
+     * @returns {Promise<{status, ok, statusText, headers, body, json}>}
+     */
+    static async fetchJSON(url, init = {}, timeoutMs = 10000) {
+        const result = await StorageAdapter.fetchText(url, init, timeoutMs);
+        let json = null;
+        if (result.body) {
+            try { json = JSON.parse(result.body); } catch (_) { /* 呼び出し側は json===null なら body を使う */ }
+        }
+        return { ...result, json };
     }
 }
 

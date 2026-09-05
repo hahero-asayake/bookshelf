@@ -104,17 +104,16 @@ class GitHubAdapter extends StorageAdapter {
 
     async testConnection() {
         const url = `https://api.github.com/repos/${this.owner}/${this.repo}`;
-        const res = await StorageAdapter.fetchWithTimeout(url, { headers: this._headers() });
-        if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed (invalid token)');
-        if (res.status === 404) throw new Error(`Repository not found: ${this.owner}/${this.repo}`);
-        if (!res.ok) {
-            throw new Error(`GitHub API error: ${res.status} ${res.statusText}`);
+        const { status, ok, statusText, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers() });
+        if (status === 401) throw new GitHubAuthError('GitHub authentication failed (invalid token)');
+        if (status === 404) throw new Error(`Repository not found: ${this.owner}/${this.repo}`);
+        if (!ok) {
+            throw new Error(`GitHub API error: ${status} ${statusText}`);
         }
-        const data = await res.json();
         return {
-            defaultBranch: data.default_branch,
-            private: data.private,
-            permissions: data.permissions
+            defaultBranch: json.default_branch,
+            private: json.private,
+            permissions: json.permissions
         };
     }
 
@@ -230,17 +229,15 @@ class GitHubAdapter extends StorageAdapter {
 
         // 1. 現在の branch ref を取得
         const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
-        const refRes = await StorageAdapter.fetchWithTimeout(refUrl, { headers: this._headers() });
-        if (!refRes.ok) throw new Error(await this._ghErr(refRes, `get ref ${this.branch}`));
-        const refData = await refRes.json();
-        const latestCommitSha = refData.object.sha;
+        const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers() });
+        if (!refRes.ok) throw new Error(this._ghErr(refRes, `get ref ${this.branch}`));
+        const latestCommitSha = refRes.json.object.sha;
 
         // 2. 既存 commit の base tree sha
         const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${latestCommitSha}`;
-        const commitRes = await StorageAdapter.fetchWithTimeout(commitUrl, { headers: this._headers() });
-        if (!commitRes.ok) throw new Error(await this._ghErr(commitRes, `get commit ${latestCommitSha}`));
-        const commitData = await commitRes.json();
-        const baseTreeSha = commitData.tree.sha;
+        const commitRes = await StorageAdapter.fetchJSON(commitUrl, { headers: this._headers() });
+        if (!commitRes.ok) throw new Error(this._ghErr(commitRes, `get commit ${latestCommitSha}`));
+        const baseTreeSha = commitRes.json.tree.sha;
 
         // 3. Tree entries 構築 (put = blob 作成, delete = sha:null)
         const treeEntries = [];
@@ -249,7 +246,7 @@ class GitHubAdapter extends StorageAdapter {
             if (e.op === 'delete') {
                 treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: null });
             } else {
-                const blobRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/blobs`, {
+                const blobRes = await StorageAdapter.fetchJSON(`https://api.github.com/repos/${this.owner}/${this.repo}/git/blobs`, {
                     method: 'POST',
                     headers: { ...this._headers(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -257,14 +254,13 @@ class GitHubAdapter extends StorageAdapter {
                         encoding: 'base64'
                     })
                 });
-                if (!blobRes.ok) throw new Error(await this._ghErr(blobRes, `create blob ${e.path}`));
-                const blobData = await blobRes.json();
-                treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: blobData.sha });
+                if (!blobRes.ok) throw new Error(this._ghErr(blobRes, `create blob ${e.path}`));
+                treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: blobRes.json.sha });
             }
         }
 
         // 4. Tree を作成
-        const treeRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/trees`, {
+        const treeRes = await StorageAdapter.fetchJSON(`https://api.github.com/repos/${this.owner}/${this.repo}/git/trees`, {
             method: 'POST',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -272,45 +268,40 @@ class GitHubAdapter extends StorageAdapter {
                 tree: treeEntries
             })
         });
-        if (!treeRes.ok) throw new Error(await this._ghErr(treeRes, 'create tree'));
-        const treeData = await treeRes.json();
+        if (!treeRes.ok) throw new Error(this._ghErr(treeRes, 'create tree'));
 
         // 5. Commit を作成
         const msg = message || `chore(bookshelf): batch update ${batch.length} file(s)`;
-        const newCommitRes = await StorageAdapter.fetchWithTimeout(`https://api.github.com/repos/${this.owner}/${this.repo}/git/commits`, {
+        const newCommitRes = await StorageAdapter.fetchJSON(`https://api.github.com/repos/${this.owner}/${this.repo}/git/commits`, {
             method: 'POST',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: msg,
-                tree: treeData.sha,
+                tree: treeRes.json.sha,
                 parents: [latestCommitSha]
             })
         });
-        if (!newCommitRes.ok) throw new Error(await this._ghErr(newCommitRes, 'create commit'));
-        const newCommitData = await newCommitRes.json();
+        if (!newCommitRes.ok) throw new Error(this._ghErr(newCommitRes, 'create commit'));
 
         // 6. Ref を更新 (force: false = 楽観ロック)
-        const updateRefRes = await StorageAdapter.fetchWithTimeout(refUrl, {
+        const updateRefRes = await StorageAdapter.fetchJSON(refUrl, {
             method: 'PATCH',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sha: newCommitData.sha, force: false })
+            body: JSON.stringify({ sha: newCommitRes.json.sha, force: false })
         });
         if (updateRefRes.status === 422) {
             throw new GitHubConflictError(`Branch ${this.branch} was updated since batch start`, this.branch);
         }
-        if (!updateRefRes.ok) throw new Error(await this._ghErr(updateRefRes, `update ref ${this.branch}`));
+        if (!updateRefRes.ok) throw new Error(this._ghErr(updateRefRes, `update ref ${this.branch}`));
 
         // 書き込み後はキャッシュした sha を全部破棄 (Tree 経由で更新したので個別 sha は古い)
         this._shaCache.clear();
-        return newCommitData.sha;
+        return newCommitRes.json.sha;
     }
 
-    async _ghErr(res, ctx) {
-        let detail = `${res.status} ${res.statusText}`;
-        try {
-            const data = await res.json();
-            if (data && data.message) detail += `: ${data.message}`;
-        } catch (_) {}
+    _ghErr(fetchResult, ctx) {
+        let detail = `${fetchResult.status} ${fetchResult.statusText}`;
+        if (fetchResult.json && fetchResult.json.message) detail += `: ${fetchResult.json.message}`;
         return `${ctx}: ${detail}`;
     }
 
@@ -363,21 +354,21 @@ class GitHubAdapter extends StorageAdapter {
 
     async _getContent(path) {
         const url = `${this._apiUrl(path)}?ref=${encodeURIComponent(this.branch)}`;
-        const res = await StorageAdapter.fetchWithTimeout(url, { headers: this._headers() });
-        if (res.status === 404) return null;
-        if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
-        if (res.status === 403) {
-            const remaining = res.headers.get('X-RateLimit-Remaining');
+        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers() });
+        if (status === 404) return null;
+        if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
+        if (status === 403) {
+            const remaining = headers.get('X-RateLimit-Remaining');
             if (remaining === '0') {
-                const reset = res.headers.get('X-RateLimit-Reset');
+                const reset = headers.get('X-RateLimit-Reset');
                 throw new Error(`GitHub rate limit exceeded. Reset at ${new Date(Number(reset) * 1000).toLocaleString()}`);
             }
-            throw new Error(`GitHub API forbidden: ${res.status} ${res.statusText}`);
+            throw new Error(`GitHub API forbidden: ${status} ${statusText}`);
         }
-        if (!res.ok) {
-            throw new Error(`GitHub API error: ${res.status} ${res.statusText} on GET ${path}`);
+        if (!ok) {
+            throw new Error(`GitHub API error: ${status} ${statusText} on GET ${path}`);
         }
-        return await res.json();
+        return json;
     }
 
     async _putContent(path, content, { sha = null, message = null } = {}) {
@@ -389,25 +380,22 @@ class GitHubAdapter extends StorageAdapter {
         };
         if (sha) body.sha = sha;
 
-        const res = await StorageAdapter.fetchWithTimeout(url, {
+        const { status, ok, statusText, body: text, json } = await StorageAdapter.fetchJSON(url, {
             method: 'PUT',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
-        if (res.status === 409) {
+        if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
+        if (status === 409) {
             throw new GitHubConflictError(`sha conflict on ${path}`, path);
         }
-        if (res.status === 422) {
-            const detail = await res.text().catch(() => '');
-            throw new GitHubValidationError(`GitHub validation error on PUT ${path}: ${detail}`, path, detail);
+        if (status === 422) {
+            throw new GitHubValidationError(`GitHub validation error on PUT ${path}: ${text}`, path, text);
         }
-        if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            throw new Error(`GitHub API error: ${res.status} ${res.statusText} on PUT ${path}\n${text}`);
+        if (!ok) {
+            throw new Error(`GitHub API error: ${status} ${statusText} on PUT ${path}\n${text}`);
         }
-        const data = await res.json();
-        return data.content && data.content.sha;
+        return json.content && json.content.sha;
     }
 
     async _deleteContent(path, sha) {
@@ -417,23 +405,21 @@ class GitHubAdapter extends StorageAdapter {
             sha,
             branch: this.branch
         };
-        const res = await StorageAdapter.fetchWithTimeout(url, {
+        const { status, ok, statusText, body: text } = await StorageAdapter.fetchJSON(url, {
             method: 'DELETE',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        if (res.status === 404) return;
-        if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
-        if (res.status === 409) {
+        if (status === 404) return;
+        if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
+        if (status === 409) {
             throw new GitHubConflictError(`sha conflict on delete ${path}`, path);
         }
-        if (res.status === 422) {
-            const detail = await res.text().catch(() => '');
-            throw new GitHubValidationError(`GitHub validation error on DELETE ${path}: ${detail}`, path, detail);
+        if (status === 422) {
+            throw new GitHubValidationError(`GitHub validation error on DELETE ${path}: ${text}`, path, text);
         }
-        if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            throw new Error(`GitHub API error: ${res.status} ${res.statusText} on DELETE ${path}\n${text}`);
+        if (!ok) {
+            throw new Error(`GitHub API error: ${status} ${statusText} on DELETE ${path}\n${text}`);
         }
     }
 

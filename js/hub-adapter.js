@@ -84,7 +84,7 @@ class HubStorageAdapter extends StorageAdapter {
     async fileExists(path) {
         const res = await this._fetch('GET', this._dataUrl(path), { method: 'HEAD' });
         if (res.status === 404) return false;
-        if (!res.ok) throw await this._err(res, `HEAD ${path}`);
+        if (!res.ok) throw this._err(res, `HEAD ${path}`);
         const etag = res.headers.get('ETag');
         if (etag) this._etagCache.set(path, etag);
         return true;
@@ -93,7 +93,7 @@ class HubStorageAdapter extends StorageAdapter {
     async deleteFile(path) {
         const res = await this._fetch('DELETE', this._dataUrl(path));
         if (res.status === 404) { this._etagCache.delete(path); return; }
-        if (!res.ok) throw await this._err(res, `DELETE ${path}`);
+        if (!res.ok) throw this._err(res, `DELETE ${path}`);
         this._etagCache.delete(path);
     }
 
@@ -140,7 +140,7 @@ class HubStorageAdapter extends StorageAdapter {
         if (res.status === 409 || res.status === 412) {
             throw new HubConflictError('batch conflict on hub (data changed since read)', null);
         }
-        if (!res.ok) throw await this._err(res, 'POST data/batch');
+        if (!res.ok) throw this._err(res, 'POST data/batch');
         // Tree 相当の一括更新後は ETag キャッシュを破棄 (個別 ETag は古い)
         this._etagCache.clear();
         return true;
@@ -166,8 +166,8 @@ class HubStorageAdapter extends StorageAdapter {
         if (res.status === 413) throw new HubQuotaError('ハブの保存容量がいっぱいで公開できません。不要なデータを減らすか、Plus へのアップグレードをご検討ください。');
         if (res.status === 429) throw new Error('短時間に操作が集中しました。少し時間をおいてから、もう一度公開してください。');
         if (res.status >= 500) throw new Error('ハブ側で一時的なエラーが発生しました。時間をおいて再試行してください。');
-        if (!res.ok) throw await this._err(res, 'POST publish');
-        return await res.json();
+        if (!res.ok) throw this._err(res, 'POST publish');
+        return res.json;
     }
 
     // ===== 内部 =====
@@ -175,10 +175,10 @@ class HubStorageAdapter extends StorageAdapter {
     async _read(path) {
         const res = await this._fetch('GET', this._dataUrl(path));
         if (res.status === 404) return null;
-        if (!res.ok) throw await this._err(res, `GET ${path}`);
+        if (!res.ok) throw this._err(res, `GET ${path}`);
         const etag = res.headers.get('ETag');
         if (etag) this._etagCache.set(path, etag);
-        return await res.text();
+        return res.body;
     }
 
     async _write(path, text) {
@@ -190,7 +190,7 @@ class HubStorageAdapter extends StorageAdapter {
                 etag = head.headers.get('ETag') || undefined;
                 if (etag) this._etagCache.set(path, etag);
             } else if (head.status !== 404) {
-                throw await this._err(head, `HEAD ${path}`);
+                throw this._err(head, `HEAD ${path}`);
             }
         }
         const headers = { 'Content-Type': 'text/plain; charset=utf-8' };
@@ -198,7 +198,7 @@ class HubStorageAdapter extends StorageAdapter {
         const res = await this._fetch('PUT', this._dataUrl(path), { method: 'PUT', headers, body: text });
         if (res.status === 412) throw new HubConflictError(`etag conflict on ${path}`, path);
         if (res.status === 413) throw new HubQuotaError('ハブの保存容量上限に達しました');
-        if (!res.ok) throw await this._err(res, `PUT ${path}`);
+        if (!res.ok) throw this._err(res, `PUT ${path}`);
         const newEtag = res.headers.get('ETag');
         if (newEtag) this._etagCache.set(path, newEtag); else this._etagCache.delete(path);
     }
@@ -206,8 +206,8 @@ class HubStorageAdapter extends StorageAdapter {
     async _list(dirPath) {
         const res = await this._fetch('GET', `${this._dataUrl(dirPath)}?list=1`);
         if (res.status === 404) return null;
-        if (!res.ok) throw await this._err(res, `LIST ${dirPath}`);
-        return await res.json();
+        if (!res.ok) throw this._err(res, `LIST ${dirPath}`);
+        return res.json;
     }
 
     // path の正規化 + 検証 (パストラバーサル拒否)
@@ -235,14 +235,14 @@ class HubStorageAdapter extends StorageAdapter {
     async _fetch(method, url, init = {}) {
         const key = await this._key();
         const headers = { ...(init.headers || {}), 'Authorization': `Bearer ${key}` };
-        const res = await StorageAdapter.fetchWithTimeout(url, { method: init.method || method, headers, body: init.body });
+        const res = await StorageAdapter.fetchJSON(url, { method: init.method || method, headers, body: init.body });
         if (res.status === 401) throw new HubAuthError('Asayake ハブの認証が失効しました。再接続してください');
         return res;
     }
 
-    async _err(res, ctx) {
+    _err(res, ctx) {
         let detail = `${res.status} ${res.statusText}`;
-        try { const t = await res.text(); if (t) detail += `: ${t.slice(0, 200)}`; } catch (_) {}
+        if (res.body) detail += `: ${res.body.slice(0, 200)}`;
         return new Error(`Hub API error (${ctx}): ${detail}`);
     }
 }
