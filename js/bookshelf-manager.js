@@ -73,6 +73,17 @@ class BookshelfManager {
         return result;
     }
 
+    // 別階層に同名本棚を作れる (ADR-008「子⊆親」) ため、名前だけでは区別できない。
+    // 「親 / 子」のパス表記を返す (root→自身の順、区切りは sep)。ALL 等の特殊本棚は parent を持たないため自身の name のみ。
+    getPathLabel(internalId, sep = ' / ') {
+        const shelf = this.getById(internalId);
+        if (!shelf) return '';
+        // ALL (isSpecial) はルート直下の暗黙の親であり、パス表記には出さない (ドロワー等の既存表示と同じ扱い)。
+        const ancestors = this.getAncestors(internalId).filter(b => !b.isSpecial); // 近い順 (親→祖父母→…)
+        const chain = ancestors.slice().reverse().concat(shelf); // root→…→自身
+        return chain.map(b => b.name).join(sep);
+    }
+
     // 循環参照チェック: candidateParent が internalId の子孫でないこと
     canSetParent(internalId, candidateParentId) {
         if (internalId === candidateParentId) return false;

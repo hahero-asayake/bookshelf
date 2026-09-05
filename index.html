@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026090501">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026090502">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -819,12 +819,25 @@
                     <!-- 本の引き出し -->
                     <div class="art-side" id="art-drawer">
                         <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span></h3>
-                        <select id="art-drawer-shelf" class="sel art-drawer-shelf-sel" title="本棚"></select>
+                        <span class="popover-host art-drawer-shelf-host">
+                            <button type="button" id="art-drawer-shelf-btn" class="art-drawer-shelf-btn" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="art-drawer-shelf-icon" id="art-drawer-shelf-icon"></span>
+                                <span class="art-drawer-shelf-label" id="art-drawer-shelf-label"></span>
+                                <span class="h-icon art-drawer-shelf-chevron" data-icon="chevron-down" data-icon-size="12"></span>
+                            </button>
+                            <div class="popover art-drawer-shelf-popover" id="art-drawer-shelf-popover" hidden role="listbox" aria-label="本棚を選ぶ">
+                                <div id="art-drawer-shelf-list" class="bookshelf-popover-list"></div>
+                            </div>
+                        </span>
+                        <div id="art-drawer-target-hint" class="art-drawer-target-hint"></div>
                         <input type="search" id="art-drawer-search" class="art-drawer-search" placeholder="タイトル/著者で検索…" autocomplete="off">
-                        <div class="pp-hint art-drawer-note">同じ本も何度でも配置可</div>
+                        <button type="button" id="art-drawer-add-all" class="btn btn-secondary btn-small art-drawer-add-all" hidden></button>
                         <div id="art-drawer-list" class="art-drawer-list"></div>
                     </div>
                 </div>
+
+                <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
+                <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
 
                 <div class="form-actions pp-edit-actions">
                     <span class="art-tag-label">レイアウト</span>
@@ -1180,7 +1193,7 @@
     <script src="js/hub-auth.js?v=2026090501"></script>
     <script src="js/storage.js?v=2026081801"></script>
     <script src="js/book-manager.js?v=2026081803"></script>
-    <script src="js/bookshelf-manager.js?v=2026061508"></script>
+    <script src="js/bookshelf-manager.js?v=2026090501"></script>
     <script src="js/publish-article-store.js?v=2026090501"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script src="js/publish-article-generator.js?v=2026090501"></script>
@@ -1190,7 +1203,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026090502"></script>
+    <script src="js/bookshelf.js?v=2026090503"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

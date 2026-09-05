@@ -701,12 +701,13 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(errors).toEqual([]);
     });
 
-    test('右ペインの説明文が短い定型文になっている', async ({ page }) => {
+    // 「同じ本も何度でも配置可」の注記は不要 (本人指摘) のため削除した (イシュー#133)。
+    test('「同じ本も何度でも配置可」の注記は表示されない (イシュー#133)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        const note = await page.locator('.art-drawer-note').textContent();
-        expect(note.length).toBeLessThanOrEqual(20);
+        await expect(page.locator('.art-drawer-note')).toHaveCount(0);
+        await expect(page.locator('#art-drawer')).not.toContainText('同じ本も何度でも配置可');
         expect(errors).toEqual([]);
     });
 
@@ -760,24 +761,31 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
 });
 
 // 引き出しに本棚セレクタを付け、all固定だった引き出しを本棚で絞れるようにした (イシュー#99)。
-// 設計: #bookshelf-parent と同じフラットな select・ALL先頭固定/既定・検索と直列合成・配置済みブロックは無影響。
-test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュー#99)', () => {
+// #133 で <select> からボタン+ポップオーバー (アイコン+パス表記) へ置換。
+// 設計: 階層フラット列挙・ALL先頭固定/既定・検索と直列合成・配置済みブロックは無影響。
+test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュー#99・#133)', () => {
+    async function pickDrawerShelf(page, internalId) {
+        await page.click('#art-drawer-shelf-btn');
+        await page.locator(`#art-drawer-shelf-popover [data-shelf-internal="${internalId}"]`).click();
+    }
+
     test('本棚を選ぶとその本だけが並び、検索と併用でき、配置できる。本棚を切り替えても配置済みブロックは変化しない', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
-        const shelfSel = page.locator('#art-drawer-shelf');
+        const shelfLabel = page.locator('#art-drawer-shelf-label');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const search = page.locator('#art-drawer-search');
 
         // 既定は all (5冊, 既存の使い方を変えない)
-        await expect(shelfSel).toHaveValue('fixall001');
+        await expect(shelfLabel).toHaveText('すべての本');
         await expect(drawerItems).toHaveCount(5);
 
         // 本棚Bを選ぶ→Bの本だけが並ぶ (テスト本棚=3冊)
-        await shelfSel.selectOption('fixshelf01');
+        await pickDrawerShelf(page, 'fixshelf01');
         await expect(drawerItems).toHaveCount(3);
+        await expect(shelfLabel).toHaveText('テスト本棚');
 
         // 検索と併用できる (本棚内でさらにタイトルで絞る)
         await search.fill('3');
@@ -793,7 +801,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
 
         // 本棚を切り替えても、既に配置済みのブロックは変化しない
         await search.fill('');
-        await shelfSel.selectOption('fixall001');
+        await pickDrawerShelf(page, 'fixall001');
         await expect(drawerItems).toHaveCount(5);
         await expect(page.locator('.art-shelf-item')).toHaveCount(1);
         await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
@@ -802,15 +810,49 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         expect(errors).toEqual([]);
     });
 
-    test('本棚セレクタは #bookshelf-parent と同じ型 (フラットな select) で、ALL が先頭かつ既定値', async ({ page }) => {
+    test('本棚セレクタはアイコン付きカスタムリストで、ALL が先頭かつ既定選択', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
-        const options = await page.locator('#art-drawer-shelf option').allTextContents();
-        expect(options[0]).toBe('すべての本');
-        expect(options).toContain('テスト本棚');
-        await expect(page.locator('#art-drawer-shelf')).toHaveValue('fixall001');
+        await expect(page.locator('#art-drawer-shelf-label')).toHaveText('すべての本');
+        await page.click('#art-drawer-shelf-btn');
+        const items = page.locator('#art-drawer-shelf-popover .art-drawer-shelf-item');
+        const labels = await items.allTextContents();
+        expect(labels[0]).toContain('すべての本');
+        expect(labels.some(t => t.includes('テスト本棚'))).toBe(true);
+        await expect(page.locator('#art-drawer-shelf-popover [data-shelf-internal="fixall001"]')).toHaveAttribute('aria-selected', 'true');
+        // アイコンが乗っている (項目2)
+        await expect(items.first().locator('.bs-popover-icon')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    test('キーボードで開閉・選択できる: トリガーへ Tab → Enter で開く → Tab → Enter で選択 → Esc で閉じてフォーカスが戻る', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        const btn = page.locator('#art-drawer-shelf-btn');
+        await btn.focus();
+        await expect(btn).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#art-drawer-shelf-popover')).toBeVisible();
+        await expect(btn).toHaveAttribute('aria-expanded', 'true');
+
+        // Tab で1件目 (すべての本) → 2件目 (テスト本棚) の順にフォーカス移動し Enter で選択
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#art-drawer-shelf-label')).toHaveText('テスト本棚');
+        await expect(page.locator('#art-drawer-list .art-drawer-item')).toHaveCount(3);
+
+        // Esc で閉じてトリガーへフォーカスが戻る
+        await page.click('#art-drawer-shelf-btn');
+        await expect(page.locator('#art-drawer-shelf-popover')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#art-drawer-shelf-popover')).toBeHidden();
+        await expect(btn).toBeFocused();
+
         expect(errors).toEqual([]);
     });
 });
@@ -929,6 +971,219 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         expect(on.bottomWidth).toBeGreaterThan(0);
         // 色以外の手掛かり: on/off で下線の色そのものが切り替わっている (幅は常時2pxで固定・色で on/off を示す実装)
         expect(on.bottomColor).not.toBe(off.bottomColor);
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#133 項目3/5: 追加先ブロックの明示 (Nielsen #1 システム状態の可視性) とまとめて追加+歯止め。
+test.describe('記事エディタ: 追加先ブロックの明示・まとめて追加 (イシュー#133)', () => {
+    test('ブロックA作成→A強調→引き出しから追加→Aに入る。ブロックB作成→B強調に切替→引き出しから追加→Bに入る（Aは変化しない）', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        // ブロックA作成: 追加直後は自動的に追加先としてアクティブになる
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const blockA = page.locator('.art-block').nth(0);
+        await expect(blockA).toHaveClass(/is-add-target/);
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+
+        // 引き出しから1冊クリック→Aに入る
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await expect(blockA.locator('.art-shelf-item')).toHaveCount(1);
+
+        // ブロックB作成 (末尾へ追加): 自動的にBがアクティブへ切り替わり、Aの強調は外れる
+        // .art-add-menu-item は先頭/末尾の各追加メニューに存在するため、開いた .art-add 内でスコープする
+        // (グローバルな .first() だと閉じたままの先頭メニュー側にマッチしてクリックできない)。
+        const lastAdd = page.locator('.art-add').last();
+        await lastAdd.locator('.art-add-btn').click();
+        await lastAdd.locator('.art-add-menu-item[data-block-type="shelf"]').click();
+        const blockB = page.locator('.art-block').nth(1);
+        await expect(blockB).toHaveClass(/is-add-target/);
+        await expect(blockA).not.toHaveClass(/is-add-target/);
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック2');
+
+        // 引き出しから1冊クリック→Bに入る (Aは変化しない)
+        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
+        await expect(blockB.locator('.art-shelf-item')).toHaveCount(1);
+        await expect(blockA.locator('.art-shelf-item')).toHaveCount(1);
+
+        // ブロックAをクリック→Aが再びアクティブになる (画面と実際の追加先が一致する)
+        await blockA.click();
+        await expect(blockA).toHaveClass(/is-add-target/);
+        await expect(blockB).not.toHaveClass(/is-add-target/);
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+        await page.locator('#art-drawer-list .art-drawer-item').nth(2).click();
+        await expect(blockA.locator('.art-shelf-item')).toHaveCount(2);
+        await expect(blockB.locator('.art-shelf-item')).toHaveCount(1);
+
+        expect(errors).toEqual([]);
+    });
+
+    test('まとめて追加: 検索で絞り込んだ状態は絞り込んだ分だけ追加され、閾値未満は確認ダイアログを挟まない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        await page.locator('#art-drawer-search').fill('3');
+        await expect(page.locator('#art-drawer-list .art-drawer-item')).toHaveCount(1);
+        const addAllBtn = page.locator('#art-drawer-add-all');
+        await expect(addAllBtn).toContainText('表示中の1冊を追加');
+
+        await addAllBtn.click();
+        await expect(page.locator('.cfm-box')).toHaveCount(0);
+        await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+        await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
+
+        // 絞り込みを解除すると「すべての本」5冊が対象になる (閾値未満のためここも確認なし)
+        await page.locator('#art-drawer-search').fill('');
+        await expect(addAllBtn).toContainText('表示中の5冊を追加');
+
+        expect(errors).toEqual([]);
+    });
+
+    test('まとめて追加: 実データ相当(800冊)で閾値(50冊)超は確認ダイアログが出て、キャンセルなら追加されずOKなら全件追加される', async ({ page }) => {
+        const errors = await bootAppWithManyBooks(page, 800);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        const addAllBtn = page.locator('#art-drawer-add-all');
+        await expect(addAllBtn).toContainText('表示中の800冊を追加');
+
+        // キャンセル: 追加されない
+        await addAllBtn.click();
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await expect(page.locator('.cfm-message')).toContainText('800');
+        await page.locator('.cfm-cancel').click();
+        await expect(page.locator('.cfm-box')).toHaveCount(0);
+        await expect(page.locator('.art-shelf-item')).toHaveCount(0);
+
+        // OK: 表示中の800冊が全件追加される
+        await addAllBtn.click();
+        await page.locator('.cfm-ok').click();
+        await expect(page.locator('.art-shelf-item')).toHaveCount(800, { timeout: 15000 });
+
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#133 項目6: 短/長トグルが何の話か分からない (本人指摘) への説明+メモ内容。
+// hover-only は使えない (ui-standards/ux-heuristics) ため、フォーカス/タッチでも同じ内容に到達できることを検証する。
+test.describe('記事エディタ: 短/長トグルの説明+メモ内容 (イシュー#133)', () => {
+    async function addShelfWithBooks(page, n) {
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+        const count = Math.min(n, await drawerItems.count());
+        for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+    }
+
+    test('キーボードフォーカスでツールチップが表示され、実際のメモ内容が入る。Escで閉じる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 2); // fixture: B000000001=メモ無, B000000002=memo:"テストメモ"
+
+        const item2 = page.locator('.art-shelf-item').nth(1); // B000000002
+        const shortToggle = item2.locator('.art-item-show-toggle[data-show-key="shortMemo"]');
+        await expect(shortToggle).toHaveAttribute('aria-describedby', 'art-item-tooltip');
+
+        await shortToggle.focus();
+        const tip = page.locator('#art-item-tooltip');
+        await expect(tip).toBeVisible();
+        await expect(tip).toContainText('短文メモを表示する');
+        await expect(tip).toContainText('テストメモ');
+
+        // Esc で閉じる (title 属性だけでなく、フォーカス経由でも同じ内容に到達できたことの確認込み)
+        await page.keyboard.press('Escape');
+        await expect(tip).toBeHidden();
+
+        // 長トグル (このメモはメモ内容なし=hasDetailMemo 無し) にフォーカス → 「長文メモなし」
+        const longToggle = item2.locator('.art-item-show-toggle[data-show-key="longMemo"]');
+        await longToggle.focus();
+        await expect(tip).toBeVisible();
+        await expect(tip).toContainText('長文メモを表示する');
+        await expect(tip).toContainText('長文メモなし');
+
+        // blur でも消える (フォーカスが外れたら閉じる)
+        await longToggle.blur();
+        await expect(tip).toBeHidden();
+
+        expect(errors).toEqual([]);
+    });
+
+    test('短文メモが空の本は「短文メモなし」、長文メモありの本は「長文メモあり」と出る', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 1); // B000000001 = 短文メモ無
+
+        // fixture に長文メモありのケースが無いため hasDetailMemo を動的付与
+        await page.evaluate(() => {
+            const notes = window.bookshelf.userData.notes;
+            notes['B000000001'] = { ...(notes['B000000001'] || {}), hasDetailMemo: true };
+        });
+
+        const item = page.locator('.art-shelf-item').first();
+        const tip = page.locator('#art-item-tooltip');
+
+        await item.locator('.art-item-show-toggle[data-show-key="shortMemo"]').focus();
+        await expect(tip).toContainText('短文メモなし');
+
+        await item.locator('.art-item-show-toggle[data-show-key="longMemo"]').focus();
+        await expect(tip).toContainText('長文メモあり');
+
+        expect(errors).toEqual([]);
+    });
+
+    test('ホバーでもツールチップが表示される (フォーカス到達経路と同じ内容)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addShelfWithBooks(page, 2);
+
+        const shortToggle = page.locator('.art-shelf-item').nth(1).locator('.art-item-show-toggle[data-show-key="shortMemo"]');
+        await shortToggle.hover();
+        const tip = page.locator('#art-item-tooltip');
+        await expect(tip).toBeVisible();
+        await expect(tip).toContainText('テストメモ');
+
+        await page.mouse.move(0, 0);
+        await expect(tip).toBeHidden();
+
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 短/長トグルのツールチップ タッチ到達 (390x844・タッチ有効, イシュー#133)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('tap すると一定時間ツールチップが表示され、トグルも実行される', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click(); // B000000002
+
+        const shortToggle = page.locator('.art-shelf-item').first().locator('.art-item-show-toggle[data-show-key="shortMemo"]');
+        await expect(shortToggle).not.toHaveClass(/is-on/);
+
+        await shortToggle.tap();
+        const tip = page.locator('#art-item-tooltip');
+        await expect(tip).toBeVisible();
+        await expect(tip).toContainText('テストメモ');
+        // tap はトグルも実行する (表示/非表示の切替と、内容を見る手掛かりを両立させる設計)
+        await expect(shortToggle).toHaveClass(/is-on/);
+
+        // 一定時間後に自動で消える (タッチには hover/focusout に相当する「離れる」操作が無いため)
+        await expect(tip).toBeHidden({ timeout: 4000 });
+
         expect(errors).toEqual([]);
     });
 });

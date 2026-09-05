@@ -66,6 +66,22 @@ describe('getDescendants / canSetParent', () => {
     });
 });
 
+describe('getPathLabel (イシュー#133: 別階層の同名本棚を区別するパス表記)', () => {
+    it('親 / 子 の順に name を連結する', () => {
+        expect(mgr.getPathLabel('c1')).toBe('親 / 子');
+    });
+    it('ルート直下の本棚は自身の name のみ', () => {
+        expect(mgr.getPathLabel('p1')).toBe('親');
+        expect(mgr.getPathLabel('o1')).toBe('別系統');
+    });
+    it('存在しない internalId は空文字を返す', () => {
+        expect(mgr.getPathLabel('nope')).toBe('');
+    });
+    it('区切り文字は sep 引数で変えられる', () => {
+        expect(mgr.getPathLabel('c1', ' > ')).toBe('親 > 子');
+    });
+});
+
 describe('create', () => {
     it('親の books と bookOrder をコピーして作成する', () => {
         const bs = mgr.create({ name: '新規', slug: 'fresh', parent: 'p1' });

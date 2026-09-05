@@ -4396,6 +4396,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
    示す。.dashboard-widget と同じ影の値を再利用 (新しい値を発明しない)。 */
 .art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); }
 .art-block.is-drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+/* #133 項目3: 引き出しからの追加先ブロックを常時強調する (Nielsen #1)。.is-drag-over (一時的なD&Dフィードバック) とは
+   見た目を分け、ブロックバーの背景も変えて「ここに入る」ことを操作前に予測できるようにする。 */
+.art-block.is-add-target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+.art-block.is-add-target .art-block-bar { background: var(--accent-bg); }
 .art-block.is-dragging, .art-shelf-item.is-dragging { opacity: 0.45; pointer-events: none; }
 /* バーの背景を本体(--panel)と差のある --side にし、罫線だけでなく面でバー/本体を分ける
    (.art-shelf-selbar・.art-drawer-item:hover と同じ既存トークンの再利用)。角丸はブロック本体(10px)に
@@ -4407,6 +4411,13 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block-grip { cursor: grab; color: var(--muted); touch-action: none; padding: 0.1rem 0.2rem; }
 .art-block-grip:active { cursor: grabbing; }
 .art-block-kind { background: var(--line2); border-radius: 4px; padding: 0.1rem 0.45rem; color: var(--fg2); font-weight: 600; }
+/* #133: どの本棚から作ったブロックか (パス表記+アイコン)。.art-block-bar > * の flex-shrink:0/nowrap
+   既定 (上の再発防止コメント参照) では長いパスが横に溢れるため、子セレクタで詳細度を上げて上書きする
+   (行の記述順に依存しない・ui-standards §2-13)。 */
+.art-block-bar > .art-block-shelf { flex-shrink: 1; min-width: 0; max-width: 45%; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; color: var(--fg2); }
+.art-block-shelf-icon { flex: 0 0 auto; display: inline-flex; }
+.art-block-shelf-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.art-block-shelf.is-shelf-missing { color: var(--warning); }
 .art-block-count { color: var(--muted); }
 .art-block-bar-sp { flex: 1; }
 .art-block-bar-sep { width: 1px; align-self: stretch; background: var(--line2); margin: 0 0.1rem; }
@@ -4518,14 +4529,47 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-add-menu-item b { font-size: 0.8rem; display: block; color: var(--fg); }
 .art-add-menu-item small { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
 
+/* #133 項目6: 短/長トグルの説明+メモ内容。.art-add-menu と同じ理由で position:fixed
+   (祖先 .art-col の overflow:auto にクリップされない・ui-standards §2-12)。 */
+.art-item-tooltip { position: fixed; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.14); padding: 0.5rem 0.65rem; max-width: 16rem; z-index: 30; }
+.art-item-tooltip[hidden] { display: none; }
+.art-item-tooltip-title { font-size: 0.75rem; font-weight: 700; color: var(--fg); margin-bottom: 0.2rem; }
+.art-item-tooltip-body { font-size: 0.72rem; color: var(--fg2); line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+
 /* --- 右ペイン: 本の引き出し --- */
 .art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 100%; display: flex; flex-direction: column; box-shadow: -3px 0 8px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08); }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
-.art-drawer-shelf-sel { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
+/* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
+   (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
+   ポップオーバーは position:fixed にする (.art-add-menu と同じ理由・ui-standards §2-12)。 */
+/* .popover-host (4852行付近) の display:inline-flex と同点衝突するため複合セレクタで詳細度を上げる (同上)。 */
+.popover-host.art-drawer-shelf-host { margin: 0.5rem 0.7rem 0; flex: 0 0 auto; width: calc(100% - 1.4rem); display: flex; }
+.art-drawer-shelf-btn { width: 100%; display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); cursor: pointer; }
+.art-drawer-shelf-btn:hover { background: var(--side); }
+.art-drawer-shelf-icon { display: inline-flex; flex: 0 0 auto; color: var(--fg2); }
+/* パス表記は深い階層で長くなる (#133)。nowrap+ellipsis はコンテナが縮められないと効かないため
+   min-width:0 を併せて置く (§2-15 の「flex 子は nowrap」は文字単位の縦割れ防止が目的で、
+   長文の省略とは別の対処が要る)。 */
+.art-drawer-shelf-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.art-drawer-shelf-chevron { flex: 0 0 auto; color: var(--muted); }
+/* .popover 側の position:absolute/left:50%/transform (4859行付近) は同じクラス数のため記述順で
+   上書きされ得る (ui-standards §2-13)。複合セレクタで詳細度を上げ、順序に依存せず確実に勝たせる。
+   left/top は _placeAnchoredMenu が毎回 px で明示計算するので transform は打ち消すだけでよい。 */
+.popover.art-drawer-shelf-popover { position: fixed; left: auto; top: auto; transform: none; min-width: 220px; max-width: 320px; max-height: 60vh; overflow-y: auto; }
+.art-drawer-shelf-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* #133 項目3: 引き出し側にも追加先の手掛かりを出す (Nielsen #1 システム状態の可視性)。 */
+.art-drawer-target-hint { margin: 0.4rem 0.7rem 0; font-size: 0.72rem; color: var(--muted); display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+/* 実測で発見: 生テキストの「追加先:」が flex コンテナの anonymous item になり、深い階層のパスで
+   幅が足りないと文字単位に縦割れしていた (ui-standards §2-15)。span で囲み nowrap を明示して解消。 */
+.art-drawer-target-label { flex: 0 0 auto; white-space: nowrap; }
+.art-drawer-target-icon { display: inline-flex; flex: 0 0 auto; }
+.art-drawer-target-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--fg2); font-weight: 600; }
 .art-drawer-search { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
 .art-drawer-search:focus { outline: none; border-color: var(--accent); }
-.art-drawer-note { padding: 0.5rem 0.7rem; background: var(--side); border-bottom: 1px solid var(--line2); margin: 0.5rem 0 0; flex: 0 0 auto; }
+/* #133 項目5: 表示中 (棚選択+検索絞り込み後) の本だけをまとめて追加。全件ボタンは無く「表示中の分だけ」に限定する設計。 */
+.art-drawer-add-all { margin: 0.4rem 0.7rem 0; flex: 0 0 auto; width: calc(100% - 1.4rem); justify-content: center; }
 /* 常にコンパクトリスト (密度トグル無し, イシュー#34): 表紙2列グリッドは廃止し .art-shelf-list と同体裁の1行1冊にする。
    ⚠️ grid-template-columns は 1fr でなく minmax(0,1fr) にする。1fr の最小は auto なので、タイトルの
    white-space:nowrap の分だけトラックを押し広げてしまう (旧グリッド版で実測 655x1106px まで巨大化した実績あり、commit 2e1c068)。

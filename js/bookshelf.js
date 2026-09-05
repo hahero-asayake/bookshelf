@@ -7760,11 +7760,23 @@ class VirtualBookshelf {
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => this._artShowList());
-        on('art-drawer-shelf', 'change', () => this._artOnDrawerShelfChange());
+        this._artSetupDrawerShelfPicker();
+        // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
+        // フェーズ) がモーダル自体を閉じてしまう前に、ツールチップだけを閉じて消費する。ツールチップが
+        // 非表示のときは何もしないため、通常の Esc→モーダルを閉じる動作は妨げない。
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const tip = document.getElementById('art-item-tooltip');
+            if (!tip || tip.hidden) return;
+            this._artHideItemTooltip();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
         on('art-drawer-search', 'input', (e) => {
             this._artDrawerQuery = e.target.value.trim().toLowerCase();
             this._artRenderDrawer();
         });
+        on('art-drawer-add-all', 'click', () => this._artOnDrawerAddAllClick());
         on('art-save-retry', 'click', () => this._artFlushSave());
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
@@ -8231,6 +8243,14 @@ class VirtualBookshelf {
         const density = b.density === 'card' ? 'card' : 'compact';
         const collapsed = !!b.collapsed;
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
+        // #133: どの本棚から作ったブロックか画面に出す (パス表記+アイコン)。棚が削除済みなら明示する。
+        const shelf = this.bookshelfManager.getById(b.shelfId);
+        const shelfIconName = shelf ? (shelf.iconName || 'library') : null;
+        const shelfLabel = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(b.shelfId)) : '削除済みの本棚';
+        const shelfHtml = `<span class="art-block-shelf${shelf ? '' : ' is-shelf-missing'}" title="${esc(shelfLabel)}">
+            ${shelfIconName ? `<span class="art-block-shelf-icon" data-icon-value="${esc(shelfIconName)}">${window.renderIcon(shelfIconName, { size: 13 })}</span>` : ''}
+            <span class="art-block-shelf-path">${esc(shelfLabel)}</span>
+        </span>`;
         const shortLabel = density === 'compact' ? '短' : '短文';
         const longLabel = density === 'compact' ? '長' : '長文';
         const sel = this._artShelfSelSet(b.id);
@@ -8247,8 +8267,8 @@ class VirtualBookshelf {
                 <div class="art-cover">${cover}</div>
                 <div class="art-shelf-item-title">${esc(title)}</div>
                 <div class="art-shelf-item-toggles">
-                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" aria-pressed="${show.shortMemo ? 'true' : 'false'}">${shortLabel}</button>
-                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" aria-pressed="${show.longMemo ? 'true' : 'false'}">${longLabel}</button>
+                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.shortMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${shortLabel}</button>
+                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.longMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${longLabel}</button>
                 </div>
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
@@ -8284,9 +8304,11 @@ class VirtualBookshelf {
                 <button type="button" class="art-sel-all-btn">すべて選択</button>
                 <button type="button" class="art-sel-clear-btn">選択解除</button>
             </div>` : '';
-        return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
+        // #133 項目3: 引き出しからの追加先ブロックを視覚的に示す (Nielsen #1 システム状態の可視性)。
+        const isAddTarget = b.id === this._artActiveShelfBlockId;
+        return `<div class="art-block${collapsed ? ' is-collapsed' : ''}${isAddTarget ? ' is-add-target' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-block-bar">
-                <span class="art-block-kind">本棚</span><span class="art-block-count">${items.length}冊</span>
+                <span class="art-block-kind">本棚</span>${shelfHtml}<span class="art-block-count">${items.length}冊</span>
                 <span class="art-block-bar-sp"></span>${barToolbarHtml}
                 <button type="button" class="art-chip-toggle art-collapse-toggle" title="${collapsed ? '展開' : '畳む'}">${collapsed ? '展開' : '畳む'}</button>
                 <span class="art-block-bar-sep"></span>
@@ -8327,6 +8349,36 @@ class VirtualBookshelf {
         left = Math.max(margin, Math.min(left, window.innerWidth - menuRect.width - margin));
         menuEl.style.top = `${top}px`;
         menuEl.style.left = `${left}px`;
+    }
+
+    // #133 項目6: 短/長トグルの説明+メモ内容 (title 属性だけで済ませない・hover/focus/タッチ共通到達)。
+    // 短文=resolveMemo() の内容そのもの、長文=本文が長くなり得るため有無のみ (detail 指示どおり)。
+    _artShowItemTooltip(btn) {
+        const tip = document.getElementById('art-item-tooltip');
+        if (!tip || !btn) return;
+        const key = btn.dataset.showKey;
+        const asin = btn.dataset.asin;
+        const isOn = btn.classList.contains('is-on');
+        const esc = PublishArticleGenerator.esc;
+        let title, body;
+        if (key === 'shortMemo') {
+            title = `短文メモを${isOn ? '非表示にする' : '表示する'}`;
+            const memo = this.bookshelfManager.resolveMemo(asin);
+            body = memo ? memo : '短文メモなし';
+        } else {
+            title = `長文メモを${isOn ? '非表示にする' : '表示する'}`;
+            const rec = this.userData.notes[asin] || {};
+            body = rec.hasDetailMemo ? '長文メモあり' : '長文メモなし';
+        }
+        tip.innerHTML = `<div class="art-item-tooltip-title">${esc(title)}</div><div class="art-item-tooltip-body">${esc(body)}</div>`;
+        tip.hidden = false;
+        this._placeAnchoredMenu(btn, tip);
+    }
+
+    _artHideItemTooltip() {
+        const tip = document.getElementById('art-item-tooltip');
+        if (tip) tip.hidden = true;
+        if (this._artItemTooltipTouchTimer) { clearTimeout(this._artItemTooltipTouchTimer); this._artItemTooltipTouchTimer = null; }
     }
 
     _artBindBlocksEvents() {
@@ -8438,9 +8490,29 @@ class VirtualBookshelf {
                         const key = btn.dataset.showKey;
                         item.show = item.show || { shortMemo: false, longMemo: false };
                         item.show[key] = !item.show[key];
+                        // タッチ操作 (touchstart→click) はツールチップをタイマーで併表示し続ける設計のため、
+                        // click 側では即座に消さない (即座に消すと PC でクリック直後にツールチップだけ消え、
+                        // タッチでは touchstart で表示した直後に click が発火してタイマーより先に消えてしまう)。
+                        if (!this._artItemTooltipTouchTimer) this._artHideItemTooltip();
                         this._artRenderBlocks();
                         this._artScheduleSave();
                     });
+                    // #133 項目6: 短/長が何の話か分からない (本人指摘) への説明+メモ内容。hover/focus 両方から
+                    // 同じ内容に到達する (ui-standards/ux-heuristics: hover-only はモバイル/キーボードで使えない)。
+                    btn.addEventListener('mouseenter', () => this._artShowItemTooltip(btn));
+                    btn.addEventListener('mouseleave', () => this._artHideItemTooltip());
+                    btn.addEventListener('focus', () => this._artShowItemTooltip(btn));
+                    // タッチの tap は touchstart 後に focus→blur を合成発火することがあり (実測)、
+                    // blur を無条件で処理するとタッチ用タイマーより先にツールチップが消えてしまう。
+                    // タッチタイマー動作中は blur を無視し、タイマー満了に任せる。
+                    btn.addEventListener('blur', () => { if (!this._artItemTooltipTouchTimer) this._artHideItemTooltip(); });
+                    // タッチ: tap すると表示が切り替わるボタンなので、long-press 判定は複雑度に見合わず見送り、
+                    // tap で一定時間ツールチップを併表示してからトグルも実行される形にする (理由は結果に記録)。
+                    btn.addEventListener('touchstart', () => {
+                        this._artShowItemTooltip(btn);
+                        if (this._artItemTooltipTouchTimer) clearTimeout(this._artItemTooltipTouchTimer);
+                        this._artItemTooltipTouchTimer = setTimeout(() => this._artHideItemTooltip(), 2500);
+                    }, { passive: true });
                 });
                 const rm = itemEl.querySelector('.art-shelf-item-remove');
                 if (rm) rm.addEventListener('click', () => {
@@ -8463,7 +8535,12 @@ class VirtualBookshelf {
                 this._artReorderBlocks(fromEl.dataset.blockId, toEl.dataset.blockId);
             });
             if (block.type === 'shelf') {
-                el.addEventListener('click', () => { this._artActiveShelfBlockId = blockId; });
+                el.addEventListener('click', () => {
+                    if (this._artActiveShelfBlockId === blockId) return;
+                    this._artActiveShelfBlockId = blockId;
+                    this._artRenderBlocks();
+                    this._artRenderDrawer();
+                });
             }
         });
 
@@ -8538,6 +8615,7 @@ class VirtualBookshelf {
         if (!this._artDraft.blocks) this._artDraft.blocks = [];
         this._artDraft.blocks.splice(index, 0, newBlock);
         this._artRenderBlocks();
+        if (type === 'shelf') this._artRenderDrawer();
         // 本ブロックは asin 確定まで保存しない (normalizeBlocks が asin 無しを捨てるため)
         if (type !== 'book') this._artScheduleSave();
     }
@@ -8650,9 +8728,16 @@ class VirtualBookshelf {
     // 引き出し上部の本棚セレクタを構築する。既存の #bookshelf-parent と同じ「フラットな <select>」の型
     // (index.html:733-738) を踏襲し、左ペインツリーと同じ深さ優先順 (renderBookshelfList と同じロジック)
     // で並べる。ALL は特殊本棚として先頭固定・既定値のまま (仕様どおり既存挙動を変えない)。
+    // #99 で <select> として追加。#133: 別階層に同名本棚を作れる (ADR-008) ため名前だけでは
+    // 区別できず、パス表記+アイコンが要る。<option> には要素を入れられないため、_renderBulkShelfList
+    // (1188行) の .bookshelf-popover-item + .bs-popover-icon 型を流用したボタン+ポップオーバーへ
+    // 置換 (新しい見た目を発明しない・E2E 追随は #art-drawer-shelf 系3箇所のみで済んだ)。
     _artRenderDrawerShelfSelect() {
-        const sel = document.getElementById('art-drawer-shelf');
-        if (!sel) return;
+        const btn = document.getElementById('art-drawer-shelf-btn');
+        const iconEl = document.getElementById('art-drawer-shelf-icon');
+        const labelEl = document.getElementById('art-drawer-shelf-label');
+        const listHost = document.getElementById('art-drawer-shelf-list');
+        if (!btn || !listHost) return;
         const bm = this.bookshelfManager;
         const shelves = bm.getBookshelves();
         const allShelf = shelves.find(s => s.isSpecial);
@@ -8671,31 +8756,124 @@ class VirtualBookshelf {
         };
         (byParent.get(null) || []).forEach(r => walk(r));
         const esc = PublishArticleGenerator.esc;
-        const optionsHtml = (allShelf ? `<option value="${esc(bm._keyOf(allShelf))}">${esc(allShelf.name)}</option>` : '')
-            + rows.map(bs => `<option value="${esc(bm._keyOf(bs))}">${esc(bs.name)}</option>`).join('');
-        sel.innerHTML = optionsHtml;
-        sel.value = this._artResolveSourceShelfId();
+        const currentId = this._artResolveSourceShelfId();
+
+        const itemHtml = (bs, isAll) => {
+            const key = esc(bm._keyOf(bs));
+            const label = isAll ? bs.name : bm.getPathLabel(bm._keyOf(bs));
+            const iconName = bs.iconName || 'library';
+            const isCurrent = bm._keyOf(bs) === currentId;
+            return `<button type="button" class="art-drawer-shelf-item bookshelf-popover-item${isCurrent ? ' is-current' : ''}" data-shelf-internal="${key}" role="option" aria-selected="${isCurrent ? 'true' : 'false'}" title="${esc(label)}">
+                <span class="bs-popover-icon" data-icon-value="${esc(iconName)}">${window.renderIcon(iconName, { size: 16 })}</span>
+                <span class="art-drawer-shelf-item-label">${esc(label)}</span>
+            </button>`;
+        };
+        listHost.innerHTML = (allShelf ? itemHtml(allShelf, true) : '') + rows.map(bs => itemHtml(bs, false)).join('');
+        listHost.querySelectorAll('[data-shelf-internal]').forEach(item => {
+            item.addEventListener('click', () => {
+                this._artOnDrawerShelfChange(item.dataset.shelfInternal);
+                const pop = document.getElementById('art-drawer-shelf-popover');
+                if (pop) pop.hidden = true;
+                btn.setAttribute('aria-expanded', 'false');
+                btn.focus();
+            });
+        });
+
+        // トリガーボタンの表示 (現在選択中の棚のアイコン+パス)
+        const current = bm.getById(currentId);
+        if (current) {
+            const iconName = current.iconName || 'library';
+            if (iconEl) { iconEl.innerHTML = window.renderIcon(iconName, { size: 14 }); iconEl.dataset.iconValue = iconName; }
+            if (labelEl) labelEl.textContent = current.isSpecial ? current.name : bm.getPathLabel(currentId);
+        } else if (labelEl) {
+            labelEl.textContent = '(削除済みの本棚)';
+            if (iconEl) iconEl.innerHTML = '';
+        }
     }
 
-    _artOnDrawerShelfChange() {
-        const sel = document.getElementById('art-drawer-shelf');
-        if (!sel) return;
-        this._artDraft.sourceShelfId = sel.value || null;
+    // ポップオーバーの開閉・キーボード操作 (Esc で閉じてトリガーへフォーカス返却・_artSetupUI から1回だけ bind)。
+    // 位置決めは _placeAnchoredMenu を再利用しビューポート内に収める (ui-standards §2-12)。
+    _artSetupDrawerShelfPicker() {
+        const btn = document.getElementById('art-drawer-shelf-btn');
+        const pop = document.getElementById('art-drawer-shelf-popover');
+        if (!btn || !pop) return;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const willShow = pop.hidden;
+            pop.hidden = !willShow;
+            btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+            if (willShow) this._placeAnchoredMenu(btn, pop);
+        });
+        document.addEventListener('click', (e) => {
+            if (!pop.hidden && !pop.contains(e.target) && !btn.contains(e.target)) {
+                pop.hidden = true;
+                btn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || pop.hidden) return;
+            pop.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+            btn.focus();
+        });
+    }
+
+    _artOnDrawerShelfChange(shelfInternalId) {
+        this._artDraft.sourceShelfId = shelfInternalId || null;
         this._artScheduleSave();
+        this._artRenderDrawerShelfSelect();
         this._artRenderDrawer();
+    }
+
+    // #133 項目3: 引き出し側にも「どこに追加されるか」の手掛かりを出す (Nielsen #1)。
+    // 本棚ブロックのうち何番目か (同名の棚から複数ブロックを作った場合も番号で区別できる)。
+    _artRenderDrawerTargetHint() {
+        const hintEl = document.getElementById('art-drawer-target-hint');
+        if (!hintEl) return;
+        const esc = PublishArticleGenerator.esc;
+        const block = this._artFindBlock(this._artActiveShelfBlockId);
+        if (!block || block.type !== 'shelf') {
+            hintEl.innerHTML = '<span class="art-drawer-target-label">追加先:</span> <span class="art-drawer-target-name">新しい本棚ブロックを作成</span>';
+            return;
+        }
+        const shelfBlocks = (this._artDraft.blocks || []).filter(b => b.type === 'shelf');
+        const orderIndex = shelfBlocks.findIndex(b => b.id === block.id);
+        const shelf = this.bookshelfManager.getById(block.shelfId);
+        const iconName = shelf ? (shelf.iconName || 'library') : null;
+        const label = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(block.shelfId)) : '削除済みの本棚';
+        hintEl.innerHTML = `<span class="art-drawer-target-label">追加先:</span>
+            ${iconName ? `<span class="art-drawer-target-icon" data-icon-value="${esc(iconName)}">${window.renderIcon(iconName, { size: 12 })}</span>` : ''}
+            <span class="art-drawer-target-name">${esc(label)}（本棚ブロック${orderIndex + 1}）</span>`;
+    }
+
+    // #133 項目5: 棚選択+検索絞り込み後に実際に表示されている asin のみを対象にする
+    // (783冊の "all" を検索無しで全追加しようとしても、ここでは絞り込み結果しか返らない)。
+    _artDrawerFilteredAsins() {
+        const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
+        const asins = (shelf && shelf.books) || [];
+        const query = this._artDrawerQuery || '';
+        if (!query) return asins;
+        return asins.filter(asin => {
+            const book = this.books.find(b => b.asin === asin);
+            const searchText = `${book ? book.title : asin} ${book ? book.authors : ''}`.toLowerCase();
+            return searchText.includes(query);
+        });
     }
 
     _artRenderDrawer() {
         const wrap = document.querySelector('.art-wrap');
         const listHost = document.getElementById('art-drawer-list');
         const badgeEl = document.getElementById('art-drawer-badge');
+        const addAllBtn = document.getElementById('art-drawer-add-all');
         if (!listHost) return;
+        this._artRenderDrawerTargetHint();
         const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
         const asins = (shelf && shelf.books) || [];
         if (!asins.length) {
             if (wrap) wrap.classList.add('art-drawer-collapsed');
             listHost.innerHTML = '';
             if (badgeEl) badgeEl.hidden = true;
+            if (addAllBtn) addAllBtn.hidden = true;
             return;
         }
         if (wrap) wrap.classList.remove('art-drawer-collapsed');
@@ -8703,15 +8881,15 @@ class VirtualBookshelf {
         const esc = PublishArticleGenerator.esc;
         const newCount = asins.filter(a => !usedAsins.has(a)).length;
         if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
-        const query = this._artDrawerQuery || '';
-        const filteredAsins = query ? asins.filter(asin => {
-            const book = this.books.find(b => b.asin === asin);
-            const searchText = `${book ? book.title : asin} ${book ? book.authors : ''}`.toLowerCase();
-            return searchText.includes(query);
-        }) : asins;
+        const filteredAsins = this._artDrawerFilteredAsins();
         if (!filteredAsins.length) {
             listHost.innerHTML = '<div class="art-drawer-empty">条件に合う本がありません</div>';
+            if (addAllBtn) addAllBtn.hidden = true;
             return;
+        }
+        if (addAllBtn) {
+            addAllBtn.hidden = false;
+            addAllBtn.textContent = `表示中の${filteredAsins.length}冊を追加`;
         }
         listHost.innerHTML = filteredAsins.map(asin => {
             const book = this.books.find(b => b.asin === asin);
@@ -8727,6 +8905,23 @@ class VirtualBookshelf {
         listHost.querySelectorAll('.art-drawer-item').forEach(el => {
             el.addEventListener('click', () => this._artOnDrawerBookClick(el.dataset.asin));
         });
+    }
+
+    // 閾値超は confirmDialog で件数を明示して確認 (783冊の "all" 誤爆防止)。
+    // 対象は _artDrawerFilteredAsins() = 棚選択+検索絞り込み後に表示中の本のみ。
+    async _artOnDrawerAddAllClick() {
+        const asins = this._artDrawerFilteredAsins();
+        if (!asins.length) return;
+        const ADD_ALL_CONFIRM_THRESHOLD = 50;
+        if (asins.length > ADD_ALL_CONFIRM_THRESHOLD) {
+            const ok = await confirmDialog({
+                title: 'まとめて追加',
+                message: `表示中の${asins.length}冊をまとめて追加します。よろしいですか？`,
+                okLabel: '追加する'
+            });
+            if (!ok) return;
+        }
+        this._artAddBooksToShelf(asins);
     }
 
     _artOnDrawerBookClick(asin) {
@@ -8745,6 +8940,12 @@ class VirtualBookshelf {
     }
 
     _artAddBookToShelf(asin) {
+        this._artAddBooksToShelf([asin]);
+    }
+
+    // #133 項目5: まとめて追加も1冊クリックと同じ追加先解決経路 (_artActiveShelfBlockId) を通す。
+    _artAddBooksToShelf(asins) {
+        if (!asins.length) return;
         let block = this._artFindBlock(this._artActiveShelfBlockId);
         if (!block || block.type !== 'shelf') {
             block = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
@@ -8753,7 +8954,10 @@ class VirtualBookshelf {
             this._artActiveShelfBlockId = block.id;
         }
         block.items = block.items || [];
-        block.items.push({ id: PublishArticleStore._newId('pl'), blockId: block.id, asin, order: block.items.length, show: { shortMemo: false, longMemo: false }, addedAt: Date.now() });
+        let order = block.items.length;
+        asins.forEach(asin => {
+            block.items.push({ id: PublishArticleStore._newId('pl'), blockId: block.id, asin, order: order++, show: { shortMemo: false, longMemo: false }, addedAt: Date.now() });
+        });
         this._artRenderBlocks();
         this._artRenderDrawer();
         this._artScheduleSave();
