@@ -13,6 +13,22 @@ const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 
+// アプリ本体の新バージョン検知 (イシュー#143・仮説a-1対策)。
+// SW の updatefound は「load 時に reg.update() を1回呼ぶ」だけで、開きっぱなしのタブに新しい
+// ?v= が届く経路が無かった (SW 自身のバイトが変わらない限り updatefound は発火しない)。
+// index.html を no-store で取り直し、埋め込まれた js/bookshelf.js の ?v= を現在ロード中の値と
+// 比較することで、SW の更新有無に依存せず検知する。E2E 環境で SW が動かなくても検証できる。
+const APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5分: 更新頻度に対して十分短く、負荷にならない値
+
+// html 文字列からアプリのバージョン識別子 (js/bookshelf.js の ?v= 値) を取り出す。無ければ null。
+function extractAppVersionFromHtml(html) {
+    const m = /js\/bookshelf\.js\?v=([\w.-]+)/.exec(html || '');
+    return m ? m[1] : null;
+}
+// unit テストから直接検証できるよう公開 (VirtualBookshelf 自体は DOM 依存が強く import 経由では
+// インスタンス化しないため、検知ロジックはこの純粋関数側に切り出してテスト対象にする)。
+if (typeof window !== 'undefined') window.extractAppVersionFromHtml = extractAppVersionFromHtml;
+
 // --- Obsidian Folder Sync: IndexedDB helpers ---
 function openSyncDB() {
     return new Promise((resolve, reject) => {
@@ -6899,6 +6915,35 @@ class VirtualBookshelf {
             setInterval(() => this._updateStatusBar(), 30000);
             setTimeout(() => this._updateStatusBar(), 1500);
         }
+        if (!this._appVersionWatch) {
+            this._appVersionWatch = true;
+            // 開きっぱなしのタブでも新バージョンに気づけるよう、復帰時と一定間隔でチェック (イシュー#143)。
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') this._checkAppVersion();
+            });
+            setInterval(() => this._checkAppVersion(), APP_VERSION_CHECK_INTERVAL_MS);
+        }
+    }
+
+    /**
+     * index.html を取り直し、埋め込まれたアプリのバージョンが現在ロード中のものと異なれば
+     * 既存の PWA 更新バー (_onPwaUpdateReady → _updateStatusBar → _applyPwaUpdate) に接続する。
+     * SW の updatefound とは独立した経路 (イシュー#143・仮説a-1対策)。表示は自作せず、
+     * SW 検知時と同じ更新バー・同じ「更新」ボタンに乗せる。
+     */
+    async _checkAppVersion() {
+        if (this._pwaUpdateReady) return; // 既に (SW経由も含め) 検知済みなら再チェック不要
+        try {
+            const res = await fetch('index.html', { cache: 'no-store' });
+            if (!res.ok) return;
+            const html = await res.text();
+            const latest = extractAppVersionFromHtml(html);
+            const current = extractAppVersionFromHtml(document.documentElement.outerHTML);
+            if (latest && current && latest !== current) {
+                // reg=null → _applyPwaUpdate() は reg.waiting が無い分岐 (location.reload()) を使う。
+                this._onPwaUpdateReady(null);
+            }
+        } catch (_) { /* オフライン等は無視。次回チェックに任せる */ }
     }
 
     _updateStatusBar() {
