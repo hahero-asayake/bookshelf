@@ -8,6 +8,11 @@ const KINDLE_SHORTCUT_URL = '';
 // 各レーンの毎回操作に添える操作GIFのURL。空のレーンはスロットを描画しない（空箱を出さない）
 const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 
+// 記事エディタ: メモリ反映は即時のまま、リモートPUTだけこの間隔でデバウンスする (イシュー#142)。
+// 編集のたび GitHub へ直接コミットしていた (2秒間隔・履歴が汚れる) のを解消する。
+const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
+const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
+
 // --- Obsidian Folder Sync: IndexedDB helpers ---
 function openSyncDB() {
     return new Promise((resolve, reject) => {
@@ -80,6 +85,10 @@ class VirtualBookshelf {
         }
         this.syncMethod = this.syncConfig.method;
         this.storage = new BookshelfStorage(initialAdapter);
+        // 409 リトライの発火をステータス表示へ伝える (GitHubAdapter のみ持つ, イシュー#142)
+        if (this.storage.adapter) {
+            this.storage.adapter.onWriteStatus = (path, status) => this._handleAdapterWriteStatus(path, status);
+        }
         this.bookshelfManager = new BookshelfManager(this);
         // 公開システム (公開v2「記事」モデル, ADR-058 §11): 本棚を素材にした記事の定義 + 生成
         if (window.PublishArticleStore) this.publishArticleStore = new PublishArticleStore(this.storage);
@@ -223,6 +232,10 @@ class VirtualBookshelf {
                         this._syncDebounceTimer = null;
                     }
                     this._runPendingSync();
+                }
+                // 記事エディタ: 保留中のリモートフラッシュがあればタブ非表示時に即実行 (イシュー#142)
+                if (document.visibilityState === 'hidden' && this._artRemoteFlushTimer) {
+                    this._artFlushRemoteNow();
                 }
             });
 
@@ -7759,7 +7772,7 @@ class VirtualBookshelf {
         const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
         on('art-new', 'click', () => this._artOpenEditor(null));
-        on('art-back', 'click', () => this._artShowList());
+        on('art-back', 'click', () => { this._artFlushRemoteNow(); this._artShowList(); });
         this._artSetupDrawerShelfPicker();
         // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
         // フェーズ) がモーダル自体を閉じてしまう前に、ツールチップだけを閉じて消費する。ツールチップが
@@ -7777,7 +7790,7 @@ class VirtualBookshelf {
             this._artRenderDrawer();
         });
         on('art-drawer-add-all', 'click', () => this._artOnDrawerAddAllClick());
-        on('art-save-retry', 'click', () => this._artFlushSave());
+        on('art-save-retry', 'click', () => this._artFlushSave().then(() => this._artFlushRemoteNow()));
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
         on('art-theme-color', 'change', () => this._artOnThemeChange());
@@ -8011,6 +8024,7 @@ class VirtualBookshelf {
                 published: false
             };
         }
+        const restoredFromDraft = this._artRestoreLocalDraftIfNewer(id);
         const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = !id;
         const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !this._artDraft.published;
         document.getElementById('art-title').value = this._artDraft.title || '';
@@ -8021,6 +8035,78 @@ class VirtualBookshelf {
         this._artRenderDrawer();
         this._artSetSaveStatus('');
         this._artShowEditor();
+        if (restoredFromDraft) {
+            // 拾った下書きをリロードなしで確実に残す: メモリ反映→即リモートへフラッシュして
+            // localStorage の下書きを消す (喪失窓を塞ぐ対策として必須、イシュー#142)
+            this._artFlushSave().then(() => this._artFlushRemoteNow());
+        }
+    }
+
+    // ===== 記事下書きの localStorage バックアップ (イシュー#142) =====
+    //
+    // リモートPUTを ART_REMOTE_FLUSH_DEBOUNCE_MS だけデバウンスする分、タブを閉じる等での
+    // 喪失窓が広がる。その対策として、編集のたびデバウンス無しで localStorage に下書きを
+    // 同期書き込みし、次回このエディタを開いた時にリモートより新しければ復元する。
+
+    _artLocalDraftKey(id) {
+        return `${ART_LOCAL_DRAFT_PREFIX}${id || 'new'}`;
+    }
+
+    _artSaveDraftToLocalStorage() {
+        try {
+            const payload = {
+                id: this._artEditingId || null,
+                updatedAt: Date.now(),
+                draft: {
+                    title: this._artDraft.title || '',
+                    tags: this._artDraft.tags || [],
+                    blocks: this._artDraft.blocks || [],
+                    theme: this._artDraft.theme,
+                    sourceShelfId: this._artDraft.sourceShelfId
+                }
+            };
+            localStorage.setItem(this._artLocalDraftKey(this._artEditingId), JSON.stringify(payload));
+        } catch (e) {
+            console.error('記事下書きの localStorage 保存に失敗:', e);
+        }
+    }
+
+    _artClearLocalDraft() {
+        try { localStorage.removeItem(this._artLocalDraftKey(this._artEditingId)); } catch (_) { /* noop */ }
+    }
+
+    // localStorage の下書きがリモートより新しければ this._artDraft へ反映して true を返す。
+    // 古い下書きは掃除する。新規記事 (id=null) は比較対象が無いため下書きがあれば無条件で拾う。
+    _artRestoreLocalDraftIfNewer(id) {
+        const key = this._artLocalDraftKey(id);
+        let saved;
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return false;
+            saved = JSON.parse(raw);
+        } catch (e) {
+            console.error('記事下書きの復元チェックに失敗:', e);
+            return false;
+        }
+        if (!saved || !saved.draft) { try { localStorage.removeItem(key); } catch (_) {} return false; }
+        const remoteUpdatedAt = id ? (this.publishArticleStore.get(id) || {}).updatedAt || 0 : 0;
+        if (!id || saved.updatedAt > remoteUpdatedAt) {
+            this._artDraft = {
+                ...this._artDraft,
+                title: saved.draft.title,
+                tags: saved.draft.tags,
+                blocks: saved.draft.blocks,
+                theme: saved.draft.theme,
+                sourceShelfId: saved.draft.sourceShelfId
+            };
+            // 拾った下書きの所有権はメモリ(_artDraft)に移った。新規記事は create() 後に
+            // 新しい id のキーで再保存されるため、古いキー ("new" 固定 or 旧 id) をここで消さないと
+            // 永久にゴミとして残る (イシュー#142 実装中に E2E で実測)。
+            try { localStorage.removeItem(key); } catch (_) { /* noop */ }
+            return true;
+        }
+        try { localStorage.removeItem(key); } catch (_) { /* noop */ }
+        return false;
     }
 
     _artRenderThemeSelects() {
@@ -8986,6 +9072,9 @@ class VirtualBookshelf {
         this._artSaveTimer = setTimeout(() => this._artFlushSave(), 600);
     }
 
+    // メモリへの反映のみ (persist:false)。GitHub への実書込は _artScheduleRemoteFlush() が
+    // ART_REMOTE_FLUSH_DEBOUNCE_MS だけデバウンスして行う (編集のたび即コミットしていたのを解消、
+    // イシュー#142)。データを失わないよう、反映のたび localStorage にも下書きを同期保存する。
     async _artFlushSave() {
         if (this._artSaveTimer) { clearTimeout(this._artSaveTimer); this._artSaveTimer = null; }
         const patch = {
@@ -8997,15 +9086,49 @@ class VirtualBookshelf {
         };
         try {
             if (this._artEditingId) {
-                await this.publishArticleStore.update(this._artEditingId, patch);
+                await this.publishArticleStore.update(this._artEditingId, patch, { persist: false });
             } else {
-                const created = await this.publishArticleStore.create(patch);
+                const created = await this.publishArticleStore.create(patch, { persist: false });
                 this._artEditingId = created.id;
                 this._artDraft.id = created.id;
                 this._artDraft.slug = created.slug;
                 const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
             }
+            this._artSaveDraftToLocalStorage();
+            this._artScheduleRemoteFlush();
+        } catch (e) {
+            // メモリ反映自体の失敗 (未読込状態での書込等、稀)。リモートエラーと同じ表示にする。
+            const isAuthErr = e && e.name === 'HubAuthError';
+            this._artSetSaveStatus(
+                isAuthErr
+                    ? '保存できませんでした。ハブの認証が切れています。設定から再ログインしてください。'
+                    : '保存できませんでした。保存先への接続を確認してください。',
+                { error: true, retry: true }
+            );
+            console.error('記事のメモリ反映に失敗:', e);
+        }
+    }
+
+    _artScheduleRemoteFlush() {
+        if (this._artRemoteFlushTimer) clearTimeout(this._artRemoteFlushTimer);
+        this._artRemoteFlushTimer = setTimeout(() => this._artFlushRemote(), ART_REMOTE_FLUSH_DEBOUNCE_MS);
+    }
+
+    // 保留中のリモートフラッシュがあれば即座に実行する。エディタを閉じる/公開実行/
+    // visibilitychange=hidden/手動再試行のいずれからも呼ばれる (イシュー#142)。
+    // E2E からも window.bookshelf._artFlushRemoteNow() で明示的に呼べる。
+    async _artFlushRemoteNow() {
+        if (this._artRemoteFlushTimer) { clearTimeout(this._artRemoteFlushTimer); this._artRemoteFlushTimer = null; }
+        if (!this.publishArticleStore || !this.publishArticleStore.hasUnsavedChanges()) return;
+        await this._artFlushRemote();
+    }
+
+    async _artFlushRemote() {
+        if (this._artRemoteFlushTimer) { clearTimeout(this._artRemoteFlushTimer); this._artRemoteFlushTimer = null; }
+        try {
+            await this.publishArticleStore.retryPersist();
             this._artSetSaveStatus('保存しました');
+            this._artClearLocalDraft();
         } catch (e) {
             // create() の書込 (persist) が失敗しても、記事オブジェクト自体は id/slug 確定済みで
             // メモリ上の store には既に積まれている (store.create() は persist 前に push するため)。
@@ -9020,14 +9143,29 @@ class VirtualBookshelf {
                     const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
                 }
             }
+            // ui-standards §2-11: リトライ中/回復/最終失敗を区別する。GitHubRemoteChangedError は
+            // 409 リトライがリモート側の実変更を検知して上書きを中止したケース (他タブ/他デバイスの
+            // 編集と衝突) で、通信エラーとは原因が違うため専用文言にする (イシュー#142)。
             const isAuthErr = e && e.name === 'HubAuthError';
-            this._artSetSaveStatus(
-                isAuthErr
+            const isRemoteChanged = e && e.name === 'GitHubRemoteChangedError';
+            const message = isRemoteChanged
+                ? 'この記事は他の場所で更新されています。内容を確認してから、もう一度保存してください。'
+                : isAuthErr
                     ? '保存できませんでした。ハブの認証が切れています。設定から再ログインしてください。'
-                    : '保存できませんでした。保存先への接続を確認してください。',
-                { error: true, retry: true }
-            );
+                    : '保存できませんでした。保存先への接続を確認してください。';
+            this._artSetSaveStatus(message, { error: true, retry: true });
+            // エディタを閉じた後の即時フラッシュ失敗はステータス表示が見えなくなるため toast でも通知する
+            toast(message, { type: 'error' });
             console.error('記事の保存に失敗:', e);
+        }
+    }
+
+    // GitHubAdapter からの 409 リトライ通知 (path, status) を受けてステータス表示に反映する。
+    // 記事保存 (PUBLISH_ARTICLES_PATH) 以外は今回のスコープ外。
+    _handleAdapterWriteStatus(path, status) {
+        if (path !== (window.PUBLISH_ARTICLES_PATH || 'private/publish/articles.json')) return;
+        if (status === 'retrying') {
+            this._artSetSaveStatus('保存を再試行しています…');
         }
     }
 
@@ -9100,6 +9238,7 @@ class VirtualBookshelf {
         if (this._artSaveTimer) await this._artFlushSave();
         if (!this._artEditingId) await this._artFlushSave();
         if (!this._artEditingId) { toast('保存に失敗したため公開できません。', { type: 'error' }); return; }
+        await this._artFlushRemoteNow(); // 公開前に保留中の下書きを確実にリモートへ反映する (イシュー#142)
         await this._artPublishArticle(this._artEditingId);
     }
 

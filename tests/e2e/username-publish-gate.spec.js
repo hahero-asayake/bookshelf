@@ -75,6 +75,7 @@ async function createArticle(page, title) {
     await page.locator('.art-add-btn').first().click();
     await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
     await page.locator('.art-block-text textarea').fill('本文サンプル。');
+    await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
     await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 }
 

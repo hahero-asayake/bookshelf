@@ -53,6 +53,47 @@ describe('create / load 往復', () => {
     });
 });
 
+// イシュー#142: リモートPUTのデバウンス化のため、メモリ反映のみ (persist:false) を公開メソッド
+// 経由 (create/update) で検証する。writeJSON が呼ばれないこと・hasUnsavedChanges/retryPersist で
+// 後から確実にリモートへ反映できることを確認する。
+describe('persist:false (メモリ反映のみ、イシュー#142)', () => {
+    it('create({persist:false}) は writeJSON を呼ばずメモリにだけ積む', async () => {
+        const writeSpy = vi.spyOn(storage, 'writeJSON');
+        const a = await as.create({ title: '下書き中の記事' }, { persist: false });
+        expect(writeSpy).not.toHaveBeenCalled();
+        expect(as.hasUnsavedChanges()).toBe(true);
+        expect(as.get(a.id).title).toBe('下書き中の記事');
+    });
+
+    it('update({persist:false}) は writeJSON を呼ばずメモリだけ更新する', async () => {
+        const a = await as.create({ title: '元タイトル' });
+        const writeSpy = vi.spyOn(storage, 'writeJSON');
+        await as.update(a.id, { title: '編集中タイトル' }, { persist: false });
+        expect(writeSpy).not.toHaveBeenCalled();
+        expect(as.hasUnsavedChanges()).toBe(true);
+        expect(as.get(a.id).title).toBe('編集中タイトル');
+    });
+
+    it('retryPersist() で後からリモートへ反映でき、hasUnsavedChanges が false に戻る', async () => {
+        const a = await as.create({ title: '元' }, { persist: false });
+        await as.update(a.id, { title: '確定タイトル' }, { persist: false });
+        expect(as.hasUnsavedChanges()).toBe(true);
+
+        await as.retryPersist();
+        expect(as.hasUnsavedChanges()).toBe(false);
+
+        const as2 = new PublishArticleStore(storage);
+        const articles = await as2.load();
+        expect(articles.find(x => x.id === a.id).title).toBe('確定タイトル');
+    });
+
+    it('persist オプション省略時は従来どおり即座に writeJSON される (後方互換)', async () => {
+        const writeSpy = vi.spyOn(storage, 'writeJSON');
+        await as.create({ title: '即時保存' });
+        expect(writeSpy).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('update / remove / duplicate / published', () => {
     it('update でタイトル・タグ・テーマを差し替え', async () => {
         const a = await as.create({ title: 'x' });

@@ -6,10 +6,19 @@
 // 単一ファイル単位の PUT で動作する (段階2-1)。
 // Trees API による複数ファイル一括 commit + 楽観ロックは段階2-3 で追加。
 //
-// sha 管理:
-//   - readJSON / readText で取得した sha を _shaCache に保持
+// sha 管理 (イシュー#142 で改訂):
+//   - readJSON / readText で取得した sha と本文を _shaCache / _lastKnownContent に保持
 //   - writeJSON / writeText 時に sha を載せて PUT (既存ファイル更新)
-//   - sha 不一致 (422) は GitHubConflictError として throw
+//   - sha 不一致は 409 (422 ではない、イシュー#142 で実 API 実測して確定)。GitHubConflictError として
+//     throw されるが、_write() 内で 1 回だけ自動リカバリを試みる: キャッシュを破棄して最新 sha を
+//     取り直し、取得した最新本文が自分が最後に認識していた本文と同じなら (=単なる sha 管理のズレ)
+//     そのまま再 PUT して回復する。本文が異なっていれば (=他タブ/他デバイスが実際に内容を変えた)
+//     盲目的に上書きすると相手の編集を消すため、再 PUT はせず GitHubRemoteChangedError を投げる。
+//     再 PUT してもなお 409 なら本当の競合として GitHubConflictError を投げる。
+//   - 422 (サイズ超過・content 不正等) は GitHubValidationError としてレスポンスボディ付きで throw
+//     (409 と原因が違うため区別する)
+//   - 同一 path への write/delete はパス単位のキューで直列化する (同一タブ内の並行呼び出し対策。
+//     複数タブ/複数デバイス間の競合はこのキューでは防げない＝上記の本文比較が担当)
 //
 // path 表現は StorageAdapter 規約に従う (スラッシュ区切り)。
 // basePath が指定されれば各 path にプレフィックス付与。
@@ -18,6 +27,23 @@ class GitHubConflictError extends Error {
     constructor(message, path) {
         super(message);
         this.name = 'GitHubConflictError';
+        this.path = path;
+    }
+}
+
+class GitHubValidationError extends Error {
+    constructor(message, path, detail) {
+        super(message);
+        this.name = 'GitHubValidationError';
+        this.path = path;
+        this.detail = detail;
+    }
+}
+
+class GitHubRemoteChangedError extends Error {
+    constructor(message, path) {
+        super(message);
+        this.name = 'GitHubRemoteChangedError';
         this.path = path;
     }
 }
@@ -49,6 +75,17 @@ class GitHubAdapter extends StorageAdapter {
         this.basePath = (basePath || '').replace(/^\/+|\/+$/g, '');
         this.token = token;
         this._shaCache = new Map();
+        this._lastKnownContent = new Map();
+        this._writeQueues = new Map();
+        // 409 リトライの発火をアプリ層へ伝える (path, status) => void。
+        // status: 'retrying' | 'recovered' | 'conflict' | 'remote-changed'。イシュー#142。
+        this.onWriteStatus = null;
+    }
+
+    _notifyWriteStatus(path, status) {
+        if (typeof this.onWriteStatus === 'function') {
+            try { this.onWriteStatus(path, status); } catch (_) { /* 通知失敗は書込結果に影響させない */ }
+        }
     }
 
     isConnected() {
@@ -86,8 +123,9 @@ class GitHubAdapter extends StorageAdapter {
     async readJSON(path) {
         const content = await this._getContent(path);
         if (!content || content.type !== 'file') return null;
-        this._shaCache.set(path, content.sha);
         const text = this._decodeBase64(content.content);
+        this._shaCache.set(path, content.sha);
+        this._lastKnownContent.set(path, text);
         return text.trim() ? JSON.parse(text) : null;
     }
 
@@ -99,8 +137,10 @@ class GitHubAdapter extends StorageAdapter {
     async readText(path) {
         const content = await this._getContent(path);
         if (!content || content.type !== 'file') return null;
+        const text = this._decodeBase64(content.content);
         this._shaCache.set(path, content.sha);
-        return this._decodeBase64(content.content);
+        this._lastKnownContent.set(path, text);
+        return text;
     }
 
     async writeText(path, text) {
@@ -113,6 +153,10 @@ class GitHubAdapter extends StorageAdapter {
     }
 
     async deleteFile(path) {
+        return this._enqueue(path, () => this._deleteOnce(path));
+    }
+
+    async _deleteOnce(path) {
         let sha = this._shaCache.get(path);
         if (!sha) {
             const existing = await this._getContent(path);
@@ -121,6 +165,7 @@ class GitHubAdapter extends StorageAdapter {
         }
         await this._deleteContent(path, sha);
         this._shaCache.delete(path);
+        this._lastKnownContent.delete(path);
     }
 
     async listFiles(dirPath) {
@@ -350,8 +395,12 @@ class GitHubAdapter extends StorageAdapter {
             body: JSON.stringify(body)
         });
         if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
-        if (res.status === 409 || res.status === 422) {
+        if (res.status === 409) {
             throw new GitHubConflictError(`sha conflict on ${path}`, path);
+        }
+        if (res.status === 422) {
+            const detail = await res.text().catch(() => '');
+            throw new GitHubValidationError(`GitHub validation error on PUT ${path}: ${detail}`, path, detail);
         }
         if (!res.ok) {
             const text = await res.text().catch(() => '');
@@ -375,8 +424,12 @@ class GitHubAdapter extends StorageAdapter {
         });
         if (res.status === 404) return;
         if (res.status === 401) throw new GitHubAuthError('GitHub authentication failed');
-        if (res.status === 409 || res.status === 422) {
+        if (res.status === 409) {
             throw new GitHubConflictError(`sha conflict on delete ${path}`, path);
+        }
+        if (res.status === 422) {
+            const detail = await res.text().catch(() => '');
+            throw new GitHubValidationError(`GitHub validation error on DELETE ${path}: ${detail}`, path, detail);
         }
         if (!res.ok) {
             const text = await res.text().catch(() => '');
@@ -384,7 +437,20 @@ class GitHubAdapter extends StorageAdapter {
         }
     }
 
+    // ===== 書き込みキュー (同一パスへの write/delete を直列化。同一タブ内の並行呼び出し対策) =====
+
+    _enqueue(path, task) {
+        const prev = this._writeQueues.get(path) || Promise.resolve();
+        const result = prev.then(task, task);
+        this._writeQueues.set(path, result.catch(() => {}));
+        return result;
+    }
+
     async _write(path, text) {
+        return this._enqueue(path, () => this._writeOnce(path, text));
+    }
+
+    async _writeOnce(path, text) {
         let sha = this._shaCache.get(path);
         if (!sha) {
             // 新規かもしれないが、既存があれば sha を取得する必要がある
@@ -392,10 +458,59 @@ class GitHubAdapter extends StorageAdapter {
             if (existing && existing.type === 'file' && existing.sha) {
                 sha = existing.sha;
                 this._shaCache.set(path, sha);
+                this._lastKnownContent.set(path, this._decodeBase64(existing.content));
             }
         }
-        const newSha = await this._putContent(path, text, { sha });
-        if (newSha) this._shaCache.set(path, newSha);
+        try {
+            const newSha = await this._putContent(path, text, { sha });
+            if (newSha) this._shaCache.set(path, newSha);
+            this._lastKnownContent.set(path, text);
+        } catch (e) {
+            if (!(e instanceof GitHubConflictError)) throw e;
+            await this._recoverFromConflictAndRetry(path, text);
+        }
+    }
+
+    /**
+     * 409 受信後のリカバリ (イシュー#142)。
+     * 最新 sha/本文を取り直し、リモート本文が自分の最終認識と同じなら (=単なる sha キャッシュの
+     * ズレ) そのまま同じ内容で 1 回だけ再 PUT する。異なっていれば他タブ/他デバイスが実際に
+     * 内容を変えているので、盲目的に上書きせず GitHubRemoteChangedError を投げて呼び出し元に
+     * 知らせる。再 PUT してもなお 409 なら本当の競合として GitHubConflictError を投げる。
+     */
+    async _recoverFromConflictAndRetry(path, text) {
+        console.warn(`[GitHubAdapter] 409 on ${path}: sha を破棄して最新状態を取り直します`);
+        this._notifyWriteStatus(path, 'retrying');
+        this._shaCache.delete(path);
+        const latest = await this._getContent(path);
+        const latestSha = latest && latest.type === 'file' ? latest.sha : null;
+        const latestContent = latest && latest.type === 'file' ? this._decodeBase64(latest.content) : null;
+        const knownContent = this._lastKnownContent.get(path);
+
+        if (latestContent !== null && (knownContent === undefined || latestContent !== knownContent)) {
+            console.error(`[GitHubAdapter] ${path} はリモートで内容が変わっている。上書きせず中断します`);
+            this._notifyWriteStatus(path, 'remote-changed');
+            throw new GitHubRemoteChangedError(`${path} は他の場所で更新されています。内容を確認して保存し直してください。`, path);
+        }
+
+        if (latestSha) {
+            this._shaCache.set(path, latestSha);
+            this._lastKnownContent.set(path, latestContent);
+        }
+
+        try {
+            const retrySha = await this._putContent(path, text, { sha: latestSha });
+            if (retrySha) this._shaCache.set(path, retrySha);
+            this._lastKnownContent.set(path, text);
+            console.warn(`[GitHubAdapter] 409 on ${path}: リトライで回復しました`);
+            this._notifyWriteStatus(path, 'recovered');
+        } catch (e2) {
+            if (e2 instanceof GitHubConflictError) {
+                console.error(`[GitHubAdapter] ${path} はリトライ後も 409 (本当の競合)`);
+                this._notifyWriteStatus(path, 'conflict');
+            }
+            throw e2;
+        }
     }
 
     // ===== Base64 (UTF-8 対応) =====
@@ -421,4 +536,6 @@ class GitHubAdapter extends StorageAdapter {
 
 window.GitHubAdapter = GitHubAdapter;
 window.GitHubConflictError = GitHubConflictError;
+window.GitHubValidationError = GitHubValidationError;
+window.GitHubRemoteChangedError = GitHubRemoteChangedError;
 window.GitHubAuthError = GitHubAuthError;

@@ -222,7 +222,9 @@ class PublishArticleStore {
         return [...map.values()].sort((x, y) => y.count - x.count);
     }
 
-    async create(partial = {}) {
+    // persist:false はメモリ更新のみ (リモートへの反映を呼び出し元がデバウンスする、イシュー#142)。
+    // 省略時は従来どおり即座に persist する。
+    async create(partial = {}, { persist = true } = {}) {
         await this._ensure();
         const now = Date.now();
         const title = partial.title || '無題の記事';
@@ -241,11 +243,12 @@ class PublishArticleStore {
             lastBuiltAt: null
         };
         this._articles.push(article);
-        await this._persist();
+        this._dirty = true;
+        if (persist) await this._persist();
         return article;
     }
 
-    async update(id, patch = {}) {
+    async update(id, patch = {}, { persist = true } = {}) {
         await this._ensure();
         const article = this.get(id);
         if (!article) throw new Error('記事が見つかりません: ' + id);
@@ -258,7 +261,8 @@ class PublishArticleStore {
         if (patch.published !== undefined) article.published = !!patch.published;
         if (patch.lastBuiltAt !== undefined) article.lastBuiltAt = patch.lastBuiltAt;
         article.updatedAt = Date.now();
-        await this._persist();
+        this._dirty = true;
+        if (persist) await this._persist();
         return article;
     }
 
@@ -361,9 +365,11 @@ if (typeof window !== 'undefined') {
     window.PublishArticleStore = PublishArticleStore;
     window.ARTICLE_LAYOUTS = ARTICLE_LAYOUTS;
     window.ARTICLE_COLORS = ARTICLE_COLORS;
+    window.PUBLISH_ARTICLES_PATH = PUBLISH_ARTICLES_PATH;
 }
 if (typeof globalThis !== 'undefined') {
     globalThis.PublishArticleStore = PublishArticleStore;
     globalThis.ARTICLE_LAYOUTS = ARTICLE_LAYOUTS;
     globalThis.ARTICLE_COLORS = ARTICLE_COLORS;
+    globalThis.PUBLISH_ARTICLES_PATH = PUBLISH_ARTICLES_PATH;
 }
