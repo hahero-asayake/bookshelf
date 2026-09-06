@@ -73,8 +73,8 @@ class HubStorageAdapter extends StorageAdapter {
         await this._write(path, JSON.stringify(data, null, 2));
     }
 
-    async readText(path) {
-        return this._read(path);
+    async readText(path, hooks) {
+        return this._read(path, hooks);
     }
 
     async writeText(path, text) {
@@ -172,8 +172,8 @@ class HubStorageAdapter extends StorageAdapter {
 
     // ===== 内部 =====
 
-    async _read(path) {
-        const res = await this._fetch('GET', this._dataUrl(path));
+    async _read(path, hooks) {
+        const res = await this._fetch('GET', this._dataUrl(path), {}, hooks);
         if (res.status === 404) return null;
         if (!res.ok) throw this._err(res, `GET ${path}`);
         const etag = res.headers.get('ETag');
@@ -232,10 +232,10 @@ class HubStorageAdapter extends StorageAdapter {
     }
 
     // method 引数はログ用。実際の method は init.method を優先
-    async _fetch(method, url, init = {}) {
+    async _fetch(method, url, init = {}, hooks) {
         const key = await this._key();
         const headers = { ...(init.headers || {}), 'Authorization': `Bearer ${key}` };
-        const res = await StorageAdapter.fetchJSON(url, { method: init.method || method, headers, body: init.body });
+        const res = await StorageAdapter.fetchJSON(url, { method: init.method || method, headers, body: init.body }, undefined, hooks);
         if (res.status === 401) throw new HubAuthError('Asayake ハブの認証が失効しました。再接続してください');
         return res;
     }

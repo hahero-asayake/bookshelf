@@ -636,8 +636,8 @@ describe('index.html (記事一覧)', () => {
     });
 });
 
-describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143・段階通知はイシュー#153)', () => {
-    it('長文メモ表示ブロックが1件なら reading{done:0,total:1} → reading{done:1,total:1} → rendering → assembling の順に呼ばれる', async () => {
+describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143・段階通知はイシュー#153・fetch3分割/ブロック単位はイシュー#156)', () => {
+    it('長文メモ表示ブロックが1件なら reading(report0) → reading(fetch-start) → reading(report1) → rendering(report) → rendering(block-start/done) → assembling の順に呼ばれる', async () => {
         const article = makeArticle({ blocks: [
             { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
         ] });
@@ -645,8 +645,11 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
         expect(calls).toEqual([
             { stage: 'reading', done: 0, total: 1 },
+            { stage: 'reading', done: 0, total: 1, phase: 'fetch-start', asin: 'M1', adapterKind: '不明' },
             { stage: 'reading', done: 1, total: 1 },
             { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'book' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'book' },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
@@ -659,11 +662,13 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
         expect(calls).toEqual([
             { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'text' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'text' },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
 
-    it('複数冊 (shelf内訳含む) なら reading段階の total が合計件数になり、doneが単調増加する', async () => {
+    it('複数冊 (shelf内訳含む) なら reading段階の done(report分)が単調増加し、fetch-startがasin付きで冊ごとに挟まる', async () => {
         const article = makeArticle({ blocks: [
             { type: 'shelf', items: [
                 { asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } },
@@ -680,10 +685,69 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         const calls = [];
         await g2.build([article], { state, onProgress: (p) => calls.push({ ...p }) });
         const readingCalls = calls.filter(c => c.stage === 'reading');
-        expect(readingCalls[0]).toEqual({ stage: 'reading', done: 0, total: 2 });
-        expect(readingCalls[readingCalls.length - 1]).toEqual({ stage: 'reading', done: 2, total: 2 });
-        expect(readingCalls.map(c => c.done)).toEqual([0, 1, 2]);
-        expect(calls.map(c => c.stage)).toEqual(['reading', 'reading', 'reading', 'rendering', 'assembling']);
+        // report(done)呼び出し (phase無し) だけを抜き出すと、既存どおり done は 0→1→2 と単調増加する。
+        const reportCalls = readingCalls.filter(c => !c.phase);
+        expect(reportCalls.map(c => c.done)).toEqual([0, 1, 2]);
+        expect(reportCalls[0]).toEqual({ stage: 'reading', done: 0, total: 2 });
+        expect(reportCalls[reportCalls.length - 1]).toEqual({ stage: 'reading', done: 2, total: 2 });
+        // fetch-start は冊ごとに asin つきで1回ずつ挟まる (イシュー#156: 容疑者②の切り分け用)。
+        const fetchStartCalls = readingCalls.filter(c => c.phase === 'fetch-start');
+        expect(fetchStartCalls.map(c => c.asin)).toEqual(['M1', 'M2']);
+        expect(calls.map(c => c.stage)).toEqual([
+            'reading', 'reading', 'reading', 'reading', 'reading',
+            'rendering', 'rendering', 'rendering', 'rendering', 'rendering',
+            'assembling'
+        ]);
+    });
+
+    it('readBookMemo の hooks (onHeaders/onBody) が呼ばれると、reading段階に phase:headers/body-done がasin・adapterKind・elapsedMs付きで追加される (容疑者②=fetchハングの3分割計測, イシュー#156)', async () => {
+        const state = makeState();
+        const app = {
+            storage: {
+                loadAll: async () => state,
+                // 実アダプタの readText 契約 (path, hooks) を模す: hooks.onHeaders/onBody を実際に呼ぶ。
+                adapter: { constructor: { name: 'GitHubAdapter' } },
+                readBookMemo: async (asin, title, hooks) => {
+                    if (hooks && hooks.onHeaders) hooks.onHeaders();
+                    if (hooks && hooks.onBody) hooks.onBody();
+                    return asin === 'M1' ? '# メモ' : null;
+                }
+            }
+        };
+        const g = new PublishArticleGenerator(app);
+        const article = makeArticle({ blocks: [
+            { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
+        ] });
+        const calls = [];
+        await g.build([article], { state, onProgress: (p) => calls.push({ ...p }) });
+        const readingCalls = calls.filter(c => c.stage === 'reading');
+        expect(readingCalls.map(c => c.phase)).toEqual([undefined, 'fetch-start', 'headers', 'body-done', undefined]);
+        const headers = readingCalls.find(c => c.phase === 'headers');
+        const bodyDone = readingCalls.find(c => c.phase === 'body-done');
+        expect(headers.asin).toBe('M1');
+        expect(headers.adapterKind).toBe('GitHub（fetch経由）');
+        expect(typeof headers.elapsedMs).toBe('number');
+        expect(bodyDone.adapterKind).toBe('GitHub（fetch経由）');
+        expect(typeof bodyDone.elapsedMs).toBe('number');
+    });
+
+    it('app.storage.adapter が LocalFSAdapter なら adapterKind が「fetchなし」であることを示す (容疑者②の前提=fetch経路かどうかの切り分け, イシュー#156)', async () => {
+        const state = makeState();
+        const app = {
+            storage: {
+                loadAll: async () => state,
+                adapter: { constructor: { name: 'LocalFSAdapter' } },
+                readBookMemo: async (asin) => asin === 'M1' ? '# メモ' : null
+            }
+        };
+        const g = new PublishArticleGenerator(app);
+        const article = makeArticle({ blocks: [
+            { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
+        ] });
+        const calls = [];
+        await g.build([article], { state, onProgress: (p) => calls.push({ ...p }) });
+        const fetchStart = calls.find(c => c.phase === 'fetch-start');
+        expect(fetchStart.adapterKind).toBe('ローカルフォルダ（fetchなし）');
     });
 
     it('onProgress を渡しても渡さなくても、公開HTML出力は完全一致する (可観測性のための変更が公開物に影響しない)', async () => {

@@ -388,8 +388,8 @@ class BookshelfStorage {
         return `${asin}__${this.sanitizeFileName(title)}.md`;
     }
 
-    readBookMemo(asin, title) {
-        return this.adapter.readText(`private/books/${this.bookMemoFileName(asin, title)}`);
+    readBookMemo(asin, title, hooks) {
+        return this.adapter.readText(`private/books/${this.bookMemoFileName(asin, title)}`, hooks);
     }
 
     async writeBookMemo(asin, title, content) {

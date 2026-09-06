@@ -103,6 +103,51 @@ describe('StorageAdapter.fetchText', () => {
     });
 });
 
+describe('StorageAdapter.fetchText hooks (イシュー#156: 容疑者②=fetchハングを「発行/ヘッダ受領/ボディ読了」の3点に分けて計測するためのフック)', () => {
+    it('通常応答なら onHeaders → onBody の順に1回ずつ呼ばれる', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response('ok body', { status: 200 })));
+        const order = [];
+        const result = await StorageAdapter.fetchText('https://example.test/data/x', {}, 10000, {
+            onHeaders: () => order.push('headers'),
+            onBody: () => order.push('body')
+        });
+        expect(order).toEqual(['headers', 'body']);
+        expect(result.body).toBe('ok body');
+    });
+
+    it('hooks を渡さなくても例外にならず、従来どおり動作する (計装は完全にoptional)', async () => {
+        globalThis.fetch = vi.fn(() => Promise.resolve(new Response('ok', { status: 200 })));
+        const result = await StorageAdapter.fetchText('https://example.test/data/x');
+        expect(result.body).toBe('ok');
+    });
+
+    it('本文送信が遅延・停止する罠 (#143) では onHeaders は呼ばれるが onBody は呼ばれないまま タイムアウトする (容疑者②の機序の実在確認)', async () => {
+        globalThis.fetch = bodyStallFetch();
+        const calls = [];
+        const p = StorageAdapter.fetchText('https://example.test/data/x', {}, 10000, {
+            onHeaders: () => calls.push('headers'),
+            onBody: () => calls.push('body')
+        });
+        const assertion = expect(p).rejects.toThrow(/タイムアウトしました \(10000ms\)/);
+        await vi.advanceTimersByTimeAsync(10000);
+        await assertion;
+        expect(calls).toEqual(['headers']);
+    });
+
+    it('fetch() 自体が応答しないケースでは onHeaders も呼ばれない', async () => {
+        globalThis.fetch = hangingFetch();
+        const calls = [];
+        const p = StorageAdapter.fetchText('https://example.test/data/x', {}, 10000, {
+            onHeaders: () => calls.push('headers'),
+            onBody: () => calls.push('body')
+        });
+        const assertion = expect(p).rejects.toThrow(/タイムアウトしました/);
+        await vi.advanceTimersByTimeAsync(10000);
+        await assertion;
+        expect(calls).toEqual([]);
+    });
+});
+
 describe('StorageAdapter.fetchJSON', () => {
     it('本文を JSON.parse して json に入れる', async () => {
         globalThis.fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ a: 1 }), { status: 200 })));

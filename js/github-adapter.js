@@ -133,8 +133,8 @@ class GitHubAdapter extends StorageAdapter {
         await this._write(path, text);
     }
 
-    async readText(path) {
-        const content = await this._getContent(path);
+    async readText(path, hooks) {
+        const content = await this._getContent(path, hooks);
         if (!content || content.type !== 'file') return null;
         const text = this._decodeBase64(content.content);
         this._shaCache.set(path, content.sha);
@@ -356,7 +356,7 @@ class GitHubAdapter extends StorageAdapter {
         return `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encoded}`;
     }
 
-    async _getContent(path) {
+    async _getContent(path, hooks) {
         const url = `${this._apiUrl(path)}?ref=${encodeURIComponent(this.branch)}`;
         // GitHub Contents API の GET は `Cache-Control: private, max-age=60` を返す (実測)。
         // このURL(?ref=付き)はPUT/DELETE(クエリ無し)と別URLのため、書込成功時のブラウザ自動キャッシュ
@@ -364,7 +364,7 @@ class GitHubAdapter extends StorageAdapter {
         // (_recoverFromConflictAndRetry) がこの古い sha を「最新」として再取得してしまうと、実際には
         // 競合していないのに何度リトライしても 409 になる (イシュー#150で実機再現・特定)。
         // no-store で必ずネットワークから最新を取る。
-        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' });
+        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, undefined, hooks);
         if (status === 404) return null;
         if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
         if (status === 403) {

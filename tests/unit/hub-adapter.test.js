@@ -48,6 +48,17 @@ describe('read', () => {
         mockFetch({ 'GET /data/private/books/a.md': () => res('# memo', 200, { ETag: '"m1"' }) });
         expect(await adapter.readText('private/books/a.md')).toBe('# memo');
     });
+
+    it('readText(path, hooks) の hooks が実際の fetch まで届き、onHeaders → onBody の順に呼ばれる (イシュー#156)', async () => {
+        mockFetch({ 'GET /data/private/books/a.md': () => res('# memo', 200, { ETag: '"m1"' }) });
+        const order = [];
+        const text = await adapter.readText('private/books/a.md', {
+            onHeaders: () => order.push('headers'),
+            onBody: () => order.push('body')
+        });
+        expect(text).toBe('# memo');
+        expect(order).toEqual(['headers', 'body']);
+    });
 });
 
 describe('write + 楽観ロック', () => {

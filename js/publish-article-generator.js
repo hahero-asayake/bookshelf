@@ -133,6 +133,18 @@ class PublishArticleGenerator {
         this.app = app;
     }
 
+    // イシュー#156: 長文メモ読込 (readBookMemo) がどの経路 (fetch が実際に走るか否か) を通るかを
+    // onProgress 経由で画面/ログへ出すためのラベル。app.storage.adapter が無い (unit テストの簡易
+    // モック等) 場合は '不明' を返す (計装のみ・存在しなくても readBookMemo 自体は動く)。
+    _adapterKindLabel() {
+        const ctor = this.app && this.app.storage && this.app.storage.adapter && this.app.storage.adapter.constructor;
+        const name = ctor && ctor.name;
+        if (name === 'GitHubAdapter') return 'GitHub（fetch経由）';
+        if (name === 'HubStorageAdapter') return 'Asayakeハブ（fetch経由）';
+        if (name === 'LocalFSAdapter') return 'ローカルフォルダ（fetchなし）';
+        return name || '不明';
+    }
+
     // ===== 旧 PublishGenerator から複製した純粋ユーティリティ (依存切り離し・公開v2 S3) =====
     // 旧モデル撤去後も本ファイル単体で完結させるため、esc/日付整形/favicon を自前で持つ。
     static esc(s) {
@@ -361,9 +373,20 @@ class PublishArticleGenerator {
         const report = (done) => { if (typeof onProgress === 'function') onProgress({ stage: 'reading', done, total }); };
         if (total > 0) report(0);
         let done = 0;
+        const adapterKind = this._adapterKindLabel();
         for (const bookData of detailTargets) {
+            const asin = bookData.asin;
+            const fetchStartAt = Date.now();
+            // イシュー#156: 容疑者②(実アダプタ経由のfetchハング)を「fetch発行」「Response受領(ヘッダ到達)」
+            // 「ボディ読み切り完了」の3点に分けて計測する。ヘッダは即返りボディだけが止まる罠 (ADR-081で
+            // 現行の fetchText/fetchJSON 自体は対策済みと確認済み) が万一別経路で再発しても、reading の
+            // どのphaseで止まったかが画面/ログから読める。
+            if (typeof onProgress === 'function') onProgress({ stage: 'reading', done, total, phase: 'fetch-start', asin, adapterKind });
             try {
-                const text = await this.app.storage.readBookMemo(bookData.asin, bookData.title);
+                const text = await this.app.storage.readBookMemo(bookData.asin, bookData.title, {
+                    onHeaders: () => { if (typeof onProgress === 'function') onProgress({ stage: 'reading', done, total, phase: 'headers', asin, adapterKind, elapsedMs: Date.now() - fetchStartAt }); },
+                    onBody: () => { if (typeof onProgress === 'function') onProgress({ stage: 'reading', done, total, phase: 'body-done', asin, adapterKind, elapsedMs: Date.now() - fetchStartAt }); }
+                });
                 if (text != null) bookData.detailMemo = PublishArticleGenerator.stripFrontmatter(text);
             } catch (_) {
                 // 読み込み失敗 (タイムアウト含む, イシュー#134) はそのブロックのメモを空のままにする
@@ -427,13 +450,18 @@ ${h.longMemo(longMemoHtml)}
         return `<section class="blk blk-shelf"><div class="shelf">${tiles}</div></section>`;
     }
 
-    _renderBlocks(resolvedBlocks) {
+    _renderBlocks(resolvedBlocks, onProgress) {
         const h = this._helpers();
-        return resolvedBlocks.map(r => {
-            if (r.type === 'text') return this._renderTextBlock(r);
-            if (r.type === 'book') return this._renderBookBlock(r, h);
-            if (r.type === 'shelf') return this._renderShelfBlock(r, h);
-            return '';
+        return resolvedBlocks.map((r, blockIndex) => {
+            // イシュー#156: 各ブロックのMarkdown→HTML変換 (#153のO(n²)劣化が実際に起きる区間) の
+            // 開始/完了をブロック index+種別つきで計測する。
+            if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex, blockType: r.type });
+            let html = '';
+            if (r.type === 'text') html = this._renderTextBlock(r);
+            else if (r.type === 'book') html = this._renderBookBlock(r, h);
+            else if (r.type === 'shelf') html = this._renderShelfBlock(r, h);
+            if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex, blockType: r.type });
+            return html;
         }).filter(Boolean).join('\n');
     }
 
@@ -617,7 +645,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
                 report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
-                body = this._renderBlocks(resolvedBlocks);
+                body = this._renderBlocks(resolvedBlocks, opts.onProgress);
                 report('assembling'); // HTMLシェル組立
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 

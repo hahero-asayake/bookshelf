@@ -80,7 +80,8 @@ class LocalFSAdapter extends StorageAdapter {
         await writable.close();
     }
 
-    async readText(path) {
+    // hooks (イシュー#156: onHeaders/onBody) は fetch を使わないこの実装には無縁のため受け取っても無視する。
+    async readText(path, _hooks) {
         try {
             return await StorageAdapter.withTimeout(this._readTextRaw(path), 10000, `${path} の読み込み`);
         } catch (e) {

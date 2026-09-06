@@ -109,14 +109,19 @@ class StorageAdapter {
      * @param {RequestInit} [init]
      * @param {number} [timeoutMs=10000] 10秒: ハブ/GitHub 双方の通常応答 (概ね数百ms〜2秒) に
      *   対して十分な余裕を持たせつつ、無応答時に「生成中…」が体感で壊れて見えるほど長引かせない値。
+     * @param {{onHeaders?:function, onBody?:function}} [hooks] イシュー#156: 段階トレース用の任意コールバック。
+     *   onHeaders はヘッダ受信直後 (本文読み取り開始前)、onBody は本文読み切り直後に呼ばれる。どちらも
+     *   省略可・戻り値は無視する (計装のみ・成否やタイミングに一切影響しない)。
      * @returns {Promise<{status:number, ok:boolean, statusText:string, headers:Headers, body:string}>}
      */
-    static async fetchText(url, init = {}, timeoutMs = 10000) {
+    static async fetchText(url, init = {}, timeoutMs = 10000, hooks = {}) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
             const res = await fetch(url, { ...init, signal: controller.signal });
+            if (typeof hooks.onHeaders === 'function') hooks.onHeaders({ status: res.status, ok: res.ok });
             const body = await res.text();
+            if (typeof hooks.onBody === 'function') hooks.onBody();
             return { status: res.status, ok: res.ok, statusText: res.statusText, headers: res.headers, body };
         } catch (e) {
             if (e.name === 'AbortError') {
@@ -132,10 +137,11 @@ class StorageAdapter {
      * fetchText の結果を JSON.parse する。本文が空、または JSON として不正な場合は
      * 例外を投げず json:null を返す (呼び出し側は status/ok で成否判定してから json を使う設計のため、
      * エラーレスポンスの本文が非JSONでも呼び出し側の分岐を壊さない)。
+     * @param {{onHeaders?:function, onBody?:function}} [hooks] fetchText 参照 (イシュー#156)。
      * @returns {Promise<{status, ok, statusText, headers, body, json}>}
      */
-    static async fetchJSON(url, init = {}, timeoutMs = 10000) {
-        const result = await StorageAdapter.fetchText(url, init, timeoutMs);
+    static async fetchJSON(url, init = {}, timeoutMs = 10000, hooks = {}) {
+        const result = await StorageAdapter.fetchText(url, init, timeoutMs, hooks);
         let json = null;
         if (result.body) {
             try { json = JSON.parse(result.body); } catch (_) { /* 呼び出し側は json===null なら body を使う */ }

@@ -32,13 +32,34 @@ const ART_PREVIEW_HARD_DEADLINE_MS = ART_PREVIEW_STALL_MS * 5; // 100秒
 
 // build()のonProgressが伝える段階 (イシュー#153: 「生成中…」に段階名を出し、本人が1回試すだけで
 // どこで時間が掛かっているか分かるようにする)。
+// イシュー#156: #153時点は stage (reading/rendering/assembling) のみだった解像度を上げ、
+// build-entered(_artRunPreviewBuild到達)・dom(DOM反映完了)・各stageのphase(fetch-start/headers/
+// body-done・block-start/block-done)まで文言に出す。フィールドが無い呼び出し(古いテスト等)でも
+// 従来どおりの大枠文言にフォールバックする (後方互換)。
 const ART_PREVIEW_STAGE_LABEL = (progress) => {
     if (!progress) return '';
-    if (progress.stage === 'reading' && progress.total > 0) return `長文メモ ${progress.done}/${progress.total} 読込中・`;
-    if (progress.stage === 'rendering') return 'Markdown変換中・';
+    if (progress.stage === 'build-entered') return '生成準備中・';
+    if (progress.stage === 'reading') {
+        const base = progress.total > 0 ? `長文メモ ${progress.done}/${progress.total} 読込中` : '長文メモ読込中';
+        if (progress.phase === 'fetch-start') return `${base}（${progress.adapterKind || ''}へ問合せ中）・`;
+        if (progress.phase === 'headers') return `${base}（応答ヘッダ受信・本文待ち）・`;
+        if (progress.phase === 'body-done') return `${base}（本文受信完了）・`;
+        return `${base}・`;
+    }
+    if (progress.stage === 'rendering') {
+        if (progress.phase === 'block-start' || progress.phase === 'block-done') {
+            return `Markdown変換中（ブロック${(progress.blockIndex ?? 0) + 1}: ${progress.blockType || ''}）・`;
+        }
+        return 'Markdown変換中・';
+    }
     if (progress.stage === 'assembling') return 'ページ組立中・';
+    if (progress.stage === 'dom') return '画面反映中・';
     return '';
 };
+// unit テストから直接検証できるよう公開 (イシュー#156・純粋関数として window に出す制約は
+// extractAppVersionFromHtml と同様、tests/unit/*.test.js が import する ESM 評価では
+// トップレベル const がグローバルスコープへ出ないため)。
+if (typeof window !== 'undefined') window.ART_PREVIEW_STAGE_LABEL = ART_PREVIEW_STAGE_LABEL;
 
 // アプリ本体の新バージョン検知 (イシュー#143・仮説a-1対策)。
 // SW の updatefound は「load 時に reg.update() を1回呼ぶ」だけで、開きっぱなしのタブに新しい
@@ -9500,7 +9521,10 @@ class VirtualBookshelf {
             return;
         }
         this._artHidePreviewStall();
-        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
+        // イシュー#156: 起動ハンドラ発火の計測点(1)。「起動処理」のまま秒数付き表示 (_artRunPreviewBuild
+        // 側の1秒ティック) に切り替わらない＝容疑者①(_artRunPreviewBuild未到達)が濃厚、と実機1回で
+        // 切り分けられるようにするため、_artRunPreviewBuild側の文言とあえて区別する。
+        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（起動処理）</p>');
         this._artOpenPreviewModal();
         await this._artRunPreviewBuild();
     }
@@ -9508,7 +9532,7 @@ class VirtualBookshelf {
     /** ストール表示の「再試行」ボタンから呼ばれる。新しい試行として _artPreview と同じ経路を再実行する。 */
     _artRetryPreview() {
         this._artHidePreviewStall();
-        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…</p>');
+        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（起動処理）</p>');
         this._artRunPreviewBuild();
     }
 
@@ -9522,18 +9546,35 @@ class VirtualBookshelf {
         this._artPreviewGeneration = generation;
         const isCurrent = () => this._artPreviewGeneration === generation;
 
+        // イシュー#156: 段階トレース(世代単位)。ストール発火時に「最後に通過した段階名＋その段階に
+        // 入ってからの経過ms」を画面へ必ず出すための記録。console.warnにも全trace配列を出す
+        // (#153の「console.warnに段階名+経過msを残す」作法を踏襲・devtoolsを開かせない設計は画面表示側)。
+        const trace = [];
+        this._artPreviewTrace = trace;
+
         const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
         const startedAt = Date.now();
-        let lastProgress = { stage: 'reading', done: 0, total: 0 };
+        // (2) _artRunPreviewBuild 冒頭到達の計測点。容疑者①(未到達)は、この行に来ない限り
+        // lastProgress/trace が更新されず、_artPreview側の「生成中…（起動処理）」表示のまま
+        // 1秒ティックの秒数表示にも切り替わらないことで実機から判別できる。
+        let lastProgress = { stage: 'build-entered' };
+        let stageEnteredAt = startedAt;
         let stalled = false;
         let stallTimer = null;
         const stallMs = this._artPreviewStallMs || ART_PREVIEW_STALL_MS;
         const hardDeadlineMs = this._artPreviewHardDeadlineMs || ART_PREVIEW_HARD_DEADLINE_MS;
 
+        const pushTrace = (progress) => {
+            stageEnteredAt = Date.now();
+            trace.push({ ts: stageEnteredAt, ...progress });
+        };
+        pushTrace(lastProgress);
+
         const renderGenerating = () => {
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+            const stageElapsedSec = Math.max(0, Math.round((Date.now() - stageEnteredAt) / 1000));
             const progressText = ART_PREVIEW_STAGE_LABEL(lastProgress);
-            this._artSetPreview(`<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（${progressText}${elapsed}秒経過）</p>`);
+            this._artSetPreview(`<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（${progressText}この段階${stageElapsedSec}秒・全体${elapsed}秒経過）</p>`);
         };
         const tickTimer = setInterval(() => {
             if (!isCurrent()) { clearInterval(tickTimer); return; }
@@ -9543,7 +9584,8 @@ class VirtualBookshelf {
             if (!isCurrent() || stalled) return;
             stalled = true;
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-            this._artShowPreviewStall(lastProgress, elapsed);
+            const stageElapsedMs = Date.now() - stageEnteredAt;
+            this._artShowPreviewStall(lastProgress, elapsed, stageElapsedMs, trace);
         };
         // 個々の読込/変換ステップが返るたびにリセットされる検知 (連続する読込の谷間が長い場合に早期発見)。
         const scheduleStall = () => { clearTimeout(stallTimer); stallTimer = setTimeout(triggerStall, stallMs); };
@@ -9561,7 +9603,7 @@ class VirtualBookshelf {
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], {
                 state: this._artBuildPreviewState(),
-                onProgress: (p) => { lastProgress = p; if (isCurrent() && !stalled) scheduleStall(); }
+                onProgress: (p) => { lastProgress = p; pushTrace(p); if (isCurrent() && !stalled) scheduleStall(); }
             });
             finish();
             if (!isCurrent()) return; // 再試行で新しい世代が始まっている＝この結果は古い
@@ -9569,6 +9611,7 @@ class VirtualBookshelf {
             const file = result.files.find(f => f.path === 'preview/index.html');
             if (file) {
                 this._artSetPreview(file.content);
+                pushTrace({ stage: 'dom' }); // (6) DOM反映完了の計測点
                 // 長文メモの読み込みに失敗があっても生成は続行する (haltOnReadFailure を渡していない)。
                 // 公開HTMLの中身は変えず、アプリ側の通知だけで気づけるようにする (イシュー#134)。
                 if (result.articles[0] && result.articles[0].memoReadFailed) {
@@ -9596,17 +9639,25 @@ class VirtualBookshelf {
         }
     }
 
-    /** ストール検知の発火時表示 (ui-standards §2-11: 何が起きたか＋次にどうすればよいか)。 */
-    _artShowPreviewStall(lastProgress, elapsedSec) {
-        // イシュー#153: 段階名 (reading/rendering/assembling) と経過msを console にも必ず残す。
-        // 本人が実機で1回試すだけで「どの段階で何ms掛かったか」を後から拾える最後の砦。
-        console.warn(`[記事プレビュー] 生成が停止しています。段階=${lastProgress.stage || '不明'} 経過=${elapsedSec}秒`, lastProgress);
+    /**
+     * ストール検知の発火時表示 (ui-standards §2-11: 何が起きたか＋次にどうすればよいか)。
+     * イシュー#156: 「最後に通過した段階名＋その段階に入ってからの経過ms」を画面メッセージに必ず出す
+     * (console だけに出す設計にしない＝devtools を開かせずに実機1回で読める形にするのが本計装の核)。
+     * stageElapsedMs/trace は省略可 (既定 undefined/[]) — 呼び出し元を増やさず既存動作も壊さない。
+     */
+    _artShowPreviewStall(lastProgress, elapsedSec, stageElapsedMs, trace) {
+        // イシュー#153/#156: 段階名 (reading/rendering/assembling 等) と経過ms・全trace配列を
+        // console にも必ず残す。本人が実機で1回試すだけで「どの段階で何ms掛かったか」を後から拾える最後の砦。
+        console.warn(`[記事プレビュー] 生成が停止しています。最終段階=${lastProgress.stage || '不明'} 全体経過=${elapsedSec}秒 この段階の経過=${stageElapsedMs ?? '不明'}ms`, { lastProgress, trace });
         const el = document.getElementById('pp-preview-stall');
         const msgEl = document.getElementById('pp-preview-stall-msg');
         if (!el || !msgEl) return;
         const stageText = ART_PREVIEW_STAGE_LABEL(lastProgress);
-        const progressText = stageText ? `（最後の進捗: ${stageText.replace(/・$/, '')}）` : '';
-        msgEl.textContent = `プレビューの生成が止まっているようです（${elapsedSec}秒経過${progressText}）。\n通信が不安定な可能性があります。`;
+        const stageLabel = stageText ? stageText.replace(/・$/, '') : (lastProgress && lastProgress.stage) || '不明';
+        const progressText = stageElapsedMs != null
+            ? `（最後に通過した段階「${stageLabel}」に入ってから${stageElapsedMs}ms経過）`
+            : (stageText ? `（最後の進捗: ${stageLabel}）` : '');
+        msgEl.textContent = `プレビューの生成が止まっているようです（全体${elapsedSec}秒経過${progressText}）。\n通信が不安定な可能性があります。`;
         el.hidden = false;
     }
 

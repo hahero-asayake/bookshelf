@@ -303,3 +303,21 @@ describe('同一パスへの並行書き込みの直列化', () => {
         expect(adapter._shaCache.get('p.json')).toBe('s2');
     });
 });
+
+describe('readText の hooks 透過 (イシュー#156: 段階トレースがfetchのヘッダ受領/ボディ読了を区別するための経路)', () => {
+    it('readText(path, hooks) の hooks が実際の fetch まで届き、onHeaders → onBody の順に呼ばれる', async () => {
+        mockFetch([() => contentRes('本文', 's1')]);
+        const order = [];
+        const text = await adapter.readText('p.json', {
+            onHeaders: () => order.push('headers'),
+            onBody: () => order.push('body')
+        });
+        expect(text).toBe('本文');
+        expect(order).toEqual(['headers', 'body']);
+    });
+
+    it('hooks を渡さなくても従来どおり動作する (計装は完全にoptional)', async () => {
+        mockFetch([() => contentRes('本文', 's1')]);
+        expect(await adapter.readText('p.json')).toBe('本文');
+    });
+});

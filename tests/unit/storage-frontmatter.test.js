@@ -63,3 +63,22 @@ describe('joinFrontmatter', () => {
         expect(S.joinFrontmatter(null, '# メモ')).toBe('# メモ');
     });
 });
+
+describe('readBookMemo の hooks 透過 (イシュー#156: BookshelfStorage → adapter.readText へ計装フックが届くことの確認)', () => {
+    it('readBookMemo(asin, title, hooks) の hooks がそのまま adapter.readText の第2引数に渡る', async () => {
+        let receivedPath, receivedHooks;
+        const adapter = { readText: async (path, hooks) => { receivedPath = path; receivedHooks = hooks; return '# memo'; } };
+        const storage = new S(adapter);
+        const hooks = { onHeaders: () => {}, onBody: () => {} };
+        const text = await storage.readBookMemo('ASIN1', 'タイトル', hooks);
+        expect(text).toBe('# memo');
+        expect(receivedPath).toBe('private/books/ASIN1__タイトル.md');
+        expect(receivedHooks).toBe(hooks);
+    });
+
+    it('hooks を渡さなくても従来どおり動作する', async () => {
+        const adapter = { readText: async (path) => (path.includes('ASIN1') ? '# memo' : null) };
+        const storage = new S(adapter);
+        expect(await storage.readBookMemo('ASIN1', 'タイトル')).toBe('# memo');
+    });
+});
