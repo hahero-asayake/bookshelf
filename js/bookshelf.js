@@ -22,6 +22,14 @@ const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 // _artPreviewStallMs を優先し、無ければこの既定値を使う。
 const ART_PREVIEW_STALL_MS = 20000; // 20秒: 目安値 (issue依頼のとおり)
 
+// (2)の全体上限は(1)と別値にする(イシュー#153差し戻し対応)。同じ値だと「遅いだけの正常系を
+// 誤検知しない」という(1)の設計意図と矛盾する(20秒で(2)が必ず発火し、10冊×遅い回線のような
+// 正常系でもストール表示に落ちてしまう)。実測(Playwright, 直列読込のため理論値と一致):
+// 10冊×500ms/冊=5013ms、50冊(「まとめて追加」のconfirm閾値, js/bookshelf.js:9083)×2000ms/冊
+// (ADR-081実測の通常応答上限)=100018ms。実運用最悪ケースの100秒を上回る値として stallMs の
+// 5倍(100秒)を採用する。テストから注入できるよう _artPreviewHardDeadlineMs を優先する。
+const ART_PREVIEW_HARD_DEADLINE_MS = ART_PREVIEW_STALL_MS * 5; // 100秒
+
 // build()のonProgressが伝える段階 (イシュー#153: 「生成中…」に段階名を出し、本人が1回試すだけで
 // どこで時間が掛かっているか分かるようにする)。
 const ART_PREVIEW_STAGE_LABEL = (progress) => {
@@ -9487,6 +9495,7 @@ class VirtualBookshelf {
         let stalled = false;
         let stallTimer = null;
         const stallMs = this._artPreviewStallMs || ART_PREVIEW_STALL_MS;
+        const hardDeadlineMs = this._artPreviewHardDeadlineMs || ART_PREVIEW_HARD_DEADLINE_MS;
 
         const renderGenerating = () => {
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
@@ -9510,7 +9519,9 @@ class VirtualBookshelf {
         // イシュー#153: onProgressのたびにscheduleStallをリセットするだけでは、個々のステップが
         // stallMs未満で返り続ける限りビルド全体が何分かかっても検知されない欠陥があったため、
         // 個別リセット式のscheduleStallとは独立に、開始時刻を基準とする固定タイマーを併設する。
-        const hardDeadlineTimer = setTimeout(triggerStall, stallMs);
+        // stallMsと同じ値にすると「遅いだけの正常系を誤検知しない」という個別検知の設計意図と
+        // 矛盾する(実測に基づきstallMsの5倍=100秒を既定にした、ART_PREVIEW_HARD_DEADLINE_MS参照)。
+        const hardDeadlineTimer = setTimeout(triggerStall, hardDeadlineMs);
 
         const finish = () => { clearTimeout(stallTimer); clearTimeout(hardDeadlineTimer); clearInterval(tickTimer); };
 
@@ -9529,6 +9540,12 @@ class VirtualBookshelf {
                 // 公開HTMLの中身は変えず、アプリ側の通知だけで気づけるようにする (イシュー#134)。
                 if (result.articles[0] && result.articles[0].memoReadFailed) {
                     toast('一部の長文メモを読み込めませんでした（通信が不安定な可能性があります）。プレビューにはその本のメモが空欄で表示されています。', { type: 'warn' });
+                }
+                // 強調記号の解析が上限を超えた場合、一部が装飾なしで表示される (イシュー#153)。
+                // console.warnだけでは本人が気づけないため、memoReadFailedと同じ作法でtoastも出す
+                // (公開HTMLの中身は変えず通知だけ)。
+                if (result.articles[0] && result.articles[0].markdownDegraded) {
+                    toast('長文の一部で強調・コード記号が特殊なパターンだったため、装飾なしで表示されています。内容は失われていません。', { type: 'warn' });
                 }
             } else {
                 // ui-standards §2-11: 何が起きたか (errors 全件、無ければその事実自体) ＋ 次の一手を必ず出す。

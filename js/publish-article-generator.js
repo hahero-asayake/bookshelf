@@ -197,7 +197,7 @@ class PublishArticleGenerator {
     //
     // 生 HTML の混入 (<script> 等) は renderer.html でエスケープし、リンク/画像は http(s):/mailto: の
     // スキームのみ許可する (それ以外は無効化)。CSP script-src 'none' に加えた多層防御。
-    static markdownToHtml(markdown) {
+    static markdownToHtml(markdown, opts = {}) {
         const src = String(markdown == null ? '' : markdown);
         if (!src.trim()) return '';
         const esc = PublishArticleGenerator.esc;
@@ -229,6 +229,7 @@ class PublishArticleGenerator {
         const html = g.parse(src, { renderer, tokenizer, gfm: true, breaks: false });
         if (wasDegraded()) {
             console.warn(`[markdownToHtml] 強調記号の解析が上限(${PublishArticleGenerator._EM_STRONG_LDELIM_LIMIT}回)を超えたため一部を装飾なしで表示しました (${src.length}文字, イシュー#153)`);
+            if (typeof opts.onDegraded === 'function') opts.onDegraded();
         }
         return html;
     }
@@ -378,8 +379,10 @@ class PublishArticleGenerator {
 
     // ===== ブロック HTML =====
 
+    _onMarkdownDegraded() { this._markdownDegradedInBuild = true; }
+
     _renderTextBlock(resolved) {
-        const html = PublishArticleGenerator.markdownToHtml(resolved.block.markdown);
+        const html = PublishArticleGenerator.markdownToHtml(resolved.block.markdown, { onDegraded: () => this._onMarkdownDegraded() });
         const shifted = PublishArticleGenerator.shiftHtmlHeadings(html, ARTICLE_HEADING_LEVEL.textBlock);
         return shifted ? `<section class="blk blk-text">${shifted}</section>` : '';
     }
@@ -389,7 +392,7 @@ class PublishArticleGenerator {
         if (!bookData) return '';
         const longMemoHtml = (block.show.longMemo && bookData.detailMemo)
             ? PublishArticleGenerator.shiftHtmlHeadings(
-                PublishArticleGenerator.markdownToHtml(bookData.detailMemo), ARTICLE_HEADING_LEVEL.detailMemo)
+                PublishArticleGenerator.markdownToHtml(bookData.detailMemo, { onDegraded: () => this._onMarkdownDegraded() }), ARTICLE_HEADING_LEVEL.detailMemo)
             : '';
         return `<section class="blk blk-book">
 ${h.cover(bookData)}
@@ -410,7 +413,7 @@ ${h.amazon(bookData)}
             if (!bookData) return '';
             const longMemoHtml = (placement.show.longMemo && bookData.detailMemo)
                 ? PublishArticleGenerator.shiftHtmlHeadings(
-                    PublishArticleGenerator.markdownToHtml(bookData.detailMemo), ARTICLE_HEADING_LEVEL.detailMemo)
+                    PublishArticleGenerator.markdownToHtml(bookData.detailMemo, { onDegraded: () => this._onMarkdownDegraded() }), ARTICLE_HEADING_LEVEL.detailMemo)
                 : '';
             return `<div class="bk">
 ${h.cover(bookData)}
@@ -610,6 +613,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             if (!article.publicId) { errors.push(`公開IDが未発番です: ${article.title}`); continue; }
             let resolvedBlocks, body;
             const report = (stage) => { if (typeof opts.onProgress === 'function') opts.onProgress({ stage, done: 0, total: 0 }); };
+            this._markdownDegradedInBuild = false; // イシュー#153: 安全弁発動(強調記号の一部装飾なし)を記事ごとに検出する
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
                 report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
@@ -661,7 +665,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 reportRef, pluginFooter
             });
             files.push({ path: `${article.publicId}/index.html`, content: html });
-            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed });
+            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
         }
 
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });

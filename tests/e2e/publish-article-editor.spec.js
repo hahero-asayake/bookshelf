@@ -378,7 +378,9 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
     test('長文メモ読込が1冊あたりstallMs未満でも、多数冊の合計経過でストール検知される (回帰テスト・イシュー#153 H2)', async ({ page }) => {
         // イシュー#153で発覚した欠陥: onProgressのたびにscheduleStallがリセットされるため、
         // 個々の読込がstallMs未満で返り続ける限りビルド全体が何分かかってもストール判定されなかった。
-        // 5冊×300ms(stallMs未満)=合計1500msだが、絶対経過ベースの上限(stallMs=500ms)で必ず検知される。
+        // 5冊×300ms(stallMs未満)=合計1500msだが、絶対経過ベースの上限(hardDeadlineMs=1000ms)で
+        // 必ず検知される。差し戻し対応: hardDeadlineMsはstallMsの5倍が既定(実測に基づく)なので、
+        // stallMsと同じ値では検知されない。テストからは両方を独立に短く注入する。
         const errors = await bootApp(page);
         await page.evaluate(() => {
             window.bookshelf.userData.notes = window.bookshelf.userData.notes || {};
@@ -402,13 +404,14 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         }
 
         await page.evaluate(() => {
-            window.bookshelf._artPreviewStallMs = 500; // stallMsを短縮 (本番20000)
-            // 個々の読込は300ms (stallMs未満) で返るが、5冊分で合計1500ms > stallMs
+            window.bookshelf._artPreviewStallMs = 5000; // 個別検知は発火させない値 (5冊分の合計1500ms未満にはならない設計)
+            window.bookshelf._artPreviewHardDeadlineMs = 1000; // 全体上限だけ短縮 (本番はstallMsの5倍=100000)
+            // 個々の読込は300ms (stallMs=5000ms未満) で返るが、5冊分で合計1500ms > hardDeadlineMs(1000ms)
             window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => setTimeout(() => resolve('# メモ'), 300));
         });
 
         await page.click('#art-preview');
-        // 修正前は合計1500ms(stallMsの3倍)待ってもストール表示が出なかった (実測済み)
+        // 修正前は合計1500ms待ってもストール表示が出なかった (実測済み)
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         expect(errors).toEqual([]);
     });

@@ -1,6 +1,6 @@
 // PublishArticleGenerator: Markdown変換 / 見出しシフト / テーマCSS / データ解決 / プライバシーガード の検証
 // (S2 記事モデル生成器, ADR-058・09_公開システム設計 §11.3〜11.6)
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/publish-article-store.js');
 await import('../../js/vendor/marked.umd.js');
@@ -133,6 +133,35 @@ describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回�
         const htmlEmphasis = PublishArticleGenerator.markdownToHtml(withEmphasis);
         expect(htmlEmphasis).toContain('<strong>重要な部分</strong>');
         expect(htmlEmphasis).toContain('<em>強調</em>');
+    });
+
+    // 差し戻し対応: 安全弁(_EM_STRONG_LDELIM_LIMIT)が「壊れていないこと」を明示的に固定する。
+    // 実測(_local/issue153-step4-ldelim-count.mjs): 実運用相当の長文読書メモ(100章=17200文字、
+    // 自然な強調密度)でもLDelimマッチは300回に留まり、上限800回まで2.7倍の余裕がある。
+    it('上限(800回)未満まで閉じた強調を含む長文でもdegradedせず、強調が正しくHTML化される', () => {
+        let degraded = false;
+        const chapterUnit = `## 章
+
+この章では**成長**が描かれる。読んでいて*心に残った*台詞があった。\`引用\`部分も記録する。
+
+`;
+        // 100章(実運用相当の長文メモの規模感)でLDelimマッチは実測300回程度(上限800の半分未満)
+        const text = chapterUnit.repeat(100);
+        const html = PublishArticleGenerator.markdownToHtml(text, { onDegraded: () => { degraded = true; } });
+        expect(degraded).toBe(false);
+        expect(html).toContain('<strong>成長</strong>');
+        expect(html).toContain('<em>心に残った</em>');
+        expect(html).toContain('<code>引用</code>');
+    });
+
+    it('上限(800回)を超える異常入力ではonDegradedが呼ばれ、console.warnで理由(文字数)を通知する', () => {
+        let degraded = false;
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const input = repeatToSize('**閉じない強調 __閉じないアンダー `閉じないコード [閉じないリンク(', 65536);
+        PublishArticleGenerator.markdownToHtml(input, { onDegraded: () => { degraded = true; } });
+        expect(degraded).toBe(true);
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('イシュー#153'));
+        warnSpy.mockRestore();
     });
 });
 
