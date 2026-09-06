@@ -217,7 +217,7 @@ class BookshelfExporter {
         if (!hub.key || !hub.apiBase) {
             throw new Error('共有（ハブ）に公開するには、設定の「同期」で Asayake ハブにログインしてください。');
         }
-        const siteUrl = hub.publicBase || '';
+        const siteUrl = hub.bookshelfBase || hub.publicBase || '';
         if (dryRun) {
             return {
                 dryRun: true,

@@ -3273,7 +3273,8 @@ class VirtualBookshelf {
         if (!status) return;
         const hub = (SyncConfigManager.load().hub) || {};
         if (hub.key && hub.apiBase) {
-            status.textContent = hub.publicBase ? `公開 URL: ${hub.publicBase}` : 'Asayake ハブに接続済み';
+            const base = hub.bookshelfBase || hub.publicBase;
+            status.textContent = base ? `公開 URL: ${base}` : 'Asayake ハブに接続済み';
         } else {
             status.textContent = '先に設定の「同期」で Asayake ハブにログインしてください。';
         }
@@ -7966,9 +7967,12 @@ class VirtualBookshelf {
                     ? `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>`
                     : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
                 const url = pub ? this._artPageUrl(a) : '';
+                // 公開済みなのに publicId 未発番 (旧 pages.json からの移行データ等、イシュー#154) だと
+                // url が空文字になり urlRow が消え「公開したはずなのにリンクが出ない」と映る。
+                // 「更新」ボタン (republish→_artPublishArticle) を押せば自動発番されるため、その旨を出す。
                 const urlRow = url
                     ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a></span>`
-                    : '';
+                    : (pub && !a.publicId ? '<span class="pp-row-url pp-row-url-pending">公開URLを準備中です。「更新」を押すと発行されます。</span>' : '');
                 return `<li class="pp-row" data-id="${esc(a.id)}">
                   <div class="pp-row-main">
                     <span class="pp-row-title">${esc(a.title)} ${badge}</span>
@@ -8039,12 +8043,14 @@ class VirtualBookshelf {
         this._artRenderList();
     }
 
-    // 公開先の公開ベース URL (target=hub なら publicBase、github なら Pages URL)。未確定なら ''
+    // 公開先の公開ベース URL (target=hub なら bookshelfBase(新)優先/publicBase(旧)、github なら Pages URL)。
+    // 未確定なら '' (S6・ADR-076: username 未設定ユーザは bookshelfBase が null のため publicBase へ落ちる)
     _artPublicBase() {
         const cfg = SyncConfigManager.load();
         const pub = cfg.publish || {};
         if (pub.target === 'hub') {
-            return (cfg.hub && cfg.hub.publicBase) || '';
+            const hub = cfg.hub || {};
+            return hub.bookshelfBase || hub.publicBase || '';
         }
         const gh = cfg.github || {};
         const owner = pub.owner || gh.login || gh.owner || '';
@@ -8055,11 +8061,13 @@ class VirtualBookshelf {
         return `https://${o}.github.io/${repo}/`;
     }
 
-    // 記事 1 つの公開 URL (ベース + slug/)。ベース未確定なら ''
+    // 記事 1 つの公開 URL (ベース + publicId/)。URL に slug (タイトル由来) を出さないのが S6・ADR-076
+    // (イシュー#154: 旧実装は a.slug を使っており「.../無題の記事/」のような日本語 URL になっていた)。
+    // ベース未確定、または publicId 未発番 (公開直後の安全網が未実行の旧データ等) なら ''
     _artPageUrl(a) {
         const base = this._artPublicBase();
-        if (!base || !a || !a.slug) return '';
-        return `${base.replace(/\/?$/, '/')}${a.slug}/`;
+        if (!base || !a || !a.publicId) return '';
+        return `${base.replace(/\/?$/, '/')}${a.publicId}/`;
     }
 
     _artFindBlock(id) {

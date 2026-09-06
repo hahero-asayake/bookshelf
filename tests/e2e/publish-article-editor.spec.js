@@ -866,6 +866,125 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect(page.locator('.pp-row .pp-status-on')).toBeVisible();
         expect(errors).toEqual([]);
     });
+
+    // イシュー#154: 記事一覧の公開URL表示 (_artPageUrl) が旧形式 (hub.publicBase + slug) のまま
+    // だった。username 設定済み (bookshelfBase あり) なら新形式 (bookshelfBase + publicId) を、
+    // 末尾は記事タイトル由来の slug ではなく publicId を出すことを検証する。
+    test('記事一覧のURL表示は新形式(bookshelfBase+publicId)で、記事タイトル由来のslugは出ない (イシュー#154)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '無題の記事');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
+        expect(article.publicId).toBeTruthy();
+
+        await page.click('#art-back');
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        const urlLink = page.locator('.pp-row .pp-row-url a').first();
+        await expect(urlLink).toHaveAttribute('href', `https://bookshelf.asayake.org/hahero/${article.publicId}/`);
+        // 記事タイトル (「無題の記事」) がそのまま URL パス断片に出ていないこと (旧 slug 実装の再発防止)
+        expect(await urlLink.getAttribute('href')).not.toContain('無題の記事');
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#154: bookshelfBase (username 設定済み) が無い場合の安全網。ゲート (username-publish-gate)
+    // により通常は username 未設定でハブ公開はブロックされるため、この状態は「一度 username を設定して
+    // 公開した後に何らかの理由で bookshelfBase が失われた」ケースを模して直接 cfg を書き換えて再現する。
+    test('bookshelfBase が無い記事はpublicBaseへフォールバックする (username未設定ユーザを壊さない, イシュー#154)', async ({ page }) => {
+        const { hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'フォールバック確認');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
+
+        // bookshelfBase を失った状態を模し、一覧を再描画させる
+        await page.evaluate(() => {
+            const cfg = SyncConfigManager.load();
+            cfg.hub.bookshelfBase = null;
+            SyncConfigManager.save(cfg);
+        });
+        await page.click('#art-back');
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        const urlLink = page.locator('.pp-row .pp-row-url a').first();
+        await expect(urlLink).toHaveAttribute('href', `${HUB}/public/sid/${article.publicId}/`);
+    });
+
+    // イシュー#154: 設定画面 (同期タブ) の「公開 URL: ...」表示 (_reflectPublishHubStatus) も
+    // hub.publicBase 固定だった。bookshelfBase (新形式) を優先することを検証する。
+    test('設定画面の「公開 URL:」表示は新形式(bookshelfBase)を優先する (イシュー#154)', async ({ page }) => {
+        await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
+        await expect(page.locator('#publish-section')).toHaveClass(/pane-active/);
+        // bootAppForPublish の初期設定は既に target=hub のため、一旦 github へ切替えて戻すことで
+        // change イベントを確実に発火させ、_reflectPublishHubStatus を再実行させる。
+        await page.selectOption('#publish-target-select', 'github');
+        await page.selectOption('#publish-target-select', 'hub');
+        await expect(page.locator('#publish-hub-status')).toContainText('https://bookshelf.asayake.org/hahero/');
+
+        // bookshelfBase を失った状態 (フォールバック) でも publicBase で表示は出る
+        await page.evaluate(() => {
+            const cfg = SyncConfigManager.load();
+            cfg.hub.bookshelfBase = null;
+            SyncConfigManager.save(cfg);
+        });
+        await page.selectOption('#publish-target-select', 'github');
+        await page.selectOption('#publish-target-select', 'hub');
+        await expect(page.locator('#publish-hub-status')).toContainText(`${HUB}/public/sid/`);
+    });
+
+    // イシュー#154 (②レビュー指摘): 旧 pages.json からの移行データ (migrateFromLegacyIfNeeded) は
+    // published をそのまま引き継ぐが publicId は null 固定のため、「公開済みなのに publicId 未発番」
+    // という状態が実在しうる (実際のハブデータで確認された)。URL 表示を空にするだけだと
+    // 「公開したはずなのにリンクが出ない」という別の不可解さになるため、理由と次の一手 (更新ボタン)
+    // が分かる注記を出すこと、かつ「更新」を押せば実際に発番されリンクが復活することを検証する。
+    test('公開済みなのにpublicId未発番の記事は理由の注記が出て、「更新」を押すと発番されURLが表示される (イシュー#154)', async ({ page }) => {
+        const { hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        // 旧移行データを模して published:true / publicId:null の記事を直接注入する
+        await page.evaluate(async () => {
+            const store = window.bookshelf.publishArticleStore;
+            await store.create({ title: '移行済み記事', published: true, blocks: [{ id: 'b1', type: 'text', markdown: '本文' }] });
+        });
+        await page.evaluate(() => window.bookshelf._artRenderList());
+        await expect(page.locator('#art-list-view')).toBeVisible();
+
+        const row = page.locator('.pp-row', { hasText: '移行済み記事' });
+        await expect(row.locator('.pp-row-url')).toHaveText('公開URLを準備中です。「更新」を押すと発行されます。');
+        await expect(row.locator('.pp-row-url a')).toHaveCount(0);
+
+        await row.locator('[data-act="republish"]').click();
+        // 無料プランは初回公開時に同意ダイアログを挟む (このテストではまだ同意していない)
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        const id = await page.evaluate(() => window.bookshelf.publishArticleStore.articles().find(a => a.title === '移行済み記事').id);
+        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
+        expect(article.publicId).toBeTruthy();
+        await expect(row.locator('.pp-row-url a')).toHaveAttribute('href', `https://bookshelf.asayake.org/hahero/${article.publicId}/`);
+    });
 });
 
 test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有効)', () => {

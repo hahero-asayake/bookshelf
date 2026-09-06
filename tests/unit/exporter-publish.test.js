@@ -228,6 +228,23 @@ describe('共有ハブ公開 (target=hub, ADR-033)', () => {
         expect(hubCaptured.files).toBeNull();
         expect(r.writeEntries.sort()).toEqual(['index.html', 'manga/index.html']);
     });
+
+    // イシュー#154: _exportToHub 内の siteUrl (dryRun 結果・公開結果に使う) が hub.publicBase 固定
+    // だった。_exportToHub は export() 内の siteBaseUrl (行90, S6 対応済み) とは別に自前で siteUrl を
+    // 計算しており、そちらが未対応のまま残っていた。
+    it('S6 (ADR-076): dryRun(hub) の siteUrl は bookshelfBase 設定済みならそちらを使う', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', bookshelfBase: 'https://bookshelf.asayake.org/taro-books/' };
+        const r = await new BookshelfExporter(makeApp({ articles: [{ id: 'p1', published: true }] })).export({ dryRun: true });
+        expect(r.siteUrl).toBe('https://bookshelf.asayake.org/taro-books/');
+    });
+
+    it('S6 (ADR-076): bookshelfBase 未設定 (移行未了) の dryRun(hub) siteUrl は従来どおり publicBase', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/' };
+        const r = await new BookshelfExporter(makeApp({ articles: [{ id: 'p1', published: true }] })).export({ dryRun: true });
+        expect(r.siteUrl).toBe('https://hub.example/public/sid/');
+    });
 });
 
 describe('削除同期の安全性 (ADR-033 監査)', () => {
