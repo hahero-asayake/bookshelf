@@ -88,22 +88,24 @@ describe('markdownToHtml (js/vendor/marked.umd.js 経由・CDN不使用)', () =>
 
 describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回帰テスト・イシュー#153)', () => {
     // marked v18.0.9 の emStrong トークナイザーは、閉じない強調記号 (**/__/`) が連続する入力で
-    // O(n^2) に劣化する (修正前実測: 1MBで11019ms)。_makeGuardedTokenizer の安全弁が効いていれば
-    // 1MBでも十分高速に完了する。CI環境のCPU差を吸収するため閾値には余裕を持たせつつ、
-    // 「速くなった」で終わらせず2倍刻みの傾き(線形なら~2倍)でO(n)化を確認する。
+    // O(n^2) に劣化する (修正前実測: ローカルで1MB=11019ms)。_makeGuardedTokenizer の安全弁が
+    // 効いていれば1MBでも十分高速に完了する。閾値はCI共有ランナーのCPU差を吸収する必要がある
+    // (実測: ローカル461-782ms、GitHub Actions共有ランナーで3533ms=ローカルの約7倍)。
+    // O(n^2)のままなら同じ比率でCI環境は約70秒超になるはずなので、8秒の閾値でも十分な回帰検出力
+    // を保ちつつ、「速くなった」で終わらせず2倍刻みの傾き(線形なら~2倍)でO(n)化を確認する。
     function repeatToSize(unit, targetBytes) {
         const times = Math.ceil(targetBytes / Buffer.byteLength(unit, 'utf-8'));
         return unit.repeat(times).slice(0, targetBytes);
     }
     const UNCLOSED_MARKS_UNIT = '**閉じない強調 __閉じないアンダー `閉じないコード [閉じないリンク(';
 
-    it('1MBの閉じない強調記号列を3秒未満で変換完了する (修正前は11秒超)', () => {
+    it('1MBの閉じない強調記号列を8秒未満で変換完了する (修正前はローカルで11秒超・O(n^2)ならCI環境で70秒超になるはず)', () => {
         const input = repeatToSize(UNCLOSED_MARKS_UNIT, 1048576);
         const t0 = performance.now();
         const html = PublishArticleGenerator.markdownToHtml(input);
         const ms = performance.now() - t0;
         expect(html.length).toBeGreaterThan(0);
-        expect(ms).toBeLessThan(3000);
+        expect(ms).toBeLessThan(8000);
     });
 
     it('サイズ2倍ごとの所要時間が概ね2倍前後に収まる (O(n)線形・O(n^2)なら4倍以上になるはず)', () => {
