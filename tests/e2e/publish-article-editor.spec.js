@@ -280,6 +280,81 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         expect(errors).toEqual([]);
     });
 
+    // イシュー#152: 失敗時に理由が空欄のまま表示される設計 (result.errors[0] || '') が、
+    // 20時間の原因究明の一因になっていた (ui-standards §2-11)。errors 全件＋次の一手が
+    // 必ず出ることを検証する。成功経路の内容検証 (記事タイトル・本文の存在) は直前の各テストが
+    // 既にカバーしている。ここでは build() を注入して失敗させる経路 (errors 返却/throw の両方) だけを補う。
+    test('generator.buildがerrorsを返して失敗すると、iframeにerrors全件と次の一手が表示される (イシュー#152)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+
+        await page.evaluate(() => {
+            window.bookshelf.publishArticleGenerator.build = () => Promise.resolve({
+                files: [], articles: [], leak: [],
+                errors: ['接続エラー: 長文メモを読み込めませんでした', '公開IDが未発番です: テスト記事']
+            });
+        });
+
+        await page.click('#art-preview');
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        expect(srcdoc).toContain('プレビューを生成できませんでした');
+        // errors 全件が出る (result.errors[0] だけを見ない)
+        expect(srcdoc).toContain('接続エラー: 長文メモを読み込めませんでした');
+        expect(srcdoc).toContain('公開IDが未発番です: テスト記事');
+        // 次の一手が出る (理由だけで終わらない)
+        expect(srcdoc).toContain('もう一度プレビューを開き直してください');
+        expect(errors).toEqual([]);
+    });
+
+    test('generator.buildがerrorsを返さず(空配列)失敗しても、理由不明である事実と次の一手が表示される (イシュー#152)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+
+        await page.evaluate(() => {
+            // 依頼文が主張していた「preview/index.html が無く errors も空」の状態を模す。
+            window.bookshelf.publishArticleGenerator.build = () => Promise.resolve({
+                files: [], articles: [], leak: [], errors: []
+            });
+        });
+
+        await page.click('#art-preview');
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        expect(srcdoc).toContain('プレビューを生成できませんでした');
+        // 理由が空欄のまま終わらない (旧: result.errors[0] || '' で無言になっていた)
+        expect(srcdoc).not.toMatch(/生成できませんでした。\s*<br>\s*<br>/);
+        expect(srcdoc).toContain('原因不明');
+        expect(srcdoc).toContain('もう一度プレビューを開き直してください');
+        expect(errors).toEqual([]);
+    });
+
+    test('generator.buildがthrowして失敗すると、iframeにエラー内容と次の一手が表示される (イシュー#152)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+
+        await page.evaluate(() => {
+            window.bookshelf.publishArticleGenerator.build = () => Promise.reject(new Error('ネットワークタイムアウト'));
+        });
+
+        await page.click('#art-preview');
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        expect(srcdoc).toContain('プレビューに失敗しました');
+        expect(srcdoc).toContain('ネットワークタイムアウト');
+        expect(srcdoc).toContain('もう一度プレビューを開き直してください');
+        expect(errors).toEqual([]);
+    });
+
     test('build()が永久pendingでも、一定時間で必ずストール表示に落ちる (回帰テスト・イシュー#143)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
@@ -464,6 +539,10 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
             window.bookshelf.flushSync = async () => {};
             window.bookshelf._isSyncReady = () => true;
+            // 本棚全体 (userData) のバックグラウンド同期は LocalFSAdapter 未接続 (dirHandle なし) の
+            // ため、_isSyncReady() の偽装だけでは記事保存を繰り返すうちに debounce タイマーが発火して
+            // 無関係な同期エラーが console.error に混入する (公開テストとは別経路)。ここで止める。
+            window.bookshelf._scheduleSync = () => {};
         }, [JSON.parse(fixtureLibrary), JSON.parse(fixtureUserData).notes]);
         return { errors, hubCaptured };
     }
@@ -557,6 +636,90 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const article = await readArticle();
         expect(article.published).toBe(true);
         await expect(page.locator('#art-unpublish')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#152: 公開後の案内 URL がサイトのトップ (siteUrl そのもの) を指しており、公開した
+    // 記事へ直接飛べなかった。記事個別の URL (<siteUrl>/<publicId>/) を案内することを検証する。
+    test('公開成功後のtoastには記事個別のURL(<siteUrl>/<publicId>/)が案内される。サイトのトップではない (イシュー#152)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'URL案内テスト');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
+        expect(article.publicId).toBeTruthy();
+
+        const successToast = page.locator('.toast-success');
+        await expect(successToast).toBeVisible();
+        const toastText = await successToast.textContent();
+        expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/${article.publicId}/`);
+        // サイトのトップ単体 (末尾が publicId ではない) を案内していないことも確認する。
+        expect(toastText).not.toMatch(/公開 URL: [^\n]*\/sid\/\s*$/m);
+        expect(errors).toEqual([]);
+    });
+
+    test('公開中記事の一括更新: 1件だけならその記事URL、複数件ならサイトのトップ+件数を案内する (イシュー#152)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        // 1本目を作成・公開 (この時点では公開中記事は1件)
+        await page.click('#art-new');
+        await page.fill('#art-title', '一括更新テスト1');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文1');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        const id1 = await page.evaluate(() => window.bookshelf._artEditingId);
+        const article1 = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id1);
+
+        // 一覧に戻り、公開中1件のみで一括更新 → その記事の個別URLを案内する
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        hubCaptured.files = null;
+        await page.click('#art-republish-all');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        let toastText = await page.locator('.toast-success').last().textContent();
+        expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/${article1.publicId}/`);
+
+        // 2本目を作成・公開 (これで公開中記事が2件になる)
+        await page.click('#art-new');
+        await page.fill('#art-title', '一括更新テスト2');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文2');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        hubCaptured.files = null;
+        await page.click('#art-publish');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        // 一覧に戻り、公開中2件で一括更新 → 個別記事に決められないためサイトのトップ+件数を案内する
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        hubCaptured.files = null;
+        await page.click('#art-republish-all');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        toastText = await page.locator('.toast-success').last().textContent();
+        expect(toastText).toContain('公開中の 2 記事を更新しました');
+        expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/`);
+        expect(toastText).not.toContain(`公開 URL: ${HUB}/public/sid/${article1.publicId}/`);
         expect(errors).toEqual([]);
     });
 

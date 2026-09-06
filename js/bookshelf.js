@@ -7746,7 +7746,6 @@ class VirtualBookshelf {
                 return { ok: false, reason: 'flush' };
             }
             const result = await this.exporter.export();
-            this._lastPublishUrl = result.siteUrl;
             console.info('公開 URL:', result.siteUrl);
             // 公開先を記録 (target 切替時に旧公開先の残存を警告するため)
             try {
@@ -9241,6 +9240,12 @@ class VirtualBookshelf {
         if (retryBtn) retryBtn.hidden = !retry;
     }
 
+    // 記事 1 つの公開 URL (siteUrl + publicId/)。siteUrl の末尾スラッシュ有無を問わない (イシュー#152:
+    // result.siteUrl はサイトのトップであり、案内すべきは記事個別の URL のため呼び出し側で組み立てる)。
+    _artArticleUrl(siteUrl, publicId) {
+        return `${String(siteUrl || '').replace(/\/?$/, '/')}${publicId}/`;
+    }
+
     // 記事を公開する (published=true にして全公開中記事を push)。更新(republish)もここを通る。
     // エディタ内「公開する」・一覧の「公開/更新」の共通実体 (旧 _ppPublishPage と同じ役割分担)。
     // opts.draftFlushFailed: 公開直前の下書きリモート反映 (_artFlushRemoteNow) が失敗していた場合に
@@ -9302,7 +9307,12 @@ class VirtualBookshelf {
         if (lastBuiltAtFailed) notes.push('公開日時の記録に失敗しました（表示には影響ありません。しばらくしてからもう一度保存すると解消します）。');
         const noteSummary = notes.length > 0 ? `\n（${notes.join(' ')}）` : '';
         const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-        toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}${noteSummary}`, { type: 'success' });
+        // この記事自身の URL を案内する (イシュー#152: siteUrl はサイトのトップで記事へ直接飛べなかった)。
+        // 長文メモ読込失敗等でこの記事が生成対象から除外されていた場合は articles に含まれないため、
+        // その時だけサイトのトップへフォールバックする (errSummary の注意件数で気づける)。
+        const published = (r.result.articles || []).find(a => a.id === id);
+        const publishUrl = published ? this._artArticleUrl(r.result.siteUrl, published.publicId) : r.result.siteUrl;
+        toast(`「${article.title}」を公開しました。\n公開 URL: ${publishUrl}${errSummary}${noteSummary}`, { type: 'success' });
         this._artRenderList();
     }
 
@@ -9386,7 +9396,13 @@ class VirtualBookshelf {
             const r = await this._runPublishExport();
             if (!r.ok) return;
             const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-            toast(`公開中の ${r.result.published} 記事を更新しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+            // 更新記事が1件ならその記事の URL、複数ならどれか1つに決められないためサイトのトップ
+            // (全記事への入口として妥当) を案内する (イシュー#152)。
+            const updatedArticles = r.result.articles || [];
+            const publishUrl = updatedArticles.length === 1
+                ? this._artArticleUrl(r.result.siteUrl, updatedArticles[0].publicId)
+                : r.result.siteUrl;
+            toast(`公開中の ${r.result.published} 記事を更新しました。\n公開 URL: ${publishUrl}${errSummary}`, { type: 'success' });
             this._artRenderList();
         } finally {
             if (btn) { btn.disabled = false; btn.innerHTML = orig; if (window.applyIcons) window.applyIcons(btn); }
@@ -9500,13 +9516,18 @@ class VirtualBookshelf {
                     toast('一部の長文メモを読み込めませんでした（通信が不安定な可能性があります）。プレビューにはその本のメモが空欄で表示されています。', { type: 'warn' });
                 }
             } else {
-                this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。${PublishArticleGenerator.esc(result.errors[0] || '')}</p>`);
+                // ui-standards §2-11: 何が起きたか (errors 全件、無ければその事実自体) ＋ 次の一手を必ず出す。
+                // result.errors[0] || '' で理由が空欄のまま出ていた設計が原因究明を遅らせた反省 (イシュー#152)。
+                const reason = result.errors.length > 0
+                    ? result.errors.map(e => PublishArticleGenerator.esc(e)).join('<br>')
+                    : '生成結果にプレビュー用のページが含まれていませんでした（原因不明）。';
+                this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。<br>${reason}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
             }
         } catch (e) {
             finish();
             if (!isCurrent()) return;
             this._artHidePreviewStall();
-            this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビュー失敗: ${PublishArticleGenerator.esc(e.message)}</p>`);
+            this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューに失敗しました。<br>${PublishArticleGenerator.esc(e.message)}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
         }
     }
 
