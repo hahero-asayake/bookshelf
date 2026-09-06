@@ -468,6 +468,51 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         return { errors, hubCaptured };
     }
 
+    // イシュー#150: 409 リトライ後も競合が続き lastBuiltAt 記録だけ失敗しても、公開自体 (push) は
+    // 成功しているため「失敗」と表示してはいけない (ui-standards §2-11)。GitHubConflictError を
+    // 模した update() 差し替えで「リトライ後も409」を再現し、成功 toast への集約を検証する。
+    test('公開成功後にlastBuiltAt記録が409で失敗しても、公開成功toastが表示されエラーtoastは出ない (イシュー#150)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => {
+            const store = window.bookshelf.publishArticleStore;
+            const orig = store.update.bind(store);
+            // published/title 等の通常の patch は素通しし、lastBuiltAt を含む patch だけ
+            // 「409 リトライ後も競合」(GitHubConflictError) を模して失敗させる。
+            store.update = async (id, patch, opts) => {
+                if (patch && Object.prototype.hasOwnProperty.call(patch, 'lastBuiltAt')) {
+                    const e = new Error('sha conflict on private/publish/articles.json');
+                    e.name = 'GitHubConflictError';
+                    throw e;
+                }
+                return orig(id, patch, opts);
+            };
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'lastBuiltAt失敗テスト');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        await page.click('#art-publish');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        // 公開 push (hubCaptured.files) は成功している = 公開自体は成功。
+        // 成功 toast が表示され、lastBuiltAt 失敗はその中に付記される。
+        const successToast = page.locator('.toast-success');
+        await expect(successToast).toBeVisible();
+        await expect(successToast).toContainText('を公開しました');
+        await expect(successToast).toContainText('公開日時の記録に失敗しました');
+        // 「保存できませんでした」等の独立したエラー toast は出ない (公開成功の表示を上書きしない)。
+        await expect(page.locator('.toast-error')).toHaveCount(0);
+        // console.error 自体は残る (イシュー#104: 握り潰しで真因が追えなくなるのを防ぐ方針は維持)。
+        expect(errors.some(e => e.includes('公開日時の記録に失敗'))).toBe(true);
+    });
+
     test('「公開する」→同意→push まで通る。生成HTMLに記事タイトル・本の内容が反映される', async ({ page }) => {
         const { errors, hubCaptured } = await bootAppForPublish(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());

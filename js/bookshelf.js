@@ -9171,18 +9171,23 @@ class VirtualBookshelf {
     // 保留中のリモートフラッシュがあれば即座に実行する。エディタを閉じる/公開実行/
     // visibilitychange=hidden/手動再試行のいずれからも呼ばれる (イシュー#142)。
     // E2E からも window.bookshelf._artFlushRemoteNow() で明示的に呼べる。
-    async _artFlushRemoteNow() {
+    async _artFlushRemoteNow(opts) {
         if (this._artRemoteFlushTimer) { clearTimeout(this._artRemoteFlushTimer); this._artRemoteFlushTimer = null; }
-        if (!this.publishArticleStore || !this.publishArticleStore.hasUnsavedChanges()) return;
-        await this._artFlushRemote();
+        if (!this.publishArticleStore || !this.publishArticleStore.hasUnsavedChanges()) return { ok: true };
+        return this._artFlushRemote(opts);
     }
 
-    async _artFlushRemote() {
+    // silent: true の場合、失敗してもエラー toast は出さずステータス欄のみ更新し、呼び出し元に
+    // { ok:false, error } を返す。公開フロー (_artPublish) 内から呼ぶときに使う (イシュー#150) ——
+    // 公開自体が成功した後に付随する下書き反映の失敗は、公開成功 toast と別の「保存できませんでした」
+    // エラー toast を独立に出さず、呼び出し元 (_artPublishArticle) の成功表示へ 1 本化して伝える。
+    async _artFlushRemote({ silent = false } = {}) {
         if (this._artRemoteFlushTimer) { clearTimeout(this._artRemoteFlushTimer); this._artRemoteFlushTimer = null; }
         try {
             await this.publishArticleStore.retryPersist();
             this._artSetSaveStatus('保存しました');
             this._artClearLocalDraft();
+            return { ok: true };
         } catch (e) {
             // create() の書込 (persist) が失敗しても、記事オブジェクト自体は id/slug 確定済みで
             // メモリ上の store には既に積まれている (store.create() は persist 前に push するため)。
@@ -9208,9 +9213,12 @@ class VirtualBookshelf {
                     ? '保存できませんでした。ハブの認証が切れています。設定から再ログインしてください。'
                     : '保存できませんでした。保存先への接続を確認してください。';
             this._artSetSaveStatus(message, { error: true, retry: true });
-            // エディタを閉じた後の即時フラッシュ失敗はステータス表示が見えなくなるため toast でも通知する
-            toast(message, { type: 'error' });
+            if (!silent) {
+                // エディタを閉じた後の即時フラッシュ失敗はステータス表示が見えなくなるため toast でも通知する
+                toast(message, { type: 'error' });
+            }
             console.error('記事の保存に失敗:', e);
+            return { ok: false, error: e };
         }
     }
 
@@ -9235,7 +9243,9 @@ class VirtualBookshelf {
 
     // 記事を公開する (published=true にして全公開中記事を push)。更新(republish)もここを通る。
     // エディタ内「公開する」・一覧の「公開/更新」の共通実体 (旧 _ppPublishPage と同じ役割分担)。
-    async _artPublishArticle(id) {
+    // opts.draftFlushFailed: 公開直前の下書きリモート反映 (_artFlushRemoteNow) が失敗していた場合に
+    // _artPublish から渡される。公開自体の成否とは別に、成功 toast への付記に使う (イシュー#150)。
+    async _artPublishArticle(id, { draftFlushFailed = false } = {}) {
         const article = this.publishArticleStore.get(id);
         if (!article) return;
         // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
@@ -9282,9 +9292,17 @@ class VirtualBookshelf {
         // console.warn だと E2E の page.on('console') error 収集 (type()==='error') に載らず
         // 握り潰しと同じ結果になっていた。console.error に変更しテストから真因が追える形にする
         // (イシュー#104)。
-        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.error('公開日時の記録に失敗 (公開自体は成功):', e); }
+        let lastBuiltAtFailed = !!r.result.lastBuiltAtFailed; // _exportToGitHub/_exportToHub 内の更新
+        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.error('公開日時の記録に失敗 (公開自体は成功):', e); lastBuiltAtFailed = true; }
+        // ui-standards §2-11: 公開自体が成功した以上、付随する記録の失敗は独立したエラー toast に
+        // せず、成功 toast に「何が起きたか」を付記して 1 本化する (イシュー#150。公開成功なのに
+        // 「保存できませんでした」エラー toast が後から出て上書きし、公開失敗と誤認させていた再発)。
+        const notes = [];
+        if (draftFlushFailed) notes.push('直前の編集内容の保存に失敗しました。もう一度保存し直してください。');
+        if (lastBuiltAtFailed) notes.push('公開日時の記録に失敗しました（表示には影響ありません。しばらくしてからもう一度保存すると解消します）。');
+        const noteSummary = notes.length > 0 ? `\n（${notes.join(' ')}）` : '';
         const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-        toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}`, { type: 'success' });
+        toast(`「${article.title}」を公開しました。\n公開 URL: ${r.result.siteUrl}${errSummary}${noteSummary}`, { type: 'success' });
         this._artRenderList();
     }
 
@@ -9292,8 +9310,10 @@ class VirtualBookshelf {
         if (this._artSaveTimer) await this._artFlushSave();
         if (!this._artEditingId) await this._artFlushSave();
         if (!this._artEditingId) { toast('保存に失敗したため公開できません。', { type: 'error' }); return; }
-        await this._artFlushRemoteNow(); // 公開前に保留中の下書きを確実にリモートへ反映する (イシュー#142)
-        await this._artPublishArticle(this._artEditingId);
+        // 公開前に保留中の下書きを確実にリモートへ反映する (イシュー#142)。silent: true にし、
+        // 失敗しても独立したエラー toast は出さず _artPublishArticle の成功表示へ集約する (イシュー#150)。
+        const flushResult = await this._artFlushRemoteNow({ silent: true });
+        await this._artPublishArticle(this._artEditingId, { draftFlushFailed: !flushResult.ok });
     }
 
     async _artPublishFromList(id) {

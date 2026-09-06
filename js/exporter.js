@@ -187,10 +187,13 @@ class BookshelfExporter {
 
         // 各記事の lastBuiltAt を更新
         const now = Date.now();
+        let lastBuiltAtFailed = false;
         for (const a of result.articles) {
             // 公開自体は成功しているため握り潰すが、テストから真因が追えるよう console.error は残す
             // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
-            try { await store.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); }
+            // 失敗有無は lastBuiltAtFailed で呼び出し元 (bookshelf.js) に伝え、成功トーストへの
+            // 付記に使う (イシュー#150: 付随的な記録失敗を「公開失敗」のエラー表示にしない)。
+            try { await store.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
         }
 
         return {
@@ -199,7 +202,8 @@ class BookshelfExporter {
             deletes: deletes.length,
             siteUrl,
             publicUrl: siteUrl,
-            errors: result.errors
+            errors: result.errors,
+            lastBuiltAtFailed
         };
     }
 
@@ -236,10 +240,13 @@ class BookshelfExporter {
         if (typeof HubAuth !== 'undefined') { try { await HubAuth.refreshUsage(); } catch (_) {} }
 
         const now = Date.now();
+        let lastBuiltAtFailed = false;
         for (const a of result.articles) {
             // 公開自体は成功しているため握り潰すが、テストから真因が追えるよう console.error は残す
             // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
-            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); }
+            // 失敗有無は lastBuiltAtFailed で呼び出し元 (bookshelf.js) に伝え、成功トーストへの
+            // 付記に使う (イシュー#150: 付随的な記録失敗を「公開失敗」のエラー表示にしない)。
+            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
         }
         const url = (resp && resp.siteUrl) || siteUrl;
         return {
@@ -248,7 +255,8 @@ class BookshelfExporter {
             deletes: 0,
             siteUrl: url,
             publicUrl: url,
-            errors: result.errors
+            errors: result.errors,
+            lastBuiltAtFailed
         };
     }
 
