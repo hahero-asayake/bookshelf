@@ -8413,7 +8413,9 @@ class VirtualBookshelf {
         // #133: どの本棚から作ったブロックか画面に出す (パス表記+アイコン)。棚が削除済みなら明示する。
         const shelf = this.bookshelfManager.getById(b.shelfId);
         const shelfIconName = shelf ? (shelf.iconName || 'library') : null;
-        const shelfLabel = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(b.shelfId)) : '削除済みの本棚';
+        // イシュー#155: shelfId が最初から無い (未選択のまま保存された旧データ) 場合と、
+        // 一度は設定されたが本棚が削除された場合とで文言を分ける (前者を「削除済み」と言うのは誤り)。
+        const shelfLabel = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(b.shelfId)) : (b.shelfId ? '削除済みの本棚' : '未選択の本棚');
         const shelfHtml = `<span class="art-block-shelf${shelf ? '' : ' is-shelf-missing'}" title="${esc(shelfLabel)}">
             ${shelfIconName ? `<span class="art-block-shelf-icon" data-icon-value="${esc(shelfIconName)}">${window.renderIcon(shelfIconName, { size: 13 })}</span>` : ''}
             <span class="art-block-shelf-path">${esc(shelfLabel)}</span>
@@ -8719,6 +8721,13 @@ class VirtualBookshelf {
             }
         });
 
+        // イシュー#155: 本棚が1つも無い状態では、本棚ブロックを作っても「どの本棚を指すか」を
+        // 解決しようがなく shelfId:null のまま保存されてしまう。_artResolveSourceShelfId() の
+        // 自己修復が効かない唯一のケースなので、その手前で追加自体を止める (無効化+理由表示)。
+        // all(isSpecial) 本棚に限定しない (isSpecial 本棚は同期書き出し時に無ければ生成されるだけで
+        // 常設が保証されておらず、「真の初回」= 通常本棚を1つ作った直後でも isSpecial は無いままの
+        // ケースがある。critical-path.spec.js で実測・_artResolveSourceShelfId() と同じ基準に揃える)。
+        const hasAnyShelf = this.bookshelfManager.getBookshelves().length > 0;
         host.querySelectorAll('.art-add').forEach(addEl => {
             const btn = addEl.querySelector('.art-add-btn');
             const menu = addEl.querySelector('.art-add-menu');
@@ -8731,6 +8740,11 @@ class VirtualBookshelf {
                 if (!menu.hidden) this._placeAnchoredMenu(addEl, menu);
             });
             menu.querySelectorAll('.art-add-menu-item').forEach(item => {
+                if (item.dataset.blockType === 'shelf' && !hasAnyShelf) {
+                    item.disabled = true;
+                    item.title = '本棚がまだ1つもありません。先に本棚を作成してから追加できます。';
+                    return;
+                }
                 item.addEventListener('click', () => {
                     const type = item.dataset.blockType;
                     const index = [...host.querySelectorAll('.art-add')].indexOf(addEl);
@@ -8783,7 +8797,10 @@ class VirtualBookshelf {
             newBlock = { id: PublishArticleStore._newId('blk'), type: 'book', asin: null, show: { shortMemo: false, longMemo: false, rating: false } };
             this._artPendingBookBlockId = newBlock.id;
         } else if (type === 'shelf') {
-            newBlock = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
+            // sourceShelfId が未設定/削除済みでも _artResolveSourceShelfId() が all 本棚へ自動補正する
+            // (イシュー#155: 補正前は shelfId:null のまま保存され「どの本棚か分からないブロック」になっていた)。
+            // 本棚が1つも無い場合のみ null が残るが、その状態ではメニュー側で本棚ブロックの追加自体を無効化している。
+            newBlock = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artResolveSourceShelfId(), items: [] };
             // 追加直後は「本の引き出し」からの追加先として即アクティブにする (ブロックをクリックしなくても使える)
             this._artActiveShelfBlockId = newBlock.id;
         } else return;
@@ -8894,7 +8911,13 @@ class VirtualBookshelf {
     _artResolveSourceShelfId() {
         const bm = this.bookshelfManager;
         if (bm.getById(this._artDraft.sourceShelfId)) return this._artDraft.sourceShelfId;
-        const allShelf = bm.getBookshelves().find(s => s.isSpecial);
+        // イシュー#155: all(isSpecial) 本棚は同期書き出し時に無ければ生成される (_prepareSyncEntries)
+        // だけで、userData.bookshelves の初期値としては保証されていない。実機の「真の初回」
+        // (本棚をまだ1つも作っていない状態) では isSpecial 本棚が存在しないことがある
+        // (critical-path.spec.js で実測)。_artOpenEditor の新規記事初期化 (8100行付近) と同じ
+        // フォールバック順 (all → 先頭の本棚 → null) に揃える。
+        const shelves = bm.getBookshelves();
+        const allShelf = shelves.find(s => s.isSpecial) || shelves[0] || null;
         const fallback = allShelf ? bm._keyOf(allShelf) : null;
         this._artDraft.sourceShelfId = fallback;
         return fallback;
@@ -8961,7 +8984,8 @@ class VirtualBookshelf {
             if (iconEl) { iconEl.innerHTML = window.renderIcon(iconName, { size: 14 }); iconEl.dataset.iconValue = iconName; }
             if (labelEl) labelEl.textContent = current.isSpecial ? current.name : bm.getPathLabel(currentId);
         } else if (labelEl) {
-            labelEl.textContent = '(削除済みの本棚)';
+            // _artResolveSourceShelfId() は本棚が1つも無い場合のみ null を返す (全て解決失敗)。
+            labelEl.textContent = '(本棚がありません)';
             if (iconEl) iconEl.innerHTML = '';
         }
     }
@@ -9021,7 +9045,7 @@ class VirtualBookshelf {
         const orderIndex = shelfBlocks.findIndex(b => b.id === block.id);
         const shelf = this.bookshelfManager.getById(block.shelfId);
         const iconName = shelf ? (shelf.iconName || 'library') : null;
-        const label = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(block.shelfId)) : '削除済みの本棚';
+        const label = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(block.shelfId)) : (block.shelfId ? '削除済みの本棚' : '未選択の本棚');
         hintEl.innerHTML = `<span class="art-drawer-target-label">追加先:</span>
             ${iconName ? `<span class="art-drawer-target-icon" data-icon-value="${esc(iconName)}">${window.renderIcon(iconName, { size: 12 })}</span>` : ''}
             <span class="art-drawer-target-name">${esc(label)}（本棚ブロック${orderIndex + 1}）</span>`;
@@ -9129,7 +9153,8 @@ class VirtualBookshelf {
         if (!asins.length) return;
         let block = this._artFindBlock(this._artActiveShelfBlockId);
         if (!block || block.type !== 'shelf') {
-            block = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artDraft.sourceShelfId, items: [] };
+            // イシュー#155: _artInsertBlock と同じ理由で _artResolveSourceShelfId() を通す。
+            block = { id: PublishArticleStore._newId('blk'), type: 'shelf', shelfId: this._artResolveSourceShelfId(), items: [] };
             if (!this._artDraft.blocks) this._artDraft.blocks = [];
             this._artDraft.blocks.push(block);
             this._artActiveShelfBlockId = block.id;

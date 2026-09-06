@@ -310,6 +310,20 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         expect(html).toContain('漫画2');
     });
 
+    it('shelfId:null (本棚未選択のまま保存された旧データ) でも例外を投げず空の本棚として完走する (回帰テスト・イシュー#155)', async () => {
+        const article = makeArticle({
+            blocks: [
+                { id: 'b1', type: 'shelf', shelfId: null, items: [] },
+                { id: 'b2', type: 'text', markdown: 'aa' }
+            ]
+        });
+        const r = await gen.build([article]);
+        expect(r.errors).toEqual([]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).toContain('class="blk blk-shelf"><div class="shelf"></div>');
+        expect(html).toContain('<p>aa</p>');
+    });
+
     it('同じ本を1記事内に何度でも配置でき、配置ごとに独立した表示設定が反映される (多重集合・追補1)', async () => {
         const article = makeArticle({
             blocks: [{

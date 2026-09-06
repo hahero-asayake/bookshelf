@@ -40,6 +40,34 @@ async function bootApp(page, initialArticlesJSON) {
     return errors;
 }
 
+// イシュー#155: 本棚が1つも無い (all 本棚すら無い) 状態を模す。_artResolveSourceShelfId() の
+// 自己修復が効かない唯一のケースであり、この状態でのみ shelfId:null が生まれ得る。
+async function bootAppNoShelves(page, initialArticlesJSON) {
+    const errors = [];
+    page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const userData = JSON.parse(fixtureUserData);
+    userData.bookshelves = [];
+    await page.addInitScript(([userDataStr, library]) => {
+        localStorage.setItem('virtualBookshelf_userData', userDataStr);
+        localStorage.setItem('virtualBookshelf_library', library);
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+    }, [JSON.stringify(userData), fixtureLibrary]);
+    await page.goto('/index.html');
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+    await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await page.evaluate((initial) => {
+        const mem = new Map();
+        if (initial) mem.set('private/publish/articles.json', initial);
+        const adapter = window.bookshelf.storage.adapter;
+        adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+        adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        window.bookshelf._isSyncReady = () => true;
+    }, initialArticlesJSON || null);
+    return errors;
+}
+
 // イシュー#59: 実データ相当(783冊)の引き出しでビューポート収まりを検証するため、userData の
 // "all" 特殊本棚(books配列)と library の両方に count 冊のダミーを注入する。_artRenderDrawer は
 // shelf.books を直接参照するため、library だけ増やしても引き出しには反映されない (実測済み)。
@@ -2186,6 +2214,96 @@ test.describe('記事エディタ: スクロールコンテナ中間位置でも
         await expect(items).toHaveCount(3);
         for (let i = 0; i < 3; i++) expectBoxWithin(await items.nth(i).boundingBox());
 
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#155: 本棚ブロックが shelfId:null のまま保存される不具合の再発防止。
+// step1で特定した再現条件 (本棚が1つも無い状態) を潰す実装と、既存 shelfId:null データの後方互換を固定する。
+test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシュー#155)', () => {
+    test('本棚が1つも無い状態では「本棚」ブロックの追加メニューが無効化され、追加できない', async ({ page }) => {
+        const errors = await bootAppNoShelves(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        const shelfItem = page.locator('.art-add-menu-item[data-block-type="shelf"]').first();
+        await expect(shelfItem).toBeDisabled();
+        await expect(shelfItem).toHaveAttribute('title', /本棚がまだ1つもありません/);
+        // 無効化されたボタンはクリックしても _artInsertBlock に届かずブロックは増えない
+        await shelfItem.click({ force: true });
+        expect(await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length)).toBe(0);
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚データがある状態では、本棚ブロック追加で shelfId:null が作られない (再発防止・step1の再現条件の裏返し)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        const shelfId = await page.evaluate(() => {
+            const article = window.bookshelf.publishArticleStore.get(window.bookshelf._artEditingId);
+            return article.blocks.find(b => b.type === 'shelf').shelfId;
+        });
+        expect(shelfId).not.toBeNull();
+        expect(errors).toEqual([]);
+    });
+
+    test('sourceShelfId が削除済み本棚を指していても、新規本棚ブロックは all 本棚へ自動補正される (自己修復 _artResolveSourceShelfId)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        // 存在しない本棚IDを sourceShelfId に注入 (削除済み本棚を指していた状況を模す)
+        await page.evaluate(() => { window.bookshelf._artDraft.sourceShelfId = 'deleted-shelf-xyz'; });
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const shelfId = await page.evaluate(() => window.bookshelf._artDraft.blocks.find(b => b.type === 'shelf').shelfId);
+        expect(shelfId).toBe('fixall001'); // fixtureのisSpecial本棚(すべての本)へ補正される
+        expect(errors).toEqual([]);
+    });
+
+    test('既存の shelfId:null データ (旧・異常データ) を読み込んでもエディタ描画が完走し「未選択の本棚」と表示される', async ({ page }) => {
+        const legacyArticle = {
+            id: 'art-legacy-null', slug: 'legacy-null', publicId: 'legacyNull01',
+            title: '旧データ', tags: [],
+            blocks: [
+                { id: 'blk-shelf-null', type: 'shelf', shelfId: null, items: [] },
+                { id: 'blk-text', type: 'text', markdown: 'ab' }
+            ],
+            theme: { layout: 'card', color: 'white' }, sourceShelfId: null, published: false,
+            createdAt: 1, updatedAt: 1, lastBuiltAt: null
+        };
+        const errors = await bootApp(page, { articles: [legacyArticle] });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.locator('#art-list [data-act="edit"]').first().click();
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await expect(page.locator('.art-block-shelf.is-shelf-missing')).toHaveText('未選択の本棚');
+        expect(errors).toEqual([]);
+    });
+
+    test('既存の shelfId:null データでもプレビュー生成が完走する (回帰テスト・#155 step2実測の固定)', async ({ page }) => {
+        const legacyArticle = {
+            id: 'art-legacy-null2', slug: 'legacy-null2', publicId: 'legacyNull02',
+            title: '旧データ2', tags: [],
+            blocks: [
+                { id: 'blk-shelf-null', type: 'shelf', shelfId: null, items: [] },
+                { id: 'blk-text', type: 'text', markdown: 'ab' }
+            ],
+            theme: { layout: 'card', color: 'white' }, sourceShelfId: null, published: false,
+            createdAt: 1, updatedAt: 1, lastBuiltAt: null
+        };
+        const errors = await bootApp(page, { articles: [legacyArticle] });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.locator('#art-list [data-act="edit"]').first().click();
+        await page.click('#art-preview');
+        await page.waitForFunction(() => {
+            const f = document.getElementById('pp-preview-frame');
+            return f && f.srcdoc && !f.srcdoc.includes('生成中');
+        }, { timeout: 10000 });
+        await expect(page.locator('#pp-preview-stall')).toBeHidden();
+        const html = await page.locator('#pp-preview-frame').evaluate((el) => el.srcdoc);
+        expect(html).toContain('class="blk blk-shelf"><div class="shelf"></div>');
         expect(errors).toEqual([]);
     });
 });

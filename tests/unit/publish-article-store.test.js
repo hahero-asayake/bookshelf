@@ -194,6 +194,13 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
         }
     });
 
+    it('shelfId 未指定/null の本棚ブロックも例外にならず null のまま保存される (後方互換・イシュー#155)', async () => {
+        const a = await as.create({ title: 'x', blocks: [{ type: 'shelf', items: [] }] });
+        expect(a.blocks[0].shelfId).toBeNull();
+        const reloaded = as.get(a.id);
+        expect(reloaded.blocks[0].shelfId).toBeNull();
+    });
+
     it('order を明示指定すれば維持し、未指定は配列順で補完する', async () => {
         const a = await as.create({
             title: 'x',
