@@ -165,6 +165,80 @@ describe('onWriteStatus: 409リトライの発火をアプリ層へ通知する 
     });
 });
 
+describe('GET のキャッシュ抑止 (イシュー#150: ブラウザHTTPキャッシュにより「リトライ後も409」が再発した根治)', () => {
+    // 実測 (gh api -i): GitHub Contents API の GET は Cache-Control: private, max-age=60 を返す。
+    // GET(?ref=main付き)とPUT(クエリ無し)はURLが違うため、PUT成功時のブラウザ自動キャッシュ無効化が
+    // 効かず、60秒間ブラウザキャッシュから古い sha が返り続けることがある。_recoverFromConflictAndRetry
+    // がこの古いレスポンスを「取り直した最新」として信じてしまうと、実際には競合していないのに
+    // 何度リトライしても 409 になる。cache:'no-store' で必ずネットワークから最新を取ることで解消する。
+    it('_getContent の GET は cache: no-store を指定する', async () => {
+        const { calls } = mockFetch([() => contentRes('A', 's1')]);
+        await adapter.readText('p.json');
+        const getCall = calls.find(c => c.method === 'GET');
+        expect(getCall).toBeTruthy();
+        // mockFetch は init をそのまま fetch へ渡す実装のため、calls には body しか積んでいないので
+        // ここでは fn の呼び出し引数を直接確認する。
+        const fn = globalThis.fetch;
+        const initArg = fn.mock.calls[0][1];
+        expect(initArg.cache).toBe('no-store');
+    });
+
+    it('commitBatch の ref 取得 GET も cache: no-store を指定する', async () => {
+        mockFetch([
+            () => new Response(JSON.stringify({ object: { sha: 'refsha1' } }), { status: 200 }),
+            () => new Response(JSON.stringify({ tree: { sha: 'treesha1' } }), { status: 200 }),
+            () => new Response(JSON.stringify({ sha: 'blobsha1' }), { status: 200 }),
+            () => new Response(JSON.stringify({ sha: 'newtreesha1' }), { status: 200 }),
+            () => new Response(JSON.stringify({ sha: 'newcommitsha1' }), { status: 200 }),
+            () => new Response(JSON.stringify({ object: { sha: 'newcommitsha1' } }), { status: 200 }),
+        ]);
+        adapter.beginBatch();
+        adapter.addBatchEntry('p.json', 'B');
+        await adapter.commitBatch();
+        const fn = globalThis.fetch;
+        const refGetCall = fn.mock.calls.find(([url, init]) => url.includes('/git/refs/heads/') && (init.method || 'GET').toUpperCase() === 'GET');
+        expect(refGetCall[1].cache).toBe('no-store');
+    });
+
+    it('ブラウザキャッシュが古い sha を返し続ける状況でも、cache:no-store により直列化2本目の書き込みが409にならず成功する', async () => {
+        // 実ブラウザの HTTP キャッシュを模擬: cache:'no-store' が指定されない GET は、
+        // そのURLへの最初のレスポンスを (サーバー側の状態が進んでも) 返し続ける。
+        let serverSha = 's1';
+        const staleCache = new Map();
+        globalThis.fetch = vi.fn(async (url, init = {}) => {
+            const method = (init.method || 'GET').toUpperCase();
+            if (method === 'GET') {
+                if (init.cache !== 'no-store') {
+                    if (!staleCache.has(url)) staleCache.set(url, serverSha);
+                    return contentRes('A', staleCache.get(url)); // キャッシュされた古い sha を返す
+                }
+                return contentRes('A', serverSha); // no-store は必ず最新
+            }
+            if (method === 'PUT') {
+                const body = JSON.parse(init.body);
+                if (body.sha !== serverSha) return putConflictRes();
+                serverSha = 's2';
+                return putOkRes(serverSha);
+            }
+            throw new Error('unexpected method ' + method);
+        });
+
+        // 1本目の書き込み (直列化された前段の書き込みが成功し、サーバー側の sha が s1→s2 に進む)
+        await adapter.writeText('p.json', 'B');
+        expect(serverSha).toBe('s2');
+
+        // 2本目の書き込み: _shaCache をクリアし「まだ自分のキャッシュにshaを持っていない」状態から
+        // 始める (#150 の実ログで、公開1回のうちに articles.json へ複数回書き込みが連続した状況を模す)。
+        adapter._shaCache.delete('p.json');
+        // GET(?ref=main相当のURL)には s1 の古いレスポンスがキャッシュされている想定だが、
+        // _getContent が cache:'no-store' を指定するため実際には最新の s2 を取得し、
+        // 1回で PUT が成功する (修正前は staleCache の s1 を掴んで 409→リトライしても409 になっていた)。
+        await adapter.writeText('p.json', 'C');
+        expect(adapter._shaCache.get('p.json')).toBe('s2');
+        expect(adapter._lastKnownContent.get('p.json')).toBe('C');
+    });
+});
+
 describe('422: sha 不一致以外のバリデーションエラー', () => {
     it('409 とは別の GitHubValidationError を、レスポンスボディ付きで投げる', async () => {
         mockFetch([

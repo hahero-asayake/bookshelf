@@ -9289,11 +9289,11 @@ class VirtualBookshelf {
             this._artRenderList();
             return;
         }
-        // console.warn だと E2E の page.on('console') error 収集 (type()==='error') に載らず
-        // 握り潰しと同じ結果になっていた。console.error に変更しテストから真因が追える形にする
-        // (イシュー#104)。
-        let lastBuiltAtFailed = !!r.result.lastBuiltAtFailed; // _exportToGitHub/_exportToHub 内の更新
-        try { await this.publishArticleStore.update(id, { lastBuiltAt: Date.now() }); } catch (e) { console.error('公開日時の記録に失敗 (公開自体は成功):', e); lastBuiltAtFailed = true; }
+        // lastBuiltAt 更新は _runPublishExport → _exportToGitHub/_exportToHub 内で対象記事も含め
+        // 全公開記事分まとめて1回だけ行う (イシュー#150: ここで再度 update() していたのは exporter 側
+        // と同じ書き込みの二重実行=公開1回でarticles.jsonへの書込が連続することが409の発生確率を
+        // 上げていたため一本化して削除。#104 の console.error は exporter.js 側に残っている)。
+        const lastBuiltAtFailed = !!r.result.lastBuiltAtFailed;
         // ui-standards §2-11: 公開自体が成功した以上、付随する記録の失敗は独立したエラー toast に
         // せず、成功 toast に「何が起きたか」を付記して 1 本化する (イシュー#150。公開成功なのに
         // 「保存できませんでした」エラー toast が後から出て上書きし、公開失敗と誤認させていた再発)。

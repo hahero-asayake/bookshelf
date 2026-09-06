@@ -228,8 +228,12 @@ class GitHubAdapter extends StorageAdapter {
         this._batch = null;
 
         // 1. 現在の branch ref を取得
+        // _getContent と同じ Cache-Control 脆弱性を抱える (イシュー#150)。こちらは 409 ではなく
+        // 6. の ref 更新が 422 でconflict検知するだけでリトライ機構が無いため、古い ref を
+        // ブラウザキャッシュから拾うと「実は最新ではないbase treeで作ったcommit」が422で弾かれず
+        // 気づかれにくい形で失敗しうる。no-store で必ず最新を取る。
         const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
-        const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers() });
+        const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers(), cache: 'no-store' });
         if (!refRes.ok) throw new Error(this._ghErr(refRes, `get ref ${this.branch}`));
         const latestCommitSha = refRes.json.object.sha;
 
@@ -354,7 +358,13 @@ class GitHubAdapter extends StorageAdapter {
 
     async _getContent(path) {
         const url = `${this._apiUrl(path)}?ref=${encodeURIComponent(this.branch)}`;
-        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers() });
+        // GitHub Contents API の GET は `Cache-Control: private, max-age=60` を返す (実測)。
+        // このURL(?ref=付き)はPUT/DELETE(クエリ無し)と別URLのため、書込成功時のブラウザ自動キャッシュ
+        // 無効化が効かず、60秒間ブラウザキャッシュから古い sha が返り続けることがある。409 リカバリ
+        // (_recoverFromConflictAndRetry) がこの古い sha を「最新」として再取得してしまうと、実際には
+        // 競合していないのに何度リトライしても 409 になる (イシュー#150で実機再現・特定)。
+        // no-store で必ずネットワークから最新を取る。
+        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' });
         if (status === 404) return null;
         if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
         if (status === 403) {

@@ -509,8 +509,10 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect(successToast).toContainText('公開日時の記録に失敗しました');
         // 「保存できませんでした」等の独立したエラー toast は出ない (公開成功の表示を上書きしない)。
         await expect(page.locator('.toast-error')).toHaveCount(0);
-        // console.error 自体は残る (イシュー#104: 握り潰しで真因が追えなくなるのを防ぐ方針は維持)。
-        expect(errors.some(e => e.includes('公開日時の記録に失敗'))).toBe(true);
+        // console.error 自体は残る (イシュー#104: 握り潰しで真因が追えなくなるのを防ぐ方針は維持。
+        // #150 で bookshelf.js 側の重複 update を削除し exporter.js 側の1回だけに一本化したため、
+        // 出力元のメッセージも exporter.js のものになる)。
+        expect(errors.some(e => e.includes('記事のlastBuiltAt更新に失敗'))).toBe(true);
     });
 
     test('「公開する」→同意→push まで通る。生成HTMLに記事タイトル・本の内容が反映される', async ({ page }) => {
