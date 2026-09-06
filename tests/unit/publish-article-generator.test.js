@@ -86,6 +86,54 @@ describe('markdownToHtml (js/vendor/marked.umd.js 経由・CDN不使用)', () =>
     });
 });
 
+describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回帰テスト・イシュー#153)', () => {
+    // marked v18.0.9 の emStrong トークナイザーは、閉じない強調記号 (**/__/`) が連続する入力で
+    // O(n^2) に劣化する (修正前実測: 1MBで11019ms)。_makeGuardedTokenizer の安全弁が効いていれば
+    // 1MBでも十分高速に完了する。CI環境のCPU差を吸収するため閾値には余裕を持たせつつ、
+    // 「速くなった」で終わらせず2倍刻みの傾き(線形なら~2倍)でO(n)化を確認する。
+    function repeatToSize(unit, targetBytes) {
+        const times = Math.ceil(targetBytes / Buffer.byteLength(unit, 'utf-8'));
+        return unit.repeat(times).slice(0, targetBytes);
+    }
+    const UNCLOSED_MARKS_UNIT = '**閉じない強調 __閉じないアンダー `閉じないコード [閉じないリンク(';
+
+    it('1MBの閉じない強調記号列を3秒未満で変換完了する (修正前は11秒超)', () => {
+        const input = repeatToSize(UNCLOSED_MARKS_UNIT, 1048576);
+        const t0 = performance.now();
+        const html = PublishArticleGenerator.markdownToHtml(input);
+        const ms = performance.now() - t0;
+        expect(html.length).toBeGreaterThan(0);
+        expect(ms).toBeLessThan(3000);
+    });
+
+    it('サイズ2倍ごとの所要時間が概ね2倍前後に収まる (O(n)線形・O(n^2)なら4倍以上になるはず)', () => {
+        const sizes = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB
+        const timings = sizes.map((size) => {
+            const input = repeatToSize(UNCLOSED_MARKS_UNIT, size);
+            const t0 = performance.now();
+            PublishArticleGenerator.markdownToHtml(input);
+            return performance.now() - t0;
+        });
+        for (let i = 1; i < timings.length; i++) {
+            const ratio = timings[i] / Math.max(timings[i - 1], 0.01);
+            // O(n^2)なら比率は4倍前後(2倍刻みなので2^2)になるはず。線形化できていれば3倍未満に収まる。
+            // CI環境のCPU差・GC等の揺れを見込んだ緩めの上限 (実測ローカルでは概ね2倍前後)。
+            expect(ratio).toBeLessThan(3);
+        }
+    });
+
+    it('通常の文章 (強調記号を含まない/低密度) は誤ってフォールバックされず装飾が残る', () => {
+        const normalText = '普通の読書メモです。'.repeat(2000); // 20000文字・記号密度0%
+        const html = PublishArticleGenerator.markdownToHtml(normalText);
+        expect(html).not.toBe(`<p>${PublishArticleGenerator.esc(normalText)}</p>`);
+
+        const withEmphasis = '# 見出し\n\n**重要な部分**を*強調*しつつ`コード`も書く。\n\n'.repeat(50);
+        const htmlEmphasis = PublishArticleGenerator.markdownToHtml(withEmphasis);
+        expect(htmlEmphasis).toContain('<strong>重要な部分</strong>');
+        expect(htmlEmphasis).toContain('<em>強調</em>');
+    });
+});
+
 describe('shiftHtmlHeadings (§11.5・固定+1ではなく最浅レベルとの差分シフト)', () => {
     it('# 始まりのメモを targetLevel=4 にシフトすると相対関係を保って h4/h5 になる', () => {
         const html = '<h1>導入</h1><p>x</p><h2>詳細</h2>';
@@ -543,26 +591,34 @@ describe('index.html (記事一覧)', () => {
     });
 });
 
-describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143)', () => {
-    it('長文メモ表示ブロックが1件なら {done:0,total:1} → {done:1,total:1} の順に呼ばれる', async () => {
+describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143・段階通知はイシュー#153)', () => {
+    it('長文メモ表示ブロックが1件なら reading{done:0,total:1} → reading{done:1,total:1} → rendering → assembling の順に呼ばれる', async () => {
         const article = makeArticle({ blocks: [
             { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
         ] });
         const calls = [];
         await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
-        expect(calls).toEqual([{ done: 0, total: 1 }, { done: 1, total: 1 }]);
+        expect(calls).toEqual([
+            { stage: 'reading', done: 0, total: 1 },
+            { stage: 'reading', done: 1, total: 1 },
+            { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'assembling', done: 0, total: 0 }
+        ]);
     });
 
-    it('長文メモ表示ブロックが無ければ一度も呼ばれない', async () => {
+    it('長文メモ表示ブロックが無くても rendering/assembling は通知される (読込対象が無いだけ)', async () => {
         const article = makeArticle({ blocks: [
             { type: 'text', markdown: '本文のみ' }
         ] });
         const calls = [];
         await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
-        expect(calls).toEqual([]);
+        expect(calls).toEqual([
+            { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'assembling', done: 0, total: 0 }
+        ]);
     });
 
-    it('複数冊 (shelf内訳含む) なら total が合計件数になり、doneが単調増加する', async () => {
+    it('複数冊 (shelf内訳含む) なら reading段階の total が合計件数になり、doneが単調増加する', async () => {
         const article = makeArticle({ blocks: [
             { type: 'shelf', items: [
                 { asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } },
@@ -578,9 +634,11 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143)'
         const g2 = new PublishArticleGenerator(app);
         const calls = [];
         await g2.build([article], { state, onProgress: (p) => calls.push({ ...p }) });
-        expect(calls[0]).toEqual({ done: 0, total: 2 });
-        expect(calls[calls.length - 1]).toEqual({ done: 2, total: 2 });
-        expect(calls.map(c => c.done)).toEqual([0, 1, 2]);
+        const readingCalls = calls.filter(c => c.stage === 'reading');
+        expect(readingCalls[0]).toEqual({ stage: 'reading', done: 0, total: 2 });
+        expect(readingCalls[readingCalls.length - 1]).toEqual({ stage: 'reading', done: 2, total: 2 });
+        expect(readingCalls.map(c => c.done)).toEqual([0, 1, 2]);
+        expect(calls.map(c => c.stage)).toEqual(['reading', 'reading', 'reading', 'rendering', 'assembling']);
     });
 
     it('onProgress を渡しても渡さなくても、公開HTML出力は完全一致する (可観測性のための変更が公開物に影響しない)', async () => {

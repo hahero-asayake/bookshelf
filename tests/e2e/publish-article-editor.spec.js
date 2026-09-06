@@ -375,6 +375,73 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         expect(errors).toEqual([]);
     });
 
+    test('長文メモ読込が1冊あたりstallMs未満でも、多数冊の合計経過でストール検知される (回帰テスト・イシュー#153 H2)', async ({ page }) => {
+        // イシュー#153で発覚した欠陥: onProgressのたびにscheduleStallがリセットされるため、
+        // 個々の読込がstallMs未満で返り続ける限りビルド全体が何分かかってもストール判定されなかった。
+        // 5冊×300ms(stallMs未満)=合計1500msだが、絶対経過ベースの上限(stallMs=500ms)で必ず検知される。
+        const errors = await bootApp(page);
+        await page.evaluate(() => {
+            window.bookshelf.userData.notes = window.bookshelf.userData.notes || {};
+            ['B000000001', 'B000000002', 'B000000003', 'B000000004', 'B000000005'].forEach((asin) => {
+                window.bookshelf.userData.notes[asin] = { ...(window.bookshelf.userData.notes[asin] || {}), hasDetailMemo: true };
+            });
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
+        const drawerCount = await drawerItems.count();
+        for (let i = 0; i < drawerCount; i++) await drawerItems.nth(i).click();
+        // 本棚アイテムごとの個別トグル (既定 longMemo:false) なので全アイテム分クリックする
+        const longToggles = page.locator('.art-item-show-toggle[data-show-key="longMemo"]');
+        const toggleCount = await longToggles.count();
+        for (let i = 0; i < toggleCount; i++) {
+            const t = longToggles.nth(i);
+            if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
+        }
+
+        await page.evaluate(() => {
+            window.bookshelf._artPreviewStallMs = 500; // stallMsを短縮 (本番20000)
+            // 個々の読込は300ms (stallMs未満) で返るが、5冊分で合計1500ms > stallMs
+            window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => setTimeout(() => resolve('# メモ'), 300));
+        });
+
+        await page.click('#art-preview');
+        // 修正前は合計1500ms(stallMsの3倍)待ってもストール表示が出なかった (実測済み)
+        await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
+        expect(errors).toEqual([]);
+    });
+
+    test('長文メモ読込がハングしても、ストール表示に段階(読込中N/M)が残る (回帰テスト・イシュー#153 H3)', async ({ page }) => {
+        // イシュー#153で確認: LocalFSAdapter.readTextはFile System Access APIを直に呼びタイムアウトの
+        // 外にあった(ステップ2でwithTimeout保護を追加済み)。ここではより上位のstorage.readBookMemoを
+        // 無限pendingにして、どの段階で止まっているかがストール表示に残ることを確認する。
+        const errors = await bootApp(page);
+        await page.evaluate(() => {
+            window.bookshelf.userData.notes = window.bookshelf.userData.notes || {};
+            window.bookshelf.userData.notes['B000000001'] = { ...(window.bookshelf.userData.notes['B000000001'] || {}), hasDetailMemo: true };
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        const longToggle = page.locator('.art-item-show-toggle[data-show-key="longMemo"]').first();
+        if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
+
+        await page.evaluate(() => {
+            window.bookshelf._artPreviewStallMs = 300;
+            window.bookshelf.storage.readBookMemo = () => new Promise(() => {}); // 永久pending
+        });
+
+        await page.click('#art-preview');
+        await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('#pp-preview-stall-msg')).toContainText('長文メモ');
+        await expect(page.locator('#pp-preview-stall-msg')).toContainText('読込中');
+        expect(errors).toEqual([]);
+    });
+
     test('ストール表示から「再試行」を押すと新しい build が始まり、成功すれば結果に差し替わる', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());

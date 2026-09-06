@@ -142,6 +142,30 @@ class StorageAdapter {
         }
         return { ...result, json };
     }
+
+    /**
+     * fetch 以外の Promise (File System Access API 等、AbortController を受け付けない API) に
+     * タイムアウトを掛ける汎用ヘルパー (イシュー#153)。LocalFSAdapter.readText/readJSON はこれまで
+     * fetchText/fetchJSON のタイムアウト保護の外にあり、権限プロンプト待ちやハンドル失効時に
+     * 無期限で pending する余地があった。元の Promise 自体はキャンセルできない (FS API に signal は
+     * 無い) ため、タイムアウト後もバックグラウンドで実行され続ける点に注意 (諦めてエラーを返すだけ)。
+     * @template T
+     * @param {Promise<T>} promise
+     * @param {number} timeoutMs
+     * @param {string} label エラーメッセージに含める操作名
+     * @returns {Promise<T>}
+     */
+    static async withTimeout(promise, timeoutMs, label) {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label}がタイムアウトしました (${timeoutMs}ms)`)), timeoutMs);
+        });
+        try {
+            return await Promise.race([promise, timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
 }
 
 window.StorageAdapter = StorageAdapter;

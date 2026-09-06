@@ -162,6 +162,37 @@ class PublishArticleGenerator {
         return String(text || '').replace(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/, '').trim();
     }
 
+    // marked v18.0.9 の emStrong トークナイザーは、開始デリミタ (*/_) にマッチするたびに
+    // 対応する終了デリミタを残り文字列全体から探索する実装で、対応する終了デリミタが
+    // 存在しない (閉じない強調記号が連続する) 入力では O(n^2) に劣化する (イシュー#153 実測:
+    // 1MB の閉じない強調記号列で 11 秒、メインスレッドを同期占有し「生成中…」が固まって見える
+    // 直接原因と確認)。emStrong はテキスト中の全位置で呼ばれる (マッチしなければ即 return する
+    // だけ) ため、単純な呼び出し回数では *_ を含まない通常の文章でも上限に達してしまう
+    // (実測で発覚)。開始デリミタ候補にマッチした回数 (＝重い探索ループに入った回数) だけを
+    // 数え、それが上限を超えたら以降はデリミタ1文字をプレーンテキストとして消費するだけの
+    // 軽量フォールバックに切り替える。
+    static _EM_STRONG_LDELIM_LIMIT = 800;
+
+    static _makeGuardedTokenizer(g) {
+        const tokenizer = new g.Tokenizer();
+        const originalEmStrong = tokenizer.emStrong.bind(tokenizer);
+        let ldelimMatches = 0;
+        let degraded = false;
+        tokenizer.emStrong = function (src, maskedSrc, prevChar) {
+            if (!degraded) {
+                tokenizer.rules.inline.emStrongLDelim.lastIndex = 0;
+                if (tokenizer.rules.inline.emStrongLDelim.test(src)) ldelimMatches++;
+                if (ldelimMatches > PublishArticleGenerator._EM_STRONG_LDELIM_LIMIT) degraded = true;
+            }
+            if (degraded) {
+                const m = /^([*_])\1*/.exec(src);
+                return m ? { type: 'text', raw: m[0], text: m[0] } : undefined;
+            }
+            return originalEmStrong(src, maskedSrc, prevChar);
+        };
+        return { tokenizer, wasDegraded: () => degraded };
+    }
+
     // ===== Markdown → HTML (js/vendor/marked.umd.js, CDN不使用・§11.4) =====
     //
     // 生 HTML の混入 (<script> 等) は renderer.html でエスケープし、リンク/画像は http(s):/mailto: の
@@ -169,9 +200,9 @@ class PublishArticleGenerator {
     static markdownToHtml(markdown) {
         const src = String(markdown == null ? '' : markdown);
         if (!src.trim()) return '';
+        const esc = PublishArticleGenerator.esc;
         const g = (typeof globalThis !== 'undefined' && globalThis.marked) ||
                   (typeof window !== 'undefined' && window.marked);
-        const esc = PublishArticleGenerator.esc;
         if (!g || typeof g.parse !== 'function' || typeof g.Renderer !== 'function') {
             // vendor 未ロード時のフォールバック (テスト環境の取りこぼし対策)。素の段落として escape する。
             return `<p>${esc(src)}</p>`;
@@ -194,7 +225,12 @@ class PublishArticleGenerator {
             if (!href) return '';
             return `<img src="${esc(href)}" alt="${esc(token.text || '')}" loading="lazy">`;
         };
-        return g.parse(src, { renderer, gfm: true, breaks: false });
+        const { tokenizer, wasDegraded } = PublishArticleGenerator._makeGuardedTokenizer(g);
+        const html = g.parse(src, { renderer, tokenizer, gfm: true, breaks: false });
+        if (wasDegraded()) {
+            console.warn(`[markdownToHtml] 強調記号の解析が上限(${PublishArticleGenerator._EM_STRONG_LDELIM_LIMIT}回)を超えたため一部を装飾なしで表示しました (${src.length}文字, イシュー#153)`);
+        }
+        return html;
     }
 
     // ===== 見出しシフト (§11.5) =====
@@ -320,7 +356,8 @@ class PublishArticleGenerator {
         }
 
         const total = detailTargets.length;
-        const report = (done) => { if (typeof onProgress === 'function') onProgress({ done, total }); };
+        // stage: 'reading'|'rendering'|'assembling' (イシュー#153・段階が画面に残るようにする)。
+        const report = (done) => { if (typeof onProgress === 'function') onProgress({ stage: 'reading', done, total }); };
         if (total > 0) report(0);
         let done = 0;
         for (const bookData of detailTargets) {
@@ -572,9 +609,12 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             // 未発番のまま渡ってきた記事は URL を確定できないため生成対象から外す (S6・ADR-076)。
             if (!article.publicId) { errors.push(`公開IDが未発番です: ${article.title}`); continue; }
             let resolvedBlocks, body;
+            const report = (stage) => { if (typeof opts.onProgress === 'function') opts.onProgress({ stage, done: 0, total: 0 }); };
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
+                report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
                 body = this._renderBlocks(resolvedBlocks);
+                report('assembling'); // HTMLシェル組立
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 
             // 長文メモの読み込みに1件でも失敗 (タイムアウト含む) があった場合の扱い (イシュー#134)。

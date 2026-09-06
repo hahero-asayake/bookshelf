@@ -54,17 +54,21 @@ class LocalFSAdapter extends StorageAdapter {
     // ===== StorageAdapter 実装 =====
 
     async readJSON(path) {
-        const { dirParts, fileName } = this._splitPath(path);
         try {
-            const dir = await this._resolveDir(dirParts);
-            const fileHandle = await dir.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
-            const text = await file.text();
-            return text.trim() ? JSON.parse(text) : null;
+            return await StorageAdapter.withTimeout(this._readJSONRaw(path), 10000, `${path} の読み込み`);
         } catch (e) {
             if (e.name === 'NotFoundError') return null;
             throw e;
         }
+    }
+
+    async _readJSONRaw(path) {
+        const { dirParts, fileName } = this._splitPath(path);
+        const dir = await this._resolveDir(dirParts);
+        const fileHandle = await dir.getFileHandle(fileName);
+        const file = await fileHandle.getFile();
+        const text = await file.text();
+        return text.trim() ? JSON.parse(text) : null;
     }
 
     async writeJSON(path, data) {
@@ -77,16 +81,20 @@ class LocalFSAdapter extends StorageAdapter {
     }
 
     async readText(path) {
-        const { dirParts, fileName } = this._splitPath(path);
         try {
-            const dir = await this._resolveDir(dirParts);
-            const fileHandle = await dir.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
-            return await file.text();
+            return await StorageAdapter.withTimeout(this._readTextRaw(path), 10000, `${path} の読み込み`);
         } catch (e) {
             if (e.name === 'NotFoundError') return null;
             throw e;
         }
+    }
+
+    async _readTextRaw(path) {
+        const { dirParts, fileName } = this._splitPath(path);
+        const dir = await this._resolveDir(dirParts);
+        const fileHandle = await dir.getFileHandle(fileName);
+        const file = await fileHandle.getFile();
+        return await file.text();
     }
 
     async writeText(path, text) {

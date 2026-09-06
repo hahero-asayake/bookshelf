@@ -13,13 +13,24 @@ const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 
-// 記事プレビューのストール検知 (イシュー#143)。build() が失敗も成功もせず無期限に pending した場合、
-// 「生成中…」が永久に残ってしまう (根本原因はfetchWithTimeoutの設計欠陥・ADR-081で根治したが、原因を
-// 問わず「無言の無限スピナー」を見せないための最後の砦として独立に実装する)。一律の全体上限ではなく、
-// 「進捗 (長文メモの読込完了) が一定時間まったく進まない」ことで発火する＝10冊×遅い回線のような
-// 正常系(遅いだけ)を誤ってストール扱いしない。テストから注入できるよう VirtualBookshelf インスタンスの
+// 記事プレビューのストール検知 (イシュー#143・#153)。build() が失敗も成功もせず無期限に pending
+// した場合、「生成中…」が永久に残ってしまう。二段構え: (1) 進捗 (長文メモの読込完了) が一定時間
+// まったく進まないことで発火する検知＝10冊×遅い回線のような正常系(遅いだけ)を誤ってストール扱い
+// しない。(2) それとは独立に、ビルド開始からの絶対経過時間で必ず発火する検知＝onProgressが
+// stallMs未満の間隔で呼ばれ続ける限り(1)が永久にリセットされてしまう欠陥(イシュー#153実測)を
+// 構造的に塞ぐ。テストから注入できるよう VirtualBookshelf インスタンスの
 // _artPreviewStallMs を優先し、無ければこの既定値を使う。
 const ART_PREVIEW_STALL_MS = 20000; // 20秒: 目安値 (issue依頼のとおり)
+
+// build()のonProgressが伝える段階 (イシュー#153: 「生成中…」に段階名を出し、本人が1回試すだけで
+// どこで時間が掛かっているか分かるようにする)。
+const ART_PREVIEW_STAGE_LABEL = (progress) => {
+    if (!progress) return '';
+    if (progress.stage === 'reading' && progress.total > 0) return `長文メモ ${progress.done}/${progress.total} 読込中・`;
+    if (progress.stage === 'rendering') return 'Markdown変換中・';
+    if (progress.stage === 'assembling') return 'ページ組立中・';
+    return '';
+};
 
 // アプリ本体の新バージョン検知 (イシュー#143・仮説a-1対策)。
 // SW の updatefound は「load 時に reg.update() を1回呼ぶ」だけで、開きっぱなしのタブに新しい
@@ -9472,32 +9483,36 @@ class VirtualBookshelf {
 
         const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
         const startedAt = Date.now();
-        let lastProgress = { done: 0, total: 0 };
+        let lastProgress = { stage: 'reading', done: 0, total: 0 };
         let stalled = false;
         let stallTimer = null;
         const stallMs = this._artPreviewStallMs || ART_PREVIEW_STALL_MS;
 
         const renderGenerating = () => {
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-            const progressText = lastProgress.total > 0 ? `長文メモ ${lastProgress.done}/${lastProgress.total} 読込中・` : '';
+            const progressText = ART_PREVIEW_STAGE_LABEL(lastProgress);
             this._artSetPreview(`<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（${progressText}${elapsed}秒経過）</p>`);
         };
         const tickTimer = setInterval(() => {
             if (!isCurrent()) { clearInterval(tickTimer); return; }
             if (!stalled) renderGenerating();
         }, 1000);
-        const scheduleStall = () => {
-            clearTimeout(stallTimer);
-            stallTimer = setTimeout(() => {
-                if (!isCurrent() || stalled) return;
-                stalled = true;
-                const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-                this._artShowPreviewStall(lastProgress, elapsed);
-            }, stallMs);
+        const triggerStall = () => {
+            if (!isCurrent() || stalled) return;
+            stalled = true;
+            const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+            this._artShowPreviewStall(lastProgress, elapsed);
         };
+        // 個々の読込/変換ステップが返るたびにリセットされる検知 (連続する読込の谷間が長い場合に早期発見)。
+        const scheduleStall = () => { clearTimeout(stallTimer); stallTimer = setTimeout(triggerStall, stallMs); };
         scheduleStall();
+        // ビルド開始からの絶対経過時間で発火する上限 (onProgressが何度呼ばれても消えない)。
+        // イシュー#153: onProgressのたびにscheduleStallをリセットするだけでは、個々のステップが
+        // stallMs未満で返り続ける限りビルド全体が何分かかっても検知されない欠陥があったため、
+        // 個別リセット式のscheduleStallとは独立に、開始時刻を基準とする固定タイマーを併設する。
+        const hardDeadlineTimer = setTimeout(triggerStall, stallMs);
 
-        const finish = () => { clearTimeout(stallTimer); clearInterval(tickTimer); };
+        const finish = () => { clearTimeout(stallTimer); clearTimeout(hardDeadlineTimer); clearInterval(tickTimer); };
 
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], {
@@ -9533,12 +9548,14 @@ class VirtualBookshelf {
 
     /** ストール検知の発火時表示 (ui-standards §2-11: 何が起きたか＋次にどうすればよいか)。 */
     _artShowPreviewStall(lastProgress, elapsedSec) {
+        // イシュー#153: 段階名 (reading/rendering/assembling) と経過msを console にも必ず残す。
+        // 本人が実機で1回試すだけで「どの段階で何ms掛かったか」を後から拾える最後の砦。
+        console.warn(`[記事プレビュー] 生成が停止しています。段階=${lastProgress.stage || '不明'} 経過=${elapsedSec}秒`, lastProgress);
         const el = document.getElementById('pp-preview-stall');
         const msgEl = document.getElementById('pp-preview-stall-msg');
         if (!el || !msgEl) return;
-        const progressText = lastProgress.total > 0
-            ? `（最後の進捗: 長文メモ ${lastProgress.done}/${lastProgress.total} 読込中）`
-            : '';
+        const stageText = ART_PREVIEW_STAGE_LABEL(lastProgress);
+        const progressText = stageText ? `（最後の進捗: ${stageText.replace(/・$/, '')}）` : '';
         msgEl.textContent = `プレビューの生成が止まっているようです（${elapsedSec}秒経過${progressText}）。\n通信が不安定な可能性があります。`;
         el.hidden = false;
     }
