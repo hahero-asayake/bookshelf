@@ -7901,6 +7901,24 @@ class VirtualBookshelf {
             this._artRenderDrawer();
         });
         on('art-drawer-add-all', 'click', () => this._artOnDrawerAddAllClick());
+        // 900px以下のボトムシート (イシュー#165・案C): FAB で開く、スクリム/×/Esc で閉じる。
+        on('art-fab', 'click', () => this._artOpenSheet());
+        on('art-sheet-scrim', 'click', () => this._artCloseSheet());
+        on('art-sheet-close', 'click', () => this._artCloseSheet());
+        on('art-publish-header', 'click', () => this._artPublish());
+        this._artBindSheetScrollFade();
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const side = document.getElementById('art-drawer');
+            if (!side || !side.classList.contains('is-open')) return;
+            // capture + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (594行, bubbling
+            // フェーズ) が `.art-drawer` は `.modal` クラスを持たないため巻き込めず、モーダル自体を
+            // 閉じてしまう (art-item-tooltip と同型の対処・ui-standards §1「モーダル内モーダルは
+            // 最前面だけ閉じる」)。シートが開いていなければ何もせず通常の Esc→モーダル閉じを妨げない。
+            this._artCloseSheet();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
         on('art-save-retry', 'click', () => this._artFlushSave().then(() => this._artFlushRemoteNow()));
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
@@ -7929,6 +7947,7 @@ class VirtualBookshelf {
     }
 
     _artShowList() {
+        this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
         document.getElementById('art-list-view').hidden = false;
         document.getElementById('art-edit-view').hidden = true;
         const content = document.querySelector('.art-modal-content');
@@ -8123,6 +8142,7 @@ class VirtualBookshelf {
     }
 
     _artOpenEditor(id) {
+        this._artCloseSheet(); // 前回の編集セッションのシート開閉状態を持ち越さない (開いていなければ no-op)
         this._artEditingId = id;
         this._artPendingBookBlockId = null;
         this._artActiveShelfBlockId = null;
@@ -9104,10 +9124,53 @@ class VirtualBookshelf {
         });
     }
 
+    // ===== 本の引き出しのボトムシート化 (900px以下限定・イシュー#165・案C) =====
+    // ⚠️履歴統合 (物理戻る/スワイプバックでシートを閉じる) は見送り、Esc・スクリム・×ボタンのみ
+    // 対応する。理由: シートは publish-pages-modal というモーダルの「中」で開く入れ子構造のため、
+    // 汎用の _modalHistPush/_modalHistPop (_modalHistStack) で2段積むと、シートを能動的に閉じた際
+    // (fromHistory:false→history.back()) に発生する popstate を汎用ハンドラ (5918行台。スタック末尾を
+    // 無条件 pop する設計) が処理し、既に自分で splice 済みの次の要素 (publish-pages-modal) を誤って
+    // 閉じてしまう実測バグがある (二重 pop・実機のE2Eで再現確認済み)。汎用ハンドラ自体の修正は既存
+    // 21箇所の履歴統合ロジック全てに影響するためこのイシューのスコープを超えると判断し、シート専用の
+    // pushState/popstate も追加しなかった (同じ二重pop構造を再現するリスクがあるため)。②へ判断材料
+    // として申し送り、必要なら別途対応する。
+    _artOpenSheet() {
+        const side = document.getElementById('art-drawer');
+        const scrim = document.getElementById('art-sheet-scrim');
+        if (!side) return;
+        side.classList.add('is-open');
+        if (scrim) scrim.classList.add('is-open');
+    }
+
+    _artCloseSheet() {
+        const side = document.getElementById('art-drawer');
+        if (!side || !side.classList.contains('is-open')) return;
+        side.classList.remove('is-open');
+        const scrim = document.getElementById('art-sheet-scrim');
+        if (scrim) scrim.classList.remove('is-open');
+    }
+
+    // FAB 軽減策 (イシュー#165 §4): 本文スクロール中は半透明化し、止まったら通常表示に戻す。
+    // 常時可視であること自体は要件なので完全に隠しはしない (opacity のみ・display は変えない)。
+    _artBindSheetScrollFade() {
+        if (this._artSheetScrollFadeBound) return;
+        this._artSheetScrollFadeBound = true;
+        let timer = null;
+        document.addEventListener('scroll', (e) => {
+            if (!e.target || e.target.nodeType !== 1 || !e.target.classList || !e.target.classList.contains('art-col')) return;
+            const fab = document.getElementById('art-fab');
+            if (!fab) return;
+            fab.classList.add('is-scrolling');
+            clearTimeout(timer);
+            timer = setTimeout(() => fab.classList.remove('is-scrolling'), 500);
+        }, true);
+    }
+
     _artRenderDrawer() {
         const wrap = document.querySelector('.art-wrap');
         const listHost = document.getElementById('art-drawer-list');
         const badgeEl = document.getElementById('art-drawer-badge');
+        const fabBadgeEl = document.getElementById('art-fab-badge');
         const addAllBtn = document.getElementById('art-drawer-add-all');
         if (!listHost) return;
         this._artRenderDrawerTargetHint();
@@ -9117,6 +9180,7 @@ class VirtualBookshelf {
             if (wrap) wrap.classList.add('art-drawer-collapsed');
             listHost.innerHTML = '';
             if (badgeEl) badgeEl.hidden = true;
+            if (fabBadgeEl) fabBadgeEl.hidden = true;
             if (addAllBtn) addAllBtn.hidden = true;
             return;
         }
@@ -9125,6 +9189,7 @@ class VirtualBookshelf {
         const esc = PublishArticleGenerator.esc;
         const newCount = asins.filter(a => !usedAsins.has(a)).length;
         if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
+        if (fabBadgeEl) { fabBadgeEl.hidden = newCount === 0; fabBadgeEl.textContent = String(newCount); }
         const filteredAsins = this._artDrawerFilteredAsins();
         if (!filteredAsins.length) {
             listHost.innerHTML = '<div class="art-drawer-empty">条件に合う本がありません</div>';
@@ -9166,6 +9231,8 @@ class VirtualBookshelf {
             if (!ok) return;
         }
         this._artAddBooksToShelf(asins);
+        // イシュー#165: 「まとめて追加」も1操作で完結するため900px以下では自動で閉じる (理由は_artOnDrawerBookClick参照)
+        this._artCloseSheet();
     }
 
     _artOnDrawerBookClick(asin) {
@@ -9177,6 +9244,10 @@ class VirtualBookshelf {
                 this._artRenderBlocks();
                 this._artRenderDrawer();
                 this._artScheduleSave();
+                // イシュー#165: 本単体ブロックは1冊選べば操作完結。900px以下ではシートを開いたままにすると
+                // スクリムが本文を覆い続け「選んだら画面が触れなくなる」体験になるため自動で閉じる
+                // (900px超・シート未オープン時は _artCloseSheet が no-op なので無害)。
+                this._artCloseSheet();
                 return;
             }
         }
@@ -9979,8 +10050,11 @@ class VirtualBookshelf {
     // スマホ: モーダルを履歴に積む (物理戻る/スワイプバック = アプリ離脱でなくモーダルを閉じる)。
     // 設定・取込は個別実装 (_settingsHist/_importHist)。それ以外の単純モーダルはこの汎用版を使う。
     // 新しいモーダルを作ったら show で _modalHistPush、close で _modalHistPop を呼ぶ (ui-standards §1)。
-    _modalHistPush(id, close) {
-        if (!this._isSettingsMobile()) return;
+    // isMobile: 既定は _isSettingsMobile() (768px)。判定幅が異なる面 (例: 900px の記事エディタ
+    // ボトムシート・イシュー#165) は個別に判定関数を渡す。既存呼び出しは無変更で従来どおり動く。
+    _modalHistPush(id, close, { isMobile } = {}) {
+        const mobile = isMobile ? isMobile() : this._isSettingsMobile();
+        if (!mobile) return;
         this._bindSettingsPopstate();
         this._modalHistStack = this._modalHistStack || [];
         if (this._modalHistStack.some((e) => e.id === id)) return; // 二重オープンで積み増さない

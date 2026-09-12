@@ -4542,6 +4542,14 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* --- 右ペイン: 本の引き出し --- */
 .art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 100%; display: flex; flex-direction: column; box-shadow: -3px 0 8px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08); }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
+/* --- ヘッダー公開ボタン・本の引き出しのボトムシート化用要素 (900px以下限定。#165)。
+   900px超では一切使わないため既定は非表示にし、900px以下のメディアクエリでのみ有効化する。 */
+.art-hd-publish-group { display: none; margin-left: auto; flex: 0 0 auto; }
+.art-sheet-handle { display: none; flex: 0 0 auto; }
+.art-sheet-close { display: none; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
+.art-sheet-close:hover { color: var(--fg); }
+.art-sheet-scrim { display: none; }
+.art-fab { display: none; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 /* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
    (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
@@ -4597,15 +4605,52 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-drawer-empty { padding: 1rem 0.7rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 900px) {
-    /* 900px以下は既存のシート全体スクロール設計を変えない (残り高さ配分は900px超のみ, イシュー#59)。
-       .art-wrap を明示的に元の暗黙 auto 行に戻し、.art-col も従来の 58vh 上限に固定する。
-       .art-wrap は 900px超用の flex:1 1 auto; min-height:0; (残り高さぶん縮む指定) を継承したままなので、
-       ここで明示的に自然な高さへ戻さないと、.art-side (max-height:none) の実コンテンツ量が増えたとき
-       (今回のフッター拡張でモーダル内の兄弟要素の必要高さが増えた) に .art-wrap 側が圧縮され、
-       .art-side が overflow:visible ではみ出て後続の .pp-edit-actions と重なる (イシュー#99・CI回帰)。 */
-    .art-wrap { grid-template-columns: 1fr; grid-template-rows: none; flex: none; min-height: auto; }
-    .art-col { max-height: 58vh; }
-    .art-side { position: static; max-height: none; }
+    /* ボトムシート化 (イシュー#165・案C)。.art-side を fixed の画面下せり上がりオーバーレイに変え、
+       .art-wrap/.art-col は 900px 超と同じ「モーダルの残り高さを flex チェーンで配分する」設計に統一する
+       (58vh 決め打ちだった旧実装は #59 時点で「.art-side が縦積みでモーダル全体がスクロールする」前提の
+       上に成立していたが、.art-side をフローから外す本変更でその前提自体が崩れるため撤去する)。 */
+    .art-wrap { grid-template-columns: 1fr; }
+
+    .art-hd-publish-group { display: flex; }
+    .art-sheet-handle { display: block; width: 36px; height: 4px; background: var(--line); border-radius: 999px; margin: 0.5rem auto 0; }
+    .art-sheet-close { display: inline-flex; align-items: center; }
+
+    /* 高さは vh 決め打ちでなく安全弁 (ヘッダー等の実測 3.5rem を引いた残り) との min() にする。
+       完全な「親の残り高さから導く」は position:fixed の性質上できない (containing block が viewport になるため)。
+       6幅実測 (イシュー#165 検証ステップ) で安全弁側が常時勝つ場合は実質的な決め打ちと同じになるため flex 側の値を見直す。 */
+    .art-side {
+        position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto;
+        max-height: min(70vh, calc(100vh - 3.5rem));
+        border-radius: 14px 14px 0 0;
+        box-shadow: 0 -6px 20px rgba(0,0,0,.18);
+        transform: translateY(100%);
+        transition: transform 0.25s ease;
+        z-index: 950;
+    }
+    .art-side.is-open { transform: translateY(0); }
+
+    .art-sheet-scrim {
+        display: block; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+        z-index: 940; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    }
+    .art-sheet-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+    /* FAB (常時可視が要件・イシュー#165 §4)。本文 (.art-col) スクロール中は is-scrolling で半透明化
+       するが完全には消さない (バッジの新着件数が読めなくなるため)。 */
+    .art-fab {
+        display: flex; position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 930;
+        width: 52px; height: 52px; border-radius: 50%; border: none;
+        background: var(--accent); color: #fff; cursor: pointer;
+        align-items: center; justify-content: center;
+        box-shadow: 0 6px 16px rgba(0,0,0,.25);
+        transition: opacity 0.2s ease;
+    }
+    .art-fab.is-scrolling { opacity: 0.55; }
+    .art-fab-badge {
+        position: absolute; top: -2px; right: -2px; background: var(--danger); color: #fff;
+        border-radius: 999px; font-size: 0.62rem; padding: 0.05rem 0.4rem; font-weight: 700;
+        min-width: 1.1rem; line-height: 1.4;
+    }
 }
 @media (max-width: 760px) {
     .art-hd { flex-wrap: wrap; }

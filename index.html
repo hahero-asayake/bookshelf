@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026091302">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026091303">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -800,6 +800,9 @@
                 <div class="art-hd">
                     <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
                     <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
+                    <div class="art-hd-publish-group">
+                        <button id="art-publish-header" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
+                    </div>
                 </div>
 
                 <div class="art-tagbar">
@@ -816,9 +819,12 @@
                         <div id="art-blocks" class="art-blocks"></div>
                     </div>
 
-                    <!-- 本の引き出し -->
+                    <!-- 本の引き出し (900px以下ではボトムシート化。ハンドル/閉じるボタンは900px以下限定表示) -->
                     <div class="art-side" id="art-drawer">
-                        <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span></h3>
+                        <div class="art-sheet-handle" aria-hidden="true"></div>
+                        <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span>
+                            <button type="button" id="art-sheet-close" class="art-sheet-close" title="閉じる" aria-label="閉じる"><span class="h-icon" data-icon="x" data-icon-size="16"></span></button>
+                        </h3>
                         <span class="popover-host art-drawer-shelf-host">
                             <button type="button" id="art-drawer-shelf-btn" class="art-drawer-shelf-btn" aria-haspopup="listbox" aria-expanded="false">
                                 <span class="art-drawer-shelf-icon" id="art-drawer-shelf-icon"></span>
@@ -835,6 +841,13 @@
                         <div id="art-drawer-list" class="art-drawer-list"></div>
                     </div>
                 </div>
+
+                <!-- 900px以下限定: ボトムシートのスクリムとFAB (本の引き出しを開く) -->
+                <div id="art-sheet-scrim" class="art-sheet-scrim"></div>
+                <button type="button" id="art-fab" class="art-fab" title="本の引き出しを開く" aria-label="本の引き出しを開く">
+                    <span class="h-icon" data-icon="library" data-icon-size="22"></span>
+                    <span id="art-fab-badge" class="art-fab-badge" hidden></span>
+                </button>
 
                 <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
                 <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
@@ -1212,7 +1225,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026091303"></script>
+    <script src="js/bookshelf.js?v=2026091304"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

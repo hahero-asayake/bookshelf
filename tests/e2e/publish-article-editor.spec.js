@@ -116,6 +116,29 @@ async function bootAppWithManyBooks(page, count = 800) {
     return errors;
 }
 
+// イシュー#165: 900px以下では本の引き出しがボトムシート化され既定で閉じているため、
+// #art-drawer-list の項目を直接クリックする既存テストは先にFABでシートを開く必要がある。
+// 900px超 (FAB非表示) では何もしない=既存の常時表示挙動のまま。
+async function ensureDrawerSheetOpen(page) {
+    const fabVisible = await page.locator('#art-fab').isVisible().catch(() => false);
+    if (!fabVisible) return;
+    const isOpen = await page.evaluate(() => {
+        const el = document.getElementById('art-drawer');
+        return !!(el && el.classList.contains('is-open'));
+    });
+    if (!isOpen) await page.click('#art-fab');
+}
+
+// 開いたままだと #art-sheet-scrim (pointer-events:auto) が以降の操作 (ドラッグ・tap等) を
+// 遮って intercepts pointer events で失敗する。本を選び終えたら必ず対で呼ぶ。
+async function closeDrawerSheetIfOpen(page) {
+    const isOpen = await page.evaluate(() => {
+        const el = document.getElementById('art-drawer');
+        return !!(el && el.classList.contains('is-open'));
+    });
+    if (isOpen) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); }
+}
+
 test.describe('記事エディタ: 作成→編集の基本経路', () => {
     test('新規作成→タイトル/タグ入力→自動保存され一覧に反映される', async ({ page }) => {
         const errors = await bootApp(page);
@@ -1106,8 +1129,10 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
 
         await page.locator('.art-add-btn').first().click();
         await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await ensureDrawerSheetOpen(page); // イシュー#165: 900px以下はボトムシートを開かないと引き出しの本が見えない
         await page.locator('#art-drawer-list .art-drawer-item').nth(0).click();
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
+        await closeDrawerSheetIfOpen(page); // 開いたままだとスクリムが後続のドラッグ操作を遮る
 
         const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => it.asin));
         const before = await orderOf();
@@ -1823,7 +1848,9 @@ test.describe('記事エディタ: 短/長トグルのツールチップ タッ�
         await page.click('#art-new');
         await page.locator('.art-add-btn').first().click();
         await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await ensureDrawerSheetOpen(page); // イシュー#165: 900px以下はボトムシートを開かないと引き出しの本が見えない
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click(); // B000000002
+        await closeDrawerSheetIfOpen(page); // 開いたままだとスクリムが後続のtap操作を遮る
 
         const shortToggle = page.locator('.art-shelf-item').first().locator('.art-item-show-toggle[data-show-key="shortMemo"]');
         await expect(shortToggle).not.toHaveClass(/is-on/);
@@ -2335,6 +2362,89 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await expect(page.locator('#pp-preview-stall')).toBeHidden();
         const html = await page.locator('#pp-preview-frame').evaluate((el) => el.srcdoc);
         expect(html).toContain('class="blk blk-shelf"><div class="shelf"></div>');
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#165 (案C: ボトムシート+FAB): 900px以下限定のFAB→シート開閉→公開ボタン常時可視の経路。
+test.describe('記事エディタ: ボトムシートFAB (900px以下限定・イシュー#165)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('FABで本の引き出しシートを開閉でき、本を追加でき、ヘッダーの公開ボタンからも公開できる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'ボトムシートテスト記事');
+
+        // FABは常時可視 (§4)。閉じている間、引き出しの本はビューポート外にある (toBeVisible() は
+        // 画面外でも真になるため使わない・ui-standards §2-12。boundingBox で実座標を見る)。
+        await expect(page.locator('#art-fab')).toBeVisible();
+        const closedBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
+        expect(closedBox.y).toBeGreaterThanOrEqual(844);
+
+        // FABクリックでシートがせり上がり、本が画面内でクリックできる (transform transition 0.25s待つ)
+        await page.click('#art-fab');
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await page.waitForTimeout(400);
+        const openBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
+        expect(openBox.y).toBeGreaterThanOrEqual(0);
+        expect(openBox.y).toBeLessThan(844);
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        const blockCount = await page.evaluate(() => window.bookshelf._artDraft.blocks.length);
+        expect(blockCount).toBe(1);
+
+        // 本選択後もシートは自動で閉じない (複数冊を続けて追加できる設計)。この状態のまま Esc を押すと
+        // シートだけが閉じ、モーダル本体は残ることを確認する (シートは.modalクラスを持たないため
+        // 全モーダル共通Escハンドラの誤爆に注意が要る・実装時に発見)。
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await page.waitForTimeout(400); // transform transition 0.25s完了を確実に待つ (スクリムのopacity遷移含む)
+
+        // FABはフッターの操作ボタン (プレビュー・公開) の実クリック領域を覆わない (シートを閉じた状態で確認)
+        // (elementFromPoint で各ボタンの四隅+中心を実座標チェック。§4のFAB常時可視とフッター両立の確認。
+        // art-dup/art-del は新規記事では #art-page-ops が hidden で幅0になるため対象から外す)
+        const footerIds = ['art-preview', 'art-publish'];
+        for (const id of footerIds) {
+            const covered = await page.evaluate((elId) => {
+                const el = document.getElementById(elId);
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                const points = [[r.left + 2, r.top + 2], [r.right - 2, r.top + 2], [r.left + 2, r.bottom - 2], [r.right - 2, r.bottom - 2], [(r.left + r.right) / 2, (r.top + r.bottom) / 2]];
+                return points.map(([x, y]) => {
+                    const top = document.elementFromPoint(x, y);
+                    return top === el || (el.contains(top));
+                });
+            }, id);
+            if (covered) expect(covered.every(Boolean), `${id} の全隅+中心が自分自身でヒットする (FABに覆われていない)`).toBe(true);
+        }
+
+        // ヘッダーの公開ボタン (常時可視化・§2) は既存のフッター公開ボタンと同じ関数を呼ぶ
+        await expect(page.locator('#art-publish-header')).toBeVisible();
+        await page.evaluate(() => {
+            const orig = window.bookshelf._artPublish.bind(window.bookshelf);
+            window.bookshelf._artPublishCalled = false;
+            window.bookshelf._artPublish = async (...args) => { window.bookshelf._artPublishCalled = true; return orig(...args); };
+        });
+        await page.click('#art-publish-header');
+        await expect.poll(() => page.evaluate(() => window.bookshelf._artPublishCalled)).toBe(true);
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 900px超では従来どおり2カラム表示のまま (回帰確認・イシュー#165)', () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    test('FAB・ヘッダー公開ボタンは表示されず、本の引き出しは常時右側パネルとして見える', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+
+        await expect(page.locator('#art-fab')).toBeHidden();
+        await expect(page.locator('.art-hd-publish-group')).toBeHidden();
+        const sideBox = await page.locator('#art-drawer').boundingBox();
+        expect(sideBox.y).toBeGreaterThanOrEqual(0);
+        expect(sideBox.y).toBeLessThan(400);
         expect(errors).toEqual([]);
     });
 });
