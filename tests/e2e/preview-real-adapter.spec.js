@@ -178,3 +178,32 @@ test('(c) fetchが最後まで応答しない場合、実GitHubAdapter+実fetch�
     expect(stallMsg).toContain('へ問合せ中');
     expect(errors).toEqual([]);
 });
+
+test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロック単位の段階表示が画面(srcdoc)へ反映される (イシュー#160: メインスレッド同期占有時でもpaintの機会を保証する保険実装)', async ({ page }) => {
+    const errors = await bootAppGitHub(page, {});
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.click('#art-new');
+    await expect.poll(() => page.evaluate(() => !!window.bookshelf._artDraft)).toBe(true);
+    // UIから1個ずつブロック追加すると待ち時間が長すぎるため、既に開いている _artDraft へ直接
+    // 大量のtextブロックを注入する (経路自体は #art-preview クリック→本物のbuild()/onProgress)。
+    await page.evaluate(() => {
+        const bigMd = '# 見出し\n\n' + '本文です。'.repeat(3000);
+        window.bookshelf._artDraft.blocks = Array.from({ length: 24 }, (_, i) => ({
+            id: `b${i}`, type: 'text', markdown: bigMd
+        }));
+    });
+    await page.click('#art-preview');
+    let seenBlockProgress = false;
+    for (let i = 0; i < 50; i++) {
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        if (srcdoc && srcdoc.includes('Markdown変換中（ブロック')) { seenBlockProgress = true; break; }
+        await page.waitForTimeout(20);
+    }
+    console.log(`[preview-real-adapter] (d) ブロック単位の段階表示を検出=${seenBlockProgress}`);
+    expect(seenBlockProgress).toBe(true);
+    await expect.poll(async () => {
+        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+        return srcdoc;
+    }, { timeout: 10000 }).not.toContain('生成中');
+    expect(errors).toEqual([]);
+});

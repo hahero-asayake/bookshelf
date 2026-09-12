@@ -116,6 +116,11 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         await expect(page.locator('.art-shelf-item')).toHaveCount(1);
         await page.click('#art-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+        // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+        // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
+        // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+            .not.toContain('生成中');
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).not.toContain('生成できませんでした');
         expect(srcdoc).not.toContain('プレビュー失敗');

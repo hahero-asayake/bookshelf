@@ -265,6 +265,11 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
 
         await page.click('#art-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+        // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+        // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
+        // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+            .not.toContain('生成中');
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('わたしを構成する10冊');
         expect(srcdoc).toContain('はじめに');
@@ -287,6 +292,11 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
 
         await page.click('#art-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+        // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+        // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
+        // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+            .not.toContain('生成中');
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('class="bk-rating"');
         expect(srcdoc).toContain('aria-label="評価 5/5"');
@@ -303,6 +313,11 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // debounce (600ms) が経過する前に即プレビューを押す
         await page.locator('.art-block-text textarea').fill('# まだ保存されていない見出し');
         await page.click('#art-preview');
+        // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+        // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
+        // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+            .not.toContain('生成中');
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('まだ保存されていない見出し');
         expect(errors).toEqual([]);
@@ -551,6 +566,11 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.selectOption('#art-theme-layout', 'wall');
         await page.selectOption('#art-theme-color', 'black');
         await page.click('#art-preview');
+        // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+        // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
+        // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+            .not.toContain('生成中');
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('data-layout="wall"');
         expect(srcdoc).toContain('data-color="black"');

@@ -165,6 +165,11 @@ test('公開: 記事を新規作成→本棚ブロックに本を配置→プレ
     await expect(page.locator('.art-shelf-item')).toHaveCount(1);
     await page.click('#art-preview');
     await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+    // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
+    // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
+    // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
+    await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
+        .not.toContain('生成中');
     const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
     expect(srcdoc).toContain('フィクスチャの本');
     expect(srcdoc).not.toContain('生成できませんでした');

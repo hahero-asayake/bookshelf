@@ -9590,6 +9590,18 @@ class VirtualBookshelf {
         // 個々の読込/変換ステップが返るたびにリセットされる検知 (連続する読込の谷間が長い場合に早期発見)。
         const scheduleStall = () => { clearTimeout(stallTimer); stallTimer = setTimeout(triggerStall, stallMs); };
         scheduleStall();
+        // イシュー#160: tickTimer(setInterval)・stallTimer/hardDeadlineTimer(setTimeout)は、いずれも
+        // メインスレッドが同期占有されている間はコールバック自体が発火しない(#153/#156の構造そのもの)。
+        // onProgressは各同期ブロックの境界(reading/rendering各ステップ)で必ず呼ばれるため、そのたびに
+        // (1)tickTimerの1秒待ちに依存せず画面文言を即時更新し、(2)hardDeadlineを既に過ぎていればタイマーの
+        // 発火を待たずその場でstallを起こす、という自己回復を行う。「占有中はタイマーが発火しない」構造を
+        // 前提に、次にJSが動く瞬間(=onProgress呼び出し時)を検知の代替トリガーにする設計。
+        const onProgressTick = () => {
+            if (!isCurrent()) return;
+            if (stalled) return;
+            if (Date.now() - startedAt >= hardDeadlineMs) { triggerStall(); return; }
+            renderGenerating();
+        };
         // ビルド開始からの絶対経過時間で発火する上限 (onProgressが何度呼ばれても消えない)。
         // イシュー#153: onProgressのたびにscheduleStallをリセットするだけでは、個々のステップが
         // stallMs未満で返り続ける限りビルド全体が何分かかっても検知されない欠陥があったため、
@@ -9603,7 +9615,7 @@ class VirtualBookshelf {
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], {
                 state: this._artBuildPreviewState(),
-                onProgress: (p) => { lastProgress = p; pushTrace(p); if (isCurrent() && !stalled) scheduleStall(); }
+                onProgress: (p) => { lastProgress = p; pushTrace(p); if (isCurrent() && !stalled) scheduleStall(); onProgressTick(); }
             });
             finish();
             if (!isCurrent()) return; // 再試行で新しい世代が始まっている＝この結果は古い

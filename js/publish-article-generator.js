@@ -21,6 +21,11 @@
 // 本のタイトルは h3、そこに埋め込む長文メモは h4 から始める (メモ内の相対関係は保ったまま差分シフト)。
 const ARTICLE_HEADING_LEVEL = { textBlock: 2, bookTitle: 3, detailMemo: 4 };
 
+// イシュー#160: メインスレッドが同期占有されている間は、DOM を書き換えてもブラウザは paint できない
+// (マイクロタスクの隙間だけでは足りず、マクロタスク境界へ戻る必要がある)。ブロック解決/変換の各境界で
+// これへ await することで、重い記事でも進捗表示が実際に画面へ反映される機会を保証する。
+const _yieldToEventLoop = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 // 配色トークン10種 (§11.3・モック ~/kuroko/discord/tmp/mock-theme.html で実証された値をベースに、
 // axe-core (WCAG AA) のコントラスト検証で不足が見つかった2値だけ補正した (完了条件検証時に発見・S2):
 //   white: --sub #767676→#666666 (--surface #fafafa との比が4.35→5.50)
@@ -450,9 +455,14 @@ ${h.longMemo(longMemoHtml)}
         return `<section class="blk blk-shelf"><div class="shelf">${tiles}</div></section>`;
     }
 
-    _renderBlocks(resolvedBlocks, onProgress) {
+    // イシュー#160: 元は同期 .map() だった (呼び出し元は build() の1箇所のみ・戻り値は変わらない)。
+    // ブロックごとに await _yieldToEventLoop() でマクロタスクへ戻り、Markdown変換 (#153のO(n²)劣化が
+    // 実際に起きる区間) が重い記事でも、ブロック境界で画面へ進捗が反映される機会を保証する。
+    async _renderBlocks(resolvedBlocks, onProgress) {
         const h = this._helpers();
-        return resolvedBlocks.map((r, blockIndex) => {
+        const parts = [];
+        for (let blockIndex = 0; blockIndex < resolvedBlocks.length; blockIndex++) {
+            const r = resolvedBlocks[blockIndex];
             // イシュー#156: 各ブロックのMarkdown→HTML変換 (#153のO(n²)劣化が実際に起きる区間) の
             // 開始/完了をブロック index+種別つきで計測する。
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex, blockType: r.type });
@@ -460,9 +470,11 @@ ${h.longMemo(longMemoHtml)}
             if (r.type === 'text') html = this._renderTextBlock(r);
             else if (r.type === 'book') html = this._renderBookBlock(r, h);
             else if (r.type === 'shelf') html = this._renderShelfBlock(r, h);
+            if (html) parts.push(html);
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex, blockType: r.type });
-            return html;
-        }).filter(Boolean).join('\n');
+            await _yieldToEventLoop();
+        }
+        return parts.join('\n');
     }
 
     // ===== HTML シェル =====
@@ -645,7 +657,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
                 report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
-                body = this._renderBlocks(resolvedBlocks, opts.onProgress);
+                body = await this._renderBlocks(resolvedBlocks, opts.onProgress);
                 report('assembling'); // HTMLシェル組立
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 

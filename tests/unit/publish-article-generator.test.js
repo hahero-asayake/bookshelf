@@ -759,6 +759,26 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         expect(JSON.stringify(with_.files)).toBe(JSON.stringify(without.files));
         expect(JSON.stringify(with_.articles)).toBe(JSON.stringify(without.articles));
     });
+
+    it('_renderBlocks はブロックごとにマクロタスクへ yield する (イシュー#160: メインスレッドが長時間同期占有される記事でも、ブロック境界でブラウザがpaintする機会を保証する保険実装)', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'text', markdown: 'A' },
+            { type: 'text', markdown: 'B' }
+        ] });
+        const order = [];
+        await gen.build([article], { onProgress: (p) => {
+            if (p.stage === 'rendering' && p.phase === 'block-done' && p.blockIndex === 0) {
+                // block0完了の直後にマクロタスクを1つ積む。_renderBlocksが本当に
+                // setTimeout(...,0) でイベントループへ戻っていれば、先に登録されたこちらが
+                // block1のblock-startより先に実行されるはず (FIFO)。
+                setTimeout(() => order.push('interleaved-macrotask'), 0);
+            }
+            if (p.stage === 'rendering' && p.phase === 'block-start' && p.blockIndex === 1) {
+                order.push('block1-start');
+            }
+        } });
+        expect(order).toEqual(['interleaved-macrotask', 'block1-start']);
+    });
 });
 
 describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完了条件)', () => {
