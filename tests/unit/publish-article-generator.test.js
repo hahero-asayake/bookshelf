@@ -805,6 +805,127 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
     });
 });
 
+describe('opts.onTimerLag (イシュー#163: Promise.raceに負けたsetTimeoutの解決を捨てずに観測し、resumedBy単独では区別できない「タイマー健全」と「タイマー凍結だがMessageChannelに救われた」を遅延値で埋める)', () => {
+    it('onTimerLag は onProgress とは別経路で呼ばれ、onProgress 側には timer-lag 系の phase が一切現れない (②指摘: pushTrace/lastProgress を汚さないための設計。timer-lag系がラベル経路に入らないことの一次的な保証はここ)', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'text', markdown: 'A' },
+            { type: 'text', markdown: 'B' }
+        ] });
+        const progressCalls = [];
+        const timerLagCalls = [];
+        const result = await gen.build([article], {
+            onProgress: (p) => progressCalls.push({ ...p }),
+            onTimerLag: (info) => timerLagCalls.push({ ...info })
+        });
+        expect(progressCalls.some(c => String(c.phase || '').startsWith('timer-lag'))).toBe(false);
+        const summary = timerLagCalls.find(c => c.phase === 'timer-lag-summary');
+        expect(summary).toBeTruthy();
+        expect(summary.yields).toBe(2);
+        expect(typeof summary.buildId).toBe('number');
+        // 可観測性のための配線追加が公開HTML出力に影響しないことを既存の同種テスト(onProgress版)と
+        // 同じ作法で確認する。
+        const without = await gen.build([{ ...article }], { state: makeState() });
+        expect(JSON.stringify(result.files)).toBe(JSON.stringify(without.files));
+    });
+
+    it('健全時(実タイマー)は timer-lag-summary の overCount が0でmaxLagMsが小さく収まり、閾値超えの個別timer-lagイベントも出ない(「止まっていない」と読める)', async () => {
+        const article = makeArticle({ blocks: [
+            { type: 'text', markdown: 'A' },
+            { type: 'text', markdown: 'B' },
+            { type: 'text', markdown: 'C' }
+        ] });
+        const timerLagCalls = [];
+        await gen.build([article], { onTimerLag: (info) => timerLagCalls.push({ ...info }) });
+        // summary はループ完了直後の同期スナップショット(末尾ブロック分のsetTimeoutがまだ発火して
+        // いないことがある)。実タイマーで少し待ち、遅延発火分の個別イベント有無も含めて確認する。
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const summary = timerLagCalls.find(c => c.phase === 'timer-lag-summary');
+        expect(summary).toBeTruthy();
+        expect(summary.yields).toBe(3);
+        expect(summary.overCount).toBe(0);
+        expect(summary.maxLagMs).toBeLessThan(1000);
+        expect(timerLagCalls.filter(c => c.phase === 'timer-lag').length).toBe(0);
+    });
+
+    it('タイマー凍結を人工再現すると timer-lag-summary が fired=0/pending>0 で読み取れる (setTimeoutだけ止め、MessageChannelは実物のままbuildを完走させる=#161の凍結再現と同じ考え方)', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout'] });
+        try {
+            const article = makeArticle({ blocks: [
+                { type: 'text', markdown: 'A' },
+                { type: 'text', markdown: 'B' }
+            ] });
+            const timerLagCalls = [];
+            const result = await gen.build([article], { onTimerLag: (info) => timerLagCalls.push({ ...info }) });
+            // setTimeoutが一切発火していなくても MessageChannel 側で build 自体は完走すること
+            // (#161で二重化した「治る」側の効果・本イシューでは壊さない)。
+            expect(result.files.length).toBeGreaterThan(0);
+            const summary = timerLagCalls.find(c => c.phase === 'timer-lag-summary');
+            expect(summary).toBeTruthy();
+            expect(summary.yields).toBe(2);
+            expect(summary.fired).toBe(0);
+            expect(summary.pending).toBe(2);
+            expect(timerLagCalls.filter(c => c.phase === 'timer-lag').length).toBe(0); // 未発火なので個別イベントもまだ無い
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('buildId は build() 呼び出し(記事1件のレンダリング)ごとに異なる値になる (②指摘3: 集計オブジェクトの混入防止の識別子)', async () => {
+        const articleA = makeArticle({ id: 'artA', publicId: 'pubA', blocks: [{ type: 'text', markdown: 'A' }] });
+        const articleB = makeArticle({ id: 'artB', publicId: 'pubB', blocks: [{ type: 'text', markdown: 'B' }] });
+        const events = [];
+        const onTimerLag = (info) => events.push({ ...info });
+        await gen.build([articleA], { onTimerLag });
+        await gen.build([articleB], { onTimerLag });
+        const summaries = events.filter(e => e.phase === 'timer-lag-summary');
+        expect(summaries.length).toBe(2);
+        expect(summaries[0].buildId).not.toBe(summaries[1].buildId);
+    });
+
+    it('build完了後に遅延発火した個別timer-lagイベントも発生元のbuildIdを保ったまま記録され、既にemit済みのsummaryや他buildの集計に混ざらない (②指摘3: 集計オブジェクトの混入防止をbuildをまたいだ遅延発火で固定する)', async () => {
+        // fakeTimersでのDate同時フェイクは「setTimeout(0)がスケジュールされた仮想時刻」で発火する
+        // sinon準拠の挙動のため、advanceTimersByTimeで進めても発火時点のDate.nowは進まない(実測済み・
+        // 60000ms進めてもlagMs=0だった)。実ブラウザのタイマー凍結は「実時間で遅れて発火する」ため、
+        // ここは実時間で負け側setTimeoutだけを遅延させ、実際に大きなlagMsを発生させる。
+        const realSetTimeout = globalThis.setTimeout;
+        globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, (ms || 0) + 300, ...args);
+        try {
+            const articleA = makeArticle({ id: 'artA', publicId: 'pubA', blocks: [{ type: 'text', markdown: 'A' }] });
+            const articleB = makeArticle({ id: 'artB', publicId: 'pubB', blocks: [{ type: 'text', markdown: 'B' }] });
+            const events = [];
+            const onTimerLag = (info) => events.push({ ...info });
+
+            // 2つのbuildを完走させる(MessageChannelは変更していないので、setTimeoutが未発火でも
+            // build自体はすぐ完走する=#161の「治る」側の効果そのもの)。
+            await gen.build([articleA], { onTimerLag });
+            await gen.build([articleB], { onTimerLag });
+
+            const summaries = events.filter(e => e.phase === 'timer-lag-summary');
+            expect(summaries.length).toBe(2);
+            const [summaryA, summaryB] = summaries;
+            expect(summaryA.buildId).not.toBe(summaryB.buildId);
+            // この時点ではどちらのbuildの負け側setTimeoutも実時間で遅延中のため未発火(pending)。
+            expect(summaryA.pending).toBe(1);
+            expect(summaryB.pending).toBe(1);
+
+            events.length = 0; // ここから先に発火する個別イベントだけを見る
+            await new Promise((resolve) => realSetTimeout(resolve, 400)); // 遅延分(300ms)+余裕を実時間で待つ
+            const individuals = events.filter(e => e.phase === 'timer-lag');
+            expect(individuals.length).toBe(2); // build A・B それぞれ1件ずつ、混ざらず2件
+            const buildIdsOfIndividuals = new Set(individuals.map(e => e.buildId));
+            expect(buildIdsOfIndividuals.size).toBe(2);
+            expect(buildIdsOfIndividuals.has(summaryA.buildId)).toBe(true);
+            expect(buildIdsOfIndividuals.has(summaryB.buildId)).toBe(true);
+            // 既にemit済みのsummaryオブジェクト自体は不変(スナップショット)のまま=summaryだけ見れば
+            // 判定が付く設計(②指摘3)が、遅延発火後も壊れていないことを確認する。
+            expect(summaryA.pending).toBe(1);
+            expect(summaryB.pending).toBe(1);
+        } finally {
+            globalThis.setTimeout = realSetTimeout;
+        }
+    });
+});
+
 describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完了条件)', () => {
     it('旧公開ページを PublishArticleStore.migrateFromPages で変換し、PublishArticleGenerator.build がそのまま通る', async () => {
         // 実運用に近い形: 旧 pages.json 形式のページ (旧 PublishPageStore.create() が返す形と同じ構造の

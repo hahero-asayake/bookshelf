@@ -91,4 +91,9 @@ describe('ART_PREVIEW_STAGE_LABEL', () => {
     it('未知の stage は空文字 (後方互換・古い呼び出し元が未知の値を渡しても例外にならない)', () => {
         expect(ART_PREVIEW_STAGE_LABEL({ stage: 'mystery' })).toBe('');
     });
+
+    it('timer-lag/timer-lag-summary (イシュー#163) はこの関数の分岐に一切追加していない＝ stage を持たないため空文字にフォールバックする (②指摘: timer-lag系はonProgress/このラベル経路を経由させない設計そのものの防御線。本来の経路遮断は publish-article-generator.test.js の opts.onTimerLag 側で確認済み)', () => {
+        expect(ART_PREVIEW_STAGE_LABEL({ phase: 'timer-lag', blockIndex: 1, lagMs: 9000 })).toBe('');
+        expect(ART_PREVIEW_STAGE_LABEL({ phase: 'timer-lag-summary', yields: 3, pending: 2, maxLagMs: 9000 })).toBe('');
+    });
 });

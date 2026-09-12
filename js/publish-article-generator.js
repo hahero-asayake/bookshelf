@@ -31,12 +31,30 @@ const ARTICLE_HEADING_LEVEL = { textBlock: 2, bookTitle: 3, detailMemo: 4 };
 // 二重化する＝タイマーが止まっていても MessageChannel 側で復帰できる(治る)。かつ、どちらで復帰したかを
 // 呼び出し元へ返す＝次に実機で止まった場合、trace の resumedBy から「タイマーが生きていたか」が
 // 実機報告だけで確定できる(直る保証はできない環境要因なので、原因特定を優先)。
-// 実測(Node.js): MessageChannel の postMessage は setTimeout(0) より速く解決するため、通常時は
-// 常に resumedBy='messageChannel' になる＝'timeout' が記録される場合こそ MessageChannel 自体が
-// 機能しない特殊環境を示す(逆に、両方とも記録されない=yield-doneに到達しない場合がタイマー飢餓)。
+// 実測(Node.js/vitest): MessageChannel の postMessage は setTimeout(0) より速く解決するため、
+// 常に resumedBy='messageChannel' になる。
+// イシュー#163で実ブラウザ(Chromium)実測したところ結果が逆転した: 健全時は3/3・18/20・20/20回と
+// 一貫して resumedBy='timeout' が優勢(MessageChannelでなくsetTimeoutが先に解決する)、タイマー完全
+// 凍結を人工再現した場合のみ resumedBy='messageChannel' が全件になった。Node.js限定の観測を
+// 「通常時は～になる」と一般化していたのがそもそもの誤りで、実ブラウザでは意味が逆になる。
+// つまり resumedBy の値そのもの(どちらが多いか)は環境依存で当てにならず、「タイマー健全」と
+// 「タイマー凍結だが MessageChannel に救われた」を単独では判別できない(この逆転自体が#163の
+// 前提=判別不能性を補強する直接証拠)。判別は下記の timer-lag/timer-lag-summary(lagMs/pending)に
+// 委ねる設計にした。(逆に、resumedBy自体が記録されない=yield-doneに到達しない場合はタイマー飢餓、
+// という既存の判別経路はこの逆転と無関係に成立する)。
 // ポートを明示的に close しないと、Node.js(vitest等)でイベントループを保持し続けプロセスが
 // 終了しなくなることを実測で確認したため、決着後に必ず閉じる。
-const _yieldToEventLoop = () => new Promise((resolve) => {
+// イシュー#163: resumedBy 単独では「タイマー健全(通常時)」と「タイマー凍結だが MessageChannel に
+// 救われた」を区別できない(上記のとおり通常時も常に'messageChannel')。race に負けた setTimeout を
+// 捨てずに実際の発火遅延(lagMs)を onTimerLag へ通知する＝settled 後(既に MessageChannel で決着済み)
+// でも通知は必ず行う(settled ガードは finish() の二重解決防止のみに使い、通知はその外で行う)。
+// lagMs には次ブロックの同期処理時間(Markdown変換等)が乗る＝健全時でも数ms〜数百msになりうるが、
+// タイマーがスロットリング/凍結されている場合は数十秒〜分に跳ねる、または(バックグラウンドタブ丸ごと
+// 凍結等で)build 完了時点になっても発火しない(pending)という桁違いの差で読み取る設計 (呼び出し元
+// _renderBlocks 側で集計)。setTimeout 自体は元から clearTimeout していない(ワンショット0ms)ため、
+// この観測のために新たなタイマー/ハンドルは追加しない。
+const _yieldToEventLoop = (onTimerLag) => new Promise((resolve) => {
+    const startedAt = Date.now();
     let settled = false;
     let ch = null;
     const finish = (via) => {
@@ -45,13 +63,20 @@ const _yieldToEventLoop = () => new Promise((resolve) => {
         if (ch) { ch.port1.close(); ch.port2.close(); }
         resolve(via);
     };
-    setTimeout(() => finish('timeout'), 0);
+    setTimeout(() => {
+        finish('timeout');
+        if (typeof onTimerLag === 'function') onTimerLag(Date.now() - startedAt);
+    }, 0);
     if (typeof MessageChannel !== 'undefined') {
         ch = new MessageChannel();
         ch.port1.onmessage = () => finish('messageChannel');
         ch.port2.postMessage(0);
     }
 });
+
+// イシュー#163: 個別の遅延超過(trace肥大抑制のための閾値)。build 1回分の集計は _renderBlocks 側。
+const ART_TIMER_LAG_EVENT_MS = 250;
+let _timerLagBuildSeq = 0; // _renderBlocks 呼び出し(記事1件のレンダリング)ごとに一意＝集計混入防止
 
 // 配色トークン10種 (§11.3・モック ~/kuroko/discord/tmp/mock-theme.html で実証された値をベースに、
 // axe-core (WCAG AA) のコントラスト検証で不足が見つかった2値だけ補正した (完了条件検証時に発見・S2):
@@ -494,13 +519,19 @@ ${h.longMemo(longMemoHtml)}
     // イシュー#160: 元は同期 .map() だった (呼び出し元は build() の1箇所のみ・戻り値は変わらない)。
     // ブロックごとに await _yieldToEventLoop() でマクロタスクへ戻り、Markdown変換 (#153のO(n²)劣化が
     // 実際に起きる区間) が重い記事でも、ブロック境界で画面へ進捗が反映される機会を保証する。
-    async _renderBlocks(resolvedBlocks, onProgress) {
+    async _renderBlocks(resolvedBlocks, onProgress, onTimerLag) {
         // イシュー#161: _helpers() 自体は _renderBlocks 冒頭で1回しか呼ばれない(静的解析・実測とも
         // 軽量と確認済みだが、依頼#161-3の「そこが重い可能性も見る」を計装として残す)。
         if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'helpers-start' });
         const h = this._helpers();
         if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'helpers-ready' });
         const parts = [];
+        // イシュー#163: onTimerLag は onProgress と別経路(呼び出し元は trace へ直接積むだけにし、
+        // 画面表示の lastProgress/段階経過時刻には影響させない設計＝呼び出し元の責務、②指摘)。
+        // buildId は build() 1回・記事1件のレンダリングごとに一意＝タイマー凍結からの復帰で通知が
+        // 次のビルド開始後まで遅延しても、集計(timerLag)はこの呼び出しローカルのため混ざらない。
+        const buildId = ++_timerLagBuildSeq;
+        const timerLag = { yields: 0, fired: 0, pending: 0, maxLagMs: 0, overCount: 0 };
         for (let blockIndex = 0; blockIndex < resolvedBlocks.length; blockIndex++) {
             const r = resolvedBlocks[blockIndex];
             // イシュー#156: 各ブロックのMarkdown→HTML変換 (#153のO(n²)劣化が実際に起きる区間) の
@@ -516,8 +547,50 @@ ${h.longMemo(longMemoHtml)}
             // yield-start は発火するがそれに対応する yield-done が来ない場合、そのブロックの
             // yield待ちで止まっている(setTimeout(0)不発火=タイマー飢餓)ことが trace から分かる。
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex, blockType: r.type });
-            const resumedBy = await _yieldToEventLoop();
+            timerLag.yields++;
+            timerLag.pending++;
+            const resumedBy = await _yieldToEventLoop((lagMs) => {
+                timerLag.fired++;
+                timerLag.pending--;
+                if (lagMs > timerLag.maxLagMs) timerLag.maxLagMs = lagMs;
+                if (lagMs > ART_TIMER_LAG_EVENT_MS) {
+                    timerLag.overCount++;
+                    if (typeof onTimerLag === 'function') onTimerLag({ phase: 'timer-lag', buildId, blockIndex, blockType: r.type, yieldIndex: blockIndex, lagMs });
+                }
+            });
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex, blockType: r.type, resumedBy });
+        }
+        // イシュー#163 差し戻し(実測): summaryをforループ完了直後の同期スナップショットのまま
+        // 確定すると、直近ブロックのraceに負けたsetTimeoutがまだキューで順番待ちなだけ(構造的な
+        // 測定タイミングのずれ)でも pending>0 になり、実ブラウザの重い記事(20ブロック)で
+        // 誤って「タイマーが止まっている」と読める値が出ることを実測で確認した(pending=1/20・
+        // maxLagMs=24msの完全な健全ケースでconsole.warnが誤発火)。pending/overCountに比率や
+        // 下限を設けるのは実測タイミングのずれを閾値という名の定数で覆い隠す対症療法になる
+        // (記事構成が変われば再現しない・根拠がない)ため採らない。
+        // 「_yieldToEventLoop()をあと1回だけ挟む」も実測したが解消しなかった(重い記事で
+        // pending=1のまま)。原因はターン数ではなく実経過時間だった: MessageChannelのpostMessage
+        // 配送はsub-ms(健全時のyieldがほぼ即復帰する実測どおり)で完了するため、1回追加してもほぼ
+        // 実時間が経過しない。対してブラウザのネストしたタイマーには最小遅延クランプ(Chromiumで
+        // 概ね4ms前後)があり、直近で登録された setTimeout(0) はそのクランプ時間が経過するまで
+        // 発火できない。そのため「あと1回」という回数ベースの対処(2回・3回と積むのも同じ性質)では
+        // 効かず、実経過時間そのものを稼ぐ必要がある。
+        // 対処: pendingが0になるか実時間で SETTLE_BUDGET_MS を使い切るまで、_yieldToEventLoop()を
+        // 繰り返す(集計対象外・resumedBy/lagMsは診断しない)。各yieldはMessageChannel側で即復帰する
+        // ため、setTimeoutが完全に凍結していてもここでハングしない(凍結時はpendingが0にならないまま
+        // 実時間の猶予を使い切って抜ける＝「止まっている」がそのまま維持される、既存のMC復帰効果は
+        // 変えない)。ループ回数の上限は暴走防止の安全弁であって診断の閾値ではない。
+        const SETTLE_BUDGET_MS = 20; // Chromiumのネストしたタイマー最小クランプ(~4ms)に十分な余裕
+        const SETTLE_MAX_ITERATIONS = 1000; // 安全弁(実時間の猶予とは別に、万一の暴走を打ち切る)
+        const settleDeadline = Date.now() + SETTLE_BUDGET_MS;
+        let settleIterations = 0;
+        while (timerLag.pending > 0 && Date.now() < settleDeadline && settleIterations < SETTLE_MAX_ITERATIONS) {
+            settleIterations++;
+            await _yieldToEventLoop();
+        }
+        // build 完了時点の集計を必ず1件出す(閾値超えが無い健全時も含む)。「maxLagMsが小さく
+        // pending=0」と読めることそのものが「タイマーは止まっていなかった」の証拠になる。
+        if (typeof onTimerLag === 'function') {
+            onTimerLag({ phase: 'timer-lag-summary', buildId, yields: timerLag.yields, fired: timerLag.fired, pending: timerLag.pending, maxLagMs: timerLag.maxLagMs, overCount: timerLag.overCount });
         }
         return parts.join('\n');
     }
@@ -702,7 +775,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             try {
                 resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
                 report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
-                body = await this._renderBlocks(resolvedBlocks, opts.onProgress);
+                body = await this._renderBlocks(resolvedBlocks, opts.onProgress, opts.onTimerLag);
                 report('assembling'); // HTMLシェル組立
             } catch (e) { errors.push(`resolve ${article.title}: ${e.message}`); continue; }
 

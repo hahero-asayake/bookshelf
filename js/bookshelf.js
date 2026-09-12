@@ -30,6 +30,14 @@ const ART_PREVIEW_STALL_MS = 20000; // 20秒: 目安値 (issue依頼のとおり
 // 5倍(100秒)を採用する。テストから注入できるよう _artPreviewHardDeadlineMs を優先する。
 const ART_PREVIEW_HARD_DEADLINE_MS = ART_PREVIEW_STALL_MS * 5; // 100秒
 
+// イシュー#163: timer-lag-summary(build完了時点の集計)からconsole.warnを出すかどうかの閾値。
+// generator側の個別記録閾値(250ms、ART_TIMER_LAG_EVENT_MS)は「trace肥大抑制」用の細かい粒度で、
+// 重い記事では次ブロックの同期処理時間が乗るだけで健全時でも超えうる(実測で確認済み)。ここは
+// 「人間に警告する」ための粗い粒度＝pending(build完了時点で未発火)が残るか、桁が秒単位に達した
+// 場合だけに絞り、健全時の誤警告(診断ノイズ)を避ける。テストから注入できるよう
+// _artTimerLagWarnMs を優先する(既存の stallMs/hardDeadlineMs と同じ作法)。
+const ART_TIMER_LAG_WARN_MS = 5000;
+
 // build()のonProgressが伝える段階 (イシュー#153: 「生成中…」に段階名を出し、本人が1回試すだけで
 // どこで時間が掛かっているか分かるようにする)。
 // イシュー#156: #153時点は stage (reading/rendering/assembling) のみだった解像度を上げ、
@@ -9574,6 +9582,22 @@ class VirtualBookshelf {
         const stallMs = this._artPreviewStallMs || ART_PREVIEW_STALL_MS;
         const hardDeadlineMs = this._artPreviewHardDeadlineMs || ART_PREVIEW_HARD_DEADLINE_MS;
 
+        // イシュー#163: timer-lag/timer-lag-summary は上の pushTrace(onProgress経路)を通さず、
+        // trace への直接追記だけを行う専用経路にする。pushTrace は stageEnteredAt/lastProgress を
+        // 更新し画面の段階表示(「この段階N秒」)に使われる副作用を持つため、タイマー凍結から復帰した
+        // 瞬間に溜まった通知が一括発火すると、まさに診断したい場面で段階経過秒がリセットされ・
+        // lastProgress が上書きされて段階表示が巻き戻る事故になる(実測前に静的解析で発見・②指摘)。
+        // build完了後に遅延発火する通知もありうるが、その場合もここは trace への追記のみ＝
+        // 画面文言・stall判定には一切影響しない。
+        const pushTimerLagTrace = (info) => {
+            trace.push({ ts: Date.now(), ...info });
+            if (info.phase !== 'timer-lag-summary') return;
+            const warnMs = this._artTimerLagWarnMs || ART_TIMER_LAG_WARN_MS;
+            if (info.pending > 0 || info.maxLagMs >= warnMs) {
+                console.warn(`[記事プレビュー] タイマー遅延を検知しました(生成自体は完了・診断用の記録): 発行${info.yields}件中${info.overCount}件が閾値超過・最大遅延${info.maxLagMs}ms・build完了時点で未発火${info.pending}件`, info);
+            }
+        };
+
         const pushTrace = (progress) => {
             stageEnteredAt = Date.now();
             trace.push({ ts: stageEnteredAt, ...progress });
@@ -9625,7 +9649,8 @@ class VirtualBookshelf {
         try {
             const result = await this.publishArticleGenerator.build([tempArticle], {
                 state: this._artBuildPreviewState(),
-                onProgress: (p) => { lastProgress = p; pushTrace(p); if (isCurrent() && !stalled) scheduleStall(); onProgressTick(); }
+                onProgress: (p) => { lastProgress = p; pushTrace(p); if (isCurrent() && !stalled) scheduleStall(); onProgressTick(); },
+                onTimerLag: pushTimerLagTrace
             });
             finish();
             if (!isCurrent()) return; // 再試行で新しい世代が始まっている＝この結果は古い
