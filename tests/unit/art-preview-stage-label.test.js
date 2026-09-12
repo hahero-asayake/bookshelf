@@ -45,11 +45,39 @@ describe('ART_PREVIEW_STAGE_LABEL', () => {
         expect(ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', done: 0, total: 0 })).toBe('Markdown変換中・');
     });
 
-    it('rendering phase:block-start/block-done はブロック番号+種別を1始まりで出す', () => {
+    it('rendering phase:block-start/block-done はブロック番号+種別を1始まりで出し、かつ互いに区別できる (イシュー#161: 完全同一文言だったため停止位置がblock-start前後かblock-done後か実機報告から判別できなかった反省)', () => {
         const start = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'book' });
         const done = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 2, blockType: 'shelf' });
-        expect(start).toBe('Markdown変換中（ブロック1: book）・');
-        expect(done).toBe('Markdown変換中（ブロック3: shelf）・');
+        expect(start).toBe('Markdown変換開始（ブロック1: book）・');
+        expect(done).toBe('Markdown変換完了（ブロック3: shelf・次段階へ移行待ち）・');
+        expect(start).not.toBe(done.replace('3', '1').replace('shelf', 'book')); // 文言自体が別テンプレートであること
+    });
+
+    it('rendering phase:helpers-start/helpers-ready はヘルパー準備段階を出す (イシュー#161: _helpers生成自体が重い可能性の計装)', () => {
+        expect(ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'helpers-start' })).toBe('ヘルパー準備中・');
+        expect(ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'helpers-ready' })).toBe('ヘルパー準備完了・');
+    });
+
+    it('rendering phase:shelf-items-start/shelf-item-done/shelf-assemble-done は shelf ブロック内部の内訳を出す (イシュー#161: _renderShelfBlock区間のブラックボックス解消)', () => {
+        const startText = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'shelf-items-start', blockIndex: 2, blockType: 'shelf', itemsTotal: 3 });
+        const itemDone = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'shelf-item-done', blockIndex: 2, blockType: 'shelf', itemIndex: 1, itemsTotal: 3 });
+        const assembleDone = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'shelf-assemble-done', blockIndex: 2, blockType: 'shelf' });
+        expect(startText).toBe('本棚内訳生成中（ブロック3: shelf・0/3冊）・');
+        expect(itemDone).toBe('本棚内訳生成中（ブロック3: shelf・2/3冊完了）・');
+        expect(assembleDone).toBe('本棚ブロック結合完了（ブロック3: shelf）・');
+    });
+
+    it('rendering phase:shelf-items-start は items 0件でも発火した体で表示できる (イシュー#161: items空でもこの段階に来ているか自体が異常検知の材料になる)', () => {
+        expect(ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'shelf-items-start', blockIndex: 2, blockType: 'shelf', itemsTotal: 0 })).toBe('本棚内訳生成中（ブロック3: shelf・0/0冊）・');
+    });
+
+    it('rendering phase:yield-start/yield-done はブロック境界のyield待ちと復帰経路を出す (イシュー#161: setTimeout(0)不発火=タイマー飢餓の実機切り分け計装)', () => {
+        const yieldStart = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'yield-start', blockIndex: 2, blockType: 'shelf' });
+        const yieldDoneTimeout = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'yield-done', blockIndex: 2, blockType: 'shelf', resumedBy: 'timeout' });
+        const yieldDoneMc = ART_PREVIEW_STAGE_LABEL({ stage: 'rendering', phase: 'yield-done', blockIndex: 2, blockType: 'shelf', resumedBy: 'messageChannel' });
+        expect(yieldStart).toBe('次ブロックへ移行待ち（ブロック3: shelf）・');
+        expect(yieldDoneTimeout).toBe('次ブロックへ移行完了（ブロック3: shelf・復帰経路:timeout）・');
+        expect(yieldDoneMc).toBe('次ブロックへ移行完了（ブロック3: shelf・復帰経路:messageChannel）・');
     });
 
     it('assembling は「ページ組立中」', () => {

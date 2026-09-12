@@ -47,9 +47,19 @@ const ART_PREVIEW_STAGE_LABEL = (progress) => {
         return `${base}・`;
     }
     if (progress.stage === 'rendering') {
-        if (progress.phase === 'block-start' || progress.phase === 'block-done') {
-            return `Markdown変換中（ブロック${(progress.blockIndex ?? 0) + 1}: ${progress.blockType || ''}）・`;
-        }
+        // イシュー#161: block-start/block-done が同一文言だったため、実機報告「ブロック3: shelf」が
+        // どちらの段階か区別できなかった(停止位置の曖昧さの根本原因)。文言を分け、shelf内部の
+        // sub-phase・yield待ち区間も出す(コンソール・タイマー非依存＝同期的な文言生成のみ)。
+        const blk = `ブロック${(progress.blockIndex ?? 0) + 1}: ${progress.blockType || ''}`;
+        if (progress.phase === 'helpers-start') return 'ヘルパー準備中・';
+        if (progress.phase === 'helpers-ready') return 'ヘルパー準備完了・';
+        if (progress.phase === 'block-start') return `Markdown変換開始（${blk}）・`;
+        if (progress.phase === 'shelf-items-start') return `本棚内訳生成中（${blk}・0/${progress.itemsTotal ?? 0}冊）・`;
+        if (progress.phase === 'shelf-item-done') return `本棚内訳生成中（${blk}・${(progress.itemIndex ?? 0) + 1}/${progress.itemsTotal ?? 0}冊完了）・`;
+        if (progress.phase === 'shelf-assemble-done') return `本棚ブロック結合完了（${blk}）・`;
+        if (progress.phase === 'block-done') return `Markdown変換完了（${blk}・次段階へ移行待ち）・`;
+        if (progress.phase === 'yield-start') return `次ブロックへ移行待ち（${blk}）・`;
+        if (progress.phase === 'yield-done') return `次ブロックへ移行完了（${blk}・復帰経路:${progress.resumedBy || '不明'}）・`;
         return 'Markdown変換中・';
     }
     if (progress.stage === 'assembling') return 'ページ組立中・';
@@ -9524,7 +9534,7 @@ class VirtualBookshelf {
         // イシュー#156: 起動ハンドラ発火の計測点(1)。「起動処理」のまま秒数付き表示 (_artRunPreviewBuild
         // 側の1秒ティック) に切り替わらない＝容疑者①(_artRunPreviewBuild未到達)が濃厚、と実機1回で
         // 切り分けられるようにするため、_artRunPreviewBuild側の文言とあえて区別する。
-        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（起動処理）</p>');
+        this._artSetPreviewProgress('生成中…（起動処理）');
         this._artOpenPreviewModal();
         await this._artRunPreviewBuild();
     }
@@ -9532,7 +9542,7 @@ class VirtualBookshelf {
     /** ストール表示の「再試行」ボタンから呼ばれる。新しい試行として _artPreview と同じ経路を再実行する。 */
     _artRetryPreview() {
         this._artHidePreviewStall();
-        this._artSetPreview('<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（起動処理）</p>');
+        this._artSetPreviewProgress('生成中…（起動処理）');
         this._artRunPreviewBuild();
     }
 
@@ -9574,7 +9584,7 @@ class VirtualBookshelf {
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
             const stageElapsedSec = Math.max(0, Math.round((Date.now() - stageEnteredAt) / 1000));
             const progressText = ART_PREVIEW_STAGE_LABEL(lastProgress);
-            this._artSetPreview(`<p style="padding:2rem;color:#888;font-family:sans-serif;text-align:center">生成中…（${progressText}この段階${stageElapsedSec}秒・全体${elapsed}秒経過）</p>`);
+            this._artSetPreviewProgress(`生成中…（${progressText}この段階${stageElapsedSec}秒・全体${elapsed}秒経過）`);
         };
         const tickTimer = setInterval(() => {
             if (!isCurrent()) { clearInterval(tickTimer); return; }
@@ -9620,6 +9630,7 @@ class VirtualBookshelf {
             finish();
             if (!isCurrent()) return; // 再試行で新しい世代が始まっている＝この結果は古い
             this._artHidePreviewStall();
+            this._artHidePreviewProgress();
             const file = result.files.find(f => f.path === 'preview/index.html');
             if (file) {
                 this._artSetPreview(file.content);
@@ -9641,12 +9652,14 @@ class VirtualBookshelf {
                 const reason = result.errors.length > 0
                     ? result.errors.map(e => PublishArticleGenerator.esc(e)).join('<br>')
                     : '生成結果にプレビュー用のページが含まれていませんでした（原因不明）。';
+                this._artHidePreviewProgress();
                 this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。<br>${reason}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
             }
         } catch (e) {
             finish();
             if (!isCurrent()) return;
             this._artHidePreviewStall();
+            this._artHidePreviewProgress();
             this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューに失敗しました。<br>${PublishArticleGenerator.esc(e.message)}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
         }
     }
@@ -9661,6 +9674,7 @@ class VirtualBookshelf {
         // イシュー#153/#156: 段階名 (reading/rendering/assembling 等) と経過ms・全trace配列を
         // console にも必ず残す。本人が実機で1回試すだけで「どの段階で何ms掛かったか」を後から拾える最後の砦。
         console.warn(`[記事プレビュー] 生成が停止しています。最終段階=${lastProgress.stage || '不明'} 全体経過=${elapsedSec}秒 この段階の経過=${stageElapsedMs ?? '不明'}ms`, { lastProgress, trace });
+        this._artHidePreviewProgress();
         const el = document.getElementById('pp-preview-stall');
         const msgEl = document.getElementById('pp-preview-stall-msg');
         if (!el || !msgEl) return;
@@ -9681,6 +9695,23 @@ class VirtualBookshelf {
     _artSetPreview(html) {
         const frame = document.getElementById('pp-preview-frame');
         if (frame) frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
+    }
+
+    // イシュー#161: #160でブロック境界ごとに進捗表示を更新するようにしたため、進捗のたびに
+    // frame.srcdoc(iframe再パースを伴う)へ代入する回数が実測で5倍(2回→10回)に増えていた
+    // (②見立て4)。進捗の「文言更新」は親DOM(#pp-preview-progress)への同期textContent書き換えに
+    // 変え、iframeの破棄・再生成は generator の最終結果反映(_artSetPreview)時の1回だけに戻す。
+    _artSetPreviewProgress(text) {
+        const el = document.getElementById('pp-preview-progress');
+        const msgEl = document.getElementById('pp-preview-progress-msg');
+        if (!el || !msgEl) return;
+        msgEl.textContent = text;
+        el.hidden = false;
+    }
+
+    _artHidePreviewProgress() {
+        const el = document.getElementById('pp-preview-progress');
+        if (el) el.hidden = true;
     }
 
     _artOpenPreviewModal() {

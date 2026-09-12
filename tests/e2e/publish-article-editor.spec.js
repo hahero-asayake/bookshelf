@@ -268,8 +268,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
-        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
-            .not.toContain('生成中');
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true))
+            .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('わたしを構成する10冊');
         expect(srcdoc).toContain('はじめに');
@@ -295,8 +295,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
-        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
-            .not.toContain('生成中');
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true))
+            .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('class="bk-rating"');
         expect(srcdoc).toContain('aria-label="評価 5/5"');
@@ -316,8 +316,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
-        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
-            .not.toContain('生成中');
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true))
+            .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('まだ保存されていない見出し');
         expect(errors).toEqual([]);
@@ -510,7 +510,13 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-preview');
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         await page.click('#pp-preview-retry');
+        // イシュー#161: #pp-preview-stall が非表示になるのは _artRetryPreview 冒頭の同期処理
+        // (クリック直後) で、2回目の build 完了とは無関係(CPU負荷が高い並列実行下でこの差が
+        // 顕在化しフレークした実測あり)。完了判定は進捗オーバーレイ(#pp-preview-progress)の
+        // hiddenを待つ(成功/失敗いずれかの結果に到達したことの正確な指標)。
         await expect(page.locator('#pp-preview-stall')).toBeHidden();
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true))
+            .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('再試行テスト');
         expect(srcdoc).not.toContain('生成できませんでした');
@@ -543,16 +549,19 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         });
 
         page.click('#art-preview'); // await しない (進捗中の途中状態を見るため)
+        // イシュー#161: 進捗文言の出力先をiframe srcdoc非依存(親DOM #pp-preview-progress-msg)へ
+        // 変更したため、途中状態の検証もそちらのtextContentを見る。
         await expect.poll(async () => {
-            const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-            return srcdoc;
+            const text = await page.evaluate(() => {
+                const el = document.getElementById('pp-preview-progress-msg');
+                return el ? el.textContent : '';
+            });
+            return text;
         }, { timeout: 5000 }).toContain('長文メモ 0/1 読込中');
 
         await page.evaluate(() => window.bookshelf.__releaseRead());
-        await expect.poll(async () => {
-            const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-            return srcdoc;
-        }, { timeout: 5000 }).not.toContain('生成中');
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
+            { timeout: 5000 }).toBe(true);
         expect(errors).toEqual([]);
     });
 
@@ -569,8 +578,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
-        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc))
-            .not.toContain('生成中');
+        await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true))
+            .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('data-layout="wall"');
         expect(srcdoc).toContain('data-color="black"');
@@ -2317,9 +2326,11 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.locator('#art-list [data-act="edit"]').first().click();
         await page.click('#art-preview');
+        // イシュー#161: 進捗表示はiframe srcdoc非依存(親DOM #pp-preview-progress)になったため、
+        // 完了判定もそちらのhiddenを見る。
         await page.waitForFunction(() => {
-            const f = document.getElementById('pp-preview-frame');
-            return f && f.srcdoc && !f.srcdoc.includes('生成中');
+            const el = document.getElementById('pp-preview-progress');
+            return el ? el.hidden : true;
         }, { timeout: 10000 });
         await expect(page.locator('#pp-preview-stall')).toBeHidden();
         const html = await page.locator('#pp-preview-frame').evaluate((el) => el.srcdoc);

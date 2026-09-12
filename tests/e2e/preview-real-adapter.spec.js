@@ -121,10 +121,10 @@ test('(a) 通常応答: 実GitHubAdapter+実fetch経由でプレビューが完�
 
     const startedAt = Date.now();
     await page.click('#art-preview');
-    await expect.poll(async () => {
-        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-        return srcdoc;
-    }, { timeout: 10000 }).not.toContain('生成中');
+    // イシュー#161: 進捗表示はiframe srcdoc非依存(親DOM #pp-preview-progress)になったため、
+    // 完了判定はそちらのhiddenを見る(srcdocは結果反映時の1回しか書き換わらない)。
+    await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
+        { timeout: 10000 }).toBe(true);
     const elapsedMs = Date.now() - startedAt;
 
     const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
@@ -149,10 +149,8 @@ test('(b) 遅延応答(2000ms/冊×3冊): stallMs(20秒)未満のため完走す
 
     const startedAt = Date.now();
     await page.click('#art-preview');
-    await expect.poll(async () => {
-        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-        return srcdoc;
-    }, { timeout: 15000 }).not.toContain('生成中');
+    await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
+        { timeout: 15000 }).toBe(true);
     const elapsedMs = Date.now() - startedAt;
 
     await expect(page.locator('#pp-preview-stall')).toBeHidden();
@@ -179,7 +177,7 @@ test('(c) fetchが最後まで応答しない場合、実GitHubAdapter+実fetch�
     expect(errors).toEqual([]);
 });
 
-test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロック単位の段階表示が画面(srcdoc)へ反映される (イシュー#160: メインスレッド同期占有時でもpaintの機会を保証する保険実装)', async ({ page }) => {
+test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロック単位の段階表示が画面へ反映される (イシュー#160: メインスレッド同期占有時でもpaintの機会を保証する保険実装。イシュー#161で進捗表示の出力先をiframe srcdoc再パース非依存の親DOM(#pp-preview-progress)へ変更したため、判定先をsrcdocから移した)', async ({ page }) => {
     const errors = await bootAppGitHub(page, {});
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
@@ -195,15 +193,21 @@ test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロ�
     await page.click('#art-preview');
     let seenBlockProgress = false;
     for (let i = 0; i < 50; i++) {
-        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-        if (srcdoc && srcdoc.includes('Markdown変換中（ブロック')) { seenBlockProgress = true; break; }
+        const progressText = await page.evaluate(() => {
+            const el = document.getElementById('pp-preview-progress-msg');
+            return el ? el.textContent : '';
+        });
+        if (progressText && progressText.includes('ブロック')) { seenBlockProgress = true; break; }
         await page.waitForTimeout(20);
     }
     console.log(`[preview-real-adapter] (d) ブロック単位の段階表示を検出=${seenBlockProgress}`);
     expect(seenBlockProgress).toBe(true);
-    await expect.poll(async () => {
-        const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-        return srcdoc;
-    }, { timeout: 10000 }).not.toContain('生成中');
+    // 完了後は進捗オーバーレイが隠れ、結果本体(srcdoc)に記事本文が反映される。
+    await expect.poll(() => page.evaluate(() => {
+        const el = document.getElementById('pp-preview-progress');
+        return el ? el.hidden : true;
+    }), { timeout: 10000 }).toBe(true);
+    const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
+    expect(srcdoc).toContain('見出し');
     expect(errors).toEqual([]);
 });

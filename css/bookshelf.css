@@ -4625,6 +4625,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-preview-stall { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.9rem; padding: 1.5rem; background: rgba(255,255,255,.94); text-align: center; }
 .pp-preview-stall[hidden] { display: none; }
 .pp-preview-stall-msg { margin: 0; color: var(--fg2); font-size: 0.92rem; max-width: 32em; white-space: pre-line; }
+/* イシュー#161: 進捗表示はiframe srcdocの再パース非依存(親DOMの同期textContent書き換え)にする */
+.pp-preview-progress { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(255,255,255,.94); text-align: center; pointer-events: none; }
+.pp-preview-progress[hidden] { display: none; }
+.pp-preview-progress-msg { margin: 0; color: #888; font-size: 0.92rem; }
 @media (max-width: 760px) {
     .pp-preview-dialog { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
     .pp-edit-actions { flex-wrap: wrap; }

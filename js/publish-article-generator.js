@@ -24,7 +24,34 @@ const ARTICLE_HEADING_LEVEL = { textBlock: 2, bookTitle: 3, detailMemo: 4 };
 // イシュー#160: メインスレッドが同期占有されている間は、DOM を書き換えてもブラウザは paint できない
 // (マイクロタスクの隙間だけでは足りず、マクロタスク境界へ戻る必要がある)。ブロック解決/変換の各境界で
 // これへ await することで、重い記事でも進捗表示が実際に画面へ反映される機会を保証する。
-const _yieldToEventLoop = () => new Promise((resolve) => setTimeout(resolve, 0));
+// イシュー#161: #160導入直後の実機報告で「setTimeout(0)を含むタイマー系が一切発火しない」状態
+// (Chromeのバックグラウンドタブ/省電力モードによるタイマースロットリング・凍結) が有力候補と特定した
+// (人工再現で実機の全観測を再現済み)。setTimeout は上記条件でスロットリング対象になるが、
+// MessageChannel の postMessage はスロットリングされない(ブラウザの既知の性質)ため、Promise.race で
+// 二重化する＝タイマーが止まっていても MessageChannel 側で復帰できる(治る)。かつ、どちらで復帰したかを
+// 呼び出し元へ返す＝次に実機で止まった場合、trace の resumedBy から「タイマーが生きていたか」が
+// 実機報告だけで確定できる(直る保証はできない環境要因なので、原因特定を優先)。
+// 実測(Node.js): MessageChannel の postMessage は setTimeout(0) より速く解決するため、通常時は
+// 常に resumedBy='messageChannel' になる＝'timeout' が記録される場合こそ MessageChannel 自体が
+// 機能しない特殊環境を示す(逆に、両方とも記録されない=yield-doneに到達しない場合がタイマー飢餓)。
+// ポートを明示的に close しないと、Node.js(vitest等)でイベントループを保持し続けプロセスが
+// 終了しなくなることを実測で確認したため、決着後に必ず閉じる。
+const _yieldToEventLoop = () => new Promise((resolve) => {
+    let settled = false;
+    let ch = null;
+    const finish = (via) => {
+        if (settled) return;
+        settled = true;
+        if (ch) { ch.port1.close(); ch.port2.close(); }
+        resolve(via);
+    };
+    setTimeout(() => finish('timeout'), 0);
+    if (typeof MessageChannel !== 'undefined') {
+        ch = new MessageChannel();
+        ch.port1.onmessage = () => finish('messageChannel');
+        ch.port2.postMessage(0);
+    }
+});
 
 // 配色トークン10種 (§11.3・モック ~/kuroko/discord/tmp/mock-theme.html で実証された値をベースに、
 // axe-core (WCAG AA) のコントラスト検証で不足が見つかった2値だけ補正した (完了条件検証時に発見・S2):
@@ -435,15 +462,21 @@ ${h.amazon(bookData)}
 </section>`;
     }
 
-    _renderShelfBlock(resolved, h) {
+    // イシュー#161: shelfブロック内部 (items.map の各要素・テンプレ結合) を段階として出す。
+    // block-start～block-done の間がブラックボックスだった (#153のO(n²)劣化・不明なハングの両方が
+    // ここに埋もれうる)ため、items が空でも "shelf-items-start"(itemsTotal:0) は必ず発火する＝
+    // 「この段階に来ているか」自体が、items空のはずなのに来ていない異常を検知する材料になる。
+    _renderShelfBlock(resolved, h, onProgress, blockIndex) {
         const { items } = resolved;
-        const tiles = items.map(({ placement, bookData }) => {
-            if (!bookData) return '';
+        const report = (phase, extra) => { if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase, blockIndex, blockType: 'shelf', ...extra }); };
+        report('shelf-items-start', { itemsTotal: items.length });
+        const tiles = items.map(({ placement, bookData }, itemIndex) => {
+            if (!bookData) { report('shelf-item-done', { itemIndex, itemsTotal: items.length }); return ''; }
             const longMemoHtml = (placement.show.longMemo && bookData.detailMemo)
                 ? PublishArticleGenerator.shiftHtmlHeadings(
                     PublishArticleGenerator.markdownToHtml(bookData.detailMemo, { onDegraded: () => this._onMarkdownDegraded() }), ARTICLE_HEADING_LEVEL.detailMemo)
                 : '';
-            return `<div class="bk">
+            const tile = `<div class="bk">
 ${h.cover(bookData)}
 ${h.title(bookData)}
 ${h.author(bookData)}
@@ -451,7 +484,10 @@ ${placement.show.rating ? h.rating(bookData) : ''}
 ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
 ${h.longMemo(longMemoHtml)}
 </div>`;
+            report('shelf-item-done', { itemIndex, itemsTotal: items.length });
+            return tile;
         }).join('');
+        report('shelf-assemble-done', { itemsTotal: items.length });
         return `<section class="blk blk-shelf"><div class="shelf">${tiles}</div></section>`;
     }
 
@@ -459,7 +495,11 @@ ${h.longMemo(longMemoHtml)}
     // ブロックごとに await _yieldToEventLoop() でマクロタスクへ戻り、Markdown変換 (#153のO(n²)劣化が
     // 実際に起きる区間) が重い記事でも、ブロック境界で画面へ進捗が反映される機会を保証する。
     async _renderBlocks(resolvedBlocks, onProgress) {
+        // イシュー#161: _helpers() 自体は _renderBlocks 冒頭で1回しか呼ばれない(静的解析・実測とも
+        // 軽量と確認済みだが、依頼#161-3の「そこが重い可能性も見る」を計装として残す)。
+        if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'helpers-start' });
         const h = this._helpers();
+        if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'helpers-ready' });
         const parts = [];
         for (let blockIndex = 0; blockIndex < resolvedBlocks.length; blockIndex++) {
             const r = resolvedBlocks[blockIndex];
@@ -469,10 +509,15 @@ ${h.longMemo(longMemoHtml)}
             let html = '';
             if (r.type === 'text') html = this._renderTextBlock(r);
             else if (r.type === 'book') html = this._renderBookBlock(r, h);
-            else if (r.type === 'shelf') html = this._renderShelfBlock(r, h);
+            else if (r.type === 'shelf') html = this._renderShelfBlock(r, h, onProgress, blockIndex);
             if (html) parts.push(html);
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex, blockType: r.type });
-            await _yieldToEventLoop();
+            // イシュー#161: block-done後・次ブロックへ進む前のyield待ち区間を段階として出す。
+            // yield-start は発火するがそれに対応する yield-done が来ない場合、そのブロックの
+            // yield待ちで止まっている(setTimeout(0)不発火=タイマー飢餓)ことが trace から分かる。
+            if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex, blockType: r.type });
+            const resumedBy = await _yieldToEventLoop();
+            if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex, blockType: r.type, resumedBy });
         }
         return parts.join('\n');
     }

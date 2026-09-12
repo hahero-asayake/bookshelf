@@ -637,7 +637,7 @@ describe('index.html (記事一覧)', () => {
 });
 
 describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143・段階通知はイシュー#153・fetch3分割/ブロック単位はイシュー#156)', () => {
-    it('長文メモ表示ブロックが1件なら reading(report0) → reading(fetch-start) → reading(report1) → rendering(report) → rendering(block-start/done) → assembling の順に呼ばれる', async () => {
+    it('長文メモ表示ブロックが1件なら reading(report0) → reading(fetch-start) → reading(report1) → rendering(report→helpers→block-start/done→yield) → assembling の順に呼ばれる (イシュー#161: helpers-start/ready・yield-start/doneを新設)', async () => {
         const article = makeArticle({ blocks: [
             { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } }
         ] });
@@ -648,8 +648,12 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
             { stage: 'reading', done: 0, total: 1, phase: 'fetch-start', asin: 'M1', adapterKind: '不明' },
             { stage: 'reading', done: 1, total: 1 },
             { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'rendering', done: 0, total: 0, phase: 'helpers-start' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'helpers-ready' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'book' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'book' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex: 0, blockType: 'book' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'book', resumedBy: 'messageChannel' },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
@@ -662,8 +666,12 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         await gen.build([article], { onProgress: (p) => calls.push({ ...p }) });
         expect(calls).toEqual([
             { stage: 'rendering', done: 0, total: 0 },
+            { stage: 'rendering', done: 0, total: 0, phase: 'helpers-start' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'helpers-ready' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'text' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'text' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex: 0, blockType: 'text' },
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'text', resumedBy: 'messageChannel' },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
@@ -693,11 +701,22 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         // fetch-start は冊ごとに asin つきで1回ずつ挟まる (イシュー#156: 容疑者②の切り分け用)。
         const fetchStartCalls = readingCalls.filter(c => c.phase === 'fetch-start');
         expect(fetchStartCalls.map(c => c.asin)).toEqual(['M1', 'M2']);
-        expect(calls.map(c => c.stage)).toEqual([
-            'reading', 'reading', 'reading', 'reading', 'reading',
-            'rendering', 'rendering', 'rendering', 'rendering', 'rendering',
-            'assembling'
-        ]);
+        // stageの大枠遷移順序 (reading全部→rendering全部→assembling) が保たれることを確認する。
+        // イシュー#161でrendering内のphase種別(helpers-*/shelf-*/yield-*)が増えたため、個数の
+        // 完全一致ではなく「reading→rendering→assemblingの並びが崩れていないか」を見る形にする
+        // (詳細なphase個数はこのテストの意図ではない・shelf内部のphaseは別途下で検証する)。
+        const stages = calls.map(c => c.stage);
+        expect(stages[0]).toBe('reading');
+        expect(stages[stages.length - 1]).toBe('assembling');
+        expect(stages.every((s, i) => i === 0 || s === stages[i - 1] || ['reading', 'rendering', 'assembling'].indexOf(s) >= ['reading', 'rendering', 'assembling'].indexOf(stages[i - 1]))).toBe(true);
+        expect(readingCalls.length).toBe(5);
+        // イシュー#161: shelfブロック(items 2件)内部のsub-phaseが item 単位で発火することを確認する。
+        const shelfItemsStart = calls.find(c => c.phase === 'shelf-items-start');
+        const shelfItemDones = calls.filter(c => c.phase === 'shelf-item-done');
+        const shelfAssembleDone = calls.find(c => c.phase === 'shelf-assemble-done');
+        expect(shelfItemsStart).toEqual({ stage: 'rendering', done: 0, total: 0, phase: 'shelf-items-start', blockIndex: 0, blockType: 'shelf', itemsTotal: 2 });
+        expect(shelfItemDones.map(c => c.itemIndex)).toEqual([0, 1]);
+        expect(shelfAssembleDone).toEqual({ stage: 'rendering', done: 0, total: 0, phase: 'shelf-assemble-done', blockIndex: 0, blockType: 'shelf', itemsTotal: 2 });
     });
 
     it('readBookMemo の hooks (onHeaders/onBody) が呼ばれると、reading段階に phase:headers/body-done がasin・adapterKind・elapsedMs付きで追加される (容疑者②=fetchハングの3分割計測, イシュー#156)', async () => {
@@ -760,7 +779,7 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         expect(JSON.stringify(with_.articles)).toBe(JSON.stringify(without.articles));
     });
 
-    it('_renderBlocks はブロックごとにマクロタスクへ yield する (イシュー#160: メインスレッドが長時間同期占有される記事でも、ブロック境界でブラウザがpaintする機会を保証する保険実装)', async () => {
+    it('_renderBlocks はブロックごとにマクロタスクへ yield する (イシュー#160: 保険実装。イシュー#161で _yieldToEventLoop を setTimeout+MessageChannel の Promise.race に二重化したため、外部setTimeoutとの相対順序ではなく(1)マイクロタスク境界を必ず超えること(2)resumedByがtimeout/messageChannelのいずれかで記録される=マクロタスクを経由した直接証拠、の2点で検証する。実測: MessageChannelはNode/jsdom双方でsetTimeout(0)より先に解決するため通常はresumedBy=messageChannelになる)', async () => {
         const article = makeArticle({ blocks: [
             { type: 'text', markdown: 'A' },
             { type: 'text', markdown: 'B' }
@@ -768,16 +787,21 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
         const order = [];
         await gen.build([article], { onProgress: (p) => {
             if (p.stage === 'rendering' && p.phase === 'block-done' && p.blockIndex === 0) {
-                // block0完了の直後にマクロタスクを1つ積む。_renderBlocksが本当に
-                // setTimeout(...,0) でイベントループへ戻っていれば、先に登録されたこちらが
-                // block1のblock-startより先に実行されるはず (FIFO)。
-                setTimeout(() => order.push('interleaved-macrotask'), 0);
+                // block0完了の直後にマイクロタスクを1つ積む。マイクロタスクは常にマクロタスクより
+                // 先に処理されるため、_renderBlocksが同期的に次ブロックへ進んでいなければ
+                // (=何らかの形でイベントループへ戻っていれば)、これは必ずblock1-startより先に実行される。
+                Promise.resolve().then(() => order.push('microtask-after-block0-done'));
+            }
+            if (p.stage === 'rendering' && p.phase === 'yield-done' && p.blockIndex === 0) {
+                order.push(`yield-done:${p.resumedBy}`);
             }
             if (p.stage === 'rendering' && p.phase === 'block-start' && p.blockIndex === 1) {
                 order.push('block1-start');
             }
         } });
-        expect(order).toEqual(['interleaved-macrotask', 'block1-start']);
+        expect(order[0]).toBe('microtask-after-block0-done');
+        expect(order[1]).toMatch(/^yield-done:(timeout|messageChannel)$/);
+        expect(order[2]).toBe('block1-start');
     });
 });
 
