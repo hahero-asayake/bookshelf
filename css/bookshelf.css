@@ -4258,6 +4258,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
 .pp-empty.pp-error { color: var(--danger); border-color: var(--danger); display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
 .pp-empty.pp-error .h-icon { color: var(--danger); }
+/* イシュー#166: 本ブロック空状態を <button> 化 (対象が明確なブロック内の追加入口)。<p>向けの .pp-empty に
+   button 既定装飾のリセットを重ねる (常時表示・hover非依存)。 */
+.pp-empty-btn { width: 100%; font: inherit; cursor: pointer; }
+.pp-empty-btn:hover { border-color: var(--accent); color: var(--accent); }
 .pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
 .pp-row-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -4549,7 +4553,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-sheet-close { display: none; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
 .art-sheet-close:hover { color: var(--fg); }
 .art-sheet-scrim { display: none; }
-.art-fab { display: none; }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 /* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
    (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
@@ -4634,23 +4637,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
         z-index: 940; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
     }
     .art-sheet-scrim.is-open { opacity: 1; pointer-events: auto; }
-
-    /* FAB (常時可視が要件・イシュー#165 §4)。本文 (.art-col) スクロール中は is-scrolling で半透明化
-       するが完全には消さない (バッジの新着件数が読めなくなるため)。 */
-    .art-fab {
-        display: flex; position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 930;
-        width: 52px; height: 52px; border-radius: 50%; border: none;
-        background: var(--accent); color: #fff; cursor: pointer;
-        align-items: center; justify-content: center;
-        box-shadow: 0 6px 16px rgba(0,0,0,.25);
-        transition: opacity 0.2s ease;
-    }
-    .art-fab.is-scrolling { opacity: 0.55; }
-    .art-fab-badge {
-        position: absolute; top: -2px; right: -2px; background: var(--danger); color: #fff;
-        border-radius: 999px; font-size: 0.62rem; padding: 0.05rem 0.4rem; font-weight: 700;
-        min-width: 1.1rem; line-height: 1.4;
-    }
 }
 @media (max-width: 760px) {
     .art-hd { flex-wrap: wrap; }

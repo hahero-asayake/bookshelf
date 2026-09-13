@@ -117,16 +117,17 @@ async function bootAppWithManyBooks(page, count = 800) {
 }
 
 // イシュー#165: 900px以下では本の引き出しがボトムシート化され既定で閉じているため、
-// #art-drawer-list の項目を直接クリックする既存テストは先にFABでシートを開く必要がある。
-// 900px超 (FAB非表示) では何もしない=既存の常時表示挙動のまま。
+// #art-drawer-list の項目を直接クリックする既存テストは先にシートを開く必要がある。
+// イシュー#166: FAB廃止によりシートを開く入口はブロック内の追加ボタンに一本化された。
+// 900px超は art-side が常時表示 (is-open は無関係) のためクリックしても無害。
 async function ensureDrawerSheetOpen(page) {
-    const fabVisible = await page.locator('#art-fab').isVisible().catch(() => false);
-    if (!fabVisible) return;
     const isOpen = await page.evaluate(() => {
         const el = document.getElementById('art-drawer');
         return !!(el && el.classList.contains('is-open'));
     });
-    if (!isOpen) await page.click('#art-fab');
+    if (isOpen) return;
+    const addBtn = page.locator('.art-shelf-add').last();
+    if (await addBtn.count()) await addBtn.click();
 }
 
 // 開いたままだと #art-sheet-scrim (pointer-events:auto) が以降の操作 (ドラッグ・tap等) を
@@ -1538,6 +1539,10 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
 
 // 本棚ブロックの一括操作を選択式にし Undo を付けた (イシュー#55)。
 // 設計: 選択なしのブロックバーは要素5個以下・1件以上選択で選択バーが出る・一括適用は Undo 付きトースト。
+// イシュー#166: 「このブロックに追加」ボタンが対象明示のため必須で1個増え、上限を6個以下に更新した
+// (視覚ノイズは要素数の上限でなく既存アイコンとの視覚言語統一で抑える方針・step1で②承認済み)。
+// ⚠️この上限は「操作要素を増やしすぎない」ための歯止め。#166で対象明示ボタンを1個追加した分の
+// 必要最小限であり、これ以上増やす場合は要素数を上げるのでなく情報設計から見直すこと(②指摘)。
 test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
     async function addShelfWithBooks(page, n) {
         await page.locator('.art-add-btn').first().click();
@@ -1547,7 +1552,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
     }
 
-    test('選択なしのとき、ブロックバーの操作要素は5個以下 (ラベルを除く)', async ({ page }) => {
+    test('選択なしのとき、ブロックバーの操作要素は6個以下 (ラベルを除く・イシュー#166で追加ボタン分+1)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
@@ -1555,7 +1560,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
 
         await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
         const count = await page.locator('.art-block-bar').first().locator('button, select, .art-block-grip').count();
-        expect(count).toBeLessThanOrEqual(5);
+        expect(count).toBeLessThanOrEqual(6);
         expect(errors).toEqual([]);
     });
 
@@ -2366,24 +2371,25 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
     });
 });
 
-// イシュー#165 (案C: ボトムシート+FAB): 900px以下限定のFAB→シート開閉→公開ボタン常時可視の経路。
-test.describe('記事エディタ: ボトムシートFAB (900px以下限定・イシュー#165)', () => {
+// イシュー#166: FAB廃止によりシートを開く入口は本棚ブロックの追加ボタン(.art-shelf-add)に一本化。
+test.describe('記事エディタ: ボトムシート・本棚ブロックの追加ボタン経由 (900px以下限定・イシュー#166)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-    test('FABで本の引き出しシートを開閉でき、本を追加でき、ヘッダーの公開ボタンからも公開できる', async ({ page }) => {
+    test('本棚ブロックの追加ボタンで本の引き出しシートを開閉でき、本を追加でき、ヘッダーの公開ボタンからも公開できる', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'ボトムシートテスト記事');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
 
-        // FABは常時可視 (§4)。閉じている間、引き出しの本はビューポート外にある (toBeVisible() は
+        // シートは既定で閉じている。閉じている間、引き出しの本はビューポート外にある (toBeVisible() は
         // 画面外でも真になるため使わない・ui-standards §2-12。boundingBox で実座標を見る)。
-        await expect(page.locator('#art-fab')).toBeVisible();
         const closedBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
         expect(closedBox.y).toBeGreaterThanOrEqual(844);
 
-        // FABクリックでシートがせり上がり、本が画面内でクリックできる (transform transition 0.25s待つ)
-        await page.click('#art-fab');
+        // 本棚ブロックの追加ボタンでシートがせり上がり、本が画面内でクリックできる (transform transition 0.25s待つ)
+        await page.locator('.art-shelf-add').first().click();
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         await page.waitForTimeout(400);
         const openBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
@@ -2393,31 +2399,13 @@ test.describe('記事エディタ: ボトムシートFAB (900px以下限定・�
         const blockCount = await page.evaluate(() => window.bookshelf._artDraft.blocks.length);
         expect(blockCount).toBe(1);
 
-        // 本選択後もシートは自動で閉じない (複数冊を続けて追加できる設計)。この状態のまま Esc を押すと
-        // シートだけが閉じ、モーダル本体は残ることを確認する (シートは.modalクラスを持たないため
+        // 本棚への個別追加は複数冊を続けて選べる設計のため、選択後もシートは自動で閉じない。この状態のまま
+        // Esc を押すとシートだけが閉じ、モーダル本体は残ることを確認する (シートは.modalクラスを持たないため
         // 全モーダル共通Escハンドラの誤爆に注意が要る・実装時に発見)。
         await page.keyboard.press('Escape');
         await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         await page.waitForTimeout(400); // transform transition 0.25s完了を確実に待つ (スクリムのopacity遷移含む)
-
-        // FABはフッターの操作ボタン (プレビュー・公開) の実クリック領域を覆わない (シートを閉じた状態で確認)
-        // (elementFromPoint で各ボタンの四隅+中心を実座標チェック。§4のFAB常時可視とフッター両立の確認。
-        // art-dup/art-del は新規記事では #art-page-ops が hidden で幅0になるため対象から外す)
-        const footerIds = ['art-preview', 'art-publish'];
-        for (const id of footerIds) {
-            const covered = await page.evaluate((elId) => {
-                const el = document.getElementById(elId);
-                if (!el) return null;
-                const r = el.getBoundingClientRect();
-                const points = [[r.left + 2, r.top + 2], [r.right - 2, r.top + 2], [r.left + 2, r.bottom - 2], [r.right - 2, r.bottom - 2], [(r.left + r.right) / 2, (r.top + r.bottom) / 2]];
-                return points.map(([x, y]) => {
-                    const top = document.elementFromPoint(x, y);
-                    return top === el || (el.contains(top));
-                });
-            }, id);
-            if (covered) expect(covered.every(Boolean), `${id} の全隅+中心が自分自身でヒットする (FABに覆われていない)`).toBe(true);
-        }
 
         // ヘッダーの公開ボタン (常時可視化・§2) は既存のフッター公開ボタンと同じ関数を呼ぶ
         await expect(page.locator('#art-publish-header')).toBeVisible();
@@ -2432,19 +2420,93 @@ test.describe('記事エディタ: ボトムシートFAB (900px以下限定・�
     });
 });
 
-test.describe('記事エディタ: 900px超では従来どおり2カラム表示のまま (回帰確認・イシュー#165)', () => {
+test.describe('記事エディタ: 900px超では従来どおり2カラム表示のまま (回帰確認・イシュー#165/#166)', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
-    test('FAB・ヘッダー公開ボタンは表示されず、本の引き出しは常時右側パネルとして見える', async ({ page }) => {
+    test('FABは存在せず、ヘッダー公開ボタンも表示されず、本の引き出しは常時右側パネルとして見える', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
-        await expect(page.locator('#art-fab')).toBeHidden();
+        // イシュー#166: FABはDOMごと撤去した (非表示ではなく不在)。count() で不在そのものを確認する。
+        expect(await page.locator('#art-fab').count()).toBe(0);
         await expect(page.locator('.art-hd-publish-group')).toBeHidden();
         const sideBox = await page.locator('#art-drawer').boundingBox();
         expect(sideBox.y).toBeGreaterThanOrEqual(0);
         expect(sideBox.y).toBeLessThan(400);
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#166: ブロック内ボタンからの3経路(本単体差し替え/まとめて追加/本棚個別追加)と
+// 対象ブロック明示・自動クローズ維持を確認する。
+test.describe('記事エディタ: ブロック内ボタンからの本追加3経路 (イシュー#166)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('本単体ブロックの差し替えボタン: シートが開き対象が明示され、選ぶと自動で閉じる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+
+        // 空状態ボタン (バー内アイコン+本文中の空状態ボタンの2箇所が同じ .art-book-pick クラスを持つ)
+        expect(await page.locator('.art-book-pick').count()).toBe(2);
+        const closedBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
+        expect(closedBox.y).toBeGreaterThanOrEqual(844);
+
+        await page.locator('.art-book-pick').first().click();
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        // シート側に対象ブロックが明示される (Nielsen #1 可視性)
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('差し替え対象');
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本ブロック');
+
+        await page.waitForTimeout(400);
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // イシュー#165の自動クローズ挙動を維持: 1冊選べば操作完結なので自動で閉じる
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        const asin = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].asin);
+        expect(asin).toBeTruthy();
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚ブロックの「まとめて追加」: シートが開き対象が明示され、追加後は自動で閉じる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        await page.locator('.art-shelf-add').first().click();
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック');
+        await page.waitForTimeout(400);
+
+        await page.locator('#art-drawer-add-all').click();
+        // イシュー#165: 「まとめて追加」も1操作で完結するため自動で閉じる
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        expect(itemCount).toBeGreaterThan(0);
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚ブロックの個別追加: シートが開き対象が明示され、選んでも開いたまま (複数冊追加用途)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        await page.locator('.art-shelf-add').first().click();
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await page.waitForTimeout(400);
+
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // 意図的に開いたまま (複数冊を続けて選ぶ用途)
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        expect(itemCount).toBe(1);
         expect(errors).toEqual([]);
     });
 });

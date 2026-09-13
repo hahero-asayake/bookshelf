@@ -7901,12 +7901,11 @@ class VirtualBookshelf {
             this._artRenderDrawer();
         });
         on('art-drawer-add-all', 'click', () => this._artOnDrawerAddAllClick());
-        // 900px以下のボトムシート (イシュー#165・案C): FAB で開く、スクリム/×/Esc で閉じる。
-        on('art-fab', 'click', () => this._artOpenSheet());
+        // 900px以下のボトムシート (イシュー#165・案C): スクリム/×/Esc で閉じる。
+        // イシュー#166: 開く入口だった FAB は廃止・ブロック内の追加ボタン(art-book-pick/art-shelf-add)に一本化。
         on('art-sheet-scrim', 'click', () => this._artCloseSheet());
         on('art-sheet-close', 'click', () => this._artCloseSheet());
         on('art-publish-header', 'click', () => this._artPublish());
-        this._artBindSheetScrollFade();
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
             const side = document.getElementById('art-drawer');
@@ -8389,10 +8388,13 @@ class VirtualBookshelf {
             </div>`;
         }
         if (b.type === 'book') {
+            // イシュー#166: 対象が常に明確な「本を選ぶ/差し替え」の入口をブロック内に置く (FAB廃止に伴う代替)。
+            // 押したブロックへ入るよう _artPendingBookBlockId をここでセットしてからシートを開く (900px超は右パネル常時表示)。
+            const pickBtn = `<button type="button" class="art-block-ic art-book-pick" title="${b.asin ? 'この本を選び直す' : 'この本を選ぶ'}"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'book-plus'}" data-icon-size="14"></span></button>`;
             if (!b.asin) {
                 return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
-                    <div class="art-block-bar"><span class="art-block-kind">本</span>${barCommon}</div>
-                    <div class="art-block-body"><p class="pp-empty">右の「本の引き出し」から本をクリックして選んでください。</p></div>
+                    <div class="art-block-bar"><span class="art-block-kind">本</span>${pickBtn}${barCommon}</div>
+                    <div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>
                 </div>`;
             }
             const book = this.books.find(x => x.asin === b.asin);
@@ -8401,7 +8403,7 @@ class VirtualBookshelf {
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
             const show = b.show || { shortMemo: false, longMemo: false, rating: false };
             return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
-                <div class="art-block-bar"><span class="art-block-kind">本</span>${barCommon}</div>
+                <div class="art-block-bar"><span class="art-block-kind">本</span>${pickBtn}${barCommon}</div>
                 <div class="art-block-body art-block-book-body">
                     <div class="art-cover">${cover}</div>
                     <div class="art-block-book-info">
@@ -8538,10 +8540,13 @@ class VirtualBookshelf {
             </div>` : '';
         // #133 項目3: 引き出しからの追加先ブロックを視覚的に示す (Nielsen #1 システム状態の可視性)。
         const isAddTarget = b.id === this._artActiveShelfBlockId;
+        // イシュー#166: 「このブロックに追加」の入口をブロック内に置く (FAB廃止に伴う代替)。押すとこのブロックを
+        // _artActiveShelfBlockId にしてからシートを開く (既存のブロッククリックでのアクティブ化とは併存する)。
+        const addBtn = `<button type="button" class="art-block-ic art-shelf-add" title="このブロックに本を追加"><span class="h-icon" data-icon="book-plus" data-icon-size="14"></span></button>`;
         return `<div class="art-block${collapsed ? ' is-collapsed' : ''}${isAddTarget ? ' is-add-target' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-block-bar">
                 <span class="art-block-kind">本棚</span>${shelfHtml}<span class="art-block-count">${items.length}冊</span>
-                <span class="art-block-bar-sp"></span>${barToolbarHtml}
+                <span class="art-block-bar-sp"></span>${barToolbarHtml}${addBtn}
                 <button type="button" class="art-chip-toggle art-collapse-toggle" title="${collapsed ? '展開' : '畳む'}">${collapsed ? '展開' : '畳む'}</button>
                 <span class="art-block-bar-sep"></span>
                 <span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14"></span>
@@ -8550,7 +8555,7 @@ class VirtualBookshelf {
             </div>
             ${selbarHtml}
             <div class="art-block-body"${collapsed ? ' hidden' : ''}>
-                <div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml || '<p class="pp-empty">右の「本の引き出し」から本を追加してください。</p>'}</div>
+                <div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml || '<p class="pp-empty">上の「＋ 追加」ボタンから本を追加してください。</p>'}</div>
             </div>
         </div>`;
     }
@@ -8633,6 +8638,28 @@ class VirtualBookshelf {
             if (dup) dup.addEventListener('click', () => this._artDuplicateBlock(blockId));
             const del = el.querySelector('.art-block-del');
             if (del) del.addEventListener('click', () => this._artRemoveBlock(blockId));
+
+            // イシュー#166: 本ブロックの「選ぶ/差し替え」入口 (asin無しは空状態ボタン+バーアイコンの2箇所に同じクラスが乗る)。
+            el.querySelectorAll('.art-book-pick').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this._artPendingBookBlockId = blockId;
+                    this._artRenderDrawer();
+                    this._artOpenSheet();
+                });
+            });
+            // イシュー#166: 本棚ブロックの「このブロックに追加」入口。バー内クリックは既存の
+            // ブロック全体クリック (アクティブ化のみ) とバブリングするため stopPropagation で二重実行を防ぐ。
+            const shelfAddBtn = el.querySelector('.art-shelf-add');
+            if (shelfAddBtn) shelfAddBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // 直前に「本を選ぶ」を開いてキャンセルした場合の差し替え待ちが残っていると
+                // ヒント表示・クリック時の追加先解決の両方が誤るため、ここで明示的に解除する。
+                this._artPendingBookBlockId = null;
+                this._artActiveShelfBlockId = blockId;
+                this._artRenderBlocks();
+                this._artRenderDrawer();
+                this._artOpenSheet();
+            });
 
             const densityBtn = el.querySelector('.art-density-toggle');
             if (densityBtn) densityBtn.addEventListener('click', () => {
@@ -9095,6 +9122,16 @@ class VirtualBookshelf {
         const hintEl = document.getElementById('art-drawer-target-hint');
         if (!hintEl) return;
         const esc = PublishArticleGenerator.esc;
+        // イシュー#166: 本ブロックの「選ぶ/差し替え」待ちのときは、本棚ブロックの追加先より優先して対象を明示する。
+        if (this._artPendingBookBlockId) {
+            const pending = this._artFindBlock(this._artPendingBookBlockId);
+            if (pending && pending.type === 'book') {
+                const pendingBook = pending.asin ? this.books.find(x => x.asin === pending.asin) : null;
+                const pendingLabel = pendingBook ? pendingBook.title : (pending.asin || '未選択');
+                hintEl.innerHTML = `<span class="art-drawer-target-label">差し替え対象:</span> <span class="art-drawer-target-name">${esc(pendingLabel)}（本ブロック）</span>`;
+                return;
+            }
+        }
         const block = this._artFindBlock(this._artActiveShelfBlockId);
         if (!block || block.type !== 'shelf') {
             hintEl.innerHTML = '<span class="art-drawer-target-label">追加先:</span> <span class="art-drawer-target-name">新しい本棚ブロックを作成</span>';
@@ -9150,27 +9187,10 @@ class VirtualBookshelf {
         if (scrim) scrim.classList.remove('is-open');
     }
 
-    // FAB 軽減策 (イシュー#165 §4): 本文スクロール中は半透明化し、止まったら通常表示に戻す。
-    // 常時可視であること自体は要件なので完全に隠しはしない (opacity のみ・display は変えない)。
-    _artBindSheetScrollFade() {
-        if (this._artSheetScrollFadeBound) return;
-        this._artSheetScrollFadeBound = true;
-        let timer = null;
-        document.addEventListener('scroll', (e) => {
-            if (!e.target || e.target.nodeType !== 1 || !e.target.classList || !e.target.classList.contains('art-col')) return;
-            const fab = document.getElementById('art-fab');
-            if (!fab) return;
-            fab.classList.add('is-scrolling');
-            clearTimeout(timer);
-            timer = setTimeout(() => fab.classList.remove('is-scrolling'), 500);
-        }, true);
-    }
-
     _artRenderDrawer() {
         const wrap = document.querySelector('.art-wrap');
         const listHost = document.getElementById('art-drawer-list');
         const badgeEl = document.getElementById('art-drawer-badge');
-        const fabBadgeEl = document.getElementById('art-fab-badge');
         const addAllBtn = document.getElementById('art-drawer-add-all');
         if (!listHost) return;
         this._artRenderDrawerTargetHint();
@@ -9180,16 +9200,16 @@ class VirtualBookshelf {
             if (wrap) wrap.classList.add('art-drawer-collapsed');
             listHost.innerHTML = '';
             if (badgeEl) badgeEl.hidden = true;
-            if (fabBadgeEl) fabBadgeEl.hidden = true;
             if (addAllBtn) addAllBtn.hidden = true;
             return;
         }
         if (wrap) wrap.classList.remove('art-drawer-collapsed');
         const usedAsins = this._artUsedAsins();
         const esc = PublishArticleGenerator.esc;
+        // イシュー#166: 新着バッジはシート内(art-drawer-badge)のみ維持。FAB上の予告バッジ(art-fab-badge)は
+        // FAB廃止に伴い廃止 (ブロック単位の情報ではないためブロック内ボタンへの移設もしない、理由は設計レポート参照)。
         const newCount = asins.filter(a => !usedAsins.has(a)).length;
         if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
-        if (fabBadgeEl) { fabBadgeEl.hidden = newCount === 0; fabBadgeEl.textContent = String(newCount); }
         const filteredAsins = this._artDrawerFilteredAsins();
         if (!filteredAsins.length) {
             listHost.innerHTML = '<div class="art-drawer-empty">条件に合う本がありません</div>';

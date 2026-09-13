@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026091303">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026091305">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -842,12 +842,8 @@
                     </div>
                 </div>
 
-                <!-- 900px以下限定: ボトムシートのスクリムとFAB (本の引き出しを開く) -->
+                <!-- 900px以下限定: ボトムシートのスクリム (イシュー#166: FABは廃止・入口はブロック内ボタンに一本化) -->
                 <div id="art-sheet-scrim" class="art-sheet-scrim"></div>
-                <button type="button" id="art-fab" class="art-fab" title="本の引き出しを開く" aria-label="本の引き出しを開く">
-                    <span class="h-icon" data-icon="library" data-icon-size="22"></span>
-                    <span id="art-fab-badge" class="art-fab-badge" hidden></span>
-                </button>
 
                 <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
                 <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
@@ -1225,7 +1221,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026091304"></script>
+    <script src="js/bookshelf.js?v=2026091306"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
