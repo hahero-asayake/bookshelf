@@ -4327,7 +4327,12 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-book-chosen li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-chip-x { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 1rem; line-height: 1; padding: 0; }
 .pp-chip-x:hover { color: var(--danger); }
-.pp-edit-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+/* イシュー#168実測で発見: flex-wrap は元々 @media (max-width: 760px) でだけ有効化されていたが、
+   900px以下のボトムシート化 (#165) 等モバイル最適化全般は760pxでなく900pxを境にしている。
+   この境界のズレにより 760px超〜900px以下 (実測768px) は wrap が効かないまま全要素が1行に
+   収めようとし、縮小余地が最も大きい pp-page-ops だけが極端に潰れて内部で3行に分裂していた
+   (768x1024実測: h=122px、通常36pxの3.4倍)。既定から wrap にして境界のズレを無くす。 */
+.pp-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .pp-actions-spacer { flex: 1; }
 
 /* --- 詳細設定（折りたたみ）: ページ操作（複製・削除など） --- */
@@ -4339,7 +4344,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-advanced[open] > summary .pp-advanced-caret { transform: rotate(180deg); }
 .pp-advanced-note { font-weight: 400; font-size: 0.78rem; color: var(--muted); margin-left: auto; }
 .pp-advanced-body { padding: 0 1.05rem 0.95rem; }
-.pp-page-ops { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; }
+/* イシュー#168実測: 900px以下の中間幅(768px)で、親(.pp-edit-actions)の他要素が1行に収まる分だけ
+   pp-page-ops に残る横幅が減り、flex-wrap:wrap だと内部の複製/公開取消/削除が3行に分裂していた
+   (h=122px、通常36pxの3.4倍)。pp-page-ops を「割れない1ブロック」として扱い、幅が足りなければ
+   親側の折り返しで次の行に丸ごと落ちるようにする (nowrap 化)。 */
+.pp-page-ops { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.45rem; flex-shrink: 0; }
 .pp-page-ops-label { font-size: 0.8rem; color: var(--muted); margin-right: 0.25rem; }
 .pp-page-ops .pp-del-spacer { flex: 1; }
 /* hidden 属性を尊重 (自身の display:flex と .btn-small の重複定義が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
@@ -4367,6 +4376,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     background: var(--panel); color: var(--fg2); font-size: 0.82rem; }
 /* 選択中の配色が一目で分かる手掛かり (過剰にしない=色だけの小さな丸、イシュー#99・指摘3) */
 .art-theme-swatch { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--line); flex: 0 0 auto; }
+/* イシュー#168差し戻し対応: ラベル+select(+スウォッチ)を割れない1ブロックとして扱う
+   (pp-page-opsと同じnowrap手法)。幅が足りなければグループごと次の行に落ちる。 */
+.art-theme-group { display: flex; align-items: center; gap: 0.45rem; flex-wrap: nowrap; flex-shrink: 0; }
 .art-save-status { font-size: 0.78rem; color: var(--muted); }
 .art-save-status.is-error { color: var(--danger); font-weight: 600; }
 /* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
@@ -4391,8 +4403,13 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* --- 本体 2 ペイン --- */
 .art-wrap { display: grid; grid-template-columns: 1fr 17rem; gap: 1rem; align-items: start; flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+/* 棚が空のときの自動非表示 (_artRenderDrawer)。ユーザー操作の畳み (下の art-drawer-user-collapsed)
+   とは別クラス・別状態 (イシュー#168・状態の混線を避ける設計、step1で承認済み)。どちらか一方でも
+   真なら畳まれた見た目になる (OR条件で構わない・両立しても矛盾しない)。 */
 .art-wrap.art-drawer-collapsed { grid-template-columns: 1fr; }
 .art-wrap.art-drawer-collapsed .art-side { display: none; }
+.art-wrap.art-drawer-user-collapsed { grid-template-columns: 1fr; }
+.art-wrap.art-drawer-user-collapsed .art-side { display: none; }
 .art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
 
 /* --- ブロック共通 --- */
@@ -4492,6 +4509,25 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-list .art-shelf-item:last-child { border-bottom: none; }
 .art-shelf-list .art-shelf-item:hover { background: var(--side); }
 .art-shelf-list .art-shelf-item.is-selected { background: var(--accent-bg); }
+
+/* イシュー#168: 本一覧末尾の常駐追加ボタン (#166のバー内ボタンが複製/削除と同一視覚言語で
+   見つけにくかった代替。本そのものが並ぶ領域に常駐させ、grid/list どちらでも1マス/1行として続く)。
+   差し戻し対応: 既定色(--muted/--line)が既存の薄い破線ボタンと見分けがつかず埋没した(②実機指摘)。
+   主要操作として常時アクセント色で目立たせる(hover待ちにしない・薄いトークンに揃えない)。 */
+.art-shelf-add-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem;
+    border: 1.5px dashed var(--accent); border-radius: 7px; background: var(--accent-bg); color: var(--accent-strong);
+    cursor: pointer; font: inherit; font-size: 0.72rem; font-weight: 600; padding: 0.4rem; width: 100%; }
+.art-shelf-grid .art-shelf-add-tile { aspect-ratio: 5/7; }
+.art-shelf-add-tile:hover { border-style: solid; }
+.art-shelf-list .art-shelf-add-tile { flex-direction: row; padding: 0.5rem 0.7rem; border-radius: 6px; margin-top: 0.2rem; }
+.art-shelf-add-tile-label { font-weight: 600; }
+
+/* 本0冊の空状態: プレースホルダーの <p> を <button> 化 (#166 の .pp-empty-btn と同じパターンを
+   本棚ブロックにも適用。本があるときの .art-shelf-add-tile と同じクリック領域の考え方)。
+   .pp-empty の既定(薄いグレー破線)を上書きし、tile と同じアクセント色で統一する。 */
+.art-shelf-add-empty { display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-color: var(--accent); background: var(--accent-bg); color: var(--accent-strong); font-weight: 600; }
+.art-shelf-add-empty:hover { border-style: solid; }
 .art-shelf-list .art-shelf-item-grip { color: var(--muted); font-size: 0.65rem; cursor: grab; touch-action: none; }
 .art-shelf-list .art-shelf-item .art-cover { width: 34px; height: 34px; aspect-ratio: unset; max-height: none; border-radius: 3px; }
 .art-shelf-list .art-shelf-item-title { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4546,13 +4582,20 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* --- 右ペイン: 本の引き出し --- */
 .art-side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; position: sticky; top: 0.3rem; max-height: 100%; display: flex; flex-direction: column; box-shadow: -3px 0 8px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08); }
 .art-side h3 { font-size: 0.8rem; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line2); display: flex; justify-content: space-between; align-items: center; margin: 0; flex: 0 0 auto; }
-/* --- ヘッダー公開ボタン・本の引き出しのボトムシート化用要素 (900px以下限定。#165)。
+/* イシュー#168: art-hd-publish-group (公開ボタン) は元は900px以下限定 (#165、ボトムシートで
+   フッターの公開ボタンが隠れる対策) だったが、フッター側の #art-publish を撤去した (重複解消・
+   フッター要素数削減) ため、900px超でもこちらを唯一の公開導線として常時表示にする。 */
+.art-hd-publish-group { display: flex; margin-left: auto; flex: 0 0 auto; }
+/* --- 本の引き出しのボトムシート化用要素 (900px以下限定。#165)。
    900px超では一切使わないため既定は非表示にし、900px以下のメディアクエリでのみ有効化する。 */
-.art-hd-publish-group { display: none; margin-left: auto; flex: 0 0 auto; }
 .art-sheet-handle { display: none; flex: 0 0 auto; }
 .art-sheet-close { display: none; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
 .art-sheet-close:hover { color: var(--fg); }
 .art-sheet-scrim { display: none; }
+/* 900px超限定: 本の引き出しを畳むボタン (イシュー#168)。900px以下は art-sheet-close (×) が
+   ボトムシートを閉じる役なので、こちらは非表示にする (下のメディアクエリで反転)。 */
+.art-drawer-collapse-btn { display: inline-flex; align-items: center; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
+.art-drawer-collapse-btn:hover { color: var(--fg); }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 /* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
    (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
@@ -4614,9 +4657,13 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
        上に成立していたが、.art-side をフローから外す本変更でその前提自体が崩れるため撤去する)。 */
     .art-wrap { grid-template-columns: 1fr; }
 
-    .art-hd-publish-group { display: flex; }
     .art-sheet-handle { display: block; width: 36px; height: 4px; background: var(--line); border-radius: 999px; margin: 0.5rem auto 0; }
     .art-sheet-close { display: inline-flex; align-items: center; }
+    .art-drawer-collapse-btn { display: none; }
+    /* イシュー#168: art-drawer-user-collapsed は900px超専用の状態。PCで畳んだ記憶が残ったまま
+       900px以下でこのモーダルを開くと .art-side ごと display:none になりボトムシートが開けなく
+       なる事故になるため、900px以下では明示的に無効化する。 */
+    .art-wrap.art-drawer-user-collapsed .art-side { display: flex; }
 
     /* 高さは vh 決め打ちでなく安全弁 (ヘッダー等の実測 3.5rem を引いた残り) との min() にする。
        完全な「親の残り高さから導く」は position:fixed の性質上できない (containing block が viewport になるため)。
@@ -4662,7 +4709,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-preview-progress-msg { margin: 0; color: #888; font-size: 0.92rem; }
 @media (max-width: 760px) {
     .pp-preview-dialog { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
-    .pp-edit-actions { flex-wrap: wrap; }
 }
 
 /* 統一方針 (C-271): ボタンは内容幅・横並び (全幅積みは他セクションと不揃いになる) */

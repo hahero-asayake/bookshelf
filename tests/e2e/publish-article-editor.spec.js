@@ -726,7 +726,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -759,7 +759,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -803,7 +803,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -833,7 +833,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文1');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -858,7 +858,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
 
         // 一覧に戻り、公開中2件で一括更新 → 個別記事に決められないためサイトのトップ+件数を案内する
@@ -887,7 +887,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -909,7 +909,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
         hubCaptured.files = null;
@@ -962,7 +962,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -993,7 +993,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish');
+        await page.click('#art-publish-header');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1265,9 +1265,11 @@ test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', ()
         await page.locator('.art-add-btn').first().click();
         await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
 
+        // イシュー#168: 空状態の案内は <p class="pp-empty"> から常駐の追加ボタン
+        // (.art-shelf-add-empty、同じ pp-empty 見た目を継承) に変わった。潰れないことは
+        // このボタン自体の高さ/幅で見る (.art-shelf-list は0冊時は描画されない)。
         await expect(page.locator('.art-block-body .pp-empty')).toBeVisible();
-        // 密度の既定はコンパクト (B) なので .art-shelf-list 側で潰れないことを見る
-        const box = await page.locator('.art-shelf-list').boundingBox();
+        const box = await page.locator('.art-shelf-add-empty').boundingBox();
         expect(box.height).toBeGreaterThan(40);
         expect(box.width).toBeGreaterThan(200);
         expect(errors).toEqual([]);
@@ -2420,20 +2422,93 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
     });
 });
 
-test.describe('記事エディタ: 900px超では従来どおり2カラム表示のまま (回帰確認・イシュー#165/#166)', () => {
+test.describe('記事エディタ: 900px超は本の引き出しが初期状態で右側パネル表示 (回帰確認・イシュー#165/#166/#168)', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
-    test('FABは存在せず、ヘッダー公開ボタンも表示されず、本の引き出しは常時右側パネルとして見える', async ({ page }) => {
+    test('FABは存在せず、ヘッダー公開ボタンは表示され (#168でフッター側を撤去し一本化)、本の引き出しは既定で右側パネルとして見える', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
         // イシュー#166: FABはDOMごと撤去した (非表示ではなく不在)。count() で不在そのものを確認する。
         expect(await page.locator('#art-fab').count()).toBe(0);
-        await expect(page.locator('.art-hd-publish-group')).toBeHidden();
+        // イシュー#168: フッターの #art-publish を撤去しヘッダー側 (#art-publish-header) に一本化した
+        // ため、900px超でも常時表示になる (#165時点は900px以下限定だった)。
+        await expect(page.locator('.art-hd-publish-group')).toBeVisible();
+        await expect(page.locator('#art-publish-header')).toBeVisible();
+        expect(await page.locator('#art-publish').count()).toBe(0);
         const sideBox = await page.locator('#art-drawer').boundingBox();
         expect(sideBox.y).toBeGreaterThanOrEqual(0);
         expect(sideBox.y).toBeLessThan(400);
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 900px超で本の引き出しを畳める・記憶する (イシュー#168)', () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    test('本エリアの常駐ボタンで開く→畳むボタンで閉じる→常駐ボタンで再度開ける', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        // 既定は開いた状態 (localStorage未設定)
+        await expect(page.locator('.art-wrap')).not.toHaveClass(/art-drawer-user-collapsed/);
+        const openBox = await page.locator('#art-drawer').boundingBox();
+        expect(openBox.width).toBeGreaterThan(0);
+
+        // 畳むボタンで畳む
+        await page.click('#art-drawer-collapse-btn');
+        await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
+        await expect(page.locator('#art-drawer')).toBeHidden();
+
+        // 本エリアの常駐ボタン (本棚ブロックの追加ボタン) で再度開ける
+        await page.locator('.art-shelf-add').first().click();
+        await expect(page.locator('.art-wrap')).not.toHaveClass(/art-drawer-user-collapsed/);
+        await expect(page.locator('#art-drawer')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    test('畳んだ状態はlocalStorageに記憶され、エディタを開き直しても畳んだまま', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        await page.click('#art-drawer-collapse-btn');
+        await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
+        const stored = await page.evaluate(() => localStorage.getItem('bookshelf_art_drawer_collapsed'));
+        expect(stored).toBe('1');
+
+        // 一覧へ戻ってから再度エディタを開き直す (新しい記事)
+        await page.click('#art-back');
+        await page.click('#art-new');
+        await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
+        await expect(page.locator('#art-drawer')).toBeHidden();
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 狭い画面は#166のボトムシートのまま (回帰確認・イシュー#168)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('900px以下ではart-drawer-collapse-btnは非表示、閉じるのは従来どおり×とスクリム', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        await expect(page.locator('#art-drawer-collapse-btn')).toBeHidden();
+        await page.locator('.art-shelf-add').first().click();
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await page.click('#art-sheet-close');
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        // 900px以下では art-drawer-user-collapsed は付かない (常にボトムシートの開閉のみ)
+        await expect(page.locator('.art-wrap')).not.toHaveClass(/art-drawer-user-collapsed/);
         expect(errors).toEqual([]);
     });
 });
@@ -2509,4 +2584,129 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         expect(itemCount).toBe(1);
         expect(errors).toEqual([]);
     });
+});
+
+// イシュー#168: 本棚名テキストの撤去後も、対象ブロックの明示 (.is-add-target / 引き出し側ヒント) が
+// 独立して機能し続けることを確認する (テキストは対象明示の主手段ではなかった、という step1 の実読結果)。
+test.describe('記事エディタ: 本棚ブロックの本棚名テキスト撤去後も追加先が分かる (イシュー#168)', () => {
+    test('本棚名テキストはDOMに無いが、アイコンのtitleと.is-add-target/引き出しヒントで対象ブロックが分かる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+
+        const blockA = page.locator('.art-block').nth(0);
+        // 本棚名のテキスト表示は撤去済み (ハヘロ「名前出るのいらなくない？」)
+        expect(await blockA.locator('.art-block-shelf-path').count()).toBe(0);
+        // アイコンは残り、title属性で本棚名を保持する (ホバーで分かる・複数本棚ブロックの識別手段)
+        const shelfIcon = blockA.locator('.art-block-shelf-icon');
+        await expect(shelfIcon).toBeVisible();
+        const title = await blockA.locator('.art-block-shelf').getAttribute('title');
+        expect(title).toBeTruthy();
+
+        // 対象ブロックの明示はテキストに依存せず機能する (.is-add-target ハイライト)
+        await expect(blockA).toHaveClass(/is-add-target/);
+        // 引き出し側ヒントも同様に機能する (#133 のヒント文言)
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+
+        // 2つ目のブロックを作ってもテキストは出ず、対象切替は引き続き機能する
+        const lastAdd = page.locator('.art-add').last();
+        await lastAdd.locator('.art-add-btn').click();
+        await lastAdd.locator('.art-add-menu-item[data-block-type="shelf"]').click();
+        const blockB = page.locator('.art-block').nth(1);
+        expect(await blockB.locator('.art-block-shelf-path').count()).toBe(0);
+        await expect(blockB).toHaveClass(/is-add-target/);
+        await expect(blockA).not.toHaveClass(/is-add-target/);
+
+        expect(errors).toEqual([]);
+    });
+
+    // 本棚不在 (未選択/削除済み) 時に警告テキストが残ることは、既存の shelfId:null 回帰テスト
+    // (2327行目付近「既存の shelfId:null データ (旧・異常データ) を読み込んでもエディタ描画が完走し
+    // 「未選択の本棚」と表示される」) が .art-block-shelf.is-shelf-missing のテキストとして
+    // 既に検証済み (イシュー#155)。ここでの重複追加は行わない。
+});
+
+// イシュー#168: フッター (.pp-edit-actions) の「崩れ」を #166 の数値項目 (はみ出し・横スクロール) に
+// 加えて、折り返し行の内容・矩形交差・内容あふれ・pp-page-ops内部の分裂まで検出する。
+test.describe('記事エディタ: フッターの崩れ検出 (折り返し・重なり・内部分裂・イシュー#168)', () => {
+    async function measureFooter(page) {
+        return page.evaluate(() => {
+            const container = document.querySelector('.form-actions.pp-edit-actions');
+            if (!container) return null;
+            const pageOps = document.getElementById('art-page-ops');
+            const pageOpsRect = pageOps ? pageOps.getBoundingClientRect() : null;
+            const rects = Array.from(container.children)
+                .filter(el => !el.hidden && getComputedStyle(el).display !== 'none')
+                .map(el => {
+                    const r = el.getBoundingClientRect();
+                    return { id: el.id || el.className, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+                });
+            let overlapCount = 0;
+            for (let i = 0; i < rects.length; i++) {
+                for (let j = i + 1; j < rects.length; j++) {
+                    const a = rects[i], b = rects[j];
+                    const ix = Math.max(a.left, b.left) < Math.min(a.right, b.right);
+                    const iy = Math.max(a.top, b.top) < Math.min(a.bottom, b.bottom);
+                    if (ix && iy) overlapCount++;
+                }
+            }
+            // イシュー#168差し戻し対応: 配色スウォッチが配色selectと分断され「謎の黒丸」として
+            // 孤立していた実機不具合(390px)の再発防止。同じ .art-theme-group 内にあるか(DOM構造)と、
+            // centerYが近いか(視覚的に同じ行か。高さの違うselect/swatchはtopでなくcenterYで比べる)を見る。
+            const colorSel = document.getElementById('art-theme-color');
+            const swatch = document.getElementById('art-theme-swatch');
+            const sameThemeGroup = !!(colorSel && swatch && colorSel.closest('.art-theme-group') === swatch.closest('.art-theme-group') && colorSel.closest('.art-theme-group') !== null);
+            const colorSelRect = colorSel ? colorSel.getBoundingClientRect() : null;
+            const swatchRect = swatch ? swatch.getBoundingClientRect() : null;
+            const swatchCenterYDiff = (colorSelRect && swatchRect)
+                ? Math.abs(((colorSelRect.top + colorSelRect.bottom) / 2) - ((swatchRect.top + swatchRect.bottom) / 2))
+                : null;
+            return {
+                innerWidth: window.innerWidth,
+                scrollHeight: container.scrollHeight,
+                clientHeight: container.clientHeight,
+                anyRightOverflow: rects.some(r => r.right > window.innerWidth),
+                overlapCount,
+                pageOpsHeight: pageOpsRect ? Math.round(pageOpsRect.height) : null,
+                sameThemeGroup,
+                swatchCenterYDiff,
+            };
+        });
+    }
+
+    for (const vp of [
+        { width: 390, height: 844 }, { width: 430, height: 932 }, { width: 600, height: 1080 },
+        { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1080, height: 1920 },
+    ]) {
+        test(`${vp.width}x${vp.height}: 内容あふれ・重なり・pp-page-ops内部分裂が無い`, async ({ page }) => {
+            await page.setViewportSize(vp);
+            const errors = await bootApp(page);
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.click('#art-new');
+            await page.evaluate(() => window.bookshelf._artFlushSave());
+            await expect.poll(() => page.evaluate(() => !document.getElementById('art-page-ops').hidden)).toBe(true);
+            // 3ボタン(複製/公開を取り消す/削除)が揃った最大構成で測る (実測記事と同条件)
+            await page.evaluate(() => {
+                window.bookshelf._artDraft.published = true;
+                const unpub = document.getElementById('art-unpublish');
+                if (unpub) unpub.hidden = false;
+            });
+
+            const m = await measureFooter(page);
+            expect(m.scrollHeight).toBeLessThanOrEqual(m.clientHeight);
+            expect(m.anyRightOverflow).toBe(false);
+            expect(m.overlapCount).toBe(0);
+            // イシュー#168実測の核心: pp-page-ops (複製/公開取消/削除) は nowrap 化により
+            // どの幅でも1行 (36px前後) を維持し、768のような内部3行分裂 (旧h=122px) を起こさない。
+            expect(m.pageOpsHeight).toBeLessThanOrEqual(40);
+            // イシュー#168差し戻し対応: 配色スウォッチが配色selectと同じグループ内にあり、
+            // centerYが近い(同じ行にある)ことをどの幅でも確認する(②実機指摘「謎の黒丸」の再発防止)。
+            expect(m.sameThemeGroup).toBe(true);
+            expect(m.swatchCenterYDiff).toBeLessThan(4);
+            expect(errors).toEqual([]);
+        });
+    }
 });

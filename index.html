@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026091305">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026091402">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -823,6 +823,8 @@
                     <div class="art-side" id="art-drawer">
                         <div class="art-sheet-handle" aria-hidden="true"></div>
                         <h3>本の引き出し <span id="art-drawer-badge" class="art-badge" hidden></span>
+                            <!-- 900px超限定: 引き出しを畳む (イシュー#168・900px以下は art-sheet-close がボトムシートを閉じる) -->
+                            <button type="button" id="art-drawer-collapse-btn" class="art-drawer-collapse-btn" title="本の引き出しを畳む" aria-label="本の引き出しを畳む"><span class="h-icon" data-icon="panel-right" data-icon-size="16"></span></button>
                             <button type="button" id="art-sheet-close" class="art-sheet-close" title="閉じる" aria-label="閉じる"><span class="h-icon" data-icon="x" data-icon-size="16"></span></button>
                         </h3>
                         <span class="popover-host art-drawer-shelf-host">
@@ -848,14 +850,23 @@
                 <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
                 <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
 
+                <!-- イシュー#168: 公開ボタンはヘッダー (#art-publish-header, #165) と機能重複していたため
+                     フッターからは撤去。ヘッダー側に一本化し、フッターの要素数そのものを減らす
+                     (「隠す」のではなく重複を無くす方針・②承認済み)。 -->
                 <div class="form-actions pp-edit-actions">
-                    <span class="art-tag-label">レイアウト</span>
-                    <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
-                    <span class="art-tag-label">配色</span>
-                    <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
-                    <span id="art-theme-swatch" class="art-theme-swatch" title="選択中の配色"></span>
+                    <!-- イシュー#168差し戻し対応: 配色スウォッチが配色selectと分断され「謎の黒丸」として
+                         孤立していた (390px実測で発覚)。ラベル+select(+スウォッチ)を折り返し不可の
+                         1ブロックにまとめ、pp-page-ops と同じ手法(nowrapグループ)で対で崩れないようにする。 -->
+                    <span class="art-theme-group">
+                        <span class="art-tag-label">レイアウト</span>
+                        <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
+                    </span>
+                    <span class="art-theme-group">
+                        <span class="art-tag-label">配色</span>
+                        <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
+                        <span id="art-theme-swatch" class="art-theme-swatch" title="選択中の配色"></span>
+                    </span>
                     <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                    <button id="art-publish" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
                     <span class="pp-actions-spacer"></span>
                     <span id="art-save-status" class="art-save-status"></span>
                     <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
@@ -1221,7 +1232,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026091306"></script>
+    <script src="js/bookshelf.js?v=2026091401"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

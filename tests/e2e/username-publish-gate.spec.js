@@ -83,7 +83,7 @@ test('(1) username 未設定でハブ公開しようとするとブロックさ�
     const { errors, hubCaptured } = await bootAppForPublish(page, { username: null });
     await createArticle(page, 'ゲート確認記事');
 
-    await page.click('#art-publish');
+    await page.click('#art-publish-header');
     // 初回公開は無料プランのアフィリエイト同意ダイアログが先に出る (username ゲートより前段)
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok');
@@ -115,7 +115,7 @@ test('(2)(3) 設定画面から username 設定 (fetch スタブ) →成功表�
     await createArticle(page, 'ゲート確認記事2');
 
     // 1回目の公開: 無料プラン同意 → username 未設定でブロック
-    await page.click('#art-publish');
+    await page.click('#art-publish-header');
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok'); // 無料プラン同意
     await expect(page.locator('.cfm-box')).toBeVisible();
@@ -149,7 +149,7 @@ test('(4) Worker のバリデーションエラー (予約語等) は設定画�
     });
     await createArticle(page, 'ゲート確認記事3');
 
-    await page.click('#art-publish');
+    await page.click('#art-publish-header');
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok'); // 無料プラン同意
     await expect(page.locator('.cfm-box')).toBeVisible();
@@ -171,7 +171,7 @@ test('username 設定済みならブロックされず公開が通る (ゲート
     const { errors, hubCaptured } = await bootAppForPublish(page, { username: 'hahero' });
     await createArticle(page, 'ゲート確認記事4');
 
-    await page.click('#art-publish');
+    await page.click('#art-publish-header');
     // 設定済みなのでブロックダイアログではなく、無料プラン同意ダイアログが最初に出る
     await expect(page.locator('.cfm-box')).toBeVisible();
     await expect(page.locator('.cfm-message')).not.toContainText('ユーザー名を設定');
@@ -216,7 +216,7 @@ test('公開先が GitHub (自前 repo) のときは username ゲートを適用
     }, JSON.parse(fixtureLibrary));
 
     await createArticle(page, 'GitHub公開はゲート対象外');
-    await page.click('#art-publish');
+    await page.click('#art-publish-header');
     // username 未設定でもブロックされず、そのまま公開成功トーストが出る (同意ダイアログも出ない=target=github)
     await expect(page.locator('.toast-success')).toBeVisible();
     const id = await page.evaluate(() => window.bookshelf._artEditingId);

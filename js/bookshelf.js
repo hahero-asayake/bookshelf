@@ -13,6 +13,10 @@ const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 
+// 本の引き出し (900px超) をユーザーが畳んだかどうかの記憶キー (イシュー#168)。
+// 900px以下は毎回閉じたボトムシートから始まる設計のため対象外 (_artIsDrawerNarrow 参照)。
+const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
+
 // 記事プレビューのストール検知 (イシュー#143・#153)。build() が失敗も成功もせず無期限に pending
 // した場合、「生成中…」が永久に残ってしまう。二段構え: (1) 進捗 (長文メモの読込完了) が一定時間
 // まったく進まないことで発火する検知＝10冊×遅い回線のような正常系(遅いだけ)を誤ってストール扱い
@@ -7905,6 +7909,8 @@ class VirtualBookshelf {
         // イシュー#166: 開く入口だった FAB は廃止・ブロック内の追加ボタン(art-book-pick/art-shelf-add)に一本化。
         on('art-sheet-scrim', 'click', () => this._artCloseSheet());
         on('art-sheet-close', 'click', () => this._artCloseSheet());
+        // 900px超限定: 本の引き出しを畳む (イシュー#168)。開くのは本エリア常駐ボタン (_artOpenSheet 経由)。
+        on('art-drawer-collapse-btn', 'click', () => this._artSetDrawerUserCollapsed(true));
         on('art-publish-header', 'click', () => this._artPublish());
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
@@ -7923,7 +7929,6 @@ class VirtualBookshelf {
         on('art-theme-layout', 'change', () => this._artOnThemeChange());
         on('art-theme-color', 'change', () => this._artOnThemeChange());
         on('art-preview', 'click', () => this._artPreview());
-        on('art-publish', 'click', () => this._artPublish());
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
         on('art-unpublish', 'click', async () => { if (!this._artEditingId) return; await this._artUnpublish(this._artEditingId); });
@@ -8142,6 +8147,9 @@ class VirtualBookshelf {
 
     _artOpenEditor(id) {
         this._artCloseSheet(); // 前回の編集セッションのシート開閉状態を持ち越さない (開いていなければ no-op)
+        // 900px超の畳み状態だけは記憶を復元する (900px以下は上の _artCloseSheet() で毎回閉じた状態から
+        // 始まる・イシュー#168)。_artRenderDrawer() が wrap へクラス適用する。
+        try { this._artDrawerUserCollapsed = localStorage.getItem(ART_DRAWER_COLLAPSE_KEY) === '1'; } catch (_) { this._artDrawerUserCollapsed = false; }
         this._artEditingId = id;
         this._artPendingBookBlockId = null;
         this._artActiveShelfBlockId = null;
@@ -8477,9 +8485,15 @@ class VirtualBookshelf {
         // イシュー#155: shelfId が最初から無い (未選択のまま保存された旧データ) 場合と、
         // 一度は設定されたが本棚が削除された場合とで文言を分ける (前者を「削除済み」と言うのは誤り)。
         const shelfLabel = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(b.shelfId)) : (b.shelfId ? '削除済みの本棚' : '未選択の本棚');
+        // イシュー#168: 本棚名のテキスト表示は撤去 (ハヘロ「名前出るのいらなくない？」)。対象ブロックの
+        // 明示は .is-add-target ハイライト (下) と引き出し側ヒント _artRenderDrawerTargetHint が実装上
+        // 独立して担っており、このテキストの有無に依存しないことを実測で確認済み (step1 設計レポート)。
+        // アイコンは残し title 属性で本棚名を保持する (複数本棚ブロックの識別手がかりを完全には失わせない)。
+        // shelf 不在 (削除済み/未選択) はデータ異常の警告のため例外的にテキストのまま残す。
         const shelfHtml = `<span class="art-block-shelf${shelf ? '' : ' is-shelf-missing'}" title="${esc(shelfLabel)}">
-            ${shelfIconName ? `<span class="art-block-shelf-icon" data-icon-value="${esc(shelfIconName)}">${window.renderIcon(shelfIconName, { size: 13 })}</span>` : ''}
-            <span class="art-block-shelf-path">${esc(shelfLabel)}</span>
+            ${shelfIconName
+                ? `<span class="art-block-shelf-icon" data-icon-value="${esc(shelfIconName)}">${window.renderIcon(shelfIconName, { size: 13 })}</span>`
+                : `<span class="art-block-shelf-path">${esc(shelfLabel)}</span>`}
         </span>`;
         const shortLabel = density === 'compact' ? '短' : '短文';
         const longLabel = density === 'compact' ? '長' : '長文';
@@ -8540,13 +8554,27 @@ class VirtualBookshelf {
             </div>` : '';
         // #133 項目3: 引き出しからの追加先ブロックを視覚的に示す (Nielsen #1 システム状態の可視性)。
         const isAddTarget = b.id === this._artActiveShelfBlockId;
-        // イシュー#166: 「このブロックに追加」の入口をブロック内に置く (FAB廃止に伴う代替)。押すとこのブロックを
-        // _artActiveShelfBlockId にしてからシートを開く (既存のブロッククリックでのアクティブ化とは併存する)。
-        const addBtn = `<button type="button" class="art-block-ic art-shelf-add" title="このブロックに本を追加"><span class="h-icon" data-icon="book-plus" data-icon-size="14"></span></button>`;
+        // イシュー#168: 「このブロックに追加」の入口をバー(操作アイコン列)から本一覧そのものへ移設。
+        // #166 時点はバー内 (.art-block-ic・複製/削除と同一視覚言語) に置いたため見つけにくいという
+        // 実機フィードバックが出た (step1 設計レポート参照)。本があれば一覧末尾の+タイル、無ければ
+        // 大型の破線ボタンにして、本が並ぶ領域そのものに常駐させる。クリックハンドラは既存の
+        // .art-shelf-add クラスに依存するクエリのまま (querySelector で1個だけ拾う設計・イベント側は無変更)。
+        const addTileHtml = items.length
+            ? `<button type="button" class="art-shelf-add art-shelf-add-tile" title="このブロックに本を追加">
+                <span class="h-icon" data-icon="book-plus" data-icon-size="18"></span>
+                <span class="art-shelf-add-tile-label">本を追加</span>
+            </button>`
+            : '';
+        const bodyHtml = items.length
+            ? `<div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml}${addTileHtml}</div>`
+            : `<button type="button" class="art-shelf-add art-shelf-add-empty pp-empty pp-empty-btn" title="このブロックに本を追加">
+                <span class="h-icon" data-icon="book-plus" data-icon-size="20"></span>
+                <span>このボタンから本を追加してください</span>
+            </button>`;
         return `<div class="art-block${collapsed ? ' is-collapsed' : ''}${isAddTarget ? ' is-add-target' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-block-bar">
                 <span class="art-block-kind">本棚</span>${shelfHtml}<span class="art-block-count">${items.length}冊</span>
-                <span class="art-block-bar-sp"></span>${barToolbarHtml}${addBtn}
+                <span class="art-block-bar-sp"></span>${barToolbarHtml}
                 <button type="button" class="art-chip-toggle art-collapse-toggle" title="${collapsed ? '展開' : '畳む'}">${collapsed ? '展開' : '畳む'}</button>
                 <span class="art-block-bar-sep"></span>
                 <span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14"></span>
@@ -8554,9 +8582,7 @@ class VirtualBookshelf {
                 <button type="button" class="art-block-ic art-block-del" title="削除"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span></button>
             </div>
             ${selbarHtml}
-            <div class="art-block-body"${collapsed ? ' hidden' : ''}>
-                <div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml || '<p class="pp-empty">上の「＋ 追加」ボタンから本を追加してください。</p>'}</div>
-            </div>
+            <div class="art-block-body"${collapsed ? ' hidden' : ''}>${bodyHtml}</div>
         </div>`;
     }
 
@@ -9171,7 +9197,12 @@ class VirtualBookshelf {
     // 21箇所の履歴統合ロジック全てに影響するためこのイシューのスコープを超えると判断し、シート専用の
     // pushState/popstate も追加しなかった (同じ二重pop構造を再現するリスクがあるため)。②へ判断材料
     // として申し送り、必要なら別途対応する。
+    // イシュー#168: 900px超では本の引き出しが「畳める」ようになったため、本エリアの常駐ボタン
+    // (art-shelf-add/art-book-pick) から共通で呼べるよう、ここで「開く」意味に幅で分岐させる。
+    // _artCloseSheet() 側は分岐させない (ビュー切替時の自動クローズ等・900px以下専用の複数箇所から
+    // 呼ばれており、900px超に広げるとユーザーが畳んだ状態を意図せず上書きしてしまうため)。
     _artOpenSheet() {
+        if (!this._artIsDrawerNarrow()) { this._artSetDrawerUserCollapsed(false); return; }
         const side = document.getElementById('art-drawer');
         const scrim = document.getElementById('art-sheet-scrim');
         if (!side) return;
@@ -9187,12 +9218,34 @@ class VirtualBookshelf {
         if (scrim) scrim.classList.remove('is-open');
     }
 
+    _artIsDrawerNarrow() {
+        return window.matchMedia('(max-width: 900px)').matches;
+    }
+
+    // 900px超限定のユーザー操作による畳み (イシュー#168)。棚が空のとき自動で隠す
+    // .art-drawer-collapsed (_artRenderDrawer 内) とは別クラス・別状態で管理する
+    // (自動判定とユーザー操作を混ぜると、畳みを開いたつもりでも棚が空だと隠れたままになる等の
+    // 事故を招くため、意図的に分離した設計・step1 で承認済み)。
+    _artSetDrawerUserCollapsed(collapsed) {
+        this._artDrawerUserCollapsed = !!collapsed;
+        try { localStorage.setItem(ART_DRAWER_COLLAPSE_KEY, this._artDrawerUserCollapsed ? '1' : '0'); } catch (_) { /* noop */ }
+        const wrap = document.querySelector('.art-wrap');
+        if (wrap) wrap.classList.toggle('art-drawer-user-collapsed', this._artDrawerUserCollapsed);
+    }
+
+    _artToggleDrawerCollapsed() {
+        this._artSetDrawerUserCollapsed(!this._artDrawerUserCollapsed);
+    }
+
     _artRenderDrawer() {
         const wrap = document.querySelector('.art-wrap');
         const listHost = document.getElementById('art-drawer-list');
         const badgeEl = document.getElementById('art-drawer-badge');
         const addAllBtn = document.getElementById('art-drawer-add-all');
         if (!listHost) return;
+        // イシュー#168: ユーザー操作の畳み (art-drawer-user-collapsed) を毎回の再描画で反映する。
+        // 棚が空のときの自動 art-drawer-collapsed (この直後) とは別クラスなので独立して付け外しできる。
+        if (wrap) wrap.classList.toggle('art-drawer-user-collapsed', !!this._artDrawerUserCollapsed);
         this._artRenderDrawerTargetHint();
         const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
         const asins = (shelf && shelf.books) || [];
