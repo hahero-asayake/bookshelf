@@ -27,6 +27,8 @@ async function run(fetchImpl) {
     });
 }
 
+let allPass = true;
+
 // シナリオ1: 実測どおり
 {
     const r = await run(async (url, opts) => {
@@ -38,13 +40,17 @@ async function run(fetchImpl) {
         for (let i = s; i < Math.min(s + batch, total); i++) items.push({ asin: 'B' + i, title: 'T', authors: 'A', acquiredTime: 1, readStatus: 'READ', productImage: '', originType: 'Purchase', statusFromPlatformSearch: 'Active' });
         return { json: async () => ({ success: true, GetContentOwnershipData: { numberOfItems: total, items } }) };
     });
-    console.log('[実測どおり]', r && r.startsWith('OK:860') ? 'PASS: ' + r : 'FAIL: ' + r);
+    const pass = r && r.startsWith('OK:860');
+    if (!pass) allPass = false;
+    console.log('[実測どおり]', pass ? 'PASS: ' + r : 'FAIL: ' + r);
 }
 
 // シナリオ2: 0件
 {
     const r = await run(async () => ({ json: async () => ({ success: true, GetContentOwnershipData: { numberOfItems: 0, items: [] } }) }));
-    console.log('[0件]', r && r.startsWith('ERROR:') && r.includes('0件') ? 'PASS: ' + r : 'FAIL: ' + r);
+    const pass = r && r.startsWith('ERROR:') && r.includes('0件');
+    if (!pass) allPass = false;
+    console.log('[0件]', pass ? 'PASS: ' + r : 'FAIL: ' + r);
 }
 
 // シナリオ3: 全件<Active
@@ -58,5 +64,9 @@ async function run(fetchImpl) {
         for (let i = s; i < Math.min(s + batch, total); i++) items.push({ asin: 'B' + i });
         return { json: async () => ({ success: true, GetContentOwnershipData: { numberOfItems: total, items } }) };
     });
-    console.log('[全件<Active]', r && r.startsWith('ERROR:') && r.includes('下回り') ? 'PASS: ' + r : 'FAIL: ' + r);
+    const pass = r && r.startsWith('ERROR:') && r.includes('下回り');
+    if (!pass) allPass = false;
+    console.log('[全件<Active]', pass ? 'PASS: ' + r : 'FAIL: ' + r);
 }
+
+if (!allPass) process.exitCode = 1;
