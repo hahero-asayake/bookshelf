@@ -1,4 +1,7 @@
 // 実行: node scripts/verify/test-bookmarklet-logic.mjs
+// ⚠️2026-09-16時点で動作しない: Error: bookmarklet code not found（js/bookshelf.js内の
+// _buildKindleBookmarkletCode の実装がこのツールの正規表現パターンと一致しない）。
+// 置き場の移設のみ実施・ロジックの追従修正は別イシュー。
 // _buildKindleBookmarkletCode 内の fp/安全弁ロジックをモックで検証(csrfToken/fetch/postMessage等はモック)
 // URLを扱わない純粋Node処理＝BOOKSHELF_VERIFY_DATA_DIR等の対象外。
 import { readFileSync } from 'fs';
