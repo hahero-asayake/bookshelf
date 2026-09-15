@@ -5921,6 +5921,10 @@ class VirtualBookshelf {
         const backBtn = document.getElementById('settings-back');
         if (backBtn) backBtn.addEventListener('click', () => history.back());
         window.addEventListener('popstate', async () => {
+            // _modalHistPop が能動クローズの後始末として呼んだ history.back() が発火させた
+            // popstate はここで消費して無視する (ユーザーの戻る操作と区別できないと、入れ子
+            // モーダルで次の要素を誤って閉じる二重pop事故になる。イシュー#165で発見・#170で対策)。
+            if (this._modalHistSuppress > 0) { this._modalHistSuppress--; return; }
             // 汎用モーダル履歴: 戻る = 最前面のモーダルを閉じてアプリに留まる
             const mhs = this._modalHistStack;
             if (mhs && mhs.length) {
@@ -9188,15 +9192,15 @@ class VirtualBookshelf {
     }
 
     // ===== 本の引き出しのボトムシート化 (900px以下限定・イシュー#165・案C) =====
-    // ⚠️履歴統合 (物理戻る/スワイプバックでシートを閉じる) は見送り、Esc・スクリム・×ボタンのみ
-    // 対応する。理由: シートは publish-pages-modal というモーダルの「中」で開く入れ子構造のため、
-    // 汎用の _modalHistPush/_modalHistPop (_modalHistStack) で2段積むと、シートを能動的に閉じた際
-    // (fromHistory:false→history.back()) に発生する popstate を汎用ハンドラ (5918行台。スタック末尾を
+    // 履歴統合 (物理戻る/スワイプバックでシートを閉じる) はイシュー#170で対応した。
+    // シートは publish-pages-modal というモーダルの「中」で開く入れ子構造のため、汎用の
+    // _modalHistPush/_modalHistPop (_modalHistStack) で2段積むと、シートを能動的に閉じた際
+    // (fromHistory:false→history.back()) に発生する popstate を汎用ハンドラ (5923行台。スタック末尾を
     // 無条件 pop する設計) が処理し、既に自分で splice 済みの次の要素 (publish-pages-modal) を誤って
-    // 閉じてしまう実測バグがある (二重 pop・実機のE2Eで再現確認済み)。汎用ハンドラ自体の修正は既存
-    // 21箇所の履歴統合ロジック全てに影響するためこのイシューのスコープを超えると判断し、シート専用の
-    // pushState/popstate も追加しなかった (同じ二重pop構造を再現するリスクがあるため)。②へ判断材料
-    // として申し送り、必要なら別途対応する。
+    // 閉じてしまう実測バグがあった (二重 pop・#165で発見・実機のE2Eで再現確認済み)。既存21箇所の
+    // 履歴統合ロジックを無変更で通すため、汎用ハンドラ自体は変えず、_modalHistPop の history.back()
+    // 直前に抑制カウンタ (_modalHistSuppress) を立て、それが発火させる popstate をハンドラ先頭で
+    // 消費して無視する方式で二重popを解消した (_modalHistPop/popstateハンドラの実装参照)。
     // イシュー#168: 900px超では本の引き出しが「畳める」ようになったため、本エリアの常駐ボタン
     // (art-shelf-add/art-book-pick) から共通で呼べるよう、ここで「開く」意味に幅で分岐させる。
     // _artCloseSheet() 側は分岐させない (ビュー切替時の自動クローズ等・900px以下専用の複数箇所から
@@ -9208,14 +9212,16 @@ class VirtualBookshelf {
         if (!side) return;
         side.classList.add('is-open');
         if (scrim) scrim.classList.add('is-open');
+        this._modalHistPush('art-sheet', (o) => this._artCloseSheet(o), { isMobile: () => this._artIsDrawerNarrow() });
     }
 
-    _artCloseSheet() {
+    _artCloseSheet({ fromHistory = false } = {}) {
         const side = document.getElementById('art-drawer');
         if (!side || !side.classList.contains('is-open')) return;
         side.classList.remove('is-open');
         const scrim = document.getElementById('art-sheet-scrim');
         if (scrim) scrim.classList.remove('is-open');
+        this._modalHistPop('art-sheet', { fromHistory });
     }
 
     _artIsDrawerNarrow() {
@@ -10141,8 +10147,14 @@ class VirtualBookshelf {
         const i = st.findIndex((e) => e.id === id);
         if (i === -1) return;
         st.splice(i, 1);
-        // × や ESC で閉じたときは自前で積んだ履歴を掃除する。popstate 経由なら消費済み
-        if (!fromHistory) { try { history.back(); } catch (_) {} }
+        // × や ESC で閉じたときは自前で積んだ履歴を掃除する。popstate 経由なら消費済み。
+        // この history.back() が発火させる popstate は「能動的に閉じた後始末」であって
+        // ユーザーの戻る操作ではないため、抑制カウンタで popstate ハンドラ側に無視させる
+        // (イシュー#170: 入れ子時に次の要素を誤って閉じる二重pop対策)。
+        if (!fromHistory) {
+            this._modalHistSuppress = (this._modalHistSuppress || 0) + 1;
+            try { history.back(); } catch (_) { this._modalHistSuppress--; }
+        }
     }
 
     showExclusionsModal() {
