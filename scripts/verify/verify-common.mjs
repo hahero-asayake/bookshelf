@@ -7,6 +7,12 @@ import { dirname, resolve } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// bookshelfリポジトリルートへの絶対パス解決。js/*.js等のソースをNode側で直接読む
+// スクリプト(構文検証・ロジック単体テスト等)がcwd依存やローカル環境固有の絶対パス決め打ちに戻らないための共通口。
+export function resolveRepoRoot() {
+    return resolve(HERE, '..', '..');
+}
+
 export function resolveBase(argOverride) {
     const base = argOverride || 'http://localhost:8000/';
     if (/asayake\.org/.test(base)) console.log(`⚠️ 本番URLを見ています: ${base}`);
