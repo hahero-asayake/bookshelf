@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026091402">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026091601">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -853,24 +853,29 @@
                 <!-- イシュー#168: 公開ボタンはヘッダー (#art-publish-header, #165) と機能重複していたため
                      フッターからは撤去。ヘッダー側に一本化し、フッターの要素数そのものを減らす
                      (「隠す」のではなく重複を無くす方針・②承認済み)。 -->
+                <!-- イシュー#170 (#169監査の実装): フッターを性質の異なる3ゾーンに再編。
+                     区切り線+余白で性質差を伝える (隠す/折りたたむでは解かない・8/24指摘)。 -->
                 <div class="form-actions pp-edit-actions">
-                    <!-- イシュー#168差し戻し対応: 配色スウォッチが配色selectと分断され「謎の黒丸」として
-                         孤立していた (390px実測で発覚)。ラベル+select(+スウォッチ)を折り返し不可の
-                         1ブロックにまとめ、pp-page-ops と同じ手法(nowrapグループ)で対で崩れないようにする。 -->
-                    <span class="art-theme-group">
-                        <span class="art-tag-label">レイアウト</span>
-                        <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
-                    </span>
-                    <span class="art-theme-group">
-                        <span class="art-tag-label">配色</span>
-                        <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
-                        <span id="art-theme-swatch" class="art-theme-swatch" title="選択中の配色"></span>
-                    </span>
-                    <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                    <span class="pp-actions-spacer"></span>
-                    <span id="art-save-status" class="art-save-status"></span>
-                    <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
-                    <div class="pp-page-ops" id="art-page-ops" hidden>
+                    <!-- ゾーン1: 表示設定。イシュー#168差し戻し対応の nowrap グループ化はそのまま維持。 -->
+                    <div class="art-footer-zone art-footer-zone-display">
+                        <span class="art-theme-group">
+                            <span class="art-tag-label">レイアウト</span>
+                            <select id="art-theme-layout" class="sel art-theme-sel" title="レイアウト"></select>
+                        </span>
+                        <span class="art-theme-group">
+                            <span class="art-tag-label">配色</span>
+                            <select id="art-theme-color" class="sel art-theme-sel" title="配色"></select>
+                            <span id="art-theme-swatch" class="art-theme-swatch" title="選択中の配色"></span>
+                        </span>
+                    </div>
+                    <!-- ゾーン2: 確認・状態 -->
+                    <div class="art-footer-zone art-footer-zone-confirm">
+                        <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
+                        <span id="art-save-status" class="art-save-status"></span>
+                        <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
+                    </div>
+                    <!-- ゾーン3: 記事操作 (通常操作→取り消し可能な破壊的操作→不可逆な破壊的操作の順) -->
+                    <div class="pp-page-ops art-footer-zone art-footer-zone-ops" id="art-page-ops" hidden>
                         <button id="art-dup" class="btn btn-secondary btn-small" type="button">複製</button>
                         <button id="art-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
                         <span class="pp-del-spacer"></span>
@@ -1232,7 +1237,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026091401"></script>
+    <script src="js/bookshelf.js?v=2026091602"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

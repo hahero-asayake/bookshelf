@@ -1632,31 +1632,29 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         expect(errors).toEqual([]);
     });
 
-    test('各行の短/長トグルは枠なしで、オン時に aria-pressed と下線バー (色以外の手掛かり) が付く', async ({ page }) => {
+    test('各行の短/長トグルは.art-chip-toggleで、オン時に aria-pressed と太字・背景色 (色以外の手掛かり) が付く (イシュー#170: .art-icon-toggle廃止・chip-toggleへ統一)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addShelfWithBooks(page, 1);
 
         const toggle = page.locator('.art-item-show-toggle').first();
+        await expect(toggle).toHaveClass(/art-chip-toggle/);
         const off = await toggle.evaluate(el => {
             const s = getComputedStyle(el);
-            return { top: s.borderTopStyle, left: s.borderLeftStyle, right: s.borderRightStyle, bottomColor: s.borderBottomColor, pressed: el.getAttribute('aria-pressed') };
+            return { fontWeight: s.fontWeight, background: s.backgroundColor, pressed: el.getAttribute('aria-pressed') };
         });
-        expect(off.top).toBe('none');
-        expect(off.left).toBe('none');
-        expect(off.right).toBe('none');
         expect(off.pressed).toBe('false');
 
         await toggle.click();
         const on = await toggle.evaluate(el => {
             const s = getComputedStyle(el);
-            return { bottomWidth: parseFloat(s.borderBottomWidth), bottomColor: s.borderBottomColor, pressed: el.getAttribute('aria-pressed') };
+            return { fontWeight: s.fontWeight, background: s.backgroundColor, pressed: el.getAttribute('aria-pressed') };
         });
         expect(on.pressed).toBe('true');
-        expect(on.bottomWidth).toBeGreaterThan(0);
-        // 色以外の手掛かり: on/off で下線の色そのものが切り替わっている (幅は常時2pxで固定・色で on/off を示す実装)
-        expect(on.bottomColor).not.toBe(off.bottomColor);
+        // 色以外の手掛かり: on/off で太字・背景の有無そのものが切り替わっている (.art-chip-toggle.is-on)
+        expect(on.fontWeight).not.toBe(off.fontWeight);
+        expect(on.background).not.toBe(off.background);
         expect(errors).toEqual([]);
     });
 });
@@ -2586,10 +2584,12 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
     });
 });
 
-// イシュー#168: 本棚名テキストの撤去後も、対象ブロックの明示 (.is-add-target / 引き出し側ヒント) が
-// 独立して機能し続けることを確認する (テキストは対象明示の主手段ではなかった、という step1 の実読結果)。
-test.describe('記事エディタ: 本棚ブロックの本棚名テキスト撤去後も追加先が分かる (イシュー#168)', () => {
-    test('本棚名テキストはDOMに無いが、アイコンのtitleと.is-add-target/引き出しヒントで対象ブロックが分かる', async ({ page }) => {
+// イシュー#168で本棚名テキストを撤去、イシュー#170でアイコンも撤去 (ハヘロ「アイコンを持つ必要
+// あるだろうか」)。撤去後も対象ブロックの明示 (.is-add-target / 引き出し側ヒント) が独立して機能し
+// 続けることを確認する (アイコン/テキストは対象明示の主手段ではなかった、という #169/#170 step1 の
+// 実測結果。②判断: 代替表示は追加しない)。
+test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名テキスト撤去後も追加先が分かる (イシュー#168/#170)', () => {
+    test('アイコン・本棚名テキストともDOMに無いが、.is-add-target/引き出しヒントで対象ブロックが分かる', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
@@ -2597,26 +2597,24 @@ test.describe('記事エディタ: 本棚ブロックの本棚名テキスト撤
         await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
 
         const blockA = page.locator('.art-block').nth(0);
-        // 本棚名のテキスト表示は撤去済み (ハヘロ「名前出るのいらなくない？」)
+        // 本棚名のテキスト表示は撤去済み (#168「名前出るのいらなくない？」)
         expect(await blockA.locator('.art-block-shelf-path').count()).toBe(0);
-        // アイコンは残り、title属性で本棚名を保持する (ホバーで分かる・複数本棚ブロックの識別手段)
-        const shelfIcon = blockA.locator('.art-block-shelf-icon');
-        await expect(shelfIcon).toBeVisible();
-        const title = await blockA.locator('.art-block-shelf').getAttribute('title');
-        expect(title).toBeTruthy();
+        // アイコンも撤去済み (#170「本棚アイコンを持つ必要あるだろうか」)
+        expect(await blockA.locator('.art-block-shelf-icon').count()).toBe(0);
 
-        // 対象ブロックの明示はテキストに依存せず機能する (.is-add-target ハイライト)
+        // 対象ブロックの明示はアイコン/テキストに依存せず機能する (.is-add-target ハイライト)
         await expect(blockA).toHaveClass(/is-add-target/);
         // 引き出し側ヒントも同様に機能する (#133 のヒント文言)
         await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
         await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
 
-        // 2つ目のブロックを作ってもテキストは出ず、対象切替は引き続き機能する
+        // 2つ目のブロックを作ってもアイコン/テキストは出ず、対象切替は引き続き機能する
         const lastAdd = page.locator('.art-add').last();
         await lastAdd.locator('.art-add-btn').click();
         await lastAdd.locator('.art-add-menu-item[data-block-type="shelf"]').click();
         const blockB = page.locator('.art-block').nth(1);
         expect(await blockB.locator('.art-block-shelf-path').count()).toBe(0);
+        expect(await blockB.locator('.art-block-shelf-icon').count()).toBe(0);
         await expect(blockB).toHaveClass(/is-add-target/);
         await expect(blockA).not.toHaveClass(/is-add-target/);
 
@@ -2624,9 +2622,10 @@ test.describe('記事エディタ: 本棚ブロックの本棚名テキスト撤
     });
 
     // 本棚不在 (未選択/削除済み) 時に警告テキストが残ることは、既存の shelfId:null 回帰テスト
-    // (2327行目付近「既存の shelfId:null データ (旧・異常データ) を読み込んでもエディタ描画が完走し
+    // (2329行目付近「既存の shelfId:null データ (旧・異常データ) を読み込んでもエディタ描画が完走し
     // 「未選択の本棚」と表示される」) が .art-block-shelf.is-shelf-missing のテキストとして
-    // 既に検証済み (イシュー#155)。ここでの重複追加は行わない。
+    // 既に検証済み (イシュー#155)。この警告は識別用装飾と別物のため#170のアイコン/テキスト撤去の
+    // 対象外 (js/bookshelf.js _artRenderShelfBlock 参照)。ここでの重複追加は行わない。
 });
 
 // イシュー#168: フッター (.pp-edit-actions) の「崩れ」を #166 の数値項目 (はみ出し・横スクロール) に
@@ -2701,7 +2700,11 @@ test.describe('記事エディタ: フッターの崩れ検出 (折り返し・�
             expect(m.overlapCount).toBe(0);
             // イシュー#168実測の核心: pp-page-ops (複製/公開取消/削除) は nowrap 化により
             // どの幅でも1行 (36px前後) を維持し、768のような内部3行分裂 (旧h=122px) を起こさない。
-            expect(m.pageOpsHeight).toBeLessThanOrEqual(40);
+            // イシュー#170でフッターを3ゾーン化し、900px以下では各ゾーン間に区切り線+padding-top
+            // (0.6rem) を挟むようになったため、900px以下のpp-page-ops実測値は47px前後に上がった
+            // (36px+padding)。閾値は「1行+区切り分」と「3行分裂(旧h=122px)」を明確に区別できる
+            // 70pxへ緩める(3行分裂ならこの閾値でも確実に検知できる)。
+            expect(m.pageOpsHeight).toBeLessThanOrEqual(70);
             // イシュー#168差し戻し対応: 配色スウォッチが配色selectと同じグループ内にあり、
             // centerYが近い(同じ行にある)ことをどの幅でも確認する(②実機指摘「謎の黒丸」の再発防止)。
             expect(m.sameThemeGroup).toBe(true);

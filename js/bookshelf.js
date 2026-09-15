@@ -8483,22 +8483,23 @@ class VirtualBookshelf {
         const density = b.density === 'card' ? 'card' : 'compact';
         const collapsed = !!b.collapsed;
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
-        // #133: どの本棚から作ったブロックか画面に出す (パス表記+アイコン)。棚が削除済みなら明示する。
+        // #133: どの本棚から作ったブロックか判定する (イシュー#170でアイコン/テキストは撤去、
+        // shelf不在時の警告表示にのみ使う)。棚が削除済みなら明示する。
         const shelf = this.bookshelfManager.getById(b.shelfId);
-        const shelfIconName = shelf ? (shelf.iconName || 'library') : null;
         // イシュー#155: shelfId が最初から無い (未選択のまま保存された旧データ) 場合と、
         // 一度は設定されたが本棚が削除された場合とで文言を分ける (前者を「削除済み」と言うのは誤り)。
         const shelfLabel = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(b.shelfId)) : (b.shelfId ? '削除済みの本棚' : '未選択の本棚');
-        // イシュー#168: 本棚名のテキスト表示は撤去 (ハヘロ「名前出るのいらなくない？」)。対象ブロックの
-        // 明示は .is-add-target ハイライト (下) と引き出し側ヒント _artRenderDrawerTargetHint が実装上
-        // 独立して担っており、このテキストの有無に依存しないことを実測で確認済み (step1 設計レポート)。
-        // アイコンは残し title 属性で本棚名を保持する (複数本棚ブロックの識別手がかりを完全には失わせない)。
-        // shelf 不在 (削除済み/未選択) はデータ異常の警告のため例外的にテキストのまま残す。
-        const shelfHtml = `<span class="art-block-shelf${shelf ? '' : ' is-shelf-missing'}" title="${esc(shelfLabel)}">
-            ${shelfIconName
-                ? `<span class="art-block-shelf-icon" data-icon-value="${esc(shelfIconName)}">${window.renderIcon(shelfIconName, { size: 13 })}</span>`
-                : `<span class="art-block-shelf-path">${esc(shelfLabel)}</span>`}
-        </span>`;
+        // イシュー#168で本棚名のテキスト表示を撤去(ハヘロ「名前出るのいらなくない？」)、
+        // イシュー#170でアイコンも撤去(ハヘロ「本棚アイコンを持つ必要あるだろうか」)。対象ブロックの
+        // 明示は .is-add-target ハイライト (下) と引き出し側ヒント _artRenderDrawerTargetHint が
+        // 独立して担っており、アイコン/テキストの有無に依存しないことを実測で確認済み (#168/#170 step1)。
+        // shelf 不在 (削除済み/未選択) はデータ異常の警告のため、識別用装飾とは別物として例外的に
+        // テキストのまま残す (ADR-095 の異常表示を維持)。
+        const shelfHtml = shelf
+            ? `<span class="art-block-shelf"></span>`
+            : `<span class="art-block-shelf is-shelf-missing">
+                <span class="art-block-shelf-path">${esc(shelfLabel)}</span>
+            </span>`;
         const shortLabel = density === 'compact' ? '短' : '短文';
         const longLabel = density === 'compact' ? '長' : '長文';
         const ratingLabel = density === 'compact' ? '評' : '評価';
@@ -8516,9 +8517,9 @@ class VirtualBookshelf {
                 <div class="art-cover">${cover}</div>
                 <div class="art-shelf-item-title">${esc(title)}</div>
                 <div class="art-shelf-item-toggles">
-                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.shortMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${shortLabel}</button>
-                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.longMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${longLabel}</button>
-                    <button type="button" class="art-icon-toggle art-item-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating" data-asin="${esc(it.asin)}" aria-pressed="${show.rating ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${ratingLabel}</button>
+                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.shortMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${shortLabel}</button>
+                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.longMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${longLabel}</button>
+                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating" data-asin="${esc(it.asin)}" aria-pressed="${show.rating ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${ratingLabel}</button>
                 </div>
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>

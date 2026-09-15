@@ -4332,8 +4332,21 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
    この境界のズレにより 760px超〜900px以下 (実測768px) は wrap が効かないまま全要素が1行に
    収めようとし、縮小余地が最も大きい pp-page-ops だけが極端に潰れて内部で3行に分裂していた
    (768x1024実測: h=122px、通常36pxの3.4倍)。既定から wrap にして境界のズレを無くす。 */
-.pp-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
-.pp-actions-spacer { flex: 1; }
+/* イシュー#170 (#169監査の実装): 表示設定｜確認・状態｜記事操作の3ゾーンを区切り線+余白で分離
+   (隠す/折りたたむでは解かない)。ゾーン内 gap (0.45rem, .art-footer-zone) よりゾーン間 gap を
+   大きくして性質差を伝える。900px超は横1列+区切り線 (border-left)、900px以下 (縦積み) は
+   境界のズレを避けるため既存のボトムシート化・畳み機能と同じ900px基準で border-top に切替える。 */
+.pp-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem 1.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.art-footer-zone { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.45rem; }
+.art-footer-zone-confirm { flex: 1 1 auto; }
+.art-footer-zone-display + .art-footer-zone,
+.art-footer-zone-confirm + .art-footer-zone { padding-left: 1.6rem; border-left: 1px solid var(--line); }
+@media (max-width: 900px) {
+    .art-footer-zone { flex-wrap: wrap; }
+    .art-footer-zone-ops { flex-wrap: nowrap; } /* イシュー#168: 「割れない1ブロック」原則を維持 */
+    .art-footer-zone-display + .art-footer-zone,
+    .art-footer-zone-confirm + .art-footer-zone { margin-left: 0; padding-left: 0; border-left: none; width: 100%; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+}
 
 /* --- 詳細設定（折りたたみ）: ページ操作（複製・削除など） --- */
 .pp-advanced { border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
@@ -4432,19 +4445,22 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block-grip { cursor: grab; color: var(--muted); touch-action: none; padding: 0.1rem 0.2rem; }
 .art-block-grip:active { cursor: grabbing; }
 .art-block-kind { background: var(--line2); border-radius: 4px; padding: 0.1rem 0.45rem; color: var(--fg2); font-weight: 600; }
-/* #133: どの本棚から作ったブロックか (パス表記+アイコン)。.art-block-bar > * の flex-shrink:0/nowrap
-   既定 (上の再発防止コメント参照) では長いパスが横に溢れるため、子セレクタで詳細度を上げて上書きする
-   (行の記述順に依存しない・ui-standards §2-13)。 */
+/* #133: どの本棚から作ったブロックか。.art-block-bar > * の flex-shrink:0/nowrap 既定 (上の
+   再発防止コメント参照) では長いパスが横に溢れるため、子セレクタで詳細度を上げて上書きする
+   (行の記述順に依存しない・ui-standards §2-13)。イシュー#170でアイコン/通常テキストは撤去済み、
+   shelf不在(異常系)の警告テキストのみこのルールを使う。 */
 .art-block-bar > .art-block-shelf { flex-shrink: 1; min-width: 0; max-width: 45%; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; color: var(--fg2); }
-.art-block-shelf-icon { flex: 0 0 auto; display: inline-flex; }
 .art-block-shelf-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .art-block-shelf.is-shelf-missing { color: var(--warning); }
 .art-block-count { color: var(--muted); }
 .art-block-bar-sp { flex: 1; }
 .art-block-bar-sep { width: 1px; align-self: stretch; background: var(--line2); margin: 0 0.1rem; }
-.art-block-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 0.2rem; display: inline-flex; align-items: center; }
+.art-block-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 0.2rem; display: inline-flex; align-items: center; border-radius: 4px; }
 .art-block-ic:hover { color: var(--accent); }
-.art-block-ic.art-block-del:hover { color: var(--danger); }
+/* イシュー#170: 削除は複製/選び直しと重さが違う破壊的操作。hover依存の無色は「削除」だと
+   伝わらない(Nielsen #4/#9)ため、記事削除(.btn-danger)と同じ常時弱いdangerトーンへ揃える。 */
+.art-block-ic.art-block-del { color: var(--danger); }
+.art-block-ic.art-block-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .art-block-body { padding: 0.75rem 0.85rem; }
 
 /* --- 文章ブロック: 生 Markdown textarea --- */
@@ -4464,11 +4480,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-chip-toggle { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 0.2rem 0.6rem; font-size: 0.74rem; color: var(--fg2); cursor: pointer; }
 .art-chip-toggle.is-on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
 .art-shelf-sort-sel, .art-sel-show-sel { border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.72rem; color: var(--fg2); background: var(--panel); }
-
-/* 行内トグル (短/長): 枠なし tertiary icon button。色だけに頼らず太字+下線バーも併用 (WCAG) */
-.art-icon-toggle { border: none; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--muted); cursor: pointer; line-height: 1.3; }
-.art-icon-toggle:hover { color: var(--accent); }
-.art-icon-toggle.is-on { color: var(--accent-strong); font-weight: 600; border-bottom-color: var(--accent); }
 
 /* 選択バー (1件以上選択したときだけ表示、イシュー#55) */
 /* 選択バーは「選択中」を示す面なので、他の選択状態(drag-over・選択カード等)と同じ --accent-bg を
@@ -4536,7 +4547,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* 個別アイテム共通 */
 .art-shelf-item.is-drag-over { border: 1px dashed var(--accent); background: var(--accent-bg); }
-.art-shelf-item-toggles .art-icon-toggle { font-size: 0.62rem; padding: 0.05rem 0.3rem; }
+/* イシュー#170: 本棚アイテム行は縦の余白が狭いため、chip-toggleを他箇所より小さくする縮小variant
+   (旧 .art-icon-toggle の縮小指定を移設。視覚言語は5種のchip-toggleへ統一、サイズだけ個別) */
+.art-shelf-item-toggles .art-chip-toggle { font-size: 0.62rem; padding: 0.05rem 0.3rem; }
 .art-shelf-item-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; }
 .art-shelf-item-ic:hover { color: var(--accent); }
 .art-shelf-item-ic:disabled { opacity: 0.3; cursor: default; }
@@ -4594,8 +4607,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-sheet-scrim { display: none; }
 /* 900px超限定: 本の引き出しを畳むボタン (イシュー#168)。900px以下は art-sheet-close (×) が
    ボトムシートを閉じる役なので、こちらは非表示にする (下のメディアクエリで反転)。 */
+/* イシュー#170 step1で判定: chip-toggle化しない(押すとパネルごと消える=シートの×と同じ性質、
+   ON/OFFの状態トグルではない)。「アイコンのみ弱色・hoverでaccent」の5分類へ正式に寄せる微修正のみ。 */
 .art-drawer-collapse-btn { display: inline-flex; align-items: center; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
-.art-drawer-collapse-btn:hover { color: var(--fg); }
+.art-drawer-collapse-btn:hover { color: var(--accent); }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 /* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
    (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
