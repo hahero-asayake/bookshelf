@@ -68,10 +68,12 @@ wrangler deploy -c wrangler.hub.toml
 ## Phase C. 検証 (security-critical — 必ず実機で) ＝ B-3「実機検証」の手順書
 
 > Worker 再デプロイ後、**ハブ機能を本番投入する前に必ずここを通す**。Google ログインは自動化できないので手動。
-> アプリ (`hahero-asayake.github.io/bookshelf`) を開き、設定→同期/アカウントから操作する。
+> アプリ (`asayake.org/bookshelf`。旧 `hahero-asayake.github.io/bookshelf` は 301 で移行済み) を開き、設定→同期/アカウントから操作する。
+> 2026-09-24 に kuroko アカウントで本番の実機検証を実施済み (イシュー#199)。結果と既知の課題は obsidian `60_🐙claude/63_🐙project/bookshelf/ハブ実機検証_20260924.md` を参照。
 
 1. **配信**: R2 に `sites/test/index.html` を置き、`https://<HUB_DOMAIN>/public/test/` が表示。レスポンスに **CSP (`script-src` 無し＝`default-src 'none'`)**・`Set-Cookie` 無しを確認。
 2. **認証**: Google サインイン → ID トークンを `POST /session` → `{key, siteId, publicBase}`。改ざん/別 aud は **401**。
+   - 既知の不整合 (2026-09-24 実測): 3 分割だが中身が JSON でない `aaa.bbb.ccc` は **500** (`verifyGoogleIdToken` の JSON.parse が未捕捉)。ドット無し・別 aud・署名偽造は 401。
    - ※ 事前に **Google Cloud Console の OAuth クライアント (Web)** の「承認済み JavaScript 生成元」にアプリ配信元 (`https://hahero-asayake.github.io`、移行後は `https://asayake.org`) が登録済みであること。未登録だと GIS ボタンが出ても認証が通らない。OAuth 同意画面にプライバシー URL (`…/bookshelf/legal/privacy.html`) も登録。
 3. **私的 API**: 返ったキーで
    - `PUT /data/private/library.json` → `ETag` → 古い If-Match で再 PUT は **412**。
@@ -83,6 +85,8 @@ wrangler deploy -c wrangler.hub.toml
    - **Plus** のとき → 公開時に送った本人タグ付きに飛ぶ。
    - **Plus→Free 降格 (Phase E で解約)** 後、**再公開せずに**同じ `/go` を開くと運営タグに切替わっている (= キャッシュ無効 `no-store` の効果)。`..`/不正 ASIN は **400**。
 7. **退会 `DELETE /account`**: アカウント削除 → `data/<uid>/`・`sites/<siteId>/`・KV (`uid:`/`key:`/`report:`/`site:`) が消える。削除後 `/public/<siteId>/` が **404**、キーが **401**。
+   - ⚠️ 既知の課題 (2026-09-24 実測・要修正): 失効するのは**退会に使ったキー 1 本だけ**。退会前に別ログインで発行された hk_ キーは退会後も認証を通り、`data/<uid>/` に書ける (`requireAuth` は `key:` の存在しか見ない)。また退会は `uname:<username>` と `email:<email>` を消さない＝username は解放されず、同じアカウントで再登録して `POST /username` すると **200 が返るのに紐づかない** (`/usage` の username は null)。修正・再検証まで C-7 は条件付き。
+   - 公開ページは Cache API (`max-age=60`) 越しのため、退会・停止の反映は最大 60 秒遅れる。
 
 > ここが通って初めて UI 統合 (5 つ目の同期方式・公開先「共有」) と課金 (Phase E) を本番投入する。
 
@@ -277,13 +281,20 @@ wrangler deploy -c wrangler.hub.toml
 ```powershell
 # 停止 (451 化)
 wrangler kv key put "report:<siteId>" '{"status":"suspended","reason":"<通報概要>","at":"<ISO日時>"}' --namespace-id d429572547b4434486d44ee0159f46ae --remote
-# 確認: https://hub.asayake.org/public/<siteId>/ が 451 (キャッシュヒット中は最大 60 秒遅れ)
+# 確認: https://bookshelf.asayake.org/<username>/ が 451 (キャッシュヒット中・KV エッジキャッシュで最大 60〜120 秒遅れ)
+#   ※ username 設定済みのサイトは https://hub.asayake.org/public/<siteId>/ が report 判定より前に 301 で bookshelf.asayake.org/<username>/ へ飛ぶ。
+#     hub の URL は 451 にならない (301)。curl なら -L で最終 451 を確認する。
 # 解除
 wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0159f46ae --remote
 ```
 
+- 検証・一時停止には **`--ttl <秒>` (最小 60) 付きの put** が便利 (自動失効するので解除し忘れない): `wrangler kv key put "report:<siteId>" '{"status":"suspended"}' --namespace-id d429572547b4434486d44ee0159f46ae --remote --ttl 480`
 - 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
 - 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。
+- **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は退会でも消えない。
+- **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。KV への put/delete や `wrangler deploy` の前に `wrangler login` をやり直すこと。
+
+> 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
 
 ---
 
