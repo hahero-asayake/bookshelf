@@ -51,6 +51,8 @@ export default {
 
         const rec = await env.KV.get(`uname:${username}`, 'json');
         if (!rec) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        // 退会済みアカウントの墓標 (hub の handleAccountDelete): 名前は他人へ渡さず、301 でも誰にも飛ばさない (#204)
+        if (rec.tombstone) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
 
         // 改名: 旧 username へのアクセスは新 username へ 301 (解放しない・なりすまし防止, 09 §10.3-v2)
         if (rec.movedTo) {

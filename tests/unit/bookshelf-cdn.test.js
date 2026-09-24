@@ -67,6 +67,19 @@ describe('bookshelf-cdn Worker', () => {
         expect(await res.text()).toBe('<html>article</html>');
     });
 
+    it('退会済みアカウントの墓標 (tombstone) は 404。他人へ 301 でも飛ばさず、siteId/movedTo が残っていても配信しない (#204)', async () => {
+        const KV = makeKV({
+            'uname:gone-user': { tombstone: true, owner: 'hash', at: 1 },
+            'uname:gone-moved': { tombstone: true, owner: 'hash', at: 1, movedTo: 'new-name', siteId: 'site1' }
+        });
+        const BUCKET = makeBucket({ 'sites/site1/index.html': '<html>leftover</html>' });
+        for (const name of ['gone-user', 'gone-moved']) {
+            const res = await worker.fetch(new Request(`https://bookshelf.asayake.org/${name}/`), env(KV, BUCKET), ctx);
+            expect(res.status).toBe(404);
+            expect(res.headers.get('Location')).toBeNull();
+        }
+    });
+
     it('改名した旧 username は新 username へ 301 (movedTo)', async () => {
         const KV = makeKV({ 'uname:old-name': { uid: 'u1', siteId: 'site1', movedTo: 'new-name' } });
         const res = await worker.fetch(new Request('https://bookshelf.asayake.org/old-name/'), env(KV, makeBucket()), ctx);

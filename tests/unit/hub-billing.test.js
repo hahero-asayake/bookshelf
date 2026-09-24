@@ -14,7 +14,11 @@ function makeKV(initial = {}) {
         store,
         async get(k, type) { const v = store.get(k); if (v == null) return null; return type === 'json' ? JSON.parse(v) : v; },
         async put(k, v) { store.set(k, v); },
-        async delete(k) { store.delete(k); }
+        async delete(k) { store.delete(k); },
+        // 退会時の索引 (ukey:/unames:) 列挙用 (本番 KV の list 相当。#204)
+        async list({ prefix = '' } = {}) {
+            return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true };
+        }
     };
 }
 
@@ -478,7 +482,7 @@ describe('handleCheckout (Managed Payments, ADR-037)', () => {
     });
 
     it('Price がプレースホルダ (REPLACE_) なら 503', async () => {
-        const KV = makeKV({ 'key:hk_abc': { uid: 'u1' } });
+        const KV = makeKV({ 'key:hk_abc': { uid: 'u1' }, 'uid:u1': {} });   // 認証は uid:<uid> の存在も見る (#204)
         const cap = stubStripe();
         await expect(handleCheckout(authedRequest({ plan: 'monthly' }), checkoutEnv(KV, { STRIPE_PRICE_MONTHLY: 'REPLACE_price_monthly' })))
             .rejects.toMatchObject({ status: 503 });

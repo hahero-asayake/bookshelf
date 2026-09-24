@@ -25,6 +25,8 @@
 //   HUB_DOMAIN       ハブの単一ホスト名 (例 "asayake.app")。公開 URL の組立に使う
 //   APP_ORIGIN       アプリ配信元 (CORS 許可。例 "https://hahero-asayake.github.io")
 //   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 100MB = Free プラン。Plus は uid レコードで個別に引き上げ)
+//   TOMBSTONE_SALT   (任意・secret) 退会済み username の墓標に持たせる本人照合ハッシュの塩 (#204)。未設定なら
+//                    GOOGLE_CLIENT_ID で代替。本番では `wrangler secret put TOMBSTONE_SALT` 推奨 (変更すると既存の墓標は取り戻せなくなる)。
 //   WRITE_LIMITER    (任意) ratelimit バインディング。書込 (PUT/DELETE/batch/publish) を uid/キー単位で制限
 //                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
 //   OPERATOR_AFFILIATE_TAG (任意) ハブ公開ページの Amazon アフィタグ (Free / 解決不能時)。/go が解決して使う。
@@ -210,7 +212,7 @@ async function handleSession(request, env) {
     if (!rec) {
         // 公開 URL は不透明な siteId (uuid)。本名/メール/Google sub を URL に晒さない
         const siteId = crypto.randomUUID();
-        rec = { siteId, email, status: 'ok' };
+        rec = { siteId, email, status: 'ok', createdAt: Date.now() };
         await env.KV.put(`uid:${uid}`, JSON.stringify(rec));
         // plan='free' が既定。Plus 化は plan:<uid> の plan/quotaBytes を引き上げるだけ (アプリ再実装不要)
         await env.KV.put(`plan:${uid}`, JSON.stringify({ plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA }));
@@ -222,6 +224,7 @@ async function handleSession(request, env) {
     if (rec.email) await env.KV.put(`email:${String(rec.email).toLowerCase()}`, uid);
     const key = 'hk_' + crypto.randomUUID().replace(/-/g, '');
     await env.KV.put(`key:${key}`, JSON.stringify({ uid, siteId: rec.siteId, createdAt: Date.now() }));
+    await env.KV.put(`ukey:${uid}:${key}`, '1');   // uid→キー索引 (退会時の実削除用・1キー1エントリで RMW 競合なし)
     const planRec = await getPlan(env, uid);
     return json({
         key, uid, siteId: rec.siteId, email,
@@ -240,7 +243,7 @@ async function handleSession(request, env) {
 
 // ===== username 予約 (S6・ADR-076・09 §10.3-v2) =====
 // POST /username { username } → KV `uname:<username>` を一意予約し uid:<uid>.username を更新する。
-// 改名時、旧 username は解放しない (movedTo で 301 に使う。なりすまし防止)。
+// 改名時、旧 username は解放しない (movedTo で 301 に使う。なりすまし防止)。退会時も解放せず墓標にする (handleAccountDelete)。
 // ⚠️ KV は CAS 無し (read-modify-write last-writer-wins)。同時登録レースでの受容根拠は 09 §10.3-v2 参照。
 // S7 で D1/Durable Object へ移行するまでの暫定実装。
 async function handleUsername(request, env) {
@@ -249,28 +252,41 @@ async function handleUsername(request, env) {
     const { username } = await request.json().catch(() => ({}));
     if (!isValidUsername(username)) throw httpError(400, 'invalid or reserved username');
 
-    const existing = await env.KV.get(`uname:${username}`, 'json');
-    // 冪等: 自分が「現在使用中」として持っている username への再送 (movedTo が無い = 現用のレコード)。
-    // movedTo 付きの自分のレコードは「元の名前に戻す」再取得なので冪等扱いにせず、下の改名ロジックへ
-    // 通して movedTo をクリアする (A→B→A で 301 ループになるのを防ぐ、#126 ②指摘)。
-    if (existing && existing.uid === sess.uid && !existing.movedTo) {
-        return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
-    }
-    // 他人が現用 or 他人の movedTo 記録 (=他人が過去に使っていた名前) は横取り不可
-    if (existing && existing.uid !== sess.uid) throw httpError(409, 'username taken');
-
     const uidRec = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (!uidRec) throw httpError(401, 'unknown session');
+    const existing = await env.KV.get(`uname:${username}`, 'json');
+    if (existing && existing.tombstone) {
+        // 退会済みアカウントの墓標 (handleAccountDelete)。退会した本人 (owner ハッシュ一致) だけ取り戻せる。他人は 409。
+        if (existing.owner !== await tombstoneOwner(env, sess.uid)) throw httpError(409, 'username taken');
+    } else if (existing && existing.uid === sess.uid && !existing.movedTo && uidRec.username === username) {
+        // 冪等: uid レコードが実際にその username を現用として持つときだけ (uname: の残骸だけで 200 を返さない・#204)。
+        // movedTo 付きの自分のレコードは「元の名前に戻す」再取得なので冪等扱いにせず、下の改名ロジックへ
+        // 通して movedTo をクリアする (A→B→A で 301 ループになるのを防ぐ、#126 ②指摘)。
+        return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
+    } else if (existing && existing.uid !== sess.uid) {
+        // 他人が現用 or 他人の movedTo 記録 (=他人が過去に使っていた名前) は横取り不可
+        throw httpError(409, 'username taken');
+    }
 
-    // 改名: 旧 username は削除せず movedTo で残す (解放しない・なりすまし防止)
+    // 改名: 旧 username は削除せず movedTo で残す (解放しない・なりすまし防止。退会時は墓標化)
     if (uidRec.username && uidRec.username !== username) {
         await env.KV.put(`uname:${uidRec.username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId, movedTo: username }));
     }
     await env.KV.put(`uname:${username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId }));
+    await env.KV.put(`unames:${sess.uid}:${username}`, '1');   // uid→予約名索引 (退会時に現用名+旧名を全て解放するため)
     uidRec.username = username;
     await env.KV.put(`uid:${sess.uid}`, JSON.stringify(uidRec));
 
     return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
+}
+
+// 退会済み username の墓標に持たせる本人照合用ハッシュ (#204)。退会者の識別子 (Google sub) を KV に残さないため
+// HMAC-SHA-256(uid)。塩は TOMBSTONE_SALT (secret)。未設定でも動く (GOOGLE_CLIENT_ID で代替) が、本番では設定すること。
+async function tombstoneOwner(env, uid) {
+    const salt = env.TOMBSTONE_SALT || env.GOOGLE_CLIENT_ID || 'asayake-hub';
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(String(uid)));
+    return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // 管理者判定: ADMIN_EMAILS (secret, カンマ区切り) に含まれるメールか。未設定なら常に false。
@@ -415,9 +431,20 @@ async function requireAuth(request, env) {
     const auth = request.headers.get('Authorization') || '';
     const m = auth.match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
     if (!m) throw httpError(401, 'missing key');
-    const sess = await env.KV.get(`key:${m[1]}`, 'json');
+    const sess = await resolveKey(env, m[1]);
     if (!sess) throw httpError(401, 'invalid key');
     return sess; // { uid, siteId }
+}
+
+// キー文字列 → セッション。key レコードが有り、かつ ①uid:<uid> (アカウント) が存在し、
+// ②アカウントの作成世代より後に発行されたキーだけ有効。退会済み/作り直し前のキーは全て無効 (#204)。
+async function resolveKey(env, hk) {
+    const sess = await env.KV.get(`key:${hk}`, 'json');
+    if (!sess) return null;
+    const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!rec) return null;
+    if (rec.createdAt && (sess.createdAt || 0) < rec.createdAt) return null;
+    return sess;
 }
 
 // ===== 書込レート制限 (Class A 書込暴走対策, ADR-033) =====
@@ -576,7 +603,9 @@ async function handlePublish(request, env) {
 
 // ===== アカウント削除 (退会, ADR-033 / 個人情報の削除権) =====
 // uid の私的データ (data/<uid>/) と公開サイト (sites/<siteId>/) を全削除し、
-// 使用量レコード・現在の公開キー・通報レコードを KV から消す。
+// 使用量レコード・そのアカウントの全公開キー (ukey: 索引)・email 逆引き・通報レコードを KV から消す (#204)。
+// username 予約 (uname:) は墓標に置換する: 名前は他人へ渡さず、退会した本人だけが再登録で取り戻せる (ADR-076 の延長)。
+// 先に uid:<uid> を消すことで、他のキーも含め退会後の書込を即座に遮断する (resolveKey)。
 async function handleAccountDelete(request, env) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
@@ -604,23 +633,56 @@ async function handleAccountDelete(request, env) {
         }
     }
 
-    await deletePrefix(env, `data/${sess.uid}/`);
-    if (sess.siteId) await deletePrefix(env, `sites/${sess.siteId}/`);
-
+    // 先に uid:<uid> を消す＝全キーが即座に無効 (resolveKey ①)。以降の R2/KV 掃除中に別キーの書込が入らない。
+    // 掃除で例外が出たら uid レコードを戻して再実行できるようにする。
+    const uidRec = await env.KV.get(`uid:${sess.uid}`, 'json');
     await env.KV.delete(`uid:${sess.uid}`);
+    try {
+        await deletePrefix(env, `data/${sess.uid}/`);
+        if (sess.siteId) await deletePrefix(env, `sites/${sess.siteId}/`);
+    } catch (e) {
+        if (uidRec) await env.KV.put(`uid:${sess.uid}`, JSON.stringify(uidRec));
+        throw e;
+    }
+
     await env.KV.delete(`plan:${sess.uid}`);
     await env.KV.delete(`usage:${sess.uid}`);
     if (planRec && planRec.stripeCustomerId) {
         const owner = await env.KV.get(`stripe:${planRec.stripeCustomerId}`);
         if (owner === sess.uid) await env.KV.delete(`stripe:${planRec.stripeCustomerId}`);   // 自分を指す逆引きだけ削除 (ADR-039)
     }
+    // 全キーの実削除 (無効化は resolveKey が担保済み。索引に無い旧キーは残るが使えない)。呼び出しキーは索引外でも消す。
     if (key) await env.KV.delete(`key:${key}`);
+    await deleteIndexed(env, `ukey:${sess.uid}:`, (hk) => env.KV.delete(`key:${hk}`));
+    // username 予約 (現用名 + 改名で movedTo が付いた旧名) は墓標化する: 名前は他人へ渡さず (旧 URL の読者が第三者の
+    // ページに着かない=ADR-076 の「解放しない」を退会後へ延長)、生の uid は残さず本人照合用ハッシュだけ持つ。
+    // 退会した本人が再登録すれば取り戻せる (handleUsername)。他 uid を指すものは触らない。
+    const names = new Set();
+    if (uidRec && uidRec.username) names.add(uidRec.username);
+    await deleteIndexed(env, `unames:${sess.uid}:`, async (n) => { names.add(n); });
+    const tombOwner = await tombstoneOwner(env, sess.uid);
+    for (const n of names) {
+        const u = await env.KV.get(`uname:${n}`, 'json');
+        if (u && u.uid === sess.uid) await env.KV.put(`uname:${n}`, JSON.stringify({ tombstone: true, owner: tombOwner, at: Date.now() }));
+    }
+    const email = uidRec && uidRec.email ? String(uidRec.email).toLowerCase() : null;
+    if (email && (await env.KV.get(`email:${email}`)) === sess.uid) await env.KV.delete(`email:${email}`);
     if (sess.siteId) {
         await env.KV.delete(`report:${sess.siteId}`);
         await env.KV.delete(`site:${sess.siteId}`);   // /go の逆引きも除去 (孤立防止)
     }
 
     return json({ ok: true, deleted: true });
+}
+
+// KV: prefix 配下の索引エントリを列挙 (ページング対応)し、各エントリ名(prefix 除去後)を fn に渡して索引自体も削除
+async function deleteIndexed(env, prefix, fn) {
+    let cursor;
+    do {
+        const res = await env.KV.list({ prefix, cursor });
+        for (const k of res.keys) { await fn(k.name.slice(prefix.length)); await env.KV.delete(k.name); }
+        cursor = res.list_complete ? undefined : res.cursor;
+    } while (cursor);
 }
 
 // R2: prefix 配下のオブジェクトを全削除 (ページング対応)
@@ -949,7 +1011,7 @@ async function handleCommunityPlugins(request, env) {
 async function optionalUid(request, env) {
     const m = (request.headers.get('Authorization') || '').match(/^Bearer\s+(hk_[a-f0-9]+)$/i);
     if (!m) return null;
-    const sess = await env.KV.get(`key:${m[1]}`, 'json');
+    const sess = await resolveKey(env, m[1]);
     return sess ? sess.uid : null;
 }
 
@@ -1148,17 +1210,22 @@ export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, han
 async function verifyGoogleIdToken(idToken, clientId) {
     const [h, p, s] = idToken.split('.');
     if (!h || !p || !s) throw httpError(401, 'malformed token');
-    const header = JSON.parse(b64urlToText(h));
-    const payload = JSON.parse(b64urlToText(p));
+    let header, payload, sigBytes;
+    try {
+        header = JSON.parse(b64urlToText(h));
+        payload = JSON.parse(b64urlToText(p));
+        sigBytes = b64urlToBytes(s);
+    } catch (_) { throw httpError(401, 'malformed token'); }
+    if (!header || typeof header !== 'object' || !payload || typeof payload !== 'object') throw httpError(401, 'malformed token');
     if (payload.aud !== clientId) throw httpError(401, 'aud mismatch');
     if (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com') throw httpError(401, 'iss mismatch');
-    if (payload.exp * 1000 < Date.now()) throw httpError(401, 'token expired');
+    if (typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now()) throw httpError(401, 'token expired');
 
     const certs = await (await fetch(GOOGLE_CERTS)).json();
     const jwk = certs.keys.find(k => k.kid === header.kid);
     if (!jwk) throw httpError(401, 'signing key not found');
     const cryptoKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, b64urlToBytes(s), new TextEncoder().encode(`${h}.${p}`));
+    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sigBytes, new TextEncoder().encode(`${h}.${p}`));
     if (!ok) throw httpError(401, 'signature invalid');
     return payload;
 }

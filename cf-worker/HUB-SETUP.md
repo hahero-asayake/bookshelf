@@ -84,8 +84,9 @@ wrangler deploy -c wrangler.hub.toml
    - **Free** のとき → `?tag=<OPERATOR_AFFILIATE_TAG>` 付き (vars の値) に飛ぶ。
    - **Plus** のとき → 公開時に送った本人タグ付きに飛ぶ。
    - **Plus→Free 降格 (Phase E で解約)** 後、**再公開せずに**同じ `/go` を開くと運営タグに切替わっている (= キャッシュ無効 `no-store` の効果)。`..`/不正 ASIN は **400**。
-7. **退会 `DELETE /account`**: アカウント削除 → `data/<uid>/`・`sites/<siteId>/`・KV (`uid:`/`key:`/`report:`/`site:`) が消える。削除後 `/public/<siteId>/` が **404**、キーが **401**。
-   - ⚠️ 既知の課題 (2026-09-24 実測・要修正): 失効するのは**退会に使ったキー 1 本だけ**。退会前に別ログインで発行された hk_ キーは退会後も認証を通り、`data/<uid>/` に書ける (`requireAuth` は `key:` の存在しか見ない)。また退会は `uname:<username>` と `email:<email>` を消さない＝username は解放されず、同じアカウントで再登録して `POST /username` すると **200 が返るのに紐づかない** (`/usage` の username は null)。修正・再検証まで C-7 は条件付き。
+7. **退会 `DELETE /account`**: アカウント削除 → `data/<uid>/`・`sites/<siteId>/`・KV (`uid:`/そのアカウントの**全** `key:`/`ukey:`/`email:`/`report:`/`site:`) が消える。削除後 `/public/<siteId>/` が **404**、**同じアカウントの別キーも含めて全キーが 401**。`uname:<username>` は消さず**墓標** (`{tombstone:true, owner:<ハッシュ>}`) に置換される＝bookshelf.asayake.org では **404**、他人は同名を取れず (409)、退会した本人が再登録すれば取り戻せる (ADR-097)。
+   - ✅ 2026-09-24 に #199 の実機検証で見つかった欠陥 (退会に使ったキー 1 本しか失効しない／`uname:`・`email:` が残り再登録で `/usage` の username が null／不正トークンで 500) を **#204 でコード修正** (単体テスト＋`wrangler dev --local` で確認)。**本番反映 (`wrangler deploy` は hub と bookshelf-cdn の両方) と反映後の再検証まで C-7 は条件付き**。再検証: 2 回ログインしてキーを 2 本作る → 片方で退会 → もう片方の `PUT /data/x.txt` が **401** → 再ログインして同名 username を `POST /username` で取り直し `/usage` に username が入る → `POST /session` に `{"idToken":"aaa.bbb.ccc"}` で **401** (500 でない)。
+   - 索引導入前に発行されたキーの `key:` レコードは退会後も KV に残る (認証は①アカウント存在②作成世代で無効化される)。デプロイ前に「退会→再登録」済みのアカウントは旧キーを判別できないので、デプロイ後に一度退会→再登録して世代を切る。
    - 公開ページは Cache API (`max-age=60`) 越しのため、退会・停止の反映は最大 60 秒遅れる。
 
 > ここが通って初めて UI 統合 (5 つ目の同期方式・公開先「共有」) と課金 (Phase E) を本番投入する。
@@ -190,6 +191,16 @@ test モードで一度でも Plus 化 (または Checkout) した uid は、KV 
 - **管理者リセット**: 管理者は アプリの管理者パネル「**課金リンクをリセット**」、または `POST /admin/plan {email, resetBilling:true}` で対象を純 KV で free に戻し Stripe リンクを外せる (stale でも必ず成功)。
 - **一括**: 移行直後に `plan:*` を棚卸しし `stripeCustomerId`/`stripeSubscriptionId` を剥がす + `stripe:*` 逆引きを削除する wrangler kv 一括処理を流すと最も確実。
 - **デプロイ後の確認 (必須ゲート)**: live の最初の失敗時に実際の **error.code / param / message** を 1 度採取し、`isStripeMissing` の `resource_missing` 判定・正規表現と一致するか確認 (プレビュー版が code を返すか)。文言が違えば正規表現を調整。
+
+### E-5b. 退会済み username 墓標の塩 (ADR-097, 任意・推奨)
+退会したアカウントの `uname:` は、退会者の識別子 (Google sub) を残さないよう `HMAC-SHA-256(uid)` のハッシュを持つ墓標になる。その塩を secret で与える。
+```bash
+cd cf-worker
+wrangler secret put TOMBSTONE_SALT -c wrangler.hub.toml   # 推測されにくいランダム文字列 (例 openssl rand -hex 32)
+wrangler deploy -c wrangler.hub.toml
+```
+- 未設定でも動く (塩は `GOOGLE_CLIENT_ID` で代替) が、本番では設定すること。
+- ⚠️ **一度設定したら変えない**: 変更すると既存の墓標は本人でも取り戻せなくなる (ハッシュが一致しなくなる)。toml には書かない。
 
 ### E-6. 管理者プラン切替 (ADR-038, 任意)
 運営/招待アカウントを Stripe 非経由で 無料↔Plus に切替えたいとき設定する。
