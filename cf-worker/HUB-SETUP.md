@@ -277,9 +277,15 @@ wrangler deploy -c wrangler.hub.toml
 
 ### G-2. 外形監視 (UptimeRobot・無料枠)
 
-- 監視 URL は **未認証で 200 が返る具体パス**に固定する: `https://hub.asayake.org/public/<自分のsiteId>/`
-  (ルート `/` はハンドラ無しで 404 のため監視に使わない。siteId は publish 済みのものを使う)。
-- 通知先: asayake.hahero@gmail.com。ステータス up を確認して完了 (§1-#7)。
+- **管理主体 = kuroko 用の Google アカウントの UptimeRobot** (資格情報は kuroko 側で保持・アドレスは公開しない)。2026-09-24 に 8/12 のハヘロ個人アカウントでの登録から kuroko アカウントへ登録し直した (イシュー#201)。ハヘロ側の旧アカウントには触っていない (旧URLを叩き続けても 301 で新URLへ行くため害は無い。消すかはハヘロ判断)。
+- 監視 URL は **未認証で 200 が返る具体パス**に固定する: `https://bookshelf.asayake.org/hahero/` (H-5 の切替後の URL で作成済み)。
+  ルート `/` や `/top` は使わない (ハンドラ無し / S7 まで 404)。
+- モニタ: HTTP(s)・間隔 5 分 (無料枠)・名前 `bookshelf hub (hahero)`。
+- 通知先: Discord **#📚bookshelf** (UptimeRobot の Discord 連携。専用に作った webhook を登録済み・webhook URL は公開しない)。
+  UptimeRobot の「Test Notification」が送る `Monitor is DOWN … Connection Timeout` は**テスト送信の定型文**で実障害ではない。
+- API キー: Main API key (読み書き) を kuroko の実行環境の `~/.local/share/kuroko/uptimerobot-key` (パーミッション 600) に保存。**値はリポジトリに書かない**。
+  監視の追加・変更・一時停止は kuroko が UptimeRobot API v2 (`https://api.uptimerobot.com/v2/` の `getMonitors` / `newMonitor` / `editMonitor`) で行う (ダッシュボードの手作業は不要)。
+- 検証済み (2026-09-24): status up・テスト通知が Discord に到達・保存キーの `getMonitors` で該当モニタが返る (§1-#7)。
 
 ### G-3. Stripe webhook 失敗通知
 
@@ -395,12 +401,16 @@ curl -s -o /dev/null -w "status=%{http_code}\n" "https://hub.asayake.org/public/
 
 ### H-5. UptimeRobot 監視URLの切替 (Phase G-2 の更新)
 
-Phase G-2 の監視URL (`https://hub.asayake.org/public/<自分のsiteId>/`) を、H-4 で自分の username を設定した後に切り替える。
+Phase G-2 の監視URLは、H-4 で自分の username を設定した後の `https://bookshelf.asayake.org/<自分のusername>/` に切り替える。
 
-1. UptimeRobot ダッシュボード → 対象モニターを編集。
-2. **監視URLを `https://bookshelf.asayake.org/<自分のusername>/` に変更** (未認証で200が返る具体パス)。
+**2026-09-24 実施済み (イシュー#201)**: 監視を kuroko アカウントの UptimeRobot に登録し直した際、最初から新URL `https://bookshelf.asayake.org/hahero/` で作成した (旧URL `hub.asayake.org/public/<siteId>/` からの差替は不要)。以後の URL 変更は kuroko が API で行う (キーの保存場所は G-2)。
+
+URL を変える必要が出たときの手順:
+
+1. kuroko が `editMonitor` (対象モニタの `url` を更新) で変更する。ダッシュボードで手動編集してもよい。
+2. **監視URLは `https://bookshelf.asayake.org/<自分のusername>/`** (未認証で200が返る具体パス)。
 3. ⚠️ **`/top` はまだ監視に使わない**。`/top` (全ユーザ横断一覧) は S7 (D1索引) 実装まで存在せず、現状は他の予約語と同じく404を返す。`/top` の実装後に別途この節を更新する。
-4. ステータスが up に戻ることを確認。
+4. `getMonitors` の `status` が 2 (up) に戻ることを確認。
 
 ### H-6. ロールバック (何かおかしければ)
 
