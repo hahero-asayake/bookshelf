@@ -28,6 +28,7 @@
 //   TOMBSTONE_SALT   (secret・本番では必須) 退会済み username の墓標に持たせる本人照合ハッシュの塩 (#204)。コード上は未設定でも
 //                    動く (GOOGLE_CLIENT_ID で代替) が、公開値の塩では既知の Google sub から墓標を突き合わせられるので
 //                    本番では `wrangler secret put TOMBSTONE_SALT` を deploy 前に行う (変更すると既存の墓標は取り戻せなくなる)。
+//                    未設定のまま退会が走ると handleAccountDelete が console.warn を出す (挙動は変えない・設定漏れの検知用, #208)。
 //   WRITE_LIMITER    (任意) ratelimit バインディング。書込 (PUT/DELETE/batch/publish) を uid/キー単位で制限
 //                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
 //   OPERATOR_AFFILIATE_TAG (任意) ハブ公開ページの Amazon アフィタグ (Free / 解決不能時)。/go が解決して使う。
@@ -282,7 +283,8 @@ async function handleUsername(request, env) {
 }
 
 // 退会済み username の墓標に持たせる本人照合用ハッシュ (#204)。退会者の識別子 (Google sub) を KV に残さないため
-// HMAC-SHA-256(uid)。塩は TOMBSTONE_SALT (secret)。未設定でも動く (GOOGLE_CLIENT_ID で代替) が、本番では設定すること。
+// HMAC-SHA-256(uid)。塩は TOMBSTONE_SALT (secret)。未設定でも動く (GOOGLE_CLIENT_ID で代替) が、本番では設定すること
+// (未設定の退会は handleAccountDelete が警告ログを出す)。
 async function tombstoneOwner(env, uid) {
     const salt = env.TOMBSTONE_SALT || env.GOOGLE_CLIENT_ID || 'asayake-hub';
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -661,6 +663,8 @@ async function handleAccountDelete(request, env) {
     const names = new Set();
     if (uidRec && uidRec.username) names.add(uidRec.username);
     await deleteIndexed(env, `unames:${sess.uid}:`, async (n) => { names.add(n); });
+    // 塩の設定漏れに気づけるよう警告だけ出す (挙動は変えない=フォールバック塩で墓標化は続行)。識別子・塩の値は出さない。
+    if (!env.TOMBSTONE_SALT) console.warn('[account-delete] TOMBSTONE_SALT 未設定: フォールバック塩 (公開値) で墓標のハッシュを計算した');
     const tombOwner = await tombstoneOwner(env, sess.uid);
     for (const n of names) {
         const u = await env.KV.get(`uname:${n}`, 'json');

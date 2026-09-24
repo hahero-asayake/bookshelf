@@ -71,7 +71,7 @@ async function mintIdToken(claims = {}, header = { alg: 'RS256', kid: KID }) {
 // 同一ミリ秒でのキー発行/再登録の衝突 (世代判定の境界) を避けるため Date を固定し、明示的に進める。
 const tick = (ms = 1000) => vi.setSystemTime(Date.now() + ms);
 
-let KV, R2, env, realFetch;
+let KV, R2, env, realFetch, warn;
 
 beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -80,6 +80,7 @@ beforeEach(() => {
     R2 = makeR2();
     env = { KV, BUCKET: R2, GOOGLE_CLIENT_ID: CLIENT_ID, HUB_DOMAIN: 'hub.test' };
     globalThis.caches = { default: { async match() { return null; }, async put() {} } };   // bookshelf-cdn が使う Cache API
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});   // TOMBSTONE_SALT 未設定の警告 (#208) でテスト出力を汚さない
     realFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input) => {
         if (String(input) === GOOGLE_CERTS) return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
@@ -88,6 +89,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    warn.mockRestore();
     globalThis.fetch = realFetch;
     vi.useRealTimers();
 });
@@ -297,6 +299,27 @@ describe('退会の掃除範囲・順序・墓標の塩 (設計: uid 先行削�
         env.TOMBSTONE_SALT = 'salt-2';                                        // 塩の変更 = 既存の墓標は照合できなくなる (仕様)
         const d = await login();
         expect((await setUsername(d.key, 'taro')).status).toBe(409);
+    });
+
+    it('TOMBSTONE_SALT 未設定の退会は警告ログを1回出し (識別子・塩の値は含まない)、設定済みなら出さない。どちらも墓標化は従来どおり (#208)', async () => {
+        // 未設定 (フォールバック塩): 警告1回・退会と墓標化は成功
+        const a = await login();
+        await setUsername(a.key, 'taro');
+        expect((await call('DELETE', '/account', { key: a.key })).status).toBe(200);
+        expect(warn).toHaveBeenCalledTimes(1);
+        const logged = JSON.stringify(warn.mock.calls);
+        expect(logged).toContain('TOMBSTONE_SALT');
+        for (const secret of [a.uid, 'taro', EMAIL, CLIENT_ID, 'asayake-hub']) expect(logged).not.toContain(secret);
+        expect((await KV.get('uname:taro', 'json')).tombstone).toBe(true);
+
+        // 設定済み: 警告なし・退会と墓標化は成功
+        warn.mockClear(); tick();
+        env.TOMBSTONE_SALT = 'salt-1';
+        const b = await login('g-sub-2', 'jiro@example.invalid');
+        await setUsername(b.key, 'jiro');
+        expect((await call('DELETE', '/account', { key: b.key })).status).toBe(200);
+        expect(warn).not.toHaveBeenCalled();
+        expect((await KV.get('uname:jiro', 'json')).tombstone).toBe(true);
     });
 });
 
