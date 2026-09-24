@@ -55,10 +55,19 @@
 ### B-2. デプロイ
 ```bash
 npm i -g wrangler            # 初回のみ
-wrangler login
+wrangler login               # 人間が手で行う場合のみ。kuroko が deploy する場合は login 不要 (下の「デプロイ運用」= API トークンを環境変数で渡す)
 cd cf-worker
 wrangler deploy -c wrangler.hub.toml
 ```
+
+### デプロイ運用 (2026-09-24 ハヘロ決裁・#210 で実施)
+**本番 deploy は ②レビューの承認後に kuroko が範囲を絞った API トークンで行う** (8/16 の「本人手動・トークンを置かない」方針を変更)。`wrangler login` の OAuth は不要。
+
+- **トークン**: `/home/kuroko/.local/share/kuroko/cloudflare-token` (600・kuroko 所有)。**値はリポジトリ・ログ・報告・スクショに出さない**。
+- **渡し方**: 環境変数 `CLOUDFLARE_API_TOKEN` (上のファイルから読む) と `CLOUDFLARE_ACCOUNT_ID` (toml の `account_id`) で wrangler に渡す。**kuroko の HOME で実行し、sei の wrangler 設定 (`/home/sei/.config/.wrangler/`) は参照も更新もしない**。`PATH` に node が無い環境では nvm の node の bin (`/home/sei/.nvm/versions/node/v24.18.0/bin`) を PATH 先頭に入れる。Bash に `$` を含むコマンドを渡せない場合は node スクリプト (child_process) 経由で渡す。
+- **型 (この順)**: ① `wrangler secret list -c wrangler.hub.toml` で `TOMBSTONE_SALT` の有無を確認 (**既設なら上書きしない**) ・本番 KV の件数を **読むだけ**で数える (手順書 `ハブ退会修正_本番反映手順` §3。キー文字列・メールは出力しない) → ② `wrangler deployments list -c …` で**直前のバージョン ID を控える** → ③ hub (`wrangler.hub.toml`) → bookshelf-cdn (`wrangler.bookshelf.toml`) の順に `wrangler deploy` (hub が失敗したら cdn へ進まない・`ishanten` には触らない) → ④ curl で 3 点 (不正 idToken の `POST /session`=401・キー無し `GET /usage`=401・`bookshelf.asayake.org/<既存username>/`=200) → ⑤ 実機再検証 (Phase C step 7 の退会)。
+- **rollback**: `wrangler rollback <version-id> -c <toml> -m <理由>`。戻し先は ② で控えた直前版。`wrangler secret put` も新しいバージョン (Source: Secret Change) を作るので、secret 込みの版を選ぶ。⚠️ **新版で退会 (墓標化) が走った後に旧版へ戻すと、旧コードは墓標に対して 409 を返し続ける**＝退会後の rollback は ② に判断を返す。
+- **実績 (#210・2026-09-25)**: hub `0da945c5-ab86-4111-9ad5-f904043a09d7`・bookshelf-cdn `99a0805b-0cef-40e6-be65-5ee0498578ed` (どちらも HEAD=ee88451)。直前版は hub `02481685-d717-4bf9-a55a-ac71177c5ef9`・bookshelf-cdn `f9a8f011-23a8-4d34-a05d-6469d3c67d36`。
 
 ### B-3. DNS (自動)
 `wrangler.hub.toml` の route は `custom_domain = true` なので、**`wrangler deploy` が `hub.asayake.org` の DNS レコードと TLS 証明書を自動作成**する。手動の DNS 追加は不要 (証明書発行に数分かかることがある)。
@@ -85,7 +94,7 @@ wrangler deploy -c wrangler.hub.toml
    - **Plus** のとき → 公開時に送った本人タグ付きに飛ぶ。
    - **Plus→Free 降格 (Phase E で解約)** 後、**再公開せずに**同じ `/go` を開くと運営タグに切替わっている (= キャッシュ無効 `no-store` の効果)。`..`/不正 ASIN は **400**。
 7. **退会 `DELETE /account`**: アカウント削除 → `data/<uid>/`・`sites/<siteId>/`・KV (`uid:`/そのアカウントの**全** `key:`/`ukey:`/`email:`/`report:`/`site:`) が消える。削除後 `/public/<siteId>/` が **404**、**同じアカウントの別キーも含めて全キーが 401**。`uname:<username>` は消さず**墓標** (`{tombstone:true, owner:<ハッシュ>}`) に置換される＝bookshelf.asayake.org では **404**、他人は同名を取れず (409)、退会した本人が再登録すれば取り戻せる (ADR-097)。
-   - ✅ 2026-09-24 に #199 の実機検証で見つかった欠陥 (退会に使ったキー 1 本しか失効しない／`uname:`・`email:` が残り再登録で `/usage` の username が null／不正トークンで 500) を **#204 でコード修正** (単体テスト＋`wrangler dev --local` で確認)。**本番反映 (`wrangler deploy` は hub と bookshelf-cdn の両方) と反映後の再検証まで C-7 は条件付き**。再検証: 2 回ログインしてキーを 2 本作る → 片方で退会 → もう片方の `PUT /data/x.txt` が **401** → 再ログインして同名 username を `POST /username` で取り直し `/usage` に username が入る → `POST /session` に `{"idToken":"aaa.bbb.ccc"}` で **401** (500 でない)。
+   - ✅ 2026-09-24 に #199 の実機検証で見つかった欠陥 (退会に使ったキー 1 本しか失効しない／`uname:`・`email:` が残り再登録で `/usage` の username が null／不正トークンで 500) を **#204 でコード修正** (単体テスト＋`wrangler dev --local` で確認)。**2026-09-25 (#210) に本番反映 (hub と bookshelf-cdn の両方) と実機再検証まで完了して C-7 通過** (別キーの `PUT /data`・`/usage` が 401・退会後の username が 404・再登録で同名を取り戻し `/usage` に入る・旧キーは 401 のまま・不正 idToken が 401。未確認の 1 点＝別の Google アカウントでは墓標の名前を取れない (409) はアカウントが無く実機未確認・単体テストで担保)。再検証の手順: 2 回ログインしてキーを 2 本作る → 片方で退会 → もう片方の `PUT /data/x.txt` が **401** → 再ログインして同名 username を `POST /username` で取り直し `/usage` に username が入る → `POST /session` に `{"idToken":"aaa.bbb.ccc"}` で **401** (500 でない)。
    - 索引導入前に発行されたキーの `key:` レコードは退会後も KV に残る (認証は①アカウント存在②作成世代で無効化される)。デプロイ前に「退会→再登録」済みのアカウントは旧キーを判別できないので、デプロイ後に一度退会→再登録して世代を切る。
    - 公開ページは Cache API (`max-age=60`) 越しのため、退会・停止の反映は最大 60 秒遅れる。
 
@@ -199,7 +208,7 @@ cd cf-worker
 wrangler secret put TOMBSTONE_SALT -c wrangler.hub.toml   # 推測されにくいランダム文字列 (例 openssl rand -hex 32)
 wrangler deploy -c wrangler.hub.toml
 ```
-- コード上は未設定でも動く (塩は `GOOGLE_CLIENT_ID`、それも無ければ固定文字列で代替・**警告ログは出ない**) が、それは開発・テスト用の挙動。本番では設定済みであることを deploy 前に確認する (`wrangler secret list -c wrangler.hub.toml` に `TOMBSTONE_SALT` が出ること)。
+- コード上は未設定でも動く (塩は `GOOGLE_CLIENT_ID`、それも無ければ固定文字列で代替・退会時に `console.warn` の警告ログが出る＝`wrangler tail` で見える (#208)。墓標化は続行) が、それは開発・テスト用の挙動。本番では設定済みであることを deploy 前に確認する (`wrangler secret list -c wrangler.hub.toml` に `TOMBSTONE_SALT` が出ること)。**本番は 2026-09-25 に設定済み** (kuroko が乱数を生成して `secret put` の stdin へ直接流した＝値はどこにも残していない)。
 - ⚠️ **一度設定したら変えない**: 変更すると既存の墓標は本人でも取り戻せなくなる (ハッシュが一致しなくなる)。toml には書かない。
 
 ### E-6. 管理者プラン切替 (ADR-038, 任意)
@@ -309,9 +318,9 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 - 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
 - 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。
 - **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は退会でも消えない。
-- **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。KV への put/delete や `wrangler deploy` の前に `wrangler login` をやり直すこと。
+- **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。**kuroko の API トークン (上の「デプロイ運用」) を使えば login は不要**で、KV への put/delete も `wrangler deploy` もこのトークンで行える。人間が手で行う場合だけ `wrangler login` をやり直すこと。
 
-> 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
+> 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。**認証は kuroko のトークンで解消済み＝いつでも実施できる**。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
 
 ---
 
