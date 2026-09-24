@@ -192,14 +192,14 @@ test モードで一度でも Plus 化 (または Checkout) した uid は、KV 
 - **一括**: 移行直後に `plan:*` を棚卸しし `stripeCustomerId`/`stripeSubscriptionId` を剥がす + `stripe:*` 逆引きを削除する wrangler kv 一括処理を流すと最も確実。
 - **デプロイ後の確認 (必須ゲート)**: live の最初の失敗時に実際の **error.code / param / message** を 1 度採取し、`isStripeMissing` の `resource_missing` 判定・正規表現と一致するか確認 (プレビュー版が code を返すか)。文言が違えば正規表現を調整。
 
-### E-5b. 退会済み username 墓標の塩 (ADR-097, 任意・推奨)
-退会したアカウントの `uname:` は、退会者の識別子 (Google sub) を残さないよう `HMAC-SHA-256(uid)` のハッシュを持つ墓標になる。その塩を secret で与える。
+### E-5b. 退会済み username 墓標の塩 (ADR-097, **本番デプロイ前に必須**)
+退会したアカウントの `uname:` は、退会者の識別子 (Google sub) を残さないよう `HMAC-SHA-256(uid)` のハッシュを持つ墓標になる。その塩を secret で与える。**塩が無い (公開値の `GOOGLE_CLIENT_ID` で代替される) と、既知の Google sub からハッシュを再計算でき、墓標と突き合わせて退会者を特定できてしまう**ため、deploy 前に必ず設定する。
 ```bash
 cd cf-worker
 wrangler secret put TOMBSTONE_SALT -c wrangler.hub.toml   # 推測されにくいランダム文字列 (例 openssl rand -hex 32)
 wrangler deploy -c wrangler.hub.toml
 ```
-- 未設定でも動く (塩は `GOOGLE_CLIENT_ID` で代替) が、本番では設定すること。
+- コード上は未設定でも動く (塩は `GOOGLE_CLIENT_ID`、それも無ければ固定文字列で代替・**警告ログは出ない**) が、それは開発・テスト用の挙動。本番では設定済みであることを deploy 前に確認する (`wrangler secret list -c wrangler.hub.toml` に `TOMBSTONE_SALT` が出ること)。
 - ⚠️ **一度設定したら変えない**: 変更すると既存の墓標は本人でも取り戻せなくなる (ハッシュが一致しなくなる)。toml には書かない。
 
 ### E-6. 管理者プラン切替 (ADR-038, 任意)

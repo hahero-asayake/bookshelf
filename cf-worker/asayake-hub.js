@@ -25,8 +25,9 @@
 //   HUB_DOMAIN       ハブの単一ホスト名 (例 "asayake.app")。公開 URL の組立に使う
 //   APP_ORIGIN       アプリ配信元 (CORS 許可。例 "https://hahero-asayake.github.io")
 //   QUOTA_BYTES      1 ユーザの保存上限 (任意、既定 100MB = Free プラン。Plus は uid レコードで個別に引き上げ)
-//   TOMBSTONE_SALT   (任意・secret) 退会済み username の墓標に持たせる本人照合ハッシュの塩 (#204)。未設定なら
-//                    GOOGLE_CLIENT_ID で代替。本番では `wrangler secret put TOMBSTONE_SALT` 推奨 (変更すると既存の墓標は取り戻せなくなる)。
+//   TOMBSTONE_SALT   (secret・本番では必須) 退会済み username の墓標に持たせる本人照合ハッシュの塩 (#204)。コード上は未設定でも
+//                    動く (GOOGLE_CLIENT_ID で代替) が、公開値の塩では既知の Google sub から墓標を突き合わせられるので
+//                    本番では `wrangler secret put TOMBSTONE_SALT` を deploy 前に行う (変更すると既存の墓標は取り戻せなくなる)。
 //   WRITE_LIMITER    (任意) ratelimit バインディング。書込 (PUT/DELETE/batch/publish) を uid/キー単位で制限
 //                    し、Class A 書込暴走による課金事故を防ぐ (ADR-033)。未設定なら制限なし (本番では必須)。
 //   OPERATOR_AFFILIATE_TAG (任意) ハブ公開ページの Amazon アフィタグ (Free / 解決不能時)。/go が解決して使う。
