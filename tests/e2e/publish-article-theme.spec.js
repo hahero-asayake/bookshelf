@@ -203,3 +203,88 @@ test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas 
         }
     });
 });
+
+// 目玉本ブロック (.blk-book) の狭幅レイアウト (イシュー#195 公-4)。
+// 従来は grid-template-columns:150px 1fr 固定で縮退が無く、390px では本文カラムが約122pxまで潰れて
+// タイトルが「フィクスチャの本 / 1」のように不自然に折り返していた。640px 以下は書影を上・本文を下に
+// 縦積みにする。640px を超える幅は従来の2カラムのまま (見た目を変えない・#180 Q7 の決裁待ちのため)。
+// 実際の Amazon 書影は数百px幅なので、テスト書影も大きな画像にする (小さい画像だと 150px 列でも
+// 自然サイズで止まり、縦積み時に書影が列幅いっぱいへ膨らむ不具合を検知できない)。
+const WIDE_COVER_DATA_URI = 'data:image/svg+xml;utf8,' +
+    encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><rect width="500" height="700" fill="#2b4a7d"/></svg>');
+
+async function openBookBlockPreview(page, context, { layout, width }) {
+    await page.goto('/index.html');
+    await page.waitForFunction(() => window.PublishArticleGenerator);
+    const state = buildState();
+    state.library.books[0].title = 'フィクスチャの本 1'; // 修正前は 122px 幅で「フィクスチャの本 / 1」の2行に割れていたタイトル
+    state.library.books[0].productImage = WIDE_COVER_DATA_URI;
+    state.notes.B001 = { memo: '読み終わって空を見上げた。スケールで殴ってくる一冊で、二度目は違う場所で刺さった。', rating: 4, hasDetailMemo: false };
+    const article = buildArticle({ layout, color: 'white' });
+    article.blocks = [
+        { id: 'k1', type: 'book', asin: 'B001', show: { shortMemo: true, longMemo: false, rating: true } },
+        { id: 'k2', type: 'book', asin: 'B003', show: { shortMemo: false, longMemo: false, rating: false } } // 書影なし (プレースホルダ)
+    ];
+    const html = await renderArticleHtml(page, state, article);
+    const preview = await context.newPage();
+    await preview.setViewportSize({ width, height: 844 });
+    await preview.setContent(html, { waitUntil: 'load' });
+    // 書影の読込前は img の実寸が確定せず boundingBox が不安定になるため、デコード完了を待つ
+    await preview.evaluate(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));
+    return preview;
+}
+
+async function measureBookBlocks(preview) {
+    const blocks = preview.locator('.blk-book');
+    const out = [];
+    for (let i = 0; i < await blocks.count(); i++) {
+        const blk = blocks.nth(i);
+        out.push({
+            section: await blk.boundingBox(),
+            cover: await blk.locator('.bk-cover').boundingBox(),
+            body: await blk.locator('.blk-book-body').boundingBox(),
+            title: await blk.locator('.bk-title').boundingBox()
+        });
+    }
+    return out;
+}
+
+test.describe('目玉本ブロック (.blk-book) の狭幅レイアウト (イシュー#195)', () => {
+    for (const layout of LAYOUTS) {
+        test(`390px×${layout}: 書影が上・本文が下の縦積みになり、本文がブロック幅を使い切る`, async ({ page, context }) => {
+            const preview = await openBookBlockPreview(page, context, { layout, width: 390 });
+            const blocks = await measureBookBlocks(preview);
+            expect(blocks, '目玉本ブロックが2つ描画されていること').toHaveLength(2);
+
+            for (const [i, { section, cover, body }] of blocks.entries()) {
+                expect(cover.y + cover.height, `目玉本[${i}]: 書影は本文より上 (縦積み)`).toBeLessThanOrEqual(body.y + 1);
+                expect(cover.width, `目玉本[${i}]: 書影は150px幅のまま (列幅いっぱいに膨らまない)`).toBeLessThanOrEqual(151);
+                expect(cover.width, `目玉本[${i}]: 書影が描画されていること`).toBeGreaterThan(100);
+                expect(body.width, `目玉本[${i}]: 本文が右カラムに押し潰されずブロック幅の大半を使う (修正前は約122px)`)
+                    .toBeGreaterThan(section.width * 0.8);
+            }
+            expect(blocks[0].title.height, '短いタイトルが1行に収まる (修正前は幅122pxで2行に割れていた)').toBeLessThan(40);
+
+            const overflowX = await preview.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+            expect(overflowX, '横スクロールが出ないこと').toBeLessThanOrEqual(0);
+
+            await preview.screenshot({ path: `test-results/publish-article-theme/blk-book-390-${layout}.png`, fullPage: true });
+            await preview.close();
+        });
+    }
+
+    test('640px は縦積み・641px は従来どおりの2カラム (640px を超える幅の見た目は変えない)', async ({ page, context }) => {
+        const narrow = await openBookBlockPreview(page, context, { layout: 'card', width: 640 });
+        for (const [i, { cover, body }] of (await measureBookBlocks(narrow)).entries()) {
+            expect(cover.y + cover.height, `640px 目玉本[${i}]: 縦積み`).toBeLessThanOrEqual(body.y + 1);
+        }
+        await narrow.close();
+
+        const wide = await openBookBlockPreview(page, context, { layout: 'card', width: 641 });
+        for (const [i, { cover, body }] of (await measureBookBlocks(wide)).entries()) {
+            expect(cover.x + cover.width, `641px 目玉本[${i}]: 書影は本文の左 (2カラム)`).toBeLessThanOrEqual(body.x + 1);
+            expect(body.y, `641px 目玉本[${i}]: 本文は書影と同じ高さ帯に並ぶ (縦積みでない)`).toBeLessThan(cover.y + cover.height);
+        }
+        await wide.close();
+    });
+});

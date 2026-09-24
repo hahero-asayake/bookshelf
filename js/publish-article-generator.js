@@ -129,6 +129,7 @@ a{color:var(--acc)}
   border-radius:10px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--elev)}
 .blk-book .bk-title{font-size:17px;margin:0 0 3px}
 .blk-book .bk-author{margin-bottom:12px}
+@media(max-width:640px){.blk-book{grid-template-columns:minmax(0,1fr)}.blk-book .bk-cover{width:150px;max-width:100%}}
 .amz{display:inline-block;margin-top:10px;font-size:11px;text-decoration:none;padding:6px 13px;
   border-radius:5px;background:var(--acc);color:var(--acc-t);font-weight:700}
 .pub-ad-top{display:flex;align-items:center;gap:.45em;margin:0 0 20px;color:var(--sub);font-size:11px;line-height:1.4}
