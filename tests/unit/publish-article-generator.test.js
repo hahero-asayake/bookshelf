@@ -1,6 +1,8 @@
 // PublishArticleGenerator: Markdown変換 / 見出しシフト / テーマCSS / データ解決 / プライバシーガード の検証
 // (S2 記事モデル生成器, ADR-058・09_公開システム設計 §11.3〜11.6)
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 await import('../../js/publish-article-store.js');
 await import('../../js/vendor/marked.umd.js');
@@ -522,6 +524,49 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
         expect(html).toContain('class="tags"');
         expect(html).toContain('SF');
         expect(html).toContain('私を構成する10冊');
+    });
+
+    // 法務・通報導線 (11_ローンチ実行計画 完了定義#8・WP-B5・イシュー#195)。公開v2 の生成器へ移行した後の
+    // 出力そのもの (build().files) を検証する。記事ページも一覧 index.html も同じ _wrapDoc を通るため両方を見る。
+    const LEGAL_BASE = 'https://hahero-asayake.github.io/bookshelf/';
+    const legalHtmls = async (opts) => {
+        const r = await gen.build([makeArticle()], opts);
+        return [
+            ['記事ページ', r.files.find(f => f.path === 'pub-test01/index.html').content],
+            ['一覧 index.html', r.files.find(f => f.path === 'index.html').content]
+        ];
+    };
+
+    it('記事ページと一覧 index.html の両方のフッターに 利用規約 / プライバシーポリシー / このページを通報 が出る', async () => {
+        for (const [label, html] of await legalHtmls({})) {
+            const legal = html.match(/<p class="pub-legal">([\s\S]*?)<\/p>/);
+            expect(legal, `${label}: フッターに .pub-legal がある`).not.toBeNull();
+            expect(html.indexOf('<footer class="pub-footer">'), `${label}: .pub-legal は footer 内`).toBeLessThan(html.indexOf('<p class="pub-legal">'));
+            expect(legal[1], `${label}: 利用規約`).toContain(`<a href="${LEGAL_BASE}legal/terms.html" target="_blank" rel="noopener">利用規約</a>`);
+            expect(legal[1], `${label}: プライバシーポリシー`).toContain(`<a href="${LEGAL_BASE}legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>`);
+            expect(legal[1], `${label}: 通報 (運営宛て mailto)`).toMatch(/<a href="mailto:asayake\.hahero@gmail\.com\?subject=[^"]+">このページを通報<\/a>/);
+        }
+    });
+
+    it('フッターの法務リンク先 (github.io/bookshelf/legal/…) は repo の legal/ に実在する (Pages が main を直配信)', async () => {
+        for (const [label, html] of await legalHtmls({})) {
+            const hrefs = [...html.matchAll(/<a href="(https:\/\/hahero-asayake\.github\.io\/bookshelf\/legal\/[^"]+)"/g)].map(m => m[1]);
+            expect(hrefs.length, `${label}: 法務リンクが2本ある`).toBe(2);
+            for (const href of hrefs) {
+                const rel = href.slice(LEGAL_BASE.length);
+                expect(existsSync(resolve(import.meta.dirname, '../..', rel)), `${label}: ${rel} が repo に実在する`).toBe(true);
+            }
+        }
+    });
+
+    it('通報メールの件名に公開先の識別子 (hub=siteId・GitHub=公開URL) が入り、通報された記事の特定に使える', async () => {
+        const subjectOf = (html) => decodeURIComponent(html.match(/mailto:[^?"]+\?subject=([^"]+)"/)[1]);
+        for (const [label, html] of await legalHtmls({ target: 'hub', siteId: 'site1' })) {
+            expect(subjectOf(html), `hub ${label}`).toBe('[通報] AsayakeBookshelf 公開記事 siteId=site1');
+        }
+        for (const [label, html] of await legalHtmls({ target: 'github', siteBaseUrl: 'https://example.github.io/my-books/' })) {
+            expect(subjectOf(html), `github ${label}`).toBe('[通報] AsayakeBookshelf 公開記事 https://example.github.io/my-books');
+        }
     });
 });
 

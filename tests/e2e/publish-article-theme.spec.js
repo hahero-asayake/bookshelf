@@ -288,3 +288,47 @@ test.describe('目玉本ブロック (.blk-book) の狭幅レイアウト (イ�
         await wide.close();
     });
 });
+
+// 公開出力のフッター法務・通報導線 (イシュー#195 公-5・11_ローンチ実行計画 完了定義#8)。
+// 既存の断言 (critical-path.spec.js / publish-article-editor.spec.js) はエディタのプレビュー srcdoc の
+// 「legal/terms.html」「このページを通報」だけだったので、実際に公開される出力 (build().files =
+// 記事ページ + 一覧 index.html) を実ブラウザで描画し、3リンクの表示・宛先・通報メール件名を確認する。
+test.describe('公開出力のフッター法務・通報導線 (イシュー#195)', () => {
+    for (const width of [1280, 390]) {
+        test(`${width}px: 記事ページと一覧 index.html のフッターに 利用規約 / プライバシーポリシー / このページを通報 が表示される`, async ({ page, context }) => {
+            await page.goto('/index.html');
+            await page.waitForFunction(() => window.PublishArticleGenerator);
+            const article = buildArticle({ layout: 'card', color: 'white' });
+            const files = await page.evaluate(async ({ state, article }) => {
+                const app = { storage: { loadAll: async () => state, readBookMemo: async () => null } };
+                const r = await new window.PublishArticleGenerator(app).build([article], { target: 'hub', siteId: 'site1' });
+                return r.files;
+            }, { state: buildState(), article });
+            expect(files.map((f) => f.path).sort(), '公開出力は記事ページと一覧 index.html').toEqual([`${article.publicId}/index.html`, 'index.html'].sort());
+
+            for (const f of files) {
+                const preview = await context.newPage();
+                await preview.setViewportSize({ width, height: 844 });
+                await preview.setContent(f.content, { waitUntil: 'load' });
+
+                const links = preview.locator('footer.pub-footer .pub-legal a');
+                await expect(links, `${f.path}: フッターに3リンク`).toHaveCount(3);
+                await expect(links).toHaveText(['利用規約', 'プライバシーポリシー', 'このページを通報']);
+                await expect(links.nth(0)).toHaveAttribute('href', 'https://hahero-asayake.github.io/bookshelf/legal/terms.html');
+                await expect(links.nth(1)).toHaveAttribute('href', 'https://hahero-asayake.github.io/bookshelf/legal/privacy.html');
+                const mail = await links.nth(2).getAttribute('href');
+                expect(mail, `${f.path}: 通報は運営宛ての mailto`).toMatch(/^mailto:asayake\.hahero@gmail\.com\?subject=/);
+                expect(decodeURIComponent(mail.split('subject=')[1]), `${f.path}: 件名に公開先の識別子 (hub=siteId)`).toBe('[通報] AsayakeBookshelf 公開記事 siteId=site1');
+
+                // 3リンクとも画面内に収まって押せる (狭幅でフッターが横にはみ出していない)
+                for (let i = 0; i < 3; i++) {
+                    await expect(links.nth(i)).toBeVisible();
+                    const box = await links.nth(i).boundingBox();
+                    expect(box.x, `${f.path} リンク${i}: 左端が画面内`).toBeGreaterThanOrEqual(0);
+                    expect(box.x + box.width, `${f.path} リンク${i}: 右端が画面内`).toBeLessThanOrEqual(width);
+                }
+                await preview.close();
+            }
+        });
+    }
+});
