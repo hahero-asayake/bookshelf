@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026092503">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026092505">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -536,32 +536,39 @@
                         <label class="form-label" for="setting-public-name"><span class="h-icon" data-icon="user" data-icon-size="14"></span>公開名義（発行者名）</label>
                         <input id="setting-public-name" type="text" placeholder="例: あなたの名前 / ハンドル" autocomplete="off">
                         <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
-                        <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
-                        <select id="publish-target-select">
-                            <option value="hub">Asayake ハブ（Google ログインだけ・おすすめ）</option>
-                            <option value="github">自分の GitHub リポジトリ（上級者向け）</option>
-                        </select>
-                        <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
-
-                        <div id="publish-config-github" class="publish-target-config">
-                            <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ</label>
-                            <select id="publish-repo-select">
-                                <option value="">（GitHub 接続後に選べます）</option>
-                            </select>
-                            <small class="publish-config-hint">公開ページ（HTML）の書き出し先です。中身は誰でも見られるので、公開専用の空 public リポジトリを選んでください。</small>
-                            <details class="pp-advanced">
-                                <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>リポジトリの作り方と公開URL<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                                <div class="pp-advanced-body">
-                                    <small class="publish-config-hint">空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加すると、ここで選べるようになります。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で見られます。</small>
-                                </div>
-                            </details>
-                            <span id="publish-repo-status" class="path-status"></span>
-                        </div>
-
                         <div id="publish-config-hub" class="publish-target-config" hidden>
                             <small class="publish-config-hint">Asayake ハブ（hahero 運営）へ直接公開します。GitHub は不要で、Google ログインだけで公開 URL が手に入ります（中身は誰でも読めます）。</small>
                             <span id="publish-hub-status" class="path-status"></span>
                         </div>
+
+                        <!-- 公開先は「一度決めたら触らない設定項目」(ADR-099): 既定はハブ。切替 (自前の GitHub 公開) は折りたたみの中に置き、主導線から外す -->
+                        <details class="pp-advanced publish-target-details" id="publish-target-details">
+                            <summary><span class="h-icon" data-icon="settings" data-icon-size="13"></span>公開先の変更（通常は触りません）<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <div class="pp-advanced-body">
+                                <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
+                                <select id="publish-target-select">
+                                    <option value="hub">Asayake ハブ（Google ログインだけ・おすすめ）</option>
+                                    <option value="github">自分の GitHub リポジトリ（上級者向け）</option>
+                                </select>
+                                <p id="publish-index-note" class="publish-config-hint publish-index-note" hidden>この公開先の記事は、ハブの索引（タグ検索・/top・マイページ）には載りません。</p>
+                                <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
+
+                            <div id="publish-config-github" class="publish-target-config">
+                                <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ</label>
+                                <select id="publish-repo-select">
+                                    <option value="">（GitHub 接続後に選べます）</option>
+                                </select>
+                                <small class="publish-config-hint">公開ページ（HTML）の書き出し先です。中身は誰でも見られるので、公開専用の空 public リポジトリを選んでください。</small>
+                                <details class="pp-advanced">
+                                    <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>リポジトリの作り方と公開URL<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                                    <div class="pp-advanced-body">
+                                        <small class="publish-config-hint">空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加すると、ここで選べるようになります。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で見られます。</small>
+                                    </div>
+                                </details>
+                                <span id="publish-repo-status" class="path-status"></span>
+                            </div>
+                            </div>
+                        </details>
 
                         <div id="publish-affiliate" class="publish-target-config" hidden>
                             <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
@@ -1111,7 +1118,7 @@
         <div class="modal-content">
             <button class="modal-close" id="report-modal-close">×</button>
             <div class="modal-header">
-                <h2><span class="h-icon" data-icon="flag" data-icon-size="20"></span>記事を通報</h2>
+                <h2><span class="h-icon" data-icon="alert-triangle" data-icon-size="20"></span>記事を通報</h2>
             </div>
             <div class="modal-body">
                 <p class="muted-hint">対象: <span id="report-target-url" class="report-target-url"></span></p>
@@ -1280,7 +1287,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026092503"></script>
+    <script src="js/bookshelf.js?v=2026092504"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

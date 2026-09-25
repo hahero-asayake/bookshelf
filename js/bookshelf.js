@@ -3322,6 +3322,11 @@ class VirtualBookshelf {
         const hubBlock = document.getElementById('publish-config-hub');
         if (ghBlock) ghBlock.hidden = (target !== 'github');
         if (hubBlock) hubBlock.hidden = (target !== 'hub');
+        // 自前公開 (GitHub) は索引に載らない (ADR-099)。選んでいる間はその旨を明示し、設定を見失わないよう折りたたみを開く
+        const indexNote = document.getElementById('publish-index-note');
+        if (indexNote) indexNote.hidden = (target !== 'github');
+        const targetDetails = document.getElementById('publish-target-details');
+        if (targetDetails && target === 'github') targetDetails.open = true;
         if (target === 'hub') this._reflectPublishHubStatus();
         this._reflectPublishSwitchWarn();
     }
@@ -6142,6 +6147,8 @@ class VirtualBookshelf {
         const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
         if (det && det.id) this._activateSettingsCategory(det.id, { push: true });
         if (el !== det) {
+            // 折りたたみ (details) の中の項目へ案内するときは、祖先を開いてから見せる (例: 公開先の変更)
+            for (let d = el.parentElement && el.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             try { if (typeof el.focus === 'function') el.focus({ preventScroll: true }); } catch (_) {}
         }

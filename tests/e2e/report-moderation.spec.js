@@ -1,7 +1,7 @@
 // 記事の通報ダイアログ (公開記事フッタの ?report=<記事URL>) と、管理者の通報審査パネル (ADR-099・イシュー#220)。
 // ハブ API は page.route で差し替える。通報ダイアログは docs/ui-standards.md §1 の標準操作 (ESC・戻る・枠外クリックでは閉じない) も打鍵する。
 import { test, expect } from './helpers/test-base.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -65,6 +65,14 @@ async function boot(page, { loggedIn = true, isAdmin = false, query = '', report
         window.bookshelf._isSyncReady = () => true;
     });
     return { errors, captured, state };
+}
+
+// ISSUE220_SHOT_DIR を指定すると同じ状態のスクリーンショットも保存する (検証の証跡用・通常の CI では保存しない)
+const SHOT_DIR = process.env.ISSUE220_SHOT_DIR || '';
+async function shot(page, name) {
+    if (!SHOT_DIR) return;
+    mkdirSync(SHOT_DIR, { recursive: true });
+    await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
 }
 
 const reportQuery = `?report=${encodeURIComponent(ARTICLE)}`;
@@ -151,11 +159,13 @@ test.describe('通報ダイアログ (?report=<記事URL>)', () => {
         expect(errors).toEqual([]);
     });
 
-    for (const [w, h] of [[1280, 800], [390, 844]]) {
+    for (const [w, h] of [[1280, 800], [800, 900], [390, 844]]) {
         test(`配置 (${w}x${h}): ダイアログと主要部品が画面内に収まり、ボタンが重ならず右端が揃う`, async ({ page }) => {
             await page.setViewportSize({ width: w, height: h });
             const { errors } = await boot(page, { query: reportQuery });
             await expect(page.locator('#report-modal')).toHaveClass(/show/);
+            await page.selectOption('#report-category', 'spam');
+            await shot(page, `report-dialog-${w}`);
             const box = async (sel) => page.locator(sel).boundingBox();
             const content = await box('#report-modal .modal-content');
             for (const sel of ['#report-category', '#report-reason', '#report-submit', '#report-cancel', '#report-modal-close']) {
@@ -214,3 +224,53 @@ test.describe('通報の審査パネル (管理者のみ)', () => {
         expect(errors).toEqual([]);
     });
 });
+
+// 審査パネルの配置 (ui-alignment: 座標で検証してから見せる)。長いタイトル・長い理由・複数件・外し中の記事でも崩れないこと。
+for (const [w, h] of [[1280, 800], [800, 900], [390, 844]]) {
+    test(`配置 (${w}x${h}): 通報の審査パネル: 記事カードの左端が揃い、ボタンが重ならず、枠と画面内に収まる`, async ({ page }) => {
+        await page.setViewportSize({ width: w, height: h });
+        const { errors, state } = await boot(page, { isAdmin: true });
+        const longTitle = 'とても長いタイトルの記事で折り返しがどうなるかを確かめるための、あえて長くした見出しです。' + 'x'.repeat(30);
+        const longUrl = ARTICLE + 'y'.repeat(60) + '/';
+        state.reports = [
+            { articleId: 'sA', url: longUrl, title: longTitle, articleStatus: 'active', count: 3, categories: { spam: 1, abuse: 1, discrimination: 1 }, latestReason: 'とても長い理由の文章です。'.repeat(8), latestAt: 1, reportIds: ['r1', 'r2', 'r3'] },
+            { articleId: 'sB', url: ARTICLE + 'b/', title: 'ボブの記事', articleStatus: 'active', count: 1, categories: { other: 1 }, latestReason: '', latestAt: 1, reportIds: ['r4'] }
+        ];
+        state.hidden = [{ articleId: 'sC', url: ARTICLE + 'c/', title: '外し中の記事', reportCount: 2 }];
+        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        const panel = page.locator('#account-admin-reports');
+        await expect(panel).toBeVisible();
+        await expect(page.locator('#report-review-list .report-item')).toHaveCount(3);
+        await panel.scrollIntoViewIfNeeded();
+        await shot(page, `report-review-panel-${w}`);
+        const list = await page.locator('#report-review-list').boundingBox();
+        const items = await page.locator('#report-review-list .report-item').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, sw: e.scrollWidth, cw: e.clientWidth }; }));
+        for (const [i, it] of items.entries()) {
+            expect(Math.abs(it.x - list.x), `カード${i}の左端が一覧と揃う`).toBeLessThanOrEqual(1);
+            expect(Math.abs(it.w - list.width), `カード${i}の幅が一覧と揃う`).toBeLessThanOrEqual(1);
+            expect(it.sw, `カード${i}は横にあふれない`).toBeLessThanOrEqual(it.cw + 1);
+            expect(it.x + it.w, `カード${i}の右端が画面内`).toBeLessThanOrEqual(w);
+            if (i > 0) expect(items[i - 1].y + items[i - 1].h, `カード${i - 1}→${i} は重ならない`).toBeLessThanOrEqual(it.y + 0.5);
+        }
+        // 各カードのボタン: カード枠内・互いに重ならない・上端が揃う (折り返しても行内で)
+        const cards = page.locator('#report-review-list .report-item');
+        for (let i = 0; i < 3; i++) {
+            const c = await cards.nth(i).boundingBox();
+            const bs = await cards.nth(i).locator('button').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
+            expect(bs.length, `カード${i}のボタン数`).toBeGreaterThanOrEqual(1);
+            for (const b of bs) {
+                expect(b.x, `カード${i}のボタン左が枠内`).toBeGreaterThanOrEqual(c.x - 0.5);
+                expect(b.x + b.w, `カード${i}のボタン右が枠内`).toBeLessThanOrEqual(c.x + c.width + 0.5);
+                expect(b.y + b.h, `カード${i}のボタン下が枠内`).toBeLessThanOrEqual(c.y + c.height + 0.5);
+            }
+            for (let a = 0; a < bs.length; a++) for (let b2 = a + 1; b2 < bs.length; b2++) {
+                const A = bs[a], B = bs[b2];
+                const overlap = A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h;
+                expect(overlap, `カード${i}のボタン${a}と${b2}が重ならない`).toBe(false);
+            }
+        }
+        const admin = await page.locator('#account-admin-reports').evaluate(el => ({ sw: el.scrollWidth, cw: el.clientWidth }));
+        expect(admin.sw, '審査パネル全体が横にあふれない').toBeLessThanOrEqual(admin.cw + 1);
+        expect(errors).toEqual([]);
+    });
+}

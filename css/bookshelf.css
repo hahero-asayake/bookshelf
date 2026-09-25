@@ -3879,6 +3879,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .report-review-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .report-item { padding: 0.5rem 0.6rem; border: 1px solid var(--line, #ece7ef); border-radius: 8px; background: var(--panel, #fff); }
 .report-item-title { font-size: 0.85rem; font-weight: 600; word-break: break-all; }
+.report-item-title a { color: var(--accent-strong, var(--accent)); text-decoration: none; }
+.report-item-title a:hover { text-decoration: underline; }
 .report-item-meta { margin-top: 0.15rem; font-size: 0.78rem; color: var(--fg2, #4b5460); }
 .report-item-reason { margin-top: 0.15rem; font-size: 0.78rem; color: var(--fg2, #4b5460); white-space: pre-wrap; word-break: break-word; }
 .report-item-actions { margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -4247,6 +4249,15 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     border-top: 1px dashed var(--line);
 }
 .publish-target-config[hidden] { display: none; }
+
+/* 公開先の変更 (折りたたみ・ADR-099): 通常は触らない設定なので、閉じているときは 1 行の目立たない見出しだけにする */
+/* .pp-advanced (後方の共通定義) と同じ詳細度になるため、クラスを重ねて必ず勝たせる (ui-standards §2-13) */
+.pp-advanced.publish-target-details { background: transparent; margin-top: 0.6rem; }
+.pp-advanced.publish-target-details > summary { padding: 0.5rem 0.8rem; font-size: 0.82rem; font-weight: 600; color: var(--fg2); }
+.pp-advanced.publish-target-details > summary .h-icon:first-child { flex: 0 0 auto; }
+.pp-advanced.publish-target-details > .pp-advanced-body { padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.pp-advanced.publish-target-details > .pp-advanced-body > .form-label:first-child { margin-top: 0; }
+.publish-index-note[hidden] { display: none; }
 
 /* ===== 公開ページ管理モーダル (P1 静的SSG, ADR-030) ===== */
 .publish-pages-content { max-width: 680px; width: 94vw; }
