@@ -102,6 +102,105 @@ describe('layout: 2色構成・最小要素・型に依存しない', () => {
     });
 });
 
+describe('タイトルの折り返し: 最小限の日本語禁則処理 (a 行頭禁則・b 英数字・c 数字+単位・d ぶら下げ無し)', () => {
+    // 1 文字 = 10px の測定 (等幅) で境界を正確に作る。maxW=100 → 1 行 10 文字。
+    const m = (t) => Array.from(t).length * 10;
+    const wrap = (text, maxW = 100, maxLines = 5) => PublishOgpImage._wrap(text, 'x', maxW, maxLines, m);
+    const NO_HEAD = PublishOgpImage.NO_HEAD;
+
+    it('(a) 行頭禁則: 句読点・閉じ括弧・長音・中黒を行頭に置かない (前の文字ごと次の行へ送る)', () => {
+        // 素朴な折り返しなら 11 文字目の「、」が行頭に来る位置
+        expect(wrap('あ'.repeat(9) + 'い、う').lines).toEqual(['あ'.repeat(9), 'い、う']);
+        expect(wrap('あ'.repeat(9) + 'い」う').lines).toEqual(['あ'.repeat(9), 'い」う']);
+        expect(wrap('あ'.repeat(9) + 'コー').lines).toEqual(['あ'.repeat(9), 'コー']);
+        expect(wrap('あ'.repeat(9) + 'い・う').lines).toEqual(['あ'.repeat(9), 'い・う']);
+        expect(wrap('あ'.repeat(8) + 'いです.').lines).toEqual(['あ'.repeat(8) + 'いで', 'す.']);   // ASCII の閉じ記号も (「す.」を送る)
+        expect(wrap('あ'.repeat(9) + 'い 、う').lines.every((l, i) => i === 0 || !l.startsWith('、'))).toBe(true);   // 空白を挟んだ句読点も行頭に来ない
+    });
+
+    it('(a) 行末禁則 (開き括弧を行末に置かない): 「 は次の文字と同じ行へ', () => {
+        const r = wrap('あ'.repeat(9) + '「い」');
+        expect(r.lines).toEqual(['あ'.repeat(9), '「い」']);
+        expect(r.lines.every(l => !l.endsWith('「'))).toBe(true);
+    });
+
+    it('(b) 英数字の連続 (ASCII の英字・数字・記号) の途中では折り返さない', () => {
+        expect(wrap('あ'.repeat(8) + 'ABCDEFGい').lines).toEqual(['あ'.repeat(8), 'ABCDEFGい']);
+        expect(wrap('あ'.repeat(8) + 'v1.2.3い').lines).toEqual(['あ'.repeat(8), 'v1.2.3い']);
+    });
+
+    it('(b) 半角スペースは折り返し位置になる (行頭・行末に空白を残さない)', () => {
+        const r = wrap('Kindle Unlimited の本', 100);
+        expect(r.lines.every(l => l === l.trim() && l.length > 0)).toBe(true);
+        expect(r.lines[0]).toBe('Kindle');   // 'Kindle Unlimited' は 16 文字で 1 行に入らない
+    });
+
+    it('(c) 数字の直後の単位 (冊・年・巻・位…) は数字と同じ行に保つ (ASCII・全角・漢数字)', () => {
+        expect(wrap('あ'.repeat(8) + '50冊と').lines).toEqual(['あ'.repeat(8), '50冊と']);
+        expect(wrap('あ'.repeat(8) + '２０２６年').lines).toEqual(['あ'.repeat(8), '２０２６年']);
+        expect(wrap('あ'.repeat(9) + '十冊').lines).toEqual(['あ'.repeat(9), '十冊']);
+        expect(wrap('あ'.repeat(8) + '二十年').lines).toEqual(['あ'.repeat(8), '二十年']);
+        // 数字の後ろに単位が来なければ、数字は普通の英数字連続として扱う
+        expect(wrap('あ'.repeat(8) + '50と').lines).toEqual(['あ'.repeat(8) + '50', 'と']);
+    });
+
+    it('(c) 「ベスト50冊と、」が「50/冊」に割れない (レビューで指摘された実例)', () => {
+        const LONG = '2026年に読み返したい、人生を変えた小説・エッセイ・漫画のベスト50冊と、その選び方のすべて〜初心者から上級者まで、迷ったらここから始めたい保存版の読書リスト〜';
+        const plan = PublishOgpImage.layout(article({ title: LONG }), { color: 'orange' });
+        const L = plan.title.lines;
+        expect(L).toHaveLength(3);
+        expect(L[1].endsWith('ベスト')).toBe(true);
+        expect(L[2].startsWith('50冊と、')).toBe(true);
+        for (let i = 0; i < L.length - 1; i++) expect(/[0-9]$/.test(L[i]) && /^[冊年巻位]/.test(L[i + 1])).toBe(false);
+        expect(plan.title.truncated).toBe(true);
+    });
+
+    it('(d) ぶら下げはしない: 追い込みで行幅を超える場合は前の文字で折る (どの行も maxW を超えない)', () => {
+        // 「い」までで 10 文字 (=maxW ちょうど) → 「、」を前の行へ追い込むと 11 文字で超える → 「い」ごと次の行へ
+        const r = wrap('あ'.repeat(9) + 'い、');
+        expect(r.lines).toEqual(['あ'.repeat(9), 'い、']);
+        expect(r.lines.every(l => m(l) <= 100)).toBe(true);
+        // ちょうど収まる時 (9 文字 + 「、」= 10) は前の行に残る
+        expect(wrap('あ'.repeat(8) + 'い、う').lines).toEqual(['あ'.repeat(8) + 'い、', 'う']);
+    });
+
+    it('1 単位が行幅を超える長い英数字 (URL 等) だけは文字単位で割る (行幅は超えない・文字は失われない)', () => {
+        const url = 'https://example.com/very/long/path/to/an/article';
+        const r = wrap(url, 100, 10);
+        expect(r.lines.every(l => m(l) <= 100)).toBe(true);
+        expect(r.lines.join('')).toBe(url);
+    });
+
+    it('3 行を超える分は単位ごと削って「…」で省略する (数字+単位を「50」だけにして切らない)', () => {
+        const r = wrap('あ'.repeat(20) + 'い'.repeat(9) + '50冊と続く長い文章です', 100, 3);
+        expect(r.truncated).toBe(true);
+        expect(r.lines).toHaveLength(3);
+        expect(r.lines[2].endsWith('…')).toBe(true);
+        expect(r.lines.every(l => m(l) <= 100)).toBe(true);
+        expect(/[0-9]…$/.test(r.lines[2])).toBe(false);
+    });
+
+    it('性質検査 (疑似乱数 300 通り): どの行も maxW を超えず・文字は失われず・2 行目以降が行頭禁則の文字で始まらず・行末が開き括弧でない', () => {
+        const pool = Array.from('あいうえお漢字、。」）ー・「（ABC123冊年 ');
+        let seed = 12345;
+        const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+        for (let n = 0; n < 300; n++) {
+            const len = 1 + Math.floor(rnd() * 60);
+            const text = Array.from({ length: len }, () => pool[Math.floor(rnd() * pool.length)]).join('').replace(/\s+/g, ' ').trim();
+            if (!text) continue;
+            const maxW = 60 + Math.floor(rnd() * 15) * 10;
+            const r = wrap(text, maxW, 50);
+            expect(r.truncated).toBe(false);
+            expect(r.lines.join('').replace(/ /g, '')).toBe(text.replace(/ /g, ''));   // 文字は失われない (空白だけ折り返し位置で捨てる)
+            r.lines.forEach((l, i) => {
+                expect(m(l), `${JSON.stringify(text)} maxW=${maxW} line=${l}`).toBeLessThanOrEqual(maxW);
+                if (i > 0) expect(NO_HEAD.has(Array.from(l)[0]), `行頭禁則: ${JSON.stringify(r.lines)}`).toBe(false);
+                if (i < r.lines.length - 1) expect(PublishOgpImage.NO_TAIL.has(Array.from(l).pop()), `行末禁則: ${JSON.stringify(r.lines)}`).toBe(false);
+            });
+        }
+    });
+});
+
 // ---- Canvas の差し替え (経路を通す) ----
 function fakeCanvasFactory({ glyphOk = true, blank = false, pngSize = 30000, notPng = false } = {}) {
     const created = [];

@@ -186,28 +186,77 @@ class PublishOgpImage {
         return w;
     }
 
-    // 文字単位の折り返し。maxLines を超える分は最終行末を「…」で省略し truncated=true にする。
-    static _wrap(text, font, maxW, maxLines, measure) {
-        const lines = [];
-        let cur = '';
-        const chars = Array.from(text);
+    // 行頭に置かない文字 (行頭禁則)。閉じ括弧・句読点・長音・中黒・小さい記号など。ASCII の閉じ記号も含む。
+    static get NO_HEAD() { return new Set(Array.from('、。，．）」』】〕〉》｝］・ー！？…‥：；々.,!?;:)]}%')); }
+    // 行末に置かない文字 (開き括弧)。次の単位へ寄せる。
+    static get NO_TAIL() { return new Set(Array.from('（「『【〔〈《｛［')); }
+    // 数字の直後に付く単位 (数字と同じ行に保つ)。小さな一覧で足りる範囲だけ持つ。
+    static get COUNTERS() { return new Set(Array.from('冊巻年月日時分秒歳才位個件本人円回章話号点部枚選％')); }
+
+    // タイトルを「行の途中で切らない単位」に分ける (最小限の禁則処理)。
+    //  (b) ASCII の連続 (英字・数字・記号) と全角数字の連続は 1 単位 (単語の途中で折り返さない)
+    //  (c) 数字 (ASCII・全角・漢数字) の直後の単位 (冊・年・巻・位…) は数字と同じ単位
+    //  (a) 行頭禁則の文字は前の単位へ・行末禁則 (開き括弧) は次の単位へ寄せる
+    // 空白は単独の単位 (折り返し位置になり、行頭・行末では捨てる)。
+    static _units(text) {
+        const raw = Array.from(text);
+        const isAscii = (c) => c >= '!' && c <= '~';
+        const isFwDigit = (c) => c >= '０' && c <= '９';
+        const isKanjiNum = (c) => '〇一二三四五六七八九十百千万'.includes(c);
+        const NO_HEAD = PublishOgpImage.NO_HEAD, NO_TAIL = PublishOgpImage.NO_TAIL, COUNTERS = PublishOgpImage.COUNTERS;
+        const units = [];
+        let glueNext = false;   // 直前が開き括弧 → 次の単位を連結する
         let i = 0;
-        for (; i < chars.length; i++) {
-            const next = cur + chars[i];
-            if (cur && measure(next, font) > maxW) {
-                if (lines.length === maxLines - 1) break;   // 最終行: 残りは省略処理へ
-                lines.push(cur.trimEnd());
-                cur = chars[i] === ' ' ? '' : chars[i];
-            } else {
-                cur = next;
-            }
+        while (i < raw.length) {
+            const c = raw[i];
+            let u;
+            if (c === ' ' || c === '　') { if (!glueNext) units.push(' '); i++; continue; }   // 開き括弧の直後の空白は捨てる (括弧を行末に残さない)
+            if (isAscii(c) || isFwDigit(c)) {
+                let j = i + 1;
+                while (j < raw.length && (isAscii(raw[j]) || isFwDigit(raw[j]))) j++;
+                if (j < raw.length && COUNTERS.has(raw[j]) && /[0-9０-９]/.test(raw[j - 1])) j++;   // 50冊・2026年
+                u = raw.slice(i, j).join(''); i = j;
+            } else if (isKanjiNum(c)) {
+                let j = i + 1;
+                while (j < raw.length && isKanjiNum(raw[j])) j++;
+                if (j < raw.length && COUNTERS.has(raw[j])) { u = raw.slice(i, j + 1).join(''); i = j + 1; }   // 十冊・二十年
+                else { u = c; i++; }
+            } else { u = c; i++; }
+            const uc = Array.from(u);
+            if (NO_HEAD.has(uc[0]) && units.length >= 2 && units[units.length - 1] === ' ') units.pop();   // 「A 、B」の空白は捨てて句読点を前の単位へ付ける
+            const last = units.length - 1;
+            if (last >= 0 && units[last] !== ' ' && (glueNext || NO_HEAD.has(uc[0]))) units[last] += u;   // 開き括弧の直後 / 行頭禁則の文字は前の単位へ連結
+            else units.push(u);
+            glueNext = NO_TAIL.has(uc[uc.length - 1]);
         }
-        if (i >= chars.length) { lines.push(cur); return { lines, truncated: false }; }
-        // 最終行に収まらない残りがある → 末尾を削って「…」が収まるところまで詰める
-        let last = cur;
-        while (last && measure(last + '…', font) > maxW) last = Array.from(last).slice(0, -1).join('');
-        lines.push(last.trimEnd() + '…');
-        return { lines, truncated: true };
+        return units;
+    }
+
+    // 単位ごとの貪欲な折り返し。単位の途中では折らない (=禁則で前の文字ごと次の行へ送る場合があり、
+    // 行頭禁則の文字を前の行へはみ出させる「ぶら下げ」はしない＝どの行も maxW を超えない)。
+    // 1 単位が行幅を超える時 (長い URL 等) だけ文字単位に割る。maxLines を超える分は最終行末を「…」で省略し truncated=true。
+    static _wrap(text, font, maxW, maxLines, measure) {
+        const w = (str) => measure(str, font);
+        const units = [];
+        for (const u of PublishOgpImage._units(text)) {
+            if (u !== ' ' && w(u) > maxW) units.push(...Array.from(u)); else units.push(u);
+        }
+        const lines = [];
+        let cur = [];
+        for (const u of units) {
+            if (u === ' ') { if (cur.length) cur.push(u); continue; }   // 行頭の空白は捨てる
+            if (!cur.length || w(cur.join('') + u) <= maxW) { cur.push(u); continue; }
+            if (lines.length === maxLines - 1) {   // 最終行に収まらない残りがある → 単位ごと削って「…」が収まるまで詰める
+                const keep = cur.slice();
+                while (keep.length && w(keep.join('').trimEnd() + '…') > maxW) keep.pop();
+                lines.push(keep.join('').trimEnd() + '…');
+                return { lines, truncated: true };
+            }
+            lines.push(cur.join('').trimEnd());
+            cur = [u];
+        }
+        lines.push(cur.join('').trimEnd());
+        return { lines, truncated: false };
     }
 
     static _hasCjk(s) { return /[　-ヿ㐀-鿿豈-﫿＀-￯]/.test(s); }

@@ -23,6 +23,7 @@ const CASES = [
     { name: '4-no-tags-white', viewport: [1280, 720], article: { title: 'タグの無い記事', tags: [] }, color: 'white' },
     { name: '5-black', viewport: [1280, 720], article: { title: '夜に読む本', tags: ['ホラー', 'SF'] }, color: 'black' },
     { name: '6-yellow', viewport: [1280, 720], article: { title: '黄色のテーマ', tags: ['実用書'] }, color: 'yellow' },
+    { name: '8-kinsoku-kanji-numeral-red', viewport: [1280, 720], article: { title: '私が一年で読み返した本は全部で十冊、その理由を書いておく', tags: ['読書'] }, color: 'red' },
     { name: '7-mobile390-purple', viewport: [390, 844], article: { title: LONG, tags: ['小説', 'エッセイ', 'kindle'] }, color: 'purple' }
 ];
 
