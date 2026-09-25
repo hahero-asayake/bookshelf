@@ -12,7 +12,9 @@ const HUB = 'https://mockhub.test';
 const ARTICLE = 'https://bookshelf.asayake.org/alice/AbCdEfGhIj/';
 
 // hub 接続済み (loggedIn=false なら hub 無し)・管理者かどうかを指定して起動する。/report と /admin は state で挙動を変える。
-async function boot(page, { loggedIn = true, isAdmin = false, query = '', reportStatus = 200 } = {}) {
+// prepare = ルート差し替えと localStorage の仕込みだけ (遷移しない)。SW 初回登録のリロードを待つテストは boot の page.evaluate が
+// 「Execution context was destroyed」で落ちるため、prepare だけ呼んで自前で goto する。
+async function prepare(page, { loggedIn = true, isAdmin = false, reportStatus = 200 } = {}) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error' && !/status of (4\d\d|5\d\d)/.test(msg.text())) errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
@@ -51,6 +53,11 @@ async function boot(page, { loggedIn = true, isAdmin = false, query = '', report
             ...(loggedIn ? { hub: { key: 'hk_test', apiBase: hub, email: 'test@example.com', plan: 'free', isAdmin, siteId: 'sid' } } : {})
         }));
     }, [fixtureUserData, fixtureLibrary, HUB, loggedIn, isAdmin]);
+    return { errors, captured, state };
+}
+
+async function boot(page, { query = '', ...opts } = {}) {
+    const { errors, captured, state } = await prepare(page, opts);
     await page.goto('/index.html' + query);
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => {
@@ -186,6 +193,73 @@ test.describe('通報ダイアログ (?report=<記事URL>)', () => {
             expect(errors).toEqual([]);
         });
     }
+});
+
+// イシュー#221: 初めてアプリを開く人は SW 初回登録の controllerchange で自動リロードされる (index.html の swRefreshing)。
+// ?report= は開いた直後に URL から除去済みなので、退避しないとリロードで通報ダイアログが消える。
+const PENDING_KEY = 'bookshelf.pendingReport';
+
+test.describe('通報ダイアログ × リロード (イシュー#221)', () => {
+    // SW は config どおり block のまま、「閉じる前のリロード」を page.reload() で再現して決定的に確かめる
+    test('開いたままリロードしても開き直し、閉じた後のリロードでは出ない', async ({ page }) => {
+        const { errors } = await boot(page, { query: reportQuery });
+        const modal = page.locator('#report-modal');
+        await expect(modal).toHaveClass(/show/);
+        expect(new URL(page.url()).search).toBe('');
+        await page.reload();
+        await expect(modal).toHaveClass(/show/);
+        await expect(page.locator('#report-target-url')).toHaveText(ARTICLE);
+        expect(new URL(page.url()).search).toBe('');
+        await page.click('#report-cancel');
+        await expect(modal).not.toHaveClass(/show/);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.waitForTimeout(500);   // 開き直しが走るなら起動直後に出る
+        await expect(modal).not.toHaveClass(/show/);
+        expect(await page.evaluate((k) => sessionStorage.getItem(k), PENDING_KEY)).toBeNull();
+        expect(errors).toEqual([]);
+    });
+
+    test('未ログインのログイン案内も、閉じる前のリロードでは開き直し、閉じた後のリロードでは出ない', async ({ page }) => {
+        const { errors } = await boot(page, { loggedIn: false, query: reportQuery });
+        const cfm = page.locator('.cfm-box');
+        await expect(cfm).toContainText('ログインが必要');
+        await page.reload();
+        await expect(cfm).toContainText('ログインが必要');
+        await cfm.locator('.cfm-cancel').click();
+        await expect(cfm).toHaveCount(0);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.waitForTimeout(500);
+        await expect(cfm).toHaveCount(0);
+        await expect(page.locator('#report-modal')).not.toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+
+    test.describe('SW 未登録の新規プロファイル', () => {
+        test.use({ serviceWorkers: 'allow' });   // このグループだけ実際に SW を登録させる (config は block)
+
+        test('リンクから初めて開いても、SW 初回登録の自動リロードを経て通報ダイアログが開いている', async ({ page }) => {
+            const { errors } = await prepare(page);
+            let loads = 0;
+            page.on('load', () => { loads++; });   // replaceState では発火しない = 文書の読み込み回数
+            await page.goto('/index.html' + reportQuery);
+            // SW 初回登録 → clients.claim() → controllerchange → location.reload()。リロードが起きたことを実測する
+            // (起きない環境で「開いている」が素通りしないよう、先にリロード完了を待つ)
+            await expect.poll(() => loads, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+            const modal = page.locator('#report-modal');
+            await expect(modal).toHaveClass(/show/);
+            await expect(page.locator('#report-target-url')).toHaveText(ARTICLE);
+            expect(new URL(page.url()).search).toBe('');   // リロード後も query は URL に戻らない
+            expect(await page.evaluate(() => performance.getEntriesByType('navigation')[0].type)).toBe('reload');
+            expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+            // リロード後のダイアログもふつうに送れる
+            await page.selectOption('#report-category', 'spam');
+            await page.click('#report-submit');
+            await expect(modal).not.toHaveClass(/show/);
+            expect(errors).toEqual([]);
+        });
+    });
 });
 
 test.describe('通報の審査パネル (管理者のみ)', () => {

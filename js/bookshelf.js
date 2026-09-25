@@ -4170,31 +4170,55 @@ class VirtualBookshelf {
 
     // ===== 記事の通報 (ADR-099・全件手動審査) =====
     // 公開記事フッタの「通報」リンクは https://asayake.org/bookshelf/?report=<記事URL>。ルーターはハッシュ専用のため query は衝突しない。
+    // 初めてアプリを開く人は SW 初回登録の controllerchange で自動リロードされる (index.html の swRefreshing)。
+    // ?report= は URL から除去済みなのでリロードでダイアログが消える → sessionStorage に退避し、閉じるまで起動時に開き直す。
     _handleReportParam() {
         if (this._reportParamHandled) return;
         let params;
         try { params = new URLSearchParams(location.search); } catch (_) { return; }
-        const target = params.get('report');
+        let target = params.get('report');
+        if (target) {
+            this._pendingReportSet(target);
+            try {   // 閉じた後のリロードで再表示しない
+                params.delete('report');
+                const qs = params.toString();
+                history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+            } catch (_) {}
+        } else {
+            target = this._pendingReportGet();
+        }
         if (!target) return;
         this._reportParamHandled = true;
-        try {   // リロードで再表示しない
-            params.delete('report');
-            const qs = params.toString();
-            history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
-        } catch (_) {}
         this.openReportModal(target);
+    }
+
+    // 通報対象の退避 (sessionStorage・タブ限り)。TTL 内かつダイアログを閉じる前のリロードだけを救う。
+    _pendingReportSet(url) {
+        try { sessionStorage.setItem('bookshelf.pendingReport', JSON.stringify({ url, at: Date.now() })); } catch (_) {}
+    }
+
+    _pendingReportGet() {
+        try {
+            const v = JSON.parse(sessionStorage.getItem('bookshelf.pendingReport') || 'null');
+            return v && typeof v.url === 'string' && Date.now() - v.at < 10 * 60 * 1000 ? v.url : null;
+        } catch (_) { return null; }
+    }
+
+    _pendingReportClear() {
+        try { sessionStorage.removeItem('bookshelf.pendingReport'); } catch (_) {}
     }
 
     async openReportModal(articleUrl) {
         const hub = (SyncConfigManager.load().hub) || {};
         if (!(hub.key && hub.apiBase)) {
             await this._confirmOpenSettings('通報には Asayake アカウントへのログインが必要です。設定の「アカウント」でログインしてから、もう一度通報のリンクを開いてください。', 'account-section');
+            this._pendingReportClear();   // 案内が解決するまでは残す (案内表示中のリロードで再表示するため)
             return;
         }
         const url = String(articleUrl || '').trim();
-        if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 500) { toast('通報の対象を読み取れませんでした。記事のページから、もう一度リンクを開いてください。', { type: 'error' }); return; }
+        if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 500) { this._pendingReportClear(); toast('通報の対象を読み取れませんでした。記事のページから、もう一度リンクを開いてください。', { type: 'error' }); return; }
         const modal = document.getElementById('report-modal');
-        if (!modal) return;
+        if (!modal) { this._pendingReportClear(); return; }
         this._reportTarget = url;
         document.getElementById('report-target-url').textContent = url;
         document.getElementById('report-category').value = '';
@@ -4207,6 +4231,7 @@ class VirtualBookshelf {
     closeReportModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('report-modal');
         if (modal) modal.classList.remove('show');
+        this._pendingReportClear();
         this._modalHistPop('report-modal', { fromHistory });
     }
 
