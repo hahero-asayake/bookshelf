@@ -318,7 +318,7 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 - 検証・一時停止には **`--ttl <秒>` (最小 60) 付きの put** が便利 (自動失効するので解除し忘れない): `wrangler kv key put "report:<siteId>" '{"status":"suspended"}' --namespace-id d429572547b4434486d44ee0159f46ae --remote --ttl 480`
 - 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
 - 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。
-- **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は退会でも消えない。
+- **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は、退会で消える (ADR-099・#220 以降: 本人が付けた通報と本人の記事への通報を `handleAccountDelete` が削除)。通報の審査 (一覧・非表示/復帰) は #220 step3 で追加する。
 - **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。**kuroko の API トークン (上の「デプロイ運用」) を使えば login は不要**で、KV への put/delete も `wrangler deploy` もこのトークンで行える。人間が手で行う場合だけ `wrangler login` をやり直すこと。
 
 > 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。**認証は kuroko のトークンで解消済み＝いつでも実施できる**。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
@@ -426,3 +426,14 @@ URL を変える必要が出たときの手順:
 
 - `bookshelf-cdn` Worker を止めたいだけなら Cloudflare ダッシュボード → Workers & Pages → `bookshelf-cdn` → Delete (または route を外す)。DNS レコードは custom_domain 経由なので Worker 削除と一緒に整理される。
 - username を設定したユーザを旧URLに戻したい場合、KV `uid:<uid>` から `username` フィールドを削除すれば `serveSite`/`handlePublish` が旧URL配信に戻る (`uname:<username>` の予約自体は残るので、他人が同じ username を取れる状態にはならない=安全側)。
+
+## D1 マイグレーション (索引・通報: ADR-099 / イシュー#220)
+
+`cf-worker/migrations/` に**追加型のみ**の SQL を置く (既存列は消さない = 旧 hub Worker でも動く・`wrangler rollback` しても D1 は壊れない)。**1 回だけ**実行する (`ALTER TABLE ADD COLUMN` は再実行すると duplicate column で失敗)。新規 DB は `community-schema.sql` を流せば同じ形になる。
+
+1. 適用前に退避: `wrangler d1 export asayake-community --remote -c wrangler.hub.toml --output=<tmp>/asayake-community-before.sql` (**`wrangler rollback` は D1 を戻さない**ので、戻すときはこの SQL から復元する)。
+2. `wrangler d1 execute asayake-community --remote -c wrangler.hub.toml --file=migrations/0001_index_articles.sql`
+3. 旧 `POST /community/sites` 由来の行 (`public_id=''`) が残っていれば (`SELECT COUNT(*) FROM sites WHERE public_id=''`)、export 済みを確認して `migrations/0002_purge_legacy_sites.sql` を実行する (0 件なら不要)。
+4. hub Worker を deploy (D1 適用の**後**。先に deploy すると `public_id`/`status` 列が無く索引の更新が失敗する = 公開自体は成功するが索引は空のまま)。
+
+※ kuroko の Cloudflare トークンに **D1 Edit** が無いと 1〜3 は実行できない (2026-09-25 実測: `wrangler d1 list` が Authentication error 10000)。

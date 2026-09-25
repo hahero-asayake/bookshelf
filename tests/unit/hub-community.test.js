@@ -142,45 +142,47 @@ describe('rawGitHubBase (SHAピン raw URL 構築)', () => {
     });
 });
 
-describe('公開本棚 掲載 (sites)', () => {
-    it('掲載 → 一覧に出る、同一 URL の再掲載は更新 (重複しない)', async () => {
+// 索引 (ADR-099): sites の行は POST /publish の index 同送でだけ出来る (登録は tests/unit/hub-index.test.js)。
+// ここでは一覧・取り下げの契約を、直接仕込んだ行で確認する。
+const seedSite = (e, o = {}) => {
+    const row = { id: 's1', uid: 'uuser', url: 'https://bookshelf.asayake.org/user/AbCdEfGhIj/', title: '私の記事', description: '', cover_url: '', tags: 'SF,技術書', created_at: 1, updated_at: 1, hidden: 0, status: 'active', public_id: 'AbCdEfGhIj', ...o };
+    e.DB._t.sites.push(row);
+    return row;
+};
+describe('索引 (sites): 一覧・取り下げ・登録口の閉鎖', () => {
+    it('一覧: active の記事だけが出て、uid を晒さない・未認証は owned=false', async () => {
         const e = makeEnv();
-        const r1 = await handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://asayake.org/public/x/', title: '私の本棚', tags: ['SF', '技術書'] }, 'hk_bbbbbb'), e);
-        const { id } = await r1.json();
-        expect(id).toBeTruthy();
-        await handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://asayake.org/public/x/', title: '改題した本棚', tags: ['SF', '技術書'] }, 'hk_bbbbbb'), e);
+        seedSite(e);
+        seedSite(e, { id: 's2', status: 'hidden', hidden: 1 });
         const listReq = req('/community/sites', 'GET', null, null);
         const list = await (await handleCommunitySitesList(listReq, e, withUrl(listReq))).json();
         expect(list.sites).toHaveLength(1);
-        expect(list.sites[0].title).toBe('改題した本棚');
+        expect(list.sites[0].title).toBe('私の記事');
         expect(list.sites[0].tags).toEqual(['SF', '技術書']);
         expect(list.sites[0].stars).toBe(0);
-        expect(list.sites[0].owned).toBe(false);          // 未認証の閲覧
-        expect(list.sites[0]).not.toHaveProperty('uid');  // Google sub を晒さない
+        expect(list.sites[0].owned).toBe(false);
+        expect(list.sites[0]).not.toHaveProperty('uid');
     });
-    it('認証して一覧すると自分の掲載は owned=true', async () => {
+    it('認証して一覧すると自分の記事は owned=true', async () => {
         const e = makeEnv();
-        await handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: 'mine' }, 'hk_bbbbbb'), e);
+        seedSite(e);
         const r = req('/community/sites', 'GET', null, 'hk_bbbbbb');
         const list = await (await handleCommunitySitesList(r, e, withUrl(r))).json();
         expect(list.sites[0].owned).toBe(true);
     });
-    it('title 無しは 400 / https でない URL は 400', async () => {
+    it('POST /community/sites (任意 URL の登録口) は 410 で閉じている', async () => {
         const e = makeEnv();
-        await expect(handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: '' }, 'hk_bbbbbb'), e)).rejects.toThrow('title');
-        await expect(handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'http://a.test/', title: 'x' }, 'hk_bbbbbb'), e)).rejects.toThrow('https');
+        await expect(handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: 'x' }, 'hk_bbbbbb'), e))
+            .rejects.toMatchObject({ status: 410 });
+        expect(e.DB._t.sites).toHaveLength(0);
     });
-    it('掲載は本人 or 管理者のみ削除でき、他人は 403', async () => {
+    it('取り下げは本人 or 管理者のみでき、他人は 403', async () => {
         const e = makeEnv();
-        const { id } = await (await handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: 'x' }, 'hk_bbbbbb'), e)).json();
+        const { id } = seedSite(e);
         await expect(handleCommunitySiteDelete(req('/community/sites/' + id, 'DELETE', null, 'hk_cccccc'), e, '/community/sites/' + id)).rejects.toThrow('not owner');
         const del = await handleCommunitySiteDelete(req('/community/sites/' + id, 'DELETE', null, 'hk_bbbbbb'), e, '/community/sites/' + id);
         expect(del.status).toBe(204);
-        const listReq = req('/community/sites', 'GET', null, null);
-        expect((await (await handleCommunitySitesList(listReq, e, withUrl(listReq))).json()).sites).toHaveLength(0);
-    });
-    it('未ログインは 401', async () => {
-        await expect(handleCommunitySiteUpsert(req('/community/sites', 'POST', { url: 'https://a.test/', title: 'x' }, null), makeEnv())).rejects.toThrow(/key/i);
+        expect(e.DB._t.sites).toHaveLength(0);
     });
 });
 

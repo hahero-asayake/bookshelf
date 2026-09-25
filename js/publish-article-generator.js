@@ -865,9 +865,10 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 } catch (e) { ogSkipped.push({ title: article.title, reason: 'error' }); }
             }
 
+            const ogDescription = this._ogDescription(article, resolvedBlocks, publisher);
             const html = this._wrapDoc(article, publisher, body, {
                 pageHasAds, siteHasAffiliate, ogImage,
-                ogDescription: this._ogDescription(article, resolvedBlocks, publisher),
+                ogDescription,
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '',
                 noindex: !article.published,
                 updatedAt: article.updatedAt || article.lastBuiltAt || 0,
@@ -876,7 +877,8 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             files.push({ path: `${article.publicId}/index.html`, content: html });
             // og.png はバイナリ (base64)。ogUnchanged = 入力が前回公開と同じ (GitHub は blob 書込を省ける。パスは出力集合に残す)
             if (ogRender) files.push({ path: `${article.publicId}/og.png`, content: ogRender.base64, encoding: 'base64', ogHash: ogRender.hash, ogUnchanged: article.ogHash === ogRender.hash });
-            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, ogHash: ogRender ? ogRender.hash : null, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
+            // tags/description/coverUrl/publishedAt は共有ハブの索引 (POST /publish の index 同送・ADR-099) 用。GitHub 公開では使わない。
+            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, ogHash: ogRender ? ogRender.hash : null, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, tags: (article.tags || []).map(t => String(t).trim()).filter(Boolean), description: ogDescription || '', coverUrl: ogImage, publishedAt: article.lastBuiltAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
         }
 
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });

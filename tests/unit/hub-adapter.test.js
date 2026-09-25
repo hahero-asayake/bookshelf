@@ -185,6 +185,16 @@ describe('publishSite (共有ハブ公開)', () => {
         expect(out.siteUrl).toBe('https://hub.example/public/sid/');
     });
 
+    it('索引 (ADR-099): index を渡すと /publish の body に載せ、省略すると載せない', async () => {
+        const bodies = [];
+        mockFetch({ 'POST /publish': ({ init }) => { bodies.push(JSON.parse(init.body)); return res(JSON.stringify({ ok: true, indexed: true }), 200); } });
+        const index = [{ publicId: 'AbCdEfGhIj', title: 't', tags: ['a'], coverUrl: '', publishedAt: 1, modifiedAt: 2 }];
+        await adapter.publishSite([{ path: 'AbCdEfGhIj/index.html', content: 'x' }], true, '', index);
+        await adapter.publishSite([{ path: 'i.html', content: 'x' }], true);
+        expect(bodies[0].index).toEqual(index);
+        expect('index' in bodies[1]).toBe(false);
+    });
+
     it('413 は HubQuotaError', async () => {
         mockFetch({ 'POST /publish': () => res('too big', 413) });
         await expect(adapter.publishSite([{ path: 'i.html', content: 'x' }])).rejects.toBeInstanceOf(HubQuotaError);

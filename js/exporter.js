@@ -242,8 +242,15 @@ class BookshelfExporter {
             apiBase: hub.apiBase,
             getKey: () => (SyncConfigManager.load().hub || {}).key || ''
         });
+        // 索引 (ADR-099): ハブ公開の記事だけを公開と同時に索引へ載せる。今回の出力 (published=true の記事) だけを送るので、
+        // 公開を取り消した記事は index から外れ、サーバが deleteMissing と同じ集合で索引行を消す。GitHub 公開経路には送らない。
+        const nowMs = Date.now();
+        const index = result.articles.map(a => ({
+            publicId: a.publicId, title: a.title, description: a.description || '', tags: a.tags || [],
+            coverUrl: a.coverUrl || '', publishedAt: a.publishedAt || nowMs, modifiedAt: a.updatedAt || nowMs
+        }));
         // ownTag を同送: Worker が uid レコードに記録し、Plus 時に /go がクリック時に解決して使う (ADR-034追補)。
-        const resp = await adapter.publishSite(result.files, true, result.ownTag || '');
+        const resp = await adapter.publishSite(result.files, true, result.ownTag || '', index);
         // 公開後に使用量が変わるのでキャッシュ更新 (バー反映用・失敗は黙殺)
         if (typeof HubAuth !== 'undefined') { try { await HubAuth.refreshUsage(); } catch (_) {} }
 

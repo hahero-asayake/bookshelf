@@ -9605,8 +9605,29 @@ class VirtualBookshelf {
 
     async _artDelete(id) {
         const a = this.publishArticleStore.get(id);
-        const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。`, okLabel: '削除', danger: true });
+        // 公開中の記事の削除 (ADR-099): ハブ公開なら公開を取り消して再 push してから削除する (R2 と索引から即座に消える)。
+        // 自前公開 (GitHub) は従来どおり記事だけ削除し、公開先のページは次回公開まで残る (ハブは自前公開を管理しない)。
+        const wasPublished = !!(a && a.published);
+        const viaHub = wasPublished && this.exporter._resolvePublishConfig().target === 'hub';
+        const note = viaHub ? '\n公開中のページも公開サイトから取り下げます。'
+            : (wasPublished ? '\n公開先のページは次回公開まで残ります。' : '');
+        const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。${note}`, okLabel: '削除', danger: true });
         if (!ok) return false;
+        if (viaHub) {
+            // _artUnpublish と同じ順序: published=false にして再 push。失敗したら公開状態を戻し、記事は削除しない。
+            try { await this.publishArticleStore.update(id, { published: false }); }
+            catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return false; }
+            const r = await this._runPublishExport();
+            if (!r.ok) {
+                try { await this.publishArticleStore.update(id, { published: true }); }
+                catch (e) {
+                    toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                    console.error('記事削除の公開取消失敗時のロールバックに失敗:', e);
+                }
+                this._artRenderList();
+                return false;
+            }
+        }
         try {
             await this.publishArticleStore.remove(id);
         } catch (e) {

@@ -18,11 +18,12 @@ globalThis.GitHubAdapter = class {
     async commitBatch(msg) { captured.commits.push(msg); }
 };
 
-const hubCaptured = { files: null, deleteMissing: null, affiliateTag: null };
+const hubCaptured = { files: null, deleteMissing: null, affiliateTag: null, index: null, calls: 0 };
 globalThis.HubStorageAdapter = class {
     constructor(opts) { this.opts = opts; }
-    async publishSite(files, deleteMissing, affiliateTag) {
+    async publishSite(files, deleteMissing, affiliateTag, index) {
         hubCaptured.files = files; hubCaptured.deleteMissing = deleteMissing; hubCaptured.affiliateTag = affiliateTag;
+        hubCaptured.index = index; hubCaptured.calls++;
         return { ok: true, siteId: 'sid', siteUrl: 'https://hub.example/public/sid/', published: files.length };
     }
 };
@@ -66,7 +67,7 @@ function makeApp({ articles = [], build } = {}) {
 
 beforeEach(() => {
     captured.entries = []; captured.deletes = []; captured.commits = [];
-    hubCaptured.files = null; hubCaptured.deleteMissing = null; hubCaptured.affiliateTag = null;
+    hubCaptured.files = null; hubCaptured.deleteMissing = null; hubCaptured.affiliateTag = null; hubCaptured.index = null; hubCaptured.calls = 0;
     listThrow = false;
     mockConfig = { github: { token: 'ghu_x', login: 'hahero-asayake' }, publish: { target: 'github', owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' } };
     // target 明示が必要 (未設定の既定は 2026-07-28 に github → hub へ変更。この一連のテストは GitHub 公開経路の検証)
@@ -171,6 +172,46 @@ describe('共有ハブ公開 (target=hub, ADR-033)', () => {
         expect(r.siteUrl).toBe('https://hub.example/public/sid/');
         expect(r.published).toBe(1);
         expect(app._updates.some(u => u.patch.lastBuiltAt)).toBe(true);
+    });
+
+    it('索引 (ADR-099): 今回公開する記事のメタ (publicId・タイトル・タグ・表紙・更新時刻) を index として同送する', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', siteId: 'sid' };
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true }],
+            build: async () => ({
+                files: [{ path: 'index.html', content: 't' }, { path: 'AbCdEfGhIj/index.html', content: 'a' }],
+                articles: [{ id: 'p1', publicId: 'AbCdEfGhIj', title: '漫画', description: '説明', tags: ['SF', '技術書'], coverUrl: 'https://hub.example/public/sid/AbCdEfGhIj/og.png?v=1', updatedAt: 1234, publishedAt: 0 }],
+                leak: [], errors: []
+            })
+        });
+        await new BookshelfExporter(app).export();
+        expect(hubCaptured.index).toHaveLength(1);
+        expect(hubCaptured.index[0]).toMatchObject({ publicId: 'AbCdEfGhIj', title: '漫画', description: '説明', tags: ['SF', '技術書'], coverUrl: 'https://hub.example/public/sid/AbCdEfGhIj/og.png?v=1', modifiedAt: 1234 });
+        expect(hubCaptured.index[0].publishedAt).toBeGreaterThan(0);   // 初回公開 (lastBuiltAt 無し) は現在時刻
+    });
+
+    it('索引 (ADR-099): 公開を取り消した記事 (published=false) は index に含めない', async () => {
+        mockConfig.publish = { target: 'hub' };
+        mockConfig.hub = { key: 'hk_x', apiBase: 'https://hub.example', publicBase: 'https://hub.example/public/sid/', siteId: 'sid' };
+        const app = makeApp({
+            articles: [{ id: 'p1', published: true, publicId: 'AAAAAAAAAA' }, { id: 'p2', published: false, publicId: 'BBBBBBBBBB' }],
+            build: async (arts) => ({
+                files: arts.map(a => ({ path: `${a.publicId}/index.html`, content: 'x' })),
+                articles: arts.map(a => ({ id: a.id, publicId: a.publicId, title: a.id })), leak: [], errors: []
+            })
+        });
+        await new BookshelfExporter(app).export();
+        expect(hubCaptured.index.map(e => e.publicId)).toEqual(['AAAAAAAAAA']);
+    });
+
+    it('索引 (ADR-099): GitHub 公開経路では索引の同送先 (ハブの publishSite) を一切呼ばない = 自前公開は索引に入らない', async () => {
+        // mockConfig は beforeEach で target='github'
+        const app = makeApp({ articles: [{ id: 'p1', published: true }] });
+        await new BookshelfExporter(app).export();
+        expect(captured.commits.length).toBe(1);   // GitHub には push した
+        expect(hubCaptured.calls).toBe(0);         // ハブへは送っていない (index も無い)
+        expect(hubCaptured.index).toBeNull();
     });
 
     it('build が返した ownTag を publishSite に転送する (/go の Plus 解決用, ADR-034追補)', async () => {

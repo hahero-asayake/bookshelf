@@ -276,8 +276,16 @@ async function handleUsername(request, env) {
     }
     await env.KV.put(`uname:${username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId }));
     await env.KV.put(`unames:${sess.uid}:${username}`, '1');   // uid→予約名索引 (退会時に現用名+旧名を全て解放するため)
+    const renamed = !!uidRec.username && uidRec.username !== username;
     uidRec.username = username;
     await env.KV.put(`uid:${sess.uid}`, JSON.stringify(uidRec));
+    // 索引の記事 URL を新しい名前へ追随 (旧 URL は cdn が 301 で新へ転送するが、索引は正しい URL を持つ)。失敗しても改名は成功させる。
+    if (renamed && hasD1(env)) {
+        try {
+            await env.DB.prepare(`UPDATE sites SET url = ?1 || public_id || '/' WHERE uid = ?2 AND public_id != ''`)
+                .bind(`https://bookshelf.asayake.org/${username}/`, sess.uid).run();
+        } catch (e) { console.warn('[username] 索引の url 更新に失敗:', e && e.message); }
+    }
 
     return json({ username, bookshelfBase: `https://bookshelf.asayake.org/${username}/` });
 }
@@ -544,7 +552,7 @@ async function handleBatch(request, env) {
 async function handlePublish(request, env) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
-    const { files, deleteMissing, affiliateTag } = await request.json().catch(() => ({}));
+    const { files, deleteMissing, affiliateTag, index } = await request.json().catch(() => ({}));
     if (!Array.isArray(files)) throw httpError(400, 'files required');
     const base = `sites/${sess.siteId}/`;
 
@@ -611,7 +619,108 @@ async function handlePublish(request, env) {
     const siteUrl = rec && rec.username
         ? `https://bookshelf.asayake.org/${rec.username}/`
         : `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`;
-    return json({ ok: true, siteId: sess.siteId, siteUrl, published: files.length });
+    // 索引 (ADR-099): ハブ公開の記事だけを D1 に載せる。R2 反映が済んだ後に行い、失敗しても公開自体は成功させる。
+    const idx = await syncArticleIndex(env, sess.uid, { files, index, deleteMissing: !!deleteMissing, siteUrl });
+    return json({ ok: true, siteId: sess.siteId, siteUrl, published: files.length, indexed: idx.indexed, ...(idx.reason ? { indexSkipped: idx.reason } : {}) });
+}
+
+// ===== 索引 (ADR-099): ハブ公開の記事だけを D1 sites に記事単位で載せる =====
+// 正本は「今回 R2 に置いた記事」= files の <publicId>/index.html。アプリが同送する index はタイトル・タグ等のメタだけで、
+// files に無い publicId の要素は無視する (他人の URL・未公開記事は索引に入らない)。自前公開 (GitHub) は /publish を通らない＝索引されない。
+const PUBLIC_ID_PATH = /^([0-9A-Za-z]{10})\/index\.html$/;
+const INDEX_MAX_PER_UID = 200;
+const SQL_CHUNK = 50;   // D1 は 1 文あたり bind 100 個まで
+
+function hasD1(env) { return !!(env.DB && typeof env.DB.prepare === 'function'); }
+
+// 複数文を 1 回の D1 呼び出しにまとめる (Workers Free のサブリクエスト 50/起動を節約・batch は 1 トランザクション)。
+async function d1Batch(env, stmts) {
+    if (!stmts.length) return;
+    if (typeof env.DB.batch === 'function') { await env.DB.batch(stmts); return; }
+    for (const st of stmts) await st.run();
+}
+
+// 記事 (sites.id) に紐づく社会データを消す文の列。stars/comments/stats/reports は target_id = sites.id で参照している。
+function siteCascadeStmts(env, ids) {
+    const stmts = [];
+    for (let i = 0; i < ids.length; i += SQL_CHUNK) {
+        const chunk = ids.slice(i, i + SQL_CHUNK);
+        const ph = chunk.map((_, k) => `?${k + 1}`).join(',');
+        for (const t of ['reports', 'stars', 'comments', 'stats']) {
+            stmts.push(env.DB.prepare(`DELETE FROM ${t} WHERE target_type IN ('site','article') AND target_id IN (${ph})`).bind(...chunk));
+        }
+        stmts.push(env.DB.prepare(`DELETE FROM sites WHERE id IN (${ph})`).bind(...chunk));
+    }
+    return stmts;
+}
+
+async function syncArticleIndex(env, uid, { files, index, deleteMissing, siteUrl }) {
+    if (!hasD1(env)) return { indexed: false, reason: 'no-d1' };
+    try {
+        const present = new Set();
+        for (const f of files) { const m = PUBLIC_ID_PATH.exec(safeRel(f.path)); if (m) present.add(m[1]); }
+        const base = String(siteUrl || '').replace(/\/+$/, '') + '/';
+        const now = Date.now();
+        const stmts = [];
+        const seen = new Set();
+        for (const e of (Array.isArray(index) ? index.slice(0, INDEX_MAX_PER_UID) : [])) {
+            const pid = e && typeof e.publicId === 'string' ? e.publicId : '';
+            if (!present.has(pid) || seen.has(pid)) continue;
+            const title = String(e.title || '').trim().slice(0, 200);
+            if (!title) continue;
+            seen.add(pid);
+            const description = String(e.description || '').slice(0, 1000);
+            // 表紙は自分の公開先 (このハブの自分の URL 配下) だけ許可。外部 URL を索引の画像に混ぜない。
+            const cover = String(e.coverUrl || '').trim().slice(0, 500);
+            const coverUrl = cover.startsWith(base) ? cover : '';
+            const tags = (Array.isArray(e.tags) ? e.tags : []).map(t => String(t).replace(/,/g, ' ').trim()).filter(Boolean).slice(0, 10).join(',');
+            const pub = Number.isFinite(e.publishedAt) ? Math.floor(e.publishedAt) : now;
+            const mod = Number.isFinite(e.modifiedAt) ? Math.floor(e.modifiedAt) : now;
+            // upsert は status / report_count / created_at / published_at を触らない (通報で隠した記事を再公開で復活させない)
+            stmts.push(env.DB.prepare(
+                `INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden, source, public_id, status, report_count, published_at, modified_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 0, 'hub', ?9, 'active', 0, ?10, ?11)
+                 ON CONFLICT(uid, public_id) WHERE public_id != '' DO UPDATE SET
+                   url = excluded.url, title = excluded.title, description = excluded.description, cover_url = excluded.cover_url,
+                   tags = excluded.tags, updated_at = excluded.updated_at, modified_at = excluded.modified_at`
+            ).bind(crypto.randomUUID(), uid, `${base}${pid}/`, title, description, coverUrl, tags, now, pid, pub, mod));
+        }
+        let removed = 0;
+        if (deleteMissing) {
+            // 今回置いた記事に無い自分の行 = 公開取り消し/削除された記事。索引の在庫は R2 と常に一致させる。
+            const cur = await env.DB.prepare(`SELECT id, public_id FROM sites WHERE uid = ?1 AND public_id != ''`).bind(uid).all();
+            const gone = (cur.results || []).filter(r => !present.has(r.public_id)).map(r => r.id);
+            removed = gone.length;
+            stmts.push(...siteCascadeStmts(env, gone));
+        }
+        await d1Batch(env, stmts);
+        return { indexed: true, removed };
+    } catch (e) {
+        // 索引の失敗で公開を失敗させない (R2 は反映済み)。次回の公開で同期し直される。
+        console.warn('[publish] 索引の更新に失敗 (公開自体は成功):', e && e.message);
+        return { indexed: false, reason: 'error' };
+    }
+}
+
+// 退会: この uid の社会データ (公開した記事・記事への通報/スター/コメント/集計・本人が付けたスター/コメント/通報) を消す。
+// stats の集計は「本人が他人の対象に付けた分」だけ減算する (自分の記事の行は丸ごと消える)。
+async function deleteCommunityData(env, uid) {
+    if (!hasD1(env)) return;
+    const q = (sql) => env.DB.prepare(sql).bind(uid);
+    const own = `(SELECT id FROM sites WHERE uid = ?1)`;
+    const stmts = [
+        q(`UPDATE stats SET star_count = MAX(star_count - 1, 0) WHERE EXISTS (SELECT 1 FROM stars s WHERE s.uid = ?1 AND s.target_type = stats.target_type AND s.target_id = stats.target_id)`),
+        q(`UPDATE stats SET comment_count = MAX(comment_count - (SELECT COUNT(*) FROM comments c WHERE c.uid = ?1 AND c.target_type = stats.target_type AND c.target_id = stats.target_id), 0) WHERE EXISTS (SELECT 1 FROM comments c WHERE c.uid = ?1 AND c.target_type = stats.target_type AND c.target_id = stats.target_id)`),
+        q(`DELETE FROM reports WHERE target_type IN ('site','article') AND target_id IN ${own}`),
+        q(`DELETE FROM stars WHERE target_type IN ('site','article') AND target_id IN ${own}`),
+        q(`DELETE FROM comments WHERE target_type IN ('site','article') AND target_id IN ${own}`),
+        q(`DELETE FROM stats WHERE target_type IN ('site','article') AND target_id IN ${own}`),
+        q(`DELETE FROM sites WHERE uid = ?1`),
+        q(`DELETE FROM reports WHERE uid = ?1`),
+        q(`DELETE FROM stars WHERE uid = ?1`),
+        q(`DELETE FROM comments WHERE uid = ?1`),
+    ];
+    await d1Batch(env, stmts);
 }
 
 // ===== アカウント削除 (退会, ADR-033 / 個人情報の削除権) =====
@@ -653,6 +762,7 @@ async function handleAccountDelete(request, env) {
     try {
         await deletePrefix(env, `data/${sess.uid}/`);
         if (sess.siteId) await deletePrefix(env, `sites/${sess.siteId}/`);
+        await deleteCommunityData(env, sess.uid);   // 索引・通報・スター・コメント (ADR-099・旧穴④)
     } catch (e) {
         if (uidRec) await env.KV.put(`uid:${sess.uid}`, JSON.stringify(uidRec));
         throw e;
@@ -1036,7 +1146,7 @@ async function handleCommunitySitesList(request, env, url) {
     const sort = (url && url.searchParams.get('sort')) || 'new';
     const viewer = await optionalUid(request, env);
     const rs = await env.DB.prepare(
-        `SELECT id, uid, url, title, description, cover_url, tags, created_at, updated_at FROM sites WHERE hidden = 0`
+        `SELECT id, uid, url, title, description, cover_url, tags, created_at, updated_at, published_at, modified_at FROM sites WHERE status = 'active' AND hidden = 0`
     ).all();
     const sites = rs.results || [];
     const map = await getStatsMap(env, 'site');
@@ -1055,35 +1165,10 @@ async function handleCommunitySitesList(request, env, url) {
     return json({ sites });
 }
 
-// 掲載 (オプトイン・認証必須): 自分の公開本棚 URL を登録/更新。1 uid が複数掲載可、同一 URL は更新。
+// 旧: 任意の公開本棚 URL を登録する口。ADR-099 決裁で廃止 (索引に載るのはハブ公開の記事だけ・自前公開は恒久に索引しない)。
+// 索引への登録は POST /publish の index 同送のみ。互換不要 (ADR-006) だが、旧アプリが叩いても分かるよう 410 を返す。
 async function handleCommunitySiteUpsert(request, env) {
-    await enforceWriteLimit(request, env);
-    const sess = await requireAuth(request, env);
-    requireD1(env);
-    const body = await request.json().catch(() => ({}));
-    const url = String(body.url || '').trim();
-    if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 500) throw httpError(400, 'url must be https');
-    const title = String(body.title || '').trim().slice(0, 200);
-    if (!title) throw httpError(400, 'title required');
-    const description = String(body.description || '').slice(0, 1000);
-    const coverUrl = String(body.coverUrl || body.cover_url || '').trim().slice(0, 500);
-    const tags = (Array.isArray(body.tags) ? body.tags : String(body.tags || '').split(','))
-        .map(s => String(s).trim()).filter(Boolean).slice(0, 10).join(',');
-    const now = Date.now();
-    const existing = await env.DB.prepare(`SELECT id FROM sites WHERE uid = ?1 AND url = ?2`).bind(sess.uid, url).first();
-    let id;
-    if (existing) {
-        id = existing.id;
-        await env.DB.prepare(`UPDATE sites SET title=?1, description=?2, cover_url=?3, tags=?4, updated_at=?5 WHERE id=?6`)
-            .bind(title, description, coverUrl, tags, now, id).run();
-    } else {
-        id = crypto.randomUUID();
-        await env.DB.prepare(
-            `INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 0)`
-        ).bind(id, sess.uid, url, title, description, coverUrl, tags, now).run();
-    }
-    return json({ ok: true, id });
+    throw httpError(410, 'index registration is done by /publish (hub-published articles only)');
 }
 
 // 掲載の取り下げ (本人 or 管理者)。

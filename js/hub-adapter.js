@@ -151,8 +151,11 @@ class HubStorageAdapter extends StorageAdapter {
     // 私的同期 (data/) とは別経路。deleteMissing=true で今回出力に無いファイルをサーバ側で削除。
     // affiliateTag: 本人の Amazon アフィタグ。Worker が uid レコードに記録し、Plus 時に /go が
     //   クリック時に解決して使う (ADR-034追補)。空文字なら送らない。
-    // @returns {Promise<{ok, siteId, siteUrl, published}>}
-    async publishSite(files, deleteMissing = true, affiliateTag = '') {
+    // index: 索引 (ADR-099) 用の記事メタ [{publicId,title,description,tags,coverUrl,publishedAt,modifiedAt}]。
+    //   サーバは files に置いた記事 (<publicId>/index.html) の分だけを D1 に載せ、deleteMissing 時は無い記事の行を消す。
+    //   省略 (旧呼び出し) ならメタは送らない (サーバは files の集合で削除同期だけ行う)。
+    // @returns {Promise<{ok, siteId, siteUrl, published, indexed}>}
+    async publishSite(files, deleteMissing = true, affiliateTag = '', index = null) {
         const payload = {
             // encoding='base64' (og.png 等のバイナリ) は Worker がデコードして R2 に置く。未指定は従来どおり文字列。
             files: (files || []).map(f => f.encoding
@@ -161,6 +164,7 @@ class HubStorageAdapter extends StorageAdapter {
             deleteMissing: !!deleteMissing
         };
         if (affiliateTag) payload.affiliateTag = String(affiliateTag);
+        if (Array.isArray(index)) payload.index = index;
         const res = await this._fetch('POST', `${this.apiBase}/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

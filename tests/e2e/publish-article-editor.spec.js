@@ -641,13 +641,14 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
         page.on('pageerror', (err) => errors.push(String(err)));
 
-        const hubCaptured = { files: null, deleteMissing: null };
+        const hubCaptured = { files: null, deleteMissing: null, index: null };
         await page.route(`${HUB}/**`, async (route) => {
             const url = route.request().url();
             if (url.includes('/publish')) {
                 const body = route.request().postDataJSON();
                 hubCaptured.files = body.files;
                 hubCaptured.deleteMissing = body.deleteMissing;
+                hubCaptured.index = body.index;
                 return route.fulfill({ json: { ok: true, siteUrl: `${HUB}/public/sid/` } });
             }
             if (url.includes('/usage')) {
@@ -996,6 +997,54 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.published).toBe(false);
         await expect(page.locator('#art-unpublish')).toBeHidden();
+        expect(errors).toEqual([]);
+    });
+
+    test('索引 (ADR-099): ハブ公開の /publish には記事メタ (publicId・タイトル) が index として同送される', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '索引テスト記事');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-publish-header');
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.index).not.toBeNull();
+        expect(hubCaptured.index).toHaveLength(1);
+        expect(hubCaptured.index[0].title).toBe('索引テスト記事');
+        expect(hubCaptured.index[0].publicId).toMatch(/^[0-9A-Za-z]{10}$/);
+        // index の publicId は files に置いた記事 (<publicId>/index.html) と一致する
+        expect(hubCaptured.files.map(f => f.path)).toContain(`${hubCaptured.index[0].publicId}/index.html`);
+        expect(errors).toEqual([]);
+    });
+
+    test('ハブ公開中の記事を削除すると、公開取り消しの再 push (index 空) を経てから記事が削除される', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '削除連動テスト');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-publish-header');
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        hubCaptured.files = null; hubCaptured.index = null;
+
+        await page.click('#art-del');
+        await expect(page.locator('.cfm-box')).toContainText('公開サイトから取り下げます');   // 確認文言で連動を知らせる
+        await page.click('.cfm-ok');
+        // 公開を取り消した再 push (記事が files/index から外れる = サーバが R2 と索引から消す) → 記事が一覧から消える
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        expect(hubCaptured.files.map(f => f.path)).toEqual(['index.html']);
+        expect(hubCaptured.index).toEqual([]);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect(page.locator('#art-list')).not.toContainText('削除連動テスト');
         expect(errors).toEqual([]);
     });
 
