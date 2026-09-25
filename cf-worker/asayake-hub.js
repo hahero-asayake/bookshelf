@@ -43,6 +43,8 @@
 //   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
 //   ADMIN_EMAILS           (secret) カンマ区切りの管理者メール。/admin/plan で特定アカウントを無料↔Plus に手動
 //                    切替できる (Stripe を経由しない優待。ADR-038)。未設定なら /admin/plan は 403。
+//   REPORT_WEBHOOK_URL     (secret) 通報を受けたときにハヘロへ知らせる Discord webhook の URL (ADR-099)。未設定でも通報は受け付け、
+//                    通知だけ省く (console.warn)。/admin/reports などの通報審査 API は ADMIN_EMAILS の管理者だけが使える。
 //
 // コスト防御 (ADR-033, 収益化分析):
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
@@ -99,7 +101,12 @@ export default {
             if (path === '/community/comments' && request.method === 'GET') return cors(await handleCommunityCommentsList(request, env, url), env, request);
             if (path === '/community/comments' && request.method === 'POST') return cors(await handleCommunityCommentAdd(request, env), env, request);
             if (path === '/community/install' && request.method === 'POST') return cors(await handleCommunityInstall(request, env), env, request);
-            if (path === '/community/report' && request.method === 'POST') return cors(await handleCommunityReport(request, env), env, request);
+            if (path === '/community/report' && request.method === 'POST') return cors(await handleCommunityReport(request, env, ctx), env, request);
+            // --- 通報の審査 (管理者のみ・ADR-099) ---
+            if (path === '/admin/reports' && request.method === 'GET') return cors(await handleAdminReports(request, env, url), env, request);
+            let mm;
+            if (request.method === 'POST' && (mm = path.match(/^\/admin\/articles\/([^/]+)\/(hide|restore)$/))) return cors(await handleAdminArticleModerate(request, env, decodeURIComponent(mm[1]), mm[2]), env, request);
+            if (request.method === 'POST' && (mm = path.match(/^\/admin\/reports\/([^/]+)\/dismiss$/))) return cors(await handleAdminReportDismiss(request, env, decodeURIComponent(mm[1])), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
@@ -1287,20 +1294,151 @@ async function handleCommunityInstall(request, env) {
 }
 
 // 通報 (Phase C: モデレーションキュー)。非表示化は hahero の審査で別途行う。
-async function handleCommunityReport(request, env) {
+const REPORT_CATEGORIES = ['spam', 'abuse', 'illegal', 'discrimination', 'dead', 'other'];
+const REPORT_CATEGORY_LABEL = { spam: 'スパム', abuse: '誹謗中傷・嫌がらせ', illegal: '違法・犯罪予告', discrimination: '差別・侮辱', dead: 'リンク切れ', other: 'その他' };
+const REPORT_DAILY_LIMIT = 20;   // 1 uid あたり 1 日 (UTC) の通報試行の上限 (重複の再送も数える)
+
+// 通報 (ADR-099・全件手動審査): Google ログイン済みなら誰でも。索引の記事 (target=site) は articleUrl か targetId (=sites.id) で指す。
+// 重複 (同一 uid が同一対象) は 200 {duplicate:true} で件数を増やさない。自動では status を変えない (審査は管理 API)。
+async function handleCommunityReport(request, env, ctx) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     requireD1(env);
     const body = await request.json().catch(() => ({}));
-    const type = String(body.targetType || body.target_type || '');
-    const id = String(body.targetId || body.target_id || '');
-    if (!ttOk(type) || !id) throw httpError(400, 'bad target');
+    const category = String(body.category || '');
+    if (!REPORT_CATEGORIES.includes(category)) throw httpError(400, 'category required');
+    const reason = String(body.reason || '').slice(0, 500);
     const commentId = String(body.commentId || body.comment_id || '');
+    const articleUrl = String(body.articleUrl || body.article_url || '').trim();
+    let type = String(body.targetType || body.target_type || '');
+    let id = String(body.targetId || body.target_id || '');
+    let site = null;   // 通報対象の索引行 (記事の通報のとき)
+    if (articleUrl) {
+        // 索引に載っている記事だけが対象 (自前公開・非公開・退会済みの URL は 404)
+        site = await env.DB.prepare(`SELECT id, uid, title, url, report_count FROM sites WHERE url = ?1 AND status = 'active'`).bind(articleUrl).first();
+        if (!site) throw httpError(404, 'article not found in index');
+        type = 'site'; id = site.id;
+    } else if (!ttOk(type) || !id) {
+        throw httpError(400, 'bad target');
+    } else if (type === 'site' && !commentId) {
+        site = await env.DB.prepare(`SELECT id, uid, title, url, report_count FROM sites WHERE id = ?1 AND status = 'active'`).bind(id).first();
+        if (!site) throw httpError(404, 'article not found in index');
+    }
+    if (site && site.uid === sess.uid) throw httpError(400, 'cannot report your own article');
+
+    // uid あたり日次上限 (KV カウンタ・重複の再送も数える)。WRITE_LIMITER (60/分/キー) は瞬間的な連投用で別。
+    const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const rlKey = `rl:report:${sess.uid}:${day}`;
+    const used = parseInt((await env.KV.get(rlKey)) || '0', 10) || 0;
+    if (used >= REPORT_DAILY_LIMIT) throw httpError(429, 'daily report limit exceeded');
+    await env.KV.put(rlKey, String(used + 1), { expirationTtl: 172800 });
+
     const rid = crypto.randomUUID();
-    await env.DB.prepare(
-        `INSERT INTO reports (id, target_type, target_id, comment_id, uid, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)`
-    ).bind(rid, type, id, commentId, sess.uid, String(body.reason || '').slice(0, 500), Date.now()).run();
+    const ins = await env.DB.prepare(
+        `INSERT INTO reports (id, target_type, target_id, comment_id, uid, reason, created_at, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+         ON CONFLICT(target_type, target_id, uid, comment_id) DO NOTHING`
+    ).bind(rid, type, id, commentId, sess.uid, reason, Date.now(), category).run();
+    if (ins && ins.meta && ins.meta.changes === 0) return json({ ok: true, duplicate: true });   // 二重計上・二重通知しない
+
     if (commentId) await env.DB.prepare(`UPDATE comments SET report_count = report_count + 1 WHERE id = ?1`).bind(commentId).run();
+    if (site) await env.DB.prepare(`UPDATE sites SET report_count = report_count + 1 WHERE id = ?1`).bind(site.id).run();
+    // ハヘロへ通知 (Discord webhook)。失敗・未設定でも通報は成功。ctx.waitUntil で応答を遅らせない。
+    const notify = notifyReport(env, {
+        title: site ? site.title : `${type}:${id}${commentId ? ' (コメント)' : ''}`, url: site ? site.url : '', category, reason,
+        count: site ? (site.report_count || 0) + 1 : 0
+    });
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(notify); else await notify;
+    return json({ ok: true });
+}
+
+// 通報の通知本文。通報者の uid・メールは載せない (誰が通報したかは管理画面にも出さない)。
+async function notifyReport(env, { title, url, category, reason, count }) {
+    if (!env.REPORT_WEBHOOK_URL) { console.warn('[report] REPORT_WEBHOOK_URL 未設定: 通知せず通報だけ記録した'); return; }
+    const lines = [`【通報】${String(title).slice(0, 100)}`];
+    if (url) lines.push(url);
+    lines.push(`カテゴリ: ${REPORT_CATEGORY_LABEL[category] || category}${count ? `／この記事への通報 ${count} 件` : ''}`);
+    if (reason) lines.push(`理由: ${reason.slice(0, 100)}`);
+    lines.push('審査: アプリの設定→アカウント→「通報の審査」');
+    try {
+        const res = await fetch(env.REPORT_WEBHOOK_URL, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: 'bookshelf 通報', content: lines.join('\n').slice(0, 1800), allowed_mentions: { parse: [] } })
+        });
+        if (!res.ok) console.warn('[report] webhook が失敗:', res.status);
+    } catch (e) { console.warn('[report] webhook が失敗:', e && e.message); }
+}
+
+// ===== 通報の審査 (管理者のみ・ADMIN_EMAILS): 一覧・非表示・復帰・却下 =====
+async function requireAdmin(request, env) {
+    const sess = await requireAuth(request, env);
+    const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
+    if (!caller || !isAdminEmail(caller.email, env)) throw httpError(403, 'admin only');
+    return sess;
+}
+
+// GET /admin/reports?status=open: 記事単位に集約した未対応の通報 + 非表示中の記事。通報者は返さない。
+async function handleAdminReports(request, env, url) {
+    await requireAdmin(request, env);
+    requireD1(env);
+    const st = url && url.searchParams.get('status');
+    const status = ['open', 'actioned', 'dismissed'].includes(st) ? st : 'open';
+    const rs = await env.DB.prepare(
+        `SELECT s.id AS article_id, s.url, s.title, s.status AS article_status, r.id AS report_id, r.category, r.reason, r.created_at
+         FROM reports r JOIN sites s ON s.id = r.target_id WHERE r.target_type = 'site' AND r.comment_id = '' AND r.status = ?1
+         ORDER BY r.created_at DESC LIMIT 300`
+    ).bind(status).all();
+    const byArticle = new Map();
+    for (const r of (rs.results || [])) {
+        let a = byArticle.get(r.article_id);
+        if (!a) {
+            a = { articleId: r.article_id, url: r.url, title: r.title, articleStatus: r.article_status, count: 0, categories: {}, latestReason: '', latestAt: r.created_at, reportIds: [] };
+            byArticle.set(r.article_id, a);
+        }
+        a.count++; a.categories[r.category] = (a.categories[r.category] || 0) + 1; a.reportIds.push(r.report_id);
+        if (!a.latestReason && r.reason) a.latestReason = r.reason;
+    }
+    const hid = await env.DB.prepare(
+        `SELECT id, url, title, report_count FROM sites WHERE status != 'active' ORDER BY updated_at DESC LIMIT 100`
+    ).all();
+    return json({
+        reports: [...byArticle.values()],
+        hidden: (hid.results || []).map(h => ({ articleId: h.id, url: h.url, title: h.title, reportCount: h.report_count }))
+    });
+}
+
+// POST /admin/articles/:id/hide|restore。hide=索引から外す (status=hidden・旧 hidden 列も同期)＋未対応の通報を対応済みに。
+// restore=索引へ戻す＋その記事の通報を却下扱いにして件数を 0 に戻す。実体 (R2) には触らない (責任範囲は索引まで)。
+async function handleAdminArticleModerate(request, env, id, action) {
+    await requireAdmin(request, env);
+    requireD1(env);
+    const row = await env.DB.prepare(`SELECT id FROM sites WHERE id = ?1`).bind(id).first();
+    if (!row) throw httpError(404, 'article not found');
+    const now = Date.now();
+    if (action === 'hide') {
+        await d1Batch(env, [
+            env.DB.prepare(`UPDATE sites SET status = 'hidden', hidden = 1 WHERE id = ?1`).bind(id),
+            env.DB.prepare(`UPDATE reports SET status = 'actioned', handled_at = ?2 WHERE target_type = 'site' AND target_id = ?1 AND status = 'open'`).bind(id, now)
+        ]);
+        return json({ ok: true, status: 'hidden' });
+    }
+    await d1Batch(env, [
+        env.DB.prepare(`UPDATE sites SET status = 'active', hidden = 0, report_count = 0 WHERE id = ?1`).bind(id),
+        env.DB.prepare(`UPDATE reports SET status = 'dismissed', handled_at = ?2 WHERE target_type = 'site' AND target_id = ?1 AND status IN ('open','actioned')`).bind(id, now)
+    ]);
+    return json({ ok: true, status: 'active' });
+}
+
+// POST /admin/reports/:id/dismiss: 通報 1 件を却下 (記事の状態は変えない・件数は減らす)。
+async function handleAdminReportDismiss(request, env, id) {
+    await requireAdmin(request, env);
+    requireD1(env);
+    const r = await env.DB.prepare(`SELECT id, target_type, target_id, status FROM reports WHERE id = ?1`).bind(id).first();
+    if (!r) throw httpError(404, 'report not found');
+    if (r.status === 'open') {
+        const stmts = [env.DB.prepare(`UPDATE reports SET status = 'dismissed', handled_at = ?2 WHERE id = ?1`).bind(id, Date.now())];
+        if (r.target_type === 'site') stmts.push(env.DB.prepare(`UPDATE sites SET report_count = MAX(report_count - 1, 0) WHERE id = ?1`).bind(r.target_id));
+        await d1Batch(env, stmts);
+    }
     return json({ ok: true });
 }
 

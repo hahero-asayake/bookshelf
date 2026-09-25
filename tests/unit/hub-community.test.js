@@ -266,7 +266,7 @@ describe('通報 (Phase C モデレーションキュー)', () => {
         const e = makeEnv();
         await handleCommunityCommentAdd(req('/community/comments', 'POST', { targetType: 'site', targetId: 's1', body: 'x' }, 'hk_cccccc'), e);
         const cid = e.DB._t.comments[0].id;
-        const res = await (await handleCommunityReport(req('/community/report', 'POST', { targetType: 'site', targetId: 's1', commentId: cid, reason: 'spam' }, 'hk_bbbbbb'), e)).json();
+        const res = await (await handleCommunityReport(req('/community/report', 'POST', { targetType: 'site', targetId: 's1', commentId: cid, category: 'spam', reason: 'spam' }, 'hk_bbbbbb'), e)).json();
         expect(res.ok).toBe(true);
         expect(e.DB._t.reports).toHaveLength(1);
         expect(e.DB._t.comments[0].report_count).toBe(1);
