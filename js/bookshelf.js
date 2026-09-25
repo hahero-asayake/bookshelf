@@ -788,6 +788,21 @@ class VirtualBookshelf {
             exclusionsModalClose.addEventListener('click', () => this.closeExclusionsModal());
         }
 
+        // 記事の通報ダイアログ (ADR-099)
+        const reportClose = document.getElementById('report-modal-close');
+        if (reportClose) reportClose.addEventListener('click', () => this.closeReportModal());
+        const reportCancel = document.getElementById('report-cancel');
+        if (reportCancel) reportCancel.addEventListener('click', () => this.closeReportModal());
+        const reportSubmit = document.getElementById('report-submit');
+        if (reportSubmit) reportSubmit.addEventListener('click', () => this._submitReport());
+        const reportReviewRefresh = document.getElementById('report-review-refresh');
+        if (reportReviewRefresh) reportReviewRefresh.addEventListener('click', () => this._loadReportReview());
+        const reportReviewList = document.getElementById('report-review-list');
+        if (reportReviewList) reportReviewList.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-act]');
+            if (btn) this._reportReviewAct(btn);
+        });
+
         // 公開ページ管理を開く (静的SSG, ADR-030)。左ペインの「公開」ボタンから (設定からは分離)
         const publishBtn = document.getElementById('sidebar-publish');
         if (publishBtn) {
@@ -3744,6 +3759,8 @@ class VirtualBookshelf {
         });
         // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
         this._handleBillingReturn();
+        // 公開記事フッタの「通報」リンク (?report=<記事URL>) から来たら通報ダイアログを開く (ADR-099)
+        this._handleReportParam();
         // 同期節の「アカウントでログイン」誘導 → アカウントカテゴリへ切替 (設定は既に開いている)
         const openAccount = () => this._activateSettingsCategory('account-section', { push: true });
         const goto = document.getElementById('hub-goto-account');
@@ -3846,6 +3863,11 @@ class VirtualBookshelf {
         this._renderPlanDetail(hub, plus);
         const admin = document.getElementById('account-admin');   // 管理者のみ表示 (ADR-038)
         if (admin) admin.hidden = !hub.isAdmin;
+        const adminReports = document.getElementById('account-admin-reports');   // 通報の審査 (管理者のみ・ADR-099)
+        if (adminReports) {
+            adminReports.hidden = !hub.isAdmin;
+            if (hub.isAdmin && !this._reportReviewLoadedAt) this._loadReportReview();
+        }
     }
 
     // 公開URLのユーザー名 (S6・ADR-076): 現在値表示。未設定は目立たせる (公開ボタンでブロックされるため)。
@@ -4138,6 +4160,166 @@ class VirtualBookshelf {
             this._pollPlusActivation();
         } else if (billing === 'cancel') {
             toast('アップグレードはキャンセルされました。', { type: 'info' });
+        }
+    }
+
+    // ===== 記事の通報 (ADR-099・全件手動審査) =====
+    // 公開記事フッタの「通報」リンクは https://asayake.org/bookshelf/?report=<記事URL>。ルーターはハッシュ専用のため query は衝突しない。
+    _handleReportParam() {
+        if (this._reportParamHandled) return;
+        let params;
+        try { params = new URLSearchParams(location.search); } catch (_) { return; }
+        const target = params.get('report');
+        if (!target) return;
+        this._reportParamHandled = true;
+        try {   // リロードで再表示しない
+            params.delete('report');
+            const qs = params.toString();
+            history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+        } catch (_) {}
+        this.openReportModal(target);
+    }
+
+    async openReportModal(articleUrl) {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) {
+            await this._confirmOpenSettings('通報には Asayake アカウントへのログインが必要です。設定の「アカウント」でログインしてから、もう一度通報のリンクを開いてください。', 'account-section');
+            return;
+        }
+        const url = String(articleUrl || '').trim();
+        if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 500) { toast('通報の対象を読み取れませんでした。記事のページから、もう一度リンクを開いてください。', { type: 'error' }); return; }
+        const modal = document.getElementById('report-modal');
+        if (!modal) return;
+        this._reportTarget = url;
+        document.getElementById('report-target-url').textContent = url;
+        document.getElementById('report-category').value = '';
+        document.getElementById('report-reason').value = '';
+        this._setReportError('');
+        modal.classList.add('show');
+        this._modalHistPush('report-modal', (o) => this.closeReportModal(o));
+    }
+
+    closeReportModal({ fromHistory = false } = {}) {
+        const modal = document.getElementById('report-modal');
+        if (modal) modal.classList.remove('show');
+        this._modalHistPop('report-modal', { fromHistory });
+    }
+
+    _setReportError(msg) {
+        const el = document.getElementById('report-error');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.hidden = !msg;
+    }
+
+    async _submitReport() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        const category = (document.getElementById('report-category') || {}).value || '';
+        const reason = ((document.getElementById('report-reason') || {}).value || '').trim();
+        if (!(hub.key && hub.apiBase)) { this._setReportError('ログインが切れています。設定の「アカウント」でログインし直してください。'); return; }
+        if (!category) { this._setReportError('通報の種類を選んでください。'); return; }
+        const btn = document.getElementById('report-submit');
+        if (btn) btn.disabled = true;   // 二度押し防止 (ui-standards §2-6)
+        this._setReportError('');
+        try {
+            const res = await fetch(`${hub.apiBase}/community/report`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${hub.key}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ articleUrl: this._reportTarget, category, reason })
+            });
+            if (res.status === 404) { this._setReportError('対象の記事が見つかりませんでした。すでに一覧から外れているか、ハブで公開された記事ではありません。'); return; }
+            if (res.status === 429) { this._setReportError('本日の通報の上限に達しました。明日もう一度お試しください。'); return; }
+            if (res.status === 401) { this._setReportError('ログインが切れています。設定の「アカウント」でログインし直してください。'); return; }
+            if (res.status === 400) { this._setReportError('この記事は通報できません（自分の記事、または入力の不備です）。'); return; }
+            if (!res.ok) { this._setReportError('通報を送れませんでした。時間をおいて、もう一度お試しください。'); return; }
+            const data = await res.json().catch(() => ({}));
+            this.closeReportModal();
+            toast(data.duplicate ? 'この記事はすでに通報済みです。' : '通報を受け付けました。返信はしませんが、内容を確認します。', { type: 'success' });
+        } catch (e) {
+            console.error('通報の送信に失敗:', e);
+            this._setReportError('通報を送れませんでした。通信状況を確認して、もう一度お試しください。');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // 管理者: 通報の審査パネル (設定→アカウント)。一覧・一覧から外す・一覧に戻す・却下。
+    async _loadReportReview() {
+        const hub = (SyncConfigManager.load().hub) || {};
+        const list = document.getElementById('report-review-list');
+        if (!list || !(hub.key && hub.apiBase)) return;
+        this._reportReviewLoadedAt = Date.now();
+        try {
+            const res = await fetch(`${hub.apiBase}/admin/reports?status=open`, { headers: { 'Authorization': `Bearer ${hub.key}` } });
+            if (!res.ok) throw new Error(String(res.status));
+            this._renderReportReview(await res.json());
+        } catch (e) {
+            this._reportReviewLoadedAt = 0;
+            list.textContent = '通報の一覧を読み込めませんでした。「一覧を更新」でもう一度お試しください。';
+        }
+    }
+
+    _renderReportReview(data) {
+        const list = document.getElementById('report-review-list');
+        if (!list) return;
+        const LABEL = { spam: 'スパム', abuse: '誹謗中傷', illegal: '違法', discrimination: '差別', dead: 'リンク切れ', other: 'その他' };
+        list.textContent = '';
+        const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
+        const item = (a, hiddenItem) => {
+            const row = mk('div', 'report-item');
+            row.dataset.articleId = a.articleId;
+            const t = mk('div', 'report-item-title');
+            const link = mk('a', '', a.title || a.url);
+            link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
+            t.appendChild(link);
+            row.appendChild(t);
+            if (hiddenItem) row.appendChild(mk('div', 'report-item-meta', '一覧から外し中'));
+            else {
+                const cats = Object.entries(a.categories || {}).map(([k, n]) => `${LABEL[k] || k} ${n}`).join('・');
+                row.appendChild(mk('div', 'report-item-meta', `通報 ${a.count} 件（${cats}）`));
+                if (a.latestReason) row.appendChild(mk('div', 'report-item-reason', a.latestReason));
+            }
+            const actions = mk('div', 'report-item-actions');
+            const add = (act, label, cls) => {
+                const b = mk('button', `btn ${cls} btn-small`, label);
+                b.type = 'button'; b.dataset.act = act; b.dataset.articleId = a.articleId;
+                if (a.reportIds) b.dataset.reportIds = a.reportIds.join(',');
+                actions.appendChild(b);
+            };
+            if (hiddenItem) add('restore', '一覧に戻す', 'btn-secondary');
+            else { add('hide', '一覧から外す', 'btn-danger'); add('dismiss', '却下', 'btn-secondary'); }
+            row.appendChild(actions);
+            return row;
+        };
+        const reports = data.reports || [], hidden = data.hidden || [];
+        if (!reports.length && !hidden.length) { list.appendChild(mk('p', 'account-admin-hint', '未対応の通報はありません。')); return; }
+        for (const a of reports) list.appendChild(item(a, false));
+        for (const h of hidden) list.appendChild(item(h, true));
+    }
+
+    async _reportReviewAct(btn) {
+        const hub = (SyncConfigManager.load().hub) || {};
+        if (!(hub.key && hub.apiBase)) return;
+        const act = btn.dataset.act, id = btn.dataset.articleId;
+        const call = (path) => fetch(`${hub.apiBase}${path}`, { method: 'POST', headers: { 'Authorization': `Bearer ${hub.key}`, 'Content-Type': 'application/json' }, body: '{}' });
+        const row = btn.closest('.report-item');
+        row.querySelectorAll('button').forEach(b => { b.disabled = true; });   // 二度押し防止
+        try {
+            if (act === 'dismiss') {
+                for (const rid of (btn.dataset.reportIds || '').split(',').filter(Boolean)) {
+                    const r = await call(`/admin/reports/${encodeURIComponent(rid)}/dismiss`);
+                    if (!r.ok) throw new Error(String(r.status));
+                }
+            } else {
+                const r = await call(`/admin/articles/${encodeURIComponent(id)}/${act === 'hide' ? 'hide' : 'restore'}`);
+                if (!r.ok) throw new Error(String(r.status));
+            }
+            toast(act === 'hide' ? '記事を一覧から外しました。' : (act === 'restore' ? '記事を一覧に戻しました。' : '通報を却下しました。'), { type: 'success' });
+            await this._loadReportReview();
+        } catch (e) {
+            console.error('通報の審査操作に失敗:', e);
+            toast('操作できませんでした。時間をおいて、もう一度お試しください。', { type: 'error' });
+            row.querySelectorAll('button').forEach(b => { b.disabled = false; });
         }
     }
 

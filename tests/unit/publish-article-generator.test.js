@@ -559,6 +559,22 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
         }
     });
 
+    it('ハブ公開の記事ページ (索引に載る・ADR-099) は「通報」=アプリの通報ダイアログ (?report=<記事URL>) と「連絡先」(mailto) に分かれる。自前公開・一覧 index.html は従来の mailto のみ', async () => {
+        const base = 'https://bookshelf.asayake.org/taro';
+        const [[, article], [, index]] = await legalHtmls({ target: 'hub', siteId: 'site1', siteBaseUrl: base });
+        const legal = article.match(/<p class="pub-legal">([\s\S]*?)<\/p>/)[1];
+        const expected = `https://asayake.org/bookshelf/?report=${encodeURIComponent(`${base}/pub-test01/`)}`;
+        expect(legal).toContain(`<a href="${expected}" target="_blank" rel="noopener">通報</a>`);
+        expect(legal).toMatch(/<a href="mailto:asayake\.hahero@gmail\.com\?subject=[^"]+">連絡先<\/a>/);
+        expect(legal).not.toContain('このページを通報');
+        // サイトのトップ (索引される記事ではない) は従来どおり
+        expect(index.match(/<p class="pub-legal">([\s\S]*?)<\/p>/)[1]).toMatch(/">このページを通報<\/a>/);
+        // 自前公開 (GitHub) の記事ページはハブの審査対象外 = アプリの通報リンクを出さない
+        const [[, ghArticle]] = await legalHtmls({ target: 'github', siteBaseUrl: 'https://example.github.io/my-books/' });
+        expect(ghArticle).not.toContain('?report=');
+        expect(ghArticle).toMatch(/">このページを通報<\/a>/);
+    });
+
     it('通報メールの件名に公開先の識別子 (hub=siteId・GitHub=公開URL) が入り、通報された記事の特定に使える', async () => {
         const subjectOf = (html) => decodeURIComponent(html.match(/mailto:[^?"]+\?subject=([^"]+)"/)[1]);
         for (const [label, html] of await legalHtmls({ target: 'hub', siteId: 'site1' })) {

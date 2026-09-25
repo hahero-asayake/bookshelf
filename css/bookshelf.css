@@ -3871,6 +3871,18 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-admin-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .account-admin-row input { flex: 1 1 12rem; min-width: 0; padding: 0.35rem 0.5rem; border: 1px solid var(--line, #ece7ef); border-radius: 7px; font-size: 0.85rem; }
 .account-admin-result { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--fg2, #4b5460); }
+/* 記事の通報ダイアログ・通報の審査パネル (ADR-099) */
+.report-target-url { word-break: break-all; color: var(--fg2, #4b5460); }
+.report-error { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--danger, #e25555); }
+.report-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; }
+.report-actions .btn { white-space: nowrap; }
+.report-review-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.report-item { padding: 0.5rem 0.6rem; border: 1px solid var(--line, #ece7ef); border-radius: 8px; background: var(--panel, #fff); }
+.report-item-title { font-size: 0.85rem; font-weight: 600; word-break: break-all; }
+.report-item-meta { margin-top: 0.15rem; font-size: 0.78rem; color: var(--fg2, #4b5460); }
+.report-item-reason { margin-top: 0.15rem; font-size: 0.78rem; color: var(--fg2, #4b5460); white-space: pre-wrap; word-break: break-word; }
+.report-item-actions { margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.report-item-actions .btn { white-space: nowrap; }
 
 /* 公開URLのユーザー名 (S6・ADR-076) */
 .account-username { margin: 0.7rem 0; }

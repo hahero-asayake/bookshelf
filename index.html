@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026091601">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026092503">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -355,6 +355,14 @@
                                     <button id="account-admin-reset" class="btn btn-warning btn-small" type="button" title="Stripe の課金リンク（customer/subscription）を外して無料に戻す。test→live で詰まった時の復旧用">課金リンクをリセット</button>
                                 </div>
                                 <p id="account-admin-result" class="account-admin-result" hidden></p>
+                            </div>
+                            <div id="account-admin-reports" class="account-admin" hidden>
+                                <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>管理者: 通報の審査</p>
+                                <p class="account-admin-hint">通報された記事を確認し、公開の一覧から外すか却下します。記事の実体は変わりません。</p>
+                                <div class="account-admin-row">
+                                    <button id="report-review-refresh" class="btn btn-secondary btn-small" type="button">一覧を更新</button>
+                                </div>
+                                <div id="report-review-list" class="report-review-list"></div>
                             </div>
                             <div class="account-actions">
                                 <button id="account-logout-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="log-out" data-icon-size="14"></span>ログアウト</button>
@@ -1098,6 +1106,40 @@
         </div>
     </div>
 
+    <!-- 記事の通報 (ADR-099): 公開記事フッタの「通報」リンク (?report=<記事URL>) から開く。全件手動審査・返信なし -->
+    <div id="report-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="report-modal-close">×</button>
+            <div class="modal-header">
+                <h2><span class="h-icon" data-icon="flag" data-icon-size="20"></span>記事を通報</h2>
+            </div>
+            <div class="modal-body">
+                <p class="muted-hint">対象: <span id="report-target-url" class="report-target-url"></span></p>
+                <div class="form-group">
+                    <label for="report-category">通報の種類</label>
+                    <select id="report-category">
+                        <option value="">選んでください</option>
+                        <option value="spam">スパム・宣伝</option>
+                        <option value="abuse">誹謗中傷・嫌がらせ</option>
+                        <option value="illegal">違法・犯罪予告</option>
+                        <option value="discrimination">差別・侮辱</option>
+                        <option value="other">その他</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="report-reason">詳しい内容（任意）</label>
+                    <textarea id="report-reason" rows="3" maxlength="500" placeholder="どこが問題かを書いてください"></textarea>
+                </div>
+                <p class="muted-hint">通報への返信はしません。内容を確認し、必要な場合は記事を一覧から外します。</p>
+                <p id="report-error" class="report-error" role="alert" hidden></p>
+                <div class="form-actions report-actions">
+                    <button id="report-cancel" class="btn btn-secondary" type="button">キャンセル</button>
+                    <button id="report-submit" class="btn btn-primary" type="button">通報する</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Manual Book Addition Modal -->
     <div id="add-book-modal" class="modal">
         <div class="modal-content">
@@ -1231,14 +1273,14 @@
     <script src="js/publish-article-store.js?v=2026092501"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script src="js/publish-ogp-image.js?v=2026092502"></script>
-    <script src="js/publish-article-generator.js?v=2026092502"></script>
+    <script src="js/publish-article-generator.js?v=2026092503"></script>
     <script src="js/exporter.js?v=2026092502"></script>
     <script src="js/plugin-api.js?v=2026062502"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026092502"></script>
+    <script src="js/bookshelf.js?v=2026092503"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

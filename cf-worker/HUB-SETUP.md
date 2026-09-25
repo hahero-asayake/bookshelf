@@ -318,7 +318,7 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 - 検証・一時停止には **`--ttl <秒>` (最小 60) 付きの put** が便利 (自動失効するので解除し忘れない): `wrangler kv key put "report:<siteId>" '{"status":"suspended"}' --namespace-id d429572547b4434486d44ee0159f46ae --remote --ttl 480`
 - 451 応答はキャッシュされない実装のため、解除は即時〜60 秒で反映。
 - 退会 (`DELETE /account`) 時は `report:<siteId>` もコード側で削除される。
-- **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は、退会で消える (ADR-099・#220 以降: 本人が付けた通報と本人の記事への通報を `handleAccountDelete` が削除)。通報の審査 (一覧・非表示/復帰) は #220 step3 で追加する。
+- **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は、退会で消える (ADR-099・#220 以降: 本人が付けた通報と本人の記事への通報を `handleAccountDelete` が削除)。通報の審査は管理 API (`GET /admin/reports`・`POST /admin/articles/:id/hide|restore`・`POST /admin/reports/:id/dismiss`・`ADMIN_EMAILS` の管理者のみ) とアプリの設定→アカウント→「通報の審査」で行う (記事の実体は変えず索引から外すだけ)。通報の受付時は secret `REPORT_WEBHOOK_URL` (Discord webhook) へ通知する (未設定でも通報は記録される)。サイト全体の 451 停止は引き続き手動 (上記)。
 - **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。**kuroko の API トークン (上の「デプロイ運用」) を使えば login は不要**で、KV への put/delete も `wrangler deploy` もこのトークンで行える。人間が手で行う場合だけ `wrangler login` をやり直すこと。
 
 > 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。**認証は kuroko のトークンで解消済み＝いつでも実施できる**。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
@@ -437,3 +437,11 @@ URL を変える必要が出たときの手順:
 4. hub Worker を deploy (D1 適用の**後**。先に deploy すると `public_id`/`status` 列が無く索引の更新が失敗する = 公開自体は成功するが索引は空のまま)。
 
 ※ kuroko の Cloudflare トークンに **D1 Edit** が無いと 1〜3 は実行できない (2026-09-25 実測: `wrangler d1 list` が Authentication error 10000)。
+
+## 通報の通知 (Discord webhook・ADR-099 / イシュー#220)
+
+通報を受け付けたとき、ハヘロへ Discord で知らせる。secret `REPORT_WEBHOOK_URL` に webhook URL を設定する (値はリポジトリ・ログ・報告に出さない)。
+
+- 設定: `wrangler secret put REPORT_WEBHOOK_URL -c wrangler.hub.toml` (**`secret put` も新しい Worker バージョンを作る**＝rollback 先は secret 込みの版を選ぶ)。
+- 本文は記事タイトル・URL・カテゴリ・その記事への通報件数・理由の先頭 100 字だけ。**通報者の uid・メールは載せない**。メンションは無効 (`allowed_mentions: {parse: []}`)。
+- 未設定・送信失敗のときは通知だけ省き、通報自体は記録する (Worker ログに `[report] REPORT_WEBHOOK_URL 未設定` の warn)。UptimeRobot 用の webhook とは別に、#📚bookshelf に専用を作る。

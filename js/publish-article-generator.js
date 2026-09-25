@@ -609,6 +609,11 @@ ${h.longMemo(longMemoHtml)}
         const updated = PublishArticleGenerator._fmtDate(opts.updatedAt);
         const year = PublishArticleGenerator._year(opts.updatedAt);
         const reportSubject = encodeURIComponent(`[通報] AsayakeBookshelf 公開記事 ${opts.reportRef || ''}`.trim());
+        // ハブ公開の記事 (索引に載る・ADR-099): 「通報」= アプリの通報ダイアログ (Google ログイン要) と「連絡先」= メール (異議申立て用)。
+        // それ以外 (自前公開・サイトのトップ) は従来どおり mailto の「このページを通報」のみ (ハブは自前公開を審査しない)。
+        const reportLinks = opts.reportAppUrl
+            ? `<a href="${PublishArticleGenerator.esc(opts.reportAppUrl)}" target="_blank" rel="noopener">通報</a>　<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">連絡先</a>`
+            : `<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">このページを通報</a>`;
         // プラグインの公開スナップショット (純データ) をコアが esc 済み HTML 片にしたもの (ADR-042)。
         // サイト単位の加算スロット。全記事 + index (この _wrapDoc 経由) に一括で出る。
         const pluginFooter = opts.pluginFooter || '';
@@ -670,7 +675,7 @@ ${pluginFooter}
 <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
 ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
 <p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
-<p class="pub-legal"><a href="https://hahero-asayake.github.io/bookshelf/legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="https://hahero-asayake.github.io/bookshelf/legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">このページを通報</a></p>
+<p class="pub-legal"><a href="https://hahero-asayake.github.io/bookshelf/legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="https://hahero-asayake.github.io/bookshelf/legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　${reportLinks}</p>
 </footer>
 </body>
 </html>`;
@@ -722,6 +727,8 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
 
     // ===== OGP =====
 
+    // アプリ本体の URL。公開記事フッタの「通報」リンクの遷移先 (?report=<記事URL>・ADR-099)。
+    static get APP_URL() { return 'https://asayake.org/bookshelf/'; }
     static get OG_IMAGE_WIDTH() { return 1200; }
     static get OG_IMAGE_HEIGHT() { return 630; }
 
@@ -872,7 +879,8 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '',
                 noindex: !article.published,
                 updatedAt: article.updatedAt || article.lastBuiltAt || 0,
-                reportRef, pluginFooter
+                reportRef, pluginFooter,
+                reportAppUrl: target === 'hub' && siteBaseUrl ? `${PublishArticleGenerator.APP_URL}?report=${encodeURIComponent(`${siteBaseUrl}/${article.publicId}/`)}` : ''
             });
             files.push({ path: `${article.publicId}/index.html`, content: html });
             // og.png はバイナリ (base64)。ogUnchanged = 入力が前回公開と同じ (GitHub は blob 書込を省ける。パスは出力集合に残す)
