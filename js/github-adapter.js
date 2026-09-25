@@ -201,9 +201,10 @@ class GitHubAdapter extends StorageAdapter {
         this._batch = [];
     }
 
-    addBatchEntry(path, content) {
+    // encoding='base64' なら content は既に base64 (バイナリ。og.png 等) でそのまま blob にする。未指定は従来どおり UTF-8 文字列。
+    addBatchEntry(path, content, encoding) {
         if (!this._batch) throw new Error('GitHubAdapter: no active batch (call beginBatch first)');
-        this._batch.push({ op: 'put', path, content });
+        this._batch.push({ op: 'put', path, content, encoding });
     }
 
     addBatchDelete(path) {
@@ -254,7 +255,7 @@ class GitHubAdapter extends StorageAdapter {
                     method: 'POST',
                     headers: { ...this._headers(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        content: this._encodeBase64(e.content),
+                        content: e.encoding === 'base64' ? e.content : this._encodeBase64(e.content),
                         encoding: 'base64'
                     })
                 });

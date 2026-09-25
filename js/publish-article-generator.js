@@ -603,7 +603,8 @@ ${h.longMemo(longMemoHtml)}
         const theme = PublishArticleStore.normalizeTheme(article.theme);
         const pageHasAds = !!opts.pageHasAds;
         const siteHasAffiliate = !!opts.siteHasAffiliate;
-        const ogImage = opts.ogImage || '';
+        const ogImage = opts.ogImage || '';   // 自前生成 og.png の絶対 URL (無ければ画像なし・ADR-098)
+        const ogDescription = opts.ogDescription || '';
         const canonical = opts.canonical || '';
         const updated = PublishArticleGenerator._fmtDate(opts.updatedAt);
         const year = PublishArticleGenerator._year(opts.updatedAt);
@@ -632,12 +633,20 @@ ${h.longMemo(longMemoHtml)}
             `<meta name="robots" content="${opts.noindex ? 'noindex,nofollow' : 'index,follow'}">`,
             `<link rel="icon" href="${PublishArticleGenerator.FAVICON}">`,
             canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
+            ogDescription ? `<meta name="description" content="${esc(ogDescription)}">` : '',
             `<meta property="og:title" content="${esc(article.title)}">`,
             `<meta property="og:type" content="article">`,
             `<meta property="og:site_name" content="${esc(publisher)} の本棚">`,
             canonical ? `<meta property="og:url" content="${esc(canonical)}">` : '',
+            ogDescription ? `<meta property="og:description" content="${esc(ogDescription)}">` : '',
             ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : '',
-            ogImage ? `<meta name="twitter:card" content="summary_large_image">` : '<meta name="twitter:card" content="summary">'
+            ogImage ? `<meta property="og:image:width" content="${PublishArticleGenerator.OG_IMAGE_WIDTH}">` : '',
+            ogImage ? `<meta property="og:image:height" content="${PublishArticleGenerator.OG_IMAGE_HEIGHT}">` : '',
+            ogImage ? `<meta property="og:image:alt" content="${esc(article.title)}">` : '',
+            ogImage ? `<meta name="twitter:card" content="summary_large_image">` : '<meta name="twitter:card" content="summary">',
+            `<meta name="twitter:title" content="${esc(article.title)}">`,
+            ogDescription ? `<meta name="twitter:description" content="${esc(ogDescription)}">` : '',
+            ogImage ? `<meta name="twitter:image" content="${esc(ogImage)}">` : ''
         ].filter(Boolean).join('\n');
 
         return `<!doctype html>
@@ -703,11 +712,46 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const needles = [...new Set(rawNeedles.filter(Boolean))];
         const found = new Set();
         for (const f of files) {
+            if (f.encoding) continue;   // バイナリ (og.png の base64) は文字列照合の対象外
             for (const n of needles) {
                 if (f.content.includes(n)) found.add(`${n} (${f.path})`);
             }
         }
         return [...found];
+    }
+
+    // ===== OGP =====
+
+    static get OG_IMAGE_WIDTH() { return 1200; }
+    static get OG_IMAGE_HEIGHT() { return 630; }
+
+    // og:description: 本文先頭のテキストブロックから約120字 (Markdown 記号は除く)。無ければタグ列、それも無ければ発行者名。
+    _ogDescription(article, resolvedBlocks, publisher) {
+        for (const r of resolvedBlocks || []) {
+            if (r.type !== 'text') continue;
+            const t = PublishArticleGenerator._plainText(r.block && r.block.markdown);
+            if (t) return PublishArticleGenerator._clip(t, 120);
+        }
+        const tags = (article.tags || []).map(t => String(t).trim()).filter(Boolean);
+        if (tags.length) return PublishArticleGenerator._clip(tags.map(t => `#${t}`).join(' '), 120);
+        return `${publisher} の本棚`;
+    }
+
+    static _plainText(md) {
+        return String(md == null ? '' : md)
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+            .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
+            .replace(/[*_~`]+/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    static _clip(s, max) {
+        const chars = Array.from(s);
+        return chars.length > max ? chars.slice(0, max).join('').trimEnd() + '…' : s;
     }
 
     // ===== ビルド =====
@@ -765,6 +809,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const files = [];
         const built = [];
         const errors = [];
+        const ogSkipped = [];   // OGP 画像を作れなかった記事 (公開は続行・画像なし)
 
         for (const article of articles) {
             // publicId は公開の入口 (PublishArticleStore.ensurePublicId) で発番される契約。
@@ -806,31 +851,38 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 ? body.includes(`/go/${encodeURIComponent(siteId)}/`)
                 : (!!linkOpts.tag && body.includes(`tag=${encodeURIComponent(linkOpts.tag)}`));
 
-            // OGP の代表表紙 (ブロック順で最初に見つかったもの)
+            // OGP 画像は自前生成 (§11.9・ADR-098)。Amazon の表紙は og:image に使わない。
+            // 生成は公開 (exporter が opts.ogImage=true) の時だけ。失敗しても公開は止めず画像なし (summary カード) に倒す。
             let ogImage = '';
-            for (const r of resolvedBlocks) {
-                if (r.type === 'book' && r.bookData && r.bookData.productImage) { ogImage = r.bookData.productImage; break; }
-                if (r.type === 'shelf') {
-                    const found = r.items.find(i => i.bookData && i.bookData.productImage);
-                    if (found) { ogImage = found.bookData.productImage; break; }
-                }
+            let ogRender = null;
+            if (opts.ogImage && siteBaseUrl && typeof PublishOgpImage !== 'undefined') {
+                try {
+                    const r = await PublishOgpImage.render(article, article.theme, { publisher, ...(opts.ogpOptions || {}) });
+                    if (r.ok) {
+                        ogRender = r;
+                        ogImage = `${siteBaseUrl}/${article.publicId}/og.png?v=${r.hash}`;
+                    } else ogSkipped.push({ title: article.title, reason: r.reason });
+                } catch (e) { ogSkipped.push({ title: article.title, reason: 'error' }); }
             }
 
             const html = this._wrapDoc(article, publisher, body, {
                 pageHasAds, siteHasAffiliate, ogImage,
+                ogDescription: this._ogDescription(article, resolvedBlocks, publisher),
                 canonical: siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '',
                 noindex: !article.published,
                 updatedAt: article.updatedAt || article.lastBuiltAt || 0,
                 reportRef, pluginFooter
             });
             files.push({ path: `${article.publicId}/index.html`, content: html });
-            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
+            // og.png はバイナリ (base64)。ogUnchanged = 入力が前回公開と同じ (GitHub は blob 書込を省ける。パスは出力集合に残す)
+            if (ogRender) files.push({ path: `${article.publicId}/og.png`, content: ogRender.base64, encoding: 'base64', ogHash: ogRender.hash, ogUnchanged: article.ogHash === ogRender.hash });
+            built.push({ id: article.id, slug: article.slug, publicId: article.publicId, ogHash: ogRender ? ogRender.hash : null, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
         }
 
         files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });
 
         const leak = this._detectLeak(files, state);
-        return { files, articles: built, leak, errors, ownTag };
+        return { files, articles: built, leak, errors, ownTag, ogSkipped };
     }
 }
 

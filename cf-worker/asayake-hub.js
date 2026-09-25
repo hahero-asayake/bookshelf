@@ -564,9 +564,19 @@ async function handlePublish(request, env) {
     let delta = 0;
     for (const f of files) {
         const key = base + safeRel(f.path);
-        const content = f.content || '';
+        // encoding 未指定 = 従来どおり文字列 (旧アプリ互換)。'base64' = バイナリ (og.png・ADR-098)。
+        let content, size;
+        if (f.encoding === undefined || f.encoding === null || f.encoding === '') {
+            content = f.content || '';
+            size = enc.encode(content).length;
+        } else if (f.encoding === 'base64') {
+            content = decodePublishPng(f.path, f.content);
+            size = content.byteLength;   // quota はデコード後のバイト長で計量する
+        } else {
+            throw httpError(400, `unsupported encoding: ${f.encoding}`);
+        }
         keep.add(key);
-        delta += enc.encode(content).length - (existing.get(key) || 0);
+        delta += size - (existing.get(key) || 0);
         puts.push({ key, content });
     }
     const deletes = [];
@@ -1236,6 +1246,22 @@ async function verifyGoogleIdToken(idToken, clientId) {
 }
 
 // ===== ユーティリティ =====
+// base64 で受けるのは PNG (公開記事の og.png) だけ。拡張子・PNG シグネチャ・サイズを検査してバイト列を返す。
+const PUBLISH_BINARY_MAX_BYTES = 512 * 1024;
+function decodePublishPng(path, b64) {
+    if (!/\.png$/.test(String(path || ''))) throw httpError(400, `base64 is allowed only for .png: ${path}`);
+    const cleaned = String(b64 || '').replace(/\s+/g, '');
+    if (!cleaned || !/^[A-Za-z0-9+/]+={0,2}$/.test(cleaned)) throw httpError(400, `invalid base64: ${path}`);
+    if (cleaned.length > Math.ceil(PUBLISH_BINARY_MAX_BYTES * 4 / 3) + 4) throw httpError(413, `binary too large: ${path}`);
+    let bin;
+    try { bin = atob(cleaned); } catch (_) { throw httpError(400, `invalid base64: ${path}`); }
+    if (bin.length > PUBLISH_BINARY_MAX_BYTES) throw httpError(413, `binary too large: ${path}`);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (bytes.length <= sig.length || !sig.every((b, i) => bytes[i] === b)) throw httpError(400, `not a png: ${path}`);
+    return bytes;
+}
 function safeRel(path) {
     const p = String(path || '').replace(/^\/+/, '');
     if (p.split('/').some(seg => seg === '..' || seg === '.' || seg === '')) throw httpError(400, `unsafe path: ${path}`);

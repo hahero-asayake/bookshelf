@@ -154,7 +154,10 @@ class HubStorageAdapter extends StorageAdapter {
     // @returns {Promise<{ok, siteId, siteUrl, published}>}
     async publishSite(files, deleteMissing = true, affiliateTag = '') {
         const payload = {
-            files: (files || []).map(f => ({ path: this._normalize(f.path), content: f.content || '' })),
+            // encoding='base64' (og.png 等のバイナリ) は Worker がデコードして R2 に置く。未指定は従来どおり文字列。
+            files: (files || []).map(f => f.encoding
+                ? { path: this._normalize(f.path), content: f.content || '', encoding: f.encoding }
+                : { path: this._normalize(f.path), content: f.content || '' }),
             deleteMissing: !!deleteMissing
         };
         if (affiliateTag) payload.affiliateTag = String(affiliateTag);

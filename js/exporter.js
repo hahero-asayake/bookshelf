@@ -99,7 +99,8 @@ class BookshelfExporter {
         // haltOnReadFailure: 長文メモが読めなかった記事は公開しない (イシュー#134・内容欠落のまま
         // 外に出さないため)。プレビュー (bookshelf.js _artPreview) はこのオプションを渡さず、
         // 読み込めなくても生成を続行して通知のみ行う。
-        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true });
+        // ogImage: 公開時だけ OGP 画像 (og.png) を自前生成する (プレビューでは作らない・ADR-098)
+        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true, ogImage: true });
         if (articles.length > 0 && result.articles.length === 0) {
             // result.errors には具体的な理由 (公開ID未発番・長文メモ読み込み失敗等) が入っている
             // ため、あれば優先して見せる (イシュー#134: 汎用文言だと原因不明のまま再試行させてしまう)。
@@ -140,8 +141,10 @@ class BookshelfExporter {
         // 削除同期: 公開 repo の現状を列挙し、今回の出力に無いものを削除 (README.md は残す)
         const writePaths = new Set(result.files.map(f => f.path));
         const deletes = [];
+        let existingPaths = new Set();
         try {
             const existing = await this._listAllFiles(publishAdapter, '');
+            existingPaths = new Set(existing);
             for (const p of existing) {
                 if (p === 'README.md') continue;
                 if (!writePaths.has(p)) deletes.push(p);
@@ -170,7 +173,12 @@ class BookshelfExporter {
 
         // バッチ push (1 commit)
         publishAdapter.beginBatch();
-        for (const f of result.files) publishAdapter.addBatchEntry(f.path, f.content);
+        for (const f of result.files) {
+            // og.png は入力 (タイトル・タグ・発行者・配色) が前回公開と同じで公開先にも既にあれば blob 書込を省く。
+            // writePaths には残っているので削除同期の対象にはならない (省いたことで消えない)。
+            if (f.ogUnchanged && existingPaths.has(f.path)) continue;
+            publishAdapter.addBatchEntry(f.path, f.content, f.encoding);
+        }
         for (const p of deletes) publishAdapter.addBatchDelete(p);
         try {
             await publishAdapter.commitBatch(`chore(bookshelf): publish ${result.articles.length} article(s)`);
@@ -193,7 +201,7 @@ class BookshelfExporter {
             // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
             // 失敗有無は lastBuiltAtFailed で呼び出し元 (bookshelf.js) に伝え、成功トーストへの
             // 付記に使う (イシュー#150: 付随的な記録失敗を「公開失敗」のエラー表示にしない)。
-            try { await store.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
+            try { await store.update(a.id, { lastBuiltAt: now, ogHash: a.ogHash || null }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
         }
 
         return {
@@ -246,7 +254,7 @@ class BookshelfExporter {
             // (イシュー#104: 握り潰しで CI 失敗時に lastBuiltAt が null になる理由が追えなかった)。
             // 失敗有無は lastBuiltAtFailed で呼び出し元 (bookshelf.js) に伝え、成功トーストへの
             // 付記に使う (イシュー#150: 付随的な記録失敗を「公開失敗」のエラー表示にしない)。
-            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
+            try { await this.app.publishArticleStore.update(a.id, { lastBuiltAt: now, ogHash: a.ogHash || null }); } catch (e) { console.error('記事のlastBuiltAt更新に失敗 (公開自体は成功):', a.id, e); lastBuiltAtFailed = true; }
         }
         const url = (resp && resp.siteUrl) || siteUrl;
         return {

@@ -790,6 +790,78 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
     });
 
+    // S5 (ADR-098): OGP 画像 (og.png) を実ブラウザの Canvas で自前生成し、公開経路 (hub /publish) へ base64 で載せる。
+    // 公開経路 (openPublishPagesModal → 公開ボタン → 同意 → exporter.export → HubStorageAdapter.publishSite) を通して確認する。
+    async function readPngInfo(page, base64) {
+        // 実ブラウザで PNG を復号して寸法を測る (IHDR を読むだけでなく、実際に画像として読み込めることも確認する)
+        return page.evaluate(async (b64) => {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const sig = Array.from(bytes.slice(0, 8));
+            const dv = new DataView(bytes.buffer);
+            const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+            return { size: bytes.length, sig, ihdrW: dv.getUint32(16), ihdrH: dv.getUint32(20), bmpW: bmp.width, bmpH: bmp.height };
+        }, base64);
+    }
+
+    test('公開すると og.png (PNG・1200x630・200KB以下) が base64 で publish 経路に載り、記事の OGP メタがその画像を指す (S5・ADR-098)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'わたしを構成する10冊');
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await page.locator('.art-block-text textarea').fill('## はじめに\n\n本文サンプル。');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-publish-header');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        const og = hubCaptured.files.find(f => f.path.endsWith('/og.png'));
+        expect(og, `files: ${JSON.stringify(hubCaptured.files.map(f => f.path))}`).toBeTruthy();
+        expect(og.encoding).toBe('base64');
+        const info = await readPngInfo(page, og.content);
+        expect(info.sig).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        expect([info.ihdrW, info.ihdrH, info.bmpW, info.bmpH]).toEqual([1200, 630, 1200, 630]);
+        expect(info.size).toBeLessThanOrEqual(200 * 1024);
+        console.log(`[og.png 実測] ${info.size} bytes`);
+
+        const publicId = og.path.split('/')[0];
+        const html = hubCaptured.files.find(f => f.path === `${publicId}/index.html`).content;
+        expect(html).toMatch(/<meta property="og:image" content="https:\/\/bookshelf\.asayake\.org\/hahero\/[^/]+\/og\.png\?v=[0-9a-z]+">/);
+        expect(html).toContain('<meta property="og:image:width" content="1200">');
+        expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+        expect(html).toContain('<meta property="og:description" content="はじめに 本文サンプル。">');
+        expect(html).not.toMatch(/og:image" content="[^"]*media-amazon/);   // Amazon の表紙は og:image に使わない
+        expect(errors).toEqual([]);
+
+        // 公開後に ogHash が記事に保存される (同じ入力の再公開で GitHub 公開の再アップロードを省くため)
+        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        await expect.poll(async () => (await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id)).ogHash).toBeTruthy();
+    });
+
+    test('モバイル相当 (390x844) の環境でも og.png を生成でき、1200x630 の PNG になる (S5・端末依存のフォント/Canvas)', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const { hubCaptured } = await bootAppForPublish(page);
+        const r = await page.evaluate(async () => {
+            const b = window.bookshelf;
+            const a = await b.publishArticleStore.create({ title: 'モバイルで生成する長めのタイトル 〜OGP画像の折り返しと省略を確かめる〜', tags: ['エッセイ', '漫画', 'kindle'], published: true, theme: { layout: 'card', color: 'blue' } });
+            await b.publishArticleStore.ensurePublicId(a.id);
+            const res = await b.exporter.export();
+            return { published: res.published };
+        });
+        expect(r.published).toBe(1);
+        const og = hubCaptured.files.find(f => f.path.endsWith('/og.png'));
+        expect(og).toBeTruthy();
+        const info = await readPngInfo(page, og.content);
+        expect([info.ihdrW, info.ihdrH]).toEqual([1200, 630]);
+        expect(info.size).toBeLessThanOrEqual(200 * 1024);
+        console.log(`[og.png 実測 390px] ${info.size} bytes`);
+    });
+
     // イシュー#152: 公開後の案内 URL がサイトのトップ (siteUrl そのもの) を指しており、公開した
     // 記事へ直接飛べなかった。記事個別の URL (<siteUrl>/<publicId>/) を案内することを検証する。
     test('公開成功後のtoastには記事個別のURL(<siteUrl>/<publicId>/)が案内される。サイトのトップではない (イシュー#152)', async ({ page }) => {

@@ -15,7 +15,8 @@
 //   theme: { layout, color }, // レイアウト(wall|count|card) と配色(10色) の直交2軸 (§11.3)
 //   sourceShelfId,            // 由来本棚 (internalId・任意)。「本の引き出し」(S3) がこの本棚の全本を出す入口
 //   published,                // 公開状態 (true=サイトに出す)
-//   createdAt, updatedAt, lastBuiltAt
+//   createdAt, updatedAt, lastBuiltAt,
+//   ogHash,                  // 任意。前回公開した OGP 画像の入力ハッシュ (同じなら GitHub 公開で og.png の再アップロードを省く・ADR-098)
 // }
 //
 // Block (3種のみ・§11.2。本の間に文章を挟みたい場合は本棚ブロックを分割 or 本ブロックを並べる。
@@ -260,6 +261,7 @@ class PublishArticleStore {
         if (patch.slug !== undefined) article.slug = this._uniqueSlug(patch.slug, id);
         if (patch.published !== undefined) article.published = !!patch.published;
         if (patch.lastBuiltAt !== undefined) article.lastBuiltAt = patch.lastBuiltAt;
+        if (patch.ogHash !== undefined) article.ogHash = patch.ogHash;
         article.updatedAt = Date.now();
         this._dirty = true;
         if (persist) await this._persist();
