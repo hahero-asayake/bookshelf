@@ -27,6 +27,8 @@
 //   registerCommand({ id, title, icon, keywords, run })  ⌘K パレットにコマンド追加
 //   registerWidget({ id, label, icon, defaultSpan, allowedSpans, render })  ダッシュボードに widget 追加
 //   registerDetailSection({ id, render })  本詳細ペインにセクション追加 (render(host, book, ctx))
+//   registerArticleLayout({ id, label, description?, icon? }) / registerArticleColor({ id, label, description?, swatch? })
+//       記事エディタ「見た目」リストに項目を加算 (加算スロット・既存項目の置換/除去は不可。公開側の描画は未対応=07)
 //   injectCSS(id, css) / removeCSS(id)     スコープ付き <style> 注入 (unload で自動除去)
 //   registerBookFilter(fn) / registerExportTransform(fn)  蔵書フィルタ / エクスポート変換
 //   registerActiveFilter({ isActive, reset? })  「自分は今フィルタ中」をコアに申告 (空状態判定が参照)
@@ -75,6 +77,7 @@ class BookshelfPluginAPI {
         this._activeFilters = []; // { isActive, reset, pluginId } 「フィルタ中」申告 (属性プロバイダ)
         this._commands = [];      // { id, title, icon, keywords, run, pluginId } ⌘K パレット
         this._detailSections = []; // { id, render, pluginId } 本詳細ペインのセクション
+        this._articleThemes = { layout: [], color: [] }; // { kind, id, label, description, icon, swatch, pluginId } 記事の見た目リスト (加算スロット)
         this._pluginSettings = new Map(); // pluginId → render(host, api) プラグインごとの設定画面
         // pluginId → 登録トラッキング (unregister で一括解除)
         this._pluginRegistrations = new Map();
@@ -173,6 +176,8 @@ class BookshelfPluginAPI {
                 return entry;
             },
             removeDetailSection: (id) => { self.removeDetailSection(id); reg.detailSectionIds.delete(id); },
+            registerArticleLayout: (opts) => self._registerArticleTheme('layout', opts, pluginId),
+            registerArticleColor: (opts) => self._registerArticleTheme('color', opts, pluginId),
             injectCSS: (id, css) => {
                 const styleId = self.injectCSS(id, css, pluginId);
                 if (styleId) reg.styleIds.add(styleId);
@@ -220,6 +225,9 @@ class BookshelfPluginAPI {
         }
         if (reg.detailSectionIds) {
             for (const id of reg.detailSectionIds) this.removeDetailSection(id);
+        }
+        for (const kind of ['layout', 'color']) {
+            this._articleThemes[kind] = this._articleThemes[kind].filter(e => e.pluginId !== pluginId);
         }
         if (reg.styleIds) {
             for (const styleId of reg.styleIds) {
@@ -520,6 +528,26 @@ class BookshelfPluginAPI {
         if (dash && typeof dash.render === 'function' && document.getElementById('dashboard')) {
             try { dash.render(); } catch (_) {}
         }
+    }
+
+    // ===== 記事の見た目リストへの項目登録 (加算スロット) =====
+    // 標準の id と重なるもの・同じ id の二重登録は受け付けない (既存項目の置換はできない)。
+    _registerArticleTheme(kind, { id, label, description = '', icon = '', swatch = '' } = {}, pluginId = this._pluginId) {
+        if (!id || !label) {
+            console.warn(`[pluginAPI] registerArticle${kind === 'layout' ? 'Layout' : 'Color'}: id, label are required`);
+            return null;
+        }
+        const builtin = kind === 'layout'
+            ? (typeof ARTICLE_LAYOUTS !== 'undefined' ? ARTICLE_LAYOUTS : [])
+            : (typeof ARTICLE_COLORS !== 'undefined' ? ARTICLE_COLORS : []);
+        if (builtin.includes(id) || this._articleThemes[kind].some(e => e.id === id)) return null;
+        const entry = { kind, id: String(id), label: String(label), description: String(description), icon: String(icon), swatch: String(swatch), pluginId };
+        this._articleThemes[kind].push(entry);
+        return entry;
+    }
+    /** 記事エディタの見た目リストが読む: 登録済み項目 (kind='layout'|'color') の浅コピー */
+    getArticleThemes(kind) {
+        return (this._articleThemes[kind] || []).map(e => ({ ...e }));
     }
 
     // ===== 本詳細ペインのセクション登録 =====

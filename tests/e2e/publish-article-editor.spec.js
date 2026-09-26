@@ -596,8 +596,10 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.locator('.art-add-btn').first().click();
         await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
         await page.locator('.art-block-text textarea').fill('本文');
-        await page.selectOption('#art-theme-layout', 'wall');
-        await page.selectOption('#art-theme-color', 'black');
+        // イシュー#230: 見た目はキャンバス先頭の固定ブロック (縦リスト・role=radio) で選ぶ
+        await page.locator('.art-look-row[data-look-kind="layout"][data-look-id="wall"]').click();
+        await page.locator('.art-look-row[data-look-kind="color"][data-look-id="black"]').click();
+        await expect(page.locator('.art-look-row[data-look-id="black"]')).toHaveAttribute('aria-checked', 'true');
         await page.click('#art-preview');
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
@@ -1433,39 +1435,73 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
 
         await expect(page.locator('.art-shelf-list')).toBeVisible();
         await expect(page.locator('.art-shelf-grid')).toHaveCount(0);
-        await expect(page.locator('.art-shelf-item').first().locator('.art-item-show-toggle').first()).toHaveText('短');
+        // イシュー#230: 密度トグルは撤去。チップは常に「短文メモ」表記・固定幅
+        await expect(page.locator('.art-shelf-item').first().locator('.art-item-show-toggle').first()).toHaveText('短文メモ');
         expect(errors).toEqual([]);
     });
 
-    test('密度切替でコンパクト⇄カードが入れ替わり、トグル文言も連動する', async ({ page }) => {
+    test('密度トグルは無く、短文メモ/長文メモ/評価のチップは本ブロック・各行・一括バーで同じ固定幅・同じ列に並ぶ (イシュー#230)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addShelfWithBooks(page, 2);
-
-        await page.locator('.art-density-toggle').click();
-        await expect(page.locator('.art-shelf-grid')).toBeVisible();
-        await expect(page.locator('.art-shelf-list')).toHaveCount(0);
-        await expect(page.locator('.art-shelf-item').first().locator('.art-item-show-toggle').first()).toHaveText('短文');
-
-        await page.locator('.art-density-toggle').click();
-        await expect(page.locator('.art-shelf-list')).toBeVisible();
+        await expect(page.locator('.art-density-toggle')).toHaveCount(0);
+        await page.locator('.art-item-check').first().click();
+        const lefts = await page.evaluate(() => ['shortMemo', 'longMemo', 'rating'].map(k =>
+            [...document.querySelectorAll(`.art-shelf-selbar [data-show-key="${k}"], .art-shelf-item [data-show-key="${k}"]`)]
+                .map(el => { const r = el.getBoundingClientRect(); return { l: Math.round(r.left * 10) / 10, w: Math.round(r.width) }; })));
+        for (const col of lefts) {
+            expect(col.length).toBe(3); // 一括バー1 + 各行2
+            expect(Math.max(...col.map(c => c.l)) - Math.min(...col.map(c => c.l))).toBeLessThanOrEqual(1);
+            expect(new Set(col.map(c => c.w)).size).toBe(1);
+        }
         expect(errors).toEqual([]);
     });
 
-    test('「畳む」でブロック本体が隠れ、見出しバーだけ残る', async ({ page }) => {
+    test('見出し行の ▸▾ で畳むと本体が隠れて要約が出る・「すべて畳む/すべて開く」で全ブロックが切り替わる (イシュー#230)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addShelfWithBooks(page, 2);
+        const shelf = page.locator('.art-block[data-block-id]').first();
 
-        await expect(page.locator('.art-block-body').first()).toBeVisible();
-        await page.locator('.art-collapse-toggle').click();
-        await expect(page.locator('.art-block-body').first()).toBeHidden();
-        await expect(page.locator('.art-block').first()).toHaveClass(/is-collapsed/);
+        await expect(shelf.locator('.art-block-body')).toBeVisible();
+        await shelf.locator('.art-block-tg').click();
+        const shelfAfter = page.locator('.art-block[data-block-id]').first();
+        await expect(shelfAfter).toHaveClass(/is-collapsed/);
+        await expect(shelfAfter.locator('.art-block-body')).toHaveCount(0);
+        await expect(shelfAfter.locator('.art-block-sum')).toContainText('2冊');
+        // ハンドル・複製・削除は畳んでも出ている
+        await expect(shelfAfter.locator('.art-block-grip')).toBeVisible();
+        await expect(shelfAfter.locator('.art-block-dup')).toBeVisible();
+        await expect(shelfAfter.locator('.art-block-del')).toBeVisible();
+        // 畳み状態は保存しない (UI状態のみ)
+        expect(await page.evaluate(() => 'collapsed' in window.bookshelf._artDraft.blocks[0])).toBe(false);
 
-        await page.locator('.art-collapse-toggle').click();
-        await expect(page.locator('.art-block-body').first()).toBeVisible();
+        await page.locator('.art-collapse-all').click();
+        await expect(page.locator('.art-block:not(.is-collapsed)')).toHaveCount(0);
+        await expect(page.locator('.art-collapse-all')).toHaveText('すべて開く');
+        await page.locator('.art-collapse-all').click();
+        await expect(page.locator('.art-block.is-collapsed')).toHaveCount(0);
+        await expect(page.locator('.art-collapse-all')).toHaveText('すべて畳む');
+        expect(errors).toEqual([]);
+    });
+
+    test('見た目の配色リストは検索で絞り込め、プラグインが登録した項目は提供元つきで一覧に出る (イシュー#230)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => {
+            const api = window.bookshelfAPI.forPlugin('sample-theme-plugin');
+            api.registerArticleColor({ id: 'sakura', label: '桜' });
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        const colors = page.locator('.art-look-row[data-look-kind="color"]');
+        await expect(colors).toHaveCount(11);
+        const plug = page.locator('.art-look-row[data-look-id="sakura"]');
+        await expect(plug.locator('.art-look-pv')).toHaveText('sample-theme-plugin');
+        await expect(page.locator('.art-look-row[data-look-id="red"] .art-look-pv')).toHaveText('標準');
+        await page.locator('.art-look-search').fill('桜');
+        await expect(page.locator('.art-look-row[data-look-kind="color"]:not([hidden])')).toHaveCount(1);
         expect(errors).toEqual([]);
     });
 
@@ -1696,7 +1732,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
         await page.locator('.art-item-check').first().click();
         await expect(page.locator('.art-shelf-selbar')).toBeVisible();
-        await expect(page.locator('.art-sel-show-sel')).toBeEnabled();
+        await expect(page.locator('.art-sel-chip')).toHaveCount(3);
         await expect(page.locator('.art-shelf-sort-sel')).toBeEnabled();
 
         await page.locator('.art-sel-clear-btn').click();
@@ -1717,7 +1753,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
 
         await page.locator('.art-item-check').nth(0).click();
         await page.locator('.art-item-check').nth(1).click();
-        await page.locator('.art-sel-show-sel').selectOption('shortMemo:show');
+        await page.locator('.art-sel-chip[data-show-key="shortMemo"]').click();
 
         const toast = page.locator('.toast');
         await expect(toast).toBeVisible();
@@ -2053,17 +2089,17 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         expect(errors).toEqual([]);
     });
 
-    test('一括操作セレクトに評価の表示/非表示が6択目として入り、選択した本にだけ適用される', async ({ page }) => {
+    test('一括バーのチップ (短文メモ/長文メモ/評価) を押すと、選択した本にだけ適用される (イシュー#230)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addShelfWithBooks(page, 2);
 
         await page.locator('.art-item-check').first().click();
-        const options = await page.locator('.art-sel-show-sel option').allTextContents();
-        expect(options).toEqual(['表示の一括変更…', '短文メモを表示', '短文メモを隠す', '長文メモを表示', '長文メモを隠す', '評価を表示', '評価を隠す']);
+        const labels = await page.locator('.art-sel-chip').allTextContents();
+        expect(labels).toEqual(['短文メモ', '長文メモ', '評価']);
 
-        await page.locator('.art-sel-show-sel').selectOption('rating:show');
+        await page.locator('.art-sel-chip[data-show-key="rating"]').click();
         await expect(page.locator('.toast')).toContainText('1冊に適用しました');
 
         const shows = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => !!(it.show && it.show.rating)));
@@ -2826,10 +2862,7 @@ test.describe('記事エディタ: フッターの崩れ検出 (折り返し・�
             // (36px+padding)。閾値は「1行+区切り分」と「3行分裂(旧h=122px)」を明確に区別できる
             // 70pxへ緩める(3行分裂ならこの閾値でも確実に検知できる)。
             expect(m.pageOpsHeight).toBeLessThanOrEqual(70);
-            // イシュー#168差し戻し対応: 配色スウォッチが配色selectと同じグループ内にあり、
-            // centerYが近い(同じ行にある)ことをどの幅でも確認する(②実機指摘「謎の黒丸」の再発防止)。
-            expect(m.sameThemeGroup).toBe(true);
-            expect(m.swatchCenterYDiff).toBeLessThan(4);
+            // (配色スウォッチの同一行チェックは、select 撤去=見た目ブロック移設で対象が無くなったため削除・イシュー#230)
             expect(errors).toEqual([]);
         });
     }

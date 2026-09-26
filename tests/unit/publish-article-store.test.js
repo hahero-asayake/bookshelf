@@ -216,6 +216,24 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
     });
 });
 
+describe('配置の addedAt は保存を通っても消えない (イシュー#230 回帰)', () => {
+    it('update(blocks) の往復で addedAt が残り、密度・畳み (撤去済みのUI状態) は保存されない', async () => {
+        const a = await as.create({ title: 'x', blocks: [] });
+        const updated = await as.update(a.id, {
+            blocks: [{ type: 'shelf', shelfId: 'shelf-a', density: 'card', collapsed: true,
+                items: [{ asin: 'B001', addedAt: 1700000000000 }, { asin: 'B002' }] }]
+        });
+        const b = updated.blocks[0];
+        expect(b.items[0].addedAt).toBe(1700000000000);
+        expect('addedAt' in b.items[1]).toBe(false);
+        expect(b.density).toBeUndefined();
+        expect(b.collapsed).toBeUndefined();
+        const again = new PublishArticleStore(storage);
+        await again.load();
+        expect(again.get(a.id).blocks[0].items[0].addedAt).toBe(1700000000000);
+    });
+});
+
 describe('タグ (自由入力 + 正規化キー, §11.6)', () => {
     it('normalizeTagKey は小文字化 + 全角半角統一で同一視する', () => {
         expect(PublishArticleStore.normalizeTagKey('SF')).toBe(PublishArticleStore.normalizeTagKey('sf'));

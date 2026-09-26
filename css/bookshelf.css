@@ -4583,9 +4583,99 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block.is-collapsed .art-block-bar { border-bottom: none; border-radius: 10px; }
 
 /* --- 表紙 (プレースホルダ) --- */
-.art-cover { aspect-ratio: 5/7; border-radius: 4px; background: linear-gradient(150deg, var(--line2), var(--line)); display: flex;
+.art-cover { aspect-ratio: 5/7; border-radius: 4px; background: var(--line2); display: flex;
     align-items: center; justify-content: center; text-align: center; font-size: 0.62rem; color: var(--muted); padding: 0.3rem; line-height: 1.3; overflow: hidden; }
 .art-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+
+/* ===== イシュー#230: 共通見出し行・畳み・チップ列・見た目リスト (確定モック editor-v2) =====
+   --art-pad = ブロック内容の左端 (1本の揃え線)。本文・一括バー・本棚の各行が同じ値から始まる。
+   --art-cols = 本棚の各行・一括バー・本ブロックが共有する列トラック
+   (チェック | ハンドル | 書影 | 書名 | チップ3個 | 並べ替え | ×)。チップは固定幅 (押しても太らない)。 */
+#art-blocks { --art-pad: 14px; --art-chip-w: 96px; --art-chips-w: calc(var(--art-chip-w) * 3 + 16px);
+    --art-cols: 20px 14px 34px minmax(0, 1fr) var(--art-chips-w) 48px 20px; }
+.art-canvas-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.4rem; }
+.art-canvas-count { font-size: 0.76rem; color: var(--fg2); }
+
+.art-block-bar { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 28px 28px; align-items: center; gap: 0.25rem;
+    flex-wrap: nowrap; padding: 0.3rem 0.35rem; }
+.art-block-bar > .art-block-grip { justify-self: center; }
+.art-block-tg { display: flex; align-items: center; gap: 0.45rem; min-width: 0; min-height: 32px; border: none; background: none;
+    padding: 0 0.2rem; cursor: pointer; color: var(--fg2); font: inherit; text-align: left; }
+.art-block-tg .art-block-kind { display: inline-flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
+.art-block-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); font-size: 0.76rem; }
+.art-block:not(.is-collapsed) .art-block-sum { display: none; }
+.art-block-extra { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.art-block-bar > .art-block-ic { justify-self: center; width: 28px; height: 28px; justify-content: center; padding: 0; }
+.art-block-cell { width: 28px; }
+.art-block-body { padding: 0.75rem var(--art-pad); }
+
+/* 列トラックの共有 */
+.art-gx { display: grid; grid-template-columns: var(--art-cols); column-gap: 8px; align-items: center; }
+.art-chips { display: grid; grid-template-columns: repeat(3, var(--art-chip-w)); gap: 8px; }
+/* 旧 .art-shelf-list .art-shelf-item-toggles (flex・gap 0.2rem, 詳細度0,2,0) に負けないよう詳細度を揃えて上書き */
+.art-shelf-list .art-shelf-item-toggles.art-chips { display: grid; gap: 8px; }
+.art-chips .art-chip-toggle,
+.art-shelf-item-toggles .art-chip-toggle { width: var(--art-chip-w); min-height: 32px; padding: 0 0.3rem; font-size: 0.74rem; text-align: center; white-space: nowrap; }
+.art-chip-toggle.is-mixed { border-style: dashed; border-color: var(--accent); color: var(--accent-strong); }
+
+.art-block-book-body.art-gx { align-items: start; }
+.art-block-book-body.art-gx .art-cover { grid-column: 1 / 4; width: 100%; }
+.art-block-book-body.art-gx .art-block-book-info { grid-column: 4; }
+.art-block-book-body.art-gx .art-chips { grid-column: 5; }
+
+.art-shelf-list .art-shelf-item { grid-template-columns: var(--art-cols); column-gap: 8px; gap: 0.3rem 8px; padding: 0.3rem 0; }
+.art-shelf-list .art-shelf-item .art-chips { grid-column: 5; }
+.art-shelf-list .art-shelf-item-order-btns { grid-column: 6; }
+.art-shelf-list .art-shelf-item-remove { grid-column: 7; justify-self: center; }
+
+.art-shelf-selbar.art-gx { padding: 0.45rem var(--art-pad); row-gap: 0.4rem; }
+.art-shelf-selbar.art-gx .art-shelf-selbar-master { grid-column: 1 / 5; padding: 0; min-width: 0; }
+.art-shelf-selbar.art-gx .art-chips { grid-column: 5; }
+.art-shelf-selbar-ops { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+
+/* 見た目ブロック: レイアウト・配色の縦リスト (サムネ | 名前 | 提供元 | 選択)。枠の高さは同じ・中でスクロール */
+.art-look-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.art-look-hd { display: flex; align-items: center; gap: 0.5rem; min-height: 34px; margin-bottom: 0.35rem; }
+.art-look-hd h4 { margin: 0; font-size: 0.8rem; color: var(--fg2); }
+.art-look-cnt { font-size: 0.72rem; color: var(--fg2); }
+.art-look-search { margin-left: auto; flex: 0 1 11rem; min-width: 0; padding: 0.3rem 0.55rem; border: 1px solid var(--line); border-radius: 6px;
+    font-size: 0.78rem; background: var(--panel); color: var(--fg); }
+.art-look-list { border: 1px solid var(--line); border-radius: 10px; overflow-y: auto; overflow-x: hidden; height: calc(52px * 4.5); background: var(--panel); }
+.art-look-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto 20px; column-gap: 8px; align-items: center; width: 100%;
+    min-height: 52px; padding: 6px 10px; border: none; border-top: 1px solid var(--line2); background: none; text-align: left; cursor: pointer; font: inherit; color: var(--fg); }
+.art-look-row:first-child { border-top: none; }
+.art-look-row[hidden] { display: none; }
+.art-look-row:hover { background: var(--side); }
+.art-look-row[aria-checked="true"] { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.art-look-row:disabled { cursor: default; opacity: 0.6; }
+.art-look-th { width: 52px; height: 36px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: grid; place-items: center; color: var(--fg2); background: var(--panel); }
+.art-look-th.is-color { grid-template-rows: 1fr 6px; place-items: stretch; }
+.art-look-th.is-color i { font-style: normal; font-size: 0.8rem; font-weight: 700; align-self: center; text-align: center; }
+.art-look-nm { min-width: 0; display: grid; }
+.art-look-nm b { font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-look-nm small { font-size: 0.72rem; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-look-pv { justify-self: start; padding: 0 0.5rem; border: 1px solid var(--line); border-radius: 999px; font-size: 0.68rem; font-weight: 600; color: var(--fg2); line-height: 18px; white-space: nowrap; }
+.art-look-pv.is-plugin { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-strong); }
+.art-look-mk { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; }
+.art-look-row[aria-checked="true"] .art-look-mk { border-color: var(--accent); }
+.art-look-row[aria-checked="true"] .art-look-mk::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+@media (max-width: 900px) {
+    /* 狭幅: チップは書名の下の行へ (固定幅3列・チェックの左端から)。列は チェック | ハンドル | 書影 | 書名 | 並べ替え | × */
+    #art-blocks { --art-pad: 10px; --art-chip-w: 88px; --art-cols: 20px 14px 34px minmax(0, 1fr) 48px 20px; }
+    .art-shelf-list .art-shelf-item .art-chips { grid-column: 1 / -1; grid-row: 2; }
+    .art-shelf-list .art-shelf-item-order-btns { grid-column: 5; grid-row: 1; }
+    .art-shelf-list .art-shelf-item-remove { grid-column: 6; grid-row: 1; }
+    .art-shelf-selbar.art-gx .art-shelf-selbar-master { grid-column: 1 / -1; }
+    .art-shelf-selbar.art-gx .art-chips { grid-column: 1 / -1; grid-row: 2; }
+    .art-block-book-body.art-gx .art-block-book-info { grid-column: 4 / -1; }
+    .art-block-book-body.art-gx .art-chips { grid-column: 1 / -1; grid-row: 2; }
+    .art-look-body { grid-template-columns: minmax(0, 1fr); }
+    .art-look-row { grid-template-columns: 52px minmax(0, 1fr) 20px; row-gap: 2px; }
+    .art-look-th { grid-row: 1 / 3; }
+    .art-look-pv { grid-column: 2; grid-row: 2; }
+    .art-look-mk { grid-column: 3; grid-row: 1 / 3; }
+}
 
 /* --- ブロックを追加 --- */
 .art-add { position: relative; text-align: center; padding: 0.3rem 0; }

@@ -8144,8 +8144,6 @@ class VirtualBookshelf {
         }, true);
         on('art-save-retry', 'click', () => this._artFlushSave().then(() => this._artFlushRemoteNow()));
         on('art-title', 'input', () => this._artOnTitleInput());
-        on('art-theme-layout', 'change', () => this._artOnThemeChange());
-        on('art-theme-color', 'change', () => this._artOnThemeChange());
         on('art-preview', 'click', () => this._artPreview());
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
@@ -8373,6 +8371,8 @@ class VirtualBookshelf {
         this._artActiveShelfBlockId = null;
         this._artShelfSel = {};
         this._artBulkUndo = null;
+        this._artCollapsed = new Set(); // 畳み状態はエディタを開いている間だけのUI状態 (保存しない・イシュー#230)
+        this._artLookQuery = '';
         this._artDrawerQuery = '';
         const drawerSearch = document.getElementById('art-drawer-search'); if (drawerSearch) drawerSearch.value = '';
         if (id) {
@@ -8392,7 +8392,6 @@ class VirtualBookshelf {
         const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = !id;
         const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !this._artDraft.published;
         document.getElementById('art-title').value = this._artDraft.title || '';
-        this._artRenderThemeSelects();
         this._artRenderTags();
         this._artRenderBlocks();
         this._artRenderDrawerShelfSelect();
@@ -8473,33 +8472,95 @@ class VirtualBookshelf {
         return false;
     }
 
-    _artRenderThemeSelects() {
-        const layoutSel = document.getElementById('art-theme-layout');
-        const colorSel = document.getElementById('art-theme-color');
-        if (!layoutSel || !colorSel) return;
+    // ===== 見た目 (レイアウト × 配色) = キャンバス先頭の固定ブロック・縦リスト (イシュー#230) =====
+    // 標準項目＋プラグインが registerArticleLayout/Color で加算した項目 (加算スロット)。公開側の描画は
+    // 標準項目のみ対応のため、プラグイン項目は一覧に出すが選べない (07 に積み残し)。
+    _artThemeItems(kind) {
         const LAYOUT_LABELS = { wall: 'ウォール', count: 'カウントダウン', card: 'カード' };
+        const LAYOUT_ICONS = { wall: 'layout-grid', count: 'list-ordered', card: 'layout-list' };
         const COLOR_LABELS = { red: '赤', orange: '橙', pink: 'ピンク', purple: '紫', yellow: '黄', brown: '茶', green: '緑', blue: '青', black: '黒', white: '白' };
+        const std = kind === 'layout'
+            ? ARTICLE_LAYOUTS.map(id => ({ id, label: LAYOUT_LABELS[id] || id, icon: LAYOUT_ICONS[id] || 'layout-template', provider: '標準', selectable: true }))
+            : ARTICLE_COLORS.map(id => ({ id, label: COLOR_LABELS[id] || id, provider: '標準', selectable: true }));
+        const api = window.bookshelfAPI;
+        const plug = (api && typeof api.getArticleThemes === 'function') ? api.getArticleThemes(kind) : [];
+        return std.concat(plug.map(e => ({ id: e.id, label: e.label, description: e.description, icon: e.icon || 'layout-template', swatch: e.swatch, provider: e.pluginId, selectable: false, plugin: true })));
+    }
+
+    _artThemeSummary() {
         const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
-        layoutSel.innerHTML = ARTICLE_LAYOUTS.map(l => `<option value="${l}"${l === theme.layout ? ' selected' : ''}>${LAYOUT_LABELS[l] || l}</option>`).join('');
-        colorSel.innerHTML = ARTICLE_COLORS.map(c => `<option value="${c}"${c === theme.color ? ' selected' : ''}>${COLOR_LABELS[c] || c}</option>`).join('');
-        this._artUpdateThemeSwatch(theme);
+        const l = this._artThemeItems('layout').find(x => x.id === theme.layout);
+        const c = this._artThemeItems('color').find(x => x.id === theme.color);
+        return `${l ? l.label : theme.layout}・${c ? c.label : theme.color}`;
     }
 
-    // 選択中の配色を小さな丸スウォッチで示す (レイアウト×配色の2軸である旨をラベルで、
-    // 実際の色をこの丸で伝える。ARTICLE_COLOR_TOKENS はプレビュー/公開と同じ配色定義=単一の正本、イシュー#99)。
-    _artUpdateThemeSwatch(theme) {
-        const swatchEl = document.getElementById('art-theme-swatch');
-        if (!swatchEl) return;
-        const tokens = (typeof ARTICLE_COLOR_TOKENS !== 'undefined' && ARTICLE_COLOR_TOKENS[theme.color]) || null;
-        swatchEl.style.background = tokens ? tokens.acc : 'transparent';
+    _artRenderLookBlock() {
+        const esc = PublishArticleGenerator.esc;
+        const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
+        const collapsed = this._artCollapsedSet().has('look');
+        const row = (kind, it) => {
+            const checked = (kind === 'layout' ? theme.layout : theme.color) === it.id;
+            let th;
+            if (kind === 'layout') th = `<span class="art-look-th"><span class="h-icon" data-icon="${esc(it.icon)}" data-icon-size="20"></span></span>`;
+            else {
+                const t = (typeof ARTICLE_COLOR_TOKENS !== 'undefined' && ARTICLE_COLOR_TOKENS[it.id]) || null;
+                const bg = t ? t.bg : (it.swatch || 'transparent');
+                const acc = t ? t.acc : (it.swatch || 'transparent');
+                const txt = t ? t.txt : 'inherit';
+                th = `<span class="art-look-th is-color" style="background:${esc(bg)};color:${esc(txt)}"><i>Aa</i><span class="art-look-th-bar" style="background:${esc(acc)}"></span></span>`;
+            }
+            return `<button type="button" class="art-look-row" role="radio" aria-checked="${checked}" data-look-kind="${kind}" data-look-id="${esc(it.id)}" data-look-name="${esc(it.label)}"${it.selectable ? '' : ' disabled'}>
+                ${th}
+                <span class="art-look-nm"><b>${esc(it.label)}</b>${it.description ? `<small>${esc(it.description)}</small>` : ''}</span>
+                <span class="art-look-pv${it.plugin ? ' is-plugin' : ''}">${esc(it.provider)}</span>
+                <span class="art-look-mk" aria-hidden="true"></span>
+            </button>`;
+        };
+        const layouts = this._artThemeItems('layout');
+        const colors = this._artThemeItems('color');
+        const q = (this._artLookQuery || '').trim();
+        const search = colors.length >= 7
+            ? `<input type="search" class="art-look-search" placeholder="配色を検索" aria-label="配色を検索" value="${esc(q)}">`
+            : '';
+        const body = collapsed ? '' : `<div class="art-block-body art-look-body">
+                <section class="art-look-sec">
+                    <div class="art-look-hd"><h4>レイアウト</h4><span class="art-look-cnt">${layouts.length}件</span></div>
+                    <div class="art-look-list" role="radiogroup" aria-label="レイアウト">${layouts.map(it => row('layout', it)).join('')}</div>
+                </section>
+                <section class="art-look-sec">
+                    <div class="art-look-hd"><h4>配色</h4><span class="art-look-cnt">${colors.length}件</span>${search}</div>
+                    <div class="art-look-list" role="radiogroup" aria-label="配色">${colors.map(it => row('color', it)).join('')}</div>
+                </section>
+            </div>`;
+        return `<div class="art-block art-look-block${collapsed ? ' is-collapsed' : ''}" data-look-block="1">
+            ${this._artBlockBar({ id: 'look', kind: '見た目', icon: 'palette', summary: this._artThemeSummary(), fixed: true })}
+            ${body}
+        </div>`;
     }
 
-    _artOnThemeChange() {
-        const layout = document.getElementById('art-theme-layout').value;
-        const color = document.getElementById('art-theme-color').value;
-        this._artDraft.theme = PublishArticleStore.normalizeTheme({ layout, color });
-        this._artUpdateThemeSwatch(this._artDraft.theme);
-        this._artScheduleSave();
+    _artBindLookEvents(host) {
+        const el = host.querySelector('.art-look-block');
+        if (!el) return;
+        el.querySelectorAll('.art-look-row').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.disabled) return;
+                const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
+                theme[btn.dataset.lookKind] = btn.dataset.lookId;
+                this._artDraft.theme = PublishArticleStore.normalizeTheme(theme);
+                this._artRenderBlocks();
+                this._artScheduleSave();
+            });
+        });
+        const search = el.querySelector('.art-look-search');
+        const applyFilter = () => {
+            const q = (this._artLookQuery || '').trim().toLowerCase();
+            el.querySelectorAll('.art-look-row[data-look-kind="color"]').forEach(r => {
+                const hit = !q || r.dataset.lookName.toLowerCase().includes(q) || r.dataset.lookId.toLowerCase().includes(q);
+                r.hidden = !hit;
+            });
+        };
+        if (search) search.addEventListener('input', () => { this._artLookQuery = search.value; applyFilter(); });
+        applyFilter();
     }
 
     _artOnTitleInput() {
@@ -8582,45 +8643,110 @@ class VirtualBookshelf {
 
     // ===== ブロック列 (文章/本/本棚の3種のみ, §11.2) =====
 
+    _artCollapsedSet() {
+        if (!this._artCollapsed) this._artCollapsed = new Set();
+        return this._artCollapsed;
+    }
+
+    // 全ブロック共通の見出し行 (イシュー#230): ハンドル | ▸▾＋種別＋要約 | 付加操作 | 複製 | 削除。
+    // ハンドル・複製・削除は畳んでも常に出す。fixed (見た目ブロック) は並べ替え・複製・削除できないため空セルで列だけ保つ。
+    _artBlockBar({ id, kind, icon, summary = '', extra = '', fixed = false }) {
+        const esc = PublishArticleGenerator.esc;
+        const collapsed = this._artCollapsedSet().has(id);
+        const cell = '<span class="art-block-cell" aria-hidden="true"></span>';
+        return `<div class="art-block-bar">
+            ${fixed ? cell : '<span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14" title="ドラッグで並べ替え"></span>'}
+            <button type="button" class="art-block-tg" aria-expanded="${!collapsed}" title="${collapsed ? '開く' : '畳む'}">
+                <span class="art-block-chev h-icon" data-icon="${collapsed ? 'chevron-right' : 'chevron-down'}" data-icon-size="14"></span>
+                <span class="art-block-kind">${icon ? `<span class="h-icon" data-icon="${icon}" data-icon-size="13"></span>` : ''}${esc(kind)}</span>
+                <span class="art-block-sum">${esc(summary)}</span>
+            </button>
+            <span class="art-block-extra">${extra}</span>
+            ${fixed ? cell + cell : `<button type="button" class="art-block-ic art-block-dup" title="複製"><span class="h-icon" data-icon="copy" data-icon-size="14"></span></button>
+            <button type="button" class="art-block-ic art-block-del" title="削除"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span></button>`}
+        </div>`;
+    }
+
+    _artBlockSummary(b) {
+        if (b.type === 'text') {
+            const line = String(b.markdown || '').split('\n').map(x => x.replace(/^#+\s*/, '').trim()).find(Boolean) || '';
+            return line || '（空の文章）';
+        }
+        const titleOf = (asin) => { const bk = this.books.find(x => x.asin === asin); return bk ? bk.title : asin; };
+        if (b.type === 'book') return b.asin ? titleOf(b.asin) : '本が未選択';
+        if (b.type === 'shelf') {
+            const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
+            return items.length ? `${items.length}冊・${titleOf(items[0].asin)}…` : '0冊';
+        }
+        return '';
+    }
+
     _artRenderBlocks() {
         const host = document.getElementById('art-blocks');
         if (!host) return;
         const tpl = document.getElementById('art-add-menu-tpl');
         const addHtml = tpl ? tpl.innerHTML : '';
         const blocks = this._artDraft.blocks || [];
-        let html = addHtml;
+        const col = this._artCollapsedSet();
+        const allIds = ['look', ...blocks.map(b => b.id)];
+        const allCollapsed = allIds.every(id => col.has(id));
+        let html = `<div class="art-canvas-head">
+            <span class="art-canvas-count">${blocks.length}ブロック</span>
+            <button type="button" class="btn btn-secondary btn-small art-collapse-all" data-mode="${allCollapsed ? 'open' : 'close'}">${allCollapsed ? 'すべて開く' : 'すべて畳む'}</button>
+        </div>`;
+        html += this._artRenderLookBlock();
+        html += addHtml;
         if (!blocks.length) {
             html += '<p class="pp-empty art-empty">まだブロックがありません。「＋ ブロックを追加」から文章・本棚・本を選んで積み上げ、本は「本の引き出し」から配置できます。</p>';
         }
         blocks.forEach((b, i) => { html += this._artRenderBlock(b, i); html += addHtml; });
         host.innerHTML = html;
+        const allBtn = host.querySelector('.art-collapse-all');
+        if (allBtn) allBtn.addEventListener('click', () => {
+            if (allBtn.dataset.mode === 'open') col.clear();
+            else allIds.forEach(id => col.add(id));
+            this._artRenderBlocks();
+        });
+        host.querySelectorAll('.art-block').forEach(el => {
+            const id = el.dataset.lookBlock ? 'look' : el.dataset.blockId;
+            const tg = el.querySelector(':scope > .art-block-bar .art-block-tg');
+            if (tg && id) tg.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (col.has(id)) col.delete(id); else col.add(id);
+                this._artRenderBlocks();
+            });
+        });
+        this._artBindLookEvents(host);
         this._artBindBlocksEvents();
         if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
+    _artChips(show, cls, extraAttrs = '') {
+        const one = (key, label) => `<button type="button" class="art-chip-toggle ${cls}${show[key] ? ' is-on' : ''}" data-show-key="${key}"${extraAttrs} aria-pressed="${show[key] ? 'true' : 'false'}">${label}</button>`;
+        return `<div class="art-chips art-shelf-item-toggles">${one('shortMemo', '短文メモ')}${one('longMemo', '長文メモ')}${one('rating', '評価')}</div>`;
+    }
+
     _artRenderBlock(b, index) {
         const esc = PublishArticleGenerator.esc;
-        const barCommon = `
-            <span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14"></span>
-            <span class="art-block-bar-sp"></span>
-            <button type="button" class="art-block-ic art-block-dup" title="複製"><span class="h-icon" data-icon="copy" data-icon-size="14"></span></button>
-            <button type="button" class="art-block-ic art-block-del" title="削除"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span></button>`;
+        const collapsed = this._artCollapsedSet().has(b.id);
+        const summary = this._artBlockSummary(b);
         if (b.type === 'text') {
-            return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
-                <div class="art-block-bar"><span class="art-block-kind">文章</span>${barCommon}</div>
-                <div class="art-block-body art-block-text">
+            return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
+                ${this._artBlockBar({ id: b.id, kind: '文章', summary })}
+                ${collapsed ? '' : `<div class="art-block-body art-block-text">
                     <textarea class="art-text-input" placeholder="見出しや本文をMarkdownで書く…">${esc(b.markdown || '')}</textarea>
-                </div>
+                </div>`}
             </div>`;
         }
         if (b.type === 'book') {
             // イシュー#166: 対象が常に明確な「本を選ぶ/差し替え」の入口をブロック内に置く (FAB廃止に伴う代替)。
             // 押したブロックへ入るよう _artPendingBookBlockId をここでセットしてからシートを開く (900px超は右パネル常時表示)。
             const pickBtn = `<button type="button" class="art-block-ic art-book-pick" title="${b.asin ? 'この本を選び直す' : 'この本を選ぶ'}"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'book-plus'}" data-icon-size="14"></span></button>`;
+            const bar = this._artBlockBar({ id: b.id, kind: '本', summary, extra: pickBtn });
             if (!b.asin) {
-                return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
-                    <div class="art-block-bar"><span class="art-block-kind">本</span>${pickBtn}${barCommon}</div>
-                    <div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>
+                return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
+                    ${bar}
+                    ${collapsed ? '' : '<div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>'}
                 </div>`;
             }
             const book = this.books.find(x => x.asin === b.asin);
@@ -8628,20 +8754,16 @@ class VirtualBookshelf {
             const author = book ? (book.authors || '') : '';
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
             const show = b.show || { shortMemo: false, longMemo: false, rating: false };
-            return `<div class="art-block" data-block-id="${esc(b.id)}" data-index="${index}">
-                <div class="art-block-bar"><span class="art-block-kind">本</span>${pickBtn}${barCommon}</div>
-                <div class="art-block-body art-block-book-body">
+            return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
+                ${bar}
+                ${collapsed ? '' : `<div class="art-block-body art-block-book-body art-gx">
                     <div class="art-cover">${cover}</div>
                     <div class="art-block-book-info">
                         <div class="art-item-title">${esc(title)}</div>
                         <div class="art-item-author">${esc(author)}</div>
-                        <div class="art-shelf-item-toggles">
-                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo">短文メモ</button>
-                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo">長文メモ</button>
-                            <button type="button" class="art-chip-toggle art-book-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating">評価</button>
-                        </div>
                     </div>
-                </div>
+                    ${this._artChips(show, 'art-book-show-toggle')}
+                </div>`}
             </div>`;
         }
         if (b.type === 'shelf') return this._artRenderShelfBlock(b, index);
@@ -8690,12 +8812,11 @@ class VirtualBookshelf {
         this._artBulkUndo = null;
     }
 
-    // 密度は既定コンパクト (B: エディタ表示密度改善)。b.density === 'card' のときだけカード表示に切替。
+    // 表示は1行1冊のリストのみ (密度トグルはチップ固定幅と両立しないため撤去・イシュー#230)。
     // 一括操作 (短文/長文メモの表示・並び順) は選択式 (イシュー#55): 1件以上選択したときだけ選択バーを出す。
     _artRenderShelfBlock(b, index) {
         const esc = PublishArticleGenerator.esc;
-        const density = b.density === 'card' ? 'card' : 'compact';
-        const collapsed = !!b.collapsed;
+        const collapsed = this._artCollapsedSet().has(b.id);
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
         // #133: どの本棚から作ったブロックか判定する (イシュー#170でアイコン/テキストは撤去、
         // shelf不在時の警告表示にのみ使う)。棚が削除済みなら明示する。
@@ -8714,9 +8835,6 @@ class VirtualBookshelf {
             : `<span class="art-block-shelf is-shelf-missing">
                 <span class="art-block-shelf-path">${esc(shelfLabel)}</span>
             </span>`;
-        const shortLabel = density === 'compact' ? '短' : '短文';
-        const longLabel = density === 'compact' ? '長' : '長文';
-        const ratingLabel = density === 'compact' ? '評' : '評価';
         const sel = this._artShelfSelSet(b.id);
         for (const id of [...sel]) { if (!items.some(it => it.id === id)) sel.delete(id); }
         const itemsHtml = items.map((it, i) => {
@@ -8730,11 +8848,7 @@ class VirtualBookshelf {
                 <span class="art-shelf-item-grip h-icon" data-icon="grip-vertical" data-icon-size="12"></span>
                 <div class="art-cover">${cover}</div>
                 <div class="art-shelf-item-title">${esc(title)}</div>
-                <div class="art-shelf-item-toggles">
-                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.shortMemo ? ' is-on' : ''}" data-show-key="shortMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.shortMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${shortLabel}</button>
-                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.longMemo ? ' is-on' : ''}" data-show-key="longMemo" data-asin="${esc(it.asin)}" aria-pressed="${show.longMemo ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${longLabel}</button>
-                    <button type="button" class="art-chip-toggle art-item-show-toggle${show.rating ? ' is-on' : ''}" data-show-key="rating" data-asin="${esc(it.asin)}" aria-pressed="${show.rating ? 'true' : 'false'}" aria-describedby="art-item-tooltip">${ratingLabel}</button>
-                </div>
+                ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}"`)}
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
                     <button type="button" class="art-shelf-item-ic art-item-to-last" title="末尾へ"${i === items.length - 1 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-down" data-icon-size="12"></span></button>
@@ -8742,34 +8856,34 @@ class VirtualBookshelf {
                 <button type="button" class="art-shelf-item-remove" title="外す">×</button>
             </div>`;
         }).join('');
-        const barToolbarHtml = collapsed ? '' : `
-                <button type="button" class="art-chip-toggle art-density-toggle" title="表示密度を切替">${density === 'compact' ? 'コンパクト' : 'カード'}</button>`;
         const selCount = sel.size;
         const allSelected = items.length > 0 && selCount === items.length;
+        // 一括バーのチップ: 選択中の本すべてで ON なら押下表示・一部だけ ON なら混在表示。押すと全部 ON (全部 ON なら全部 OFF)。
+        const selItems = items.filter(it => sel.has(it.id));
+        const selChip = (key, label) => {
+            const on = selItems.filter(it => it.show && it.show[key]).length;
+            const all = selItems.length > 0 && on === selItems.length;
+            const mixed = on > 0 && !all;
+            return `<button type="button" class="art-chip-toggle art-sel-chip${all ? ' is-on' : ''}${mixed ? ' is-mixed' : ''}" data-show-key="${key}" aria-pressed="${all ? 'true' : (mixed ? 'mixed' : 'false')}">${label}</button>`;
+        };
         const selbarHtml = (selCount > 0 && !collapsed) ? `
-            <div class="art-shelf-selbar">
+            <div class="art-shelf-selbar art-gx">
                 <label class="checkbox-label art-shelf-selbar-master">
                     <input type="checkbox" class="art-shelf-select-all"${allSelected ? ' checked' : ''} aria-label="すべて選択">
                     <span>${selCount}冊を選択中</span>
                 </label>
-                <select class="art-sel-show-sel">
-                    <option value="">表示の一括変更…</option>
-                    <option value="shortMemo:show">短文メモを表示</option>
-                    <option value="shortMemo:hide">短文メモを隠す</option>
-                    <option value="longMemo:show">長文メモを表示</option>
-                    <option value="longMemo:hide">長文メモを隠す</option>
-                    <option value="rating:show">評価を表示</option>
-                    <option value="rating:hide">評価を隠す</option>
-                </select>
-                <select class="art-shelf-sort-sel" title="選択した本の並び順を揃える">
-                    <option value="">並び順で揃える…</option>
-                    <option value="added">追加順</option>
-                    <option value="rating">評価順</option>
-                    <option value="title">タイトル順</option>
-                </select>
-                <span class="art-block-bar-sp"></span>
-                <button type="button" class="art-sel-all-btn">すべて選択</button>
-                <button type="button" class="art-sel-clear-btn">選択解除</button>
+                <div class="art-chips">${selChip('shortMemo', '短文メモ')}${selChip('longMemo', '長文メモ')}${selChip('rating', '評価')}</div>
+                <div class="art-shelf-selbar-ops">
+                    <select class="art-shelf-sort-sel" title="選択した本の並び順を揃える">
+                        <option value="">並び順で揃える…</option>
+                        <option value="added">追加順</option>
+                        <option value="rating">評価順</option>
+                        <option value="title">タイトル順</option>
+                    </select>
+                    <span class="art-block-bar-sp"></span>
+                    <button type="button" class="art-sel-all-btn">すべて選択</button>
+                    <button type="button" class="art-sel-clear-btn">選択解除</button>
+                </div>
             </div>` : '';
         // #133 項目3: 引き出しからの追加先ブロックを視覚的に示す (Nielsen #1 システム状態の可視性)。
         const isAddTarget = b.id === this._artActiveShelfBlockId;
@@ -8785,23 +8899,15 @@ class VirtualBookshelf {
             </button>`
             : '';
         const bodyHtml = items.length
-            ? `<div class="art-shelf-${density === 'compact' ? 'list' : 'grid'}">${itemsHtml}${addTileHtml}</div>`
+            ? `<div class="art-shelf-list">${itemsHtml}${addTileHtml}</div>`
             : `<button type="button" class="art-shelf-add art-shelf-add-empty pp-empty pp-empty-btn" title="このブロックに本を追加">
                 <span class="h-icon" data-icon="book-plus" data-icon-size="20"></span>
                 <span>このボタンから本を追加してください</span>
             </button>`;
         return `<div class="art-block${collapsed ? ' is-collapsed' : ''}${isAddTarget ? ' is-add-target' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
-            <div class="art-block-bar">
-                <span class="art-block-kind">本棚</span>${shelfHtml}<span class="art-block-count">${items.length}冊</span>
-                <span class="art-block-bar-sp"></span>${barToolbarHtml}
-                <button type="button" class="art-chip-toggle art-collapse-toggle" title="${collapsed ? '展開' : '畳む'}">${collapsed ? '展開' : '畳む'}</button>
-                <span class="art-block-bar-sep"></span>
-                <span class="art-block-grip h-icon" data-icon="grip-vertical" data-icon-size="14"></span>
-                <button type="button" class="art-block-ic art-block-dup" title="複製"><span class="h-icon" data-icon="copy" data-icon-size="14"></span></button>
-                <button type="button" class="art-block-ic art-block-del" title="削除"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span></button>
-            </div>
+            ${this._artBlockBar({ id: b.id, kind: '本棚', summary: this._artBlockSummary(b), extra: shelf ? '' : shelfHtml })}
             ${selbarHtml}
-            <div class="art-block-body"${collapsed ? ' hidden' : ''}>${bodyHtml}</div>
+            ${collapsed ? '' : `<div class="art-block-body">${bodyHtml}</div>`}
         </div>`;
     }
 
@@ -8906,18 +9012,6 @@ class VirtualBookshelf {
                 this._artOpenSheet();
             });
 
-            const densityBtn = el.querySelector('.art-density-toggle');
-            if (densityBtn) densityBtn.addEventListener('click', () => {
-                block.density = (block.density === 'card') ? 'compact' : 'card';
-                this._artRenderBlocks();
-                this._artScheduleSave();
-            });
-            const collapseBtn = el.querySelector('.art-collapse-toggle');
-            if (collapseBtn) collapseBtn.addEventListener('click', () => {
-                block.collapsed = !block.collapsed;
-                this._artRenderBlocks();
-                this._artScheduleSave();
-            });
             const sortSel = el.querySelector('.art-shelf-sort-sel');
             if (sortSel) sortSel.addEventListener('change', () => {
                 const mode = sortSel.value;
@@ -8966,21 +9060,22 @@ class VirtualBookshelf {
                 this._artShelfSelSet(blockId).clear();
                 this._artRenderBlocks();
             });
-            const showSel = el.querySelector('.art-sel-show-sel');
-            if (showSel) showSel.addEventListener('change', () => {
-                const val = showSel.value;
-                if (!val) return;
-                const [key, action] = val.split(':');
-                const ids = this._artShelfSelSet(blockId);
-                const targets = (block.items || []).filter(it => ids.has(it.id));
-                this._artSnapshotBulk(blockId, block);
-                targets.forEach(it => {
-                    it.show = it.show || { shortMemo: false, longMemo: false, rating: false };
-                    it.show[key] = (action === 'show');
+            el.querySelectorAll('.art-sel-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const key = chip.dataset.showKey;
+                    const ids = this._artShelfSelSet(blockId);
+                    const targets = (block.items || []).filter(it => ids.has(it.id));
+                    const next = chip.getAttribute('aria-pressed') !== 'true';
+                    this._artSnapshotBulk(blockId, block);
+                    targets.forEach(it => {
+                        it.show = it.show || { shortMemo: false, longMemo: false, rating: false };
+                        it.show[key] = next;
+                    });
+                    this._artRenderBlocks();
+                    this._artScheduleSave();
+                    this._artToastBulkApplied(targets.length);
                 });
-                this._artRenderBlocks();
-                this._artScheduleSave();
-                this._artToastBulkApplied(targets.length);
             });
 
             el.querySelectorAll('.art-shelf-item').forEach(itemEl => {

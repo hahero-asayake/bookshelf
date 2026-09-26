@@ -128,7 +128,9 @@ class PublishArticleStore {
                     blockId: id,
                     asin: it.asin,
                     order: Number.isFinite(it.order) ? it.order : i,
-                    show: PublishArticleStore._normalizeShow(it.show)
+                    show: PublishArticleStore._normalizeShow(it.show),
+                    // 追加順の並べ替え (added) が読む。以前はここで落ちて保存のたびに消えていた (イシュー#230)
+                    ...(Number.isFinite(it.addedAt) ? { addedAt: it.addedAt } : {})
                 }))
             };
         }
