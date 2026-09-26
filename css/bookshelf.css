@@ -4451,7 +4451,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* --- ブロック共通 --- */
 /* 区切りの視認性 (イシュー#99): 罫線トークンの濃さで押すのではなく、影で「面として浮いている」ことを
    示す。.dashboard-widget と同じ影の値を再利用 (新しい値を発明しない)。 */
-.art-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); }
+.art-block, .art-look-block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); }
 .art-block.is-drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 /* #133 項目3: 引き出しからの追加先ブロックを常時強調する (Nielsen #1)。.is-drag-over (一時的なD&Dフィードバック) とは
    見た目を分け、ブロックバーの背景も変えて「ここに入る」ことを操作前に予測できるようにする。 */
@@ -4580,7 +4580,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-item-remove:hover { color: var(--danger); }
 
 /* 畳む (B): 見出しバーだけ残して本文を隠す */
-.art-block.is-collapsed .art-block-bar { border-bottom: none; border-radius: 10px; }
+.art-block.is-collapsed .art-block-bar,
+.art-look-block.is-collapsed .art-block-bar { border-bottom: none; border-radius: 10px; }
 
 /* --- 表紙 (プレースホルダ) --- */
 .art-cover { aspect-ratio: 5/7; border-radius: 4px; background: var(--line2); display: flex;
@@ -4603,7 +4604,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     padding: 0 0.2rem; cursor: pointer; color: var(--fg2); font: inherit; text-align: left; }
 .art-block-tg .art-block-kind { display: inline-flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
 .art-block-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); font-size: 0.76rem; }
-.art-block:not(.is-collapsed) .art-block-sum { display: none; }
+.art-block:not(.is-collapsed) .art-block-sum,
+.art-look-block:not(.is-collapsed) .art-block-sum { display: none; }
 .art-block-extra { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .art-block-bar > .art-block-ic { justify-self: center; width: 28px; height: 28px; justify-content: center; padding: 0; }
 .art-block-cell { width: 28px; }

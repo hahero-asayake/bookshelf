@@ -8532,7 +8532,7 @@ class VirtualBookshelf {
                     <div class="art-look-list" role="radiogroup" aria-label="配色">${colors.map(it => row('color', it)).join('')}</div>
                 </section>
             </div>`;
-        return `<div class="art-block art-look-block${collapsed ? ' is-collapsed' : ''}" data-look-block="1">
+        return `<div class="art-look-block${collapsed ? ' is-collapsed' : ''}" data-look-block="1">
             ${this._artBlockBar({ id: 'look', kind: '見た目', icon: 'palette', summary: this._artThemeSummary(), fixed: true })}
             ${body}
         </div>`;
@@ -8707,7 +8707,8 @@ class VirtualBookshelf {
             else allIds.forEach(id => col.add(id));
             this._artRenderBlocks();
         });
-        host.querySelectorAll('.art-block').forEach(el => {
+        // 見た目ブロックは並べ替え・複製・削除の対象外なので .art-block を名乗らない (ドラッグ先・件数に混ざらない)
+        host.querySelectorAll('.art-block, .art-look-block').forEach(el => {
             const id = el.dataset.lookBlock ? 'look' : el.dataset.blockId;
             const tg = el.querySelector(':scope > .art-block-bar .art-block-tg');
             if (tg && id) tg.addEventListener('click', (e) => {
