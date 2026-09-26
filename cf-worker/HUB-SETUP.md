@@ -323,7 +323,7 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 - **通報→停止は完全手動**: `POST /community/report` は D1 `reports` に 1 行積むだけで、KV `report:` は書かれず、運営への通知も自動停止も無い (通報を誰がいつ見て KV を書くかの運用は未定義)。D1 の通報行は、退会で消える (ADR-099・#220 以降: 本人が付けた通報と本人の記事への通報を `handleAccountDelete` が削除)。通報の審査は管理 API (`GET /admin/reports`・`POST /admin/articles/:id/hide|restore`・`POST /admin/reports/:id/dismiss`・`ADMIN_EMAILS` の管理者のみ) とアプリの設定→アカウント→「通報の審査」で行う (記事の実体は変えず索引から外すだけ)。通報の受付時は secret `REPORT_WEBHOOK_URL` (Discord webhook) へ通知する (未設定でも通報は記録される)。サイト全体の 451 停止は引き続き手動 (上記)。
 - **wrangler の認証 (`wrangler login` の OAuth) は失効する**。2026-09-05 に失効を確認 (2026-09-24 時点)。**kuroko の API トークン (上の「デプロイ運用」) を使えば login は不要**で、KV への put/delete も `wrangler deploy` もこのトークンで行える。人間が手で行う場合だけ `wrangler login` をやり直すこと。
 
-> 451 の実機確認は 2026-09-24 の検証では未実施 (認証失効のため)。**認証は kuroko のトークンで解消済み＝いつでも実施できる**。ローンチ前に上記の手順 (`--ttl` 付き put → `bookshelf.asayake.org/<username>/` を curl で確認) で行うこと。
+> 451 の実機確認は **2026-09-26 に実施済み** (イシュー#223・kuroko の検証用サイト・本番)。`--ttl 300` 付きで `report:<siteId>` に suspended を put → 記事ページは put の約 37 秒後・トップは約 91 秒後に **HTTP 451** (`text/plain`・本文 `This site has been suspended.`・`hub.asayake.org/public/<siteId>/` は 301→451) → **TTL 失効の約 11 秒後に自動で 200 復帰** (delete 不要) → 退会で公開 URL は 404。反映は URL ごとに Cache API (max-age=60) のエントリが別なので、ページごとに 451 になる時刻がずれる。451 の応答は英語 1 行のみ (日本語の説明・連絡先なし＝文言方針は決裁待ち)。
 
 ### G-5. バックアップ (KV / R2 / D1・外-11・イシュー#226)
 
