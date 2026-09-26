@@ -5,6 +5,7 @@
 //    課金書込 (setPlan) がキーを共有せず互いをクロバーしない。setPlan/applyStripeEvent はその plan: を書く。
 //  - Checkout/Portal の作成 (Stripe REST 呼び出し) は実口座が要るため対象外 (デプロイ後に実機検証)。
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import worker from '../../cf-worker/asayake-hub.js';
 import { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail } from '../../cf-worker/asayake-hub.js';
 
 // 簡易 KV モック (Cloudflare KV の get(json)/put/delete 互換)
@@ -488,4 +489,214 @@ describe('handleCheckout (Managed Payments, ADR-037)', () => {
             .rejects.toMatchObject({ status: 503 });
         expect(cap.url).toBeUndefined();   // Stripe を叩く前に弾く
     });
+});
+
+// ===== Webhook 経路 (#227): 署名検証→イベント適用→plan 更新を worker.fetch の /billing/webhook 経由で通す =====
+//  - 関数直呼びでなく本番と同じ入口 (POST /billing/webhook) から流す。認証 (Bearer) も Origin も要らない経路。
+//  - 冪等性は「event.id を記録して弾く」方式ではなく「同じイベントを何度当てても plan:<uid> が同じ状態に収束する」方式。
+describe('Webhook 経路: worker.fetch の POST /billing/webhook (#227)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const SECRET = 'whsec_test_227';
+
+    async function hmacHex(payload, secret, t) {
+        const enc = new TextEncoder();
+        const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const mac = await crypto.subtle.sign('HMAC', key, enc.encode(`${t}.${payload}`));
+        return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // Stripe と同じ形 (Stripe-Signature: t=…,v1=…) で署名済みの POST を作る。header を渡せば上書き (欠落/改ざん用)
+    async function webhookReq(event, { secret = SECRET, t = Math.floor(Date.now() / 1000), header, body } = {}) {
+        const payload = body !== undefined ? body : JSON.stringify(event);
+        const headers = { 'Content-Type': 'application/json' };
+        const sig = header !== undefined ? header : `t=${t},v1=${await hmacHex(payload, secret, t)}`;
+        if (sig !== null) headers['Stripe-Signature'] = sig;
+        return new Request('https://hub.example/billing/webhook', { method: 'POST', headers, body: payload });
+    }
+    const hubEnv = (KV, extra = {}) => ({ KV, STRIPE_WEBHOOK_SECRET: SECRET, PLUS_QUOTA_BYTES: String(PLUS_QUOTA), QUOTA_BYTES: String(FREE_QUOTA), APP_ORIGIN: 'https://app.example', ...extra });
+    const post = (req, e) => worker.fetch(req, e, { waitUntil() {} });
+    const completed = (o = {}) => ({ id: 'evt_c1', type: 'checkout.session.completed', data: { object: { client_reference_id: 'u1', customer: 'cus_1', subscription: 'sub_1', ...o } } });
+    const subEvent = (type, o = {}) => ({ id: 'evt_' + type, type, data: { object: { id: 'sub_1', customer: 'cus_1', status: 'active', ...o } } });
+    const freshKV = () => makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA } });
+    const planOf = async (KV) => KV.get('plan:u1', 'json');
+
+    it('STRIPE_WEBHOOK_SECRET 未設定なら 503 (署名が正しくても課金無効・plan 不変)', async () => {
+        const KV = freshKV();
+        const res = await post(await webhookReq(completed()), hubEnv(KV, { STRIPE_WEBHOOK_SECRET: undefined }));
+        expect(res.status).toBe(503);
+        expect((await planOf(KV)).plan).toBe('free');
+    });
+
+    describe('署名が不正なら 400 で plan を動かさない', () => {
+        it('Stripe-Signature ヘッダ欠落', async () => {
+            const KV = freshKV();
+            const res = await post(await webhookReq(completed(), { header: null }), hubEnv(KV));
+            expect(res.status).toBe(400);
+            expect((await planOf(KV)).plan).toBe('free');
+            expect(await KV.get('stripe:cus_1')).toBeNull();
+        });
+        it('署名が改ざん (v1 が違う)', async () => {
+            const KV = freshKV();
+            const t = Math.floor(Date.now() / 1000);
+            const res = await post(await webhookReq(completed(), { header: `t=${t},v1=deadbeef` }), hubEnv(KV));
+            expect(res.status).toBe(400);
+            expect((await planOf(KV)).plan).toBe('free');
+        });
+        it('本文が署名後に書き換えられた (署名は元の本文のまま)', async () => {
+            const KV = freshKV();
+            const t = Math.floor(Date.now() / 1000);
+            const v1 = await hmacHex(JSON.stringify(completed()), SECRET, t);
+            const tampered = JSON.stringify(completed({ client_reference_id: 'u1', customer: 'cus_ATTACKER' }));
+            const res = await post(await webhookReq(null, { header: `t=${t},v1=${v1}`, body: tampered }), hubEnv(KV));
+            expect(res.status).toBe(400);
+            expect((await planOf(KV)).plan).toBe('free');
+            expect(await KV.get('stripe:cus_ATTACKER')).toBeNull();
+        });
+        it('別の secret で署名 (他アカウント/テストモードの whsec)', async () => {
+            const KV = freshKV();
+            const res = await post(await webhookReq(completed(), { secret: 'whsec_other_account' }), hubEnv(KV));
+            expect(res.status).toBe(400);
+            expect((await planOf(KV)).plan).toBe('free');
+        });
+        it('古いタイムスタンプ (リプレイ対策・許容 5 分)', async () => {
+            const KV = freshKV();
+            const res = await post(await webhookReq(completed(), { t: Math.floor(Date.now() / 1000) - 3600 }), hubEnv(KV));
+            expect(res.status).toBe(400);
+            expect((await planOf(KV)).plan).toBe('free');
+        });
+    });
+
+    it('正署名の checkout.session.completed → 200・plan:<uid> が plus・quota 引き上げ・customer→uid 逆引き', async () => {
+        const KV = freshKV();
+        const res = await post(await webhookReq(completed()), hubEnv(KV));
+        expect(res.status).toBe(200);
+        const p = await planOf(KV);
+        expect(p.plan).toBe('plus');
+        expect(p.quotaBytes).toBe(PLUS_QUOTA);
+        expect(p.stripeCustomerId).toBe('cus_1');
+        expect(p.stripeSubscriptionId).toBe('sub_1');
+        expect(await KV.get('stripe:cus_1')).toBe('u1');
+    });
+
+    it('Authorization も Origin も無い純サーバ間 POST で通る (アプリ origin 制限の外)', async () => {
+        const KV = freshKV();
+        const req = await webhookReq(completed());
+        expect(req.headers.get('Authorization')).toBeNull();
+        expect(req.headers.get('Origin')).toBeNull();
+        expect((await post(req, hubEnv(KV))).status).toBe(200);
+    });
+
+    it('POST 以外は webhook 経路に入らない (GET は 404・plan 不変)', async () => {
+        const KV = freshKV();
+        const res = await post(new Request('https://hub.example/billing/webhook', { method: 'GET' }), hubEnv(KV));
+        expect(res.status).toBe(404);
+        expect((await planOf(KV)).plan).toBe('free');
+    });
+
+    it('uid レコードが無い (退会レース) 間は 500 で Stripe にリトライさせ、レコードが戻った再送で 200・plus に確定', async () => {
+        const KV = makeKV({});   // uid:u1 無し
+        const first = await post(await webhookReq(completed()), hubEnv(KV));
+        expect(first.status).toBe(500);
+        expect(await first.text()).toMatch(/handler error/);
+        expect(await KV.get('stripe:cus_1')).toBeNull();      // orphan 逆引きを張らない
+        expect(await KV.get('plan:u1')).toBeNull();
+        KV.store.set('uid:u1', JSON.stringify({ siteId: 's1', status: 'ok' }));
+        KV.store.set('plan:u1', JSON.stringify({ plan: 'free', quotaBytes: FREE_QUOTA }));
+        const retry = await post(await webhookReq(completed()), hubEnv(KV));
+        expect(retry.status).toBe(200);
+        expect((await planOf(KV)).plan).toBe('plus');
+    });
+
+    describe('冪等性 (同じイベントの再送・Stripe の自動リトライ)', () => {
+        it('同一 checkout.session.completed を 2 回 POST しても状態が同じ・同一 subscription への DELETE は走らない', async () => {
+            const KV = freshKV();
+            const calls = [];
+            vi.stubGlobal('fetch', async (url, opts) => {
+                calls.push({ url: String(url), method: opts && opts.method });
+                return new Response(JSON.stringify({ id: 'sub_1', status: 'active', items: { data: [{ price: { recurring: { interval: 'month' } } }] }, current_period_end: 1800000000 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            });
+            const e = hubEnv(KV, { STRIPE_SECRET_KEY: 'sk_test' });
+            expect((await post(await webhookReq(completed()), e)).status).toBe(200);
+            const once = await planOf(KV);
+            const rev1 = await KV.get('stripe:cus_1');
+            expect((await post(await webhookReq(completed()), e)).status).toBe(200);
+            expect(await planOf(KV)).toEqual(once);
+            expect(await KV.get('stripe:cus_1')).toBe(rev1);
+            expect(once).toMatchObject({ plan: 'plus', quotaBytes: PLUS_QUOTA, interval: 'month', currentPeriodEnd: 1800000000, subStatus: 'active' });
+            expect(calls.filter(c => c.method === 'DELETE')).toEqual([]);    // 自分自身の sub を消さない (二重課金防止の誤爆なし)
+        });
+
+        it('同一 customer.subscription.deleted を 2 回 POST しても Free のまま同じ状態 (quota 二重減算などなし)', async () => {
+            const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1', interval: 'month', currentPeriodEnd: 1800000000 }, 'stripe:cus_1': 'u1' });
+            const ev = subEvent('customer.subscription.deleted', { status: 'canceled' });
+            expect((await post(await webhookReq(ev), hubEnv(KV))).status).toBe(200);
+            const once = await planOf(KV);
+            expect(once).toMatchObject({ plan: 'free', quotaBytes: FREE_QUOTA, cancelAtPeriodEnd: false });
+            expect(once.interval).toBeUndefined();
+            expect((await post(await webhookReq(ev), hubEnv(KV))).status).toBe(200);
+            expect(await planOf(KV)).toEqual(once);
+        });
+
+        it('同一 customer.subscription.updated を 2 回 POST しても Plus のまま同じ状態', async () => {
+            const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'free', quotaBytes: FREE_QUOTA }, 'stripe:cus_1': 'u1' });
+            const ev = subEvent('customer.subscription.updated', { current_period_end: 1800000000, items: { data: [{ price: { recurring: { interval: 'year' } } }] } });
+            await post(await webhookReq(ev), hubEnv(KV));
+            const once = await planOf(KV);
+            await post(await webhookReq(ev), hubEnv(KV));
+            expect(await planOf(KV)).toEqual(once);
+            expect(once).toMatchObject({ plan: 'plus', interval: 'year', quotaBytes: PLUS_QUOTA });
+        });
+    });
+
+    it('ライフサイクル一巡: 購入→解約予約→期間満了で Free (逆引きの張られる前に届く created は無視して 200)', async () => {
+        const KV = freshKV();
+        const e = hubEnv(KV);
+        // created が completed より先着 (逆引き未確立) → 無視して 200・plan 不変 (completed 側で確定する)
+        expect((await post(await webhookReq(subEvent('customer.subscription.created')), e)).status).toBe(200);
+        expect((await planOf(KV)).plan).toBe('free');
+        // 購入完了 → Plus
+        expect((await post(await webhookReq(completed()), e)).status).toBe(200);
+        expect((await planOf(KV)).plan).toBe('plus');
+        // ポータルで解約 (期間末まで有効) → Plus のまま cancelAtPeriodEnd が立つ
+        expect((await post(await webhookReq(subEvent('customer.subscription.updated', { cancel_at_period_end: true, current_period_end: 1800000000 })), e)).status).toBe(200);
+        expect(await planOf(KV)).toMatchObject({ plan: 'plus', cancelAtPeriodEnd: true, currentPeriodEnd: 1800000000 });
+        // 期間満了 → Free に降格・解約予約フラグもクリア
+        expect((await post(await webhookReq(subEvent('customer.subscription.deleted', { status: 'canceled' })), e)).status).toBe(200);
+        expect(await planOf(KV)).toMatchObject({ plan: 'free', quotaBytes: FREE_QUOTA, cancelAtPeriodEnd: false });
+    });
+
+    it('管理者付与 (comp) のアカウントは Stripe の subscription.deleted が来ても Free に落ちない (経路経由)', async () => {
+        const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, adminGrant: true, stripeCustomerId: 'cus_1' }, 'stripe:cus_1': 'u1' });
+        const res = await post(await webhookReq(subEvent('customer.subscription.deleted', { status: 'canceled' })), hubEnv(KV));
+        expect(res.status).toBe(200);
+        expect((await planOf(KV)).plan).toBe('plus');
+    });
+
+    it('Stripe から subscription を取得できなくても Plus 化は止めない (周期/更新日だけ欠ける)', async () => {
+        const KV = freshKV();
+        vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+        const res = await post(await webhookReq(completed()), hubEnv(KV, { STRIPE_SECRET_KEY: 'sk_test' }));
+        expect(res.status).toBe(200);
+        const p = await planOf(KV);
+        expect(p.plan).toBe('plus');
+        expect(p.interval).toBeUndefined();
+    });
+
+    it('サブスク詳細の取得は STRIPE_API_VERSION (既定=Managed Payments のプレビュー版) を付けて Stripe を叩く', async () => {
+        const KV = freshKV();
+        const seen = [];
+        vi.stubGlobal('fetch', async (url, opts) => {
+            seen.push({ url: String(url), method: opts && opts.method, version: opts && opts.headers && opts.headers['Stripe-Version'] });
+            return new Response(JSON.stringify({ id: 'sub_1', status: 'active' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+        await post(await webhookReq(completed()), hubEnv(KV, { STRIPE_SECRET_KEY: 'sk_test' }));
+        expect(seen).toEqual([{ url: 'https://api.stripe.com/v1/subscriptions/sub_1', method: 'GET', version: '2026-02-25.preview' }]);
+    });
+
+    // 実測 (#227): 下の 2 件は現状の挙動が期待とずれる (asayake-hub.js は変更しない・所見として記録)。修正が入ったら todo を本テストへ昇格する。
+    //  - 順序逆転: subscription.deleted で Free に落とした後に、古い subscription.updated(active) が遅れて届くと Plus に戻る (event.id / created の新旧ガード無し)。
+    //  - 秘密ローテーション: 署名ヘッダに v1 が複数並ぶ (旧+新 secret の併記) と verifyStripeSignature は最後の v1 だけを見る
+    //    (`t=…,v1=<正>,v1=<旧>` は 400・`v1=<旧>,v1=<正>` は 200)。
+    it.todo('deleted の後に遅れて届いた古い updated(active) で Plus に戻らない (順序逆転ガード)');
+    it.todo('Stripe-Signature に v1 が複数あっても、いずれかが正しければ検証を通す (secret ローテーション併記)');
 });
