@@ -165,11 +165,9 @@ describe('scheduled → 1 世代のバックアップ', () => {
         expect(d.rows('select hex(a) h, b, c from t')).toEqual([{ h: '01FF', b: null, c: 3.5 }]);
     });
 
-    it('別の cron 式では何もしない・salt が無ければ secrets.json を作らない', async () => {
-        await worker.scheduled(controller('0 * * * *'), env, { waitUntil() {} });
-        expect(env.BACKUP.store.size).toBe(0);
+    it('cron 式は問わず起動する (初回の手動実行で一時的な cron を足せる)・salt が無ければ secrets.json を作らない', async () => {
         delete env.TOMBSTONE_SALT;
-        await worker.scheduled(controller(''), env, { waitUntil() {} });
+        await worker.scheduled(controller('58 3 26 9 *'), env, { waitUntil() {} });
         const [gen] = gens(env.BACKUP);
         expect(env.BACKUP.store.has(`gen/${gen}/secrets.json`)).toBe(false);
         expect(JSON.parse(dec(env.BACKUP.store.get(`gen/${gen}/manifest.json`).body)).salt).toBe(false);

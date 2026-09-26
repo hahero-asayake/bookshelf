@@ -54,15 +54,16 @@
 
 import { serveHeaders, contentType } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
-import { scheduledBackup, BACKUP_CRON } from './backup.js';
+import { scheduledBackup } from './backup.js';
 
 const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
 
 export default {
     // Cron Trigger (wrangler.hub.toml の [triggers])。日次バックアップ (イシュー#235・backup.js)。fetch の経路には触れない。
+    // 今の Cron はバックアップだけ (初回の手動実行で一時的な cron を足しても動く)。別の Cron を足す時は controller.cron でここを振り分ける。
     async scheduled(controller, env, ctx) {
-        if (!controller.cron || controller.cron === BACKUP_CRON) await scheduledBackup(env);
+        await scheduledBackup(env);
     },
 
     async fetch(request, env, ctx) {
