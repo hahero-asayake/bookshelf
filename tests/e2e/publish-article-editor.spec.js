@@ -959,6 +959,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await expect(page.locator('#art-list-view')).toBeVisible();
         hubCaptured.files = null;
+        await closePublishPanelIfOpen(page);
         await page.click('#art-republish-all');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
         let toastText = await page.locator('.toast-success').last().textContent();
@@ -980,6 +981,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await expect(page.locator('#art-list-view')).toBeVisible();
         hubCaptured.files = null;
+        await closePublishPanelIfOpen(page);
         await page.click('#art-republish-all');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
         toastText = await page.locator('.toast-success').last().textContent();
@@ -2848,82 +2850,30 @@ test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名
 
 // イシュー#168: フッター (.pp-edit-actions) の「崩れ」を #166 の数値項目 (はみ出し・横スクロール) に
 // 加えて、折り返し行の内容・矩形交差・内容あふれ・pp-page-ops内部の分裂まで検出する。
-test.describe('記事エディタ: フッターの崩れ検出 (折り返し・重なり・内部分裂・イシュー#168)', () => {
-    async function measureFooter(page) {
-        return page.evaluate(() => {
-            const container = document.querySelector('.form-actions.pp-edit-actions');
-            if (!container) return null;
-            const pageOps = document.getElementById('art-page-ops');
-            const pageOpsRect = pageOps ? pageOps.getBoundingClientRect() : null;
-            const rects = Array.from(container.children)
-                .filter(el => !el.hidden && getComputedStyle(el).display !== 'none')
-                .map(el => {
-                    const r = el.getBoundingClientRect();
-                    return { id: el.id || el.className, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
-                });
-            let overlapCount = 0;
-            for (let i = 0; i < rects.length; i++) {
-                for (let j = i + 1; j < rects.length; j++) {
-                    const a = rects[i], b = rects[j];
-                    const ix = Math.max(a.left, b.left) < Math.min(a.right, b.right);
-                    const iy = Math.max(a.top, b.top) < Math.min(a.bottom, b.bottom);
-                    if (ix && iy) overlapCount++;
-                }
-            }
-            // イシュー#168差し戻し対応: 配色スウォッチが配色selectと分断され「謎の黒丸」として
-            // 孤立していた実機不具合(390px)の再発防止。同じ .art-theme-group 内にあるか(DOM構造)と、
-            // centerYが近いか(視覚的に同じ行か。高さの違うselect/swatchはtopでなくcenterYで比べる)を見る。
-            const colorSel = document.getElementById('art-theme-color');
-            const swatch = document.getElementById('art-theme-swatch');
-            const sameThemeGroup = !!(colorSel && swatch && colorSel.closest('.art-theme-group') === swatch.closest('.art-theme-group') && colorSel.closest('.art-theme-group') !== null);
-            const colorSelRect = colorSel ? colorSel.getBoundingClientRect() : null;
-            const swatchRect = swatch ? swatch.getBoundingClientRect() : null;
-            const swatchCenterYDiff = (colorSelRect && swatchRect)
-                ? Math.abs(((colorSelRect.top + colorSelRect.bottom) / 2) - ((swatchRect.top + swatchRect.bottom) / 2))
-                : null;
-            return {
-                innerWidth: window.innerWidth,
-                scrollHeight: container.scrollHeight,
-                clientHeight: container.clientHeight,
-                anyRightOverflow: rects.some(r => r.right > window.innerWidth),
-                overlapCount,
-                pageOpsHeight: pageOpsRect ? Math.round(pageOpsRect.height) : null,
-                sameThemeGroup,
-                swatchCenterYDiff,
-            };
-        });
-    }
-
+// イシュー#230: フッターを撤去しヘッダー1行 (戻る/タイトル+保存状態/プレビュー/公開する/⋯) へ。旧フッター崩れ検出 (#168) を
+// ヘッダーの崩れ検出に置き換える: 操作ボタン4つが同じ行 (縦中心の差 < 4px) に並び、画面の右へはみ出さない。
+test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー#230・旧フッター崩れ検出 #168 の置き換え)', () => {
     for (const vp of [
         { width: 390, height: 844 }, { width: 430, height: 932 }, { width: 600, height: 1080 },
         { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1080, height: 1920 },
     ]) {
-        test(`${vp.width}x${vp.height}: 内容あふれ・重なり・pp-page-ops内部分裂が無い`, async ({ page }) => {
+        test(`${vp.width}x${vp.height}: 戻る/プレビュー/公開する/⋯ が1行に並び、はみ出さない`, async ({ page }) => {
             await page.setViewportSize(vp);
             const errors = await bootApp(page);
             await page.evaluate(() => window.bookshelf.openPublishPagesModal());
             await page.click('#art-new');
+            await page.fill('#art-title', 'ヘッダー確認');
             await page.evaluate(() => window.bookshelf._artFlushSave());
-            await expect.poll(() => page.evaluate(() => !document.getElementById('art-page-ops').hidden)).toBe(true);
-            // 3ボタン(複製/公開を取り消す/削除)が揃った最大構成で測る (実測記事と同条件)
-            await page.evaluate(() => {
-                window.bookshelf._artDraft.published = true;
-                const unpub = document.getElementById('art-unpublish');
-                if (unpub) unpub.hidden = false;
+            await expect(page.locator('#art-page-ops')).toBeVisible();
+            await expect(page.locator('.pp-edit-actions')).toHaveCount(0);
+            const m = await page.evaluate(() => {
+                const ids = ['art-back', 'art-preview', 'art-publish-header', 'art-more-btn'];
+                const rs = ids.map(id => document.getElementById(id).getBoundingClientRect());
+                const cy = rs.map(r => (r.top + r.bottom) / 2);
+                return { cyRange: Math.max(...cy) - Math.min(...cy), maxRight: Math.max(...rs.map(r => r.right)), vw: window.innerWidth };
             });
-
-            const m = await measureFooter(page);
-            expect(m.scrollHeight).toBeLessThanOrEqual(m.clientHeight);
-            expect(m.anyRightOverflow).toBe(false);
-            expect(m.overlapCount).toBe(0);
-            // イシュー#168実測の核心: pp-page-ops (複製/公開取消/削除) は nowrap 化により
-            // どの幅でも1行 (36px前後) を維持し、768のような内部3行分裂 (旧h=122px) を起こさない。
-            // イシュー#170でフッターを3ゾーン化し、900px以下では各ゾーン間に区切り線+padding-top
-            // (0.6rem) を挟むようになったため、900px以下のpp-page-ops実測値は47px前後に上がった
-            // (36px+padding)。閾値は「1行+区切り分」と「3行分裂(旧h=122px)」を明確に区別できる
-            // 70pxへ緩める(3行分裂ならこの閾値でも確実に検知できる)。
-            expect(m.pageOpsHeight).toBeLessThanOrEqual(70);
-            // (配色スウォッチの同一行チェックは、select 撤去=見た目ブロック移設で対象が無くなったため削除・イシュー#230)
+            expect(m.cyRange).toBeLessThan(4);
+            expect(m.maxRight).toBeLessThanOrEqual(m.vw);
             expect(errors).toEqual([]);
         });
     }
