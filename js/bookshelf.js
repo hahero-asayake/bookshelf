@@ -8849,7 +8849,7 @@ class VirtualBookshelf {
                 <span class="art-shelf-item-grip h-icon" data-icon="grip-vertical" data-icon-size="12"></span>
                 <div class="art-cover">${cover}</div>
                 <div class="art-shelf-item-title">${esc(title)}</div>
-                ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}"`)}
+                ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}" aria-describedby="art-item-tooltip"`)}
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
                     <button type="button" class="art-shelf-item-ic art-item-to-last" title="末尾へ"${i === items.length - 1 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-down" data-icon-size="12"></span></button>
