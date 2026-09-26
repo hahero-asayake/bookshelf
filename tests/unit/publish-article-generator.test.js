@@ -48,7 +48,8 @@ function makeArticle(partial = {}) {
         tags: partial.tags || [], blocks: partial.blocks || [],
         theme: partial.theme || { layout: 'card', color: 'white' },
         published: partial.published !== undefined ? partial.published : true,
-        createdAt: 1, updatedAt: 2, lastBuiltAt: null
+        createdAt: 1, updatedAt: 2, lastBuiltAt: null,
+        ...(partial.adTag !== undefined ? { adTag: partial.adTag } : {})
     };
 }
 
@@ -630,6 +631,25 @@ describe('Amazon リンク方式 (旧 PublishGenerator と同じ規約を踏襲,
         expect(html).toContain('/go/site1/');
         expect(html).not.toContain('tag=aff-xyz');
         expect(r.ownTag).toBe('aff-xyz');
+    });
+
+    it('記事ごとの adTag=none は allowAdTagNone のときだけ効き、タグ無しリンク・広告ラベル無しになる (イシュー#230)', async () => {
+        const blocks = [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }];
+        const page = (r) => r.files.find(f => f.path === 'pub-test01/index.html').content;
+        // GitHub / Plus (exporter が allowAdTagNone=true を渡す): 付けない
+        const gh = page(await gen.build([makeArticle({ blocks, adTag: 'none' })], { target: 'github', allowAdTagNone: true }));
+        expect(gh).not.toContain('tag=aff-xyz');
+        expect(gh).not.toContain('class="pub-ad-top"');
+        const hubPlus = page(await gen.build([makeArticle({ blocks, adTag: 'none' })], { target: 'hub', siteId: 'site1', allowAdTagNone: true }));
+        expect(hubPlus).not.toContain('/go/site1/');
+        expect(hubPlus).not.toContain('class="pub-ad-top"');
+        // ハブ×Free (allowAdTagNone=false): 記事に none が残っていても運営タグ経路 (/go) のまま
+        const hubFree = page(await gen.build([makeArticle({ blocks, adTag: 'none' })], { target: 'hub', siteId: 'site1' }));
+        expect(hubFree).toContain('/go/site1/');
+        expect(hubFree).toContain('class="pub-ad-top"');
+        // own は従来どおり
+        const own = page(await gen.build([makeArticle({ blocks, adTag: 'own' })], { target: 'github', allowAdTagNone: true }));
+        expect(own).toContain('tag=aff-xyz');
     });
 
     it('本が0件の記事には広告ラベルを出さない', async () => {
