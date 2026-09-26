@@ -13,6 +13,12 @@ account_id = "7b1c63e99dcd20999d3d0d5de0183873"   # asayake.org のあるアカ�
 binding = "BUCKET"
 bucket_name = "asayake-hub"
 
+# --- R2 バックアップ専用バケット (イシュー#235・非公開: r2.dev 無効・カスタムドメイン無し。scheduled だけが書く) ---
+# 先に `wrangler r2 bucket create asayake-hub-backup` が要る (無いと deploy が失敗する)。
+[[r2_buckets]]
+binding = "BACKUP"
+bucket_name = "asayake-hub-backup"
+
 # --- KV (キー/uid/通報) ---
 [[kv_namespaces]]
 binding = "KV"
@@ -71,6 +77,10 @@ simple = { limit = 60, period = 60 }
 # head_sampling_rate は書かない (デフォルト 1.0 = 全リクエスト記録)
 [observability]
 enabled = true
+
+# --- Cron Trigger (イシュー#235): 日次バックアップ。UTC 18:50 = JST 03:50。cron 式は backup.js の BACKUP_CRON と揃える ---
+[triggers]
+crons = ["50 18 * * *"]
 
 # --- ルート: hub.asayake.org を Worker 専用ホストに ---
 # custom_domain=true なら wrangler が DNS レコードと TLS 証明書も自動作成する

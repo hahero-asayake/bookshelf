@@ -43,6 +43,8 @@
 //   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
 //   ADMIN_EMAILS           (secret) カンマ区切りの管理者メール。/admin/plan で特定アカウントを無料↔Plus に手動
 //                    切替できる (Stripe を経由しない優待。ADR-038)。未設定なら /admin/plan は 403。
+//   BACKUP                 (R2 binding・#235) 日次バックアップ専用の非公開バケット asayake-hub-backup。scheduled だけが使う (fetch からは触らない・公開しない)。
+//                    未設定なら scheduled は何もコピーせず失敗として記録する。バックアップの失敗は REPORT_WEBHOOK_URL へ 1 行通知 (backup.js)。
 //   REPORT_WEBHOOK_URL     (secret) 通報を受けたときにハヘロへ知らせる Discord webhook の URL (ADR-099)。未設定でも通報は受け付け、
 //                    通知だけ省く (console.warn)。/admin/reports などの通報審査 API は ADMIN_EMAILS の管理者だけが使える。
 //
@@ -52,11 +54,17 @@
 
 import { serveHeaders, contentType } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
+import { scheduledBackup, BACKUP_CRON } from './backup.js';
 
 const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
 
 export default {
+    // Cron Trigger (wrangler.hub.toml の [triggers])。日次バックアップ (イシュー#235・backup.js)。fetch の経路には触れない。
+    async scheduled(controller, env, ctx) {
+        if (!controller.cron || controller.cron === BACKUP_CRON) await scheduledBackup(env);
+    },
+
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const path = url.pathname;
