@@ -7620,6 +7620,10 @@ body.select-mode .drag-handle { display: none; }
 .art-pub-radio { display: flex; align-items: center; gap: 0.5rem; font-size: 0.86rem; cursor: pointer; }
 .art-pub-radio.is-disabled { color: var(--fg2); cursor: default; }
 .art-pub-tags { border-bottom: none; margin-bottom: 0; padding: 0; }
+/* タグ0個のとき空の ul が flex gap 分だけ入力欄を右へ押す (390 で +8px ずれた・②差し戻し) → 空なら消してラベル列に揃える */
+.art-pub-tags .art-tags:empty { display: none; }
+/* ラジオの UA 既定 margin (左 5px 等) でラベル列から右へずれるのを消す */
+.art-pub-radio input[type="radio"] { margin: 0; }
 .art-pub-done { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.6rem 0.7rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-bg); }
 .art-pub-done[hidden] { display: none; }
 .art-pub-done-label { font-size: 0.78rem; font-weight: 600; color: var(--fg2); }

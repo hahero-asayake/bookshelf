@@ -1546,6 +1546,35 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(errors).toEqual([]);
     });
 
+    test('見た目ブロック: 新規記事は開いて始まり、既存記事 (ブロック2個以上) を開き直すと畳んで始まり要約「カード／白」を出す。畳みは保存しない (イシュー#230)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await expect(page.locator('.art-look-block')).not.toHaveClass(/is-collapsed/);
+        await expect(page.locator('.art-look-list').first()).toBeVisible();
+        await page.fill('#art-title', '見た目の畳み確認');
+        for (const text of ['一つ目', '二つ目']) {
+            await page.locator('.art-add-btn').last().click();
+            await page.locator('.art-add-menu-item[data-block-type="text"]').last().click();
+            await page.locator('.art-block-text textarea').last().fill(text);
+        }
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await page.click('#art-back');
+        await page.locator('li.pp-row [data-act="edit"]').first().click();
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        const look = page.locator('.art-look-block');
+        await expect(look).toHaveClass(/is-collapsed/);
+        await expect(look.locator('.art-look-list')).toHaveCount(0);
+        await expect(look.locator('.art-block-sum')).toHaveText('カード／白');
+        // 開けば一覧が出る。記事データに畳み状態は入らない
+        await look.locator('.art-block-tg').click();
+        await expect(page.locator('.art-look-list').first()).toBeVisible();
+        const art = await page.evaluate(() => window.bookshelf.publishArticleStore.get(window.bookshelf._artEditingId));
+        expect(JSON.stringify(art)).not.toContain('collapsed');
+        expect(errors).toEqual([]);
+    });
+
     test('見た目の配色リストは検索で絞り込め、プラグインが登録した項目は提供元つきで一覧に出る (イシュー#230)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => {
