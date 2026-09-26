@@ -1211,7 +1211,10 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
 
         // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
         // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
-        await page.evaluate(() => { const col = document.querySelector('.art-col'); if (col) col.scrollTop = 0; });
+        // イシュー#230: キャンバス先頭に「見た目」ブロック (開いた状態で約330px) が入ったため、scrollTop=0 だと
+        // 1280x720 の .art-col (可視高 約345px) からブロックA/Bが可視域外へ押し出され elementFromPoint が null になる
+        // (実測: gripA.y=677 > .art-col 下端 585)。前提「両ブロックが見える」を保つため、ブロックAを可視域の先頭へ寄せる。
+        await page.evaluate(() => { const a = document.querySelector('.art-block'); if (a) a.scrollIntoView({ block: 'start' }); });
         const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
         const blockB = page.locator('.art-block').nth(1);
         const gripBox = await gripA.boundingBox();
@@ -1263,6 +1266,8 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
         expect(before).toHaveLength(2);
 
         const items = page.locator('.art-shelf-item');
+        // イシュー#230: 見た目ブロックの分だけ本棚の行が下がり可視域外になるため、1冊目を可視域の先頭へ寄せてから掴む
+        await page.evaluate(() => { const a = document.querySelector('.art-shelf-item'); if (a) a.scrollIntoView({ block: 'start' }); });
         const gripA = items.nth(0).locator('.art-shelf-item-grip');
         const itemB = items.nth(1);
         const gripBox = await gripA.boundingBox();
@@ -1298,7 +1303,10 @@ test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', ()
 
         // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
         // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
-        await page.evaluate(() => { const col = document.querySelector('.art-col'); if (col) col.scrollTop = 0; });
+        // イシュー#230: キャンバス先頭に「見た目」ブロック (開いた状態で約330px) が入ったため、scrollTop=0 だと
+        // 1280x720 の .art-col (可視高 約345px) からブロックA/Bが可視域外へ押し出され elementFromPoint が null になる
+        // (実測: gripA.y=677 > .art-col 下端 585)。前提「両ブロックが見える」を保つため、ブロックAを可視域の先頭へ寄せる。
+        await page.evaluate(() => { const a = document.querySelector('.art-block'); if (a) a.scrollIntoView({ block: 'start' }); });
         const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
         const blockB = page.locator('.art-block').nth(1);
         const gripBox = await gripA.boundingBox();
@@ -1327,6 +1335,8 @@ test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', ()
         expect(before).toHaveLength(2);
 
         const items = page.locator('.art-shelf-item');
+        // イシュー#230: 見た目ブロックの分だけ本棚の行が下がり可視域外になるため、1冊目を可視域の先頭へ寄せてから掴む
+        await page.evaluate(() => { const a = document.querySelector('.art-shelf-item'); if (a) a.scrollIntoView({ block: 'start' }); });
         const gripA = items.nth(0).locator('.art-shelf-item-grip');
         const itemB = items.nth(1);
         const gripBox = await gripA.boundingBox();
