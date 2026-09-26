@@ -6027,6 +6027,8 @@ class VirtualBookshelf {
     }
 
     async _openSettingsModal(targetId) {
+        // 公開パネル (記事エディタの上のモーダル) から設定へ移る時は、パネルを先に閉じる (設定の上に残らない・イシュー#230)
+        if (typeof this._artClosePublishPanel === 'function') this._artClosePublishPanel();
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
         this._buildSettingsMaster();
@@ -8129,7 +8131,30 @@ class VirtualBookshelf {
         on('art-sheet-close', 'click', () => this._artCloseSheet());
         // 900px超限定: 本の引き出しを畳む (イシュー#168)。開くのは本エリア常駐ボタン (_artOpenSheet 経由)。
         on('art-drawer-collapse-btn', 'click', () => this._artSetDrawerUserCollapsed(true));
-        on('art-publish-header', 'click', () => this._artPublish());
+        on('art-publish-header', 'click', () => this._artOpenPublishPanel());
+        on('art-pub-close', 'click', () => this._artClosePublishPanel());
+        on('art-pub-cancel', 'click', () => this._artClosePublishPanel());
+        on('art-pub-go', 'click', () => this._artPublishFromPanel());
+        on('art-pub-copy', 'click', () => this._artCopyPublishUrl());
+        const pubModal = document.getElementById('art-publish-modal');
+        if (pubModal) pubModal.addEventListener('click', (e) => { if (e.target === pubModal) this._artClosePublishPanel(); });
+        // ⋯ メニュー (複製・公開の取消・削除)。ESC と枠外クリックはメニューだけを閉じる (エディタは閉じない)
+        on('art-more-btn', 'click', (e) => { e.stopPropagation(); this._artToggleMoreMenu(); });
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('art-more-menu');
+            const btn = document.getElementById('art-more-btn');
+            if (!menu || menu.hidden) return;
+            if (btn && btn.contains(e.target)) return;
+            this._artToggleMoreMenu(false);
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const menu = document.getElementById('art-more-menu');
+            if (!menu || menu.hidden) return;
+            this._artToggleMoreMenu(false);
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
             const side = document.getElementById('art-drawer');
@@ -8425,7 +8450,8 @@ class VirtualBookshelf {
                     tags: this._artDraft.tags || [],
                     blocks: this._artDraft.blocks || [],
                     theme: this._artDraft.theme,
-                    sourceShelfId: this._artDraft.sourceShelfId
+                    sourceShelfId: this._artDraft.sourceShelfId,
+                    adTag: this._artDraft.adTag || null
                 }
             };
             localStorage.setItem(this._artLocalDraftKey(this._artEditingId), JSON.stringify(payload));
@@ -9687,7 +9713,8 @@ class VirtualBookshelf {
             tags: this._artDraft.tags || [],
             blocks: this._artDraft.blocks || [],
             theme: this._artDraft.theme,
-            sourceShelfId: this._artDraft.sourceShelfId
+            sourceShelfId: this._artDraft.sourceShelfId,
+            adTag: this._artDraft.adTag || null
         };
         try {
             if (this._artEditingId) {
@@ -9866,6 +9893,7 @@ class VirtualBookshelf {
         const publishUrl = published ? this._artArticleUrl(r.result.siteUrl, published.publicId) : r.result.siteUrl;
         toast(`「${article.title}」を公開しました。\n公開 URL: ${publishUrl}${errSummary}${noteSummary}`, { type: 'success' });
         this._artRenderList();
+        return publishUrl;
     }
 
     async _artPublish() {
@@ -9875,7 +9903,169 @@ class VirtualBookshelf {
         // 公開前に保留中の下書きを確実にリモートへ反映する (イシュー#142)。silent: true にし、
         // 失敗しても独立したエラー toast は出さず _artPublishArticle の成功表示へ集約する (イシュー#150)。
         const flushResult = await this._artFlushRemoteNow({ silent: true });
-        await this._artPublishArticle(this._artEditingId, { draftFlushFailed: !flushResult.ok });
+        return this._artPublishArticle(this._artEditingId, { draftFlushFailed: !flushResult.ok });
+    }
+
+    _artToggleMoreMenu(force) {
+        const menu = document.getElementById('art-more-menu');
+        const btn = document.getElementById('art-more-btn');
+        if (!menu || !btn) return;
+        const open = typeof force === 'boolean' ? force : menu.hidden;
+        menu.hidden = !open;
+        btn.setAttribute('aria-expanded', String(open));
+        if (open) this._placeAnchoredMenu(btn, menu);
+    }
+
+    // ===== 公開パネル (イシュー#230): 公開前チェック / 公開先 / タグ / 広告 =====
+    _artPublishCheck() {
+        const d = this._artDraft || {};
+        const blocks = d.blocks || [];
+        const asins = [];
+        blocks.forEach(b => {
+            if (b.type === 'book' && b.asin) asins.push(b.asin);
+            if (b.type === 'shelf') (b.items || []).forEach(it => it.asin && asins.push(it.asin));
+        });
+        const noCover = asins.filter(a => { const bk = this.books.find(x => x.asin === a); return !(bk && bk.productImage); }).length;
+        const rows = [
+            { key: 'title', label: 'タイトル', required: true, ok: !!String(d.title || '').trim(), ng: 'タイトルを入れてください' },
+            { key: 'books', label: '本', required: true, ok: asins.length > 0, ng: '本を1冊以上置いてください', okText: `${asins.length}冊` },
+            { key: 'cover', label: '書影', required: false, ok: noCover === 0, ng: `書影の無い本が${noCover}冊あります` },
+            { key: 'tags', label: 'タグ', required: false, ok: (d.tags || []).length > 0, ng: 'タグを付けると見つけてもらいやすくなります' },
+        ];
+        return { rows, blocked: rows.some(r => r.required && !r.ok), warns: rows.filter(r => !r.required && !r.ok).length };
+    }
+
+    _artPublishContext() {
+        const cfg = SyncConfigManager.load();
+        const hub = cfg.hub || {};
+        const target = ((cfg.publish || {}).target) === 'github' ? 'github' : 'hub';
+        const settings = (this.userData && this.userData.settings) || {};
+        return {
+            target,
+            plan: hub.plan === 'plus' ? 'plus' : 'free',
+            githubLinked: !!(cfg.github && cfg.github.token),
+            ownTag: String(settings.affiliateId || '').trim(),
+            name: String(settings.publicDisplayName || hub.username || '').trim(),
+        };
+    }
+
+    // 記事ごとの広告タグの実効値。ハブ×Free は運営タグ固定 ('operator')。Plus/GitHub は own/none で、
+    // 未選択なら「自分のタグが登録済みなら own、未登録なら none」(タグ未登録で own は選べない)。
+    _artEffectiveAdTag(ctx) {
+        if (ctx.target === 'hub' && ctx.plan === 'free') return 'operator';
+        const v = this._artDraft && this._artDraft.adTag;
+        if (v === 'own' && ctx.ownTag) return 'own';
+        if (v === 'none') return 'none';
+        return ctx.ownTag ? 'own' : 'none';
+    }
+
+    _artRenderPublishPanel() {
+        const esc = PublishArticleGenerator.esc;
+        const check = this._artPublishCheck();
+        const det = document.getElementById('art-pub-check');
+        const sum = document.getElementById('art-pub-check-sum');
+        const list = document.getElementById('art-pub-check-list');
+        if (det && sum && list) {
+            const reqNg = check.rows.filter(r => r.required && !r.ok).length;
+            sum.innerHTML = `<span class="h-icon" data-icon="${reqNg ? 'circle-alert' : 'circle-check'}" data-icon-size="15"></span>公開前チェック：${reqNg ? `公開できません（${reqNg}件）` : (check.warns ? `公開できます（確認${check.warns}件）` : '問題ありません')}`;
+            det.classList.toggle('is-ng', reqNg > 0);
+            // NG (必須の欠け) の時だけ自動で開く
+            det.open = reqNg > 0;
+            list.innerHTML = check.rows.map(r => `<li class="art-pub-check-row ${r.ok ? 'is-ok' : (r.required ? 'is-ng' : 'is-warn')}" data-check="${r.key}">
+                <span class="h-icon" data-icon="${r.ok ? 'check' : (r.required ? 'x' : 'triangle-alert')}" data-icon-size="14"></span>
+                <span class="art-pub-check-k">${esc(r.label)}</span>
+                <span class="art-pub-check-v">${esc(r.ok ? (r.okText || 'OK') : r.ng)}</span>
+                <span class="art-pub-check-rq">${r.required ? '必須' : '推奨'}</span>
+            </li>`).join('');
+        }
+        const go = document.getElementById('art-pub-go');
+        if (go) go.disabled = check.blocked;
+
+        const ctx = this._artPublishContext();
+        const tgt = document.getElementById('art-pub-target');
+        if (tgt) {
+            const label = ctx.target === 'github' ? '自分の GitHub' : 'Asayake ハブ';
+            tgt.innerHTML = `<p class="art-pub-line"><span>公開先：<b>${label}</b>（いつもの）</span><a href="#" class="art-pub-link" data-settings="publish-section">設定で変更</a></p>
+                ${ctx.target === 'github' ? '<p class="art-pub-note">この公開先の記事は、ハブの索引（タグ検索・/top・マイページ）には載りません。</p>' : ''}
+                ${(!ctx.githubLinked && ctx.target === 'hub') ? '<p class="art-pub-note"><a href="#" class="art-pub-link" data-settings="sync-section">GitHub に公開するには設定で連携</a></p>' : ''}
+                <p class="art-pub-note">${ctx.name ? `${esc(ctx.name)} として公開します（名義は設定で変更）。` : '名義が未設定です（設定の「公開」で決められます）。'}</p>`;
+        }
+        const ad = document.getElementById('art-pub-ad');
+        if (ad) {
+            const eff = this._artEffectiveAdTag(ctx);
+            let html;
+            if (eff === 'operator') {
+                html = `<p class="art-pub-lock"><span class="h-icon" data-icon="lock" data-icon-size="14"></span>運営のタグが付きます（Free プランでは外せません）</p>
+                    <p class="art-pub-note"><a href="#" class="art-pub-link" data-settings="account-section">Plus を見る</a></p>`;
+            } else {
+                const radio = (v, label, disabled) => `<label class="art-pub-radio${disabled ? ' is-disabled' : ''}"><input type="radio" name="art-pub-adtag" value="${v}"${eff === v ? ' checked' : ''}${disabled ? ' disabled' : ''}><span>${label}</span></label>`;
+                html = `<div class="art-pub-radios" role="radiogroup" aria-label="この記事の Amazon リンク">
+                        ${radio('own', ctx.ownTag ? `自分のタグ（${esc(ctx.ownTag)}）` : '自分のタグ（未登録）', !ctx.ownTag)}
+                        ${radio('none', '付けない', false)}
+                    </div>
+                    ${ctx.ownTag ? '' : '<p class="art-pub-note"><a href="#" class="art-pub-link" data-settings="publish-section">設定で登録</a></p>'}
+                    ${ctx.target === 'github' ? '<p class="art-pub-note">自分の GitHub に公開する記事には、運営のタグは付きません。</p>' : ''}`;
+            }
+            html += (eff === 'none')
+                ? '<p class="art-pub-note">リンクにタグが付かないため、「広告」ラベルは出ません。</p>'
+                : '<p class="art-pub-note">タグ付きリンクがある時は、記事の冒頭に「広告」ラベルを自動で表示します。</p>';
+            ad.innerHTML = html;
+            ad.querySelectorAll('input[name="art-pub-adtag"]').forEach(r => r.addEventListener('change', () => {
+                this._artDraft.adTag = r.value;
+                this._artScheduleSave();
+                this._artRenderPublishPanel();
+            }));
+        }
+        document.querySelectorAll('#art-publish-modal .art-pub-link[data-settings]').forEach(a => a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = a.dataset.settings;
+            this._artClosePublishPanel();
+            this._openSettingsModal(id);
+        }));
+        const m = document.getElementById('art-publish-modal');
+        if (m && typeof window.applyIcons === 'function') window.applyIcons(m);
+    }
+
+    async _artOpenPublishPanel() {
+        const m = document.getElementById('art-publish-modal');
+        if (!m) return;
+        const done = document.getElementById('art-pub-done'); if (done) done.hidden = true;
+        this._artRenderTags();
+        this._artRenderPublishPanel();
+        m.classList.add('show');
+        this._modalHistPush('art-publish-modal', (o) => this._artClosePublishPanel(o));
+    }
+
+    _artClosePublishPanel({ fromHistory = false } = {}) {
+        const m = document.getElementById('art-publish-modal');
+        if (!m || !m.classList.contains('show')) return;
+        m.classList.remove('show');
+        this._modalHistPop('art-publish-modal', { fromHistory });
+    }
+
+    async _artPublishFromPanel() {
+        const go = document.getElementById('art-pub-go');
+        if (this._artPublishCheck().blocked) { this._artRenderPublishPanel(); return; }
+        if (go) go.disabled = true;
+        try {
+            const url = await this._artPublish();
+            if (url) {
+                const done = document.getElementById('art-pub-done');
+                const a = document.getElementById('art-pub-url');
+                if (a) { a.textContent = url; a.href = url; }
+                if (done) done.hidden = false;
+            }
+        } finally {
+            this._artRenderPublishPanel();
+        }
+    }
+
+    async _artCopyPublishUrl() {
+        const a = document.getElementById('art-pub-url');
+        const url = a ? a.textContent : '';
+        if (!url) return;
+        try { await navigator.clipboard.writeText(url); toast('公開URLをコピーしました。', { type: 'success' }); }
+        catch (_) { toast('コピーできませんでした。URLを選んでコピーしてください。', { type: 'error' }); }
     }
 
     async _artPublishFromList(id) {

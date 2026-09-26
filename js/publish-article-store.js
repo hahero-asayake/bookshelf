@@ -102,6 +102,12 @@ class PublishArticleStore {
         return { shortMemo: !!s.shortMemo, longMemo: !!s.longMemo, rating: !!s.rating };
     }
 
+    // 記事ごとの広告タグの選択 (イシュー#230): 'own'=自分のタグ / 'none'=付けない / null=未選択 (設定から既定を導く)。
+    // 運営のタグは記事単位では選ばない (Free×ハブは常に運営・Plus が運営を選ぶ経路は 07)。
+    static normalizeAdTag(v) {
+        return (v === 'own' || v === 'none') ? v : null;
+    }
+
     // ブロック列を検証・正規化する (未知 type は落とす・id や配置単位レコードの id/blockId/order を補完)
     static normalizeBlocks(blocks) {
         const list = Array.isArray(blocks) ? blocks : [];
@@ -240,6 +246,7 @@ class PublishArticleStore {
             blocks: PublishArticleStore.normalizeBlocks(partial.blocks),
             theme: PublishArticleStore.normalizeTheme(partial.theme),
             sourceShelfId: partial.sourceShelfId || null,
+            adTag: PublishArticleStore.normalizeAdTag(partial.adTag),
             published: !!partial.published,
             createdAt: now,
             updatedAt: now,
@@ -260,6 +267,7 @@ class PublishArticleStore {
         if (patch.blocks !== undefined) article.blocks = PublishArticleStore.normalizeBlocks(patch.blocks);
         if (patch.theme !== undefined) article.theme = PublishArticleStore.normalizeTheme(patch.theme);
         if (patch.sourceShelfId !== undefined) article.sourceShelfId = patch.sourceShelfId;
+        if (patch.adTag !== undefined) article.adTag = PublishArticleStore.normalizeAdTag(patch.adTag);
         if (patch.slug !== undefined) article.slug = this._uniqueSlug(patch.slug, id);
         if (patch.published !== undefined) article.published = !!patch.published;
         if (patch.lastBuiltAt !== undefined) article.lastBuiltAt = patch.lastBuiltAt;
@@ -290,7 +298,8 @@ class PublishArticleStore {
             tags: copy.tags,
             blocks: copy.blocks,
             theme: copy.theme,
-            sourceShelfId: copy.sourceShelfId
+            sourceShelfId: copy.sourceShelfId,
+            adTag: PublishArticleStore.normalizeAdTag(copy.adTag)
         });
     }
 

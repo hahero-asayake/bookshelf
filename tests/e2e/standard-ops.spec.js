@@ -86,6 +86,33 @@ test('枠外クリック/Enter/ESC: confirmDialog の基本作法', async ({ pag
 });
 
 // ===== スマホ: 戻る = 閉じてアプリに留まる (履歴統合) =====
+test('ESC/枠外クリック: 記事エディタの ⋯ メニューと公開パネルは自分だけ閉じ、エディタは残る (イシュー#230)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.click('#art-new');
+    await page.fill('#art-title', '標準操作');
+    await page.evaluate(() => window.bookshelf._artFlushSave());
+    await page.click('#art-more-btn');
+    await expect(page.locator('#art-more-menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-more-menu')).toBeHidden();
+    await page.click('#art-more-btn');
+    await page.mouse.click(640, 5);
+    await expect(page.locator('#art-more-menu')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await page.click('#art-publish-header');
+    await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-publish-modal')).not.toHaveClass(/show/);
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await page.click('#art-publish-header');
+    await page.mouse.click(5, 5);
+    await expect(page.locator('#art-publish-modal')).not.toHaveClass(/show/);
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    expect(errors).toEqual([]);
+});
+
 test.describe('スマホ戻る (履歴統合)', () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
@@ -180,6 +207,19 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.goBack();
         await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
         expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    test('公開管理→公開パネル: 戻るはパネルだけ閉じ、公開管理は残る (イシュー#230)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.click('#art-publish-header');
+        await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
+        await page.goBack();
+        await expect(page.locator('#art-publish-modal')).not.toHaveClass(/show/);
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         expect(errors).toEqual([]);
     });
 

@@ -4,6 +4,32 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// イシュー#230: 「公開する」は公開パネルを開くだけになった。公開はパネルの「公開する」(#art-pub-go) で実行する。
+// 公開前チェックの必須 (本1冊以上) を満たさない記事は、パネルを閉じて本ブロックを1つ実操作で置いてから公開する。
+// 公開成功後もパネルは開いたまま (公開URLの表示とコピーのため)。続けてエディタを操作する前に閉じる
+async function closePublishPanelIfOpen(page) {
+    if (await page.locator('#art-publish-modal.show').count()) await page.click('#art-pub-close');
+}
+
+async function publishViaPanel(page) {
+    if (await page.locator('#art-publish-modal.show').count()) await page.click('#art-pub-close');
+    await page.click('#art-publish-header');
+    await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
+    if (await page.locator('#art-pub-go').isDisabled()) {
+        await page.click('#art-pub-close');
+        await page.locator('.art-add-btn').last().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+        const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await page.click('#art-publish-header');
+        await expect(page.locator('#art-pub-go')).toBeEnabled();
+    }
+    await page.click('#art-pub-go');
+}
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
@@ -148,14 +174,18 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await expect(page.locator('#art-edit-view')).toBeVisible();
 
         await page.fill('#art-title', 'わたしを構成する10冊');
+        // イシュー#230: タグは公開パネルの「タグ」セクションで付ける
+        await page.click('#art-publish-header');
         await page.locator('#art-tag-input').fill('SF');
         await page.locator('.art-sugg-new').click();
         await expect(page.locator('#art-tags .art-tag')).toContainText('SF');
+        await page.click('#art-pub-close');
 
         // debounce (600ms) 経過を待って保存完了を確認
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await expect(page.locator('#art-list-view')).toBeVisible();
         await expect(page.locator('#art-list .pp-row-title')).toContainText('わたしを構成する10冊');
@@ -208,6 +238,8 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.fill('#art-title', '削除するテスト記事');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await closePublishPanelIfOpen(page);
+        await page.click('#art-more-btn'); // イシュー#230: 削除・公開の取消は ⋯ メニューの中
         await page.click('#art-del');
         await page.click('.cfm-ok');
         await expect(page.locator('#art-list-view')).toBeVisible();
@@ -729,7 +761,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -762,7 +794,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -789,7 +821,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         }).toBeTruthy();
         const article = await readArticle();
         expect(article.published).toBe(true);
-        await expect(page.locator('#art-unpublish')).toBeVisible();
+        await expect(page.locator('#art-unpublish')).not.toHaveAttribute('hidden', ''); // ⋯ メニュー内の項目として出ている
         expect(errors).toEqual([]);
     });
 
@@ -818,7 +850,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('## はじめに\n\n本文サンプル。');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -878,7 +910,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -893,6 +925,14 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/${article.publicId}/`);
         // サイトのトップ単体 (末尾が publicId ではない) を案内していないことも確認する。
         expect(toastText).not.toMatch(/公開 URL: [^\n]*\/sid\/\s*$/m);
+        // イシュー#230: 公開パネルに公開後の URL を表示し、コピーできる (URL の入力欄は無い)
+        const url = `${HUB}/public/sid/${article.publicId}/`;
+        await expect(page.locator('#art-pub-done')).toBeVisible();
+        await expect(page.locator('#art-pub-url')).toHaveText(url);
+        await expect(page.locator('#art-publish-modal input[type="text"]:not(#art-tag-input)')).toHaveCount(0);
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.click('#art-pub-copy');
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
         expect(errors).toEqual([]);
     });
 
@@ -908,7 +948,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文1');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -933,7 +973,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect.poll(() => hubCaptured.files).not.toBeNull();
 
         // 一覧に戻り、公開中2件で一括更新 → 個別記事に決められないためサイトのトップ+件数を案内する
@@ -962,7 +1002,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
 
@@ -984,11 +1024,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
         hubCaptured.files = null;
 
+        await closePublishPanelIfOpen(page);
+        await page.click('#art-more-btn');
         await page.click('#art-unpublish');
         await page.click('.cfm-ok'); // 「公開を取り消す」確認 (danger ボタン)
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -998,7 +1040,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const id = await page.evaluate(() => window.bookshelf._artEditingId);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.published).toBe(false);
-        await expect(page.locator('#art-unpublish')).toBeHidden();
+        await expect(page.locator('#art-unpublish')).toHaveAttribute('hidden', '');
         expect(errors).toEqual([]);
     });
 
@@ -1012,7 +1054,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.index).not.toBeNull();
         expect(hubCaptured.index).toHaveLength(1);
@@ -1033,11 +1075,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
         hubCaptured.files = null; hubCaptured.index = null;
 
+        await closePublishPanelIfOpen(page);
+        await page.click('#art-more-btn'); // イシュー#230: 削除・公開の取消は ⋯ メニューの中
         await page.click('#art-del');
         await expect(page.locator('.cfm-box')).toContainText('公開サイトから取り下げます');   // 確認文言で連動を知らせる
         await page.click('.cfm-ok');
@@ -1061,6 +1105,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await expect(page.locator('#art-list-view')).toBeVisible();
         await page.click('.pp-row [data-act="publish"]');
@@ -1085,7 +1130,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1094,6 +1139,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.publicId).toBeTruthy();
 
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await expect(page.locator('#art-list-view')).toBeVisible();
         const urlLink = page.locator('.pp-row .pp-row-url a').first();
@@ -1116,7 +1162,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('.art-block-text textarea').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1129,6 +1175,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             cfg.hub.bookshelfBase = null;
             SyncConfigManager.save(cfg);
         });
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await expect(page.locator('#art-list-view')).toBeVisible();
         const urlLink = page.locator('.pp-row .pp-row-url a').first();
@@ -2358,12 +2405,14 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
         await page.fill('#art-title', '記事1');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
 
         await page.click('#art-new');
         await page.fill('#art-title', '記事2');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
 
         await expect(page.locator('#art-list .pp-row')).toHaveCount(2);
@@ -2376,6 +2425,7 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
         expect(await displayOf(page, '#art-list-view')).toBe('none');
 
         // ← で一覧へ戻ると、編集ビューが非表示に戻ること (回帰1本体)
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await page.waitForSelector('#art-list-view:not([hidden])');
         expect(await displayOf(page, '#art-edit-view')).toBe('none');
@@ -2581,7 +2631,7 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
             window.bookshelf._artPublishCalled = false;
             window.bookshelf._artPublish = async (...args) => { window.bookshelf._artPublishCalled = true; return orig(...args); };
         });
-        await page.click('#art-publish-header');
+        await publishViaPanel(page);
         await expect.poll(() => page.evaluate(() => window.bookshelf._artPublishCalled)).toBe(true);
         expect(errors).toEqual([]);
     });
@@ -2649,6 +2699,7 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
         expect(stored).toBe('1');
 
         // 一覧へ戻ってから再度エディタを開き直す (新しい記事)
+        await closePublishPanelIfOpen(page);
         await page.click('#art-back');
         await page.click('#art-new');
         await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);

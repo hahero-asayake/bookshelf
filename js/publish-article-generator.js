@@ -822,11 +822,13 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             // publicId は公開の入口 (PublishArticleStore.ensurePublicId) で発番される契約。
             // 未発番のまま渡ってきた記事は URL を確定できないため生成対象から外す (S6・ADR-076)。
             if (!article.publicId) { errors.push(`公開IDが未発番です: ${article.title}`); continue; }
-            let resolvedBlocks, body;
+            let resolvedBlocks, body, artLinkOpts = linkOpts;
             const report = (stage) => { if (typeof opts.onProgress === 'function') opts.onProgress({ stage, done: 0, total: 0 }); };
             this._markdownDegradedInBuild = false; // イシュー#153: 安全弁発動(強調記号の一部装飾なし)を記事ごとに検出する
             try {
-                resolvedBlocks = await this._resolveBlocks(article, state, libMap, linkOpts, opts.onProgress);
+                // 記事ごとの「付けない」(adTag='none') は、プラン上それが許される時 (exporter が allowAdTagNone を渡す) だけ効かせる (イシュー#230)
+                artLinkOpts = (article.adTag === 'none' && opts.allowAdTagNone) ? { tag: '' } : linkOpts;
+                resolvedBlocks = await this._resolveBlocks(article, state, libMap, artLinkOpts, opts.onProgress);
                 report('rendering'); // Markdown→HTML変換 (イシュー#153: ここが重い変換区間)
                 body = await this._renderBlocks(resolvedBlocks, opts.onProgress, opts.onTimerLag);
                 report('assembling'); // HTMLシェル組立
@@ -854,9 +856,9 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             }, 0);
 
             // 広告ラベルは「実際に出力された当方のアフィリンク」で判定する (スタイル非依存, ADR-034追補と同方針)
-            const pageHasAds = useGo
+            const pageHasAds = (useGo && artLinkOpts.goBase)
                 ? body.includes(`/go/${encodeURIComponent(siteId)}/`)
-                : (!!linkOpts.tag && body.includes(`tag=${encodeURIComponent(linkOpts.tag)}`));
+                : (!!artLinkOpts.tag && body.includes(`tag=${encodeURIComponent(artLinkOpts.tag)}`));
 
             // OGP 画像は自前生成 (§11.9・ADR-098)。Amazon の表紙は og:image に使わない。
             // 生成は公開 (exporter が opts.ogImage=true) の時だけ。失敗しても公開は止めず画像なし (summary カード) に倒す。

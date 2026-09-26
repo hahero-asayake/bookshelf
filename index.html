@@ -27,7 +27,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026092602">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026092603">
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) -->
     <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
@@ -812,21 +812,27 @@
 
             <!-- 記事エディタ -->
             <div id="art-edit-view" hidden>
+                <!-- イシュー#230: ヘッダー1行 (戻る / タイトル+保存状態 / プレビュー / 公開する / ⋯)。フッターは撤去し、
+                     複製・公開の取消・削除は ⋯ メニューへ。タグは公開パネルへ移設 -->
                 <div class="art-hd">
                     <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
-                    <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
+                    <div class="art-hd-title">
+                        <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
+                        <span id="art-save-status" class="art-save-status"></span>
+                        <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
+                    </div>
+                    <button id="art-preview" class="btn btn-secondary btn-small" aria-label="プレビュー"><span class="h-icon" data-icon="eye" data-icon-size="14"></span><span class="art-hd-lbl">プレビュー</span></button>
                     <div class="art-hd-publish-group">
                         <button id="art-publish-header" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
                     </div>
-                </div>
-
-                <div class="art-tagbar">
-                    <span class="art-tag-label">タグ</span>
-                    <ul id="art-tags" class="art-tags"></ul>
-                    <div class="art-tag-input-wrap">
-                        <input id="art-tag-input" class="art-tag-input" type="text" placeholder="タグを追加…" autocomplete="off">
-                        <div id="art-tag-sugg" class="art-sugg" hidden></div>
-                    </div>
+                    <span class="art-more-host" id="art-page-ops" hidden>
+                        <button type="button" id="art-more-btn" class="btn btn-secondary btn-small art-more-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="art-more-menu" title="その他の操作" aria-label="その他の操作"><span class="h-icon" data-icon="more-horizontal" data-icon-size="15"></span></button>
+                        <div id="art-more-menu" class="art-more-menu" role="menu" hidden>
+                            <button id="art-dup" class="art-more-item" type="button" role="menuitem"><span class="h-icon" data-icon="copy" data-icon-size="14"></span>複製</button>
+                            <button id="art-unpublish" class="art-more-item" type="button" role="menuitem" hidden><span class="h-icon" data-icon="cloud-off" data-icon-size="14"></span>公開を取り消す</button>
+                            <button id="art-del" class="art-more-item is-danger" type="button" role="menuitem"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span>削除</button>
+                        </div>
+                    </span>
                 </div>
 
                 <div class="art-wrap">
@@ -865,27 +871,6 @@
                 <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
                 <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
 
-                <!-- イシュー#168: 公開ボタンはヘッダー (#art-publish-header, #165) と機能重複していたため
-                     フッターからは撤去。ヘッダー側に一本化し、フッターの要素数そのものを減らす
-                     (「隠す」のではなく重複を無くす方針・②承認済み)。 -->
-                <!-- イシュー#170 (#169監査の実装): フッターを性質の異なる3ゾーンに再編。
-                     区切り線+余白で性質差を伝える (隠す/折りたたむでは解かない・8/24指摘)。 -->
-                <div class="form-actions pp-edit-actions">
-                    <!-- ゾーン1 (レイアウト・配色の select) はキャンバス先頭の「見た目」ブロックへ移設 (イシュー#230) -->
-                    <!-- ゾーン2: 確認・状態 -->
-                    <div class="art-footer-zone art-footer-zone-confirm">
-                        <button id="art-preview" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>プレビュー</button>
-                        <span id="art-save-status" class="art-save-status"></span>
-                        <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
-                    </div>
-                    <!-- ゾーン3: 記事操作 (通常操作→取り消し可能な破壊的操作→不可逆な破壊的操作の順) -->
-                    <div class="pp-page-ops art-footer-zone art-footer-zone-ops" id="art-page-ops" hidden>
-                        <button id="art-dup" class="btn btn-secondary btn-small" type="button">複製</button>
-                        <button id="art-unpublish" class="btn btn-warning btn-small" type="button" hidden>公開を取り消す</button>
-                        <span class="pp-del-spacer"></span>
-                        <button id="art-del" class="btn btn-danger btn-small" type="button"><span class="h-icon" data-icon="trash-2" data-icon-size="13"></span>削除</button>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -924,6 +909,48 @@
                     <p id="pp-preview-stall-msg" class="pp-preview-stall-msg"></p>
                     <button id="pp-preview-retry" class="btn btn-primary btn-small" type="button">再試行</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 公開パネル (イシュー#230): 公開前チェック / 公開先 / タグ / 広告 の4セクション。
+         公開エディタ (#publish-pages-modal) より後ろに置く (ESC は DOM 順で最後の .modal.show を閉じる) -->
+    <div id="art-publish-modal" class="modal art-publish-modal" role="dialog" aria-modal="true" aria-labelledby="art-pub-title">
+        <div class="modal-content art-pub-content">
+            <button class="modal-close" id="art-pub-close" aria-label="閉じる">×</button>
+            <div class="modal-header"><h2 id="art-pub-title"><span class="h-icon" data-icon="upload-cloud" data-icon-size="20"></span>公開</h2></div>
+            <div class="art-pub-body">
+                <details class="art-pub-sec art-pub-check" id="art-pub-check">
+                    <summary id="art-pub-check-sum"></summary>
+                    <ul id="art-pub-check-list" class="art-pub-check-list"></ul>
+                </details>
+                <section class="art-pub-sec" id="art-pub-target-sec">
+                    <h3>公開先</h3>
+                    <div id="art-pub-target"></div>
+                </section>
+                <section class="art-pub-sec">
+                    <h3>タグ</h3>
+                    <div class="art-tagbar art-pub-tags">
+                        <ul id="art-tags" class="art-tags"></ul>
+                        <div class="art-tag-input-wrap">
+                            <input id="art-tag-input" class="art-tag-input" type="text" placeholder="タグを追加…" autocomplete="off">
+                            <div id="art-tag-sugg" class="art-sugg" hidden></div>
+                        </div>
+                    </div>
+                </section>
+                <section class="art-pub-sec" id="art-pub-ad-sec">
+                    <h3>広告（Amazon アソシエイト）</h3>
+                    <div id="art-pub-ad"></div>
+                </section>
+                <div class="art-pub-done" id="art-pub-done" hidden>
+                    <span class="art-pub-done-label">公開URL</span>
+                    <a id="art-pub-url" class="art-pub-url" href="#" target="_blank" rel="noopener"></a>
+                    <button type="button" id="art-pub-copy" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="copy" data-icon-size="14"></span>コピー</button>
+                </div>
+            </div>
+            <div class="art-pub-foot">
+                <button type="button" id="art-pub-cancel" class="btn btn-secondary btn-small">閉じる</button>
+                <button type="button" id="art-pub-go" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
             </div>
         </div>
     </div>
@@ -1266,17 +1293,17 @@
     <script src="js/storage.js?v=2026090620"></script>
     <script src="js/book-manager.js?v=2026081803"></script>
     <script src="js/bookshelf-manager.js?v=2026090501"></script>
-    <script src="js/publish-article-store.js?v=2026092601"></script>
+    <script src="js/publish-article-store.js?v=2026092602"></script>
     <script src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script src="js/publish-ogp-image.js?v=2026092502"></script>
-    <script src="js/publish-article-generator.js?v=2026092503"></script>
-    <script src="js/exporter.js?v=2026092502"></script>
+    <script src="js/publish-article-generator.js?v=2026092601"></script>
+    <script src="js/exporter.js?v=2026092601"></script>
     <script src="js/plugin-api.js?v=2026092601"></script>
     <script src="js/plugin-loader.js?v=2026072701"></script>
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026092604"></script>
+    <script src="js/bookshelf.js?v=2026092606"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

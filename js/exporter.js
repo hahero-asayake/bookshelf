@@ -100,7 +100,9 @@ class BookshelfExporter {
         // 外に出さないため)。プレビュー (bookshelf.js _artPreview) はこのオプションを渡さず、
         // 読み込めなくても生成を続行して通知のみ行う。
         // ogImage: 公開時だけ OGP 画像 (og.png) を自前生成する (プレビューでは作らない・ADR-098)
-        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true, ogImage: true });
+        // allowAdTagNone: 記事ごとの「付けない」を効かせてよいか (GitHub 公開 or Plus。Free×ハブは運営タグ固定・イシュー#230)
+        const allowAdTagNone = pub.target === 'github' || ((SyncConfigManager.load().hub || {}).plan === 'plus');
+        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true, ogImage: true, allowAdTagNone });
         if (articles.length > 0 && result.articles.length === 0) {
             // result.errors には具体的な理由 (公開ID未発番・長文メモ読み込み失敗等) が入っている
             // ため、あれば優先して見せる (イシュー#134: 汎用文言だと原因不明のまま再試行させてしまう)。

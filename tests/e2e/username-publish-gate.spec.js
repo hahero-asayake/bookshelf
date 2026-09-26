@@ -8,6 +8,27 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// イシュー#230: 「公開する」は公開パネルを開くだけになった。公開はパネルの「公開する」(#art-pub-go) で実行する。
+// 公開前チェックの必須 (本1冊以上) を満たさない記事は、パネルを閉じて本ブロックを1つ実操作で置いてから公開する。
+async function publishViaPanel(page) {
+    if (await page.locator('#art-publish-modal.show').count()) await page.click('#art-pub-close');
+    await page.click('#art-publish-header');
+    await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
+    if (await page.locator('#art-pub-go').isDisabled()) {
+        await page.click('#art-pub-close');
+        await page.locator('.art-add-btn').last().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+        const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await page.click('#art-publish-header');
+        await expect(page.locator('#art-pub-go')).toBeEnabled();
+    }
+    await page.click('#art-pub-go');
+}
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
@@ -88,7 +109,7 @@ test('(1) username 未設定でハブ公開しようとするとブロックさ�
     const { errors, hubCaptured } = await bootAppForPublish(page, { username: null });
     await createArticle(page, 'ゲート確認記事');
 
-    await page.click('#art-publish-header');
+    await publishViaPanel(page);
     // 初回公開は無料プランのアフィリエイト同意ダイアログが先に出る (username ゲートより前段)
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok');
@@ -120,7 +141,7 @@ test('(2)(3) 設定画面から username 設定 (fetch スタブ) →成功表�
     await createArticle(page, 'ゲート確認記事2');
 
     // 1回目の公開: 無料プラン同意 → username 未設定でブロック
-    await page.click('#art-publish-header');
+    await publishViaPanel(page);
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok'); // 無料プラン同意
     await expect(page.locator('.cfm-box')).toBeVisible();
@@ -154,7 +175,7 @@ test('(4) Worker のバリデーションエラー (予約語等) は設定画�
     });
     await createArticle(page, 'ゲート確認記事3');
 
-    await page.click('#art-publish-header');
+    await publishViaPanel(page);
     await expect(page.locator('.cfm-box')).toBeVisible();
     await page.click('.cfm-ok'); // 無料プラン同意
     await expect(page.locator('.cfm-box')).toBeVisible();
@@ -176,7 +197,7 @@ test('username 設定済みならブロックされず公開が通る (ゲート
     const { errors, hubCaptured } = await bootAppForPublish(page, { username: 'hahero' });
     await createArticle(page, 'ゲート確認記事4');
 
-    await page.click('#art-publish-header');
+    await publishViaPanel(page);
     // 設定済みなのでブロックダイアログではなく、無料プラン同意ダイアログが最初に出る
     await expect(page.locator('.cfm-box')).toBeVisible();
     await expect(page.locator('.cfm-message')).not.toContainText('ユーザー名を設定');
@@ -221,7 +242,7 @@ test('公開先が GitHub (自前 repo) のときは username ゲートを適用
     }, JSON.parse(fixtureLibrary));
 
     await createArticle(page, 'GitHub公開はゲート対象外');
-    await page.click('#art-publish-header');
+    await publishViaPanel(page);
     // username 未設定でもブロックされず、そのまま公開成功トーストが出る (同意ダイアログも出ない=target=github)
     await expect(page.locator('.toast-success')).toBeVisible();
     const id = await page.evaluate(() => window.bookshelf._artEditingId);

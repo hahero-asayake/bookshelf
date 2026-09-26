@@ -7574,3 +7574,54 @@ body.select-mode .drag-handle { display: none; }
     .settings-section-body input[type="password"],
     .settings-section-body input[type="email"] { max-width: none; }
 }
+
+/* ===== イシュー#230: 記事エディタのヘッダー1行 (戻る / タイトル+保存状態 / プレビュー / 公開する / ⋯) と公開パネル ===== */
+.art-hd-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
+.art-hd-title .art-title-input { flex: 1; }
+.art-hd-title .art-save-status { flex: 0 0 auto; white-space: nowrap; }
+.art-hd .art-hd-publish-group { margin-left: 0; }
+.art-more-host { position: relative; display: inline-flex; flex: 0 0 auto; }
+.art-more-host[hidden] { display: none; }
+.art-more-btn { padding-left: 0.5rem; padding-right: 0.5rem; }
+.art-more-menu { position: fixed; z-index: 1300; min-width: 11rem; padding: 0.3rem; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14); display: grid; }
+.art-more-menu[hidden] { display: none; }
+.art-more-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.6rem; border: none; background: none;
+    border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.84rem; color: var(--fg); text-align: left; }
+.art-more-item[hidden] { display: none; }
+.art-more-item:hover { background: var(--accent-bg); }
+.art-more-item.is-danger { color: var(--danger); }
+.art-more-item.is-danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+@media (max-width: 760px) {
+    .art-hd-title { flex: 1 1 100%; order: -1; }
+    .art-hd .art-hd-lbl { display: none; }   /* 狭幅はプレビューをアイコンのみにして 戻る/プレビュー/公開する/⋯ を1行に収める */
+    .art-hd .art-hd-publish-group { margin-left: auto; }
+}
+
+.art-publish-modal { z-index: 1150; }
+.art-pub-content { max-width: 560px; }
+.art-pub-body { display: grid; gap: 1rem; padding: 1rem 1.25rem 0; }
+.art-pub-sec h3 { margin: 0 0 0.4rem; font-size: 0.86rem; color: var(--fg2); }
+.art-pub-check { border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.7rem; }
+.art-pub-check > summary { cursor: pointer; display: flex; align-items: center; gap: 0.45rem; font-size: 0.86rem; font-weight: 600; color: var(--ok, var(--fg)); }
+.art-pub-check.is-ng { border-color: var(--danger); }
+.art-pub-check.is-ng > summary { color: var(--danger); }
+.art-pub-check-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+.art-pub-check-row { display: grid; grid-template-columns: 18px 4rem minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; font-size: 0.8rem; }
+.art-pub-check-row.is-ng { color: var(--danger); }
+.art-pub-check-row.is-warn { color: var(--warning); }
+.art-pub-check-rq { font-size: 0.7rem; color: var(--fg2); }
+.art-pub-line { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin: 0; font-size: 0.86rem; }
+.art-pub-note { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--fg2); }
+.art-pub-link { color: var(--accent); font-size: 0.8rem; white-space: nowrap; }
+.art-pub-lock { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.5rem 0.7rem; border: 1px dashed var(--line); border-radius: 8px;
+    background: var(--side); font-size: 0.84rem; color: var(--fg2); }
+.art-pub-radios { display: grid; gap: 0.35rem; }
+.art-pub-radio { display: flex; align-items: center; gap: 0.5rem; font-size: 0.86rem; cursor: pointer; }
+.art-pub-radio.is-disabled { color: var(--fg2); cursor: default; }
+.art-pub-tags { border-bottom: none; margin-bottom: 0; padding: 0; }
+.art-pub-done { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.6rem 0.7rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-bg); }
+.art-pub-done[hidden] { display: none; }
+.art-pub-done-label { font-size: 0.78rem; font-weight: 600; color: var(--fg2); }
+.art-pub-url { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.84rem; }
+.art-pub-foot { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; padding: 0.8rem 1.25rem 1rem; border-top: 1px solid var(--line); }
