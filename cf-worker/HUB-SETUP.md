@@ -30,7 +30,7 @@
 ### A-2. R2 バケット
 1. R2 を有効化 (**無料枠内でも支払い方法の登録が必要**)。
 2. バケット作成: **名前 `asayake-hub`**。
-3. (durability) R2 に S3 的版管理は無い (原文での再確認は未実施)。私的データ (平文) の誤削除/障害対策の**バックアップ方針は 2026-09-26 に決定・実装済み (イシュー#226)＝日次で homelab へ暗号化エクスポート＋暗号化物だけをオフサイトへ複製 → Phase G-5**。当初案の「日次で別バケットへコピーする Cron Worker」は、Workers Free の 1 起動 50 サブリクエスト制限・書込権限の追加・平文コピーが Cloudflare 内に残ることから採らなかった。
+3. (durability) R2 に S3 的版管理は無い (原文での再確認は未実施)。私的データ (平文) の誤削除/障害対策の**バックアップ方針は 2026-09-28 に方針転換 (イシュー#235・ADR-100 追補)＝Cloudflare 内で完結する Cron Worker が専用の別バケットへ全量コピー**。個人 PC・GitHub は経由しない・残らない → Phase G-5。当初 (#226) の homelab 経由＋GitHub オフサイトの案は、ハヘロの指摘 (ユーザーデータを個人 PC に置くのは想定していなかった) により置き換えた。
 
 ### A-3. KV 名前空間
 1. Workers & Pages → KV → Create: **`asayake-hub-kv`**。📝控える: **namespace ID**。
@@ -107,7 +107,7 @@ wrangler deploy -c wrangler.hub.toml
 ## Phase D. 公開準備 (運営として必須)
 
 1. **ToS / プライバシーポリシー** (平文で私的個人データを預かる = hahero が管理者)。削除・エクスポート要求の窓口、通報導線。
-2. **バックアップ** (2026-09-26 に実装済み・方針と復元手順は Phase G-5。`legal/privacy.html` の保存期間の文言も G-5 の実装に合わせて修正済み)。
+2. **バックアップ** (2026-09-28 に方針転換・実装済み・方針と復元手順は Phase G-5。`legal/privacy.html` の保存期間の文言も G-5 の実装に合わせて修正済み)。
 3. **通報→停止**: KV `report:<siteId>` に JSON `{"status":"suspended"}` を置くと `/public/<siteId>/` が 451（コードは `rep.status === 'suspended'` で判定＝素の文字列 `suspended` では効かない）。具体コマンドは Phase G。
 
 ---
@@ -325,40 +325,45 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 
 > 451 の実機確認は **2026-09-26 に実施済み** (イシュー#223・kuroko の検証用サイト・本番)。`--ttl 300` 付きで `report:<siteId>` に suspended を put → 記事ページは put の約 37 秒後・トップは約 91 秒後に **HTTP 451** (`text/plain`・本文 `This site has been suspended.`・`hub.asayake.org/public/<siteId>/` は 301→451) → **TTL 失効の約 11 秒後に自動で 200 復帰** (delete 不要) → 退会で公開 URL は 404。反映は URL ごとに Cache API (max-age=60) のエントリが別なので、ページごとに 451 になる時刻がずれる。451 の応答は英語 1 行のみ (日本語の説明・連絡先なし＝文言方針は決裁待ち)。
 
-### G-5. バックアップ (KV / R2 / D1・外-11・イシュー#226)
+### G-5. バックアップ (KV / R2 / D1・外-11・イシュー#226→#235 で方針転換)
 
-**方針 (2026-09-26 決定)**: 日次で **読み取りだけ**のフルエクスポートを取り、1 本の tar.gz に固めて **gpg 公開鍵で暗号化**し、homelab に世代保存＋暗号化物だけを既存オフサイトへ複製する。本番へは一切書かない。追加費用 0 円・追加権限 0 (kuroko のトークンで KV/R2/D1 とも読める)。総量は 0.45 MB/日 (2026-09-26 時点: KV 43 キー・R2 28 オブジェクト 421 KB・D1 86 KB)。
+**方針 (2026-09-28 決定・ADR-100 追補)**: **Cloudflare の中だけで完結させる**。`asayake-hub` Worker に `scheduled` (Cron Trigger) を足し (実装は [backup.js](backup.js))、KV・R2・D1・`TOMBSTONE_SALT` を**同じ Cloudflare アカウント内の非公開バケット `asayake-hub-backup`** へ全量コピーする。個人 PC (homelab) にもGitHub にも一切置かない。理由: 2026-09-26 11:34 のハヘロの指摘「ユーザーのデータを個人 PC に置くのは想定していなかった」。暗号化はしない (E0)。元データも同じ Cloudflare アカウントに平文で置かれているため、同一アカウント内の平文コピーで漏洩の面は増えないと判断 (②承認・2026-09-26)。費用は追加 0 円のまま。**「Cloudflare のアカウントごと失うと一緒に消える」ことは受け入れる** (決裁B)。
+
+旧方式 (#226・homelab 経由＋GitHub private repo `kuroko-db-backup` の `bookshelf-hub` ブランチ) は 2026-09-28 に廃止した。旧 timer/unit・homelab の世代ファイル・鍵ディレクトリ (`~/.local/share/kuroko/bookshelf-backup/`) は `~/kuroko/_trash/issue235-old-backup/` へ退避済み。GitHub 側の `bookshelf-hub` ブランチは削除済み (`main`・`HEAD` は無傷)。`tools/bookshelf-backup.mjs` は停止済み (ファイル先頭に注記・鍵ディレクトリが無いため実行しても動かない)。
 
 | データ | 消えたら | Cloudflare 側の保護 | バックアップ |
 |---|---|---|---|
-| KV (`uid:` `plan:` `usage:` `site:` `email:` `key:` `uname:` `unames:` `ukey:` `stripe:` `report:` `plugin:`) | 全ユーザーが siteId・プラン・username・同期キーを失う。退会墓標 (`uname:` tombstone) が消えると退会済み username の取り戻し保護が崩れる。`report:` が消えると停止中の記事が復活する | なし | 全量 (`expiration` も保存)。`rl:`・`kindle:relay:` は TTL の一時値なので除外 |
-| R2 `data/<uid>/…` (私的同期データ・平文) / `sites/<siteId>/…` (公開サイト) | 私的データの喪失 (信頼毀損が最大)／公開ページが 404 (再公開で復元可) | なし (版管理なし) | 全量 (サイズ・ETag(md5)・sha256 を manifest に記録) |
-| D1 `asayake-community` (`sites` `reports` `stars` `comments` `stats`) | 索引・通報履歴・スター/コメント | **Time Travel** (分単位・Free 7 日/Paid 30 日・プランは未確認＝7 日前提) | `wrangler d1 export` の SQL。Time Travel が一次、export は期間超過・アカウント喪失への備え |
-| Worker secret (5 件) | 下の再設定手順 | 値は読み出せない | **値はバックアップしない** (名前一覧のみ manifest に入る)。`TOMBSTONE_SALT` だけは暗号化した状態で同梱 |
+| KV (`uid:` `plan:` `usage:` `site:` `email:` `key:` `uname:` `unames:` `ukey:` `stripe:` `report:` `plugin:`) | 全ユーザーが siteId・プラン・username・同期キーを失う。退会墓標 (`uname:` tombstone) が消えると退会済み username の取り戻し保護が崩れる。`report:` が消えると停止中の記事が復活する | なし | 全量 (`expiration`・`metadata` も保存)。`rl:`・`kindle:relay:` は TTL の一時値なので除外 |
+| R2 `data/<uid>/…` (私的同期データ・平文) / `sites/<siteId>/…` (公開サイト) | 私的データの喪失 (信頼毀損が最大)／公開ページが 404 (再公開で復元可) | なし (版管理なし) | 全量 (`httpMetadata`・`customMetadata` を保持。サイズ・etag を manifest に記録) |
+| D1 `asayake-community` (`sites` `reports` `stars` `comments` `stats`) | 索引・通報履歴・スター/コメント | **Time Travel** (分単位・実測で 30 日まで保持を確認・2026-09-26。Free 7 日/Paid 30 日の原文と整合的でこのアカウントは Paid の可能性が高いが確定ではない) | scheduled が作る `d1.sql` (スキーマ＋INSERT。空の DB へ `wrangler d1 execute --remote --file=d1.sql` で復元できる)。Time Travel が一次、export は期間超過・アカウント喪失への備え |
+| Worker secret (`TOMBSTONE_SALT` 以外の 4 件) | 下の再設定手順 | 値は読み出せない | **値はバックアップしない** (secret 名の一覧は持たない・下表参照) |
+| `TOMBSTONE_SALT` | 退会済み username の本人取り戻しができなくなる (影響は限定的) | 値は読み出せない | Worker が `env.TOMBSTONE_SALT` から読み、`secrets.json` に**平文で**バックアップバケットへ同梱する (S1・②承認・2026-09-26)。同じ束に KV の `email:` 等の平文も入るため、鍵で守る場合と比べて追加の実害は小さいと判断 |
 
 **仕組み**
-- スクリプト: kuroko 側 `~/kuroko/discord/tools/bookshelf-backup.mjs` (D1 `export`・KV list＋bulk get・R2 REST list＋`r2 object get`・`secret list`)。timer: `kuroko-bookshelf-backup.timer` (systemd user・**毎日 03:50 JST**・D1 export は実行中に他のリクエストをブロックするため深夜帯。既存の 04:15/04:25/04:30 と重ならない)。
-- 保存前ガード: KV/R2 の欠落数・R2 のサイズと md5・D1 の CREATE TABLE を検証し、失敗した回は世代を消さず状態ファイル (`~/kuroko/discord/logs/bookshelf-backup-state.json`) に記録して非 0 終了する。
-- **世代 (homelab)**: `~/kuroko/backups/bookshelf-hub/` に 日次 7 (日付ごとに最新 1 件)＋日曜分の最新 4 ＝ **最長約 28 日**。
-- **オフサイト**: private repo `kuroko-db-backup` の**別ブランチ `bookshelf-hub`** へ orphan commit を force push (直近 7 世代・暗号化物と README のみ)。既存の `db-offsite-push.mjs` は `main` だけを push するので互いに干渉しない (初回 push の前後で `main` の SHA が不変なことを確認済み)。push 前にガード (0 件・破損・前回の 50% 未満なら push しない)。
-- **暗号化**: gpg 公開鍵暗号 (専用 keyring `~/.local/share/kuroko/bookshelf-backup/gnupg`)。**日次ジョブが使うのは公開鍵だけ**。tar 全体を暗号化する (公開情報も同じ tar に入るが、区別しない方が失敗要因が少ない)。
-- **鍵**: 秘密鍵は 2 か所に置く。(1) homelab の kuroko HOME `~/.local/share/kuroko/bookshelf-backup/secret.asc` (600)＝復元リハーサル・通常の復元用。(2) **homelab の外**にハヘロが控える (下の「鍵の退避 E1」)。**鍵を失うと復元できない**ので、暗号化物 (GitHub) と鍵は同じ場所に置かない。
+- 実装: `cf-worker/backup.js`。`asayake-hub.js` の `scheduled` ハンドラから呼ぶ (fetch の経路には触れない)。
+- Cron: `wrangler.hub.toml` の `[triggers] crons = ["50 18 * * *"]` (UTC 18:50 = **JST 03:50**。D1 の読みで他のリクエストを長く止めない深夜帯)。
+- バケット: `asayake-hub-backup` (APAC・非公開。r2.dev 無効・カスタムドメイン無し・`asayake-hub.js` の `fetch` からは触らない)。中身は `LATEST.json`・`gen/<JST日時>/{manifest.json, d1.sql, kv.json, r2/<元のキー>, secrets.json}`。
+- 保存前ガード: KV・R2 の件数突合、R2 のサイズ・etag 突合に失敗したら例外を投げて世代を作らない (manifest を最後に書くため、manifest が無い世代は不完全)。1 起動の操作数が Free の内部サービス宛上限 (1,000) の手前 (既定 900) を超えそうなら何も書かずに中断する (`BACKUP_OPS_LIMIT` で調整可)。
+- **世代**: 日付ごとの最新 1 世代を直近 7 日分＋日曜の最新 1 世代を直近 4 週分 (最長約 28 日・旧方式と同じ)。古い世代は**新世代の書き込みが成功した後にだけ** Worker が間引く (lifecycle rule は使わない＝失敗し続けた時に最後の良い世代まで消えるのを避ける)。件数が前回成功の 50% 未満に縮小した回は、間引かずに警告だけ通知する。
+- **失敗通知**: 毎回 `LATEST.json` に結果 (ok・時刻・世代 id・件数・エラー種別) を書く。失敗時と縮小警告時だけ既存の `REPORT_WEBHOOK_URL` へ 1 行通知 (種別と最後の成功時刻のみ・email・ユーザー名・キー名・salt は入れない)。
+- **暗号化しない (E0)**。鍵の管理コスト・「復元に homelab の秘密鍵が要る＝結局 PC 依存に戻る」という問題を避けるため。バケットへの読み取りアクセスは Worker の binding と kuroko の Cloudflare トークンに限られ、本番の R2 (`asayake-hub`) と同じ強さのアクセス制御で守られる。
 
 **状態の確認**
 ```bash
-systemctl --user list-timers | grep bookshelf-backup          # 次回実行
-journalctl --user -u kuroko-bookshelf-backup.service -n 40     # 直近の実行 (件数・サイズだけが出る)
-cat ~/kuroko/discord/logs/bookshelf-backup-state.json          # lastSuccessAt / lastError / 件数
-git ls-remote git@github.com:hahero-asayake/kuroko-db-backup.git   # main と bookshelf-hub の両 ref が見える
+# kuroko のトークンで (値は出さない):
+#   GET /workers/scripts/asayake-hub/schedules              → ["50 18 * * *"] だけになっているか
+#   GET /r2/buckets/asayake-hub-backup/objects/LATEST.json  → {ok, gen, at, counts, ops, pruned, error, lastSuccess}
+#   GET /r2/buckets/asayake-hub-backup/objects?prefix=gen/&delimiter=/  → 保持中の世代一覧
+# Workers Logs (Observability) の telemetry/query API で eventType=scheduled を絞ると cpuTimeMs・outcome が見える (core/tmp/wr235-obs.mjs が実例)。
 ```
-復元リハーサル (本番へ書かない・件数/sha256 の一致表だけを出す): `node ~/kuroko/discord/tools/bookshelf-restore-rehearsal.mjs` (2026-09-26: 32 項目一致・不一致 0)。
+復元リハーサル (本番へ書かない・件数/sha256/値の一致表だけを出す): `node ~/kuroko/discord/tools/bookshelf-restore-rehearsal-cf.mjs` (2026-09-28: 最新世代で25項目一致・不一致 0・salt の非空確認込み)。
 
-**復元手順** (⚠️ **本番への書き込み `d1 execute --remote`・`kv bulk put`・`r2 object put` は人間の承認を経てから行う**。復元前に `systemctl --user start kuroko-bookshelf-backup.service` で現状の世代を 1 本取り直す)
-1. 展開 (平文の個人情報を含むので tmpfs で): `gpg --homedir ~/.local/share/kuroko/bookshelf-backup/gnupg -d <世代>.tar.gz.gpg | tar -xz -C /run/user/$(id -u)/restore`。中身は `manifest.json`・`d1.sql`・`kv.json`・`r2/<key>`・`secrets/`。鍵が homelab に無いときは、控えた `secret.asc` を空の keyring へ `gpg --import` する。
-2. **D1**: 期間内 (Free 7 日) は Time Travel が一次 (`wrangler d1 time-travel restore asayake-community --timestamp=<ISO>`)。期間外は空の DB へ `wrangler d1 execute asayake-community --remote --file=d1.sql`。
-3. **KV**: `kv.json` から **`expiration` が過去 (または 60 秒以内) のキーを除いて**から `wrangler kv bulk put <除いたjson> --binding KV -c wrangler.hub.toml --remote`。1 件でも過去の expiration が混じるとバッチ全体が 400 で失敗する (2026-09-26 のリハーサルで実測)。
-4. **R2**: `manifest.json` の `r2.entries` を回して `wrangler r2 object put asayake-hub/<key> --file=r2/<key> --content-type=<contentType> --remote`。書き込みは**直列**で (ローカルの sqlite 永続化は並列だと 1 件落ちた)。
-5. **secret**: 下の表。
+**復元手順** (⚠️ **本番への書き込み `d1 execute --remote`・`kv bulk put`・`r2 object put` は人間の承認を経てから行う**)
+1. 取得 (平文の私的データを含むので tmpfs で): `wrangler r2 object get asayake-hub-backup/gen/<世代>/manifest.json` ほか各ファイルを `/run/user/$(id -u)/` へ。中身は `manifest.json`・`d1.sql`・`kv.json`・`r2/<key>`・(あれば) `secrets.json`。
+2. **D1**: 期間内 (実測で 30 日まで確認・Time Travel) が一次 (`wrangler d1 time-travel restore asayake-community --timestamp=<ISO>`)。期間外は空の DB へ `wrangler d1 execute asayake-community --remote --file=d1.sql`。
+3. **KV**: `kv.json` から **`expiration` が過去 (または 60 秒以内) のキーを除いて**から `wrangler kv bulk put <除いたjson> --binding KV -c wrangler.hub.toml --remote`。1 件でも過去の expiration が混じるとバッチ全体が 400 で失敗する (#226 のリハーサルで実測・新方式でも同じ)。
+4. **R2**: `manifest.json` の `r2.objects` を回して `wrangler r2 object put asayake-hub/<key> --file=r2/<key> --remote` (httpMetadata/customMetadata は manifest から復元)。書き込みは**直列**で (ローカルの sqlite 永続化は並列だと 1 件落ちた)。
+5. **secret**: 下の表。`TOMBSTONE_SALT` は同じ世代の `secrets.json` に平文で入っている。
 6. **復元後に退会済みユーザーのデータを再削除する** (`legal/privacy.html` の「退会申出から 30 日以内に削除」を満たすため。バックアップ取得後に退会した uid のデータが戻るのを放置しない)。
 7. 突合の基準は**取得時点の `manifest.json`** (本番は取得後も動く)。
 
@@ -367,17 +372,12 @@ git ls-remote git@github.com:hahero-asayake/kuroko-db-backup.git   # main と bo
 | secret | 再設定 | 失うと |
 |---|---|---|
 | `ADMIN_EMAILS` | `wrangler secret put ADMIN_EMAILS -c wrangler.hub.toml` (管理者メール・複数はカンマ区切り) | 管理 API が 403 |
-| `REPORT_WEBHOOK_URL` | 「通報の通知」節の手順で専用 webhook を作り直して `secret put REPORT_WEBHOOK_URL` (kuroko の `~/.local/share/kuroko/bookshelf-report-webhook` に URL の控えあり) | 通報通知が止まる (通報は記録される) |
+| `REPORT_WEBHOOK_URL` | 「通報の通知」節の手順で専用 webhook を作り直して `secret put REPORT_WEBHOOK_URL` (kuroko の `~/.local/share/kuroko/bookshelf-report-webhook` に URL の控えあり) | 通報通知が止まる (通報は記録される)。バックアップ失敗の通知も止まる |
 | `STRIPE_SECRET_KEY` | Stripe ダッシュボード → 開発者 → API キーで再発行 → `secret put STRIPE_SECRET_KEY` | 課金 API が動かない |
 | `STRIPE_WEBHOOK_SECRET` | Stripe → Webhook エンドポイントの署名シークレットを再表示 → `secret put STRIPE_WEBHOOK_SECRET` | webhook 検証が失敗する |
-| `TOMBSTONE_SALT` | バックアップ同梱の暗号化物を復号して渡す: `gpg --homedir ~/.local/share/kuroko/bookshelf-backup/gnupg -d ~/.local/share/kuroko/bookshelf-backup/tombstone-salt.gpg \| wrangler secret put TOMBSTONE_SALT -c wrangler.hub.toml` (バックアップの tar 内 `secrets/TOMBSTONE_SALT.gpg` も同じもの・wrangler は入力末尾の改行を除去する) | 退会済み username の本人取り戻しが永久にできなくなる (値は変更しない) |
+| `TOMBSTONE_SALT` | 最新世代の `secrets.json` の値をそのまま `wrangler secret put TOMBSTONE_SALT -c wrangler.hub.toml` に渡す (値は平文でバックアップに同梱済み・S1) | 退会済み username の本人取り戻しが永久にできなくなる (値は変更しない) |
 
-**鍵の退避 E1 (ハヘロが 1 回だけ・1〜2 分)**: kuroko の秘密鍵 1 ファイルを、homelab の外の自分の保管場所に控える。
-1. homelab で `sudo cat /home/kuroko/.local/share/kuroko/bookshelf-backup/secret.asc` を実行する (`-----BEGIN PGP PRIVATE KEY BLOCK-----` で始まる約 800 B のテキスト)。
-2. **全体をパスワードマネージャのセキュアノートに貼る** (または `sudo cp` でそのファイルを USB メモリへコピーする)。**Discord・GitHub・obsidian・メールには貼らない** (暗号化物と同じ経路に鍵を置かないため)。
-3. 控えたら kuroko に「鍵を控えた」と伝える → kuroko は控えのファイルでオフサイトの暗号化物が復号できることを確認し、確認できたら homelab 側の秘密鍵を外す (日次の暗号化は公開鍵だけで動く)。**確認できるまで homelab 側は残す** (確認前に外すと全喪失のリスクがある)。
-
-**既知の限界**: (1) Workers のプラン (Free/Paid) は kuroko のトークンで読めず未確認 → Time Travel は 7 日で見ておく。(2) R2 の取得は 1 オブジェクトずつ `r2 object get` を呼ぶため、数千件規模になると時間がかかる。増えたら S3 互換 API (R2 アクセスキーの発行＝権限追加) か etag 差分取得へ移す (今は権限を広げない)。(3) オフサイトの GitHub 側に孤立コミットがどれだけ残るかは制御できない (中身は暗号化済み・鍵が無ければ読めない)。`legal/privacy.html` はこの事実どおりに書いてある。
+**既知の限界**: (1) Workers のプラン (Free/Paid) は kuroko のトークンで読めず未確認。D1 Time Travel が実測で 30 日保持できたこと・scheduled の CPU 時間が 51〜68ms (Free の Cron 上限 10ms を超える) で 2 回とも成功したことから、Paid の可能性が高いと判断している (確定ではない)。(2) R2 の取得は 1 オブジェクトずつ呼ぶため、数千件規模になると 1 起動の操作数上限 (既定 900) に近づく。増えたら etag 差分だけコピーする方式へ見直す。(3) `asayake-hub-backup` バケット自体が漏れた場合は平文が読める (暗号化しない判断・E0)。バケットの読み取り権限は本番 R2 と同じ強さの Cloudflare トークン管理下にある。
 
 ---
 
