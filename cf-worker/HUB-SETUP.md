@@ -356,6 +356,8 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 #   GET /r2/buckets/asayake-hub-backup/objects?prefix=gen/&delimiter=/  → 保持中の世代一覧
 # Workers Logs (Observability) の telemetry/query API で eventType=scheduled を絞ると cpuTimeMs・outcome が見える (core/tmp/wr235-obs.mjs が実例)。
 ```
+
+**鮮度監視 (`GET /backup-status`・イシュー#236)**: 上の内部確認 (トークン必須) とは別に、認証なしで叩ける外形監視用の窓。`curl https://hub.asayake.org/backup-status` → `{"status":"ok"|"stale","lastSuccess":"<ISO8601>"|null}` の2項目だけ (キー名・件数・email は出ない)。Cron が止まる・未登録のまま気づかない、という「無音の障害」を UptimeRobot のキーワード監視 (G-2 に追記) から検知するための窓。閾値は既定 176400 秒 (49h)・`wrangler.hub.toml` の `[vars] BACKUP_STALE_SECONDS` で一時的に上書きできる (stale 検証用。本番データは変えない)。仕様は [06_データ仕様書] 「ハブのバックアップ」。
 復元リハーサル (本番へ書かない・件数/sha256/値の一致表だけを出す): `node ~/kuroko/discord/tools/bookshelf-restore-rehearsal-cf.mjs` (2026-09-28: 最新世代で25項目一致・不一致 0・salt の非空確認込み)。
 
 **復元手順** (⚠️ **本番への書き込み `d1 execute --remote`・`kv bulk put`・`r2 object put` は人間の承認を経てから行う**)

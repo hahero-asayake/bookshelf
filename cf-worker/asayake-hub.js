@@ -43,8 +43,11 @@
 //   PLUS_QUOTA_BYTES       (var)    Plus プランの保存上限 (既定 3GB)。Checkout 完了で uid レコードを引き上げる。
 //   ADMIN_EMAILS           (secret) カンマ区切りの管理者メール。/admin/plan で特定アカウントを無料↔Plus に手動
 //                    切替できる (Stripe を経由しない優待。ADR-038)。未設定なら /admin/plan は 403。
-//   BACKUP                 (R2 binding・#235) 日次バックアップ専用の非公開バケット asayake-hub-backup。scheduled だけが使う (fetch からは触らない・公開しない)。
+//   BACKUP                 (R2 binding・#235) 日次バックアップ専用の非公開バケット asayake-hub-backup。書込は scheduled だけが行う (公開しない)。
 //                    未設定なら scheduled は何もコピーせず失敗として記録する。バックアップの失敗は REPORT_WEBHOOK_URL へ 1 行通知 (backup.js)。
+//                    fetch は GET /backup-status からこのバケットの LATEST.json を読み取り専用で見る (#236・時刻と判定語のみ返す、中身は返さない)。
+//   BACKUP_STALE_SECONDS   (var・任意) GET /backup-status の stale 判定閾値 (秒)。未設定なら既定 176400 (49h = Cron 周期 2 回分+1 時間)。
+//                    stale の検証用に一時的に下げる想定 (#236)。
 //   REPORT_WEBHOOK_URL     (secret) 通報を受けたときにハヘロへ知らせる Discord webhook の URL (ADR-099)。未設定でも通報は受け付け、
 //                    通知だけ省く (console.warn)。/admin/reports などの通報審査 API は ADMIN_EMAILS の管理者だけが使える。
 //
@@ -72,6 +75,9 @@ export default {
 
         // 公開配信 (認証不要・同一ホストの GET)。Cache API で R2 読取 (Class B) を間引く
         if (path.startsWith('/public/')) return serveSite(request, env, path, ctx);
+
+        // バックアップ鮮度監視 (認証不要・UptimeRobot 用)。時刻と判定語だけ返す (#236)
+        if (path === '/backup-status' && request.method === 'GET') return handleBackupStatus(env);
 
         // アフィリンク・リダイレクタ (認証不要・公開ページからクリックされる)。クリック時にタグを解決
         if (path.startsWith('/go/')) return handleGo(request, env, path);
@@ -1451,7 +1457,7 @@ async function handleAdminReportDismiss(request, env, id) {
     return json({ ok: true });
 }
 
-export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders, handleUsername, serveSite, handleUsage, handlePublish, handleSession };
+export { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail, handleBillingPortal, handleAccountDelete, isStripeMissing, clearStaleStripe, handleListPlugins, handleAdminUpsertPlugin, rawGitHubBase, handleCommunityInstall, handleCommunityStar, handleCommunitySiteUpsert, handleCommunitySitesList, handleCommunitySiteDelete, handleCommunityCommentAdd, handleCommunityCommentsList, handleCommunityPlugins, handleCommunityMyStars, handleCommunityReport, isPlus, bumpStat, handleGo, serveHeaders, handleUsername, serveSite, handleUsage, handlePublish, handleSession, handleBackupStatus };
 
 // ===== Google ID トークン検証 (RS256, JWKS) =====
 async function verifyGoogleIdToken(idToken, clientId) {
@@ -1475,6 +1481,31 @@ async function verifyGoogleIdToken(idToken, clientId) {
     const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sigBytes, new TextEncoder().encode(`${h}.${p}`));
     if (!ok) throw httpError(401, 'signature invalid');
     return payload;
+}
+
+// ===== バックアップ鮮度監視 (#236): GET /backup-status =====
+// #235 の日次バックアップ (backup.js) が動いているかを認証なしで外形監視 (UptimeRobot) から見れるようにする。
+// 返すのは判定語 (ok|stale) と最終成功時刻だけ。email・ユーザー名・キー名・バケットの中身・件数は一切出さない。
+const BACKUP_CRON_PERIOD_SEC = 24 * 3600;                          // #235 の Cron 周期 (日次 1 回)
+const DEFAULT_BACKUP_STALE_SECONDS = 2 * BACKUP_CRON_PERIOD_SEC + 3600; // 2 周期 + 1 時間 = 49h = 176400 秒
+async function handleBackupStatus(env) {
+    let lastSuccess = null;
+    try {
+        if (env.BACKUP) {
+            const obj = await env.BACKUP.get('LATEST.json');
+            if (obj) {
+                const latest = JSON.parse(await obj.text());
+                lastSuccess = (latest && latest.ok) ? (latest.at || null) : (latest && latest.lastSuccess ? latest.lastSuccess.at || null : null);
+            }
+        }
+    } catch (_) { lastSuccess = null; } // 読み取り失敗・壊れた JSON はすべて stale 扱い (例外文言は返さない)
+    const thresholdSec = Number(env.BACKUP_STALE_SECONDS) > 0 ? Number(env.BACKUP_STALE_SECONDS) : DEFAULT_BACKUP_STALE_SECONDS;
+    const ageSec = lastSuccess ? (Date.now() - new Date(lastSuccess).getTime()) / 1000 : NaN;
+    const status = (lastSuccess && Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= thresholdSec) ? 'ok' : 'stale';
+    return new Response(JSON.stringify({ status, lastSuccess: lastSuccess || null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
 }
 
 // ===== ユーティリティ =====
