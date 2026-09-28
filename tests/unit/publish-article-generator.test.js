@@ -582,7 +582,9 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
 
     // 法務・通報導線 (11_ローンチ実行計画 完了定義#8・WP-B5・イシュー#195)。公開v2 の生成器へ移行した後の
     // 出力そのもの (build().files) を検証する。記事ページも一覧 index.html も同じ _wrapDoc を通るため両方を見る。
-    const LEGAL_BASE = 'https://hahero-asayake.github.io/bookshelf/';
+    // 2026-09-29 イシュー#232 step3: フッタの旧ドメイン(hahero-asayake.github.io、301でasayake.orgへ
+    // 転送される)を現行ドメインへ直した(#225 P12)ため、期待値もPublishArticleGenerator.APP_URLに合わせる。
+    const LEGAL_BASE = PublishArticleGenerator.APP_URL;
     const legalHtmls = async (opts) => {
         const r = await gen.build([makeArticle()], opts);
         return [
@@ -602,9 +604,9 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
         }
     });
 
-    it('フッターの法務リンク先 (github.io/bookshelf/legal/…) は repo の legal/ に実在する (Pages が main を直配信)', async () => {
+    it('フッターの法務リンク先 (asayake.org/bookshelf/legal/…) は repo の legal/ に実在する (Pages が main を直配信・301転送先の現行ドメイン)', async () => {
         for (const [label, html] of await legalHtmls({})) {
-            const hrefs = [...html.matchAll(/<a href="(https:\/\/hahero-asayake\.github\.io\/bookshelf\/legal\/[^"]+)"/g)].map(m => m[1]);
+            const hrefs = [...html.matchAll(/<a href="(https:\/\/asayake\.org\/bookshelf\/legal\/[^"]+)"/g)].map(m => m[1]);
             expect(hrefs.length, `${label}: 法務リンクが2本ある`).toBe(2);
             for (const href of hrefs) {
                 const rel = href.slice(LEGAL_BASE.length);

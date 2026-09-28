@@ -336,8 +336,8 @@ test.describe('公開出力のフッター法務・通報導線 (イシュー#19
                 const links = preview.locator('footer.pub-footer .pub-legal a');
                 await expect(links, `${f.path}: フッターに3リンク`).toHaveCount(3);
                 await expect(links).toHaveText(['利用規約', 'プライバシーポリシー', 'このページを通報']);
-                await expect(links.nth(0)).toHaveAttribute('href', 'https://hahero-asayake.github.io/bookshelf/legal/terms.html');
-                await expect(links.nth(1)).toHaveAttribute('href', 'https://hahero-asayake.github.io/bookshelf/legal/privacy.html');
+                await expect(links.nth(0)).toHaveAttribute('href', 'https://asayake.org/bookshelf/legal/terms.html');
+                await expect(links.nth(1)).toHaveAttribute('href', 'https://asayake.org/bookshelf/legal/privacy.html');
                 const mail = await links.nth(2).getAttribute('href');
                 expect(mail, `${f.path}: 通報は運営宛ての mailto`).toMatch(/^mailto:asayake\.hahero@gmail\.com\?subject=/);
                 expect(decodeURIComponent(mail.split('subject=')[1]), `${f.path}: 件名に公開先の識別子 (hub=siteId)`).toBe('[通報] AsayakeBookshelf 公開記事 siteId=site1');

@@ -739,8 +739,8 @@ ${affiliateStanding}
 ${pluginFooter}
 <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
 ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
-<p class="pub-powered">Powered by <a href="https://hahero-asayake.github.io/bookshelf" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
-<p class="pub-legal"><a href="https://hahero-asayake.github.io/bookshelf/legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="https://hahero-asayake.github.io/bookshelf/legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　${reportLinks}</p>
+<p class="pub-powered">Powered by <a href="${PublishArticleGenerator.APP_URL}" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
+<p class="pub-legal"><a href="${PublishArticleGenerator.APP_URL}legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="${PublishArticleGenerator.APP_URL}legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　${reportLinks}</p>
 </footer>
 </body>
 </html>`;
