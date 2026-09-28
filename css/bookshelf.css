@@ -1791,21 +1791,23 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .dashboard-welcome .dw-title .h-icon { color: var(--accent, #5b6cff); }
 .dashboard-welcome .dw-sub { margin: 0 0 0.9rem; color: var(--muted, #6b6675); font-size: 0.86rem; }
 .dashboard-welcome .dw-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-.dashboard-welcome .dw-step { display: flex; align-items: center; gap: 0.8rem; }
+/* grid化(イシュー#232 step2): flexだとwrap判定がdw-bodyの内容の自然幅を基準にするため、
+   狭幅でdw-num単独が1行目に浮いてdw-bodyだけ2行目へ落ちる(#223 S1=#225 P1)。
+   gridならnum/body/btnが独立した列に確定配置され、狭幅ではbtnの列だけ2行目へ明示的に送れる。 */
+.dashboard-welcome .dw-step { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.8rem; }
 .dashboard-welcome .dw-num {
-    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px;
+    width: 26px; height: 26px; border-radius: 999px;
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--accent, #5b6cff); color: #fff; font-size: 0.82rem; font-weight: 700;
 }
 .dashboard-welcome .dw-step.is-done .dw-num { background: var(--success, #3aa657); }
-.dashboard-welcome .dw-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.dashboard-welcome .dw-body { min-width: 0; display: flex; flex-direction: column; }
 .dashboard-welcome .dw-body strong { font-size: 0.92rem; }
 .dashboard-welcome .dw-body span { font-size: 0.8rem; color: var(--muted, #6b6675); }
-.dashboard-welcome .dw-step .btn { flex: 0 0 auto; }
 .dashboard-welcome .dw-step .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (max-width: 560px) {
-    .dashboard-welcome .dw-step { flex-wrap: wrap; }
-    .dashboard-welcome .dw-step .btn { margin-left: 36px; }
+    .dashboard-welcome .dw-step { grid-template-columns: auto 1fr; }
+    .dashboard-welcome .dw-step .btn { grid-column: 1 / -1; margin-left: 36px; margin-top: 0.4rem; }
 }
 
 .dashboard-widget {
