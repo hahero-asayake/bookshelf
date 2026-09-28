@@ -1068,12 +1068,19 @@ class VirtualBookshelf {
         setTimeout(() => { input.focus(); input.select(); }, 0);
     }
 
-    _closePalette({ fromHistory = false } = {}) {
+    _closePalette({ fromHistory = false, silent = false } = {}) {
         const pal = document.getElementById('command-palette');
         if (!pal) return;
         pal.hidden = true;
         document.body.classList.remove('cmdk-open');
         this._paletteItems = null;
+        if (silent) {
+            // イシュー#259: 呼び出し元 (switchBookshelf) がこの直後に history.replaceState で
+            // 履歴エントリを書き換えるため、ここでは history.back() を予約しない。
+            const st = this._modalHistStack;
+            if (st) { const i = st.findIndex((e) => e.id === 'command-palette'); if (i !== -1) st.splice(i, 1); }
+            return;
+        }
         this._modalHistPop('command-palette', { fromHistory });
     }
 
@@ -1209,9 +1216,12 @@ class VirtualBookshelf {
     _runPaletteIndex(idx) {
         const it = this._paletteItems && this._paletteItems[idx];
         if (!it) return;
-        // 本は run 内で自前 close するが、他はここで閉じる
-        const isBook = it.group === '本';
-        if (!isBook) this._closePalette();
+        // 本/本棚は run 内 (showBookDetail/switchBookshelf) が画面遷移とクローズを担う。
+        // 本棚はイシュー#259: ここで先に _closePalette() を呼ぶと history.back() が予約され、
+        // switchBookshelf() が積む新しい履歴と非同期に競合するため、switchBookshelf 側に
+        // 「パレットがまだ開いている」ことを検知させ、silent クローズ+replaceState で処理させる。
+        const closesInRun = it.group === '本' || it.group === '本棚';
+        if (!closesInRun) this._closePalette();
         try { it.run(); } catch (err) { console.warn('palette command failed', err); }
     }
 
@@ -5134,6 +5144,21 @@ class VirtualBookshelf {
         // 別の本棚へ移るときは前の本棚の絞り込みを持ち越さない
         // (見えない検索/評価フィルタが効き続けて「この本棚は空?」に見える事故の防止)
         if (bookshelfId !== this.currentBookshelf) this._resetFilters();
+        // イシュー#259 (②差し戻し 2026-09-29): スマホ幅でドロワー(サイドバー)や⌘Kパレットを
+        // 開いたまま本棚を選ぶと、それらを閉じる _closeDrawer/_closePalette が予約する
+        // history.back() (_modalHistPop、「戻る」操作をモーダルクローズに割り当てる仕組み) が
+        // 非同期に処理される一方、この後 router.navigateBookshelf() が同期的に location.hash へ
+        // 新しい履歴エントリを積む。両者の実行順序はブラウザ/端末の速度依存で確定しないため、
+        // setTimeout 等の時間待ちでは実機で再発しうる (②指摘)。back() 自体を呼ばせず、開いていた
+        // ドロワー/パレットの履歴エントリをそのまま本棚のハッシュへ replaceState で書き換える
+        // (履歴の深さを変えない = 戻るを1回押せば元のホームへ戻れる、実測: tmp/verify259/)。
+        const drawerWasOpen = document.body.classList.contains('drawer-open');
+        const paletteEl = document.getElementById('command-palette');
+        const paletteWasOpen = !!(paletteEl && !paletteEl.hidden);
+        const useReplace = drawerWasOpen || paletteWasOpen;
+        if (drawerWasOpen) this._closeDrawer({ silent: true });
+        if (paletteWasOpen) this._closePalette({ silent: true });
+
         this.currentBookshelf = bookshelfId;
         this.applyFilters();
         // 本棚ビューに切替
@@ -5145,15 +5170,7 @@ class VirtualBookshelf {
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
             const slug = bs?.slug || bookshelfId;
-            // イシュー#259: スマホ幅でドロワー(サイドバー)や⌘Kパレットを開いたまま本棚を選ぶと、
-            // それらを閉じる _closeDrawer/_closePalette が予約する history.back() (_modalHistPop、
-            // 「戻る」操作をモーダルクローズに割り当てる仕組み) が非同期に処理される一方、ここで
-            // navigateBookshelf() が同期的に location.hash へ新しい履歴エントリを積む。両者の
-            // 実行順序がブラウザの都合で入れ替わり、back() が「本棚を開いた直後の履歴」を巻き戻して
-            // 表示がホームへ戻ってしまっていた (実測: tmp/verify259/diag-events.mjs、PC幅は
-            // ドロワー/パレットの履歴を積まないため無関係に再現しない)。back() の処理が先に
-            // 片付くよう、hash 更新を1マクロタスク遅らせる。
-            setTimeout(() => this.router.navigateBookshelf(slug), 0);
+            this.router.navigateBookshelf(slug, { replace: useReplace });
         }
         // 複数選択中なら一括バーのボタン表示 (本棚から外す等) を本棚に合わせて更新
         if (this.selectMode) this._updateBulkBar();
@@ -5251,10 +5268,18 @@ class VirtualBookshelf {
         this._modalHistPush('drawer', (o) => this._closeDrawer(o));
     }
 
-    _closeDrawer({ fromHistory = false } = {}) {
+    _closeDrawer({ fromHistory = false, silent = false } = {}) {
         // ビュー切替 (_setBodyView) から無条件に呼ばれるため、開いていない時は何もしない
         if (!document.body.classList.contains('drawer-open')) return;
         document.body.classList.remove('drawer-open');
+        if (silent) {
+            // イシュー#259: 呼び出し元 (switchBookshelf) がこの直後に history.replaceState で
+            // 履歴エントリを書き換えるため、ここでは history.back() を予約しない
+            // (_modalHistStack からのみ静かに外す。DOM は既に上で閉じている)。
+            const st = this._modalHistStack;
+            if (st) { const i = st.findIndex((e) => e.id === 'drawer'); if (i !== -1) st.splice(i, 1); }
+            return;
+        }
         this._modalHistPop('drawer', { fromHistory });
     }
 

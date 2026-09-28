@@ -3,10 +3,14 @@
 // 原因: スマホ幅でサイドバー(ドロワー)や⌘Kパレットを開いたまま本棚を選ぶと、それらを閉じる
 // _closeDrawer/_closePalette が予約する history.back() (_modalHistPop、物理戻るボタンでモーダルを
 // 閉じる仕組み) が非同期に処理される一方、switchBookshelf() の router.navigateBookshelf() が
-// 同期的に location.hash へ新しい履歴エントリを積む。両者の実行順序がブラウザの都合で入れ替わり、
-// back() が「本棚を開いた直後の履歴」を巻き戻し、表示だけホームへ戻ってしまっていた
-// (window.bookshelf.currentBookshelf 自体は正しく更新されるため気づきにくい)。
+// 同期的に location.hash へ新しい履歴エントリを積む。両者の実行順序がブラウザ/端末の速度依存で
+// 確定しないため、back() が「本棚を開いた直後の履歴」を巻き戻し、表示だけホームへ戻ってしまう
+// ことがあった (window.bookshelf.currentBookshelf 自体は正しく更新されるため気づきにくい)。
 // PC幅はドロワー/パレットの履歴を積まないため元々無関係 (js/bookshelf.js switchBookshelf 参照)。
+//
+// 修正 (②差し戻し 2026-09-29): setTimeout 等の時間待ちに頼らず、back() 自体を呼ばせない。
+// 開いていたドロワー/パレットの履歴エントリをそのまま本棚のハッシュへ replaceState で書き換える
+// (履歴の深さを変えない=戻るを1回押せば元のホームへ戻れる)。
 //
 // 本棚が「すべての本」1つだけの空データでは、開いた本棚名が表示に残るかを区別できない
 // (どの経路でも表示は同じ「すべての本」になりうる) ため、親子3階層のデータで
@@ -57,7 +61,7 @@ async function bootApp(page, { viewport } = {}) {
 }
 
 async function expectShelfOpenAndStays(page, name) {
-    // 直後の非同期処理 (setTimeout 遅延した router 更新等) が落ち着いた後も表示が保持されることを見る
+    // 直後(popstate/hashchange等)に表示が巻き戻らず保持されることを見る
     await expect(page.locator('#current-bookshelf-title')).toHaveText(name, { timeout: 5000 });
     await page.waitForTimeout(400);
     await expect(page.locator('body')).toHaveClass(/app-view-bookshelf/);
@@ -110,6 +114,57 @@ test.describe('本棚を開く経路 (スマホ幅・イシュー#259の本命)'
         await page.waitForTimeout(150);
         await page.keyboard.press('Enter');
         await expectShelfOpenAndStays(page, CHILD_NAME);
+        expect(errors).toEqual([]);
+    });
+
+    // ②差し戻し: setTimeout(0)は実機の遅い端末で順序保証がないため不採用にした。
+    // CPUを重くしても(=タイマー/イベントの処理が遅延しても)back()自体を呼ばない実装なら
+    // 競合しないはずのことを、CDPのCPUスロットリングで裏付ける。
+    test('CPU 4倍スロットリング下でもサイドバー/⌘Kから本棚を開いても表示が残る (SP)', async ({ page, context }) => {
+        const errors = await bootApp(page, { viewport: { width: 390, height: 844 } });
+        const cdp = await context.newCDPSession(page);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+        try {
+            await page.locator('[data-mobile-nav="shelves"]').click();
+            await page.locator('#sidebar-bookshelf-tree .tree-node', { hasText: CHILD_NAME }).click();
+            await expectShelfOpenAndStays(page, CHILD_NAME);
+
+            await page.evaluate(() => window.bookshelf.router.navigateMain());
+            await page.waitForTimeout(100);
+            await page.keyboard.press('Control+k');
+            await expect(page.locator('#cmdk-backdrop')).toBeVisible();
+            await page.locator('#cmdk-input').fill(CHILD_NAME);
+            await page.waitForTimeout(150);
+            await page.keyboard.press('Enter');
+            await expectShelfOpenAndStays(page, CHILD_NAME);
+        } finally {
+            await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+        }
+        expect(errors).toEqual([]);
+    });
+
+    test('ドロワーから本棚を開いた後、ブラウザの戻るを1回押すとホームへ戻る (SP)', async ({ page }) => {
+        const errors = await bootApp(page, { viewport: { width: 390, height: 844 } });
+        await page.locator('[data-mobile-nav="shelves"]').click();
+        await page.locator('#sidebar-bookshelf-tree .tree-node', { hasText: CHILD_NAME }).click();
+        await expectShelfOpenAndStays(page, CHILD_NAME);
+
+        await page.goBack();
+        await expect(page.locator('body')).toHaveClass(/app-view-main/, { timeout: 3000 });
+        expect(errors).toEqual([]);
+    });
+
+    test('⌘Kから本棚を開いた後、ブラウザの戻るを1回押すとホームへ戻る (SP)', async ({ page }) => {
+        const errors = await bootApp(page, { viewport: { width: 390, height: 844 } });
+        await page.keyboard.press('Control+k');
+        await expect(page.locator('#cmdk-backdrop')).toBeVisible();
+        await page.locator('#cmdk-input').fill(CHILD_NAME);
+        await page.waitForTimeout(150);
+        await page.keyboard.press('Enter');
+        await expectShelfOpenAndStays(page, CHILD_NAME);
+
+        await page.goBack();
+        await expect(page.locator('body')).toHaveClass(/app-view-main/, { timeout: 3000 });
         expect(errors).toEqual([]);
     });
 });
