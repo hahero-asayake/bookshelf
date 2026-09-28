@@ -1,3 +1,10 @@
+/* [hidden] 属性を構造で保証する (ui-standards §2-2・§2-13, イシュー#231)。
+   .btn 等の display 明示クラスが UA の [hidden] を上書きする罠が4回再発したため、
+   個別に [hidden]{display:none} を足す運用をやめ、!important で全要素に一律適用する。
+   運用: hidden 切替する要素に style.display を併用しない (JS 側は el.hidden の
+   true/false だけで表示制御する)。既存の個別 [hidden] ルール群は冗長だが無害なため削除しない。 */
+[hidden] { display: none !important; }
+
 /* ===== モバイル案内バナー ===== */
 .mobile-setup-banner {
     background: linear-gradient(135deg, #fff7e0 0%, #fff0b8 100%);
@@ -3864,6 +3871,12 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .account-plan-period { color: var(--fg2, #4b5460); font-weight: 600; }
 .account-plan-cancel { display: block; margin-top: 0.15rem; color: var(--warning, #d49100); }
 .account-plan-detail.is-canceling .account-plan-period { color: var(--warning, #d49100); }
+/* comp (管理者付与 Plus) 向け案内・支払い遅延警告 (イシュー#231) */
+.account-comp-notice { display: flex; align-items: flex-start; gap: 0.35rem; margin: 0 0 0.55rem; font-size: 0.82rem; color: var(--muted, #6b6477); line-height: 1.5; }
+.account-comp-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; }
+.account-comp-notice a { color: var(--accent); }
+.account-past-due-notice { display: flex; align-items: flex-start; gap: 0.35rem; margin: 0 0 0.55rem; font-size: 0.82rem; color: var(--warning, #d49100); line-height: 1.5; }
+.account-past-due-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; color: var(--warning, #d49100); }
 /* 管理者: プラン手動切替 (ADR-038) */
 .account-admin { margin: 0.7rem 0; padding: 0.6rem 0.7rem; border: 1px dashed var(--line, #ece7ef); border-radius: 9px; background: var(--surface-2, #f7f5fa); }
 .account-admin-title { margin: 0 0 0.25rem; font-size: 0.82rem; font-weight: 600; color: var(--fg2, #4b5460); display: flex; align-items: center; gap: 0.35rem; }

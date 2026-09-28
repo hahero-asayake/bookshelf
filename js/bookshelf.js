@@ -3600,9 +3600,10 @@ class VirtualBookshelf {
         const host = document.getElementById('hub-gsi-button');
         const gotoBtn = document.getElementById('hub-goto-account');
         const msg = document.getElementById('hub-disc-msg');
-        // gotoBtn は .btn (display 指定) のため [hidden] 属性が効かない → style.display で制御
+        // [hidden] はグローバルに !important で構造保証済み (ui-standards §2-2・イシュー#231)。
+        // style.display による個別回避はもう不要 → hidden の true/false だけで制御する。
         if (consented) {
-            if (gotoBtn) gotoBtn.style.display = 'none';
+            if (gotoBtn) gotoBtn.hidden = true;
             if (msg) msg.textContent = 'Google でログインすると、この端末でハブの保存データを使えます。';
             if (host) {
                 host.hidden = false;
@@ -3616,7 +3617,7 @@ class VirtualBookshelf {
             }
         } else {
             if (host) host.hidden = true;
-            if (gotoBtn) gotoBtn.style.display = '';
+            if (gotoBtn) gotoBtn.hidden = false;
             if (msg) msg.textContent = 'ハブを使うには、まず「アカウント」で Google ログイン（規約への同意）が必要です。';
         }
     }
@@ -3865,6 +3866,15 @@ class VirtualBookshelf {
         // 「プラン変更・支払い・解約」(Stripe Billing Portal) は実際に Stripe サブスクがある時だけ。
         // 管理者付与の Plus (comp) や未払いは Stripe 顧客が無く Portal を開けないので出さない (ADR-039)。
         if (manage) manage.hidden = !(plus && hub.billingManaged);
+        // comp (管理者付与 Plus, billingManaged=false) 向けの案内 (イシュー#231)。
+        // billingManaged は stripeCustomerId の有無 (ADR-039) で、comp とそれ以外の Plus を
+        // 区別できる唯一のフィールド (/usage は adminGrant を返さない)。
+        const compNotice = document.getElementById('account-comp-notice');
+        if (compNotice) compNotice.hidden = !(plus && !hub.billingManaged);
+        // 支払い遅延警告 (任意項目・イシュー#231)。hub.subStatus は Stripe のサブスク status を
+        // そのまま転写したもの (applyStripeEvent) なので 'past_due' 判定に使える。
+        const pastDueNotice = document.getElementById('account-past-due-notice');
+        if (pastDueNotice) pastDueNotice.hidden = !(plus && hub.billingManaged && hub.subStatus === 'past_due');
         this._renderPlanDetail(hub, plus);
         const admin = document.getElementById('account-admin');   // 管理者のみ表示 (ADR-038)
         if (admin) admin.hidden = !hub.isAdmin;
