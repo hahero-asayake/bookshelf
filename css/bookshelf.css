@@ -69,7 +69,7 @@
     --muted: #6b7280;
     --line: #e4e7eb;
     --line2: #eef0f3;
-    --accent: #5b6cff;
+    --accent: #3d52ff;
     --accent-bg: #eef0ff;
     --accent-strong: #2a3aff;
     --danger: #e25555;
@@ -1820,7 +1820,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 .dashboard-welcome .dw-close:hover { background: var(--surface-3, #ece7f1); }
 .dashboard-welcome .dw-title { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.15rem; font-size: 1.1rem; }
-.dashboard-welcome .dw-title .h-icon { color: var(--accent, #5b6cff); }
+.dashboard-welcome .dw-title .h-icon { color: var(--accent, #3d52ff); }
 .dashboard-welcome .dw-sub { margin: 0 0 0.9rem; color: var(--muted, #6b6675); font-size: 0.86rem; }
 .dashboard-welcome .dw-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 /* grid化(イシュー#232 step2): flexだとwrap判定がdw-bodyの内容の自然幅を基準にするため、
@@ -1830,7 +1830,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .dashboard-welcome .dw-num {
     width: 26px; height: 26px; border-radius: 999px;
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent, #5b6cff); color: #fff; font-size: 0.82rem; font-weight: 700;
+    background: var(--accent, #3d52ff); color: #fff; font-size: 0.82rem; font-weight: 700;
 }
 .dashboard-welcome .dw-step.is-done .dw-num { background: var(--success, #3aa657); }
 .dashboard-welcome .dw-body { min-width: 0; display: flex; flex-direction: column; }
@@ -2313,7 +2313,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-size: 0.82rem;
     cursor: pointer;
 }
-.popover-filter .fp-dir-btn:hover { background: var(--accent-bg, #eef0ff); border-color: var(--accent, #5b6cff); }
+.popover-filter .fp-dir-btn:hover { background: var(--accent-bg, #eef0ff); border-color: var(--accent, #3d52ff); }
 .popover-filter .fp-dir-btn .h-icon { display: inline-flex; }
 .popover-filter .fp-hint {
     margin: 0.5rem 0 0;
@@ -3963,9 +3963,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     font-size: 0.82rem; text-align: left; transition: background 0.15s, border-color 0.15s;
 }
 .sidebar-account-chip:hover { background: var(--surface-3, #ece7f1); }
-.sidebar-account-chip.is-connected { border-color: var(--accent, #5b6cff); }
+.sidebar-account-chip.is-connected { border-color: var(--accent, #3d52ff); }
 .sidebar-account-chip .sac-icon { color: var(--muted); flex: 0 0 auto; display: inline-flex; }
-.sidebar-account-chip.is-connected .sac-icon { color: var(--accent, #5b6cff); }
+.sidebar-account-chip.is-connected .sac-icon { color: var(--accent, #3d52ff); }
 .sidebar-account-chip .sac-label {
     flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
@@ -3973,7 +3973,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     flex: 0 0 auto; font-size: 0.68rem; font-weight: 700; padding: 0.08rem 0.4rem;
     border-radius: 999px; background: #e7e3ee; color: var(--muted);
 }
-.sidebar-account-chip .sac-plan.is-plus { background: var(--accent, #5b6cff); color: #fff; }
+.sidebar-account-chip .sac-plan.is-plus { background: var(--accent, #3d52ff); color: #fff; }
 body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* GitHub Device Flow UI */
@@ -5159,7 +5159,7 @@ body.right-collapsed .app-detail { border-left: none; }
     width: 3px;
     align-self: stretch;
     min-height: 28px;
-    background: var(--accent, #5b6cff);
+    background: var(--accent, #3d52ff);
     border-radius: 2px;
 }
 body.left-collapsed .app-sidebar .sidebar-utility {
@@ -5536,7 +5536,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     justify-content: center;
     border-radius: 9px;
     background: var(--accent-bg, #eef0ff);
-    color: var(--accent, #5b6cff);
+    color: var(--accent, #3d52ff);
 }
 .pcard-icon.is-off {
     background: var(--line2);
@@ -5638,7 +5638,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     border-radius: 999px;
     background: var(--accent-bg, #eef0ff);
     color: var(--accent-strong, #2a3aff);
-    border: 1px solid color-mix(in srgb, var(--accent, #5b6cff) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent, #3d52ff) 25%, transparent);
 }
 .plugin-cat-badge .h-icon { display: inline-flex; }
 
@@ -5649,7 +5649,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 .plugin-cat-help > summary {
     cursor: pointer;
-    color: var(--accent, #5b6cff);
+    color: var(--accent, #3d52ff);
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -5721,7 +5721,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .plugin-settings-modal .psm-head-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex: 0 0 auto;
-    border-radius: 10px; background: var(--accent-bg, #eef0ff); color: var(--accent, #5b6cff);
+    border-radius: 10px; background: var(--accent-bg, #eef0ff); color: var(--accent, #3d52ff);
 }
 .plugin-settings-modal .psm-head-icon.is-off { background: var(--line2, var(--line2)); color: var(--muted, var(--line)); }
 .plugin-settings-modal .psm-head-text { flex: 1; min-width: 0; }
@@ -5747,7 +5747,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     margin-bottom: 1.2rem;
 }
 .plugin-settings-modal .psm-enable-card.is-on {
-    border-color: color-mix(in srgb, var(--accent, #5b6cff) 35%, transparent);
+    border-color: color-mix(in srgb, var(--accent, #3d52ff) 35%, transparent);
     background: var(--accent-bg, #eef0ff);
 }
 .plugin-settings-modal .psm-enable-text { flex: 1; min-width: 0; }
@@ -5775,7 +5775,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .plugin-settings-modal .psm-icon-preview {
     display: inline-flex; align-items: center; justify-content: center;
     width: 36px; height: 36px; border: 1px solid var(--line, #e5e7eb); border-radius: 8px;
-    background: var(--panel, #fff); color: var(--accent, #5b6cff); flex: 0 0 auto;
+    background: var(--panel, #fff); color: var(--accent, #3d52ff); flex: 0 0 auto;
 }
 .plugin-settings-modal .psm-icon-none { color: var(--muted, var(--muted)); }
 .plugin-settings-modal .psm-muted { font-size: 0.82rem; color: var(--muted, var(--muted)); margin: 0; }
@@ -5817,13 +5817,13 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     transition: transform 0.15s ease;
 }
 .toggle-switch input:checked + .toggle-switch-track {
-    background: var(--accent, #5b6cff);
+    background: var(--accent, #3d52ff);
 }
 .toggle-switch input:checked + .toggle-switch-track .toggle-switch-thumb {
     transform: translateX(16px);
 }
 .toggle-switch input:focus-visible + .toggle-switch-track {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #5b6cff) 30%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #3d52ff) 30%, transparent);
 }
 .toggle-switch-lg .toggle-switch-track { width: 46px; height: 26px; }
 .toggle-switch-lg .toggle-switch-thumb { width: 22px; height: 22px; }
@@ -6831,10 +6831,10 @@ input.art-shelf-select-all.is-mixed::after {
 }
 
 /* 本棚管理モーダルの D&D ドロップ位置インジケータ (左ペインツリーと同挙動) */
-.bookshelf-item.bsm-drop-before { box-shadow: 0 -3px 0 0 var(--accent, #5b6cff); }
-.bookshelf-item.bsm-drop-after  { box-shadow: 0 3px 0 0 var(--accent, #5b6cff); }
+.bookshelf-item.bsm-drop-before { box-shadow: 0 -3px 0 0 var(--accent, #3d52ff); }
+.bookshelf-item.bsm-drop-after  { box-shadow: 0 3px 0 0 var(--accent, #3d52ff); }
 .bookshelf-item.bsm-drop-inside {
-    outline: 2px dashed var(--accent, #5b6cff);
+    outline: 2px dashed var(--accent, #3d52ff);
     outline-offset: -2px;
     background-color: var(--accent-bg, #eef0ff);
 }
@@ -7138,7 +7138,7 @@ body.plugin-dark .status-row.status-update { background: var(--accent-bg); }
 .cmdk-item + .cmdk-item { box-shadow: inset 0 1px 0 var(--line2); }
 .cmdk-item.is-active { background: var(--accent-bg, #eef0ff); }
 .cmdk-item-icon { color: var(--fg2, #4a4f5e); display: inline-flex; flex-shrink: 0; }
-.cmdk-item.is-active .cmdk-item-icon { color: var(--accent, #5b6cff); }
+.cmdk-item.is-active .cmdk-item-icon { color: var(--accent, #3d52ff); }
 .cmdk-item-title {
     flex: 1;
     font-size: 0.88rem;

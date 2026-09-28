@@ -12,7 +12,7 @@ body.${BODY_CLASS} {
     --bg: #15171c; --panel: #1d2026; --side: #191c22;
     --fg: #e6e8ec; --fg2: #b3b9c4; --muted: #8b93a1;
     --line: #2c313a; --line2: #242831;
-    --accent: #7c8cff; --accent-bg: #232842; --accent-strong: #9aa6ff;
+    --accent: #4d5fd6; --accent-bg: #232842; --accent-strong: #9aa6ff;
     --shadow: 0 8px 24px rgba(0,0,0,0.5);
     --primary-color: #e6e8ec; --text-color: #e6e8ec; --bg-color: #15171c; --border-color: #2c313a;
     color-scheme: dark;

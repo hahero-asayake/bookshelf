@@ -269,7 +269,7 @@ PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀developme
 - **アプリ内の絵文字は全廃** (2026-06-01 Phase A 完了)。デフォルト UI は Lucide のみ、ユーザが選ぶアイコン (本棚/プラグイン/ヘッダー) は IconPicker で Lucide / 任意文字 (絵文字含む) を切替可
 - `<title>` は表示名 `AsayakeBookshelf`、favicon/PWA アイコンは `icons/` の朝焼けアイコン (ADR-025)。旧 📚 絵文字は廃止
 - ボタンの色規約:
-  - `.btn-primary`: `var(--accent)` (青紫 #5b6cff) — 主要アクション (保存、公開、接続 等)
+  - `.btn-primary`: `var(--accent)` (青紫 ライト #3d52ff / ダーク #4d5fd6・白文字コントラスト4.5以上、イシュー#247決裁1) — 主要アクション (保存、公開、接続 等)
   - `.btn-secondary`: ghost (white + line) — 副次アクション (キャンセル、開く 等)
   - `.btn-danger`: ghost + danger color (#e25555) — 削除系
   - `.btn-warning`: ghost + warning color (#d49100) — 注意系

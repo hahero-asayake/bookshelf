@@ -92,12 +92,12 @@ export function activate(api, manifest) {
             color: var(--muted, #888); font-size: 0.78rem; margin: 0;
         }
         .plugin-detail-section .hl-item {
-            border-left: 3px solid var(--accent, #5b6cff); padding: 0.25rem 0 0.25rem 0.6rem; margin-bottom: 0.5rem;
+            border-left: 3px solid var(--accent, #3d52ff); padding: 0.25rem 0 0.25rem 0.6rem; margin-bottom: 0.5rem;
         }
         .plugin-detail-section .hl-text { font-size: 0.82rem; line-height: 1.5; }
         .plugin-detail-section .hl-loc { font-size: 0.68rem; color: var(--muted, #888); margin-top: 2px; }
         .plugin-detail-section .hl-toggle {
-            font-size: 0.72rem; background: none; border: none; color: var(--accent, #5b6cff);
+            font-size: 0.72rem; background: none; border: none; color: var(--accent, #3d52ff);
             cursor: pointer; padding: 0;
         }
     `);

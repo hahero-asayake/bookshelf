@@ -57,7 +57,7 @@ export function activate(api, manifest) {
             font-size: 0.74rem; padding: 2px 9px; border: 1px solid var(--line, #e5e7eb);
             border-radius: 6px; background: var(--surface, #fff); color: inherit; cursor: pointer;
         }
-        .plugin-detail-section .mt-btn:hover { border-color: var(--accent, #5b6cff); color: var(--accent, #5b6cff); }
+        .plugin-detail-section .mt-btn:hover { border-color: var(--accent, #3d52ff); color: var(--accent, #3d52ff); }
     `);
 
     return {};
