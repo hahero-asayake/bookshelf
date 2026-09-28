@@ -29,9 +29,9 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
     <link rel="stylesheet" href="css/bookshelf.css?v=2026092908">
 
-    <!-- EasyMDE (アプリ内 Markdown エディタ) -->
-    <link rel="stylesheet" href="js/vendor/easymde.min.css?v=2026081801">
-    <script defer src="js/vendor/easymde.min.js?v=2026081801"></script>
+    <!-- EasyMDE (アプリ内 Markdown エディタ) は起動時に読み込まない。106KB(css+js)が
+         初回表示に不要なため、長文メモのアプリ内エディタを開く時だけ動的読み込みする
+         (_ensureEasyMDELoaded、js/bookshelf.js。イシュー#247 決裁5)。 -->
 </head>
 <body class="app-view-main">
     <!-- モバイル案内バナー (JS で UA 判定後に表示制御) -->
@@ -1305,7 +1305,7 @@
     <script src="js/router.js?v=2026061002"></script>
     <script src="js/dashboard.js?v=2026082401"></script>
     <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026092904"></script>
+    <script src="js/bookshelf.js?v=2026092905"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

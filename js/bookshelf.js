@@ -10556,6 +10556,29 @@ class VirtualBookshelf {
         }
     }
 
+    // EasyMDE (106KB・css+js) は起動時に読み込まず、長文メモのアプリ内エディタを開く時だけ
+    // 動的読み込みする (イシュー#247 決裁5・mobile Perf)。1回だけ挿入し、以降は同じPromiseを返す。
+    _ensureEasyMDELoaded() {
+        if (typeof EasyMDE !== 'undefined') return Promise.resolve();
+        if (this._easyMDELoadPromise) return this._easyMDELoadPromise;
+        const VER = '2026081801';
+        if (!document.querySelector('link[data-easymde-css]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = `js/vendor/easymde.min.css?v=${VER}`;
+            link.setAttribute('data-easymde-css', '1');
+            document.head.appendChild(link);
+        }
+        this._easyMDELoadPromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `js/vendor/easymde.min.js?v=${VER}`;
+            script.onload = () => resolve();
+            script.onerror = () => { this._easyMDELoadPromise = null; reject(new Error('EasyMDE読み込み失敗')); };
+            document.head.appendChild(script);
+        });
+        return this._easyMDELoadPromise;
+    }
+
     // アプリ内 Markdown エディタ (EasyMDE) でメモを開く
     async _openBookMemoInAppEditor(asin, book) {
         const modal = document.getElementById('book-memo-modal');
@@ -10599,10 +10622,16 @@ class VirtualBookshelf {
         modal.classList.add('show');
         this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
 
-        if (typeof EasyMDE === 'undefined') {
+        try {
+            await this._ensureEasyMDELoaded();
+        } catch (e) {
+            console.error('EasyMDE読み込みに失敗:', e);
             if (statusEl) statusEl.textContent = 'エディタライブラリの読み込みに失敗しました';
             return;
         }
+        // モーダルを開いた後の非同期読み込みなので、待っている間にモーダルが閉じられている
+        // 可能性がある (閉じた後に旧テキストエリアへエディタを生やさないためのガード)。
+        if (!modal.classList.contains('show')) return;
         this._bookMemoEditor = new EasyMDE({
             element: textareaEl,
             autoDownloadFontAwesome: false,
