@@ -2461,8 +2461,13 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 /* 起動ローディング: C-277 で「初回・新端末のときだけ出る」ものになった。
-   出る場面でも控えめに (小さめスピナー・普通ウェイト)。 */
+   出る場面でも控えめに (小さめスピナー・普通ウェイト)。
+   position:absolute で #view-main に重ねる (通常フローに置くと、消えた瞬間に
+   #view-main がローディングの高さぶん詰まって跳ねる=CLS 0.286。#223 L1・イシュー#232 step2)。
+   親 .bookshelf-container.app-main-pane は position:relative 済み。 */
 .loading {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2471,6 +2476,8 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     text-align: center;
     padding: 4rem 2rem;
     color: var(--fg2);
+    background: var(--panel);
+    z-index: 2;
 }
 .loading-spinner {
     width: 26px;
