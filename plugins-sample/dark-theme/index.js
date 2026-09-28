@@ -13,11 +13,16 @@ body.${BODY_CLASS} {
     --fg: #e6e8ec; --fg2: #b3b9c4; --muted: #8b93a1;
     --line: #2c313a; --line2: #242831;
     --accent: #4d5fd6; --accent-bg: #232842; --accent-strong: #9aa6ff;
+    --danger: #ff6b6b; --warning: #e0a930;
     --shadow: 0 8px 24px rgba(0,0,0,0.5);
     --primary-color: #e6e8ec; --text-color: #e6e8ec; --bg-color: #15171c; --border-color: #2c313a;
     color-scheme: dark;
 }
 body.${BODY_CLASS} img.book-cover { box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+/* 削除ボタンの白文字ホバー (.bd-memo-block-remove:hover) は --danger をそのまま背景に使うと
+   (このダーク値はテキスト用に明るく調整済みのため) 白文字コントラストが 4.5 を割る (実測2.7台)。
+   この1箇所だけライトの危険色を固定で使う (イシュー#247 決裁2 実測・白文字コントラスト5.3)。 */
+body.${BODY_CLASS} .bd-memo-block-remove:hover { background: #c23a3a; }
 `;
 
 export function activate(api, manifest) {

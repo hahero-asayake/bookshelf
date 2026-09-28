@@ -271,8 +271,8 @@ PC 版は [04_画面設計書](../../../obsidian/80_🚀project/81_🚀developme
 - ボタンの色規約:
   - `.btn-primary`: `var(--accent)` (青紫 ライト #3d52ff / ダーク #4d5fd6・白文字コントラスト4.5以上、イシュー#247決裁1) — 主要アクション (保存、公開、接続 等)
   - `.btn-secondary`: ghost (white + line) — 副次アクション (キャンセル、開く 等)
-  - `.btn-danger`: ghost + danger color (#e25555) — 削除系
-  - `.btn-warning`: ghost + warning color (#d49100) — 注意系
+  - `.btn-danger`: ghost + danger color (ライト #c23a3a / ダーク #ff6b6b・イシュー#247決裁2) — 削除系
+  - `.btn-warning`: ghost + warning color (ライト #a06800 / ダーク #e0a930・イシュー#247決裁2) — 注意系
   - 色を直接指定するボタン上書きは禁止 (旧 `#007bff` `#dc3545` 等)
   - 罫線トークン (`--line`/`--line2`) は `color:` 禁止 (stylelint で CI 強制) → 詳細は [ui-standards §2-10](docs/ui-standards.md)
 
