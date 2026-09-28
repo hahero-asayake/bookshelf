@@ -123,6 +123,7 @@ function buildArticle(colorId) {
             const a = document.querySelector('.blk-text a');
             const memo = document.querySelector('.bk-memo');
             const author = document.querySelector('.bk-author');
+            const coverPh = document.querySelector('.cover-ph');
             return {
                 bodyBg,
                 bodyTxt: cs(document.body)?.color,
@@ -132,7 +133,9 @@ function buildArticle(colorId) {
                 memoTxt: cs(memo)?.color,
                 memoBg: memo ? effectiveBg(memo) : null,
                 authorTxt: cs(author)?.color,
-                authorBg: author ? effectiveBg(author) : null
+                authorBg: author ? effectiveBg(author) : null,
+                coverPhTxt: cs(coverPh)?.color,
+                coverPhBg: coverPh ? getComputedStyle(coverPh).backgroundColor : null
             };
         });
 
@@ -146,27 +149,39 @@ function buildArticle(colorId) {
             '見出し/地': ratio(rgbToHex(colors.h2Txt), bg),
             'リンク/地': ratio(rgbToHex(colors.aTxt), bg),
             '短文メモ文字/箱': ratio(rgbToHex(colors.memoTxt), rgbToHex(colors.memoBg)),
-            '補助文字/地': ratio(rgbToHex(colors.authorTxt), rgbToHex(colors.authorBg) || bg)
+            '補助文字/地': ratio(rgbToHex(colors.authorTxt), rgbToHex(colors.authorBg) || bg),
+            // イシュー#257 差し戻し対応: 書影なしプレースホルダ(.cover-ph、文字=--sub)の文字/面(--cov)を追加計測。
+            // 依頼の5組(本文〜補助文字)には含まれないが、②指摘によりcov=surfaceへ変更した効果を確認する。
+            'プレースホルダ文字/面': ratio(rgbToHex(colors.coverPhTxt), rgbToHex(colors.coverPhBg))
         };
         results.push(row);
-        console.log(`${colorId.padEnd(12)} ${label.padEnd(10)} 本文=${row['本文/地'].toFixed(2)} 見出し=${row['見出し/地'].toFixed(2)} リンク=${row['リンク/地'].toFixed(2)} 短文メモ=${row['短文メモ文字/箱'].toFixed(2)} 補助=${row['補助文字/地'].toFixed(2)}`);
+        console.log(`${colorId.padEnd(12)} ${label.padEnd(10)} 本文=${row['本文/地'].toFixed(2)} 見出し=${row['見出し/地'].toFixed(2)} リンク=${row['リンク/地'].toFixed(2)} 短文メモ=${row['短文メモ文字/箱'].toFixed(2)} 補助=${row['補助文字/地'].toFixed(2)} プレースホルダ=${row['プレースホルダ文字/面'].toFixed(2)}`);
     }
 
     await browser.close();
 
-    const allOk = results.every((r) => ['本文/地', '見出し/地', 'リンク/地', '短文メモ文字/箱', '補助文字/地'].every((k) => r[k] >= 4.5));
-    console.log(`\n=== 判定: ${allOk ? '全60件(12×5) AA(4.5以上) OK' : 'NG件あり'} ===`);
+    const KEYS = ['本文/地', '見出し/地', 'リンク/地', '短文メモ文字/箱', '補助文字/地', 'プレースホルダ文字/面'];
+    const allOk = results.every((r) => KEYS.every((k) => r[k] >= 4.5));
+    // 全72件(12×6)中の最小値とその組み合わせを特定する(報告時に「実測X〜Y」の根拠を明記するため)。
+    let min = { v: Infinity, colorId: null, key: null };
+    for (const r of results) for (const k of KEYS) if (r[k] < min.v) min = { v: r[k], colorId: r.colorId, key: k };
+    let max = { v: -Infinity, colorId: null, key: null };
+    for (const r of results) for (const k of KEYS) if (r[k] > max.v) max = { v: r[k], colorId: r.colorId, key: k };
+    console.log(`\n=== 判定: ${allOk ? '全72件(12×6) AA(4.5以上) OK' : 'NG件あり'} ===`);
+    console.log(`最小値: ${min.v.toFixed(2)} (${min.colorId} の${min.key}) / 最大値: ${max.v.toFixed(2)} (${max.colorId} の${max.key})`);
 
-    writeFileSync(resolve(SHOT_DIR, 'contrast-report.json'), JSON.stringify(results, null, 2));
+    writeFileSync(resolve(SHOT_DIR, 'contrast-report.json'), JSON.stringify({ results, min, max }, null, 2));
 
-    let md = '# #257 step3: 12案×本A×棚A 実画面コントラスト再計算 (computed style実測)\n\n';
-    md += '| 配色 | 和名 | 本文/地 | 見出し/地 | リンク/地 | 短文メモ文字/箱 | 補助文字/地 |\n';
-    md += '|---|---|---|---|---|---|---|\n';
+    let md = '# #257 step3/4: 12案×本A×棚A 実画面コントラスト再計算 (computed style実測)\n\n';
+    md += '依頼の5組(本文/地〜補助文字/地)に加え、②差し戻し(2026-09-29)で書影なしプレースホルダの文字/面を追加計測。\n\n';
+    md += '| 配色 | 和名 | 本文/地 | 見出し/地 | リンク/地 | 短文メモ文字/箱 | 補助文字/地 | プレースホルダ文字/面 |\n';
+    md += '|---|---|---|---|---|---|---|---|\n';
     for (const r of results) {
         const fmt = (k) => (r[k] >= 4.5 ? '' : '⚠️') + r[k].toFixed(2);
-        md += `| ${r.colorId} | ${r.label} | ${fmt('本文/地')} | ${fmt('見出し/地')} | ${fmt('リンク/地')} | ${fmt('短文メモ文字/箱')} | ${fmt('補助文字/地')} |\n`;
+        md += `| ${r.colorId} | ${r.label} | ${fmt('本文/地')} | ${fmt('見出し/地')} | ${fmt('リンク/地')} | ${fmt('短文メモ文字/箱')} | ${fmt('補助文字/地')} | ${fmt('プレースホルダ文字/面')} |\n`;
     }
-    md += `\n判定: ${allOk ? '全60件AA(4.5以上)クリア' : 'NGあり(上表⚠️参照)'}\n`;
+    md += `\n判定: ${allOk ? '全72件(12×6)AA(4.5以上)クリア' : 'NGあり(上表⚠️参照)'}\n`;
+    md += `全体最小値: ${min.v.toFixed(2)} (${min.colorId} の「${min.key}」) / 全体最大値: ${max.v.toFixed(2)} (${max.colorId} の「${max.key}」)\n`;
     writeFileSync(resolve(SHOT_DIR, 'contrast-report.md'), md);
 
     process.exit(allOk ? 0 : 1);

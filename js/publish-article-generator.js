@@ -88,26 +88,28 @@ let _timerLagBuildSeq = 0; // _renderBlocks 呼び出し(記事1件のレンダ�
 // 全12案とも本文/地・見出し/地・リンク/地・短文メモ文字/箱・補助文字/地の5組がAA(4.5以上)確認済み
 // (各正本ディレクトリの 00_index.md・contrast.json)。
 // cov (書影プレースホルダ面。旧cov1/cov2のグラデーションを廃止し単色化, イシュー#257「グラデーションは
-// 使わない」) は line の値をそのまま使う (罫線・書影の枠線と同系色になり実装も簡素、②承認2026-09-29)。
+// 使わない」) は surface の値を使う (line流用は差し戻し・2026-09-29②指摘: プレースホルダーの文字(sub)は
+// lineの上だとAA未達(実測1.94〜3.80)だった。sub-on-surfaceは12案全数4.52〜4.56でAA適合・モックの
+// 「短文メモ文字/箱」組と同一組み合わせのため新規探索不要、値は正本surfaceをそのまま転記)。
 // elev (面の分け方) はダーク4案=none (影が見えないので境界線で分ける、既存踏襲)。白地・補色地8案は
 // txt色をRGBに変換した薄い影 (`0 2px 10px rgba(R,G,B,.07)`、既存10色と同じ作り)。
 const ARTICLE_COLOR_TOKENS = {
     // ---------- A系統：金 (v8 no.01/02-W2/03) ----------
-    'gold-dark': { bg: '#1c1a17', surface: '#26231f', txt: '#efe9df', sub: '#b7ab97', line: '#847761', acc: '#c99a3a', accT: '#1c1a17', cov: '#847761', elev: 'none' },
-    'gold-white': { bg: '#fafafa', surface: '#f2f0ea', txt: '#2e2a24', sub: '#786c54', line: '#ded5c1', acc: '#906e28', accT: '#ffffff', cov: '#ded5c1', elev: '0 2px 10px rgba(46,42,36,.07)' },
-    'gold-comp': { bg: '#d8dfee', surface: '#c0cde8', txt: '#25272d', sub: '#4c576e', line: '#94acdb', acc: '#7b5e22', accT: '#ffffff', cov: '#94acdb', elev: '0 2px 10px rgba(37,39,45,.07)' },
+    'gold-dark': { bg: '#1c1a17', surface: '#26231f', txt: '#efe9df', sub: '#b7ab97', line: '#847761', acc: '#c99a3a', accT: '#1c1a17', cov: '#26231f', elev: 'none' },
+    'gold-white': { bg: '#fafafa', surface: '#f2f0ea', txt: '#2e2a24', sub: '#786c54', line: '#ded5c1', acc: '#906e28', accT: '#ffffff', cov: '#f2f0ea', elev: '0 2px 10px rgba(46,42,36,.07)' },
+    'gold-comp': { bg: '#d8dfee', surface: '#c0cde8', txt: '#25272d', sub: '#4c576e', line: '#94acdb', acc: '#7b5e22', accT: '#ffffff', cov: '#c0cde8', elev: '0 2px 10px rgba(37,39,45,.07)' },
     // ---------- B系統：水色/藍 (v8 no.04/05-W2/06) ----------
-    'aqua-dark': { bg: '#12182a', surface: '#1b2338', txt: '#e8ecf5', sub: '#a9b3c9', line: '#6375a8', acc: '#6fb2e6', accT: '#0c1220', cov: '#6375a8', elev: 'none' },
-    'aqua-white': { bg: '#fafafa', surface: '#eaeff2', txt: '#24292e', sub: '#596f80', line: '#c1d2de', acc: '#2177bb', accT: '#ffffff', cov: '#c1d2de', elev: '0 2px 10px rgba(36,41,46,.07)' },
-    'aqua-comp': { bg: '#eee1d8', surface: '#e8d1c0', txt: '#2d2825', sub: '#6b594b', line: '#dbb394', acc: '#1c69a5', accT: '#ffffff', cov: '#dbb394', elev: '0 2px 10px rgba(45,40,37,.07)' },
+    'aqua-dark': { bg: '#12182a', surface: '#1b2338', txt: '#e8ecf5', sub: '#a9b3c9', line: '#6375a8', acc: '#6fb2e6', accT: '#0c1220', cov: '#1b2338', elev: 'none' },
+    'aqua-white': { bg: '#fafafa', surface: '#eaeff2', txt: '#24292e', sub: '#596f80', line: '#c1d2de', acc: '#2177bb', accT: '#ffffff', cov: '#eaeff2', elev: '0 2px 10px rgba(36,41,46,.07)' },
+    'aqua-comp': { bg: '#eee1d8', surface: '#e8d1c0', txt: '#2d2825', sub: '#6b594b', line: '#dbb394', acc: '#1c69a5', accT: '#ffffff', cov: '#e8d1c0', elev: '0 2px 10px rgba(45,40,37,.07)' },
     // ---------- C系統：ライム/苔色 (v8 no.07/08-W2/09) ----------
-    'lime-dark': { bg: '#101a13', surface: '#18251b', txt: '#e6efe4', sub: '#a7bba3', line: '#5e7c64', acc: '#8fd15a', accT: '#132015', cov: '#5e7c64', elev: 'none' },
-    'lime-white': { bg: '#fafafa', surface: '#edf2ea', txt: '#282e24', sub: '#607351', line: '#cedec1', acc: '#4d8024', accT: '#ffffff', cov: '#cedec1', elev: '0 2px 10px rgba(40,46,36,.07)' },
-    'lime-comp': { bg: '#e4d8ee', surface: '#d6c0e8', txt: '#29252d', sub: '#5f4d6e', line: '#bb94db', acc: '#416c1e', accT: '#ffffff', cov: '#bb94db', elev: '0 2px 10px rgba(41,37,45,.07)' },
+    'lime-dark': { bg: '#101a13', surface: '#18251b', txt: '#e6efe4', sub: '#a7bba3', line: '#5e7c64', acc: '#8fd15a', accT: '#132015', cov: '#18251b', elev: 'none' },
+    'lime-white': { bg: '#fafafa', surface: '#edf2ea', txt: '#282e24', sub: '#607351', line: '#cedec1', acc: '#4d8024', accT: '#ffffff', cov: '#edf2ea', elev: '0 2px 10px rgba(40,46,36,.07)' },
+    'lime-comp': { bg: '#e4d8ee', surface: '#d6c0e8', txt: '#29252d', sub: '#5f4d6e', line: '#bb94db', acc: '#416c1e', accT: '#ffffff', cov: '#d6c0e8', elev: '0 2px 10px rgba(41,37,45,.07)' },
     // ---------- D系統：ローズ/蘇芳 (v8 no.10/11-W2/12) ----------
-    'rose-dark': { bg: '#1a1420', surface: '#241b2c', txt: '#ece3f2', sub: '#b8a9c4', line: '#7f6a89', acc: '#e37fa0', accT: '#1a1420', cov: '#7f6a89', elev: 'none' },
-    'rose-white': { bg: '#fafafa', surface: '#f2eaed', txt: '#2e2427', sub: '#895f6d', line: '#dec1ca', acc: '#d23368', accT: '#ffffff', cov: '#dec1ca', elev: '0 2px 10px rgba(46,36,39,.07)' },
-    'rose-comp': { bg: '#d8eee7', surface: '#c0e8da', txt: '#252d2a', sub: '#49695e', line: '#94dbc3', acc: '#c32a5d', accT: '#ffffff', cov: '#94dbc3', elev: '0 2px 10px rgba(37,45,42,.07)' }
+    'rose-dark': { bg: '#1a1420', surface: '#241b2c', txt: '#ece3f2', sub: '#b8a9c4', line: '#7f6a89', acc: '#e37fa0', accT: '#1a1420', cov: '#241b2c', elev: 'none' },
+    'rose-white': { bg: '#fafafa', surface: '#f2eaed', txt: '#2e2427', sub: '#895f6d', line: '#dec1ca', acc: '#d23368', accT: '#ffffff', cov: '#f2eaed', elev: '0 2px 10px rgba(46,36,39,.07)' },
+    'rose-comp': { bg: '#d8eee7', surface: '#c0e8da', txt: '#252d2a', sub: '#49695e', line: '#94dbc3', acc: '#c32a5d', accT: '#ffffff', cov: '#c0e8da', elev: '0 2px 10px rgba(37,45,42,.07)' }
 };
 
 // ===== 構造 CSS (全レイアウト共通・コアが出す HTML はこれ1種類。色は var() 参照のみ・レイアウトは色を知らない) =====

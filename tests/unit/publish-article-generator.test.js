@@ -258,10 +258,12 @@ describe('テーマ CSS (レイアウト3テンプレ × 配色12案の直交, �
 
     it('表紙 (.bk-cover) は配色トークンに従わない (Amazon画像は本ごとに色がバラバラなため配色は表紙以外にのみ効く)', () => {
         // ARTICLE_BASE_CSS 側で .bk-cover の背景は --cov (書影プレースホルダ用の単色固定トークン、
-        // イシュー#257でグラデーション廃止・line値を流用) を使い、--bg 等の配色本体トークンには依存しない。
+        // イシュー#257でグラデーション廃止・surface値を流用。line流用は②指摘によりsurfaceへ差し戻し
+        // =プレースホルダー文字(--sub)とのコントラストAA確保のため) を使い、--bg 等の配色本体トークンには
+        // 依存しない。
         for (const c of ALL_COLORS) {
             expect(ARTICLE_COLOR_TOKENS[c].cov, c).not.toBe(ARTICLE_COLOR_TOKENS[c].bg);
-            expect(ARTICLE_COLOR_TOKENS[c].cov, c).toBe(ARTICLE_COLOR_TOKENS[c].line);
+            expect(ARTICLE_COLOR_TOKENS[c].cov, c).toBe(ARTICLE_COLOR_TOKENS[c].surface);
         }
     });
 
