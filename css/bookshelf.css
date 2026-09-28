@@ -2820,9 +2820,12 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     box-shadow: 0 24px 64px rgba(0,0,0,0.18), 0 6px 16px rgba(0,0,0,0.08);
 }
 
+/* top:20px は .modal-header (padding-top:1.4rem + h2の行高さの半分) の縦中心に合わせた値
+   (元は10pxで.modal-headerのタイトルと10pxずれていた, #225 P2・イシュー#232 step2)。
+   .modal-header を持たないモーダルの×はタイトルが無いためこの数値に依存しない。 */
 .modal-close {
     position: absolute;
-    top: 10px;
+    top: 20px;
     right: 12px;
     width: 32px;
     height: 32px;
@@ -4403,7 +4406,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-advanced > summary:hover { color: var(--accent-strong); }
 .pp-advanced-caret { color: var(--muted); transition: transform 0.15s; }
 .pp-advanced[open] > summary .pp-advanced-caret { transform: rotate(180deg); }
-.pp-advanced-note { font-weight: 400; font-size: 0.78rem; color: var(--muted); margin-left: auto; }
+/* text-wrap:pretty で最終行が1文字だけ残る孤立文字(orphan)を避ける (#225 P3・イシュー#232 step2)。
+   対応ブラウザが無い場合は通常の折返しに戻るだけで実害なし。 */
+.pp-advanced-note { font-weight: 400; font-size: 0.78rem; color: var(--muted); margin-left: auto; text-wrap: pretty; }
 .pp-advanced-body { padding: 0 1.05rem 0.95rem; }
 /* イシュー#168実測: 900px以下の中間幅(768px)で、親(.pp-edit-actions)の他要素が1行に収まる分だけ
    pp-page-ops に残る横幅が減り、flex-wrap:wrap だと内部の複製/公開取消/削除が3行に分裂していた
@@ -7505,7 +7510,8 @@ body.select-mode .drag-handle { display: none; }
     }
     .modal-content > .modal-close {
         position: fixed;
-        top: calc(10px + env(safe-area-inset-top));
+        /* 基底の .modal-close と同じ 20px 基準 (#225 P2・イシュー#232 step2) */
+        top: calc(20px + env(safe-area-inset-top));
         right: 14px;
         z-index: 7;
     }
