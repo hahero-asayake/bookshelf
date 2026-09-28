@@ -553,7 +553,11 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     align-items: center;
     justify-content: space-between;
 }
+/* 見た目のサイズ(密なツリー/サイドバー内なので拡大しない)はそのまま、::after で
+   タップ領域だけ44px相当に広げる (#225 P7・#223 A8・イシュー#232 step2・ui-standards §2-24)。
+   position:relative の子として絶対配置の透明領域を重ね、クリックは同じ要素が受ける。 */
 .sidebar-add-btn {
+    position: relative;
     background: none;
     border: none;
     cursor: pointer;
@@ -563,6 +567,14 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     justify-content: center;
     padding: 2px;
     border-radius: 4px;
+}
+.sidebar-add-btn::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
 }
 .sidebar-add-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--accent); }
 
@@ -740,7 +752,10 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 }
 .bs-pick-row.is-selected .bsr-check { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* ::after でタップ領域のみ拡張 (見た目は18pxのまま・密なツリー行の間隔は変えない)。
+   #225 P7・#223 A8・イシュー#232 step2・ui-standards §2-24 */
 .tree-toggle {
+    position: relative;
     grid-column: 6;
     width: 18px;
     height: 18px;
@@ -754,6 +769,14 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     align-items: center;
     justify-content: center;
     border-radius: 4px;
+}
+.tree-toggle::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 36px;
+    height: 36px;
+    transform: translate(-50%, -50%);
 }
 
 .tree-toggle:hover {
@@ -769,6 +792,7 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 /* 本棚操作メニュー起動ボタン (Phase G) — 常時表示 (タッチでも届くように。旧: hover 限定で隠れていた) */
 .tree-more {
+    position: relative;
     grid-column: 5;
     width: 20px;
     height: 20px;
@@ -781,6 +805,14 @@ body.app-view-bookshelf .view-bookshelf { display: block !important; }
     color: var(--muted);
     padding: 0;
     border-radius: 4px;
+}
+.tree-more::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 36px;
+    height: 36px;
+    transform: translate(-50%, -50%);
 }
 .tree-node:hover .tree-more,
 .tree-node.is-active .tree-more { color: var(--fg2); }
@@ -6927,8 +6959,14 @@ input.art-shelf-select-all.is-mixed::after {
 }
 .status-row .status-ico { display: inline-flex; flex-shrink: 0; }
 .status-row .status-msg { flex: 1; min-width: 0; }
+/* min-height:44px はタップ領域の目安 (#225 P7・#223 A8・イシュー#232 step2。ui-standardsに
+   明記された基準が無かったため §2-24 で新設)。元は高さ21pxで指の当たり判定が狭かった。 */
 .status-row .status-btn {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
     border: 1px solid currentColor;
     background: transparent;
     color: inherit;
