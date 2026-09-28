@@ -295,6 +295,25 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         expect(html).not.toContain('短文メモM1');
     });
 
+    // イシュー#238: 本棚ブロックでは長文メモを選べない。ストア側は配置(Placement)の show から
+    // longMemo キー自体を落とす (publish-article-store.test.js) が、生成器側も独立に「配置の
+    // show.longMemo は無視する」ことを保証する (旧データや直接構築されたブロックで longMemo:true が
+    // 混入していても .bk-detail を出さない、という多重の防御)。
+    it('本棚配置で show.longMemo=true・長文メモあり(_hasDetail)でも .bk-detail は出ない／本ブロックでは出る', async () => {
+        const article = makeArticle({ blocks: [
+            { id: 'b1', type: 'shelf', shelfId: 'mid', items: [
+                { id: 'p1', blockId: 'b1', asin: 'M1', order: 0, show: { shortMemo: false, rating: false, longMemo: true } }
+            ] },
+            { id: 'b2', type: 'book', asin: 'M1', show: { shortMemo: false, rating: false, longMemo: true } }
+        ] });
+        const r = await gen.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        // 本棚タイル・本ブロックの両方に「なぜ手元に置くか」(M1 の長文メモ見出し) が出るのは
+        // 本ブロック側だけであること、.bk-detail の出現数が1(本ブロック分のみ)であることの両輪で確認する。
+        expect((html.match(/class="bk-detail"/g) || []).length).toBe(1);
+        expect((html.match(/なぜ手元に置くか/g) || []).length).toBe(1);
+    });
+
     it('本棚ブロックは複数冊を .shelf > .bk のグリッドで並べる', async () => {
         const article = makeArticle({
             blocks: [{
@@ -758,11 +777,15 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
     });
 
     it('複数冊 (shelf内訳含む) なら reading段階の done(report分)が単調増加し、fetch-startがasin付きで冊ごとに挟まる', async () => {
+        // 本棚ブロックの配置は長文メモを選べない (イシュー#238) ため reading (長文メモ読込) の対象には
+        // 決してならない。shelf ブロックはここでは shelf-item-done 等の rendering sub-phase 検証用に残し
+        // (itemsTotal=2)、reading の複数冊 (done 0→1→2) は本ブロック2つ (M1・M2) で作る。
         const article = makeArticle({ blocks: [
             { type: 'shelf', items: [
-                { asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } },
-                { asin: 'N1', show: { longMemo: false, shortMemo: false, rating: false } }
+                { asin: 'M1', show: { shortMemo: false, rating: false } },
+                { asin: 'N1', show: { shortMemo: false, rating: false } }
             ] },
+            { type: 'book', asin: 'M1', show: { longMemo: true, shortMemo: false, rating: false } },
             { type: 'book', asin: 'M2', show: { longMemo: true, shortMemo: false, rating: false } }
         ] });
         // M2 は state.notes に hasDetailMemo が無いため対象外、M1 のみ対象 (total=1) になる想定を

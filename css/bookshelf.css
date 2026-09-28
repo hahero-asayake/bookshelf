@@ -4632,6 +4632,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-chips .art-chip-toggle,
 .art-shelf-item-toggles .art-chip-toggle { width: var(--art-chip-w); min-height: 32px; padding: 0 0.3rem; font-size: 0.74rem; text-align: center; white-space: nowrap; }
 .art-chip-toggle.is-mixed { border-style: dashed; border-color: var(--accent); color: var(--accent-strong); }
+/* 本棚(各行・一括バー)は長文メモを選べない(イシュー#238)→チップ2個。列トラック(--art-cols第5列=3チップ幅)は
+   本ブロックと共有のまま据え置き、.art-chips だけ2列に絞って左詰め。本ブロックのチップ順は
+   短文メモ→評価→長文メモ(_artChips)なので、この2チップは本ブロックの先頭2チップと同じ left に揃う。 */
+.art-shelf-list .art-shelf-item .art-chips,
+.art-shelf-selbar .art-chips { grid-template-columns: repeat(2, var(--art-chip-w)); }
 
 .art-block-book-body.art-gx { align-items: start; }
 .art-block-book-body.art-gx .art-cover { grid-column: 1 / 4; width: 100%; }

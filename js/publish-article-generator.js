@@ -417,9 +417,10 @@ class PublishArticleGenerator {
                 continue;
             }
             if (block.type === 'shelf') {
+                // 本棚ブロックの配置は長文メモを選べない (イシュー#238) → detailMemo の読み込み対象にしない
+                // (show.longMemo は保存されなくなったが、読み込む/参照しないことを明示するため条件自体を持たない)。
                 const items = (block.items || []).map(placement => {
                     const bookData = this._resolveBookData(placement.asin, libMap, state, linkOpts);
-                    if (bookData && placement.show.longMemo && bookData._hasDetail) detailTargets.push(bookData);
                     return { placement, bookData };
                 });
                 resolved.push({ type: 'shelf', block, items });
@@ -498,17 +499,15 @@ ${h.amazon(bookData)}
         report('shelf-items-start', { itemsTotal: items.length });
         const tiles = items.map(({ placement, bookData }, itemIndex) => {
             if (!bookData) { report('shelf-item-done', { itemIndex, itemsTotal: items.length }); return ''; }
-            const longMemoHtml = (placement.show.longMemo && bookData.detailMemo)
-                ? PublishArticleGenerator.shiftHtmlHeadings(
-                    PublishArticleGenerator.markdownToHtml(bookData.detailMemo, { onDegraded: () => this._onMarkdownDegraded() }), ARTICLE_HEADING_LEVEL.detailMemo)
-                : '';
+            // 本棚ブロックの配置は長文メモを選べない (イシュー#238) → .bk-detail は出さない。これで
+            // count/card レイアウトで .bk-memo と .bk-detail が同じ grid-area:memo に重なる問題は
+            // 本棚側では起きなくなる (本ブロック側の同問題は別イシュー・07 残検討事項)。
             const tile = `<div class="bk">
 ${h.cover(bookData)}
 ${h.title(bookData)}
 ${h.author(bookData)}
 ${placement.show.rating ? h.rating(bookData) : ''}
 ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
-${h.longMemo(longMemoHtml)}
 </div>`;
             report('shelf-item-done', { itemIndex, itemsTotal: items.length });
             return tile;

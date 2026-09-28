@@ -489,13 +489,16 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
-        const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
-        const drawerCount = await drawerItems.count();
-        for (let i = 0; i < drawerCount; i++) await drawerItems.nth(i).click();
-        // 本棚アイテムごとの個別トグル (既定 longMemo:false) なので全アイテム分クリックする
-        const longToggles = page.locator('.art-item-show-toggle[data-show-key="longMemo"]');
+        // 本棚ブロックでは長文メモを選べない (イシュー#238) ため、複数冊分の長文メモ読込は
+        // 本ブロックを冊数分並べて作る (1ブロック=1冊、旧実装は本棚ブロック+複数配置だった)。
+        const drawerCount = await page.locator('#art-drawer-list .art-drawer-item').count();
+        for (let i = 0; i < drawerCount; i++) {
+            await page.locator('.art-add-btn').last().click();
+            await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+            await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
+        }
+        // 本ブロックごとの個別トグル (既定 longMemo:false) なので全ブロック分クリックする
+        const longToggles = page.locator('.art-book-show-toggle[data-show-key="longMemo"]');
         const toggleCount = await longToggles.count();
         for (let i = 0; i < toggleCount; i++) {
             const t = longToggles.nth(i);
@@ -526,10 +529,11 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
         await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        const longToggle = page.locator('.art-item-show-toggle[data-show-key="longMemo"]').first();
+        const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
 
         await page.evaluate(() => {
@@ -589,11 +593,12 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
         await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         // 長文メモ表示をON (既定でON想定だが、明示的に押して確実にする)
-        const longToggle = page.locator('.art-item-show-toggle[data-show-key="longMemo"]').first();
+        const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
 
         await page.evaluate(() => {
@@ -1499,18 +1504,37 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(errors).toEqual([]);
     });
 
-    test('密度トグルは無く、短文メモ/長文メモ/評価のチップは本ブロック・各行・一括バーで同じ固定幅・同じ列に並ぶ (イシュー#230)', async ({ page }) => {
+    test('密度トグルは無く、本棚(各行・一括バー)は短文メモ/評価の2チップ・本ブロックは短文メモ/評価/長文メモの3チップで、短文メモ/評価は本ブロック・各行・一括バーで同じ固定幅・同じ列に並ぶ (イシュー#238)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        // 本ブロックを1つ (3チップ・列位置比較用)
+        await page.locator('.art-add-btn').first().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
         await addShelfWithBooks(page, 2);
         await expect(page.locator('.art-density-toggle')).toHaveCount(0);
+
+        // 本ブロックは短文メモ→評価→長文メモの順で3チップ (イシュー#238: この並びにすることで
+        // 本棚の2チップが本ブロックの先頭2チップと同じ列位置に揃う)
+        const bookChips = page.locator('.art-block-book-body .art-chips .art-chip-toggle');
+        await expect(bookChips).toHaveCount(3);
+        await expect(bookChips.nth(0)).toHaveText('短文メモ');
+        await expect(bookChips.nth(1)).toHaveText('評価');
+        await expect(bookChips.nth(2)).toHaveText('長文メモ');
+
+        // 本棚は長文メモを選べない (各行・一括バーとも2チップ、longMemoチップ自体が無い)
         await page.locator('.art-item-check').first().click();
-        const lefts = await page.evaluate(() => ['shortMemo', 'longMemo', 'rating'].map(k =>
-            [...document.querySelectorAll(`.art-shelf-selbar [data-show-key="${k}"], .art-shelf-item [data-show-key="${k}"]`)]
+        await expect(page.locator('.art-shelf-item').first().locator('.art-chips .art-chip-toggle')).toHaveCount(2);
+        await expect(page.locator('.art-shelf-selbar .art-chips .art-chip-toggle')).toHaveCount(2);
+        await expect(page.locator('[data-show-key="longMemo"].art-item-show-toggle, [data-show-key="longMemo"].art-sel-chip')).toHaveCount(0);
+
+        // 短文メモ・評価の left は本ブロック・本棚各行・一括バーの3者で揃う (left範囲0〜1px)
+        const lefts = await page.evaluate(() => ['shortMemo', 'rating'].map(k =>
+            [...document.querySelectorAll(`.art-block-book-body [data-show-key="${k}"], .art-shelf-selbar [data-show-key="${k}"], .art-shelf-item [data-show-key="${k}"]`)]
                 .map(el => { const r = el.getBoundingClientRect(); return { l: Math.round(r.left * 10) / 10, w: Math.round(r.width) }; })));
         for (const col of lefts) {
-            expect(col.length).toBe(3); // 一括バー1 + 各行2
+            expect(col.length).toBe(4); // 本ブロック1 + 一括バー1 + 各行2
             expect(Math.max(...col.map(c => c.l)) - Math.min(...col.map(c => c.l))).toBeLessThanOrEqual(1);
             expect(new Set(col.map(c => c.w)).size).toBe(1);
         }
@@ -1820,7 +1844,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
         await page.locator('.art-item-check').first().click();
         await expect(page.locator('.art-shelf-selbar')).toBeVisible();
-        await expect(page.locator('.art-sel-chip')).toHaveCount(3);
+        await expect(page.locator('.art-sel-chip')).toHaveCount(2); // 本棚は長文メモを選べない (イシュー#238)
         await expect(page.locator('.art-shelf-sort-sel')).toBeEnabled();
 
         await page.locator('.art-sel-clear-btn').click();
@@ -2032,31 +2056,27 @@ test.describe('記事エディタ: 短/長トグルの説明+メモ内容 (イ�
         await page.keyboard.press('Escape');
         await expect(tip).toBeHidden();
 
-        // 長トグル (このメモはメモ内容なし=hasDetailMemo 無し) にフォーカス → 「長文メモなし」
-        const longToggle = item2.locator('.art-item-show-toggle[data-show-key="longMemo"]');
-        await longToggle.focus();
+        // 評価トグル (fixture: B000000002 は rating:5) にフォーカス → 星5つ
+        // (本棚は長文メモを選べない・イシュー#238のため、shortMemo に続くもう一方の検証キーは
+        // 長文メモではなく評価にする)
+        const ratingToggle = item2.locator('.art-item-show-toggle[data-show-key="rating"]');
+        await ratingToggle.focus();
         await expect(tip).toBeVisible();
-        await expect(tip).toContainText('長文メモを表示する');
-        await expect(tip).toContainText('長文メモなし');
+        await expect(tip).toContainText('評価を表示する');
+        await expect(tip).toContainText('★★★★★');
 
         // blur でも消える (フォーカスが外れたら閉じる)
-        await longToggle.blur();
+        await ratingToggle.blur();
         await expect(tip).toBeHidden();
 
         expect(errors).toEqual([]);
     });
 
-    test('短文メモが空の本は「短文メモなし」、長文メモありの本は「長文メモあり」と出る', async ({ page }) => {
+    test('短文メモが空の本は「短文メモなし」、評価がある本は星で内容が出る', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await addShelfWithBooks(page, 1); // B000000001 = 短文メモ無
-
-        // fixture に長文メモありのケースが無いため hasDetailMemo を動的付与
-        await page.evaluate(() => {
-            const notes = window.bookshelf.userData.notes;
-            notes['B000000001'] = { ...(notes['B000000001'] || {}), hasDetailMemo: true };
-        });
+        await addShelfWithBooks(page, 1); // B000000001 = 短文メモ無・rating:5 (fixture-userdata)
 
         const item = page.locator('.art-shelf-item').first();
         const tip = page.locator('#art-item-tooltip');
@@ -2064,8 +2084,8 @@ test.describe('記事エディタ: 短/長トグルの説明+メモ内容 (イ�
         await item.locator('.art-item-show-toggle[data-show-key="shortMemo"]').focus();
         await expect(tip).toContainText('短文メモなし');
 
-        await item.locator('.art-item-show-toggle[data-show-key="longMemo"]').focus();
-        await expect(tip).toContainText('長文メモあり');
+        await item.locator('.art-item-show-toggle[data-show-key="rating"]').focus();
+        await expect(tip).toContainText('★★★★★');
 
         expect(errors).toEqual([]);
     });
@@ -2177,7 +2197,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         expect(errors).toEqual([]);
     });
 
-    test('一括バーのチップ (短文メモ/長文メモ/評価) を押すと、選択した本にだけ適用される (イシュー#230)', async ({ page }) => {
+    test('一括バーのチップ (短文メモ/評価) を押すと、選択した本にだけ適用される (イシュー#230・#238)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
@@ -2185,7 +2205,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
 
         await page.locator('.art-item-check').first().click();
         const labels = await page.locator('.art-sel-chip').allTextContents();
-        expect(labels).toEqual(['短文メモ', '長文メモ', '評価']);
+        expect(labels).toEqual(['短文メモ', '評価']); // 本棚は長文メモを選べない (イシュー#238)
 
         await page.locator('.art-sel-chip[data-show-key="rating"]').click();
         await expect(page.locator('.toast')).toContainText('1冊に適用しました');

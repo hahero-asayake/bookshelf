@@ -22,13 +22,14 @@
 // Block (3種のみ・§11.2。本の間に文章を挟みたい場合は本棚ブロックを分割 or 本ブロックを並べる。
 //        グリッド内部への差し込みは非対応):
 //   文章  { id, type:'text',  markdown }
-//   本    { id, type:'book',  asin, show:{ shortMemo, longMemo } }
+//   本    { id, type:'book',  asin, show:{ shortMemo, rating, longMemo } }
 //         … 単一配置なのでブロック自身が表示設定を持つ (配置レコードを別途持たない)
 //   本棚  { id, type:'shelf', shelfId, items:[ Placement ] }
 //         … 複数冊グリッド。items は記事保存時点のスナップショット (蔵書更新を自動反映しない・§11.1)
 //
 // Placement (本棚ブロック内の配置単位レコード・多重集合対応・追補1):
-//   { id, blockId, asin, order, show:{ shortMemo, longMemo } }
+//   { id, blockId, asin, order, show:{ shortMemo, rating } }
+//   … 長文メモは選べない (イシュー#238)。旧データの longMemo は _normalizeItemShow で読み捨てる (ADR-006)。
 //   同じ asin が同一記事内 (同一ブロック内・別ブロック間とも) に何度でも出現できる。
 //   表示設定の持ち主は「本」ではなく「配置」。
 //
@@ -102,6 +103,14 @@ class PublishArticleStore {
         return { shortMemo: !!s.shortMemo, longMemo: !!s.longMemo, rating: !!s.rating };
     }
 
+    // 本棚ブロックの配置 (Placement) は長文メモを選べない (イシュー#238・count/card レイアウトで
+    // .bk-memo と .bk-detail が同じ grid-area:memo に重なる問題の解消)。旧データに longMemo が
+    // 残っていても読み込み時に落とすだけで移行コードは書かない (ADR-006 の方針を踏襲)。
+    static _normalizeItemShow(show) {
+        const s = show || {};
+        return { shortMemo: !!s.shortMemo, rating: !!s.rating };
+    }
+
     // 記事ごとの広告タグの選択 (イシュー#230): 'own'=自分のタグ / 'none'=付けない / null=未選択 (設定から既定を導く)。
     // 運営のタグは記事単位では選ばない (Free×ハブは常に運営・Plus が運営を選ぶ経路は 07)。
     static normalizeAdTag(v) {
@@ -134,7 +143,7 @@ class PublishArticleStore {
                     blockId: id,
                     asin: it.asin,
                     order: Number.isFinite(it.order) ? it.order : i,
-                    show: PublishArticleStore._normalizeShow(it.show),
+                    show: PublishArticleStore._normalizeItemShow(it.show),
                     // 追加順の並べ替え (added) が読む。以前はここで落ちて保存のたびに消えていた (イシュー#230)
                     ...(Number.isFinite(it.addedAt) ? { addedAt: it.addedAt } : {})
                 }))
@@ -333,7 +342,7 @@ class PublishArticleStore {
                 id: blockId, type: 'shelf', shelfId: shelfKey,
                 items: asins.map((asin, i) => ({
                     id: PublishArticleStore._newId('pl'), blockId, asin, order: i,
-                    show: { shortMemo: false, longMemo: false, rating: false }
+                    show: { shortMemo: false, rating: false }
                 }))
             });
         }

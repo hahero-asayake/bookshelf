@@ -166,7 +166,7 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
                 type: 'shelf', shelfId: 'shelf-a',
                 items: [
                     { asin: 'B001', show: { shortMemo: false, longMemo: false } },
-                    { asin: 'B001', show: { shortMemo: true, longMemo: true } } // 同一本を2回配置
+                    { asin: 'B001', show: { shortMemo: true, longMemo: true } } // 同一本を2回配置 (longMemo は配置では保存されない・イシュー#238)
                 ]
             }]
         });
@@ -175,8 +175,8 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
         expect(items[0].asin).toBe('B001');
         expect(items[1].asin).toBe('B001');
         // 表示設定の持ち主は「本」ではなく「配置」= 同じ本でも配置ごとに独立して on/off できる
-        expect(items[0].show).toEqual({ shortMemo: false, longMemo: false, rating: false });
-        expect(items[1].show).toEqual({ shortMemo: true, longMemo: true, rating: false });
+        expect(items[0].show).toEqual({ shortMemo: false, rating: false });
+        expect(items[1].show).toEqual({ shortMemo: true, rating: false });
     });
 
     it('各配置は {id, blockId, asin, order, show} を持ち、blockId は親ブロックを指す', async () => {
@@ -190,8 +190,24 @@ describe('本棚ブロックの配置単位レコード (多重集合・追補1)
             expect(item.blockId).toBe(block.id);
             expect(item.asin).toBeTruthy();
             expect(typeof item.order).toBe('number');
-            expect(item.show).toEqual({ shortMemo: false, longMemo: false, rating: false });
+            expect(item.show).toEqual({ shortMemo: false, rating: false });
         }
+    });
+
+    // イシュー#238: 本棚ブロックでは長文メモを選べない (count/card レイアウトで .bk-memo と .bk-detail が
+    // 同じ grid-area:memo に重なる問題の解消)。配置の show に longMemo キー自体を持たせない。
+    it('配置の show は longMemo を保存しない (入力に true があっても落ちる)・本ブロックは保持する (ADR-006)', async () => {
+        const a = await as.create({
+            title: 'x',
+            blocks: [
+                { type: 'shelf', shelfId: 'shelf-a', items: [{ asin: 'B001', show: { shortMemo: true, longMemo: true, rating: true } }] },
+                { type: 'book', asin: 'B002', show: { shortMemo: true, longMemo: true, rating: true } }
+            ]
+        });
+        const [shelfBlock, bookBlock] = a.blocks;
+        expect(shelfBlock.items[0].show).toEqual({ shortMemo: true, rating: true });
+        expect('longMemo' in shelfBlock.items[0].show).toBe(false);
+        expect(bookBlock.show).toEqual({ shortMemo: true, longMemo: true, rating: true });
     });
 
     it('shelfId 未指定/null の本棚ブロックも例外にならず null のまま保存される (後方互換・イシュー#155)', async () => {

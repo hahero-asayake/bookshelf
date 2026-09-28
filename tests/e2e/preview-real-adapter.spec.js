@@ -82,7 +82,9 @@ async function bootAppGitHub(page, { onContentsGet } = {}) {
     return errors;
 }
 
-// fixture の本 (B000000001〜) に長文メモ有りフラグを立て、本棚ブロック+longMemo表示ONの記事を作る。
+// fixture の本 (B000000001〜) に長文メモ有りフラグを立て、bookCount 個の本ブロック (longMemo表示ON) を
+// 持つ記事を作る。本棚ブロックでは長文メモを選べない (イシュー#238) ため、複数冊の長文メモを並行して
+// 読む経路の検証は本ブロックを複数並べる形で行う (1ブロック=1冊、旧実装は本棚ブロック+複数配置だった)。
 async function createArticleWithLongMemoShelf(page, { bookCount = 3 } = {}) {
     await page.evaluate((count) => {
         window.bookshelf.userData.notes = window.bookshelf.userData.notes || {};
@@ -93,17 +95,17 @@ async function createArticleWithLongMemoShelf(page, { bookCount = 3 } = {}) {
     }, bookCount);
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
-    await page.locator('.art-add-btn').first().click();
-    await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
-    const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
-    const n = Math.min(bookCount, await drawerItems.count());
-    for (let i = 0; i < n; i++) await drawerItems.nth(i).click();
-    // ホバーで開いたツールチップ (「長文メモあり」等) が次のトグルのクリックを intercept することがある
-    // ため、クリック前に mouse.move(0,0) でツールチップを閉じてから操作する (イシュー#133 系の実測パターン)。
-    const longToggles = page.locator('.art-item-show-toggle[data-show-key="longMemo"]');
+    const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
+    for (let i = 0; i < bookCount; i++) {
+        await page.locator('.art-add-btn').last().click();
+        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
+        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+    }
+    const longToggles = page.locator('.art-book-show-toggle[data-show-key="longMemo"]');
     const toggleCount = await longToggles.count();
     for (let i = 0; i < toggleCount; i++) {
-        await page.mouse.move(0, 0);
         const t = longToggles.nth(i);
         if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
     }
