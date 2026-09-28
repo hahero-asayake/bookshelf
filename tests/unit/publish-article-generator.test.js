@@ -46,7 +46,7 @@ function makeArticle(partial = {}) {
         publicId: partial.publicId !== undefined ? partial.publicId : 'pub-test01',
         title: partial.title || 'わたしを構成する10冊',
         tags: partial.tags || [], blocks: partial.blocks || [],
-        theme: partial.theme || { layout: 'card', color: 'white' },
+        theme: partial.theme || { layout: 'book-a-shelf-a', color: 'white' },
         published: partial.published !== undefined ? partial.published : true,
         createdAt: 1, updatedAt: 2, lastBuiltAt: null,
         ...(partial.adTag !== undefined ? { adTag: partial.adTag } : {})
@@ -207,7 +207,9 @@ describe('shiftHtmlHeadings (§11.5・固定+1ではなく最浅レベルとの�
     });
 });
 
-describe('テーマ CSS (レイアウト3 × 配色10 の直交, §11.3)', () => {
+describe('テーマ CSS (レイアウト3テンプレ × 配色10 の直交, §11.3・イシュー#251で3テンプレ(本A×棚A・本C×棚C・本C×棚D)に統合)', () => {
+    const TEMPLATE_LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
+
     it('配色10種すべてにトークンが定義され、--elev を含む', () => {
         const colors = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
         for (const c of colors) {
@@ -223,15 +225,22 @@ describe('テーマ CSS (レイアウト3 × 配色10 の直交, §11.3)', () =>
         expect(PublishArticleGenerator.colorTokensCss('white')).toContain('--elev:0 2px');
     });
 
-    it('レイアウト3種 (wall/count/card) の CSS はいずれも grid-template-areas で名前付き配置する', () => {
-        for (const layout of ['wall', 'count', 'card']) {
+    it('未知のレイアウト値は book-a-shelf-a (「書影を大きく」) のCSSにフォールバックする', () => {
+        expect(PublishArticleGenerator.layoutCss('nope')).toBe(PublishArticleGenerator.layoutCss('book-a-shelf-a'));
+    });
+
+    it('棚C・棚D(book-c-shelf-c/book-c-shelf-d)は grid-template-areas で名前付き配置し、棚A(book-a-shelf-a)はCSS subgridで行内整列する', () => {
+        // .bk-cover-link (書影を包む<a>、#233の知見) 単体セレクタではなく .bk .bk-cover-link にスコープ
+        // すること (.blk-book 本ブロック内の同名クラスへ配置指定が漏れないよう分離する)。
+        for (const layout of ['book-c-shelf-c', 'book-c-shelf-d']) {
             const css = PublishArticleGenerator.layoutCss(layout);
             expect(css).toContain('grid-template-areas');
-            // .bk-cover 単体セレクタではなく .bk .bk-cover にスコープすること (.blk-book 本ブロック内の
-            // 同名クラスへ配置指定が漏れないよう分離する。完了条件検証で漏れを発見・修正した経緯あり)
-            expect(css).toMatch(/\.bk \.bk-cover\{grid-area:cov/);
-            expect(css).not.toMatch(/[^ ]\.bk-cover\{grid-area/); // .bk 抜きの直書きセレクタが残っていないこと
+            expect(css).toMatch(/\.bk \.bk-cover-link\{grid-area:cov/);
         }
+        const shelfA = PublishArticleGenerator.layoutCss('book-a-shelf-a');
+        expect(shelfA).not.toContain('grid-template-areas');
+        expect(shelfA).toContain('grid-template-rows:subgrid');
+        expect(shelfA).toMatch(/\.bk \.bk-cover-link\{grid-row:1/);
     });
 
     it('表紙 (.bk-cover) は配色トークンに従わない (Amazon画像は本ごとに色がバラバラなため配色は表紙以外にのみ効く)', () => {
@@ -240,13 +249,13 @@ describe('テーマ CSS (レイアウト3 × 配色10 の直交, §11.3)', () =>
         expect(ARTICLE_COLOR_TOKENS.red.cov1).not.toBe(ARTICLE_COLOR_TOKENS.red.bg);
     });
 
-    it('本棚グリッド用の grid-area / wall の非表示指定は .bk 配下にスコープされ、本ブロック(.blk-book)には漏れない', () => {
-        // 完了条件検証で発見したバグ: セレクタが ".bk-cover"/".bk-title" 単体だと、本棚グリッド用の
-        // grid-area:cov (card) や display:none (wall) が .blk-book 内の同名クラスにも誤爆し、
-        // 本ブロックの表紙が意図しない位置に飛ぶ・タイトル/著者が消えるという壊れ方をしていた。
-        for (const layout of ['wall', 'count', 'card']) {
+    it('本棚グリッド用の grid-area/grid-row は .bk 配下にスコープされ、本ブロック(.blk-book)には漏れない', () => {
+        // 完了条件検証で発見したバグ (旧wall/count/cardの頃): セレクタが ".bk-cover"/".bk-title" 単体だと、
+        // 本棚グリッド用の grid-area:cov が .blk-book 内の同名クラスにも誤爆し、本ブロックの表紙が
+        // 意図しない位置に飛ぶ・タイトル/著者が消えるという壊れ方をしていた。新3テンプレでも同じ不変条件を守る。
+        for (const layout of TEMPLATE_LAYOUTS) {
             const css = PublishArticleGenerator.layoutCss(layout);
-            for (const cls of ['bk-cover', 'bk-title', 'bk-author', 'bk-rating', 'bk-memo', 'bk-detail']) {
+            for (const cls of ['bk-cover-link', 'bk-title', 'bk-author', 'bk-rating', 'bk-memo', 'bk-detail']) {
                 const bare = new RegExp(`[^ .]\\.${cls}\\{`); // ".bk " 抜きの直書きセレクタが残っていないこと
                 expect(css, `${layout}: .${cls} が .bk 抜きの単体セレクタで指定されていないこと`).not.toMatch(bare);
             }
@@ -263,7 +272,7 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         expect(ARTICLE_HEADING_LEVEL.textBlock).toBe(2);
     });
 
-    it('本ブロックは表紙/タイトル/著者/短文メモ/Amazonリンクを安定クラス名で出力する', async () => {
+    it('本ブロックは表紙/タイトル/著者/短文メモを安定クラス名で出力し、Amazonリンクは書影と書名に付く(ボタン無し、イシュー#251)', async () => {
         const article = makeArticle({ blocks: [{ id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: true, longMemo: false } }] });
         const r = await gen.build([article]);
         const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
@@ -274,7 +283,11 @@ describe('build(): 文章/本/本棚ブロックの解決とレンダリング',
         expect(html).toContain('作者A');
         expect(html).toContain('class="bk-memo"');
         expect(html).toContain('短文メモM1');
-        expect(html).toContain('class="amz"');
+        // Amazonリンクは書影(<a class="bk-cover-link">)と書名(<p class="bk-title"><a>)をクリック。
+        // ボタン(.amz)は撤去済み (#233の知見: grid-area/grid-rowは<a>側に移す)。
+        expect(html).not.toContain('class="amz"');
+        expect(html).toMatch(/<a class="bk-cover-link" href="[^"]*"[^>]*><img class="bk-cover"/);
+        expect(html).toMatch(/<p class="bk-title"><a href="[^"]*"[^>]*>漫画1<\/a><\/p>/);
         expect(r.errors).toEqual([]);
     });
 
@@ -474,11 +487,6 @@ describe('星(評価)描画 (show.rating・イシュー#135・短文/長文メ�
         expect(html).toContain('aria-label="評価 2/5"');
     });
 
-    it('wall レイアウトの CSS は .bk-rating も非表示リストに含む (書影以外を隠す既存設計の一貫性)', () => {
-        const css = PublishArticleGenerator.layoutCss('wall');
-        expect(css).toMatch(/\.bk-rating\{display:none\}|\.bk-rating,/);
-    });
-
     it('色は配色トークンのみ (塗り var(--acc)・空 var(--sub))。直書きの16進色を含まない', async () => {
         const article = makeArticle({ blocks: [] });
         const r = await gen.build([article]);
@@ -513,10 +521,10 @@ describe('公開URLは publicId (S6・ADR-076・09 §11.7: タイトル/slug 変
 
 describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => {
     it('ルート要素に data-layout / data-color が記事テーマ通りに設定される', async () => {
-        const article = makeArticle({ theme: { layout: 'wall', color: 'black' } });
+        const article = makeArticle({ theme: { layout: 'book-c-shelf-d', color: 'black' } });
         const r = await gen.build([article]);
         const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
-        expect(html).toContain('data-layout="wall"');
+        expect(html).toContain('data-layout="book-c-shelf-d"');
         expect(html).toContain('data-color="black"');
     });
 

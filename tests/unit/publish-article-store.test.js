@@ -30,7 +30,7 @@ describe('create / load 往復', () => {
         expect(a.publicId).toBeNull(); // 未公開のうちは未発番 (S6・ADR-076)
         expect(a.blocks).toEqual([]);
         expect(a.tags).toEqual([]);
-        expect(a.theme).toEqual({ layout: 'card', color: 'white' }); // 既定テーマ
+        expect(a.theme).toEqual({ layout: 'book-a-shelf-a', color: 'white' }); // 既定テーマ (イシュー#251)
 
         const as2 = new PublishArticleStore(storage);
         const articles = await as2.load();
@@ -97,11 +97,11 @@ describe('persist:false (メモリ反映のみ、イシュー#142)', () => {
 describe('update / remove / duplicate / published', () => {
     it('update でタイトル・タグ・テーマを差し替え', async () => {
         const a = await as.create({ title: 'x' });
-        await as.update(a.id, { title: '新題', tags: ['SF', 'おすすめ'], theme: { layout: 'wall', color: 'black' } });
+        await as.update(a.id, { title: '新題', tags: ['SF', 'おすすめ'], theme: { layout: 'book-c-shelf-c', color: 'black' } });
         const got = as.get(a.id);
         expect(got.title).toBe('新題');
         expect(got.tags).toEqual(['SF', 'おすすめ']);
-        expect(got.theme).toEqual({ layout: 'wall', color: 'black' });
+        expect(got.theme).toEqual({ layout: 'book-c-shelf-c', color: 'black' });
     });
 
     it('remove で消える', async () => {
@@ -269,13 +269,13 @@ describe('タグ (自由入力 + 正規化キー, §11.6)', () => {
     });
 });
 
-describe('テーマ = レイアウト × 配色の直交2軸 (§11.3)', () => {
+describe('テーマ = レイアウト × 配色の直交2軸 (§11.3・イシュー#251で3テンプレ(本A×棚A・本C×棚C・本C×棚D)に統合)', () => {
     it('不正なレイアウト/配色値は既定にフォールバックする', async () => {
         const a = await as.create({ title: 'x', theme: { layout: 'nope', color: 'invisible' } });
-        expect(a.theme).toEqual({ layout: 'card', color: 'white' });
+        expect(a.theme).toEqual({ layout: 'book-a-shelf-a', color: 'white' });
     });
 
-    it('レイアウト3種・配色10種の全組み合わせを受理する', async () => {
+    it('レイアウト3テンプレ・配色10種の全組み合わせを受理する', async () => {
         for (const layout of ARTICLE_LAYOUTS_TEST) {
             for (const color of ARTICLE_COLORS_TEST) {
                 const t = PublishArticleStore.normalizeTheme({ layout, color });
@@ -284,8 +284,26 @@ describe('テーマ = レイアウト × 配色の直交2軸 (§11.3)', () => {
         }
     });
 });
-const ARTICLE_LAYOUTS_TEST = ['wall', 'count', 'card'];
+const ARTICLE_LAYOUTS_TEST = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
 const ARTICLE_COLORS_TEST = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
+
+// 旧レイアウト値(wall/count/card)は未公開アプリのため移行コードを書かない(ADR-006)が、normalizeTheme()が
+// 読み込み時に見た目の近い新値へ読み替える(②承認2026-09-29 C-1案)。経路を通す形(create/update→保存値)で固定する。
+describe('旧レイアウト値 wall/count/card の読み替え (イシュー#251)', () => {
+    it('normalizeTheme は card→book-a-shelf-a・count→book-c-shelf-d・wall→book-c-shelf-c に読み替える', () => {
+        expect(PublishArticleStore.normalizeTheme({ layout: 'card', color: 'white' })).toEqual({ layout: 'book-a-shelf-a', color: 'white' });
+        expect(PublishArticleStore.normalizeTheme({ layout: 'count', color: 'white' })).toEqual({ layout: 'book-c-shelf-d', color: 'white' });
+        expect(PublishArticleStore.normalizeTheme({ layout: 'wall', color: 'white' })).toEqual({ layout: 'book-c-shelf-c', color: 'white' });
+    });
+
+    it('create/update に旧値を渡しても、保存される記事のthemeは新3テンプレへ読み替えられる', async () => {
+        const a = await as.create({ title: 'x', theme: { layout: 'count', color: 'blue' } });
+        expect(a.theme).toEqual({ layout: 'book-c-shelf-d', color: 'blue' });
+
+        const updated = await as.update(a.id, { theme: { layout: 'wall', color: 'green' } });
+        expect(updated.theme).toEqual({ layout: 'book-c-shelf-c', color: 'green' });
+    });
+});
 
 describe('読込失敗と未作成の区別 (例外の握り潰し防止)', () => {
     function makeFailingStorage({ failRead = false, failWrite = false } = {}) {
@@ -382,7 +400,7 @@ describe('移行: 旧 pages.json → 記事モデル (非破壊, §11.1)', () =>
         expect(article.published).toBe(true);
         expect(article.createdAt).toBe(111);
         expect(article.tags).toEqual([]);
-        expect(article.theme).toEqual({ layout: 'card', color: 'white' });
+        expect(article.theme).toEqual({ layout: 'book-a-shelf-a', color: 'white' });
 
         expect(article.blocks[0].type).toBe('text');
         expect(article.blocks[0].markdown).toBe('よろしくお願いします');

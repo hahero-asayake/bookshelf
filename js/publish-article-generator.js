@@ -100,38 +100,58 @@ const ARTICLE_COLOR_TOKENS = {
 };
 
 // ===== 構造 CSS (全レイアウト共通・コアが出す HTML はこれ1種類。色は var() 参照のみ・レイアウトは色を知らない) =====
+// イシュー#251: 3テンプレ(本A×棚A・本C×棚C・本C×棚D)への統合に合わせ、モック正本
+// (bookshelf/_local/mock-templates-v5-20260928/build_v5.mjs)の確定値を反映する。
+//   - .article の幅を760px→600px(全角35〜40字の1カラム、TEXT_CSS)に変更。
+//   - 見出しh2/h3・本文p/ul/ol・引用の文字サイズ/行間をTEXT_CSSの値に統一(h4-h6は既存のcolor:accのみ据え置き)。
+//   - 表・引用線・リスト記号(GLOBAL_PROSE_CSS)を.blk-text/.bk-detail共通に追加。表はv3の見た目(枠線1px・
+//     thのみ背景・padding 7px 10px・文字14px)に統一(以前はテーブル用のCSSが無く素のまま出ていた)。
+//   - 短文メモ(.bk-memo)の見た目(淡い角丸の箱)を全ブロック共通にする(MEMO_CSS)。旧レイアウト(wall/count/card)
+//     ではレイアウトごとに.bk-memoの背景を個別定義していたが、新3テンプレは3つとも同じ見た目のため
+//     レイアウト非依存のBASE側に統一する。
+//   - 書影を<a class="bk-cover-link">で包む(#233の知見)。.bk-coverの幅は100%にしaspect-ratioはそのまま維持。
 const ARTICLE_BASE_CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;line-height:1.75;background:var(--bg);color:var(--txt)}
 img{max-width:100%;display:block}
 a{color:var(--acc)}
-.article{max-width:760px;margin:0 auto;padding:48px 24px 60px}
+.article{max-width:600px;margin:0 auto;padding:48px 24px 60px}
 .blk{margin:0 0 36px}
 .article>h1{font-size:34px;line-height:1.28;margin:0 0 12px}
 .tags{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 36px;list-style:none}
 .tags .tag{font-size:11px;padding:3px 11px;border-radius:999px;color:var(--sub);background:var(--surface);border:1px solid var(--line)}
 .blk-text h2,.blk-text h3,.blk-text h4,.blk-text h5,.blk-text h6{color:var(--acc);margin:1.2em 0 .5em}
+.blk-text h2{font-size:22px;line-height:1.4;margin:1.3em 0 .6em}
+.blk-text h3{font-size:18px;line-height:1.4;margin:1.1em 0 .5em}
 .blk-text>:first-child{margin-top:0}
-.blk-text p{margin:0 0 12px;font-size:14px}
-.blk-text ul,.blk-text ol{margin:0 0 12px;padding-left:1.4em;font-size:14px}
-.blk-text blockquote{margin:0 0 12px;padding-left:14px;border-left:3px solid var(--line);color:var(--sub)}
-.bk-cover{aspect-ratio:5/7;object-fit:cover;border-radius:4px;background:linear-gradient(150deg,var(--cov1),var(--cov2));border:1px solid var(--line)}
+.blk-text p,.blk-text ul,.blk-text ol{font-size:16px;line-height:1.9;margin:0 0 16px}
+.blk-text blockquote{font-size:15px;line-height:1.8}
+.blk-text blockquote,.bk-detail blockquote{margin:0 0 1em;padding:.15em 1em;border-left:3px solid var(--line);color:var(--sub)}
+.blk-text ul,.blk-text ol,.bk-detail ul,.bk-detail ol{padding-left:1.4em}
+.blk-text ul,.bk-detail ul{list-style:disc outside}
+.blk-text ol,.bk-detail ol{list-style:decimal outside}
+.blk-text li,.bk-detail li{margin:0 0 .25em}
+.blk-text table,.bk-detail table{width:100%;border-collapse:collapse;font-size:14px;margin:0 0 14px}
+.blk-text th,.blk-text td,.bk-detail th,.bk-detail td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+.blk-text th,.bk-detail th{background:var(--surface);color:var(--txt)}
+.blk-text strong,.bk-detail strong{font-weight:700}
+.bk-cover-link{display:block}
+.bk-cover{aspect-ratio:5/7;object-fit:cover;border-radius:4px;background:linear-gradient(150deg,var(--cov1),var(--cov2));border:1px solid var(--line);width:100%}
 .bk-cover.cover-ph{display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;font-size:11px;font-weight:600;line-height:1.35;color:var(--sub);overflow:hidden}
 .bk-title{font-size:13px;margin:8px 0 2px;font-weight:700}
+.bk-title a{color:inherit;text-decoration:none}
 .bk-author{font-size:11px;color:var(--sub)}
 .bk-rating{font-size:13px;margin-top:4px;letter-spacing:.05em}
 .bk-star-filled{color:var(--acc)}
 .bk-star-empty{color:var(--sub)}
-.bk-memo{font-size:12px;margin-top:6px;color:var(--sub);line-height:1.6;white-space:pre-wrap}
+.bk-memo{font-size:12.5px;margin-top:6px;color:var(--sub);line-height:1.6;white-space:pre-wrap;background:var(--surface);border-radius:7px;padding:7px 9px}
 .bk-detail{font-size:12px;margin-top:8px;color:var(--sub);line-height:1.7}
 .bk-detail h2,.bk-detail h3,.bk-detail h4,.bk-detail h5,.bk-detail h6{color:var(--txt);margin:1em 0 .4em;font-size:1em}
 .blk-book{display:grid;grid-template-columns:150px 1fr;gap:24px;align-items:start;padding:22px;
   border-radius:10px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--elev)}
 .blk-book .bk-title{font-size:17px;margin:0 0 3px}
 .blk-book .bk-author{margin-bottom:12px}
-@media(max-width:640px){.blk-book{grid-template-columns:minmax(0,1fr)}.blk-book .bk-cover{width:150px;max-width:100%}}
-.amz{display:inline-block;margin-top:10px;font-size:11px;text-decoration:none;padding:6px 13px;
-  border-radius:5px;background:var(--acc);color:var(--acc-t);font-weight:700}
+@media(max-width:640px){.blk-book{grid-template-columns:minmax(0,1fr)}.blk-book .bk-cover-link{width:150px;max-width:100%}}
 .pub-ad-top{display:flex;align-items:center;gap:.45em;margin:0 0 20px;color:var(--sub);font-size:11px;line-height:1.4}
 .pub-ad-tag{font-size:10px;font-weight:600;letter-spacing:.06em;border:1px solid var(--line);border-radius:4px;padding:.05em .45em;flex:none}
 footer.pub-footer{max-width:760px;margin:0 auto;padding:18px 24px 30px;font-size:10px;color:var(--sub);line-height:1.8;border-top:1px solid var(--line)}
@@ -139,50 +159,78 @@ footer.pub-footer p{margin:.3rem 0}
 footer.pub-footer a{color:var(--sub)}
 `;
 
-// ===== レイアウト CSS (3種のみ・色を知らない・var() だけ参照。.bk は grid-template-areas で名前付き配置する) =====
+// ===== レイアウト CSS (3テンプレのみ・色を知らない・var() だけ参照。.bk は grid-template-areas/subgrid で
+// 名前付き配置する) =====
+// イシュー#251: #249で確定した3テンプレ(本A×棚A・本C×棚C・本C×棚D)に総入れ替え(旧 wall/count/card は
+// 廃止・store側で読み替える, C-1案)。値は build_v5.mjs の BOOK_A_CSS/BOOK_C_CSS/SHELF_A_CSS/SHELF_C_CSS/
+// SHELF_D_CSS(モック正本, .book-a/.book-c/.shelf-a/.shelf-c/.shelf-d クラスセレクタ) を [data-layout="..."]
+// 属性セレクタへ機械的に変換した値。本ブロックCSSと本棚ブロックCSSを同じ data-layout 値の下にまとめる
+// (B-1案・エディタのレイアウト選択に3テンプレをそのまま出せる)。
 // 注意: 各ルールは必ず ".bk .bk-*" のように本棚グリッドの繰り返し要素 (.shelf > .bk) の子孫だけに
-// スコープする。".bk-*" 単体セレクタにすると本ブロック (.blk-book、grid-template-areas を使わない
-// 単純2カラム) 内の同名クラスにも grid-area / display:none が漏れて配置が壊れる
-// (完了条件検証で発見: card は表紙が意図しない位置に飛び、wall は本ブロックのタイトル等まで消えていた)。
+// スコープする。".bk-*" 単体セレクタにすると本ブロック (.blk-book) 内の同名クラスにも
+// grid-area/grid-row が漏れて配置が壊れる (旧レイアウトの完了条件検証で発見済みの罠)。
+// 書影は <a class="bk-cover-link"> で包む(#233の知見)ため、grid-area/grid-row は <img class="bk-cover">
+// ではなく .bk-cover-link 側に付ける。
 const ARTICLE_LAYOUT_CSS = {
-    // D: ウォール — 表紙のみ (タイトル/著者/メモは CSS で非表示)。表紙が主役
-    wall: `
-[data-layout="wall"] .article{max-width:940px}
-[data-layout="wall"] .article>h1{font-size:24px;font-weight:600}
-[data-layout="wall"] .shelf{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}
-[data-layout="wall"] .bk{display:grid;grid-template-areas:"cov"}
-[data-layout="wall"] .bk .bk-cover{grid-area:cov;font-size:9px;border-color:var(--sub);border-radius:2px}
-[data-layout="wall"] .bk .bk-title,[data-layout="wall"] .bk .bk-author,[data-layout="wall"] .bk .bk-rating,[data-layout="wall"] .bk .bk-memo,[data-layout="wall"] .bk .bk-detail{display:none}
-@media(max-width:640px){[data-layout="wall"] .shelf{grid-template-columns:repeat(3,1fr)}}
+    // 本A×棚A(「書影を大きく」): 本ブロック=書影を上に大きく中央・濃い背景なし(上下1px線で区切る)。
+    // 本棚=表紙カード(棚A)。CSS subgridで行内の最長書名に著者/★/メモを揃える(PC3列・スマホ2列)。
+    'book-a-shelf-a': `
+[data-layout="book-a-shelf-a"] .blk-book{grid-template-columns:minmax(0,1fr);justify-items:center;padding:28px 24px;
+  background:var(--bg);border:0;box-shadow:none;border-radius:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+[data-layout="book-a-shelf-a"] .blk-book .bk-cover-link{width:min(240px,72%)}
+[data-layout="book-a-shelf-a"] .blk-book-body{width:100%}
+[data-layout="book-a-shelf-a"] .blk-book .bk-title{font-size:20px;text-align:center;margin-top:4px}
+[data-layout="book-a-shelf-a"] .blk-book .bk-author,[data-layout="book-a-shelf-a"] .blk-book .bk-rating{text-align:center}
+[data-layout="book-a-shelf-a"] .blk-book .bk-memo{text-align:center}
+[data-layout="book-a-shelf-a"] .blk-book .bk-detail{font-size:14px}
+[data-layout="book-a-shelf-a"] .shelf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:auto;gap:26px 20px}
+[data-layout="book-a-shelf-a"] .bk{display:grid;grid-template-rows:subgrid;grid-row:span 5;row-gap:0;grid-template-columns:minmax(0,1fr);justify-items:center;align-content:start;text-align:center}
+[data-layout="book-a-shelf-a"] .bk .bk-cover-link{grid-row:1;width:min(160px,80%)}
+[data-layout="book-a-shelf-a"] .bk .bk-title{grid-row:2;font-size:15px;line-height:1.4;margin:8px 0 2px}
+[data-layout="book-a-shelf-a"] .bk .bk-author{grid-row:3}
+[data-layout="book-a-shelf-a"] .bk .bk-rating{grid-row:4}
+[data-layout="book-a-shelf-a"] .bk .bk-memo{grid-row:5}
+@media(min-width:641px){[data-layout="book-a-shelf-a"] .shelf{grid-template-columns:repeat(3,minmax(0,1fr))}}
 `,
-    // G: カウントダウン — 番号つき縦リスト。表紙小・メモは引用線つき
-    count: `
-[data-layout="count"] .shelf{display:flex;flex-direction:column;counter-reset:n}
-[data-layout="count"] .bk{display:grid;grid-template-columns:66px 66px 1fr;gap:2px 16px;align-content:start;
-  grid-template-areas:"num cov ttl" "num cov auth" "num cov rating" "num cov memo";
-  padding:22px 0;border-top:1px solid var(--line)}
-[data-layout="count"] .bk::before{grid-area:num;counter-increment:n;
-  content:counter(n,decimal-leading-zero);font-size:44px;line-height:.95;font-weight:800;color:var(--line)}
-[data-layout="count"] .bk .bk-cover{grid-area:cov;align-self:start;font-size:8px}
-[data-layout="count"] .bk .bk-title{grid-area:ttl;font-size:16px;margin:0 0 2px}
-[data-layout="count"] .bk .bk-author{grid-area:auth}
-[data-layout="count"] .bk .bk-rating{grid-area:rating}
-[data-layout="count"] .bk .bk-memo,[data-layout="count"] .bk .bk-detail{grid-area:memo;margin-top:8px;padding-left:11px;border-left:2px solid var(--line)}
-@media(max-width:560px){[data-layout="count"] .bk{grid-template-columns:52px 52px 1fr}}
+    // 本C×棚C(「文章に書影を添える」): 本ブロック=書影(88px)を左に添えて回り込ませ、短文メモの手前で
+    // clear:both(回り込み解消)。本棚=棚C(縦詰め1列・短文メモは書影の下から全幅)。
+    'book-c-shelf-c': `
+[data-layout="book-c-shelf-c"] .blk-book{display:block;background:none;border:0;padding:0;box-shadow:none;border-radius:0}
+[data-layout="book-c-shelf-c"] .blk-book::after{content:"";display:block;clear:both}
+[data-layout="book-c-shelf-c"] .blk-book .bk-cover-link{float:left;width:88px;margin:0 18px 8px 0}
+[data-layout="book-c-shelf-c"] .blk-book-body{display:block}
+[data-layout="book-c-shelf-c"] .blk-book .bk-title{font-size:19px}
+[data-layout="book-c-shelf-c"] .blk-book .bk-memo{clear:both;margin-top:2px}
+[data-layout="book-c-shelf-c"] .blk-book .bk-detail{clear:both;font-size:15px;line-height:1.9;color:var(--txt)}
+[data-layout="book-c-shelf-c"] .shelf{display:flex;flex-direction:column}
+[data-layout="book-c-shelf-c"] .bk{display:grid;grid-template-columns:48px minmax(0,1fr) auto;column-gap:12px;align-content:start;padding:11px 0;border-top:1px solid var(--line);
+  grid-template-areas:"cov ttl ttl" "cov auth rating" "memo memo memo"}
+[data-layout="book-c-shelf-c"] .bk .bk-cover-link{grid-area:cov;align-self:start}
+[data-layout="book-c-shelf-c"] .bk .bk-title{grid-area:ttl;margin:0;font-size:15px}
+[data-layout="book-c-shelf-c"] .bk .bk-author{grid-area:auth}
+[data-layout="book-c-shelf-c"] .bk .bk-rating{grid-area:rating;margin-top:0;font-size:11px}
+[data-layout="book-c-shelf-c"] .bk .bk-memo{grid-area:memo;margin-top:6px}
 `,
-    // I: カード — 3列・影(または枠)付きカード。現代的な標準形
-    card: `
-[data-layout="card"] .article{max-width:860px}
-[data-layout="card"] .blk-text{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 22px;box-shadow:var(--elev)}
-[data-layout="card"] .shelf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-[data-layout="card"] .bk{display:grid;grid-template-areas:"cov" "ttl" "auth" "rating" "memo";background:var(--surface);
-  border:1px solid var(--line);border-radius:12px;padding:13px;box-shadow:var(--elev)}
-[data-layout="card"] .bk .bk-cover{grid-area:cov;border-radius:7px}
-[data-layout="card"] .bk .bk-title{grid-area:ttl}
-[data-layout="card"] .bk .bk-author{grid-area:auth}
-[data-layout="card"] .bk .bk-rating{grid-area:rating}
-[data-layout="card"] .bk .bk-memo,[data-layout="card"] .bk .bk-detail{grid-area:memo;background:var(--bg);border-radius:7px;padding:7px 9px;margin-top:8px}
-@media(max-width:560px){[data-layout="card"] .shelf{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    // 本C×棚D(「番号つきで並べる」): 本ブロック=本Cと同じ(書影を左に添える)。本棚=棚D(番号つき縦リスト。
+    // 短文メモは書影の下から全幅)。
+    'book-c-shelf-d': `
+[data-layout="book-c-shelf-d"] .blk-book{display:block;background:none;border:0;padding:0;box-shadow:none;border-radius:0}
+[data-layout="book-c-shelf-d"] .blk-book::after{content:"";display:block;clear:both}
+[data-layout="book-c-shelf-d"] .blk-book .bk-cover-link{float:left;width:88px;margin:0 18px 8px 0}
+[data-layout="book-c-shelf-d"] .blk-book-body{display:block}
+[data-layout="book-c-shelf-d"] .blk-book .bk-title{font-size:19px}
+[data-layout="book-c-shelf-d"] .blk-book .bk-memo{clear:both;margin-top:2px}
+[data-layout="book-c-shelf-d"] .blk-book .bk-detail{clear:both;font-size:15px;line-height:1.9;color:var(--txt)}
+[data-layout="book-c-shelf-d"] .shelf{display:flex;flex-direction:column;counter-reset:n}
+[data-layout="book-c-shelf-d"] .bk{display:grid;grid-template-columns:66px 66px 1fr;gap:2px 16px;align-content:start;padding:20px 0;border-top:1px solid var(--line);
+  grid-template-areas:"num cov ttl" "num cov auth" "num cov rating" "memo memo memo"}
+[data-layout="book-c-shelf-d"] .bk::before{grid-area:num;counter-increment:n;content:counter(n,decimal-leading-zero);font-size:40px;line-height:.95;font-weight:800;color:var(--acc)}
+[data-layout="book-c-shelf-d"] .bk .bk-cover-link{grid-area:cov;align-self:start}
+[data-layout="book-c-shelf-d"] .bk .bk-title{grid-area:ttl;font-size:17px;margin:0 0 2px}
+[data-layout="book-c-shelf-d"] .bk .bk-author{grid-area:auth}
+[data-layout="book-c-shelf-d"] .bk .bk-rating{grid-area:rating}
+[data-layout="book-c-shelf-d"] .bk .bk-memo{grid-area:memo;margin-top:8px}
+@media(max-width:560px){[data-layout="book-c-shelf-d"] .bk{grid-template-columns:52px 52px 1fr}}
 `
 };
 
@@ -331,7 +379,7 @@ class PublishArticleGenerator {
             `--acc:${t.acc};--acc-t:${t.accT};--cov1:${t.cov1};--cov2:${t.cov2};--elev:${t.elev}}`;
     }
     static layoutCss(layout) {
-        return ARTICLE_LAYOUT_CSS[layout] || ARTICLE_LAYOUT_CSS.card;
+        return ARTICLE_LAYOUT_CSS[layout] || ARTICLE_LAYOUT_CSS['book-a-shelf-a'];
     }
 
     // ===== Amazon リンク (旧 PublishGenerator._amazonUrl と同ロジック。ADR-033/034追補) =====
@@ -346,14 +394,20 @@ class PublishArticleGenerator {
 
     _helpers() {
         const esc = PublishArticleGenerator.esc;
+        // Amazonリンクは書影と書名をクリック (ボタン無し、イシュー#251)。書影を <a> で包むときは
+        // grid-area/grid-row を <a class="bk-cover-link"> 側に持たせる (#233の知見。<img> へ付けると
+        // レイアウトによって配置が壊れる)。
+        const amazonLinkAttrs = (b) => `href="${esc(b.amazonUrl)}" target="_blank" rel="nofollow sponsored noopener"`;
         return {
             esc, attr: esc,
             cover: (b) => {
                 if (!b) return '';
-                if (b.productImage) return `<img class="bk-cover" loading="lazy" src="${esc(b.productImage)}" alt="${esc(b.title)}">`;
-                return `<div class="bk-cover cover-ph">${esc(b.title)}</div>`;
+                const img = b.productImage
+                    ? `<img class="bk-cover" loading="lazy" src="${esc(b.productImage)}" alt="${esc(b.title)}（Amazonで見る）">`
+                    : `<div class="bk-cover cover-ph">${esc(b.title)}</div>`;
+                return `<a class="bk-cover-link" ${amazonLinkAttrs(b)}>${img}</a>`;
             },
-            title: (b) => `<p class="bk-title">${esc(b.title)}</p>`,
+            title: (b) => `<p class="bk-title"><a ${amazonLinkAttrs(b)}>${esc(b.title)}</a></p>`,
             author: (b) => b.authors ? `<p class="bk-author">${esc(b.authors)}</p>` : '',
             shortMemo: (b) => b.shortMemo ? `<p class="bk-memo">${esc(b.shortMemo)}</p>` : '',
             longMemo: (html) => html ? `<div class="bk-detail">${html}</div>` : '',
@@ -362,8 +416,7 @@ class PublishArticleGenerator {
             // 塗り/空を別 span にして配色トークンで塗り分ける (var(--acc) 塗り・var(--sub) 空)。
             // 数値は aria-label で伝え、星文字自体は装飾として隠す (スクリーンリーダーが
             // 「星、星、星、星なし星…」と5個読み上げるのを避ける)。評価0(未評価)は描画しない。
-            rating: (b) => b.rating ? `<p class="bk-rating" aria-label="評価 ${b.rating}/5"><span aria-hidden="true"><span class="bk-star-filled">${'★︎'.repeat(b.rating)}</span><span class="bk-star-empty">${'☆︎'.repeat(5 - b.rating)}</span></span></p>` : '',
-            amazon: (b, label) => `<a class="amz" href="${esc(b.amazonUrl)}" target="_blank" rel="nofollow sponsored noopener">${esc(label || 'Amazon で見る')}</a>`
+            rating: (b) => b.rating ? `<p class="bk-rating" aria-label="評価 ${b.rating}/5"><span aria-hidden="true"><span class="bk-star-filled">${'★︎'.repeat(b.rating)}</span><span class="bk-star-empty">${'☆︎'.repeat(5 - b.rating)}</span></span></p>` : ''
         };
     }
 
@@ -484,7 +537,6 @@ ${h.author(bookData)}
 ${block.show.rating ? h.rating(bookData) : ''}
 ${block.show.shortMemo ? h.shortMemo(bookData) : ''}
 ${h.longMemo(longMemoHtml)}
-${h.amazon(bookData)}
 </div>
 </section>`;
     }

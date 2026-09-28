@@ -12,7 +12,8 @@
 //   tags: [ '表示表記', ... ], // 自由タグ。配列は入力表記のまま保持 (表示は初出表記)。
 //                             //   同一視は normalizeTagKey() で都度判定する (§11.6)。
 //   blocks: [ Block ],        // ブロック列。種類は3つだけ (§11.2)
-//   theme: { layout, color }, // レイアウト(wall|count|card) と配色(10色) の直交2軸 (§11.3)
+//   theme: { layout, color }, // レイアウト(book-a-shelf-a|book-c-shelf-c|book-c-shelf-d, イシュー#251) と
+//                             //   配色(10色) の直交2軸 (§11.3)。旧値(wall|count|card)は normalizeTheme() で読み替える
 //   sourceShelfId,            // 由来本棚 (internalId・任意)。「本の引き出し」(S3) がこの本棚の全本を出す入口
 //   published,                // 公開状態 (true=サイトに出す)
 //   createdAt, updatedAt, lastBuiltAt,
@@ -42,9 +43,17 @@
 
 const PUBLISH_ARTICLES_PATH = 'private/publish/articles.json';
 const PUBLISH_PAGES_LEGACY_PATH = 'private/publish/pages.json';
-const ARTICLE_LAYOUTS = ['wall', 'count', 'card'];
+// イシュー#251: #249で確定した3テンプレ(本A×棚A・本C×棚C・本C×棚D)に総入れ替え。旧 wall/count/card は
+// 廃止するが、未公開アプリのため移行コードは書かない(ADR-006)。旧データに旧値が残っていても
+// normalizeTheme() が読み込み時に見た目の近い新値へ読み替える(下記 _LEGACY_LAYOUT_MAP)。
+const ARTICLE_LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
 const ARTICLE_COLORS = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
-const ARTICLE_DEFAULT_THEME = { layout: 'card', color: 'white' };
+const ARTICLE_DEFAULT_THEME = { layout: 'book-a-shelf-a', color: 'white' };
+// 旧値→新値の読み替え(見た目の近さで対応・②承認2026-09-29 C-1案):
+//   card(3列カードグリッド)  → book-a-shelf-a(表紙カード)
+//   count(番号つき縦リスト)  → book-c-shelf-d(棚D=番号つき)
+//   wall(書影のみタイル)     → book-c-shelf-c(消去法。wallに対応する新テンプレは無い)
+const ARTICLE_LEGACY_LAYOUT_MAP = { card: 'book-a-shelf-a', count: 'book-c-shelf-d', wall: 'book-c-shelf-c' };
 
 class PublishArticleStore {
     constructor(storage) {
@@ -93,7 +102,10 @@ class PublishArticleStore {
 
     static normalizeTheme(theme) {
         const t = theme || {};
-        const layout = ARTICLE_LAYOUTS.includes(t.layout) ? t.layout : ARTICLE_DEFAULT_THEME.layout;
+        // 旧値(wall/count/card)が来たら新3値へ読み替える(イシュー#251・ARTICLE_LEGACY_LAYOUT_MAP参照)。
+        // 保存データ自体は書き換えない(次回保存時に新値で自然に上書きされる、移行コードはADR-006で書かない)。
+        const mappedLayout = ARTICLE_LEGACY_LAYOUT_MAP[t.layout] || t.layout;
+        const layout = ARTICLE_LAYOUTS.includes(mappedLayout) ? mappedLayout : ARTICLE_DEFAULT_THEME.layout;
         const color = ARTICLE_COLORS.includes(t.color) ? t.color : ARTICLE_DEFAULT_THEME.color;
         return { layout, color };
     }

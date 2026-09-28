@@ -1,6 +1,7 @@
 // 公開v2 記事モデルのテーマ検証 (S2, ADR-058・09_公開システム設計 §11.3知見4)
 //
-// 「検証は全数でなく代表チェック」の方針: 3レイアウト(wall/count/card) × ライト1色・黒1色 = 代表6通りで
+// イシュー#251: 3テンプレ(本A×棚A・本C×棚C・本C×棚D)に統合。旧 wall/count/card は廃止(store側で読み替え)。
+// 「検証は全数でなく代表チェック」の方針: 3テンプレ × ライト1色・黒1色 = 代表6通りで
 // PublishArticleGenerator が実際に生成した自己完結HTMLをブラウザで開き、レイアウト破綻がないかを機械的に
 // 確認する (全30通りの目視は不要)。テーマ追加時にもこのテストを流せば回帰確認できる (最後の describe)。
 import { test, expect } from './helpers/test-base.js';
@@ -76,9 +77,9 @@ function rectOverlapArea(a, b) {
 }
 
 // レンダリング破綻がないことを機械的に確認する: コンソールエラー無し・主要要素が可視かつ非ゼロサイズ・
-// grid 内の繰り返し要素 (.bk) が互いに大きく重なっていない (grid-template-areas の破綻検知) ・
+// grid 内の繰り返し要素 (.bk) が互いに大きく重なっていない (grid-template-areas/subgrid の破綻検知) ・
 // axe-core で重大なアクセシビリティ違反 (コントラスト等) が無いこと。
-async function assertNoRenderingBreakage(preview, layout) {
+async function assertNoRenderingBreakage(preview) {
     const box = await preview.locator('.article > h1').boundingBox();
     expect(box, '記事タイトルが描画されていること').not.toBeNull();
     expect(box.width).toBeGreaterThan(0);
@@ -100,35 +101,36 @@ async function assertNoRenderingBreakage(preview, layout) {
         for (let j = i + 1; j < boxes.length; j++) {
             const overlap = rectOverlapArea(boxes[i], boxes[j]);
             const minArea = Math.min(boxes[i].width * boxes[i].height, boxes[j].width * boxes[j].height);
-            expect(overlap, `.bk[${i}] と .bk[${j}] が大きく重なっていないこと (grid-template-areas 破綻検知)`)
+            expect(overlap, `.bk[${i}] と .bk[${j}] が大きく重なっていないこと (grid-template-areas/subgrid 破綻検知)`)
                 .toBeLessThan(minArea * 0.5);
         }
     }
 
-    // wall はタイトル/著者/メモを CSS で非表示にする (表紙が主役) 仕様。他レイアウトは表示する。
-    const titleVisible = await preview.locator('.bk-title').first().isVisible();
-    expect(titleVisible, `layout=${layout} での .bk-title 可視性`).toBe(layout !== 'wall');
+    // 新3テンプレ(イシュー#251)はいずれもタイトル/著者/メモを表示する仕様 (旧wallのような
+    // 「表紙のみ・他を隠す」レイアウトは廃止した)。
+    await expect(preview.locator('.bk-title').first(), '.bk-title が表示されていること').toBeVisible();
 
-    // 本ブロック (.blk-book) は本棚グリッド用の CSS (.bk 配下の grid-area / wall の非表示) の影響を
+    // 本ブロック (.blk-book) は本棚グリッド用の CSS (.bk 配下の grid-area/grid-row) の影響を
     // 受けてはいけない (完了条件検証で発見したバグの再発防止: セレクタが ".bk-cover" 単体だった当時は
-    // grid-area:cov が .blk-book 内の表紙にも誤って効き、card では表紙が意図しない位置に飛び、wall では
-    // 本ブロックのタイトル/著者まで消えていた)。wall であっても本ブロックのタイトル/著者は必ず表示される。
+    // grid-area:cov が .blk-book 内の表紙にも誤って効き、表紙が意図しない位置に飛んでいた)。
     const blkBook = preview.locator('.blk-book');
     if (await blkBook.count() > 0) {
-        await expect(blkBook.locator('.bk-title'), `layout=${layout}: 本ブロックのタイトルは常に表示`).toBeVisible();
-        await expect(blkBook.locator('.bk-author'), `layout=${layout}: 本ブロックの著者は常に表示`).toBeVisible();
+        await expect(blkBook.locator('.bk-title'), '本ブロックのタイトルは常に表示').toBeVisible();
+        await expect(blkBook.locator('.bk-author'), '本ブロックの著者は常に表示').toBeVisible();
         const coverBox = await blkBook.locator('.bk-cover').boundingBox();
-        const bodyBox = await blkBook.locator('.blk-book-body').boundingBox();
+        const titleBox = await blkBook.locator('.bk-title').boundingBox();
         expect(coverBox, '.blk-book .bk-cover が描画されていること').not.toBeNull();
-        expect(bodyBox, '.blk-book-body が描画されていること').not.toBeNull();
-        expect(coverBox.x, '本ブロックの表紙が本文の左側にあること (2カラムの列崩れ検知)').toBeLessThan(bodyBox.x);
-        const overlap = rectOverlapArea(coverBox, bodyBox);
-        const minArea = Math.min(coverBox.width * coverBox.height, bodyBox.width * bodyBox.height);
-        expect(overlap, '本ブロックの表紙と本文が大きく重なっていないこと').toBeLessThan(minArea * 0.3);
+        expect(titleBox, '.blk-book .bk-title が描画されていること').not.toBeNull();
+        // 本C(float回り込み)は .blk-book-body 自体のブロックボックスが親の全幅を占める(floatの影響を
+        // 受けるのは中の行ボックスだけ)ため、body全体ではなくタイトル(pタグ、floatの直接の隣接要素)の
+        // 位置で重なりを見る。本A(縦積み中央寄せ)・本C(float回り込み)どちらでも成立する共通チェック。
+        const overlap = rectOverlapArea(coverBox, titleBox);
+        const minArea = Math.min(coverBox.width * coverBox.height, titleBox.width * titleBox.height);
+        expect(overlap, '本ブロックの表紙とタイトルが大きく重なっていないこと').toBeLessThan(minArea * 0.5);
     }
 }
 
-const LAYOUTS = ['wall', 'count', 'card'];
+const LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
 const REPRESENTATIVE_COLORS = ['white', 'black']; // 代表: ライト1・ダーク1 (09 §11.3知見4)
 
 for (const layout of LAYOUTS) {
@@ -149,7 +151,7 @@ for (const layout of LAYOUTS) {
             await expect(preview.locator('html')).toHaveAttribute('data-layout', layout);
             await expect(preview.locator('html')).toHaveAttribute('data-color', color);
 
-            await assertNoRenderingBreakage(preview, layout);
+            await assertNoRenderingBreakage(preview);
 
             // axe-core: 重大な (critical/serious) アクセシビリティ違反が無いこと (コントラスト等)
             const results = await new AxeBuilder({ page: preview }).withTags(['wcag2aa']).analyze();
@@ -166,24 +168,28 @@ for (const layout of LAYOUTS) {
 
 // テーマ追加時に回帰できる最小テスト: 全レイアウト × 代表配色でクラス名・grid-template-areas の
 // 存在を確認する (実レンダリングは上の6通りに任せ、ここは CSS 文字列の構造だけを検証する軽量版)。
-test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas の存在チェック)', () => {
-    test('全レイアウトの CSS が .bk-cover/.bk-title/.bk-author/.bk-memo に grid-area を割り当てている', async ({ page }) => {
+test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas/subgrid の存在チェック)', () => {
+    test('棚C/棚Dの CSS は .bk-cover-link/.bk-title/.bk-author/.bk-memo に grid-area を割り当て、棚A(book-a-shelf-a)は subgrid で行内整列する', async ({ page }) => {
         await page.goto('/index.html');
         await page.waitForFunction(() => window.PublishArticleGenerator);
         const layoutCssMap = await page.evaluate(() => {
-            const layouts = ['wall', 'count', 'card'];
+            const layouts = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
             const out = {};
             for (const l of layouts) out[l] = window.PublishArticleGenerator.layoutCss(l);
             return out;
         });
-        for (const layout of ['wall', 'count', 'card']) {
+        for (const layout of ['book-c-shelf-c', 'book-c-shelf-d']) {
             const css = layoutCssMap[layout];
             expect(css, `${layout}: grid-template-areas を使っている`).toContain('grid-template-areas');
-            // .bk-cover 単体セレクタではなく .bk .bk-cover にスコープすること (.blk-book 本ブロック内の
-            // 同名クラスへ配置指定が漏れて崩れる不具合を完了条件検証で発見・修正した経緯あり)
-            expect(css, `${layout}: .bk .bk-cover に grid-area が割り当てられている`).toMatch(/\.bk \.bk-cover\{grid-area:/);
-            expect(css, `${layout}: .bk-cover 単体セレクタが残っていない`).not.toMatch(/[^ ]\.bk-cover\{grid-area/);
+            // .bk-cover-link (書影を包む<a>、#233の知見) 単体セレクタではなく .bk .bk-cover-link にスコープ
+            // すること (.blk-book 本ブロック内の同名クラスへ配置指定が漏れて崩れる不具合の再発防止)
+            expect(css, `${layout}: .bk .bk-cover-link に grid-area が割り当てられている`).toMatch(/\.bk \.bk-cover-link\{grid-area:/);
+            expect(css, `${layout}: .bk-cover-link 単体セレクタが残っていない`).not.toMatch(/[^ ]\.bk-cover-link\{grid-area/);
         }
+        const shelfA = layoutCssMap['book-a-shelf-a'];
+        expect(shelfA, 'book-a-shelf-a: grid-template-areas は使わず subgrid で行内整列する').not.toContain('grid-template-areas');
+        expect(shelfA, 'book-a-shelf-a: subgridで行内の最長書名に揃える').toContain('grid-template-rows:subgrid');
+        expect(shelfA, 'book-a-shelf-a: .bk .bk-cover-link に grid-row が割り当てられている').toMatch(/\.bk \.bk-cover-link\{grid-row:1/);
     });
 
     test('配色10種すべてが --bg/--elev を含む完全なトークンセットを返す (新配色追加時もこの形を維持する)', async ({ page }) => {
@@ -204,12 +210,12 @@ test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas 
     });
 });
 
-// 目玉本ブロック (.blk-book) の狭幅レイアウト (イシュー#195 公-4)。
-// 従来は grid-template-columns:150px 1fr 固定で縮退が無く、390px では本文カラムが約122pxまで潰れて
-// タイトルが「フィクスチャの本 / 1」のように不自然に折り返していた。640px 以下は書影を上・本文を下に
-// 縦積みにする。640px を超える幅は従来の2カラムのまま (見た目を変えない・#180 Q7 の決裁待ちのため)。
-// 実際の Amazon 書影は数百px幅なので、テスト書影も大きな画像にする (小さい画像だと 150px 列でも
-// 自然サイズで止まり、縦積み時に書影が列幅いっぱいへ膨らむ不具合を検知できない)。
+// 目玉本ブロック (.blk-book) の書影配置 (イシュー#195 公-4 → #251 で3テンプレへ統合)。
+// 旧実装は grid-template-columns:150px 1fr 固定・640px以下だけ縦積みに切り替える単一レイアウトだったが、
+// #251 で本ブロックは本A(常に縦積み中央寄せ)・本C(常に書影88px floatで回り込み)の2種に分かれ、
+// どちらも幅に応じた切り替えを持たない(モックbuild_v5.mjsのBOOK_A_CSS/BOOK_C_CSSにメディアクエリなし)。
+// 実際の Amazon 書影は数百px幅なので、テスト書影も大きな画像にする (小さい画像だと自然サイズで止まり、
+// 書影が列幅いっぱいへ膨らむ不具合を検知できない)。
 const WIDE_COVER_DATA_URI = 'data:image/svg+xml;utf8,' +
     encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><rect width="500" height="700" fill="#2b4a7d"/></svg>');
 
@@ -239,54 +245,65 @@ async function measureBookBlocks(preview) {
     const out = [];
     for (let i = 0; i < await blocks.count(); i++) {
         const blk = blocks.nth(i);
+        // 本C(float回り込み)の検証用: <p class="bk-title"> 自体のブロックボックス(boundingBox)は
+        // floatの影響を受けず親の全幅を占める(floatが効くのは中の行ボックスだけ)ため、
+        // Range.getClientRects() でテキストの実際の行の位置を取る (回り込みの実際の座標)。
+        const titleLine = await blk.locator('.bk-title').evaluate((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const rects = range.getClientRects();
+            if (!rects.length) return null;
+            const r = rects[0];
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+        });
         out.push({
             section: await blk.boundingBox(),
             cover: await blk.locator('.bk-cover').boundingBox(),
             body: await blk.locator('.blk-book-body').boundingBox(),
-            title: await blk.locator('.bk-title').boundingBox()
+            title: await blk.locator('.bk-title').boundingBox(),
+            titleLine
         });
     }
     return out;
 }
 
-test.describe('目玉本ブロック (.blk-book) の狭幅レイアウト (イシュー#195)', () => {
-    for (const layout of LAYOUTS) {
-        test(`390px×${layout}: 書影が上・本文が下の縦積みになり、本文がブロック幅を使い切る`, async ({ page, context }) => {
-            const preview = await openBookBlockPreview(page, context, { layout, width: 390 });
+test.describe('目玉本ブロック (.blk-book) の書影配置 (本A=縦積み中央寄せ・本C=float回り込み、イシュー#251)', () => {
+    test('本A(book-a-shelf-a): 幅(390/1280)を問わず書影が上・本文が下の縦積みで、横スクロールが出ない', async ({ page, context }) => {
+        for (const width of [390, 1280]) {
+            const preview = await openBookBlockPreview(page, context, { layout: 'book-a-shelf-a', width });
             const blocks = await measureBookBlocks(preview);
             expect(blocks, '目玉本ブロックが2つ描画されていること').toHaveLength(2);
-
-            for (const [i, { section, cover, body }] of blocks.entries()) {
-                expect(cover.y + cover.height, `目玉本[${i}]: 書影は本文より上 (縦積み)`).toBeLessThanOrEqual(body.y + 1);
-                expect(cover.width, `目玉本[${i}]: 書影は150px幅のまま (列幅いっぱいに膨らまない)`).toBeLessThanOrEqual(151);
-                expect(cover.width, `目玉本[${i}]: 書影が描画されていること`).toBeGreaterThan(100);
-                expect(body.width, `目玉本[${i}]: 本文が右カラムに押し潰されずブロック幅の大半を使う (修正前は約122px)`)
-                    .toBeGreaterThan(section.width * 0.8);
+            for (const [i, { cover, body }] of blocks.entries()) {
+                expect(cover.y + cover.height, `${width}px 目玉本[${i}]: 書影は本文より上 (縦積み)`).toBeLessThanOrEqual(body.y + 1);
+                expect(cover.width, `${width}px 目玉本[${i}]: 書影が描画されていること`).toBeGreaterThan(0);
             }
-            expect(blocks[0].title.height, '短いタイトルが1行に収まる (修正前は幅122pxで2行に割れていた)').toBeLessThan(40);
-
             const overflowX = await preview.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-            expect(overflowX, '横スクロールが出ないこと').toBeLessThanOrEqual(0);
-
-            await preview.screenshot({ path: `test-results/publish-article-theme/blk-book-390-${layout}.png`, fullPage: true });
+            expect(overflowX, `${width}px: 横スクロールが出ないこと`).toBeLessThanOrEqual(0);
+            await preview.screenshot({ path: `test-results/publish-article-theme/blk-book-${width}-book-a-shelf-a.png`, fullPage: true });
             await preview.close();
+        }
+    });
+
+    for (const layout of ['book-c-shelf-c', 'book-c-shelf-d']) {
+        test(`本C(${layout}): 幅(390/1280)を問わず書影(88px固定)が左・本文がその右に回り込み、横スクロールが出ない`, async ({ page, context }) => {
+            for (const width of [390, 1280]) {
+                const preview = await openBookBlockPreview(page, context, { layout, width });
+                const blocks = await measureBookBlocks(preview);
+                expect(blocks, '目玉本ブロックが2つ描画されていること').toHaveLength(2);
+                for (const [i, { cover, titleLine }] of blocks.entries()) {
+                    expect(cover.width, `${width}px 目玉本[${i}]: 書影は88px幅固定`).toBeLessThanOrEqual(89);
+                    // .bk-title 自体のブロックボックスは親の全幅を占める(floatが効くのは中の行だけ)ため、
+                    // タイトルの実際の行(Range.getClientRects())のx位置で回り込みを見る。
+                    expect(titleLine, `${width}px 目玉本[${i}]: タイトルの行が取得できること`).not.toBeNull();
+                    expect(cover.x + cover.width, `${width}px 目玉本[${i}]: タイトルの行は書影の右に回り込む (floatの列崩れ検知)`).toBeLessThanOrEqual(titleLine.x + 1);
+                }
+                const overflowX = await preview.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+                expect(overflowX, `${width}px: 横スクロールが出ないこと`).toBeLessThanOrEqual(0);
+                await preview.screenshot({ path: `test-results/publish-article-theme/blk-book-${width}-${layout}.png`, fullPage: true });
+                await preview.close();
+            }
         });
     }
-
-    test('640px は縦積み・641px は従来どおりの2カラム (640px を超える幅の見た目は変えない)', async ({ page, context }) => {
-        const narrow = await openBookBlockPreview(page, context, { layout: 'card', width: 640 });
-        for (const [i, { cover, body }] of (await measureBookBlocks(narrow)).entries()) {
-            expect(cover.y + cover.height, `640px 目玉本[${i}]: 縦積み`).toBeLessThanOrEqual(body.y + 1);
-        }
-        await narrow.close();
-
-        const wide = await openBookBlockPreview(page, context, { layout: 'card', width: 641 });
-        for (const [i, { cover, body }] of (await measureBookBlocks(wide)).entries()) {
-            expect(cover.x + cover.width, `641px 目玉本[${i}]: 書影は本文の左 (2カラム)`).toBeLessThanOrEqual(body.x + 1);
-            expect(body.y, `641px 目玉本[${i}]: 本文は書影と同じ高さ帯に並ぶ (縦積みでない)`).toBeLessThan(cover.y + cover.height);
-        }
-        await wide.close();
-    });
 });
 
 // 公開出力のフッター法務・通報導線 (イシュー#195 公-5・11_ローンチ実行計画 完了定義#8)。
@@ -298,7 +315,7 @@ test.describe('公開出力のフッター法務・通報導線 (イシュー#19
         test(`${width}px: 記事ページと一覧 index.html のフッターに 利用規約 / プライバシーポリシー / このページを通報 が表示される`, async ({ page, context }) => {
             await page.goto('/index.html');
             await page.waitForFunction(() => window.PublishArticleGenerator);
-            const article = buildArticle({ layout: 'card', color: 'white' });
+            const article = buildArticle({ layout: 'book-a-shelf-a', color: 'white' });
             const files = await page.evaluate(async ({ state, article }) => {
                 const app = { storage: { loadAll: async () => state, readBookMemo: async () => null } };
                 const r = await new window.PublishArticleGenerator(app).build([article], { target: 'hub', siteId: 'site1' });

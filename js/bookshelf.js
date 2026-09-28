@@ -8418,7 +8418,7 @@ class VirtualBookshelf {
             const allShelf = shelves.find(s => s.isSpecial) || shelves[0] || null;
             this._artDraft = {
                 title: '', tags: [], blocks: [],
-                theme: { layout: 'card', color: 'white' },
+                theme: { layout: 'book-a-shelf-a', color: 'white' }, // イシュー#251: 3テンプレ既定は「書影を大きく」
                 sourceShelfId: allShelf ? (allShelf.internalId || allShelf.id) : null,
                 published: false
             };
@@ -8515,8 +8515,9 @@ class VirtualBookshelf {
     // 標準項目＋プラグインが registerArticleLayout/Color で加算した項目 (加算スロット)。公開側の描画は
     // 標準項目のみ対応のため、プラグイン項目は一覧に出すが選べない (07 に積み残し)。
     _artThemeItems(kind) {
-        const LAYOUT_LABELS = { wall: 'ウォール', count: 'カウントダウン', card: 'カード' };
-        const LAYOUT_ICONS = { wall: 'layout-grid', count: 'list-ordered', card: 'layout-list' };
+        // イシュー#251: 3テンプレ(本A×棚A・本C×棚C・本C×棚D)。表示名は平易な日本語(②承認2026-09-29)
+        const LAYOUT_LABELS = { 'book-a-shelf-a': '書影を大きく', 'book-c-shelf-c': '文章に書影を添える', 'book-c-shelf-d': '番号つきで並べる' };
+        const LAYOUT_ICONS = { 'book-a-shelf-a': 'layout-grid', 'book-c-shelf-c': 'layout-list', 'book-c-shelf-d': 'list-ordered' };
         const COLOR_LABELS = { red: '赤', orange: '橙', pink: 'ピンク', purple: '紫', yellow: '黄', brown: '茶', green: '緑', blue: '青', black: '黒', white: '白' };
         const std = kind === 'layout'
             ? ARTICLE_LAYOUTS.map(id => ({ id, label: LAYOUT_LABELS[id] || id, icon: LAYOUT_ICONS[id] || 'layout-template', provider: '標準', selectable: true }))
