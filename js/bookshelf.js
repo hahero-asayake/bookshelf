@@ -12203,6 +12203,11 @@ class VirtualBookshelf {
             if (this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...newBook } });
             this.applyFilters();
             this.updateStats();
+            // updateStats() は #total-books (蔵書一覧ヘッダ) だけを更新し、ホームの「蔵書数」ウィジェット
+            // (BookshelfDashboard._renderCounterTotal) は再描画しない。手動追加直後にホームへ戻っても
+            // 統計が0冊のまま(再読込すれば直る=描画漏れ)だった。他の更新経路(本棚切替等)と同じく
+            // updateBookshelfSelector() 経由でダッシュボードも再描画する (#225 P4・イシュー#232 step3)。
+            this.updateBookshelfSelector();
 
         } catch (error) {
             console.error('追加エラー:', error);
