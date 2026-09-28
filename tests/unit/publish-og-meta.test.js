@@ -20,7 +20,7 @@ const gen = () => new PublishArticleGenerator({ storage: { loadAll: async () => 
 const art = (p = {}) => ({
     id: 'a1', slug: 's', publicId: p.publicId || 'pubid00001', title: p.title ?? 'わたしを構成する10冊', tags: p.tags ?? [],
     blocks: p.blocks ?? [{ id: 'b0', type: 'book', asin: 'M1', show: { shortMemo: false, longMemo: false } }, { id: 'b1', type: 'text', markdown: p.md ?? '# 見出し\n\n本文の**はじまり**です。[リンク](https://example.com)' }],
-    theme: p.theme || { layout: 'card', color: 'white' }, published: true, ogHash: p.ogHash, createdAt: 1, updatedAt: 2, lastBuiltAt: null
+    theme: p.theme || { layout: 'card', color: 'aqua-white' }, published: true, ogHash: p.ogHash, createdAt: 1, updatedAt: 2, lastBuiltAt: null
 });
 
 // Canvas 差し替え (日本語グリフ OK・PNG は最小のシグネチャ付きバイト列)

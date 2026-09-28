@@ -260,7 +260,7 @@ test.describe('記事下書きの localStorage バックアップと復元 (イ�
             localStorage.setItem('bookshelf_art_draft_new', JSON.stringify({
                 id: null,
                 updatedAt: Date.now(),
-                draft: { title: '下書きから復元されたタイトル', tags: [], blocks: [], theme: { layout: 'book-a-shelf-a', color: 'white' }, sourceShelfId: null }
+                draft: { title: '下書きから復元されたタイトル', tags: [], blocks: [], theme: { layout: 'book-a-shelf-a', color: 'aqua-white' }, sourceShelfId: null }
             }));
         });
 
@@ -636,8 +636,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // イシュー#230: 見た目はキャンバス先頭の固定ブロック (縦リスト・role=radio) で選ぶ
         // イシュー#251: 既定(book-a-shelf-a)とは別の値を選んで切り替わることを確認する
         await page.locator('.art-look-row[data-look-kind="layout"][data-look-id="book-c-shelf-d"]').click();
-        await page.locator('.art-look-row[data-look-kind="color"][data-look-id="black"]').click();
-        await expect(page.locator('.art-look-row[data-look-id="black"]')).toHaveAttribute('aria-checked', 'true');
+        await page.locator('.art-look-row[data-look-kind="color"][data-look-id="gold-dark"]').click();
+        await expect(page.locator('.art-look-row[data-look-id="gold-dark"]')).toHaveAttribute('aria-checked', 'true');
         await page.click('#art-preview');
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
@@ -646,7 +646,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             .toBe(true);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('data-layout="book-c-shelf-d"');
-        expect(srcdoc).toContain('data-color="black"');
+        expect(srcdoc).toContain('data-color="gold-dark"');
         expect(errors).toEqual([]);
     });
 
@@ -889,7 +889,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         const { hubCaptured } = await bootAppForPublish(page);
         const r = await page.evaluate(async () => {
             const b = window.bookshelf;
-            const a = await b.publishArticleStore.create({ title: 'モバイルで生成する長めのタイトル 〜OGP画像の折り返しと省略を確かめる〜', tags: ['エッセイ', '漫画', 'kindle'], published: true, theme: { layout: 'book-a-shelf-a', color: 'blue' } });
+            const a = await b.publishArticleStore.create({ title: 'モバイルで生成する長めのタイトル 〜OGP画像の折り返しと省略を確かめる〜', tags: ['エッセイ', '漫画', 'kindle'], published: true, theme: { layout: 'book-a-shelf-a', color: 'aqua-white' } });
             await b.publishArticleStore.ensurePublicId(a.id);
             const res = await b.exporter.export();
             return { published: res.published };
@@ -1609,10 +1609,10 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         const colors = page.locator('.art-look-row[data-look-kind="color"]');
-        await expect(colors).toHaveCount(11);
+        await expect(colors).toHaveCount(13); // イシュー#257: 標準12色+プラグイン1個
         const plug = page.locator('.art-look-row[data-look-id="sakura"]');
         await expect(plug.locator('.art-look-pv')).toHaveText('sample-theme-plugin');
-        await expect(page.locator('.art-look-row[data-look-id="red"] .art-look-pv')).toHaveText('標準');
+        await expect(page.locator('.art-look-row[data-look-id="gold-dark"] .art-look-pv')).toHaveText('標準');
         await page.locator('.art-look-search').fill('桜');
         await expect(page.locator('.art-look-row[data-look-kind="color"]:not([hidden])')).toHaveCount(1);
         expect(errors).toEqual([]);
@@ -2601,7 +2601,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
                 { id: 'blk-shelf-null', type: 'shelf', shelfId: null, items: [] },
                 { id: 'blk-text', type: 'text', markdown: 'ab' }
             ],
-            theme: { layout: 'book-a-shelf-a', color: 'white' }, sourceShelfId: null, published: false,
+            theme: { layout: 'book-a-shelf-a', color: 'aqua-white' }, sourceShelfId: null, published: false,
             createdAt: 1, updatedAt: 1, lastBuiltAt: null
         };
         const errors = await bootApp(page, { articles: [legacyArticle] });
@@ -2620,7 +2620,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
                 { id: 'blk-shelf-null', type: 'shelf', shelfId: null, items: [] },
                 { id: 'blk-text', type: 'text', markdown: 'ab' }
             ],
-            theme: { layout: 'book-a-shelf-a', color: 'white' }, sourceShelfId: null, published: false,
+            theme: { layout: 'book-a-shelf-a', color: 'aqua-white' }, sourceShelfId: null, published: false,
             createdAt: 1, updatedAt: 1, lastBuiltAt: null
         };
         const errors = await bootApp(page, { articles: [legacyArticle] });

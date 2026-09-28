@@ -47,13 +47,41 @@ const PUBLISH_PAGES_LEGACY_PATH = 'private/publish/pages.json';
 // 廃止するが、未公開アプリのため移行コードは書かない(ADR-006)。旧データに旧値が残っていても
 // normalizeTheme() が読み込み時に見た目の近い新値へ読み替える(下記 _LEGACY_LAYOUT_MAP)。
 const ARTICLE_LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
-const ARTICLE_COLORS = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
-const ARTICLE_DEFAULT_THEME = { layout: 'book-a-shelf-a', color: 'white' };
-// 旧値→新値の読み替え(見た目の近さで対応・②承認2026-09-29 C-1案):
+// イシュー#257: 9/28 ハヘロ決裁の確定12案(金/水色/ライム/ローズ × ダーク/白地/補色地)に総入れ替え。
+// 旧10色(red〜white)は廃止するが、未公開アプリのため移行コードは書かない(ADR-006)。
+// 系統×モード順に定義(色見本の並び順もこの順)。
+const ARTICLE_COLORS = [
+    'gold-dark', 'gold-white', 'gold-comp',
+    'aqua-dark', 'aqua-white', 'aqua-comp',
+    'lime-dark', 'lime-white', 'lime-comp',
+    'rose-dark', 'rose-white', 'rose-comp'
+];
+// 既定配色は仮に aqua-white(白と藍)。ここ1か所を変えるだけで既定を差し替えられるようにする
+// (②承認2026-09-29: ハヘロ確認待ちの仮既定。変更時はpush前tpでこの1行だけ差し替える想定)。
+const ARTICLE_DEFAULT_COLOR = 'aqua-white';
+const ARTICLE_DEFAULT_THEME = { layout: 'book-a-shelf-a', color: ARTICLE_DEFAULT_COLOR };
+// 旧レイアウト値→新値の読み替え(見た目の近さで対応・②承認2026-09-29 C-1案):
 //   card(3列カードグリッド)  → book-a-shelf-a(表紙カード)
 //   count(番号つき縦リスト)  → book-c-shelf-d(棚D=番号つき)
 //   wall(書影のみタイル)     → book-c-shelf-c(消去法。wallに対応する新テンプレは無い)
 const ARTICLE_LEGACY_LAYOUT_MAP = { card: 'book-a-shelf-a', count: 'book-c-shelf-d', wall: 'book-c-shelf-c' };
+// 旧10色→新12色の読み替え(色相の近さで対応・②承認2026-09-29、イシュー#257):
+//   red/pink   → rose-white(赤紫系はD系統ローズ/蘇芳が近い)
+//   orange/yellow/brown → gold-white(暖色はA系統金/黄土が近い)
+//   purple     → gold-comp(紫寄りの地を持つのはA系統補色版=藤色のみ・便宜的近似)
+//   green      → lime-white(緑系はC系統ライム/苔色)
+//   blue       → aqua-white(青系はB系統水色/藍)
+//   black      → aqua-dark(旧blackは別軸のダークモード役だった。中立寄りのB系統ダークを代表に充てる・便宜的近似)
+//   white      → ARTICLE_DEFAULT_COLOR(旧既定を維持する意図の読み替え)
+const ARTICLE_LEGACY_COLOR_MAP = {
+    red: 'rose-white', pink: 'rose-white',
+    orange: 'gold-white', yellow: 'gold-white', brown: 'gold-white',
+    purple: 'gold-comp',
+    green: 'lime-white',
+    blue: 'aqua-white',
+    black: 'aqua-dark',
+    white: ARTICLE_DEFAULT_COLOR
+};
 
 class PublishArticleStore {
     constructor(storage) {
@@ -106,7 +134,10 @@ class PublishArticleStore {
         // 保存データ自体は書き換えない(次回保存時に新値で自然に上書きされる、移行コードはADR-006で書かない)。
         const mappedLayout = ARTICLE_LEGACY_LAYOUT_MAP[t.layout] || t.layout;
         const layout = ARTICLE_LAYOUTS.includes(mappedLayout) ? mappedLayout : ARTICLE_DEFAULT_THEME.layout;
-        const color = ARTICLE_COLORS.includes(t.color) ? t.color : ARTICLE_DEFAULT_THEME.color;
+        // 旧10色(red〜white)が来たら新12色へ読み替える(イシュー#257・ARTICLE_LEGACY_COLOR_MAP参照)。
+        // 保存データ自体は書き換えない(次回保存時に新値で自然に上書きされる、移行コードはADR-006で書かない)。
+        const mappedColor = ARTICLE_LEGACY_COLOR_MAP[t.color] || t.color;
+        const color = ARTICLE_COLORS.includes(mappedColor) ? mappedColor : ARTICLE_DEFAULT_THEME.color;
         return { layout, color };
     }
 
@@ -399,11 +430,13 @@ if (typeof window !== 'undefined') {
     window.PublishArticleStore = PublishArticleStore;
     window.ARTICLE_LAYOUTS = ARTICLE_LAYOUTS;
     window.ARTICLE_COLORS = ARTICLE_COLORS;
+    window.ARTICLE_DEFAULT_COLOR = ARTICLE_DEFAULT_COLOR;
     window.PUBLISH_ARTICLES_PATH = PUBLISH_ARTICLES_PATH;
 }
 if (typeof globalThis !== 'undefined') {
     globalThis.PublishArticleStore = PublishArticleStore;
     globalThis.ARTICLE_LAYOUTS = ARTICLE_LAYOUTS;
     globalThis.ARTICLE_COLORS = ARTICLE_COLORS;
+    globalThis.ARTICLE_DEFAULT_COLOR = ARTICLE_DEFAULT_COLOR;
     globalThis.PUBLISH_ARTICLES_PATH = PUBLISH_ARTICLES_PATH;
 }

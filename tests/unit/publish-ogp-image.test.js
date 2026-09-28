@@ -22,7 +22,7 @@ const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
 
 describe('layout: 2色構成・最小要素・型に依存しない', () => {
     it('色は bg/txt/sub/acc の 4 トークンだけ (グラデーション・画像・影の指示を持たない)', () => {
-        const plan = PublishOgpImage.layout(article(), { color: 'blue' });
+        const plan = PublishOgpImage.layout(article(), { color: 'aqua-white' });
         const allowed = new Set(Object.values(plan.colors));
         for (const it of plan.items) {
             expect(['rect', 'pill', 'text']).toContain(it.kind);
@@ -33,13 +33,13 @@ describe('layout: 2色構成・最小要素・型に依存しない', () => {
     });
 
     it('背景の単色塗りは bg・アクセントは acc (記事本体と同じ ARTICLE_COLOR_TOKENS)', () => {
-        const plan = PublishOgpImage.layout(article(), { color: 'green' });
-        const t = ARTICLE_COLOR_TOKENS.green;
+        const plan = PublishOgpImage.layout(article(), { color: 'lime-white' });
+        const t = ARTICLE_COLOR_TOKENS['lime-white'];
         expect(plan.items[0]).toMatchObject({ kind: 'rect', w: 1200, h: 630, fill: t.bg });
         expect(plan.colors).toEqual({ bg: t.bg, txt: t.txt, sub: t.sub, acc: t.acc });
     });
 
-    it('全 10 配色で 文字 (txt/sub) は背景に対し WCAG AA 4.5 以上・アクセントは 3 以上', () => {
+    it('全 12 配色で 文字 (txt/sub) は背景に対し WCAG AA 4.5 以上・アクセントは 3 以上', () => {
         for (const color of Object.keys(ARTICLE_COLOR_TOKENS)) {
             const { bg, txt, sub, acc } = PublishOgpImage.layout(article(), { color }).colors;
             expect(ratio(txt, bg), `${color} txt`).toBeGreaterThanOrEqual(4.5);
@@ -50,11 +50,11 @@ describe('layout: 2色構成・最小要素・型に依存しない', () => {
 
     it('タイトルは最大 3 行。超えた分は最終行末を「…」で省略し truncated=true (省略したことを検査できる)', () => {
         const long = 'これはとても長い記事タイトルです。'.repeat(12);
-        const plan = PublishOgpImage.layout(article({ title: long }), { color: 'white' });
+        const plan = PublishOgpImage.layout(article({ title: long }), { color: 'aqua-white' });
         expect(plan.title.lines.length).toBe(3);
         expect(plan.title.truncated).toBe(true);
         expect(plan.title.lines[2].endsWith('…')).toBe(true);
-        const short = PublishOgpImage.layout(article({ title: '短いタイトル' }), { color: 'white' });
+        const short = PublishOgpImage.layout(article({ title: '短いタイトル' }), { color: 'aqua-white' });
         expect(short.title.lines).toEqual(['短いタイトル']);
         expect(short.title.truncated).toBe(false);
         // 描画指示のタイトル行数も 3 行まで
@@ -63,13 +63,13 @@ describe('layout: 2色構成・最小要素・型に依存しない', () => {
     });
 
     it('タグは最大 5 個 (超過は落とす)・空タイトルは「（無題）」', () => {
-        const plan = PublishOgpImage.layout(article({ tags: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }), { color: 'white' });
+        const plan = PublishOgpImage.layout(article({ tags: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }), { color: 'aqua-white' });
         expect(plan.tags).toEqual(['a', 'b', 'c', 'd', 'e']);
-        expect(PublishOgpImage.layout(article({ title: '  ' }), { color: 'white' }).title.lines).toEqual(['（無題）']);
+        expect(PublishOgpImage.layout(article({ title: '  ' }), { color: 'aqua-white' }).title.lines).toEqual(['（無題）']);
     });
 
     it('整列 (座標): 左揃え線は x=96・右揃えは x=1120・タグは同じ y/h で間隔 14・タグ文字はピル縦中央・フッターは同じ基線', () => {
-        const plan = PublishOgpImage.layout(article({ title: '整列を座標で確かめる', tags: ['エッセイ', '漫画', 'kindle'] }), { color: 'blue' }, { publisher: 'hahero' });
+        const plan = PublishOgpImage.layout(article({ title: '整列を座標で確かめる', tags: ['エッセイ', '漫画', 'kindle'] }), { color: 'aqua-white' }, { publisher: 'hahero' });
         const texts = plan.items.filter(i => i.kind === 'text');
         const pills = plan.items.filter(i => i.kind === 'pill');
         // 左揃え: タイトル行・最初のタグ・区切り線・発行者名がすべて x=96 (グリフの左端は字形ごとに数 px ずれるが、揃え線は 1 本)
@@ -92,13 +92,13 @@ describe('layout: 2色構成・最小要素・型に依存しない', () => {
 
     it('入力ハッシュ: 同じ入力なら同じ・タイトル/タグ/配色/発行者が変われば変わる・measure の差には影響されない', () => {
         const h = (a, theme, o) => PublishOgpImage.hash(PublishOgpImage.layout(a, theme, o));
-        const base = h(article(), { color: 'blue' }, { publisher: 'hahero' });
-        expect(h(article(), { color: 'blue' }, { publisher: 'hahero' })).toBe(base);
-        expect(h(article({ title: '別題' }), { color: 'blue' }, { publisher: 'hahero' })).not.toBe(base);
-        expect(h(article({ tags: ['x'] }), { color: 'blue' }, { publisher: 'hahero' })).not.toBe(base);
-        expect(h(article(), { color: 'red' }, { publisher: 'hahero' })).not.toBe(base);
-        expect(h(article(), { color: 'blue' }, { publisher: 'other' })).not.toBe(base);
-        expect(h(article(), { color: 'blue' }, { publisher: 'hahero', measure: () => 1 })).toBe(base);
+        const base = h(article(), { color: 'aqua-white' }, { publisher: 'hahero' });
+        expect(h(article(), { color: 'aqua-white' }, { publisher: 'hahero' })).toBe(base);
+        expect(h(article({ title: '別題' }), { color: 'aqua-white' }, { publisher: 'hahero' })).not.toBe(base);
+        expect(h(article({ tags: ['x'] }), { color: 'aqua-white' }, { publisher: 'hahero' })).not.toBe(base);
+        expect(h(article(), { color: 'rose-white' }, { publisher: 'hahero' })).not.toBe(base);
+        expect(h(article(), { color: 'aqua-white' }, { publisher: 'other' })).not.toBe(base);
+        expect(h(article(), { color: 'aqua-white' }, { publisher: 'hahero', measure: () => 1 })).toBe(base);
     });
 });
 
@@ -146,7 +146,7 @@ describe('タイトルの折り返し: 最小限の日本語禁則処理 (a 行�
 
     it('(c) 「ベスト50冊と、」が「50/冊」に割れない (レビューで指摘された実例)', () => {
         const LONG = '2026年に読み返したい、人生を変えた小説・エッセイ・漫画のベスト50冊と、その選び方のすべて〜初心者から上級者まで、迷ったらここから始めたい保存版の読書リスト〜';
-        const plan = PublishOgpImage.layout(article({ title: LONG }), { color: 'orange' });
+        const plan = PublishOgpImage.layout(article({ title: LONG }), { color: 'gold-white' });
         const L = plan.title.lines;
         expect(L).toHaveLength(3);
         expect(L[1].endsWith('ベスト')).toBe(true);
@@ -236,41 +236,41 @@ function fakeCanvasFactory({ glyphOk = true, blank = false, pngSize = 30000, not
 
 describe('render: 経路を通す (Canvas 差し替え)', () => {
     it('jsdom (Canvas 無し) は no-canvas で画像なしにフォールバックする (例外にしない)', async () => {
-        const r = await PublishOgpImage.render(article(), { color: 'white' }, {});
+        const r = await PublishOgpImage.render(article(), { color: 'aqua-white' }, {});
         expect(r).toEqual({ ok: false, reason: 'no-canvas' });
     });
 
     it('成功: PNG シグネチャ・base64・入力ハッシュ・1200x630 のキャンバスで描く', async () => {
         const f = fakeCanvasFactory();
-        const r = await PublishOgpImage.render(article(), { color: 'blue' }, { publisher: 'hahero', createCanvas: f.make });
+        const r = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { publisher: 'hahero', createCanvas: f.make });
         expect(r.ok).toBe(true);
         expect(PublishOgpImage.isPng(r.bytes)).toBe(true);
         expect(Buffer.from(r.base64, 'base64').equals(Buffer.from(r.bytes))).toBe(true);
-        expect(r.hash).toBe(PublishOgpImage.hash(PublishOgpImage.layout(article(), { color: 'blue' }, { publisher: 'hahero' })));
+        expect(r.hash).toBe(PublishOgpImage.hash(PublishOgpImage.layout(article(), { color: 'aqua-white' }, { publisher: 'hahero' })));
         expect(f.created.some(c => c.width === 1200 && c.height === 630)).toBe(true);
     });
 
     it('日本語グリフが描けない端末 (全漢字が同じ豆腐) は glyph で画像なしに倒す', async () => {
         const f = fakeCanvasFactory({ glyphOk: false });
-        const r = await PublishOgpImage.render(article(), { color: 'white' }, { createCanvas: f.make });
+        const r = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { createCanvas: f.make });
         expect(r).toMatchObject({ ok: false, reason: 'glyph' });
     });
 
     it('何も描けていない (全面 1 色) 画像は blank で落とす', async () => {
         const f = fakeCanvasFactory({ blank: true });
-        const r = await PublishOgpImage.render(article(), { color: 'white' }, { createCanvas: f.make });
+        const r = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { createCanvas: f.make });
         expect(r).toMatchObject({ ok: false, reason: 'blank' });
     });
 
     it('200KB を超える PNG は too-large (上限を実測サイズで判定)', async () => {
-        const over = await PublishOgpImage.render(article(), { color: 'white' }, { createCanvas: fakeCanvasFactory({ pngSize: PublishOgpImage.MAX_BYTES + 1 }).make });
+        const over = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { createCanvas: fakeCanvasFactory({ pngSize: PublishOgpImage.MAX_BYTES + 1 }).make });
         expect(over).toMatchObject({ ok: false, reason: 'too-large' });
-        const ok = await PublishOgpImage.render(article(), { color: 'white' }, { createCanvas: fakeCanvasFactory({ pngSize: PublishOgpImage.MAX_BYTES }).make });
+        const ok = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { createCanvas: fakeCanvasFactory({ pngSize: PublishOgpImage.MAX_BYTES }).make });
         expect(ok.ok).toBe(true);
     });
 
     it('PNG でない出力は encode で落とす', async () => {
-        const r = await PublishOgpImage.render(article(), { color: 'white' }, { createCanvas: fakeCanvasFactory({ notPng: true }).make });
+        const r = await PublishOgpImage.render(article(), { color: 'aqua-white' }, { createCanvas: fakeCanvasFactory({ notPng: true }).make });
         expect(r).toMatchObject({ ok: false, reason: 'encode' });
     });
 });

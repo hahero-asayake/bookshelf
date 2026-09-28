@@ -171,7 +171,9 @@ class PublishOgpImage {
     // ---- 内部 ----
     static _colors(theme, tokens) {
         const table = tokens || (typeof globalThis !== 'undefined' && globalThis.ARTICLE_COLOR_TOKENS) || {};
-        const t = table[theme && theme.color] || table.white || { bg: '#ffffff', txt: '#101010', sub: '#666666', acc: '#101010' };
+        // イシュー#257: 旧'white'は廃止。既定色はARTICLE_DEFAULT_COLOR(store.js正本)の1箇所から参照する。
+        const defaultKey = (typeof globalThis !== 'undefined' && globalThis.ARTICLE_DEFAULT_COLOR) || 'aqua-white';
+        const t = table[theme && theme.color] || table[defaultKey] || { bg: '#ffffff', txt: '#101010', sub: '#666666', acc: '#101010' };
         return { bg: t.bg, txt: t.txt, sub: t.sub, acc: t.acc };
     }
 

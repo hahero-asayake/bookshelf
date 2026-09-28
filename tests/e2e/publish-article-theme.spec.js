@@ -131,7 +131,7 @@ async function assertNoRenderingBreakage(preview) {
 }
 
 const LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
-const REPRESENTATIVE_COLORS = ['white', 'black']; // 代表: ライト1・ダーク1 (09 §11.3知見4)
+const REPRESENTATIVE_COLORS = ['aqua-white', 'gold-dark']; // 代表: 白地1・ダーク1 (09 §11.3知見4・イシュー#257で確定12案に総入れ替え)
 
 for (const layout of LAYOUTS) {
     for (const color of REPRESENTATIVE_COLORS) {
@@ -192,16 +192,21 @@ test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas/
         expect(shelfA, 'book-a-shelf-a: .bk .bk-cover-link に grid-row が割り当てられている').toMatch(/\.bk \.bk-cover-link\{grid-row:1/);
     });
 
-    test('配色10種すべてが --bg/--elev を含む完全なトークンセットを返す (新配色追加時もこの形を維持する)', async ({ page }) => {
+    test('配色12案すべてが --bg/--elev を含む完全なトークンセットを返す (新配色追加時もこの形を維持する)', async ({ page }) => {
         await page.goto('/index.html');
         await page.waitForFunction(() => window.PublishArticleGenerator);
-        const colors = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
+        const colors = [
+            'gold-dark', 'gold-white', 'gold-comp',
+            'aqua-dark', 'aqua-white', 'aqua-comp',
+            'lime-dark', 'lime-white', 'lime-comp',
+            'rose-dark', 'rose-white', 'rose-comp'
+        ];
         const cssMap = await page.evaluate((colors) => {
             const out = {};
             for (const c of colors) out[c] = window.PublishArticleGenerator.colorTokensCss(c);
             return out;
         }, colors);
-        const REQUIRED_VARS = ['--bg', '--surface', '--txt', '--sub', '--line', '--acc', '--acc-t', '--cov1', '--cov2', '--elev'];
+        const REQUIRED_VARS = ['--bg', '--surface', '--txt', '--sub', '--line', '--acc', '--acc-t', '--cov', '--elev'];
         for (const color of colors) {
             for (const v of REQUIRED_VARS) {
                 expect(cssMap[color], `${color}: ${v} を含む`).toContain(`${v}:`);
@@ -226,7 +231,7 @@ async function openBookBlockPreview(page, context, { layout, width }) {
     state.library.books[0].title = 'フィクスチャの本 1'; // 修正前は 122px 幅で「フィクスチャの本 / 1」の2行に割れていたタイトル
     state.library.books[0].productImage = WIDE_COVER_DATA_URI;
     state.notes.B001 = { memo: '読み終わって空を見上げた。スケールで殴ってくる一冊で、二度目は違う場所で刺さった。', rating: 4, hasDetailMemo: false };
-    const article = buildArticle({ layout, color: 'white' });
+    const article = buildArticle({ layout, color: 'aqua-white' });
     article.blocks = [
         { id: 'k1', type: 'book', asin: 'B001', show: { shortMemo: true, longMemo: false, rating: true } },
         { id: 'k2', type: 'book', asin: 'B003', show: { shortMemo: false, longMemo: false, rating: false } } // 書影なし (プレースホルダ)
@@ -315,7 +320,7 @@ test.describe('公開出力のフッター法務・通報導線 (イシュー#19
         test(`${width}px: 記事ページと一覧 index.html のフッターに 利用規約 / プライバシーポリシー / このページを通報 が表示される`, async ({ page, context }) => {
             await page.goto('/index.html');
             await page.waitForFunction(() => window.PublishArticleGenerator);
-            const article = buildArticle({ layout: 'book-a-shelf-a', color: 'white' });
+            const article = buildArticle({ layout: 'book-a-shelf-a', color: 'aqua-white' });
             const files = await page.evaluate(async ({ state, article }) => {
                 const app = { storage: { loadAll: async () => state, readBookMemo: async () => null } };
                 const r = await new window.PublishArticleGenerator(app).build([article], { target: 'hub', siteId: 'site1' });

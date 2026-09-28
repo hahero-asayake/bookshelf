@@ -46,7 +46,7 @@ function makeArticle(partial = {}) {
         publicId: partial.publicId !== undefined ? partial.publicId : 'pub-test01',
         title: partial.title || 'わたしを構成する10冊',
         tags: partial.tags || [], blocks: partial.blocks || [],
-        theme: partial.theme || { layout: 'book-a-shelf-a', color: 'white' },
+        theme: partial.theme || { layout: 'book-a-shelf-a', color: 'aqua-white' },
         published: partial.published !== undefined ? partial.published : true,
         createdAt: 1, updatedAt: 2, lastBuiltAt: null,
         ...(partial.adTag !== undefined ? { adTag: partial.adTag } : {})
@@ -207,12 +207,17 @@ describe('shiftHtmlHeadings (§11.5・固定+1ではなく最浅レベルとの�
     });
 });
 
-describe('テーマ CSS (レイアウト3テンプレ × 配色10 の直交, §11.3・イシュー#251で3テンプレ(本A×棚A・本C×棚C・本C×棚D)に統合)', () => {
+describe('テーマ CSS (レイアウト3テンプレ × 配色12案の直交, §11.3・イシュー#257で確定12案(金/水色/ライム/ローズ×ダーク/白地/補色地)に総入れ替え)', () => {
     const TEMPLATE_LAYOUTS = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
+    const ALL_COLORS = [
+        'gold-dark', 'gold-white', 'gold-comp',
+        'aqua-dark', 'aqua-white', 'aqua-comp',
+        'lime-dark', 'lime-white', 'lime-comp',
+        'rose-dark', 'rose-white', 'rose-comp'
+    ];
 
-    it('配色10種すべてにトークンが定義され、--elev を含む', () => {
-        const colors = ['red', 'orange', 'pink', 'purple', 'yellow', 'brown', 'green', 'blue', 'black', 'white'];
-        for (const c of colors) {
+    it('配色12案すべてにトークンが定義され、--elev を含む', () => {
+        for (const c of ALL_COLORS) {
             expect(ARTICLE_COLOR_TOKENS[c]).toBeTruthy();
             const css = PublishArticleGenerator.colorTokensCss(c);
             expect(css).toContain('--bg:');
@@ -220,9 +225,17 @@ describe('テーマ CSS (レイアウト3テンプレ × 配色10 の直交, §1
         }
     });
 
-    it('黒は --elev:none (影が見えないので境界線で分ける)、白は影つき', () => {
-        expect(PublishArticleGenerator.colorTokensCss('black')).toContain('--elev:none');
-        expect(PublishArticleGenerator.colorTokensCss('white')).toContain('--elev:0 2px');
+    it('ダーク4案は --elev:none (影が見えないので境界線で分ける)、白地・補色地8案は影つき', () => {
+        for (const c of ALL_COLORS) {
+            const css = PublishArticleGenerator.colorTokensCss(c);
+            if (c.endsWith('-dark')) expect(css, c).toContain('--elev:none');
+            else expect(css, c).toContain('--elev:0 2px');
+        }
+    });
+
+    it('未知の配色値は既定色(ARTICLE_DEFAULT_COLOR)のCSSにフォールバックする', () => {
+        const defaultKey = globalThis.ARTICLE_DEFAULT_COLOR;
+        expect(PublishArticleGenerator.colorTokensCss('nope')).toBe(PublishArticleGenerator.colorTokensCss(defaultKey));
     });
 
     it('未知のレイアウト値は book-a-shelf-a (「書影を大きく」) のCSSにフォールバックする', () => {
@@ -244,9 +257,20 @@ describe('テーマ CSS (レイアウト3テンプレ × 配色10 の直交, §1
     });
 
     it('表紙 (.bk-cover) は配色トークンに従わない (Amazon画像は本ごとに色がバラバラなため配色は表紙以外にのみ効く)', () => {
-        // ARTICLE_BASE_CSS 側で .bk-cover の背景は --cov1/--cov2 (書影プレースホルダ用の固定トークン) を使い、
-        // --bg 等の配色本体トークンには依存しない。生成 CSS 全体からそれを確認する。
-        expect(ARTICLE_COLOR_TOKENS.red.cov1).not.toBe(ARTICLE_COLOR_TOKENS.red.bg);
+        // ARTICLE_BASE_CSS 側で .bk-cover の背景は --cov (書影プレースホルダ用の単色固定トークン、
+        // イシュー#257でグラデーション廃止・line値を流用) を使い、--bg 等の配色本体トークンには依存しない。
+        for (const c of ALL_COLORS) {
+            expect(ARTICLE_COLOR_TOKENS[c].cov, c).not.toBe(ARTICLE_COLOR_TOKENS[c].bg);
+            expect(ARTICLE_COLOR_TOKENS[c].cov, c).toBe(ARTICLE_COLOR_TOKENS[c].line);
+        }
+    });
+
+    it('書影プレースホルダ (.bk-cover) はグラデーションを使わない (イシュー#257・単色化)', async () => {
+        const article = makeArticle({ theme: { layout: 'book-a-shelf-a', color: 'gold-dark' } });
+        const r = await gen.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toMatch(/linear-gradient/);
+        expect(html).toMatch(/\.bk-cover\{[^}]*background:var\(--cov\)/);
     });
 
     it('本棚グリッド用の grid-area/grid-row は .bk 配下にスコープされ、本ブロック(.blk-book)には漏れない', () => {
@@ -521,11 +545,11 @@ describe('公開URLは publicId (S6・ADR-076・09 §11.7: タイトル/slug 変
 
 describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => {
     it('ルート要素に data-layout / data-color が記事テーマ通りに設定される', async () => {
-        const article = makeArticle({ theme: { layout: 'book-c-shelf-d', color: 'black' } });
+        const article = makeArticle({ theme: { layout: 'book-c-shelf-d', color: 'gold-dark' } });
         const r = await gen.build([article]);
         const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
         expect(html).toContain('data-layout="book-c-shelf-d"');
-        expect(html).toContain('data-color="black"');
+        expect(html).toContain('data-color="gold-dark"');
     });
 
     it('CSP は script-src を許可しない (default-src \'none\' で包括的にブロック・§10.7/11.10)', async () => {

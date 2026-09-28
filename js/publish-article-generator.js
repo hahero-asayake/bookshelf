@@ -78,25 +78,36 @@ const _yieldToEventLoop = (onTimerLag) => new Promise((resolve) => {
 const ART_TIMER_LAG_EVENT_MS = 250;
 let _timerLagBuildSeq = 0; // _renderBlocks 呼び出し(記事1件のレンダリング)ごとに一意＝集計混入防止
 
-// 配色トークン10種 (§11.3・モック ~/kuroko/discord/tmp/mock-theme.html で実証された値をベースに、
-// axe-core (WCAG AA) のコントラスト検証で不足が見つかった2値だけ補正した (完了条件検証時に発見・S2):
-//   white: --sub #767676→#666666 (--surface #fafafa との比が4.35→5.50)
-//   orange: --acc #c2700c→#ad600a (.amz 等 --acc-t #fff との比が3.74→4.71)
-// 他8色・他トークンは全数チェック済みで基準内。色だけを持ちレイアウトを知らない。
-// --elev は面の分け方 (ライトは影・黒は影が見えないので none にして境界線で分ける)。
+// 配色トークン12案 (イシュー#257・9/28 ハヘロ決裁。金/水色/ライム/ローズ × ダーク/白地/補色地)。
+// 値の正本 (hexは転記のみ・独自調整なし):
+//   ダーク4案   = _local/mock-templates-v8-palettes12-20260928/palettes12.mjs の 01/04/07/10
+//   白地4案     = _local/mock-templates-v9-white-20260928/whites5.mjs の W2版 (02-W2/05-W2/08-W2/11-W2)
+//   補色地4案   = _local/mock-templates-v10-comp-deep-20260928/comp_deep.mjs の「中」(03/06/09/12)
+// キー名は「色相-モード」(系統×モード順に定義)。旧10色 (red〜white) からの読み替えは
+// publish-article-store.js の normalizeTheme() 側で吸収する (移行コードは書かない, ADR-006)。
+// 全12案とも本文/地・見出し/地・リンク/地・短文メモ文字/箱・補助文字/地の5組がAA(4.5以上)確認済み
+// (各正本ディレクトリの 00_index.md・contrast.json)。
+// cov (書影プレースホルダ面。旧cov1/cov2のグラデーションを廃止し単色化, イシュー#257「グラデーションは
+// 使わない」) は line の値をそのまま使う (罫線・書影の枠線と同系色になり実装も簡素、②承認2026-09-29)。
+// elev (面の分け方) はダーク4案=none (影が見えないので境界線で分ける、既存踏襲)。白地・補色地8案は
+// txt色をRGBに変換した薄い影 (`0 2px 10px rgba(R,G,B,.07)`、既存10色と同じ作り)。
 const ARTICLE_COLOR_TOKENS = {
-    red: { bg: '#fffafa', surface: '#fdf3f2', txt: '#1f1414', sub: '#7a5f5f', line: '#f3dedc', acc: '#c0392b', accT: '#fff', cov1: '#f0dbd8', cov2: '#dbbdb9', elev: '0 2px 10px rgba(60,20,20,.07)' },
-    orange: { bg: '#fffaf4', surface: '#fdf2e6', txt: '#1f1810', sub: '#7d6650', line: '#f2e2cd', acc: '#ad600a', accT: '#fff', cov1: '#f0e0cb', cov2: '#dcc4a5', elev: '0 2px 10px rgba(60,40,10,.07)' },
-    pink: { bg: '#fff8fa', surface: '#fdf0f4', txt: '#20141a', sub: '#7d5d6a', line: '#f3dde5', acc: '#c43f72', accT: '#fff', cov1: '#f0dae3', cov2: '#dbbccb', elev: '0 2px 10px rgba(60,20,40,.07)' },
-    purple: { bg: '#faf8fd', surface: '#f3eefb', txt: '#181425', sub: '#665c85', line: '#e5dcf4', acc: '#6d43ad', accT: '#fff', cov1: '#e2daf2', cov2: '#c6badf', elev: '0 2px 10px rgba(40,20,70,.08)' },
-    // 黄だけ「地の色＝黄・インク＝黒」(黄をアクセントにすると白背景でコントラスト比が足りず可読性が出ないため)
-    yellow: { bg: '#fdf1c4', surface: '#fbe9a8', txt: '#1c1705', sub: '#6b5c22', line: '#eddb96', acc: '#1c1705', accT: '#fdf1c4', cov1: '#f6e3a4', cov2: '#e5cd80', elev: '0 2px 10px rgba(80,65,10,.10)' },
-    brown: { bg: '#fbf9f6', surface: '#f4efe7', txt: '#231d16', sub: '#6f6154', line: '#e6ddd0', acc: '#8a6a45', accT: '#fff', cov1: '#e4d9c8', cov2: '#cbb99f', elev: '0 2px 10px rgba(60,45,25,.08)' },
-    green: { bg: '#f7faf7', surface: '#eef5ef', txt: '#142016', sub: '#5c7062', line: '#dce8de', acc: '#2f7346', accT: '#fff', cov1: '#dbe8dd', cov2: '#bcd0c0', elev: '0 2px 10px rgba(20,50,30,.07)' },
-    blue: { bg: '#f7f9fd', surface: '#edf2fb', txt: '#111a2b', sub: '#5a6b85', line: '#dde5f2', acc: '#2a5fa8', accT: '#fff', cov1: '#dce5f3', cov2: '#bdcbe3', elev: '0 2px 10px rgba(20,35,70,.08)' },
-    // 黒がダークテーマを兼ねる (別軸のダークモードは用意しない, ADR-058追補2)。影が見えないので境界線で面を分ける
-    black: { bg: '#0f0f11', surface: '#191a1d', txt: '#ececee', sub: '#8f9096', line: '#2f3036', acc: '#e8e8ea', accT: '#0f0f11', cov1: '#2c2d33', cov2: '#1c1d21', elev: 'none' },
-    white: { bg: '#ffffff', surface: '#fafafa', txt: '#101010', sub: '#666666', line: '#e7e7e7', acc: '#101010', accT: '#fff', cov1: '#ededed', cov2: '#d6d6d6', elev: '0 2px 10px rgba(0,0,0,.06)' }
+    // ---------- A系統：金 (v8 no.01/02-W2/03) ----------
+    'gold-dark': { bg: '#1c1a17', surface: '#26231f', txt: '#efe9df', sub: '#b7ab97', line: '#847761', acc: '#c99a3a', accT: '#1c1a17', cov: '#847761', elev: 'none' },
+    'gold-white': { bg: '#fafafa', surface: '#f2f0ea', txt: '#2e2a24', sub: '#786c54', line: '#ded5c1', acc: '#906e28', accT: '#ffffff', cov: '#ded5c1', elev: '0 2px 10px rgba(46,42,36,.07)' },
+    'gold-comp': { bg: '#d8dfee', surface: '#c0cde8', txt: '#25272d', sub: '#4c576e', line: '#94acdb', acc: '#7b5e22', accT: '#ffffff', cov: '#94acdb', elev: '0 2px 10px rgba(37,39,45,.07)' },
+    // ---------- B系統：水色/藍 (v8 no.04/05-W2/06) ----------
+    'aqua-dark': { bg: '#12182a', surface: '#1b2338', txt: '#e8ecf5', sub: '#a9b3c9', line: '#6375a8', acc: '#6fb2e6', accT: '#0c1220', cov: '#6375a8', elev: 'none' },
+    'aqua-white': { bg: '#fafafa', surface: '#eaeff2', txt: '#24292e', sub: '#596f80', line: '#c1d2de', acc: '#2177bb', accT: '#ffffff', cov: '#c1d2de', elev: '0 2px 10px rgba(36,41,46,.07)' },
+    'aqua-comp': { bg: '#eee1d8', surface: '#e8d1c0', txt: '#2d2825', sub: '#6b594b', line: '#dbb394', acc: '#1c69a5', accT: '#ffffff', cov: '#dbb394', elev: '0 2px 10px rgba(45,40,37,.07)' },
+    // ---------- C系統：ライム/苔色 (v8 no.07/08-W2/09) ----------
+    'lime-dark': { bg: '#101a13', surface: '#18251b', txt: '#e6efe4', sub: '#a7bba3', line: '#5e7c64', acc: '#8fd15a', accT: '#132015', cov: '#5e7c64', elev: 'none' },
+    'lime-white': { bg: '#fafafa', surface: '#edf2ea', txt: '#282e24', sub: '#607351', line: '#cedec1', acc: '#4d8024', accT: '#ffffff', cov: '#cedec1', elev: '0 2px 10px rgba(40,46,36,.07)' },
+    'lime-comp': { bg: '#e4d8ee', surface: '#d6c0e8', txt: '#29252d', sub: '#5f4d6e', line: '#bb94db', acc: '#416c1e', accT: '#ffffff', cov: '#bb94db', elev: '0 2px 10px rgba(41,37,45,.07)' },
+    // ---------- D系統：ローズ/蘇芳 (v8 no.10/11-W2/12) ----------
+    'rose-dark': { bg: '#1a1420', surface: '#241b2c', txt: '#ece3f2', sub: '#b8a9c4', line: '#7f6a89', acc: '#e37fa0', accT: '#1a1420', cov: '#7f6a89', elev: 'none' },
+    'rose-white': { bg: '#fafafa', surface: '#f2eaed', txt: '#2e2427', sub: '#895f6d', line: '#dec1ca', acc: '#d23368', accT: '#ffffff', cov: '#dec1ca', elev: '0 2px 10px rgba(46,36,39,.07)' },
+    'rose-comp': { bg: '#d8eee7', surface: '#c0e8da', txt: '#252d2a', sub: '#49695e', line: '#94dbc3', acc: '#c32a5d', accT: '#ffffff', cov: '#94dbc3', elev: '0 2px 10px rgba(37,45,42,.07)' }
 };
 
 // ===== 構造 CSS (全レイアウト共通・コアが出す HTML はこれ1種類。色は var() 参照のみ・レイアウトは色を知らない) =====
@@ -136,7 +147,7 @@ a{color:var(--acc)}
 .blk-text th,.bk-detail th{background:var(--surface);color:var(--txt)}
 .blk-text strong,.bk-detail strong{font-weight:700}
 .bk-cover-link{display:block}
-.bk-cover{aspect-ratio:5/7;object-fit:cover;border-radius:4px;background:linear-gradient(150deg,var(--cov1),var(--cov2));border:1px solid var(--line);width:100%}
+.bk-cover{aspect-ratio:5/7;object-fit:cover;border-radius:4px;background:var(--cov);border:1px solid var(--line);width:100%}
 .bk-cover.cover-ph{display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;font-size:11px;font-weight:600;line-height:1.35;color:var(--sub);overflow:hidden}
 .bk-title{font-size:13px;margin:8px 0 2px;font-weight:700}
 .bk-title a{color:inherit;text-decoration:none}
@@ -374,9 +385,10 @@ class PublishArticleGenerator {
 
     // ===== 配色 / レイアウト CSS =====
     static colorTokensCss(color) {
-        const t = ARTICLE_COLOR_TOKENS[color] || ARTICLE_COLOR_TOKENS.white;
+        const fallbackKey = (typeof globalThis !== 'undefined' && globalThis.ARTICLE_DEFAULT_COLOR) || 'aqua-white';
+        const t = ARTICLE_COLOR_TOKENS[color] || ARTICLE_COLOR_TOKENS[fallbackKey];
         return `:root{--bg:${t.bg};--surface:${t.surface};--txt:${t.txt};--sub:${t.sub};--line:${t.line};` +
-            `--acc:${t.acc};--acc-t:${t.accT};--cov1:${t.cov1};--cov2:${t.cov2};--elev:${t.elev}}`;
+            `--acc:${t.acc};--acc-t:${t.accT};--cov:${t.cov};--elev:${t.elev}}`;
     }
     static layoutCss(layout) {
         return ARTICLE_LAYOUT_CSS[layout] || ARTICLE_LAYOUT_CSS['book-a-shelf-a'];
