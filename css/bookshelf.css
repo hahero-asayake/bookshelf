@@ -4137,8 +4137,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     font-weight: 600;
 }
 
-.github-form label > input,
-.github-form label > select {
+/* 子孫セレクタ(直接の子 `>` ではない): #github-base-path は保存先選択ボタンと並べるため
+   label 直下に span.basepath-row を挟んでおり(孫要素)、`label > input` だと当たらず
+   ブラウザ既定の見た目のまま取り残されていた (#223 S2・イシュー#232 step2)。 */
+.github-form label input,
+.github-form label select {
     width: 100%;
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--line);
@@ -4151,8 +4154,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
 }
 
-.github-form label > input:focus,
-.github-form label > select:focus {
+.github-form label input:focus,
+.github-form label select:focus {
     border-color: #4a90e2;
     outline: none;
     box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.15);
