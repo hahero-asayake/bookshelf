@@ -5145,7 +5145,15 @@ class VirtualBookshelf {
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
             const slug = bs?.slug || bookshelfId;
-            this.router.navigateBookshelf(slug);
+            // イシュー#259: スマホ幅でドロワー(サイドバー)や⌘Kパレットを開いたまま本棚を選ぶと、
+            // それらを閉じる _closeDrawer/_closePalette が予約する history.back() (_modalHistPop、
+            // 「戻る」操作をモーダルクローズに割り当てる仕組み) が非同期に処理される一方、ここで
+            // navigateBookshelf() が同期的に location.hash へ新しい履歴エントリを積む。両者の
+            // 実行順序がブラウザの都合で入れ替わり、back() が「本棚を開いた直後の履歴」を巻き戻して
+            // 表示がホームへ戻ってしまっていた (実測: tmp/verify259/diag-events.mjs、PC幅は
+            // ドロワー/パレットの履歴を積まないため無関係に再現しない)。back() の処理が先に
+            // 片付くよう、hash 更新を1マクロタスク遅らせる。
+            setTimeout(() => this.router.navigateBookshelf(slug), 0);
         }
         // 複数選択中なら一括バーのボタン表示 (本棚から外す等) を本棚に合わせて更新
         if (this.selectMode) this._updateBulkBar();
