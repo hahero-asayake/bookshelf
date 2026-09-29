@@ -63,4 +63,13 @@ describe('serveSite (/public/<siteId>/…) の username 移行対応', () => {
         const res = await serveSite(new Request('https://hub.test/public/unknown/'), env(KV, BUCKET), '/public/unknown/');
         expect(res.status).toBe(200);
     });
+
+    it('通報停止中 (report:suspended) は 451・日本語本文・noindex (イシュー#247決裁3)', async () => {
+        const KV = makeKV({ 'report:site1': { status: 'suspended' } }); // site: 逆引き無し=移行未了のまま
+        const res = await serveSite(new Request('https://hub.test/public/site1/'), env(KV, makeBucket()), '/public/site1/');
+        expect(res.status).toBe(451);
+        expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+        const body = await res.text();
+        expect(body).toContain('このサイトは停止されました');
+    });
 });

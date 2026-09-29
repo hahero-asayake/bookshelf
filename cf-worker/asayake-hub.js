@@ -58,6 +58,7 @@
 import { serveHeaders, contentType } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
 import { scheduledBackup } from './backup.js';
+import { suspendedResponse } from './suspended-page.js';
 
 const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
@@ -171,7 +172,7 @@ async function serveSite(request, env, pathname, ctx) {
     }
 
     const rep = await env.KV.get(`report:${siteId}`, 'json');
-    if (rep && rep.status === 'suspended') return new Response('This site has been suspended.', { status: 451 });
+    if (rep && rep.status === 'suspended') return suspendedResponse();
 
     const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
     if (!obj) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });

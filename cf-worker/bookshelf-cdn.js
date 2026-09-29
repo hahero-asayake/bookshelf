@@ -17,6 +17,7 @@
 
 import { serveHeaders, contentType } from './serve-headers.js';
 import { isReservedTopLevel } from './reserved-usernames.js';
+import { suspendedResponse } from './suspended-page.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -67,7 +68,7 @@ export default {
 
         const reportRec = await env.KV.get(`report:${siteId}`, 'json');
         if (reportRec && reportRec.status === 'suspended') {
-            return new Response('This site has been suspended.', { status: 451 });
+            return suspendedResponse();
         }
 
         if (sub === '' || sub.endsWith('/')) sub += 'index.html';

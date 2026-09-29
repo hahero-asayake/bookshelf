@@ -88,10 +88,15 @@ describe('bookshelf-cdn Worker', () => {
         expect(res.headers.get('Cache-Control')).toBe('no-store');
     });
 
-    it('通報停止中 (report:suspended) は 451', async () => {
+    it('通報停止中 (report:suspended) は 451・日本語本文・noindex (イシュー#247決裁3)', async () => {
         const KV = makeKV({ 'uname:taro-books': { uid: 'u1', siteId: 'site1' }, 'report:site1': { status: 'suspended' } });
         const res = await worker.fetch(new Request('https://bookshelf.asayake.org/taro-books/'), env(KV, makeBucket()), ctx);
         expect(res.status).toBe(451);
+        expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+        const body = await res.text();
+        expect(body).toContain('このサイトは停止されました');
+        expect(body).toContain('mailto:');
+        expect(body).toContain('This site has been suspended');
     });
 
     it('".." を含む URL は WHATWG URL 正規化で解決され、意図しないパスに抜けない (username = "secret" として解決を試みるだけ)', async () => {
