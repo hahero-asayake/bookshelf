@@ -13,6 +13,12 @@ export function serveHeaders(ct, etag) {
     return h;
 }
 
+// 404/451/tombstone など「検索に出したくない応答」用。serveHeaders() に X-Robots-Tag: noindex を足す
+// (イシュー#247 決裁4)。200 (実際に配信するページ) には付けない。
+export function noindexHeaders(ct) {
+    return { ...serveHeaders(ct), 'X-Robots-Tag': 'noindex' };
+}
+
 export function contentType(path) {
     if (path.endsWith('.html')) return 'text/html; charset=utf-8';
     if (path.endsWith('.css')) return 'text/css; charset=utf-8';

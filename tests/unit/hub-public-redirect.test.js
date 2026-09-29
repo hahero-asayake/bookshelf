@@ -72,4 +72,11 @@ describe('serveSite (/public/<siteId>/…) の username 移行対応', () => {
         const body = await res.text();
         expect(body).toContain('このサイトは停止されました');
     });
+
+    it('404 (R2に無い) に X-Robots-Tag: noindex が付く (イシュー#247決裁4)', async () => {
+        const KV = makeKV({});
+        const res = await serveSite(new Request('https://hub.test/public/nothing/'), env(KV, makeBucket()), '/public/nothing/');
+        expect(res.status).toBe(404);
+        expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+    });
 });

@@ -55,7 +55,7 @@
 //   ① Class A 書込暴走 → WRITE_LIMITER で書込系を Bearer キー単位にレート制限 (KV/R2 参照前に弾く)。
 //   ② 公開 Class B 読取テール → /public を Cache API (caches.default) でキャッシュし R2 読取を間引く。
 
-import { serveHeaders, contentType } from './serve-headers.js';
+import { serveHeaders, contentType, noindexHeaders } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
 import { scheduledBackup } from './backup.js';
 import { suspendedResponse } from './suspended-page.js';
@@ -175,7 +175,7 @@ async function serveSite(request, env, pathname, ctx) {
     if (rep && rep.status === 'suspended') return suspendedResponse();
 
     const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
-    if (!obj) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+    if (!obj) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
     const res = new Response(obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
     // 200 のみキャッシュ (404/451 はしない)。waitUntil でレスポンスを遅らせない
     if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cache.put(cacheKey, res.clone()));

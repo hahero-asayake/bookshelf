@@ -9,7 +9,12 @@ function makeKV(initial = {}) {
         store,
         async get(k, type) { const v = store.get(k); if (v == null) return null; return type === 'json' ? JSON.parse(v) : v; },
         async put(k, v) { store.set(k, v); },
-        async delete(k) { store.delete(k); }
+        async delete(k) { store.delete(k); },
+        // sitemap.xml 用 (イシュー#247 決裁4)。prefix一致のみ・limitは無視した単純実装で十分(テスト規模)
+        async list({ prefix, limit } = {}) {
+            const keys = [...store.keys()].filter((k) => !prefix || k.startsWith(prefix)).slice(0, limit || 1000);
+            return { keys: keys.map((name) => ({ name })) };
+        }
     };
 }
 
@@ -19,6 +24,9 @@ function makeBucket(files = {}) {
             const body = files[key];
             if (body == null) return null;
             return { body, httpEtag: '"etag"' };
+        },
+        async head(key) {
+            return files[key] == null ? null : { key };
         }
     };
 }
@@ -97,6 +105,48 @@ describe('bookshelf-cdn Worker', () => {
         expect(body).toContain('このサイトは停止されました');
         expect(body).toContain('mailto:');
         expect(body).toContain('This site has been suspended');
+    });
+
+    it('404 (未登録username) に X-Robots-Tag: noindex が付く (イシュー#247決裁4)', async () => {
+        const KV = makeKV({});
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/nobody/'), env(KV, makeBucket()), ctx);
+        expect(res.status).toBe(404);
+        expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+    });
+
+    it('/robots.txt は User-agent・Allow・Sitemap 行を返す (イシュー#247決裁4)', async () => {
+        const KV = makeKV({});
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/robots.txt'), env(KV, makeBucket()), ctx);
+        expect(res.status).toBe(200);
+        const body = await res.text();
+        expect(body).toContain('User-agent: *');
+        expect(body).toContain('Sitemap: https://bookshelf.asayake.org/sitemap.xml');
+    });
+
+    it('/sitemap.xml は公開中のusernameだけを載せ、非公開・停止・退会・改名元は除外する (イシュー#247決裁4)', async () => {
+        const KV = makeKV({
+            'uname:published-user': { uid: 'u1', siteId: 'site1' },        // 公開中(R2にindex.htmlあり) → 載る
+            'uname:no-articles-user': { uid: 'u2', siteId: 'site2' },       // 非公開(R2に何も無い) → 除外
+            'uname:suspended-user': { uid: 'u3', siteId: 'site3' },
+            'report:site3': { status: 'suspended' },                       // 停止 → 除外
+            'uname:gone-user': { tombstone: true },                        // 退会 → 除外
+            'uname:old-name': { uid: 'u5', siteId: 'site5', movedTo: 'new-name' }, // 改名元 → 除外
+            'uname:new-name': { uid: 'u5', siteId: 'site5' }               // 改名先(公開中) → 載る
+        });
+        const BUCKET = makeBucket({
+            'sites/site1/index.html': 'a',
+            'sites/site3/index.html': 'a', // 停止でも中身はあり得るが report: で除外される
+            'sites/site5/index.html': 'a'
+        });
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KV, BUCKET), ctx);
+        expect(res.status).toBe(200);
+        const body = await res.text();
+        expect(body).toContain('<loc>https://bookshelf.asayake.org/published-user/</loc>');
+        expect(body).toContain('<loc>https://bookshelf.asayake.org/new-name/</loc>');
+        expect(body).not.toContain('no-articles-user');
+        expect(body).not.toContain('suspended-user');
+        expect(body).not.toContain('gone-user');
+        expect(body).not.toContain('old-name/</loc>');
     });
 
     it('".." を含む URL は WHATWG URL 正規化で解決され、意図しないパスに抜けない (username = "secret" として解決を試みるだけ)', async () => {

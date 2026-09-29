@@ -15,9 +15,10 @@
 //
 // 予約語・除外パスは reserved-usernames.js を hub 側 (POST /username) と共有する。
 
-import { serveHeaders, contentType } from './serve-headers.js';
+import { serveHeaders, contentType, noindexHeaders } from './serve-headers.js';
 import { isReservedTopLevel } from './reserved-usernames.js';
 import { suspendedResponse } from './suspended-page.js';
+import { buildRobotsTxt, buildSitemapXml } from './seo.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -27,15 +28,25 @@ export default {
         const url = new URL(request.url);
         const pathname = url.pathname;
 
+        // robots.txt / sitemap.xml (イシュー#247 決裁4)。reserved-usernames.js の EXCLUDED_PATHS に
+        // 含まれるため isReservedTopLevel は true になる = 下の予約語チェックより前で捌く必要がある。
+        if (pathname === '/robots.txt') {
+            return new Response(buildRobotsTxt(url.origin), { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+        }
+        if (pathname === '/sitemap.xml') {
+            const xml = await buildSitemapXml(env, url.origin);
+            return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+        }
+
         const rest = decodeURIComponent(pathname.slice(1)); // 先頭の '/' を落とす
         const slash = rest.indexOf('/');
         const username = slash < 0 ? rest : rest.slice(0, slash);
         let sub = slash < 0 ? '' : rest.slice(slash + 1);
 
-        if (!username) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        if (!username) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         if (isReservedTopLevel(username)) {
             // ①②いずれの予約語も、S6 時点では専用ページを持たない (/top・/about 等は別イシュー・S7 以降)
-            return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+            return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         }
         if (username.split('/').some(s => s === '..') || sub.split('/').some(s => s === '..')) {
             return new Response('bad path', { status: 400 });
@@ -51,9 +62,9 @@ export default {
         }
 
         const rec = await env.KV.get(`uname:${username}`, 'json');
-        if (!rec) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        if (!rec) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         // 退会済みアカウントの墓標 (hub の handleAccountDelete): 名前は他人へ渡さず、301 でも誰にも飛ばさない (#204)
-        if (rec.tombstone) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        if (rec.tombstone) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
 
         // 改名: 旧 username へのアクセスは新 username へ 301 (解放しない・なりすまし防止, 09 §10.3-v2)
         if (rec.movedTo) {
@@ -64,7 +75,7 @@ export default {
         }
 
         const siteId = rec.siteId;
-        if (!siteId) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        if (!siteId) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
 
         const reportRec = await env.KV.get(`report:${siteId}`, 'json');
         if (reportRec && reportRec.status === 'suspended') {
@@ -73,7 +84,7 @@ export default {
 
         if (sub === '' || sub.endsWith('/')) sub += 'index.html';
         const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
-        if (!obj) return new Response('Not found', { status: 404, headers: serveHeaders('text/plain') });
+        if (!obj) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
 
         const res = new Response(obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
         if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cache.put(cacheKey, res.clone()));
