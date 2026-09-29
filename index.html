@@ -1283,29 +1283,32 @@
         </div>
     </div>
 
-    <script src="js/icons.js?v=2026061002"></script>
-    <script src="js/ui-feedback.js?v=2026081802"></script>
-    <script src="js/storage-adapter.js?v=2026090616"></script>
-    <script src="js/local-fs-adapter.js?v=2026090617"></script>
-    <script src="js/github-adapter.js?v=2026092501"></script>
-    <script src="js/github-auth.js?v=2026061201"></script>
-    <script src="js/hub-adapter.js?v=2026092502"></script>
-    <script src="js/sync-config.js?v=2026072904"></script>
-    <script src="js/hub-auth.js?v=2026090501"></script>
-    <script src="js/storage.js?v=2026090620"></script>
-    <script src="js/book-manager.js?v=2026081803"></script>
-    <script src="js/bookshelf-manager.js?v=2026090501"></script>
-    <script src="js/publish-article-store.js?v=2026092903"></script>
-    <script src="js/vendor/marked.umd.js?v=2026081501"></script>
-    <script src="js/publish-ogp-image.js?v=2026092903"></script>
-    <script src="js/publish-article-generator.js?v=2026092905"></script>
-    <script src="js/exporter.js?v=2026092601"></script>
-    <script src="js/plugin-api.js?v=2026092601"></script>
-    <script src="js/plugin-loader.js?v=2026072701"></script>
-    <script src="js/router.js?v=2026061002"></script>
-    <script src="js/dashboard.js?v=2026082401"></script>
-    <script src="js/ui-components.js?v=2026061404"></script>
-    <script src="js/bookshelf.js?v=2026092907"></script>
+    <!-- defer: 全23本ともDOM/documentクエリをトップレベルで行わず(window.X=クラス代入のみ)、
+         起動処理はDOMContentLoadedでガード済み(bookshelf.js末尾)のため実行順序への影響は無い。
+         render-blockingを解消しパース完了を早める(イシュー#247 決裁5 追加施策・#259対応後に実施)。 -->
+    <script defer src="js/icons.js?v=2026061002"></script>
+    <script defer src="js/ui-feedback.js?v=2026081802"></script>
+    <script defer src="js/storage-adapter.js?v=2026090616"></script>
+    <script defer src="js/local-fs-adapter.js?v=2026090617"></script>
+    <script defer src="js/github-adapter.js?v=2026092501"></script>
+    <script defer src="js/github-auth.js?v=2026061201"></script>
+    <script defer src="js/hub-adapter.js?v=2026092502"></script>
+    <script defer src="js/sync-config.js?v=2026072904"></script>
+    <script defer src="js/hub-auth.js?v=2026090501"></script>
+    <script defer src="js/storage.js?v=2026090620"></script>
+    <script defer src="js/book-manager.js?v=2026081803"></script>
+    <script defer src="js/bookshelf-manager.js?v=2026090501"></script>
+    <script defer src="js/publish-article-store.js?v=2026092903"></script>
+    <script defer src="js/vendor/marked.umd.js?v=2026081501"></script>
+    <script defer src="js/publish-ogp-image.js?v=2026092903"></script>
+    <script defer src="js/publish-article-generator.js?v=2026092905"></script>
+    <script defer src="js/exporter.js?v=2026092601"></script>
+    <script defer src="js/plugin-api.js?v=2026092601"></script>
+    <script defer src="js/plugin-loader.js?v=2026072701"></script>
+    <script defer src="js/router.js?v=2026061002"></script>
+    <script defer src="js/dashboard.js?v=2026082401"></script>
+    <script defer src="js/ui-components.js?v=2026061404"></script>
+    <script defer src="js/bookshelf.js?v=2026092907"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
