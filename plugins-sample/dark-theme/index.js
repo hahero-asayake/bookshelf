@@ -14,6 +14,12 @@ body.${BODY_CLASS} {
     --line: #2c313a; --line2: #242831;
     --accent: #4d5fd6; --accent-bg: #232842; --accent-strong: #9aa6ff;
     --danger: #ff6b6b; --warning: #e0a930;
+    /* ホバー背景専用トークン(イシュー#247 決裁1・2 スコープ外指摘の解消)。--accent-strong は
+       --accent-bg上の文字色にも使う明るい値のため、そのまま.btn-primary:hoverの背景に使うと
+       白文字コントラストが2.26まで落ちる(実測)。--danger/--warningもテキスト用に明るく調整した値
+       なので、ライト固定のホバー背景(#fce8e8/#fff7e0)と組み合わせると2.36/1.99まで落ちる(実測)。
+       いずれも4.5以上になるダーク専用の暗い背景色に差し替える。 */
+    --btn-primary-hover-bg: #293b8f; --btn-danger-hover-bg: #33191a; --btn-warning-hover-bg: #332811;
     --shadow: 0 8px 24px rgba(0,0,0,0.5);
     --primary-color: #e6e8ec; --text-color: #e6e8ec; --bg-color: #15171c; --border-color: #2c313a;
     color-scheme: dark;

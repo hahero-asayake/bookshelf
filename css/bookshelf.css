@@ -74,6 +74,13 @@
     --accent-strong: #2a3aff;
     --danger: #c23a3a;
     --warning: #a06800;
+    /* ホバー背景専用トークン (イシュー#247 決裁1・2 ダーク対応)。--accent-strong はテキスト用途
+       (--accent-bg上の文字)にも使うため、ダークでは背景役に転用すると白文字コントラストを割る
+       (実測2.26)。--danger/--warning も同様(ライト固定#fce8e8/#fff7e0のまま実測2.36/1.99)。
+       ライトはここでは従来値のまま(見た目不変)、ダークは dark-theme.js 側で専用値に上書きする。 */
+    --btn-primary-hover-bg: var(--accent-strong);
+    --btn-danger-hover-bg: #fce8e8;
+    --btn-warning-hover-bg: #fff7e0;
     --shadow: 0 8px 24px rgba(0,0,0,0.06);
     --header-h: 48px;
     --book-width: 160px;
@@ -307,8 +314,8 @@ body {
 }
 
 .btn-primary:hover {
-    background-color: var(--accent-strong);
-    border-color: var(--accent-strong);
+    background-color: var(--btn-primary-hover-bg);
+    border-color: var(--btn-primary-hover-bg);
 }
 
 .btn-secondary {
@@ -330,7 +337,7 @@ body {
 }
 
 .btn-warning:hover {
-    background-color: #fff7e0;
+    background-color: var(--btn-warning-hover-bg);
     border-color: var(--warning);
 }
 
@@ -341,7 +348,7 @@ body {
 }
 
 .btn-danger:hover {
-    background-color: #fce8e8;
+    background-color: var(--btn-danger-hover-bg);
     border-color: var(--danger);
 }
 
@@ -1239,9 +1246,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 /* アイコンの既定色は var(--accent)。塗りボタン上では青背景に青で見えないので白に揃える */
 .bd-read .kindle-link .h-icon { color: inherit; margin-right: 0; }
 .bd-actions .btn-warning { color: var(--warning); }
-.bd-actions .btn-warning:hover { background: #fff7e0; border-color: var(--warning); }
+.bd-actions .btn-warning:hover { background: var(--btn-warning-hover-bg); border-color: var(--warning); }
 .bd-actions .btn-danger { color: var(--danger); }
-.bd-actions .btn-danger:hover { background: #fce8e8; border-color: var(--danger); }
+.bd-actions .btn-danger:hover { background: var(--btn-danger-hover-bg); border-color: var(--danger); }
 
 /* メタ詳細編集 (折りたたみ) */
 .bd-meta-edit {
