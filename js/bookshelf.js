@@ -8551,12 +8551,13 @@ class VirtualBookshelf {
         // イシュー#251: 3テンプレ(本A×棚A・本C×棚C・本C×棚D)。表示名は平易な日本語(②承認2026-09-29)
         const LAYOUT_LABELS = { 'book-a-shelf-a': '書影を大きく', 'book-c-shelf-c': '文章に書影を添える', 'book-c-shelf-d': '番号つきで並べる' };
         const LAYOUT_ICONS = { 'book-a-shelf-a': 'layout-grid', 'book-c-shelf-c': 'layout-list', 'book-c-shelf-d': 'list-ordered' };
-        // イシュー#257: 確定12案(金/水色/ライム/ローズ × ダーク/白地/補色地)の平易な和名 (palettes12.mjs・各00_index準拠)。
+        // イシュー#260: 「系統・地」の短い名前に簡素化 (和名は廃止、②承認2026-09-29)。
+        // *-dark→黒地・*-white→白地・*-comp→色地。キー名・値(色)は変えない。
         const COLOR_LABELS = {
-            'gold-dark': '墨と金', 'gold-white': '白と黄土', 'gold-comp': '淡い藤と黄土',
-            'aqua-dark': '藍夜と水色', 'aqua-white': '白と藍', 'aqua-comp': '淡い柿色と藍',
-            'lime-dark': '深緑とライム', 'lime-white': '白と苔色', 'lime-comp': '淡い菫と苔色',
-            'rose-dark': '墨紫とローズ', 'rose-white': '白と蘇芳', 'rose-comp': '淡い若竹色と蘇芳'
+            'gold-dark': '金・黒地', 'gold-white': '金・白地', 'gold-comp': '金・色地',
+            'aqua-dark': '水色・黒地', 'aqua-white': '水色・白地', 'aqua-comp': '水色・色地',
+            'lime-dark': 'ライム・黒地', 'lime-white': 'ライム・白地', 'lime-comp': 'ライム・色地',
+            'rose-dark': 'ローズ・黒地', 'rose-white': 'ローズ・白地', 'rose-comp': 'ローズ・色地'
         };
         const std = kind === 'layout'
             ? ARTICLE_LAYOUTS.map(id => ({ id, label: LAYOUT_LABELS[id] || id, icon: LAYOUT_ICONS[id] || 'layout-template', provider: '標準', selectable: true }))

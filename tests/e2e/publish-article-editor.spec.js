@@ -1571,7 +1571,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(errors).toEqual([]);
     });
 
-    test('見た目ブロック: 新規記事は開いて始まり、既存記事 (ブロック2個以上) を開き直すと畳んで始まり要約「書影を大きく／白と藍」を出す。畳みは保存しない (イシュー#230・表示名は#251・既定配色は#257で白と藍に)', async ({ page }) => {
+    test('見た目ブロック: 新規記事は開いて始まり、既存記事 (ブロック2個以上) を開き直すと畳んで始まり要約「書影を大きく／水色・白地」を出す。畳みは保存しない (イシュー#230・表示名は#251・既定配色は#257で水色・白地に・配色名の簡素化は#260)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
@@ -1591,7 +1591,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         const look = page.locator('.art-look-block');
         await expect(look).toHaveClass(/is-collapsed/);
         await expect(look.locator('.art-look-list')).toHaveCount(0);
-        await expect(look.locator('.art-block-sum')).toHaveText('書影を大きく／白と藍');
+        await expect(look.locator('.art-block-sum')).toHaveText('書影を大きく／水色・白地');
         // 開けば一覧が出る。記事データに畳み状態は入らない
         await look.locator('.art-block-tg').click();
         await expect(page.locator('.art-look-list').first()).toBeVisible();

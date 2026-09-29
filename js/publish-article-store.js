@@ -56,7 +56,7 @@ const ARTICLE_COLORS = [
     'lime-dark', 'lime-white', 'lime-comp',
     'rose-dark', 'rose-white', 'rose-comp'
 ];
-// 既定配色は仮に aqua-white(白と藍)。ここ1か所を変えるだけで既定を差し替えられるようにする
+// 既定配色は仮に aqua-white(水色・白地)。ここ1か所を変えるだけで既定を差し替えられるようにする
 // (②承認2026-09-29: ハヘロ確認待ちの仮既定。変更時はpush前tpでこの1行だけ差し替える想定)。
 const ARTICLE_DEFAULT_COLOR = 'aqua-white';
 const ARTICLE_DEFAULT_THEME = { layout: 'book-a-shelf-a', color: ARTICLE_DEFAULT_COLOR };

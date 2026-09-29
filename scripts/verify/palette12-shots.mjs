@@ -13,10 +13,10 @@ mkdirSync(SHOT_DIR, { recursive: true });
 const BASE = process.env.BOOKSHELF_BASE || 'http://localhost:8000/';
 
 const COLORS = [
-    ['gold-dark', '墨と金'], ['gold-white', '白と黄土'], ['gold-comp', '淡い藤と黄土'],
-    ['aqua-dark', '藍夜と水色'], ['aqua-white', '白と藍'], ['aqua-comp', '淡い柿色と藍'],
-    ['lime-dark', '深緑とライム'], ['lime-white', '白と苔色'], ['lime-comp', '淡い菫と苔色'],
-    ['rose-dark', '墨紫とローズ'], ['rose-white', '白と蘇芳'], ['rose-comp', '淡い若竹色と蘇芳']
+    ['gold-dark', '金・黒地'], ['gold-white', '金・白地'], ['gold-comp', '金・色地'],
+    ['aqua-dark', '水色・黒地'], ['aqua-white', '水色・白地'], ['aqua-comp', '水色・色地'],
+    ['lime-dark', 'ライム・黒地'], ['lime-white', 'ライム・白地'], ['lime-comp', 'ライム・色地'],
+    ['rose-dark', 'ローズ・黒地'], ['rose-white', 'ローズ・白地'], ['rose-comp', 'ローズ・色地']
 ];
 
 function hexToRgb(hex) {
