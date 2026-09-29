@@ -30,12 +30,20 @@ export default {
 
         // robots.txt / sitemap.xml (イシュー#247 決裁4)。reserved-usernames.js の EXCLUDED_PATHS に
         // 含まれるため isReservedTopLevel は true になる = 下の予約語チェックより前で捌く必要がある。
-        if (pathname === '/robots.txt') {
-            return new Response(buildRobotsTxt(url.origin), { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
-        }
-        if (pathname === '/sitemap.xml') {
-            const xml = await buildSitemapXml(env, url.origin);
-            return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+        // sitemap.xml は利用者ごとに KV.list + R2.head を行うため Cache API でキャッシュする
+        // (②差し戻し2026-09-30)。鍵は URL のみ (クエリ/ヘッダ無視)。停止・退会の反映が最大
+        // max-age (1時間) 遅れる点は 09_公開システム設計 に明記する (下記コミットで追記)。
+        if (pathname === '/robots.txt' || pathname === '/sitemap.xml') {
+            const cache = caches.default;
+            const cacheKey = new Request(url.origin + pathname, { method: 'GET' });
+            const cachedSeo = await cache.match(cacheKey);
+            if (cachedSeo) return cachedSeo;
+
+            const res = pathname === '/robots.txt'
+                ? new Response(buildRobotsTxt(url.origin), { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } })
+                : new Response(await buildSitemapXml(env, url.origin), { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+            if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cache.put(cacheKey, res.clone()));
+            return res;
         }
 
         const rest = decodeURIComponent(pathname.slice(1)); // 先頭の '/' を落とす

@@ -31,12 +31,29 @@ function makeBucket(files = {}) {
     };
 }
 
+// 実際に保存/再利用する簡易 Cache API モック(イシュー#247 決裁4追補・キャッシュ経路のテスト用)。
+// 鍵は request.url のみ(クエリ/ヘッダは見ない、本体コードの cacheKey 生成と同じ前提)。
+function makeCacheStore() {
+    const store = new Map();
+    return {
+        default: {
+            async match(req) { return store.get(req.url) || null; },
+            async put(req, res) { store.set(req.url, res); }
+        }
+    };
+}
+
 beforeEach(() => {
     globalThis.caches = { default: { async match() { return null; }, async put() {} } };
 });
 
 const env = (KV, BUCKET) => ({ KV, BUCKET });
 const ctx = { waitUntil() {} };
+// waitUntil に渡された Promise を実際に待つ ctx (キャッシュ書込みの完了を検証するテスト用)
+function makeAwaitingCtx() {
+    const pending = [];
+    return { waitUntil(p) { pending.push(p); }, flush: () => Promise.all(pending) };
+}
 
 describe('bookshelf-cdn Worker', () => {
     it('①予約語 (top) は username 解決を試みず 404', async () => {
@@ -147,6 +164,31 @@ describe('bookshelf-cdn Worker', () => {
         expect(body).not.toContain('suspended-user');
         expect(body).not.toContain('gone-user');
         expect(body).not.toContain('old-name/</loc>');
+    });
+
+    it('/sitemap.xml と /robots.txt はCache APIでキャッシュされ、2回目はKV.list/R2.headを再実行しない (イシュー#247決裁4追補)', async () => {
+        globalThis.caches = makeCacheStore();
+        let listCalls = 0;
+        const KV = makeKV({ 'uname:published-user': { uid: 'u1', siteId: 'site1' } });
+        const realList = KV.list.bind(KV);
+        KV.list = async (...args) => { listCalls++; return realList(...args); };
+        const BUCKET = makeBucket({ 'sites/site1/index.html': 'a' });
+        const awaitingCtx = makeAwaitingCtx();
+
+        const res1 = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KV, BUCKET), awaitingCtx);
+        await awaitingCtx.flush(); // waitUntil(cache.put(...)) の完了を待つ
+        expect(res1.status).toBe(200);
+        expect(listCalls).toBe(1);
+
+        const res2 = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KV, BUCKET), awaitingCtx);
+        expect(res2.status).toBe(200);
+        expect(await res2.text()).toBe(await res1.clone().text());
+        expect(listCalls).toBe(1); // 2回目はキャッシュヒットでKV.listを呼ばない
+
+        const robots1 = await worker.fetch(new Request('https://bookshelf.asayake.org/robots.txt'), env(KV, BUCKET), awaitingCtx);
+        await awaitingCtx.flush();
+        const robots2 = await worker.fetch(new Request('https://bookshelf.asayake.org/robots.txt'), env(KV, BUCKET), awaitingCtx);
+        expect(await robots2.text()).toBe(await robots1.clone().text());
     });
 
     it('".." を含む URL は WHATWG URL 正規化で解決され、意図しないパスに抜けない (username = "secret" として解決を試みるだけ)', async () => {
