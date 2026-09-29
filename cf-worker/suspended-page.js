@@ -12,6 +12,10 @@ export function suspendedResponse() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>このサイトは停止されました</title>
+<style>
+  body { margin: 0; padding: 1.5rem; max-width: 32rem; font-size: 16px; line-height: 1.7; font-family: system-ui, -apple-system, sans-serif; }
+  p { margin: 0 0 1rem; }
+</style>
 </head>
 <body>
 <p>このサイトは停止されました。心当たりが無い場合や、解除を申し出たい場合は、運営者のメールアドレス（<a href="mailto:${OPERATOR_EMAIL}">${OPERATOR_EMAIL}</a>）へご連絡ください。</p>
