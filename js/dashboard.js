@@ -218,6 +218,10 @@ class BookshelfDashboard {
 
         // ===== welcome: 既存ノードがあれば step1 の状態だけ更新、無ければ作る。出さないなら消す =====
         const showWelcome = !this.editMode && (this.app.books || []).length === 0 && !this._welcomeDismissed();
+        // index.html の inline script が「蔵書ありの可能性が高い」と仮判定して
+        // html.bs-likely-has-data で welcome を隠している場合がある。実データで
+        // showWelcome=true と分かった時点でここを外す (フラッシュ防止・イシュー#265)。
+        if (showWelcome) document.documentElement.classList.remove('bs-likely-has-data');
         let welcomeEl = document.getElementById('dashboard-welcome');
         if (showWelcome) {
             if (welcomeEl) {

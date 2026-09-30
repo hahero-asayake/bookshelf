@@ -1842,6 +1842,13 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     gap: 1rem;
 }
 
+/* 蔵書ありの可能性が高い端末では、最初の描画前(index.htmlのinline script)で隠す。
+   showWelcome=trueと判明した時点でdashboard.js render()がhtml側のクラスを外す
+   (フラッシュ防止・イシュー#265)。 */
+html.bs-likely-has-data #dashboard-welcome {
+    display: none;
+}
+
 /* 初回オンボーディング (蔵書0のときだけ) */
 .dashboard-welcome {
     position: relative;

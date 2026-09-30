@@ -27,7 +27,21 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026093004">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026093005">
+    <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
+         (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
+         (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
+         BookshelfDashboard.render() が showWelcome=true と判定した時点で
+         html.bs-likely-has-data を外して表示する(js/dashboard.js render() 参照)。
+         inline script は「隠す」方向にしか倒さないので、誤判定があってもwelcomeが
+         出るべき場面で消えたままになることはない。 -->
+    <script>
+        try {
+            if (localStorage.getItem('virtualBookshelf_userData')) {
+                document.documentElement.classList.add('bs-likely-has-data');
+            }
+        } catch (_) {}
+    </script>
 
     <!-- EasyMDE (アプリ内 Markdown エディタ) は起動時に読み込まない。106KB(css+js)が
          初回表示に不要なため、長文メモのアプリ内エディタを開く時だけ動的読み込みする
@@ -1340,7 +1354,7 @@
     <script defer src="js/plugin-api.js?v=2026092601"></script>
     <script defer src="js/plugin-loader.js?v=2026072701"></script>
     <script defer src="js/router.js?v=2026061002"></script>
-    <script defer src="js/dashboard.js?v=2026093001"></script>
+    <script defer src="js/dashboard.js?v=2026093002"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
     <script defer src="js/bookshelf.js?v=2026093002"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
