@@ -257,6 +257,7 @@ async function handleSession(request, env) {
         interval: planRec.interval, currentPeriodEnd: planRec.currentPeriodEnd,
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd, subStatus: planRec.subStatus,
         billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
+        planSource: planSourceOf(planRec),             // comp/stale の区別 (イシュー#248)
         isAdmin: isAdminEmail(rec.email || email, env),
         apiBase: `https://${env.HUB_DOMAIN}`,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`,
@@ -335,11 +336,26 @@ async function getPlan(env, uid) {
     const p = await env.KV.get(`plan:${uid}`, 'json');
     if (p) return { plan: p.plan || 'free', quotaBytes: p.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
                     stripeCustomerId: p.stripeCustomerId, stripeSubscriptionId: p.stripeSubscriptionId,
-                    interval: p.interval, currentPeriodEnd: p.currentPeriodEnd, cancelAtPeriodEnd: !!p.cancelAtPeriodEnd, subStatus: p.subStatus };
+                    interval: p.interval, currentPeriodEnd: p.currentPeriodEnd, cancelAtPeriodEnd: !!p.cancelAtPeriodEnd, subStatus: p.subStatus,
+                    adminGrant: !!p.adminGrant };
     const rec = await env.KV.get(`uid:${uid}`, 'json');
     if (!rec) return { plan: 'free', quotaBytes: Number(env.QUOTA_BYTES) || DEFAULT_QUOTA };
     return { plan: rec.plan || 'free', quotaBytes: rec.quotaBytes || (Number(env.QUOTA_BYTES) || DEFAULT_QUOTA),
              stripeCustomerId: rec.stripeCustomerId, stripeSubscriptionId: rec.stripeSubscriptionId };
+}
+
+// Plus の出どころを区別する (イシュー#248): comp (管理者付与) と stale (Stripe リンク残骸) は
+// どちらも stripeCustomerId 無し=billingManaged=false で返るため、フロントは billingManaged だけでは
+// 区別できない。plan:<uid> の adminGrant/stripeCustomerId で判定する。
+//   null    : plan!=='plus' (Free。出どころの概念が無い)
+//   'stripe': stripeCustomerId あり (Portal を開ける通常の課金 Plus。adminGrant も立っていればこちらを優先, ADR-039)
+//   'comp'  : stripeCustomerId 無し・adminGrant あり (管理者付与, ADR-038)
+//   'stale' : どちらも無し (clearStaleStripe が customer/subscription だけ消して plan=plus が残った残骸, ADR-039)
+function planSourceOf(planRec) {
+    if (!planRec || planRec.plan !== 'plus') return null;
+    if (planRec.stripeCustomerId) return 'stripe';
+    if (planRec.adminGrant) return 'comp';
+    return 'stale';
 }
 
 // 使用量バイト数を返す (旧形式=uid レコードに usedBytes を持つ場合は遅延フォールバック)。
@@ -365,6 +381,7 @@ async function handleUsage(request, env) {
         cancelAtPeriodEnd: planRec.cancelAtPeriodEnd,
         subStatus: planRec.subStatus,
         billingManaged: !!planRec.stripeCustomerId,    // Stripe 顧客がある=Portal を開ける (ADR-039)
+        planSource: planSourceOf(planRec),             // comp/stale の区別 (イシュー#248)
         isAdmin: isAdminEmail(rec.email, env),
         siteId: rec.siteId,
         publicBase: `https://${env.HUB_DOMAIN}/public/${rec.siteId}/`,

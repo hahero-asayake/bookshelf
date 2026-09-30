@@ -7,6 +7,9 @@
 //    getComputedStyle().display を実測して検証する (attribute だけ見るテストだと今回のバグを検出できない)。
 //  - あわせて、B案 (グローバル !important) の副作用調査で見つかった hub-goto-account
 //    (`style.display` による個別回避を `el.hidden` へ書き換えた箇所) の回帰も確認する。
+//  - comp と stale はどちらも billingManaged=false で返るため、hub.planSource (イシュー#248・
+//    ADR-038/039) で文言を出し分ける。旧 hub (planSource 未指定) は今まで通り comp 側の文言を保つ
+//    (s6-plus-stale-link・#231 で見つかった既知制約への対処)。
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -49,40 +52,64 @@ function getDisplay(page, id) {
 }
 
 test.describe('アカウント画面: プラン変更・支払い・解約ボタンの表示 (イシュー#227/#231)', () => {
-    test('Free では非表示・comp説明もpast_due警告も出ない', async ({ page }) => {
+    test('Free では非表示・comp説明もstale説明もpast_due警告も出ない', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'free' });
         await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
+        expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
         expect(await getDisplay(page, 'account-past-due-notice')).toBe('none');
         expect(errors).toEqual([]);
     });
 
-    test('comp (管理者付与 Plus, billingManaged=false) では非表示・代わりに説明行が見える', async ({ page }) => {
-        const errors = await bootApp(page, { plan: 'plus', billingManaged: false });
+    test('comp (管理者付与 Plus, planSource:comp) では非表示・代わりに説明行が見える', async ({ page }) => {
+        const errors = await bootApp(page, { plan: 'plus', billingManaged: false, planSource: 'comp' });
         await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).not.toBe('none');
         await expect(page.locator('#account-comp-notice')).toContainText('管理者付与');
+        expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
         expect(await getDisplay(page, 'account-past-due-notice')).toBe('none');
         expect(errors).toEqual([]);
     });
 
+    test('stale (Stripe リンク残骸, planSource:stale・s6-plus-stale-link) では管理ボタンとcomp説明が隠れ、stale説明が見える', async ({ page }) => {
+        const errors = await bootApp(page, { plan: 'plus', billingManaged: false, planSource: 'stale', interval: 'month', subStatus: 'active' });
+        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
+        expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
+        expect(await getDisplay(page, 'account-stale-notice')).not.toBe('none');
+        await expect(page.locator('#account-stale-notice')).toContainText('お支払い情報との連携が確認できない');
+        expect(await getDisplay(page, 'account-past-due-notice')).toBe('none');
+        expect(errors).toEqual([]);
+    });
+
+    test('旧 hub (planSource 未指定, billingManaged=false) では今まで通り comp 説明を表示する (回帰防止)', async ({ page }) => {
+        const errors = await bootApp(page, { plan: 'plus', billingManaged: false });
+        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
+        expect(await getDisplay(page, 'account-comp-notice')).not.toBe('none');
+        expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
+        expect(errors).toEqual([]);
+    });
+
     test('active (Stripe サブスクあり, billingManaged=true) では表示される', async ({ page }) => {
-        const errors = await bootApp(page, { plan: 'plus', billingManaged: true, subStatus: 'active' });
+        const errors = await bootApp(page, { plan: 'plus', billingManaged: true, planSource: 'stripe', subStatus: 'active' });
         await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
         expect(await getDisplay(page, 'account-manage-billing')).not.toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
+        expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
         expect(await getDisplay(page, 'account-past-due-notice')).toBe('none');
         expect(errors).toEqual([]);
     });
 
     test('past_due (支払い遅延) ではボタンは表示のまま警告も出る', async ({ page }) => {
-        const errors = await bootApp(page, { plan: 'plus', billingManaged: true, subStatus: 'past_due' });
+        const errors = await bootApp(page, { plan: 'plus', billingManaged: true, planSource: 'stripe', subStatus: 'past_due' });
         await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
         expect(await getDisplay(page, 'account-manage-billing')).not.toBe('none');
         expect(await getDisplay(page, 'account-past-due-notice')).not.toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
+        expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
         expect(errors).toEqual([]);
     });
 });

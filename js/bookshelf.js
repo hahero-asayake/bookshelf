@@ -3877,10 +3877,15 @@ class VirtualBookshelf {
         // 管理者付与の Plus (comp) や未払いは Stripe 顧客が無く Portal を開けないので出さない (ADR-039)。
         if (manage) manage.hidden = !(plus && hub.billingManaged);
         // comp (管理者付与 Plus, billingManaged=false) 向けの案内 (イシュー#231)。
-        // billingManaged は stripeCustomerId の有無 (ADR-039) で、comp とそれ以外の Plus を
-        // 区別できる唯一のフィールド (/usage は adminGrant を返さない)。
+        // billingManaged だけでは comp と stale (Stripe リンク残骸) を区別できないため、
+        // hub.planSource (イシュー#248・ADR-038/039) で振り分ける。旧 hub は planSource が
+        // 無く null で返るため、その間は従来どおり comp 側を表示する (フロント先行でもデグレしない)。
         const compNotice = document.getElementById('account-comp-notice');
-        if (compNotice) compNotice.hidden = !(plus && !hub.billingManaged);
+        if (compNotice) compNotice.hidden = !(plus && !hub.billingManaged && hub.planSource !== 'stale');
+        // stale (Stripe のリンクが掃除された残骸で plan だけ plus が残った状態) 向けの案内 (イシュー#248)。
+        // billingManaged=false のうち、comp (planSource:'comp') でない方をここで拾う。
+        const staleNotice = document.getElementById('account-stale-notice');
+        if (staleNotice) staleNotice.hidden = !(plus && !hub.billingManaged && hub.planSource === 'stale');
         // 支払い遅延警告 (任意項目・イシュー#231)。hub.subStatus は Stripe のサブスク status を
         // そのまま転写したもの (applyStripeEvent) なので 'past_due' 判定に使える。
         const pastDueNotice = document.getElementById('account-past-due-notice');

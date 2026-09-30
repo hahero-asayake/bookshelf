@@ -4,7 +4,7 @@
 //  - レコードは 3 キーに分離 (uid:=identity / plan:=課金 / usage:=使用量) され、頻繁な書込 (addUsage) と
 //    課金書込 (setPlan) がキーを共有せず互いをクロバーしない。setPlan/applyStripeEvent はその plan: を書く。
 //  - Checkout/Portal の作成 (Stripe REST 呼び出し) は実口座が要るため対象外 (デプロイ後に実機検証)。
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import worker from '../../cf-worker/asayake-hub.js';
 import { applyStripeEvent, setPlan, verifyStripeSignature, getPlan, getUsed, handleCheckout, handleAdminSetPlan, isAdminEmail } from '../../cf-worker/asayake-hub.js';
 
@@ -699,4 +699,95 @@ describe('Webhook 経路: worker.fetch の POST /billing/webhook (#227)', () => 
     //    (`t=…,v1=<正>,v1=<旧>` は 400・`v1=<旧>,v1=<正>` は 200)。
     it.todo('deleted の後に遅れて届いた古い updated(active) で Plus に戻らない (順序逆転ガード)');
     it.todo('Stripe-Signature に v1 が複数あっても、いずれかが正しければ検証を通す (secret ローテーション併記)');
+});
+
+// ===== Plus の出どころ (planSource): comp/stale の区別 (イシュー#248) =====
+// billingManaged (=!!stripeCustomerId) だけでは comp (管理者付与, ADR-038) と stale (Stripe リンク残骸,
+// clearStaleStripe が customer/subscription だけ消して plan=plus を残した状態, ADR-039) を区別できない。
+// plan:<uid> の adminGrant/stripeCustomerId から 4 状態を判定する (getPlan → planSourceOf)。
+// worker.fetch 経由で /session (Google ID トークン検証あり) と /usage (Bearer キーのみ) の両方の応答を通す。
+describe('Plus の出どころ (planSource): comp/stale の区別 (イシュー#248)', () => {
+    const psEnv = (KV, extra = {}) => ({ KV, HUB_DOMAIN: 'hub.test', PLUS_QUOTA_BYTES: String(PLUS_QUOTA), QUOTA_BYTES: String(FREE_QUOTA), ...extra });
+
+    describe('/usage', () => {
+        const usageReq = (key = 'hk_ab1') => new Request('https://hub.test/usage', { method: 'GET', headers: { Authorization: `Bearer ${key}` } });
+        const cases = [
+            ['free プランは null', { plan: 'free', quotaBytes: FREE_QUOTA }, null],
+            ['Stripe 課金中の Plus は stripe', { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1' }, 'stripe'],
+            ['管理者付与 (adminGrant, stripeCustomerId 無し) は comp', { plan: 'plus', quotaBytes: PLUS_QUOTA, adminGrant: true }, 'comp'],
+            ['stripeCustomerId も adminGrant も無い Plus は stale (Stripe リンク残骸・s6-plus-stale-link)', { plan: 'plus', quotaBytes: PLUS_QUOTA, interval: 'month', subStatus: 'active' }, 'stale'],
+            ['adminGrant と stripeCustomerId が両方あれば stripe を優先 (Portal を開けるので管理は Stripe 側)', { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_2', adminGrant: true }, 'stripe'],
+        ];
+
+        it.each(cases)('%s', async (_label, planRecord, expected) => {
+            const KV = makeKV({ 'uid:u1': { siteId: 's1', status: 'ok' }, 'key:hk_ab1': { uid: 'u1' }, 'plan:u1': planRecord });
+            const res = await worker.fetch(usageReq(), psEnv(KV), { waitUntil() {} });
+            expect(res.status).toBe(200);
+            const out = await res.json();
+            expect(out.planSource).toBe(expected);
+            expect(out.billingManaged).toBe(!!planRecord.stripeCustomerId);   // 既存フィールドは不変
+        });
+    });
+
+    // /session は Google ID トークン検証を通るため、実署名した JWT で叩く (hub-account-delete.test.js と同じ手法)。
+    describe('/session', () => {
+        const CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+        const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
+        const KID = 'ps-kid';
+        const b64u = (buf) => Buffer.from(buf).toString('base64url');
+        let privateKey, publicJwk, realFetch;
+
+        beforeAll(async () => {
+            const kp = await crypto.subtle.generateKey(
+                { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+                true, ['sign', 'verify']);
+            privateKey = kp.privateKey;
+            publicJwk = { ...(await crypto.subtle.exportKey('jwk', kp.publicKey)), kid: KID, alg: 'RS256', use: 'sig' };
+        });
+
+        afterEach(() => { if (realFetch) globalThis.fetch = realFetch; });
+
+        async function mintIdToken(sub, email) {
+            const h = b64u(JSON.stringify({ alg: 'RS256', kid: KID }));
+            const p = b64u(JSON.stringify({ sub, email, iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(Date.now() / 1000) + 3600 }));
+            const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${h}.${p}`));
+            return `${h}.${p}.${b64u(new Uint8Array(sig))}`;
+        }
+
+        function stubGoogleCerts() {
+            realFetch = globalThis.fetch;
+            globalThis.fetch = vi.fn(async (input) => {
+                if (String(input) === GOOGLE_CERTS) return new Response(JSON.stringify({ keys: [publicJwk] }), { status: 200 });
+                throw new Error(`unexpected fetch: ${input}`);
+            });
+        }
+
+        it('既存ユーザーの再ログインでも stale の Plus は planSource: stale で返る (s6-plus-stale-link)', async () => {
+            stubGoogleCerts();
+            const KV = makeKV({
+                'uid:g-sub-9': { siteId: 's9', email: 'stale@example.com', status: 'ok' },
+                'plan:g-sub-9': { plan: 'plus', quotaBytes: PLUS_QUOTA, interval: 'month', subStatus: 'active' }   // stripeCustomerId も adminGrant も無い
+            });
+            const idToken = await mintIdToken('g-sub-9', 'stale@example.com');
+            const res = await worker.fetch(new Request('https://hub.test/session', { method: 'POST', body: JSON.stringify({ idToken }) }), psEnv(KV, { GOOGLE_CLIENT_ID: CLIENT_ID }), { waitUntil() {} });
+            expect(res.status).toBe(200);
+            const out = await res.json();
+            expect(out.planSource).toBe('stale');
+            expect(out.billingManaged).toBe(false);
+        });
+
+        it('comp (管理者付与) の再ログインは回帰なく planSource: comp のまま', async () => {
+            stubGoogleCerts();
+            const KV = makeKV({
+                'uid:g-sub-8': { siteId: 's8', email: 'comp@example.com', status: 'ok' },
+                'plan:g-sub-8': { plan: 'plus', quotaBytes: PLUS_QUOTA, adminGrant: true }
+            });
+            const idToken = await mintIdToken('g-sub-8', 'comp@example.com');
+            const res = await worker.fetch(new Request('https://hub.test/session', { method: 'POST', body: JSON.stringify({ idToken }) }), psEnv(KV, { GOOGLE_CLIENT_ID: CLIENT_ID }), { waitUntil() {} });
+            expect(res.status).toBe(200);
+            const out = await res.json();
+            expect(out.planSource).toBe('comp');
+            expect(out.billingManaged).toBe(false);
+        });
+    });
 });

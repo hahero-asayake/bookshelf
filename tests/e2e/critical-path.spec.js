@@ -26,7 +26,8 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         const url = route.request().url();
         const method = route.request().method();
         if (url.includes('/usage')) {
-            return route.fulfill({ json: { plan: hubState.plan, usedBytes: 10 * MB, quotaBytes: (hubState.plan === 'plus' ? 3072 : 100) * MB, billingManaged: hubState.plan === 'plus' } });
+            // 決済完了 (Webhook相当) で billingManaged=true の通常課金 Plus になる想定 → planSource は 'stripe' (イシュー#248)
+            return route.fulfill({ json: { plan: hubState.plan, usedBytes: 10 * MB, quotaBytes: (hubState.plan === 'plus' ? 3072 : 100) * MB, billingManaged: hubState.plan === 'plus', planSource: hubState.plan === 'plus' ? 'stripe' : null } });
         }
         if (url.includes('/billing/checkout')) {
             hubState.plan = 'plus';   // 決済完了扱い (Webhook 相当)

@@ -115,6 +115,8 @@ class HubAuth {
             cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
             subStatus: data.subStatus || null,
             billingManaged: !!data.billingManaged,
+            // comp/stale の区別 (イシュー#248)。旧 hub は未定義のまま返るため既定 null (今の comp 表示を保つ)
+            planSource: data.planSource || null,
             isAdmin: !!data.isAdmin,
             publicBase: data.publicBase || '',
             // S6 (ADR-076): 未設定 (=旧siteIdのまま) なら null。公開ボタン押下時の未設定ガードに使う
@@ -149,6 +151,8 @@ class HubAuth {
             cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
             subStatus: data.subStatus || null,
             billingManaged: !!data.billingManaged,
+            // comp/stale の区別 (イシュー#248)。旧 hub は未定義のまま返るため既定 null (今の comp 表示を保つ)
+            planSource: data.planSource || null,
             isAdmin: !!data.isAdmin,
             siteId: data.siteId || (cfg.hub || {}).siteId || '',
             publicBase: data.publicBase || (cfg.hub || {}).publicBase || '',
@@ -191,7 +195,7 @@ class HubAuth {
         cfg.hub = {
             apiBase: '', key: '', uid: '', siteId: '', email: null,
             plan: 'free', quotaBytes: 0, usedBytes: 0,
-            interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, billingManaged: false, isAdmin: false,
+            interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, subStatus: null, billingManaged: false, planSource: null, isAdmin: false,
             publicBase: '', username: null, bookshelfBase: null
         };
         SyncConfigManager.save(cfg);
