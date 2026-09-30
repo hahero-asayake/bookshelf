@@ -197,25 +197,51 @@ class BookshelfDashboard {
         const layout = this.getLayout();
 
         const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-        const toolbarHtml = `
-            <div class="dashboard-toolbar">
-                <h2 class="dashboard-title">${ico('layout-dashboard', 18)}ホーム</h2>
-                <div class="dashboard-toolbar-actions">
-                    ${this.editMode
-                        ? `<button class="btn btn-secondary btn-small" id="dashboard-add-widget" type="button">${ico('plus')}ウィジェット追加</button>
-                           <button class="btn btn-primary btn-small" id="dashboard-edit-done" type="button">${ico('check')}完了</button>`
-                        : `<button class="btn btn-secondary btn-small" id="dashboard-edit-toggle" type="button">${ico('pencil')}レイアウト編集</button>`}
-                </div>
-            </div>
-        `;
 
-        const gridHtml = `<div class="dashboard-grid${this.editMode ? ' is-edit-mode' : ''}" id="dashboard-grid"></div>`;
-        // 蔵書 0 かつ未消去のときだけ初回オンボーディングを出す
+        // ===== toolbar: 既存ノードがあればアクションボタンだけ差し替え、無ければ作る =====
+        // (イシュー#265: index.html 側に「蔵書0・同期未設定」前提の静的初期HTMLを置いてあるため、
+        //  初回描画では要素を作り直さず再利用する＝LCP要素が消えて再生成されるのを避ける)
+        const actionsHtml = this.editMode
+            ? `<button class="btn btn-secondary btn-small" id="dashboard-add-widget" type="button">${ico('plus')}ウィジェット追加</button>
+               <button class="btn btn-primary btn-small" id="dashboard-edit-done" type="button">${ico('check')}完了</button>`
+            : `<button class="btn btn-secondary btn-small" id="dashboard-edit-toggle" type="button">${ico('pencil')}レイアウト編集</button>`;
+        let toolbar = host.querySelector('.dashboard-toolbar');
+        if (toolbar) {
+            const actions = toolbar.querySelector('.dashboard-toolbar-actions');
+            if (actions) actions.innerHTML = actionsHtml;
+        } else {
+            toolbar = document.createElement('div');
+            toolbar.className = 'dashboard-toolbar';
+            toolbar.innerHTML = `<h2 class="dashboard-title">${ico('layout-dashboard', 18)}ホーム</h2><div class="dashboard-toolbar-actions">${actionsHtml}</div>`;
+            host.insertBefore(toolbar, host.firstChild);
+        }
+
+        // ===== welcome: 既存ノードがあれば step1 の状態だけ更新、無ければ作る。出さないなら消す =====
         const showWelcome = !this.editMode && (this.app.books || []).length === 0 && !this._welcomeDismissed();
-        host.innerHTML = toolbarHtml + (showWelcome ? this._welcomeHtml() : '') + gridHtml;
-        if (showWelcome) this._bindWelcome();
+        let welcomeEl = document.getElementById('dashboard-welcome');
+        if (showWelcome) {
+            if (welcomeEl) {
+                this._updateWelcomeStep1(welcomeEl);
+            } else {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = this._welcomeHtml();
+                welcomeEl = tmp.firstElementChild;
+                toolbar.after(welcomeEl);
+                this._bindWelcome();
+            }
+        } else if (welcomeEl) {
+            welcomeEl.remove();
+        }
 
-        const grid = document.getElementById('dashboard-grid');
+        // ===== grid: 既存ノードがあれば中身だけ作り直す (データ依存なので毎回再構築) =====
+        let grid = document.getElementById('dashboard-grid');
+        if (!grid) {
+            grid = document.createElement('div');
+            grid.id = 'dashboard-grid';
+            host.appendChild(grid);
+        }
+        grid.className = `dashboard-grid${this.editMode ? ' is-edit-mode' : ''}`;
+        grid.innerHTML = '';
         for (let i = 0; i < layout.length; i++) {
             const w = layout[i];
             const entry = this._registry[w.id];
@@ -274,21 +300,38 @@ class BookshelfDashboard {
         try { return sessionStorage.getItem('bookshelf_welcome_dismissed') === '1'; } catch (_) { return false; }
     }
 
-    _welcomeHtml() {
-        const ico = (n, s = 16) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-        // step1 の「設定済み」は実際に使える状態のときだけ:
-        // 一度も保存していなければ未設定。保存済みでも hub は認証キー・github はトークン・
-        // local はフォルダハンドル復元まで揃って初めて done (method だけ見ると嘘になる)。
-        let syncDone = false;
+    // step1 の「設定済み」は実際に使える状態のときだけ:
+    // 一度も保存していなければ未設定。保存済みでも hub は認証キー・github はトークン・
+    // local はフォルダハンドル復元まで揃って初めて done (method だけ見ると嘘になる)。
+    _computeSyncDone() {
         try {
             const SCM = window.SyncConfigManager;
             if (SCM && SCM.isConfigured()) {
                 const cfg = SCM.load();
-                if (cfg.method === 'hub') syncDone = !!(cfg.hub && cfg.hub.key);
-                else if (cfg.method === 'github') syncDone = !!(cfg.github && cfg.github.token);
-                else if (cfg.method === 'local') syncDone = !!(this.app && this.app.obsidianDirHandle);
+                if (cfg.method === 'hub') return !!(cfg.hub && cfg.hub.key);
+                if (cfg.method === 'github') return !!(cfg.github && cfg.github.token);
+                if (cfg.method === 'local') return !!(this.app && this.app.obsidianDirHandle);
             }
         } catch (_) {}
+        return false;
+    }
+
+    // 静的初期HTML(index.html)・再利用中の既存welcomeノードに対し、step1のdone状態と
+    // ボタン文言だけを差し替える (要素自体は残す＝イシュー#265)。
+    _updateWelcomeStep1(welcomeEl) {
+        const syncDone = this._computeSyncDone();
+        const step1 = welcomeEl.querySelector('.dw-steps > .dw-step:nth-child(1)');
+        if (!step1) return;
+        step1.classList.toggle('is-done', syncDone);
+        const num = step1.querySelector('.dw-num');
+        if (num) num.innerHTML = syncDone ? window.renderIcon('check', { size: 14 }) : '1';
+        const btn = step1.querySelector('button[data-dw="sync"]');
+        if (btn) btn.textContent = syncDone ? '設定済み' : '保存先を選ぶ';
+    }
+
+    _welcomeHtml() {
+        const ico = (n, s = 16) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        const syncDone = this._computeSyncDone();
         const step = (n, done, title, desc, label, primary, act, disabled = false) =>
             `<li class="dw-step${done ? ' is-done' : ''}">
                 <span class="dw-num">${done ? window.renderIcon('check', { size: 14 }) : n}</span>
