@@ -93,6 +93,7 @@
     - 再発事例: `.modal-close{top:10px}` を `20px` に直して × とタイトルの縦中心を揃えたが、`@media`内に全画面シート用の `.modal-content > .modal-close{top:calc(10px + env(safe-area-inset-top))}` という重複ルールがあり、モバイル幅ではそちらが優先されて反映されていなかった（2026-09-26 #225 P2、2026-09-29 #232 step2 で両方揃えて解消）。
 24. **タップ領域は最低44px四方を目安にする**（WCAG 2.5.8 AA相当）。密なツリー/サイドバー等で見た目のアイコンサイズを大きくできない場合は、見た目は変えずに `position:relative` の要素へ `::after{position:absolute; width/height; transform:translate(-50%,-50%)}` で透明なヒットエリアだけ拡張する（クリックは同じ要素が受ける・視覚的な密度は変わらない）。テキストボタン等サイズを変えても違和感が無い要素は素直に `min-height:44px` にする。
     - 再発事例: `.sidebar-add-btn`(18×18)・`.tree-toggle`/`.tree-more`(18〜20px四方)・`.status-row .status-btn`(高さ21px)がいずれもタップしづらいサイズだった（2026-09-26 #225 P7・#223 A8、2026-09-29 #232 step2で対処）。`.tree-toggle`/`.tree-more`は行間隔が密なため44pxではなく36pxに抑えた暫定値＝隣接ノードとのタップ被りが無いかは実機/E2Eでの追加確認が要る。
+    - 再発事例2 (#232の残り4か所、イシュー#258): `.mobile-setup-banner-close`・`.bd-edit-toggle`は正方形ボタンなので中央44px四方の`::after`をそのまま適用。`.bd-actions .amazon-link`は横長リンクで見た目の幅が既に44px超なので幅は`100%`のまま高さだけ44pxにし、`inset:50% auto auto 0; transform:translateY(-50%)`で左端基準に配置（右にflexで隣接する除外ボタンとのgapを侵さない）。公開ページフッタ (`footer.pub-footer`) は `p{margin:.3rem}` の margin collapse で実質の行間隔が4.8pxしか無く、44pxの`::after`を単純に中央配置すると隣接行のリンクと重なる＝行ごとに上下の実余白を計算し、`pub-legal`（利用規約等、フッタ最終行で下方向に余裕がある）は非対称配置(`top:-2.4px; height:44px`)で44px達成、`pub-powered`（Powered by、上下とも隣接行があるため対称にしか広げられない）は22.8px止まり（44px未達）。
 
 ## §3 文言規約
 

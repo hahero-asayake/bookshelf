@@ -169,7 +169,13 @@ a{color:var(--acc)}
 .pub-ad-tag{font-size:10px;font-weight:600;letter-spacing:.06em;border:1px solid var(--line);border-radius:4px;padding:.05em .45em;flex:none}
 footer.pub-footer{max-width:760px;margin:0 auto;padding:18px 24px 30px;font-size:10px;color:var(--sub);line-height:1.8;border-top:1px solid var(--line)}
 footer.pub-footer p{margin:.3rem 0}
-footer.pub-footer a{color:var(--sub)}
+footer.pub-footer a{color:var(--sub);position:relative}
+/* ::after でタップ領域を拡張 (見た目は変えない)。p{margin:.3rem}の行間はmargin collapseで
+   実質4.8pxしか無いため、隣接行のリンクと重ならない範囲に制限する(#225 P7残り・イシュー#258・
+   ui-standards §2-24)。pub-legalは最終行で下方向に余裕があるため非対称に広げて44px達成、
+   pub-poweredは上下とも隣接行がありgap4.8pxしか無いため対称22.8px止まり(44px未達=理由込みでstep3報告)。 */
+footer.pub-footer .pub-powered a::after{content:"";position:absolute;left:0;top:-2.4px;width:100%;height:22.8px}
+footer.pub-footer .pub-legal a::after{content:"";position:absolute;left:0;top:-2.4px;width:100%;height:44px}
 `;
 
 // ===== レイアウト CSS (3テンプレのみ・色を知らない・var() だけ参照。.bk は grid-template-areas/subgrid で

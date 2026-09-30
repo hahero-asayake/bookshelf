@@ -47,13 +47,23 @@
 .mobile-setup-banner-actions button:hover {
     background: #d88800;
 }
+/* ::after でタップ領域だけ44pxに拡張 (見た目は変えない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
 .mobile-setup-banner-close {
+    position: relative;
     background: transparent;
     border: none;
     font-size: 1.4rem;
     cursor: pointer;
     color: #5a4400;
     padding: 0 0.3rem;
+}
+.mobile-setup-banner-close::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
 }
 
 /* 旧 ?u= 公開閲覧モード (.public-mode) は廃止。公開は静的 SSG (ADR-030) に移行。 */
@@ -939,7 +949,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     justify-content: flex-end;
     margin-bottom: 0.5rem;
 }
+/* ::after でタップ領域だけ44pxに拡張 (見た目は変えない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
 .bd-edit-toggle {
+    position: relative;
     width: 28px;
     height: 28px;
     padding: 0;
@@ -951,6 +963,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
+}
+.bd-edit-toggle::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
 }
 .bd-edit-toggle:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .bd-edit-toggle.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -1221,6 +1241,17 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 .bd-actions .amazon-link:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 .bd-actions .btn:hover { background: var(--line2); color: var(--fg); }
+/* ::after でタップ領域の高さだけ44pxに拡張 (見た目は変えない・横長リンクのため幅は要素自身と同じにし
+   隣接する除外ボタンとのgapを侵さない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
+.bd-actions .amazon-link { position: relative; }
+.bd-actions .amazon-link::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 0;
+    width: 100%;
+    height: 44px;
+    transform: translateY(-50%);
+}
 
 /* タイトル直下の「Kindleで読む」= 読書の主 CTA。アクセント塗りで一段目立たせる */
 .bd-read { display: flex; justify-content: center; margin: 0.1rem 0 0.5rem; }
