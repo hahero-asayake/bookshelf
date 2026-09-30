@@ -239,25 +239,43 @@ test.describe('通報ダイアログ × リロード (イシュー#221)', () => 
     test.describe('SW 未登録の新規プロファイル', () => {
         test.use({ serviceWorkers: 'allow' });   // このグループだけ実際に SW を登録させる (config は block)
 
-        test('リンクから初めて開いても、SW 初回登録の自動リロードを経て通報ダイアログが開いている', async ({ page }) => {
+        test('リンクから初めて開くと、SW 初回登録では自動リロードせずに通報ダイアログが開いている', async ({ page }) => {
             const { errors } = await prepare(page);
             let loads = 0;
             page.on('load', () => { loads++; });   // replaceState では発火しない = 文書の読み込み回数
             await page.goto('/index.html' + reportQuery);
-            // SW 初回登録 → clients.claim() → controllerchange → location.reload()。リロードが起きたことを実測する
-            // (起きない環境で「開いている」が素通りしないよう、先にリロード完了を待つ)
-            await expect.poll(() => loads, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+            // SW 初回登録 (それまで controller が無かった) では controllerchange が発火しても
+            // location.reload() しない設計に変更 (ADR-111・イシュー#265)。1回のロードのまま
+            // ダイアログが開くことを確認する。
             const modal = page.locator('#report-modal');
             await expect(modal).toHaveClass(/show/);
             await expect(page.locator('#report-target-url')).toHaveText(ARTICLE);
-            expect(new URL(page.url()).search).toBe('');   // リロード後も query は URL に戻らない
-            expect(await page.evaluate(() => performance.getEntriesByType('navigation')[0].type)).toBe('reload');
-            expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-            // リロード後のダイアログもふつうに送れる
+            expect(new URL(page.url()).search).toBe('');
+            expect(loads).toBe(1);
+            expect(await page.evaluate(() => performance.getEntriesByType('navigation')[0].type)).toBe('navigate');
+            await expect.poll(
+                () => page.evaluate(() => !!navigator.serviceWorker.controller),
+                { timeout: 10_000 }
+            ).toBe(true);
+            // SW 登録後もダイアログはふつうに送れる
             await page.selectOption('#report-category', 'spam');
             await page.click('#report-submit');
             await expect(modal).not.toHaveClass(/show/);
             expect(errors).toEqual([]);
+        });
+
+        test('本物の SW 更新 (2回目以降の controllerchange) では従来どおり reload される', async ({ page }) => {
+            await prepare(page);
+            await page.goto('/index.html');
+            await page.waitForFunction(() => !!navigator.serviceWorker.controller, { timeout: 10_000 });
+            let loads = 0;
+            page.on('load', () => { loads++; });
+            // 実際の新SW更新を模して2回目のcontrollerchangeを手動発火する
+            // (index.htmlのガードはhadControllerフラグで初回とそれ以降を区別する・ADR-111)
+            await page.evaluate(() => {
+                navigator.serviceWorker.dispatchEvent(new Event('controllerchange'));
+            });
+            await expect.poll(() => loads, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
         });
     });
 });

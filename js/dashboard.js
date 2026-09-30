@@ -226,12 +226,19 @@ class BookshelfDashboard {
         if (showWelcome) {
             if (welcomeEl) {
                 this._updateWelcomeStep1(welcomeEl);
+                // index.html の静的HTML由来のwelcomeは一度もbindされていないので、
+                // ここで初めて見つけた既存ノードにもbindする (bs-boundで二重bindを防ぐ・イシュー#265)。
+                if (!welcomeEl.dataset.bsBound) {
+                    this._bindWelcome();
+                    welcomeEl.dataset.bsBound = '1';
+                }
             } else {
                 const tmp = document.createElement('div');
                 tmp.innerHTML = this._welcomeHtml();
                 welcomeEl = tmp.firstElementChild;
                 toolbar.after(welcomeEl);
                 this._bindWelcome();
+                welcomeEl.dataset.bsBound = '1';
             }
         } else if (welcomeEl) {
             welcomeEl.remove();
