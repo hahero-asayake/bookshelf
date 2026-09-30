@@ -1347,7 +1347,13 @@
     <script>
         if ('serviceWorker' in navigator) {
             let swRefreshing = false;
+            // 初回登録 (それまで controller が無かった) では reload しない。
+            // activate 内の clients.claim() は初回インストール時にも controllerchange を発火させるため、
+            // ここでガードしないと初回訪問のたびに location.reload() が起き、LCP計測が2回目の
+            // ナビゲーションにずれ込んでしまう (イシュー#265 で実測・発見)。
+            let hadController = !!navigator.serviceWorker.controller;
             navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!hadController) { hadController = true; return; }
                 if (swRefreshing) return;
                 swRefreshing = true;
                 location.reload();
