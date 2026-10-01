@@ -17,6 +17,18 @@ const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 // 900px以下は毎回閉じたボトムシートから始まる設計のため対象外 (_artIsDrawerNarrow 参照)。
 const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
 
+// イシュー#268: 見たまま編集の編集状態でキャンバス (iframe) 内へ注入する部品のCSS。
+// 生成器の .blk の box-model (margin/padding) は一切変えない＝outline と absolute/行の追加だけ。
+// 色は記事の配色トークン (--acc/--line/--sub) を使い、どの配色12案の上でも馴染ませる。
+const ART_CANVAS_CHROME_CSS = `
+.art-cv-blk{position:relative;outline:1.5px dashed var(--acc);outline-offset:4px;border-radius:6px}
+.art-cv-ops{position:absolute;top:-14px;right:4px;z-index:10}
+.art-cv-more{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:pointer;padding:0}
+.art-cv-ins{height:28px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
+.art-cv-ins-btn{width:28px;height:28px;border-radius:999px;border:none;background:var(--acc);color:var(--accT,#fff);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);padding:0}
+.art-cv-empty{min-height:56px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:14px}
+`;
+
 // 記事プレビューのストール検知 (イシュー#143・#153)。build() が失敗も成功もせず無期限に pending
 // した場合、「生成中…」が永久に残ってしまう。二段構え: (1) 進捗 (長文メモの読込完了) が一定時間
 // まったく進まないことで発火する検知＝10冊×遅い回線のような正常系(遅いだけ)を誤ってストール扱い
@@ -8168,6 +8180,17 @@ class VirtualBookshelf {
             e.stopImmediatePropagation();
             e.preventDefault();
         }, true);
+        // イシュー#268: ＋シート/ブロックの⋯メニューが開いていれば、Esc はそれだけを閉じる (エディタ本体は閉じない)
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const sheet = document.getElementById('art-add-sheet');
+            const menu = document.getElementById('art-blk-menu');
+            if (sheet && !sheet.hidden) this._artCloseAddSheet();
+            else if (menu && !menu.hidden) this._artCloseBlkMenu();
+            else return;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
         on('art-drawer-search', 'input', (e) => {
             this._artDrawerQuery = e.target.value.trim().toLowerCase();
             this._artRenderDrawer();
@@ -8218,6 +8241,27 @@ class VirtualBookshelf {
         on('art-save-retry', 'click', () => this._artFlushSave().then(() => this._artFlushRemoteNow()));
         on('art-title', 'input', () => this._artOnTitleInput());
         on('art-preview', 'click', () => this._artPreview());
+        // イシュー#268: 閲覧⇄編集トグル・＋シート・ブロックの⋯メニュー
+        on('art-mode-edit', 'click', () => this._artSetMode('edit'));
+        on('art-mode-done', 'click', () => this._artSetMode(this._artMode === 'form' ? 'edit' : 'view'));
+        const addSheet = document.getElementById('art-add-sheet');
+        if (addSheet) {
+            addSheet.addEventListener('click', (e) => {
+                if (e.target.closest('[data-close]')) { this._artCloseAddSheet(); return; }
+                const item = e.target.closest('.art-add-sheet-item');
+                if (!item || item.disabled) return;
+                this._artCloseAddSheet();
+                this._artInsertBlock(item.dataset.blockType, this._artAddIndex == null ? (this._artDraft.blocks || []).length : this._artAddIndex);
+            });
+        }
+        const blkMenu = document.getElementById('art-blk-menu');
+        if (blkMenu) blkMenu.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-blk-act]');
+            if (b && !b.disabled) this._artBlkMenuAction(b.dataset.blkAct);
+        });
+        document.addEventListener('click', (e) => {
+            if (blkMenu && !blkMenu.hidden && !blkMenu.contains(e.target)) this._artCloseBlkMenu();
+        });
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
         on('art-unpublish', 'click', async () => { if (!this._artEditingId) return; await this._artUnpublish(this._artEditingId); });
@@ -8434,6 +8478,193 @@ class VirtualBookshelf {
         return set;
     }
 
+    // ===== イシュー#268: 見たまま編集 (案1・閲覧⇄編集トグル) =====
+    // 記事は公開生成器の出力を iframe srcdoc でそのまま描く (閲覧=公開ページと1px一致)。
+    // 編集状態では iframe 内へ枠・⋯・＋ (.art-cv-ui) を注入する。注入物は閲覧状態では全部取り除く。
+    // mode: 'view' | 'edit' | 'form' ('form' は step3 でブロック別編集に置き換えるまでの旧フォーム表示)
+    _artSetMode(mode) {
+        this._artMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
+        const view = document.getElementById('art-edit-view');
+        if (view) view.dataset.artMode = this._artMode;
+        this._artCloseBlkMenu();
+        this._artCloseAddSheet();
+        if (this._artMode !== 'form') this._artQueueCanvas();
+    }
+
+    _artQueueCanvas() {
+        if (this._artCanvasTimer) clearTimeout(this._artCanvasTimer);
+        this._artCanvasTimer = setTimeout(() => { this._artCanvasTimer = null; this._artRenderCanvas(); }, 80);
+    }
+
+    async _artRenderCanvas() {
+        const frame = document.getElementById('art-canvas-frame');
+        if (!frame || !this._artDraft || !this.publishArticleGenerator) return;
+        const gen = (this._artCanvasGen || 0) + 1;
+        this._artCanvasGen = gen;
+        const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
+        let html = '';
+        try {
+            const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState(), markBlocks: true });
+            const file = result.files.find(f => f.path === 'preview/index.html');
+            // 生成できなかった時は白紙にせず理由を出す (プレビューの失敗表示と同じ文言の型)
+            html = file ? file.content : `<p style="padding:1rem;font-family:sans-serif;color:#a33">記事を表示できませんでした。<br>${PublishArticleGenerator.esc((result.errors || []).join(' / '))}</p>`;
+        } catch (e) {
+            console.warn('[art-canvas] build failed:', e);
+            return;
+        }
+        if (gen !== this._artCanvasGen) return; // 後から始まった描画がある＝この結果は古い
+        // 差し替え中に高さが0へ潰れると外側 (.art-col) のスクロール位置が飛ぶ。直前の高さを保ったまま差し替える
+        frame.style.minHeight = `${frame.offsetHeight}px`;
+        frame.onload = () => {
+            frame.style.minHeight = '';
+            const doc = frame.contentDocument;
+            if (doc && doc.body && window.ResizeObserver) {
+                if (this._artCanvasRO) this._artCanvasRO.disconnect();
+                this._artCanvasRO = new ResizeObserver(() => this._artFitCanvas());
+                this._artCanvasRO.observe(doc.body);
+            }
+            this._artApplyCanvasChrome();
+        };
+        frame.srcdoc = html;
+    }
+
+    // iframe を中身の高さまで伸ばす＝スクロールは外側1本 (二重スクロールにしない)
+    _artFitCanvas() {
+        const frame = document.getElementById('art-canvas-frame');
+        const doc = frame && frame.contentDocument;
+        if (!doc || !doc.documentElement) return;
+        frame.style.height = `${doc.documentElement.scrollHeight}px`;
+    }
+
+    _artApplyCanvasChrome() {
+        const frame = document.getElementById('art-canvas-frame');
+        const doc = frame && frame.contentDocument;
+        if (!doc || !doc.body) return;
+        doc.querySelectorAll('.art-cv-ui').forEach(el => el.remove());
+        doc.querySelectorAll('.art-cv-blk').forEach(el => el.classList.remove('art-cv-blk'));
+        if (this._artMode === 'edit') {
+            const style = doc.createElement('style');
+            style.className = 'art-cv-ui';
+            style.textContent = ART_CANVAS_CHROME_CSS;
+            doc.head.appendChild(style);
+            const article = doc.querySelector('.article');
+            const blocks = this._artDraft.blocks || [];
+            const sections = new Map([...doc.querySelectorAll('section[data-art-idx]')].map(el => [Number(el.dataset.artIdx), el]));
+            const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
+            const mkInserter = (index) => {
+                const row = doc.createElement('div');
+                row.className = 'art-cv-ui art-cv-ins';
+                row.innerHTML = `<button type="button" class="art-cv-ins-btn" data-ins-index="${index}" aria-label="ここにブロックを追加">${svg('plus')}</button>`;
+                return row;
+            };
+            // 挿入の基準点: ブロックが1つも描かれていない時はタイトル (とタグ) の直後
+            let last = null;
+            if (article) last = article.querySelector(':scope > .tags') || article.querySelector(':scope > h1');
+            blocks.forEach((b, i) => {
+                let sec = sections.get(i);
+                if (!sec) {
+                    // 生成器が何も出さないブロック (空の文章・本未選択) は公開ページには出ない。編集状態でだけ仮の枠を出す
+                    sec = doc.createElement('section');
+                    sec.className = 'blk art-cv-ui art-cv-empty';
+                    sec.dataset.artIdx = String(i);
+                    sec.textContent = b.type === 'text' ? '空の文章ブロック' : b.type === 'book' ? '本が未選択の本ブロック' : '本が無い本棚ブロック';
+                    if (last && last.parentNode) last.after(sec); else if (article) article.appendChild(sec);
+                }
+                sec.classList.add('art-cv-blk');
+                sec.before(mkInserter(i));
+                const ops = doc.createElement('div');
+                ops.className = 'art-cv-ui art-cv-ops';
+                ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="ブロックの操作" aria-haspopup="menu">${svg('more-horizontal')}</button>`;
+                sec.appendChild(ops);
+                last = sec;
+            });
+            const endIns = mkInserter(blocks.length);
+            if (last && last.parentNode) last.after(endIns); else if (article) article.appendChild(endIns);
+            if (!doc.body.dataset.artCvBound) {
+                doc.body.dataset.artCvBound = '1';
+                doc.addEventListener('click', (e) => {
+                    const ins = e.target.closest('.art-cv-ins-btn');
+                    if (ins) { e.preventDefault(); this._artOpenAddSheet(Number(ins.dataset.insIndex)); return; }
+                    const more = e.target.closest('.art-cv-more');
+                    if (more) { e.preventDefault(); this._artOpenBlkMenu(Number(more.dataset.blkIdx), more); return; }
+                    if (this._artMode === 'edit' && e.target.closest('a')) e.preventDefault(); // 編集中は書影・書名のリンクで外へ出ない
+                    this._artCloseBlkMenu();
+                });
+            }
+        }
+        this._artFitCanvas();
+    }
+
+    _artOpenAddSheet(index) {
+        const sheet = document.getElementById('art-add-sheet');
+        if (!sheet) return;
+        this._artCloseBlkMenu();
+        this._artAddIndex = index;
+        const hasAnyShelf = this.bookshelfManager.getBookshelves().length > 0;
+        const shelfItem = sheet.querySelector('[data-block-type="shelf"]');
+        if (shelfItem) {
+            shelfItem.disabled = !hasAnyShelf;
+            shelfItem.title = hasAnyShelf ? '' : '本棚がまだ1つもありません。先に本棚を作成してから追加できます。';
+        }
+        sheet.hidden = false;
+        const first = sheet.querySelector('.art-add-sheet-item:not([disabled])');
+        if (first) first.focus();
+    }
+
+    _artCloseAddSheet() {
+        const sheet = document.getElementById('art-add-sheet');
+        if (sheet) sheet.hidden = true;
+    }
+
+    _artOpenBlkMenu(idx, btnInFrame) {
+        const menu = document.getElementById('art-blk-menu');
+        const anchor = document.getElementById('art-blk-menu-anchor');
+        const frame = document.getElementById('art-canvas-frame');
+        if (!menu || !anchor || !frame) return;
+        const blocks = this._artDraft.blocks || [];
+        this._artMenuBlkIdx = idx;
+        // ⋯は iframe の中にある。親文書の座標へ写した透明なアンカーを置いて _placeAnchoredMenu に渡す
+        const fr = frame.getBoundingClientRect();
+        const br = btnInFrame.getBoundingClientRect();
+        Object.assign(anchor.style, { top: `${fr.top + br.top}px`, left: `${fr.left + br.left}px`, width: `${br.width}px`, height: `${br.height}px` });
+        menu.querySelector('[data-blk-act="up"]').disabled = idx <= 0;
+        menu.querySelector('[data-blk-act="down"]').disabled = idx >= blocks.length - 1;
+        menu.hidden = false;
+        this._placeAnchoredMenu(anchor, menu);
+    }
+
+    _artCloseBlkMenu() {
+        const menu = document.getElementById('art-blk-menu');
+        if (menu) menu.hidden = true;
+    }
+
+    _artBlkMenuAction(act) {
+        const idx = this._artMenuBlkIdx;
+        const blocks = this._artDraft.blocks || [];
+        const b = blocks[idx];
+        this._artCloseBlkMenu();
+        if (!b) return;
+        if (act === 'up' || act === 'down') {
+            const to = act === 'up' ? idx - 1 : idx + 1;
+            if (to < 0 || to >= blocks.length) return;
+            blocks.splice(idx, 1);
+            blocks.splice(to, 0, b);
+            this._artRenderBlocks();
+            this._artScheduleSave();
+        } else if (act === 'delete') {
+            this._artRemoveBlock(b.id);
+        } else if (act === 'edit') {
+            this._artEditBlock(b.id);
+        }
+    }
+
+    // step3 でブロック別の編集 (文章=その場・本棚/本=全画面) に置き換える。それまでは旧フォームの該当ブロックを出す
+    _artEditBlock(blockId) {
+        this._artSetMode('form');
+        const el = document.querySelector(`#art-blocks .art-block[data-block-id="${CSS.escape(blockId)}"]`);
+        if (el) el.scrollIntoView({ block: 'start' });
+    }
+
     _artOpenEditor(id) {
         this._artCloseSheet(); // 前回の編集セッションのシート開閉状態を持ち越さない (開いていなければ no-op)
         // 900px超の畳み状態だけは記憶を復元する (900px以下は上の _artCloseSheet() で毎回閉じた状態から
@@ -8473,6 +8704,7 @@ class VirtualBookshelf {
         this._artRenderDrawerShelfSelect();
         this._artRenderDrawer();
         this._artSetSaveStatus('');
+        this._artSetMode('view'); // イシュー#268: 開いた直後は閲覧状態 (公開ページと同じ見た目)
         this._artShowEditor();
         if (restoredFromDraft) {
             // 拾った下書きをリロードなしで確実に残す: メモリ反映→即リモートへフラッシュして
@@ -8767,6 +8999,7 @@ class VirtualBookshelf {
     }
 
     _artRenderBlocks() {
+        this._artQueueCanvas(); // イシュー#268: 下書きが変わるたびにキャンバス (公開ページと同じ見た目) を描き直す
         const host = document.getElementById('art-blocks');
         if (!host) return;
         const tpl = document.getElementById('art-add-menu-tpl');

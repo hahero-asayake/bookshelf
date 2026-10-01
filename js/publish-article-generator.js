@@ -613,6 +613,7 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
             if (r.type === 'text') html = this._renderTextBlock(r);
             else if (r.type === 'book') html = this._renderBookBlock(r, h);
             else if (r.type === 'shelf') html = this._renderShelfBlock(r, h, onProgress, blockIndex);
+            if (html && this._markBlocks) html = html.replace('<section ', `<section data-art-idx="${blockIndex}" `);
             if (html) parts.push(html);
             if (typeof onProgress === 'function') onProgress({ stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex, blockType: r.type });
             // イシュー#161: block-done後・次ブロックへ進む前のyield待ち区間を段階として出す。
@@ -835,6 +836,9 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
     // ===== ビルド =====
 
     async build(articles, opts = {}) {
+        // イシュー#268: エディタの閲覧/編集キャンバス用。各ブロックの <section> に元の並び順 (data-art-idx) を付ける。
+        // 属性を足すだけ＝レイアウトは変わらない。公開経路 (markBlocks 無し) の出力は従来と同じ。
+        this._markBlocks = !!opts.markBlocks;
         const raw = (opts.state) || (await this.app.storage.loadAll()) || {};
         const state = {
             library: raw.library || { books: [] },

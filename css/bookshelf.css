@@ -7756,3 +7756,35 @@ body.select-mode .drag-handle { display: none; }
 .art-pub-done-label { font-size: 0.78rem; font-weight: 600; color: var(--fg2); }
 .art-pub-url { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.84rem; }
 .art-pub-foot { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; padding: 0.8rem 1.25rem 1rem; border-top: 1px solid var(--line); }
+
+/* ===== イシュー#268: 記事エディタ 見たまま編集 (案1・閲覧⇄編集トグル) =====
+   #art-edit-view[data-art-mode] = view | edit | form。キャンバスは公開生成器の出力を描く iframe (高さは中身に合わせる)。
+   form は step3 でブロック別編集へ置き換えるまでの旧フォーム表示。 */
+#art-edit-view[data-art-mode="view"] .art-edit-only,
+#art-edit-view[data-art-mode="edit"] .art-view-only,
+#art-edit-view[data-art-mode="form"] .art-view-only,
+#art-edit-view[data-art-mode] #art-preview { display: none; }
+#art-edit-view[data-art-mode="view"] #art-blocks,
+#art-edit-view[data-art-mode="edit"] #art-blocks,
+#art-edit-view[data-art-mode="form"] #art-canvas { display: none; }
+.art-canvas { flex: 0 0 auto; }
+.art-canvas-frame { display: block; width: 100%; height: 320px; border: 0; border-radius: 6px; background: #fafafa; }
+.art-blk-menu-anchor { position: fixed; pointer-events: none; visibility: hidden; }
+.art-add-sheet { position: fixed; inset: 0; z-index: 1250; }
+.art-add-sheet[hidden] { display: none; }
+.art-add-sheet-backdrop { position: absolute; inset: 0; background: rgba(20, 24, 30, 0.35); }
+.art-add-sheet-panel { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 100%; max-width: 420px;
+    background: var(--panel); border-radius: 14px 14px 0 0; padding: 14px 14px 22px; box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15); }
+.art-add-sheet-hd { font-size: 13px; font-weight: 700; color: var(--fg); margin: 0 4px 10px; }
+.art-add-sheet-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 10px; border: none; background: none;
+    text-align: left; border-radius: 10px; cursor: pointer; color: var(--fg); }
+.art-add-sheet-item:hover { background: var(--accent-bg); }
+.art-add-sheet-item[disabled] { opacity: 0.5; cursor: not-allowed; }
+.art-add-sheet-ic { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 10px; background: var(--bg); display: inline-flex;
+    align-items: center; justify-content: center; color: var(--accent); }
+.art-add-sheet-body { display: flex; flex-direction: column; min-width: 0; }
+.art-add-sheet-body b { font-size: 14px; }
+.art-add-sheet-body small { font-size: 12px; color: var(--fg2); margin-top: 1px; }
+/* 閲覧状態は記事だけを見せる (本の引き出しは編集状態でだけ出す。step3 で本棚の全画面の中へ移す) */
+#art-edit-view[data-art-mode="view"] .art-wrap { grid-template-columns: 1fr; }
+#art-edit-view[data-art-mode="view"] .art-side { display: none; }
