@@ -85,6 +85,72 @@ test('枠外クリック/Enter/ESC: confirmDialog の基本作法', async ({ pag
     expect(errors).toEqual([]);
 });
 
+// ===== イシュー#268: 見たまま編集の新しい面 (＋追加シート・見た目シート・ブロックの⋯メニュー・本棚/本の全画面) =====
+// ESC/枠外クリックで「その面だけ」閉じ、記事エディタ (#publish-pages-modal) は残る。全画面の ESC は「完了」(②決裁)。
+async function openEditorInEditMode(page) {
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.click('#art-new');
+    await page.fill('#art-title', '標準操作268');
+    await page.click('#art-mode-edit');
+    await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().waitFor();
+}
+
+test('ESC/枠外クリック: ＋追加シートは自分だけ閉じ、エディタは残る (イシュー#268)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await openEditorInEditMode(page);
+    const frame = page.frameLocator('#art-canvas-frame');
+    await frame.locator('.art-cv-ins-btn').last().click();
+    await expect(page.locator('#art-add-sheet')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-add-sheet')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await frame.locator('.art-cv-ins-btn').last().click();
+    await expect(page.locator('#art-add-sheet')).toBeVisible();
+    await page.locator('#art-add-sheet .art-add-sheet-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#art-add-sheet')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    expect(errors).toEqual([]);
+});
+
+test('ESC/枠外クリック: 見た目シートは自分だけ閉じ、エディタは残る (イシュー#268)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await openEditorInEditMode(page);
+    await page.click('#art-look-btn');
+    await expect(page.locator('#art-look-sheet')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-look-sheet')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await page.click('#art-look-btn');
+    await page.locator('#art-look-sheet .art-add-sheet-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#art-look-sheet')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    expect(errors).toEqual([]);
+});
+
+test('ESC/枠外クリック: ブロックの⋯メニューは自分だけ閉じ、全画面はESCで完了扱い (イシュー#268)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await openEditorInEditMode(page);
+    const frame = page.frameLocator('#art-canvas-frame');
+    await frame.locator('.art-cv-ins-btn').last().click();
+    await page.click('#art-add-sheet [data-block-type="shelf"]');
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    await page.keyboard.press('Escape'); // 全画面の ESC = 完了 (ブロックは残る)
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1);
+    await frame.locator('.art-cv-more').first().click();
+    await expect(page.locator('#art-blk-menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-blk-menu')).toBeHidden();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await frame.locator('.art-cv-more').first().click();
+    await expect(page.locator('#art-blk-menu')).toBeVisible();
+    await page.locator('#art-edit-view .art-hd').click({ position: { x: 2, y: 2 } }); // 枠外 (メニューの外) をクリック
+    await expect(page.locator('#art-blk-menu')).toBeHidden();
+    expect(errors).toEqual([]);
+});
+
 // ===== スマホ: 戻る = 閉じてアプリに留まる (履歴統合) =====
 test('ESC/枠外クリック: 記事エディタの ⋯ メニューと公開パネルは自分だけ閉じ、エディタは残る (イシュー#230)', async ({ page }) => {
     const errors = await bootApp(page);
@@ -101,6 +167,8 @@ test('ESC/枠外クリック: 記事エディタの ⋯ メニューと公開パ
     await page.mouse.click(640, 5);
     await expect(page.locator('#art-more-menu')).toBeHidden();
     await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    // イシュー#268: 公開はヘッダーの編集状態に出る
+    await page.click('#art-mode-edit');
     await page.click('#art-publish-header');
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     await page.keyboard.press('Escape');
@@ -215,6 +283,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await page.click('#art-mode-edit'); // イシュー#268: 公開は編集状態のヘッダー
         await page.click('#art-publish-header');
         await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
         await page.goBack();
@@ -229,9 +298,14 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // プレビューはブロックが1つ以上ないと警告のみで開かない (公開v2 S3) ため、文章ブロックを1つ追加する
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.click('#art-preview');
+        // イシュー#268: 追加は編集状態のキャンバスの＋→シート、プレビューは記事メニュー⋯「表示幅を切り替えて見る」
+        await page.fill('#art-title', '戻る確認');
+        await page.click('#art-mode-edit');
+        await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().click();
+        await page.click('#art-add-sheet [data-block-type="text"]');
+        await page.evaluate(() => window.bookshelf._artFlushSave());
+        await page.click('#art-more-btn');
+        await page.click('#art-width-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);

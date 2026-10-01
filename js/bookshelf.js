@@ -8279,9 +8279,10 @@ class VirtualBookshelf {
             const b = e.target.closest('[data-blk-act]');
             if (b && !b.disabled) this._artBlkMenuAction(b.dataset.blkAct);
         });
+        // モーダル内の要素がクリックの伝播を止めることがあるため、キャプチャ段階で枠外クリックを拾う
         document.addEventListener('click', (e) => {
             if (blkMenu && !blkMenu.hidden && !blkMenu.contains(e.target)) this._artCloseBlkMenu();
-        });
+        }, true);
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
         on('art-unpublish', 'click', async () => { if (!this._artEditingId) return; await this._artUnpublish(this._artEditingId); });
@@ -8609,6 +8610,13 @@ class VirtualBookshelf {
             if (last && last.parentNode) last.after(endIns); else if (article) article.appendChild(endIns);
             if (!doc.body.dataset.artCvBound) {
                 doc.body.dataset.artCvBound = '1';
+                // iframe 内にフォーカスがある時の Esc は親文書へ届かない。シート/メニューを閉じる処理へ中継する
+                doc.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    // 開いている面がある時だけ中継する (何も開いていない時に中継すると記事エディタごと閉じてしまう)
+                    const open = ['art-add-sheet', 'art-look-sheet', 'art-blk-menu'].some(id => { const el = document.getElementById(id); return el && !el.hidden; });
+                    if (open) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                });
                 doc.addEventListener('click', (e) => {
                     const ins = e.target.closest('.art-cv-ins-btn');
                     if (ins) { e.preventDefault(); this._artOpenAddSheet(Number(ins.dataset.insIndex)); return; }
@@ -8664,6 +8672,9 @@ class VirtualBookshelf {
         menu.querySelector('[data-blk-act="down"]').disabled = idx >= blocks.length - 1;
         menu.hidden = false;
         this._placeAnchoredMenu(anchor, menu);
+        // ⋯は iframe 内のボタン＝押した直後のフォーカスは iframe の中。Esc/キーボード操作が親へ届くよう項目へ移す
+        const first = menu.querySelector('.art-more-item:not([disabled])');
+        if (first) first.focus();
     }
 
     _artCloseBlkMenu() {
