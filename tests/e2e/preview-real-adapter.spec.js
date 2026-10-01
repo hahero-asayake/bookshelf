@@ -22,6 +22,42 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
+function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
+async function addBlock(page, type, pos = 'last') {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+    const btns = canvas(page).locator('.art-cv-ins-btn');
+    await expect(btns).toHaveCount(before + 1);
+    await (pos === 'first' ? btns.first() : btns.last()).click();
+    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
+    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
+    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+}
+// 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
+async function leaveForm(page) {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+}
+// 公開パネルは編集状態のヘッダー #art-publish-header から開く
+async function openPublishPanel(page) {
+    await leaveForm(page);
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await page.click('#art-publish-header');
+}
+// プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
+async function openPreview(page) {
+    await leaveForm(page);
+    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
+    await page.click('#art-more-btn');
+    await page.click('#art-width-preview');
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
@@ -97,18 +133,19 @@ async function createArticleWithLongMemoShelf(page, { bookCount = 3 } = {}) {
     await page.click('#art-new');
     const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
     for (let i = 0; i < bookCount; i++) {
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+        await addBlock(page, 'book', 'last');
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
         await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        // 全画面編集(form)では対象ブロックだけが出るので、追加した本ごとに長文メモ表示をONにする
+        const longToggles = page.locator('.art-block.is-fs-target .art-book-show-toggle[data-show-key="longMemo"]');
+        const toggleCount = await longToggles.count();
+        for (let j = 0; j < toggleCount; j++) {
+            const t = longToggles.nth(j);
+            if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
+        }
     }
-    const longToggles = page.locator('.art-book-show-toggle[data-show-key="longMemo"]');
-    const toggleCount = await longToggles.count();
-    for (let i = 0; i < toggleCount; i++) {
-        const t = longToggles.nth(i);
-        if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
-    }
+    await leaveForm(page);
 }
 
 test('(a) 通常応答: 実GitHubAdapter+実fetch経由でプレビューが完走する(容疑者②=fetchハングは実アダプタでも再現せず)', async ({ page }) => {
@@ -122,7 +159,7 @@ test('(a) 通常応答: 実GitHubAdapter+実fetch経由でプレビューが完�
     await createArticleWithLongMemoShelf(page, { bookCount: 3 });
 
     const startedAt = Date.now();
-    await page.click('#art-preview');
+    await openPreview(page);
     // イシュー#161: 進捗表示はiframe srcdoc非依存(親DOM #pp-preview-progress)になったため、
     // 完了判定はそちらのhiddenを見る(srcdocは結果反映時の1回しか書き換わらない)。
     await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
@@ -150,7 +187,7 @@ test('(b) 遅延応答(2000ms/冊×3冊): stallMs(20秒)未満のため完走す
     await createArticleWithLongMemoShelf(page, { bookCount: 3 });
 
     const startedAt = Date.now();
-    await page.click('#art-preview');
+    await openPreview(page);
     await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
         { timeout: 15000 }).toBe(true);
     const elapsedMs = Date.now() - startedAt;
@@ -169,7 +206,7 @@ test('(c) fetchが最後まで応答しない場合、実GitHubAdapter+実fetch�
     });
     await createArticleWithLongMemoShelf(page, { bookCount: 1 });
 
-    await page.click('#art-preview');
+    await openPreview(page);
     await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 10000 });
     const stallMsg = await page.locator('#pp-preview-stall-msg').textContent();
     console.log(`[preview-real-adapter] (c) fetch無応答 ストール表示文言="${stallMsg}"`);
@@ -192,7 +229,7 @@ test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロ�
             id: `b${i}`, type: 'text', markdown: bigMd
         }));
     });
-    await page.click('#art-preview');
+    await openPreview(page);
     let seenBlockProgress = false;
     for (let i = 0; i < 50; i++) {
         const progressText = await page.evaluate(() => {

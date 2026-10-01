@@ -7883,3 +7883,12 @@ body.select-mode .drag-handle { display: none; }
 #art-edit-view .art-shelf-list.art-fs-list .art-shelf-item.art-fs-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) 34px;
     grid-template-areas: none; gap: 10px; align-items: start; padding: 10px 0; min-height: 0; background: none; }
 #art-edit-view .art-shelf-list.art-fs-list .art-fs-row > * { grid-area: auto; }
+/* 並び順を揃える: 「＋本を追加」の隣の小さいテキストボタン (②決裁 step5) */
+.art-fs-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.art-fs-actions .art-fs-add { flex: 1; margin-top: 0; }
+.art-fs-sort-btn { flex: 0 0 auto; border: none; background: none; color: var(--accent); font-size: 12px; padding: 6px 2px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px; }
+.art-fs-sort-btn[disabled] { color: var(--fg2); text-decoration: none; cursor: default; opacity: 0.6; }
+.art-fs-sort-opts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.art-fs-sort-opts[hidden] { display: none; }
+.art-fs-sort-opt { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; font-size: 12px; padding: 4px 10px; cursor: pointer; }

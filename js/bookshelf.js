@@ -8264,7 +8264,7 @@ class VirtualBookshelf {
                 if (e.target.closest('[data-close]')) { this._artCloseAddSheet(); return; }
                 const item = e.target.closest('.art-add-sheet-item');
                 if (!item || item.disabled) return;
-                this._artCloseAddSheet();
+                this._artCloseAddSheet({ keepHistory: item.dataset.blockType !== 'text' });
                 const at = this._artAddIndex == null ? (this._artDraft.blocks || []).length : this._artAddIndex;
                 this._artInsertBlock(item.dataset.blockType, at);
                 const added = (this._artDraft.blocks || [])[at];
@@ -8650,11 +8650,26 @@ class VirtualBookshelf {
         sheet.hidden = false;
         const first = sheet.querySelector('.art-add-sheet-item:not([disabled])');
         if (first) first.focus();
+        this._modalHistPush('art-add-sheet', (o) => this._artCloseAddSheet(o));
     }
 
-    _artCloseAddSheet() {
+    // keepHistory: 続けて全画面を開く時は、積んだ履歴1段をそのまま全画面へ引き継ぐ (_artHistHandOver)。
+    // history.back() の直後に pushState すると、非同期の back が新しい段を消してしまう (イシュー#259 と同じ罠)
+    _artCloseAddSheet({ fromHistory = false, keepHistory = false } = {}) {
         const sheet = document.getElementById('art-add-sheet');
-        if (sheet) sheet.hidden = true;
+        if (!sheet || sheet.hidden) return;
+        sheet.hidden = true;
+        if (!keepHistory) this._modalHistPop('art-add-sheet', { fromHistory });
+    }
+
+    // スマホの「戻る」履歴: from の段を消さずに to の閉じ処理へ付け替える (積み直さない＝history を動かさない)
+    _artHistHandOver(fromId, toId, close) {
+        const st = this._modalHistStack;
+        const e = st && st.find((x) => x.id === fromId);
+        if (!e) return false;
+        e.id = toId;
+        e.close = close;
+        return true;
     }
 
     _artOpenBlkMenu(idx, btnInFrame) {
@@ -8675,18 +8690,23 @@ class VirtualBookshelf {
         // ⋯は iframe 内のボタン＝押した直後のフォーカスは iframe の中。Esc/キーボード操作が親へ届くよう項目へ移す
         const first = menu.querySelector('.art-more-item:not([disabled])');
         if (first) first.focus();
+        this._modalHistPush('art-blk-menu', (o) => this._artCloseBlkMenu(o));
     }
 
-    _artCloseBlkMenu() {
+    _artCloseBlkMenu({ fromHistory = false, keepHistory = false } = {}) {
         const menu = document.getElementById('art-blk-menu');
-        if (menu) menu.hidden = true;
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        if (!keepHistory) this._modalHistPop('art-blk-menu', { fromHistory });
     }
 
     _artBlkMenuAction(act) {
         const idx = this._artMenuBlkIdx;
         const blocks = this._artDraft.blocks || [];
         const b = blocks[idx];
-        this._artCloseBlkMenu();
+        // 本棚/本の「編集」は全画面へ移る＝⋯メニューの履歴1段をそのまま全画面へ引き継ぐ
+        const toFs = act === 'edit' && b && b.type !== 'text';
+        this._artCloseBlkMenu({ keepHistory: toFs });
         if (!b) return;
         if (act === 'up' || act === 'down') {
             const to = act === 'up' ? idx - 1 : idx + 1;
@@ -8719,12 +8739,19 @@ class VirtualBookshelf {
         this._artSetMode('form');
         this._artRenderBlocks();
         this._artRenderDrawer();
+        // スマホの「戻る」= 完了 (Esc と同じ・②決裁)。直前のシート/⋯メニューの段があれば引き継ぐ
+        const closeFs = (o) => this._artCloseBlockFs(true, o);
+        if (!this._artHistHandOver('art-add-sheet', 'art-fs', closeFs) && !this._artHistHandOver('art-blk-menu', 'art-fs', closeFs)) {
+            this._modalHistPush('art-fs', closeFs);
+        }
         const col = document.querySelector('#art-edit-view .art-col');
         if (col) col.scrollTop = 0;
     }
 
     // commit=false (キャンセル) は全画面を開いた時点のブロックへ戻す。途中の自動保存分も戻した内容で上書き保存する
-    _artCloseBlockFs(commit) {
+    _artCloseBlockFs(commit, { fromHistory = false } = {}) {
+        if (this._artMode !== 'form') return;
+        this._modalHistPop('art-fs', { fromHistory });
         const id = this._artFsBlockId;
         const blocks = this._artDraft.blocks || [];
         if (!commit && id && this._artFsSnapshot) {
@@ -9180,11 +9207,14 @@ class VirtualBookshelf {
         if (!sheet) return;
         this._artRenderLookSheet();
         sheet.hidden = false;
+        this._modalHistPush('art-look-sheet', (o) => this._artCloseLookSheet(o));
     }
 
-    _artCloseLookSheet() {
+    _artCloseLookSheet({ fromHistory = false } = {}) {
         const sheet = document.getElementById('art-look-sheet');
-        if (sheet) sheet.hidden = true;
+        if (!sheet || sheet.hidden) return;
+        sheet.hidden = true;
+        this._modalHistPop('art-look-sheet', { fromHistory });
     }
 
     _artRenderLookSheet() {
@@ -9339,7 +9369,15 @@ class VirtualBookshelf {
         return `<div class="art-block art-fs-block is-fs-target is-add-target" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-fs-sec">本（${items.length}冊）</div>
             <div class="art-shelf-list art-fs-list">${rows}</div>
-            <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
+            <div class="art-fs-actions">
+                <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
+                <button type="button" class="art-fs-sort-btn" aria-expanded="false"${items.length < 2 ? ' disabled' : ''}>並び順を揃える</button>
+            </div>
+            <div class="art-fs-sort-opts" hidden>
+                <button type="button" class="art-fs-sort-opt" data-sort="added">追加順</button>
+                <button type="button" class="art-fs-sort-opt" data-sort="rating">評価順</button>
+                <button type="button" class="art-fs-sort-opt" data-sort="title">タイトル順</button>
+            </div>
             <p class="art-fs-note">長文メモは本棚では選べません。1冊を詳しく紹介するときは「本」ブロックを使います。</p>
         </div>`;
     }
@@ -9366,6 +9404,20 @@ class VirtualBookshelf {
             row.querySelector('.art-fs-up')?.addEventListener('click', () => move(id, -1));
             row.querySelector('.art-fs-down')?.addEventListener('click', () => move(id, 1));
         });
+        // 並び順を揃える (旧: チェックボックス一括バーのセレクト)。全画面では本棚の全冊が対象
+        const sortBtn = el.querySelector('.art-fs-sort-btn');
+        const sortOpts = el.querySelector('.art-fs-sort-opts');
+        if (sortBtn && sortOpts) {
+            sortBtn.addEventListener('click', () => {
+                sortOpts.hidden = !sortOpts.hidden;
+                sortBtn.setAttribute('aria-expanded', String(!sortOpts.hidden));
+            });
+            sortOpts.querySelectorAll('.art-fs-sort-opt').forEach(b => b.addEventListener('click', () => {
+                this._artSortShelfItems(block, b.dataset.sort, null);
+                this._artRenderBlocks();
+                this._artScheduleSave();
+            }));
+        }
         el.querySelectorAll('.art-fs-memo').forEach(inp => {
             let t = null;
             inp.addEventListener('input', () => {

@@ -6,6 +6,42 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
+function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
+async function addBlock(page, type, pos = 'last') {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+    const btns = canvas(page).locator('.art-cv-ins-btn');
+    await expect(btns).toHaveCount(before + 1);
+    await (pos === 'first' ? btns.first() : btns.last()).click();
+    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
+    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
+    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+}
+// 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
+async function leaveForm(page) {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+}
+// 公開パネルは編集状態のヘッダー #art-publish-header から開く
+async function openPublishPanel(page) {
+    await leaveForm(page);
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await page.click('#art-publish-header');
+}
+// プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
+async function openPreview(page) {
+    await leaveForm(page);
+    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
+    await page.click('#art-more-btn');
+    await page.click('#art-width-preview');
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
@@ -159,11 +195,10 @@ test('公開: 記事を新規作成→本棚ブロックに本を配置→プレ
     await page.click('#art-new');
     await expect(page.locator('#art-edit-view')).toBeVisible();
     // ブロックを追加 → 本棚。引き出し (all 本棚) から本を1冊配置する
-    await page.locator('.art-add-btn').first().click();
-    await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+    await addBlock(page, 'shelf', 'first');
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
     await expect(page.locator('.art-shelf-item')).toHaveCount(1);
-    await page.click('#art-preview');
+    await openPreview(page);
     await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
     // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
     // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
