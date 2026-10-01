@@ -69,6 +69,10 @@ function makeD1() {
         if (s.startsWith('DELETE FROM sites WHERE id')) {
             const i = t.sites.findIndex(r => r.id === p[0]); if (i >= 0) t.sites.splice(i, 1); return { success: true };
         }
+        // site_tags (S7・イシュー#269): このテストファイルは掲載の取り下げ (handleCommunitySiteDelete) で
+        // 発行される DELETE だけ受ける。publish 経由の syncArticleIndex/syncSiteTagsForUid は
+        // hub-index.test.js (実 SQLite) 側で検証する。
+        if (s.startsWith('DELETE FROM site_tags WHERE site_id')) return { success: true };
         if (s.startsWith('SELECT 1 AS x FROM stars')) {
             const row = t.stars.find(r => r.target_type === p[0] && r.target_id === p[1] && r.uid === p[2]); return row ? { x: 1 } : null;
         }

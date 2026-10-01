@@ -9,9 +9,12 @@
 //                                                                 → R2 sites/<siteId>/<publicId>/index.html
 //   GET https://bookshelf.asayake.org/<username>/              → R2 sites/<siteId>/index.html (プロフィール/一覧)
 //
+//   GET https://bookshelf.asayake.org/top                       → 全ユーザー横断の公開記事一覧 (SSR・S7・イシュー#269)
+//
 // env バインディング (wrangler.bookshelf.toml, read-only 運用):
 //   BUCKET   R2 bucket (asayake-hub と同一。sites/ のみ参照)
 //   KV       KV namespace (asayake-hub と同一。uname:/uid:/site:/report: のみ参照、書込は行わない)
+//   DB       D1 (asayake-hub と同一。/top の一覧表示のみ参照、書込は行わない。S7・イシュー#269で追加)
 //
 // 予約語・除外パスは reserved-usernames.js を hub 側 (POST /username) と共有する。
 
@@ -19,6 +22,7 @@ import { serveHeaders, contentType, noindexHeaders } from './serve-headers.js';
 import { isReservedTopLevel } from './reserved-usernames.js';
 import { suspendedResponse } from './suspended-page.js';
 import { buildRobotsTxt, buildSitemapXml } from './seo.js';
+import { renderTopPage } from './top-page.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -51,9 +55,13 @@ export default {
         const username = slash < 0 ? rest : rest.slice(0, slash);
         let sub = slash < 0 ? '' : rest.slice(slash + 1);
 
+        // /top (全ユーザー横断の公開記事一覧) は S7 で実装済み。予約語チェックより前で捌く (他の予約語は
+        // まだ専用ページを持たない・/about 等は引き続き 404)。クエリ (?tag=/?cursor=) 付きも同じ扱い。
+        if (username === 'top') return renderTopPage(env, url);
+
         if (!username) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         if (isReservedTopLevel(username)) {
-            // ①②いずれの予約語も、S6 時点では専用ページを持たない (/top・/about 等は別イシュー・S7 以降)
+            // ①②いずれの予約語も専用ページを持たない (/top は上で処理済み・/about 等は別イシュー)
             return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         }
         if (username.split('/').some(s => s === '..') || sub.split('/').some(s => s === '..')) {

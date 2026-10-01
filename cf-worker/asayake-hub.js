@@ -59,6 +59,7 @@ import { serveHeaders, contentType, noindexHeaders } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
 import { scheduledBackup } from './backup.js';
 import { suspendedResponse } from './suspended-page.js';
+import { queryActiveSitesPage, clampLimit, decodeSitesCursor, encodeSitesCursor } from './community-sites-query.js';
 
 const DEFAULT_QUOTA = 100 * 1024 * 1024;  // Free プラン = 100MB (収益化設計 ADR-033)
 const GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
@@ -680,7 +681,8 @@ async function d1Batch(env, stmts) {
     for (const st of stmts) await st.run();
 }
 
-// 記事 (sites.id) に紐づく社会データを消す文の列。stars/comments/stats/reports は target_id = sites.id で参照している。
+// 記事 (sites.id) に紐づく社会データを消す文の列。stars/comments/stats/reports/site_tags は
+// target_id (or site_id) = sites.id で参照している。
 function siteCascadeStmts(env, ids) {
     const stmts = [];
     for (let i = 0; i < ids.length; i += SQL_CHUNK) {
@@ -689,9 +691,30 @@ function siteCascadeStmts(env, ids) {
         for (const t of ['reports', 'stars', 'comments', 'stats']) {
             stmts.push(env.DB.prepare(`DELETE FROM ${t} WHERE target_type IN ('site','article') AND target_id IN (${ph})`).bind(...chunk));
         }
+        stmts.push(env.DB.prepare(`DELETE FROM site_tags WHERE site_id IN (${ph})`).bind(...chunk));
         stmts.push(env.DB.prepare(`DELETE FROM sites WHERE id IN (${ph})`).bind(...chunk));
     }
     return stmts;
+}
+
+// site_tags (タグ横断検索用の副次索引・S7) を sites.tags (正本) から作り直す。pids は今回 upsert した
+// publicId 集合。ON CONFLICT upsert は新規/既存どちらでも sites.id を直接は返さないため、upsert 後に
+// uid+publicId で引き直して確定した id に対して全消し→入れ直しする (件数は1公開あたり最大 INDEX_MAX_PER_UID 件)。
+async function syncSiteTagsForUid(env, uid, pids) {
+    const list = [...pids];
+    if (!list.length) return;
+    const ph = list.map((_, i) => `?${i + 2}`).join(',');
+    const rs = await env.DB.prepare(`SELECT id, tags FROM sites WHERE uid = ?1 AND public_id IN (${ph})`).bind(uid, ...list).all();
+    const rows = rs.results || [];
+    if (!rows.length) return;
+    const ids = rows.map(r => r.id);
+    const idPh = ids.map((_, i) => `?${i + 1}`).join(',');
+    const stmts = [env.DB.prepare(`DELETE FROM site_tags WHERE site_id IN (${idPh})`).bind(...ids)];
+    for (const r of rows) {
+        const tags = r.tags ? String(r.tags).split(',').filter(Boolean) : [];
+        for (const t of tags) stmts.push(env.DB.prepare(`INSERT INTO site_tags (site_id, tag) VALUES (?1, ?2)`).bind(r.id, t));
+    }
+    await d1Batch(env, stmts);
 }
 
 async function syncArticleIndex(env, uid, { files, index, deleteMissing, siteUrl }) {
@@ -734,6 +757,7 @@ async function syncArticleIndex(env, uid, { files, index, deleteMissing, siteUrl
             stmts.push(...siteCascadeStmts(env, gone));
         }
         await d1Batch(env, stmts);
+        await syncSiteTagsForUid(env, uid, seen);
         return { indexed: true, removed };
     } catch (e) {
         // 索引の失敗で公開を失敗させない (R2 は反映済み)。次回の公開で同期し直される。
@@ -755,6 +779,7 @@ async function deleteCommunityData(env, uid) {
         q(`DELETE FROM stars WHERE target_type IN ('site','article') AND target_id IN ${own}`),
         q(`DELETE FROM comments WHERE target_type IN ('site','article') AND target_id IN ${own}`),
         q(`DELETE FROM stats WHERE target_type IN ('site','article') AND target_id IN ${own}`),
+        q(`DELETE FROM site_tags WHERE site_id IN ${own}`),
         q(`DELETE FROM sites WHERE uid = ?1`),
         q(`DELETE FROM reports WHERE uid = ?1`),
         q(`DELETE FROM stars WHERE uid = ?1`),
@@ -1180,15 +1205,9 @@ async function optionalUid(request, env) {
     return sess ? sess.uid : null;
 }
 
-// 一覧 (公開): 掲載された公開本棚。?sort=new|stars。uid は晒さず owned フラグだけ返す。
-async function handleCommunitySitesList(request, env, url) {
-    requireD1(env);
-    const sort = (url && url.searchParams.get('sort')) || 'new';
-    const viewer = await optionalUid(request, env);
-    const rs = await env.DB.prepare(
-        `SELECT id, uid, url, title, description, cover_url, tags, created_at, updated_at, published_at, modified_at FROM sites WHERE status = 'active' AND hidden = 0`
-    ).all();
-    const sites = rs.results || [];
+// annotate: stats (stars/comments/views) を付け・tags をカンマ区切り→配列に変換し・owned フラグを立て・
+// uid (Google sub) を落とす。一覧 JSON の共通整形 (ページング有無に関わらず使う)。
+async function annotateSites(env, sites, viewer) {
     const map = await getStatsMap(env, 'site');
     for (const s of sites) {
         const st = map[s.id] || {};
@@ -1199,10 +1218,50 @@ async function handleCommunitySitesList(request, env, url) {
         s.owned = !!(viewer && s.uid === viewer);
         delete s.uid;   // Google sub を公開レスポンスに出さない
     }
-    sites.sort(sort === 'stars'
-        ? (a, b) => (b.stars - a.stars) || (b.created_at - a.created_at)
-        : (a, b) => b.created_at - a.created_at);
-    return json({ sites });
+    return sites;
+}
+
+// 一覧 (公開): 掲載された公開本棚。?sort=new(既定)|stars・?tag=<tag>・?cursor=<opaque>・
+// ?limit=<n、既定24/上限50>。uid は晒さず owned フラグだけ返す (S7・イシュー#269)。
+//
+// sort=new は community-sites-query.js の cursor ページング (created_at DESC, id DESC・
+// idx_sites_status_created を SQL レベルで使用) に委譲する。sort=stars はスター集計 (stats) が
+// 別表で同じ cursor 条件が使えないため、従来どおり全件取得して JS でソートし、cursor/limit は
+// ソート後の配列に対して適用する (件数が増えたら要見直し・07 残検討事項に積み残す)。
+async function handleCommunitySitesList(request, env, url) {
+    requireD1(env);
+    const sort = (url && url.searchParams.get('sort')) || 'new';
+    const tag = ((url && url.searchParams.get('tag')) || '').trim().slice(0, 50);
+    const viewer = await optionalUid(request, env);
+    const cursor = url && url.searchParams.get('cursor');
+    const limitParam = url && url.searchParams.get('limit');
+
+    if (sort === 'stars') {
+        const base = tag
+            ? `SELECT s.id, s.uid, s.url, s.title, s.description, s.cover_url, s.tags, s.created_at, s.updated_at, s.published_at, s.modified_at
+               FROM sites s JOIN site_tags st ON st.site_id = s.id WHERE s.status='active' AND s.hidden=0 AND st.tag = ?1`
+            : `SELECT id, uid, url, title, description, cover_url, tags, created_at, updated_at, published_at, modified_at
+               FROM sites WHERE status='active' AND hidden=0`;
+        const rs = tag ? await env.DB.prepare(base).bind(tag).all() : await env.DB.prepare(base).all();
+        const all = rs.results || [];
+        await annotateSites(env, all, viewer);
+        all.sort((a, b) => (b.stars - a.stars) || (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
+        const lim = clampLimit(limitParam);
+        const cur = decodeSitesCursor(cursor);
+        let startIdx = 0;
+        if (cur) {
+            const idx = all.findIndex(r => r.id === cur.id);
+            startIdx = idx >= 0 ? idx + 1 : 0;
+        }
+        const page = all.slice(startIdx, startIdx + lim);
+        const nextCursor = (startIdx + lim < all.length && page.length) ? encodeSitesCursor(page[page.length - 1]) : null;
+        return json({ sites: page, next_cursor: nextCursor });
+    }
+
+    const { rows, hasMore } = await queryActiveSitesPage(env, { tag, cursor, limit: limitParam });
+    await annotateSites(env, rows, viewer);
+    const nextCursor = hasMore && rows.length ? encodeSitesCursor(rows[rows.length - 1]) : null;
+    return json({ sites: rows, next_cursor: nextCursor });
 }
 
 // 旧: 任意の公開本棚 URL を登録する口。ADR-099 決裁で廃止 (索引に載るのはハブ公開の記事だけ・自前公開は恒久に索引しない)。
@@ -1221,6 +1280,7 @@ async function handleCommunitySiteDelete(request, env, path) {
     if (!row) return new Response(null, { status: 204 });
     const caller = await env.KV.get(`uid:${sess.uid}`, 'json');
     if (row.uid !== sess.uid && !(caller && isAdminEmail(caller.email, env))) throw httpError(403, 'not owner');
+    await env.DB.prepare(`DELETE FROM site_tags WHERE site_id = ?1`).bind(id).run();
     await env.DB.prepare(`DELETE FROM sites WHERE id = ?1`).bind(id).run();
     return new Response(null, { status: 204 });
 }

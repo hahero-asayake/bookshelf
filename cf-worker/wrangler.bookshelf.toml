@@ -1,7 +1,8 @@
 # bookshelf.asayake.org 配信専用 Worker の wrangler 設定 (S6・ADR-076)
 # asayake-hub (wrangler.hub.toml) とは別 Worker。`wrangler deploy -c wrangler.bookshelf.toml` でデプロイ。
 # 配信ロジック (pathname→R2 lookup→返す、認証なし) を hub の認証・課金コードと分離するために新設。
-# KV/R2 は asayake-hub と同一の namespace/bucket を bind する (uname:/uid:/site:/report: と sites/ のみ参照)。
+# KV/R2/D1 は asayake-hub と同一の namespace/bucket/database を bind する
+# (uname:/uid:/site:/report: と sites/ と sites表(/top 一覧表示) のみ参照、S7・イシュー#269でD1追加)。
 # ⚠️ 実装は read-only 運用 (書込コードを一切含まない) だが、Cloudflare の binding 自体に read-only 制限機能は
 #    無いため、可能ならこの Worker のデプロイに使う API トークンは Workers Scripts の Edit のみに絞ること。
 
@@ -19,6 +20,13 @@ bucket_name = "asayake-hub"
 [[kv_namespaces]]
 binding = "KV"
 id = "d429572547b4434486d44ee0159f46ae"
+
+# --- D1 (asayake-hub と同一 database。/top の一覧表示のみ参照。S7・イシュー#269で追加) ---
+# ⚠️ ここも read-only 運用 (書込コードを一切含まない)。database_id は wrangler.hub.toml と同一値。
+[[d1_databases]]
+binding = "DB"
+database_name = "asayake-community"
+database_id = "4512f08b-abeb-4a4e-93a0-65fadcee697a"
 
 # --- 運用監視 ---
 [observability]

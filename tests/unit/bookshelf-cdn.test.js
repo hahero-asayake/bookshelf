@@ -1,7 +1,9 @@
 // @vitest-environment node
 // bookshelf.asayake.org 配信 Worker (S6・ADR-076): username → siteId 解決・予約語ガード・改名301・配信
+// /top (全ユーザー横断の公開記事一覧) は S7 (イシュー#269) で実装。D1 は実 SQLite (node:sqlite)。
 import { describe, it, expect, beforeEach } from 'vitest';
 import worker from '../../cf-worker/bookshelf-cdn.js';
+import { makeSqliteD1 } from './helpers/sqlite-d1.js';
 
 function makeKV(initial = {}) {
     const store = new Map(Object.entries(initial).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
@@ -47,7 +49,7 @@ beforeEach(() => {
     globalThis.caches = { default: { async match() { return null; }, async put() {} } };
 });
 
-const env = (KV, BUCKET) => ({ KV, BUCKET });
+const env = (KV, BUCKET, DB) => ({ KV, BUCKET, ...(DB ? { DB } : {}) });
 const ctx = { waitUntil() {} };
 // waitUntil に渡された Promise を実際に待つ ctx (キャッシュ書込みの完了を検証するテスト用)
 function makeAwaitingCtx() {
@@ -56,9 +58,16 @@ function makeAwaitingCtx() {
 }
 
 describe('bookshelf-cdn Worker', () => {
-    it('①予約語 (top) は username 解決を試みず 404', async () => {
-        const KV = makeKV({ 'uname:top': { uid: 'someone', siteId: 'siteX' } }); // 万一登録されていても無視
+    it('/top は username 解決を試みない (uname:top が万一登録されていても無視)', async () => {
+        const KV = makeKV({ 'uname:top': { uid: 'someone', siteId: 'siteX' } });
         const res = await worker.fetch(new Request('https://bookshelf.asayake.org/top/'), env(KV, makeBucket()), ctx);
+        expect(res.status).toBe(200);
+        expect(await res.text()).not.toContain('siteX');
+    });
+
+    it('①予約語 (/about 等) は username 解決を試みず 404 (/top だけ S7 で専用ページになった)', async () => {
+        const KV = makeKV({});
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/about/'), env(KV, makeBucket()), ctx);
         expect(res.status).toBe(404);
     });
 
@@ -205,5 +214,61 @@ describe('bookshelf-cdn Worker', () => {
         const KV = makeKV({});
         const res = await worker.fetch(new Request('https://bookshelf.asayake.org/taro-books/', { method: 'POST' }), env(KV, makeBucket()), ctx);
         expect(res.status).toBe(405);
+    });
+});
+
+describe('/top (全ユーザー横断の公開記事一覧・S7・イシュー#269)', () => {
+    let DB;
+    beforeEach(() => {
+        DB = makeSqliteD1();
+        DB._db.exec(`INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden, source, public_id, status, report_count, published_at, modified_at)
+            VALUES ('s1','u1','https://bookshelf.asayake.org/taro/aaaaaaaaaa/','<script>alert(1)</script>','説明1','','SF,技術書',2000,2000,0,'hub','aaaaaaaaaa','active',0,2000,2000)`);
+        DB._db.exec(`INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden, source, public_id, status, report_count, published_at, modified_at)
+            VALUES ('s2','u2','https://bookshelf.asayake.org/jiro/bbbbbbbbbb/','記事2','説明2','','エッセイ',1000,1000,0,'hub','bbbbbbbbbb','active',0,1000,1000)`);
+        DB._db.exec(`INSERT INTO sites (id, uid, url, title, description, cover_url, tags, created_at, updated_at, hidden, source, public_id, status, report_count, published_at, modified_at)
+            VALUES ('s3','u3','https://bookshelf.asayake.org/saburo/cccccccccc/','隠れ記事','隠れ','','SF',3000,3000,1,'hub','cccccccccc','hidden',3,3000,3000)`);
+        DB._db.exec(`INSERT INTO site_tags (site_id, tag) VALUES ('s1','SF'),('s1','技術書'),('s2','エッセイ'),('s3','SF')`);
+    });
+
+    it('公開中 (active・非hidden) の記事だけ新しい順でカード表示し、タイトルはHTMLエスケープする', async () => {
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/top'), env({}, makeBucket(), DB), ctx);
+        expect(res.status).toBe(200);
+        const body = await res.text();
+        expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+        expect(body).not.toContain('<script>alert(1)</script>');
+        expect(body.indexOf('説明1')).toBeLessThan(body.indexOf('説明2')); // created_at DESC (新しい順)
+        expect(body).not.toContain('隠れ記事');   // hidden/quarantined は出ない
+    });
+
+    it('?tag= でタグ横断検索できる', async () => {
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/top?tag=%E3%82%A8%E3%83%83%E3%82%BB%E3%82%A4'), env({}, makeBucket(), DB), ctx);
+        const body = await res.text();
+        expect(body).toContain('説明2');
+        expect(body).not.toContain('&lt;script&gt;'); // s1(SF/技術書)は出ない
+    });
+
+    it('ページ送り (?cursor=) で次のページが取れる', async () => {
+        const res1 = await worker.fetch(new Request('https://bookshelf.asayake.org/top?limit=1'), env({}, makeBucket(), DB), ctx);
+        const body1 = await res1.text();
+        expect(body1).toContain('&lt;script&gt;'); // s1 (created_at最大) が1件目
+        const m = body1.match(/href="\/top\?cursor=([^"]+)"/);
+        expect(m).toBeTruthy();
+        const res2 = await worker.fetch(new Request(`https://bookshelf.asayake.org/top?limit=1&cursor=${m[1]}`), env({}, makeBucket(), DB), ctx);
+        const body2 = await res2.text();
+        expect(body2).toContain('説明2'); // s2 が2件目
+        expect(body2).not.toContain('&lt;script&gt;');
+    });
+
+    it('D1 未設定 (ローカル/移行直後) でも 500 にならず 0 件ページを返す', async () => {
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/top'), env({}, makeBucket()), ctx);
+        expect(res.status).toBe(200);
+        expect(await res.text()).toContain('まだ公開された記事がありません');
+    });
+
+    it('/sitemap.xml に /top を含む', async () => {
+        const KV = makeKV({});
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KV, makeBucket()), ctx);
+        const body = await res.text();
+        expect(body).toContain('<loc>https://bookshelf.asayake.org/top</loc>');
     });
 });

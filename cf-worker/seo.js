@@ -1,8 +1,8 @@
 // robots.txt / sitemap.xml 生成 (bookshelf-cdn.js 用・イシュー#247 決裁4)。
-// bookshelf-cdn のバインディングは KV と R2 のみ (D1 は無い、wrangler.bookshelf.toml で確認済み)。
-// 掲載対象は KV `uname:<username>` を列挙して決める (username→siteId 解決に既に使っている索引を
-// そのまま使い回す。新しい索引は増やさない)。件数上限は KV.list() の1呼び出し上限(1000件)をそのまま
-// 採用する(ローンチ前の登録者数はこれで十分足りる規模。超えたらページング対応が要る)。
+// ユーザーページの掲載対象は KV `uname:<username>` を列挙して決める (username→siteId 解決に既に
+// 使っている索引をそのまま使い回す。新しい索引は増やさない)。件数上限は KV.list() の1呼び出し上限
+// (1000件) をそのまま採用する(ローンチ前の登録者数はこれで十分足りる規模。超えたらページング対応が要る)。
+// /top (S7・イシュー#269で追加) は常設の公開ページなので無条件で載せる (D1 問い合わせ不要)。
 
 export function buildRobotsTxt(origin) {
     return `User-agent: *\nAllow: /\nSitemap: ${origin}/sitemap.xml\n`;
@@ -23,7 +23,7 @@ async function isSitemapEligible(env, rec) {
 
 export async function buildSitemapXml(env, origin) {
     const list = await env.KV.list({ prefix: 'uname:', limit: 1000 });
-    const urls = [];
+    const urls = [`${origin}/top`];
     for (const key of list.keys) {
         const username = key.name.slice('uname:'.length);
         const rec = await env.KV.get(key.name, 'json');

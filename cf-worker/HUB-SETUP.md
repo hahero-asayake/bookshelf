@@ -421,8 +421,8 @@ wrangler deploy -c wrangler.hub.toml
 デプロイ直後、**まだ誰も username を設定していない状態**なので、まずは「予約語ガード」と「未登録 username は404」だけ確認できる。username 設定 (H-4) 後に「200配信」「301」を確認する。
 
 ```bash
-# 予約語 (①②) は 404
-curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/top/
+# 予約語 (①②) は 404 (/top は S7 で専用ページになったため別扱い。下の Phase I 参照)
+curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/about/
 curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/favicon.ico
 
 # 未登録 username は 404
@@ -477,7 +477,7 @@ URL を変える必要が出たときの手順:
 
 1. kuroko が `editMonitor` (対象モニタの `url` を更新) で変更する。ダッシュボードで手動編集してもよい。
 2. **監視URLは `https://bookshelf.asayake.org/<自分のusername>/`** (未認証で200が返る具体パス)。
-3. ⚠️ **`/top` はまだ監視に使わない**。`/top` (全ユーザ横断一覧) は S7 (D1索引) 実装まで存在せず、現状は他の予約語と同じく404を返す。`/top` の実装後に別途この節を更新する。
+3. `https://bookshelf.asayake.org/top` も S7 (イシュー#269) で実装済み＝未認証・D1未設定でも0件ページで200を返すため監視URLの候補になる (Phase I 参照)。個人ページ (`/<username>/`) は「自分のアカウント/KVが生きているか」、`/top` は「D1/一覧表示まで生きているか」を見る点が違う＝**どちらか一方で足りるなら個人ページのままでよい** (既存の監視を無理に切り替える必要は無い)。両方の経路を見たい場合だけ `/top` へ変更/追加する。
 4. `getMonitors` の `status` が 2 (up) に戻ることを確認。
 
 ### H-6. ロールバック (何かおかしければ)
@@ -494,7 +494,54 @@ URL を変える必要が出たときの手順:
 3. 旧 `POST /community/sites` 由来の行 (`public_id=''`) が残っていれば (`SELECT COUNT(*) FROM sites WHERE public_id=''`)、export 済みを確認して `migrations/0002_purge_legacy_sites.sql` を実行する (0 件なら不要)。
 4. hub Worker を deploy (D1 適用の**後**。先に deploy すると `public_id`/`status` 列が無く索引の更新が失敗する = 公開自体は成功するが索引は空のまま)。
 
-※ kuroko の Cloudflare トークンに **D1 Edit** が無いと 1〜3 は実行できない (2026-09-25 実測: `wrangler d1 list` が Authentication error 10000)。
+※ kuroko の Cloudflare トークンに **D1 Edit** が無いと 1〜3 は実行できない (2026-09-25 実測: `wrangler d1 list` が Authentication error 10000)。**2026-10-01 追記 (イシュー#269 step1)**: 同トークンで `wrangler d1 execute asayake-community --remote --command "SELECT …"` (名前指定の読取クエリ) は成功した＝`d1 list` (データベース一覧) と「既知のDB名への実行」は別権限の可能性がある。ただし CREATE TABLE/INSERT (書込) は未確認＝Phase I 着手時に①の冪等確認コマンドで先に当たりを付けること。
+
+## Phase I. S7 本体 (`/top`・ページング・タグ横断検索: イシュー#269)
+
+> `/top` (全ユーザー横断の公開記事一覧)・`GET /community/sites` の cursor ページング・`?tag=` タグ横断検索を実装。設計は 08 ADR (本 ADR 番号は 07_残検討事項・08_意思決定記録を参照)・09 §11.12。コード実装・単体テスト (vitest・実SQLite) は完了済み。以下は**ハヘロが実行する Cloudflare 本番操作**。
+
+### I-1. D1 migration (`migrations/0003_site_tags.sql`)
+
+`site_tags` 表 (タグ横断検索用の副次索引。正本は `sites.tags`) を追加し、既存 `sites.tags` から backfill する。**追加型のみ** (既存列は触らない)。
+
+1. 適用前に退避: `wrangler d1 export asayake-community --remote -c wrangler.hub.toml --output=<tmp>/asayake-community-before-0003.sql`
+2. `wrangler d1 execute asayake-community --remote -c wrangler.hub.toml --file=migrations/0003_site_tags.sql`
+3. 確認: `wrangler d1 execute asayake-community --remote -c wrangler.hub.toml --command "SELECT COUNT(*) AS n FROM site_tags"` が `sites.tags` に入っている件数と矛盾しない数になっているか (0件でもエラーにはならない＝ローンチ前で記事0件なら0のままでよい)。
+4. 戻し方: `DROP TABLE site_tags;` (他の表には触れていないため、これだけで巻き戻る)。
+
+### I-2. Worker を deploy (D1 migration の**後**。順序: hub → bookshelf-cdn)
+
+`asayake-hub` 側の `GET /community/sites` ページング・`site_tags` 同期コードは `site_tags` 表が無い状態で動かすと upsert 時の `syncSiteTagsForUid` が例外になるが、`syncArticleIndex` はこれを catch して `indexed:false` を返す設計 (索引失敗で公開自体は失敗させない、既存の例外処理方針のまま)。ただし**ページング・タグ検索は `site_tags`/新しい `sites` クエリに依存するため、I-1 を先に適用してから deploy する**こと。
+
+```bash
+cd cf-worker
+wrangler deploy -c wrangler.hub.toml          # ① GET /community/sites ページング・site_tags 同期
+wrangler deploy -c wrangler.bookshelf.toml    # ② /top (新しい D1 binding を反映するため再デプロイ必須)
+```
+
+⚠️ `wrangler.bookshelf.toml` に **D1 binding (`DB`) を新規追加した** (イシュー#269 step3)。この Worker は元々 KV/R2 のみ (read-only) だったため、deploy 前に `wrangler.bookshelf.toml` の `[[d1_databases]]` ブロックが入っていることを確認する (database_id は `wrangler.hub.toml` と同一値)。
+
+### I-3. 動作確認 (curl)
+
+```bash
+# /top が 200 で返り、HTMLにカード一覧(0件なら「まだ公開された記事がありません」)が出る
+curl -s -o /dev/null -w "status=%{http_code}\n" https://bookshelf.asayake.org/top
+curl -s https://bookshelf.asayake.org/top | grep -o "まだ公開された記事がありません\|<h1>" | head -1
+
+# ページング: limit=1 で next_cursor が付くか (JSON API 側)
+curl -s "https://hub.asayake.org/community/sites?limit=1" | head -c 300
+
+# タグ検索 (記事が無ければ空配列でもエラーにならないことだけ確認)
+curl -s "https://hub.asayake.org/community/sites?tag=SF" | head -c 300
+
+# sitemap.xml に /top が載っているか
+curl -s https://bookshelf.asayake.org/sitemap.xml | grep -o "https://bookshelf.asayake.org/top"
+```
+
+### I-4. ロールバック
+
+- Worker だけ戻したい: `wrangler rollback -c wrangler.hub.toml` / `wrangler rollback -c wrangler.bookshelf.toml` (直前のバージョンIDは `wrangler deployments list` で deploy 前に控えておく、既存の運用ルールと同じ)。D1 (`site_tags` 表) は Worker ロールバックでは戻らない＝必要なら I-1 の「戻し方」(`DROP TABLE site_tags;`) を別途実行する。
+- `site_tags` 表が無い状態に Worker (新コード) を deploy してしまった場合: `GET /community/sites`/`/top` の `?tag=` 検索・`JOIN site_tags` を含むクエリだけが失敗する (D1 のテーブル不在エラー)。タグ無しの通常一覧 (sort=new・tag無指定) は `site_tags` を参照しないため影響しない。復旧は I-1 を実行するだけでよい。
 
 ## 通報の通知 (Discord webhook・ADR-099 / イシュー#220)
 

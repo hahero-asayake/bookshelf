@@ -31,6 +31,15 @@ CREATE INDEX IF NOT EXISTS idx_sites_hidden ON sites(hidden);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sites_uid_pub ON sites(uid, public_id) WHERE public_id != '';
 CREATE INDEX IF NOT EXISTS idx_sites_status_created ON sites(status, created_at DESC);
 
+-- タグ横断検索 (S7・イシュー#269)。sites.tags (カンマ区切り、表示/OGP用の正本) を1タグ1行へ展開した副次索引。
+-- 正本は sites.tags のまま＝この表は常に syncArticleIndex() が sites.tags から作り直す (手で書き換えない)。
+CREATE TABLE IF NOT EXISTS site_tags (
+  site_id TEXT NOT NULL,   -- sites.id
+  tag     TEXT NOT NULL,
+  PRIMARY KEY (site_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_site_tags_tag ON site_tags(tag);
+
 -- 集計 (ランキング読取の高速化。star/comment/install は書込時に増減する)。
 CREATE TABLE IF NOT EXISTS stats (
   target_type   TEXT NOT NULL,             -- 'plugin' | 'site'
