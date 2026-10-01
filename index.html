@@ -865,23 +865,24 @@
                 <!-- イシュー#230: ヘッダー1行 (戻る / タイトル+保存状態 / プレビュー / 公開する / ⋯)。フッターは撤去し、
                      複製・公開の取消・削除は ⋯ メニューへ。タグは公開パネルへ移設 -->
                 <div class="art-hd">
-                    <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
+                    <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る" aria-label="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
                     <div class="art-hd-title">
                         <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
                         <span id="art-save-status" class="art-save-status"></span>
                         <button id="art-save-retry" class="btn btn-secondary btn-small" type="button" hidden>もう一度保存</button>
                     </div>
                     <!-- イシュー#268: 見たまま編集 (案1)。閲覧状態=「編集」と⋯、編集状態=「見た目・公開・完了・⋯」(#art-edit-view[data-art-mode]) -->
-                    <button id="art-look-btn" class="btn btn-secondary btn-small art-edit-only" type="button"><span class="h-icon" data-icon="palette" data-icon-size="14"></span><span class="art-hd-lbl">見た目</span></button>
+                    <button id="art-look-btn" class="btn btn-secondary btn-small art-edit-only" type="button" title="見た目（テンプレート・配色）" aria-label="見た目"><span class="h-icon" data-icon="palette" data-icon-size="14"></span><span class="art-hd-lbl">見た目</span></button>
                     <button id="art-preview" class="btn btn-secondary btn-small" aria-label="プレビュー"><span class="h-icon" data-icon="eye" data-icon-size="14"></span><span class="art-hd-lbl">プレビュー</span></button>
                     <div class="art-hd-publish-group art-edit-only">
-                        <button id="art-publish-header" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
+                        <button id="art-publish-header" class="btn btn-primary btn-small" title="公開" aria-label="公開"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span><span class="art-hd-lbl">公開する</span></button>
                     </div>
-                    <button id="art-mode-edit" class="btn btn-primary btn-small art-view-only" type="button"><span class="h-icon" data-icon="pencil" data-icon-size="14"></span>編集</button>
-                    <button id="art-mode-done" class="btn btn-primary btn-small art-edit-only" type="button"><span class="h-icon" data-icon="check" data-icon-size="14"></span>完了</button>
+                    <button id="art-mode-edit" class="btn btn-primary btn-small art-view-only" type="button" title="編集" aria-label="編集"><span class="h-icon" data-icon="pencil" data-icon-size="14"></span>編集</button>
+                    <button id="art-mode-done" class="btn btn-primary btn-small art-edit-only" type="button" title="完了" aria-label="完了"><span class="h-icon" data-icon="check" data-icon-size="14"></span>完了</button>
                     <span class="art-more-host" id="art-page-ops" hidden>
                         <button type="button" id="art-more-btn" class="btn btn-secondary btn-small art-more-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="art-more-menu" title="その他の操作" aria-label="その他の操作"><span class="h-icon" data-icon="more-horizontal" data-icon-size="15"></span></button>
                         <div id="art-more-menu" class="art-more-menu" role="menu" hidden>
+                            <button id="art-width-preview" class="art-more-item" type="button" role="menuitem"><span class="h-icon" data-icon="eye" data-icon-size="14"></span>表示幅を切り替えて見る</button>
                             <button id="art-dup" class="art-more-item" type="button" role="menuitem"><span class="h-icon" data-icon="copy" data-icon-size="14"></span>複製</button>
                             <button id="art-unpublish" class="art-more-item" type="button" role="menuitem" hidden><span class="h-icon" data-icon="cloud-off" data-icon-size="14"></span>公開を取り消す</button>
                             <button id="art-del" class="art-more-item is-danger" type="button" role="menuitem"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span>削除</button>
@@ -903,6 +904,14 @@
                         <button type="button" class="art-add-sheet-item" data-block-type="text"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="pen-line" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>文章</b><small>見出しと本文を書く</small></span></button>
                         <button type="button" class="art-add-sheet-item" data-block-type="shelf"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="library" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>本棚</b><small>複数冊を並べて紹介する</small></span></button>
                         <button type="button" class="art-add-sheet-item" data-block-type="book"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="book" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>本</b><small>1冊を大きく紹介する</small></span></button>
+                    </div>
+                </div>
+                <!-- イシュー#268 step4: 見た目シート (下から・テンプレ3種/配色12案。押した瞬間に背後の記事へ反映・×か枠外で閉じる) -->
+                <div id="art-look-sheet" class="art-add-sheet art-look-sheet" role="dialog" aria-modal="true" aria-label="見た目" hidden>
+                    <div class="art-add-sheet-backdrop" data-close></div>
+                    <div class="art-add-sheet-panel">
+                        <div class="art-look-sheet-hd"><span class="art-add-sheet-hd">見た目</span><button type="button" class="art-look-sheet-close" data-close title="閉じる" aria-label="閉じる"><span class="h-icon" data-icon="x" data-icon-size="16"></span></button></div>
+                        <div id="art-look-sheet-body"></div>
                     </div>
                 </div>
                 <!-- イシュー#268: ブロックの⋯メニュー (編集/上へ/下へ/削除) -->

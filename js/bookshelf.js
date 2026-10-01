@@ -30,6 +30,8 @@ const ART_CANVAS_CHROME_CSS = `
 .art-cv-empty-editing{display:block}
 .art-cv-ta{display:block;width:100%;min-height:120px;font:inherit;font-size:16px;line-height:1.9;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;resize:none;overflow:hidden}
 .art-cv-ta:focus{outline:2px solid var(--acc);outline-offset:1px}
+.article>h1{cursor:text}
+.art-cv-title{display:block;width:100%;font:inherit;font-size:34px;line-height:1.28;font-weight:700;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:0 0 12px}
 `;
 
 // 記事プレビューのストール検知 (イシュー#143・#153)。build() が失敗も成功もせず無期限に pending
@@ -8188,7 +8190,9 @@ class VirtualBookshelf {
             if (e.key !== 'Escape') return;
             const sheet = document.getElementById('art-add-sheet');
             const menu = document.getElementById('art-blk-menu');
+            const lk = document.getElementById('art-look-sheet');
             if (sheet && !sheet.hidden) this._artCloseAddSheet();
+            else if (lk && !lk.hidden) this._artCloseLookSheet();
             else if (menu && !menu.hidden) this._artCloseBlkMenu();
             else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
             else return;
@@ -8249,6 +8253,10 @@ class VirtualBookshelf {
         on('art-mode-edit', 'click', () => this._artSetMode('edit'));
         on('art-mode-done', 'click', () => this._artSetMode('view'));
         on('art-fs-done', 'click', () => this._artCloseBlockFs(true));
+        on('art-look-btn', 'click', () => this._artOpenLookSheet());
+        const lookSheet = document.getElementById('art-look-sheet');
+        if (lookSheet) lookSheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) this._artCloseLookSheet(); });
+        on('art-width-preview', 'click', () => { const m = document.getElementById('art-more-menu'); if (m) m.hidden = true; this._artPreview(); });
         on('art-fs-cancel', 'click', () => this._artCloseBlockFs(false));
         const addSheet = document.getElementById('art-add-sheet');
         if (addSheet) {
@@ -8500,6 +8508,7 @@ class VirtualBookshelf {
         if (view) view.dataset.artMode = this._artMode;
         this._artCloseBlkMenu();
         this._artCloseAddSheet();
+        this._artCloseLookSheet();
         if (this._artMode !== 'form') this._artQueueCanvas();
     }
 
@@ -8605,6 +8614,8 @@ class VirtualBookshelf {
                     if (ins) { e.preventDefault(); this._artOpenAddSheet(Number(ins.dataset.insIndex)); return; }
                     const more = e.target.closest('.art-cv-more');
                     if (more) { e.preventDefault(); this._artOpenBlkMenu(Number(more.dataset.blkIdx), more); return; }
+                    const h1 = this._artMode === 'edit' && !e.target.closest('.art-cv-title') ? e.target.closest('.article > h1') : null;
+                    if (h1) { e.preventDefault(); this._artEditTitleInline(h1); return; }
                     // 編集状態で文章ブロックの本文をタップしたら、その場入力を始める
                     const sec = this._artMode === 'edit' && !e.target.closest('.art-cv-ta') ? e.target.closest('section.art-cv-blk') : null;
                     const tb = sec ? (this._artDraft.blocks || [])[Number(sec.dataset.artIdx)] : null;
@@ -8715,6 +8726,26 @@ class VirtualBookshelf {
         this._artPendingBookBlockId = null;
         this._artSetMode('edit');
         this._artRenderBlocks();
+    }
+
+    // 記事タイトルのその場入力 (②決裁 step4: タイトルは記事の上で直接打つ)。値はヘッダーの #art-title に流し、
+    // 既存の input ハンドラ (下書き反映・自動保存) をそのまま通す
+    _artEditTitleInline(h1) {
+        const doc = h1.ownerDocument;
+        const src = document.getElementById('art-title');
+        if (!src) return;
+        const inp = doc.createElement('input');
+        inp.type = 'text';
+        inp.className = 'art-cv-ui art-cv-title';
+        inp.value = src.value;
+        inp.placeholder = '記事タイトル';
+        inp.setAttribute('aria-label', '記事タイトル');
+        h1.style.display = 'none';
+        h1.after(inp);
+        this._artInlineBlockId = '__title';
+        inp.addEventListener('input', () => { src.value = inp.value; src.dispatchEvent(new Event('input', { bubbles: true })); });
+        inp.addEventListener('blur', () => { this._artInlineBlockId = null; this._artQueueCanvas(); });
+        inp.focus();
     }
 
     // 文章ブロックのその場入力。キャンバス (iframe) の該当ブロックの中身を Markdown の入力欄に置き換える。
@@ -9108,6 +9139,7 @@ class VirtualBookshelf {
         if (this._artFsBlockId) {
             const t = host.querySelector(`.art-block[data-block-id="${CSS.escape(this._artFsBlockId)}"]`);
             if (t) t.classList.add('is-fs-target');
+            this._artFsBindPending = true; // イベント結線 (_artBindBlocksEvents) の後で全画面専用の結線をする
         }
         const allBtn = host.querySelector('.art-collapse-all');
         if (allBtn) allBtn.addEventListener('click', () => {
@@ -9127,6 +9159,43 @@ class VirtualBookshelf {
         });
         this._artBindLookEvents(host);
         this._artBindBlocksEvents();
+        if (this._artFsBindPending) { this._artFsBindPending = false; this._artBindShelfFs(host); }
+        if (typeof window.applyIcons === 'function') window.applyIcons(host);
+    }
+
+    // ===== イシュー#268 step4: 見た目シート (テンプレ3種=縦一列・配色12案=4列グリッド)。名前と色は _artThemeItems の実値 =====
+    _artOpenLookSheet() {
+        const sheet = document.getElementById('art-look-sheet');
+        if (!sheet) return;
+        this._artRenderLookSheet();
+        sheet.hidden = false;
+    }
+
+    _artCloseLookSheet() {
+        const sheet = document.getElementById('art-look-sheet');
+        if (sheet) sheet.hidden = true;
+    }
+
+    _artRenderLookSheet() {
+        const host = document.getElementById('art-look-sheet-body');
+        if (!host) return;
+        const esc = PublishArticleGenerator.esc;
+        const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
+        const lay = this._artThemeItems('layout').filter(it => it.selectable).map(it => `<button type="button" class="art-lk-lay" role="radio" aria-checked="${theme.layout === it.id}" data-look-kind="layout" data-look-id="${esc(it.id)}"><span class="h-icon" data-icon="${esc(it.icon)}" data-icon-size="20"></span><span>${esc(it.label)}</span></button>`).join('');
+        const col = this._artThemeItems('color').filter(it => it.selectable).map(it => {
+            const t = (typeof ARTICLE_COLOR_TOKENS !== 'undefined' && ARTICLE_COLOR_TOKENS[it.id]) || {};
+            return `<button type="button" class="art-lk-col" role="radio" aria-checked="${theme.color === it.id}" data-look-kind="color" data-look-id="${esc(it.id)}" title="${esc(it.label)}"><span class="art-lk-th" style="background:${esc(t.bg || '#fff')};color:${esc(t.txt || '#222')}"><i>Aa</i><b style="background:${esc(t.acc || '#888')}"></b></span><span>${esc(it.label)}</span></button>`;
+        }).join('');
+        host.innerHTML = `<div class="art-lk-sec">テンプレート</div><div class="art-lk-lays" role="radiogroup" aria-label="テンプレート">${lay}</div>
+            <div class="art-lk-sec">配色</div><div class="art-lk-cols" role="radiogroup" aria-label="配色">${col}</div>`;
+        host.querySelectorAll('[data-look-kind]').forEach(btn => btn.addEventListener('click', () => {
+            const th = PublishArticleStore.normalizeTheme(this._artDraft.theme);
+            th[btn.dataset.lookKind] = btn.dataset.lookId;
+            this._artDraft.theme = PublishArticleStore.normalizeTheme(th);
+            this._artScheduleSave();
+            this._artRenderLookSheet();
+            this._artRenderBlocks(); // 背後のキャンバスへ即反映
+        }));
         if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
@@ -9227,7 +9296,76 @@ class VirtualBookshelf {
 
     // 表示は1行1冊のリストのみ (密度トグルはチップ固定幅と両立しないため撤去・イシュー#230)。
     // 一括操作 (短文/長文メモの表示・並び順) は選択式 (イシュー#55): 1件以上選択したときだけ選択バーを出す。
+    // イシュー#268 step4: 本棚の全画面 (承認モック shot-2-shelf-sp-390 の並び)。
+    // 行 = 書影サムネ・書名・著者・短文メモ入力 (その場で入力)・チップ「短文メモ/評価」、右端に ↑ ↓ ×。
+    // チェックボックス一括操作と grip ドラッグは出さない (上へ・下へに一本化・②決裁)。
+    _artRenderShelfFs(b, index) {
+        const esc = PublishArticleGenerator.esc;
+        const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
+        const ic = (name, size) => `<span class="h-icon" data-icon="${name}" data-icon-size="${size}"></span>`;
+        const rows = items.map((it, i) => {
+            const book = this.books.find(x => x.asin === it.asin);
+            const title = book ? book.title : it.asin;
+            const author = book ? (book.authors || book.author || '') : '';
+            const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : `<span>${esc(title)}</span>`;
+            const memo = this.bookshelfManager.resolveMemo(it.asin) || '';
+            const show = it.show || { shortMemo: false, rating: false };
+            return `<div class="art-shelf-item art-fs-row" data-item-id="${esc(it.id)}">
+                <div class="art-fs-cover">${cover}</div>
+                <div class="art-fs-body">
+                    <div class="art-fs-ttl">${esc(title)}</div>
+                    ${author ? `<div class="art-fs-au">${esc(Array.isArray(author) ? author.join('、') : author)}</div>` : ''}
+                    <input type="text" class="art-fs-memo" data-asin="${esc(it.asin)}" value="${esc(memo)}" placeholder="短文メモを書く" aria-label="${esc(title)}の短文メモ">
+                    ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}" aria-describedby="art-item-tooltip"`, false)}
+                </div>
+                <div class="art-fs-ops">
+                    <button type="button" class="art-fs-ic art-fs-up" title="上へ" aria-label="上へ"${i === 0 ? ' disabled' : ''}>${ic('chevron-up', 16)}</button>
+                    <button type="button" class="art-fs-ic art-fs-down" title="下へ" aria-label="下へ"${i === items.length - 1 ? ' disabled' : ''}>${ic('chevron-down', 16)}</button>
+                    <button type="button" class="art-fs-ic art-shelf-item-remove" title="外す" aria-label="外す">${ic('x', 16)}</button>
+                </div>
+            </div>`;
+        }).join('');
+        return `<div class="art-block art-fs-block is-fs-target is-add-target" data-block-id="${esc(b.id)}" data-index="${index}">
+            <div class="art-fs-sec">本（${items.length}冊）</div>
+            <div class="art-shelf-list art-fs-list">${rows}</div>
+            <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
+            <p class="art-fs-note">長文メモは本棚では選べません。1冊を詳しく紹介するときは「本」ブロックを使います。</p>
+        </div>`;
+    }
+
+    // 全画面の行の ↑↓ と短文メモ入力。短文メモは本ごとの1つ (ALL 1段・ADR-007) なので saveNote で保存する
+    _artBindShelfFs(host) {
+        const el = host.querySelector('.art-fs-block');
+        if (!el) return;
+        const block = (this._artDraft.blocks || []).find(x => x.id === el.dataset.blockId);
+        if (!block) return;
+        const move = (itemId, dir) => {
+            const items = (block.items || []).slice().sort((x, y) => x.order - y.order);
+            const i = items.findIndex(it => it.id === itemId);
+            const j = i + dir;
+            if (i < 0 || j < 0 || j >= items.length) return;
+            [items[i], items[j]] = [items[j], items[i]];
+            items.forEach((it, k) => { it.order = k; });
+            block.items = items;
+            this._artRenderBlocks();
+            this._artScheduleSave();
+        };
+        el.querySelectorAll('.art-fs-row').forEach(row => {
+            const id = row.dataset.itemId;
+            row.querySelector('.art-fs-up')?.addEventListener('click', () => move(id, -1));
+            row.querySelector('.art-fs-down')?.addEventListener('click', () => move(id, 1));
+        });
+        el.querySelectorAll('.art-fs-memo').forEach(inp => {
+            let t = null;
+            inp.addEventListener('input', () => {
+                if (t) clearTimeout(t);
+                t = setTimeout(() => { this.saveNote(inp.dataset.asin, inp.value); this._artQueueCanvas(); }, 300);
+            });
+        });
+    }
+
     _artRenderShelfBlock(b, index) {
+        if (this._artFsBlockId === b.id) return this._artRenderShelfFs(b, index);
         const esc = PublishArticleGenerator.esc;
         const collapsed = this._artCollapsedSet().has(b.id);
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
@@ -9541,7 +9679,7 @@ class VirtualBookshelf {
                 if (toFirst) toFirst.addEventListener('click', (e) => { e.stopPropagation(); this._artMoveShelfItem(block, itemId, 'first'); });
                 const toLast = itemEl.querySelector('.art-item-to-last');
                 if (toLast) toLast.addEventListener('click', (e) => { e.stopPropagation(); this._artMoveShelfItem(block, itemId, 'last'); });
-                this._artBindDrag(itemEl.querySelector('.art-shelf-item-grip'), itemEl, '.art-shelf-item', (fromEl, toEl) => {
+                if (!itemEl.classList.contains('art-fs-row')) this._artBindDrag(itemEl.querySelector('.art-shelf-item-grip'), itemEl, '.art-shelf-item', (fromEl, toEl) => {
                     this._artReorderShelfItems(block, fromEl.dataset.itemId, toEl.dataset.itemId);
                 });
             });

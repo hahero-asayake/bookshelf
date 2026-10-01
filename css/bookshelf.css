@@ -7821,3 +7821,65 @@ body.select-mode .drag-handle { display: none; }
     /* 全画面ではモーダルの×がヘッダー右端の「完了」に重なる。編集中は ← (一覧へ) とキャンセル/完了で抜ける */
     #publish-pages-modal .art-modal-content.art-editing > .modal-close { display: none; }
 }
+
+/* ===== イシュー#268 step4 ===== */
+/* 本棚/本の全画面: 画面そのもの (外枠・上部の帯・バーの装飾を消す)。モック shot-2-shelf-sp-390 の並び */
+#art-edit-view[data-art-mode="form"] .art-block.is-fs-target { border: 0; box-shadow: none; background: none; padding: 0; outline: none; }
+#art-edit-view[data-art-mode="form"] .art-block.is-fs-target > .art-block-bar { background: none; border: 0; padding: 0; min-height: 0; }
+.art-fs-block .art-shelf-list.art-fs-list { display: block; }
+.art-fs-sec { font-size: 12px; font-weight: 700; color: var(--fg2); margin: 4px 0 8px; }
+.art-fs-row { display: grid; grid-template-columns: 48px 1fr 34px; gap: 10px; align-items: start; padding: 10px 0;
+    border-bottom: 1px solid var(--line2); }
+.art-fs-cover { width: 48px; height: 72px; border-radius: 3px; overflow: hidden; background: var(--bg); display: flex;
+    align-items: center; justify-content: center; font-size: 0; }
+.art-fs-cover img { width: 100%; height: 100%; object-fit: cover; }
+.art-fs-ttl { font-size: 14px; font-weight: 700; color: var(--fg); line-height: 1.35; }
+.art-fs-au { font-size: 12px; color: var(--fg2); }
+.art-fs-memo { display: block; width: 100%; height: 34px; margin-top: 6px; border: 1px solid var(--line); border-radius: 7px;
+    padding: 0 9px; font-size: 13px; color: var(--fg); background: var(--panel); }
+.art-fs-body .art-chips { margin-top: 6px; }
+.art-fs-ops { display: flex; flex-direction: column; gap: 4px; }
+.art-fs-ic { width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg2);
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.art-fs-ic[disabled] { opacity: 0.4; cursor: default; }
+.art-fs-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 44px; margin-top: 12px;
+    border: 1.5px dashed var(--accent); border-radius: 9px; background: var(--panel); color: var(--accent); font-size: 14px;
+    font-weight: 700; cursor: pointer; }
+.art-fs-note { font-size: 12px; color: var(--fg2); margin: 10px 0 0; line-height: 1.6; }
+/* 見た目シート */
+.art-look-sheet .art-add-sheet-panel { max-width: 440px; max-height: 88dvh; overflow-y: auto; }
+.art-look-sheet-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.art-look-sheet-hd .art-add-sheet-hd { margin: 0 4px; }
+.art-look-sheet-close { width: 32px; height: 32px; border-radius: 999px; border: none; background: var(--bg); color: var(--fg2);
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.art-lk-sec { font-size: 12px; font-weight: 700; color: var(--fg2); margin: 10px 4px 8px; }
+.art-lk-lays { display: flex; gap: 8px; }
+.art-lk-lay { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 1px solid var(--line);
+    border-radius: 9px; background: var(--panel); font-size: 12px; color: var(--fg); cursor: pointer; }
+.art-lk-lay[aria-checked="true"] { border: 2px solid var(--accent); padding: 9px 3px; color: var(--accent); }
+.art-lk-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.art-lk-col { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; padding: 0;
+    font-size: 12px; color: var(--fg); cursor: pointer; }
+.art-lk-th { width: 100%; height: 44px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.12); display: flex; align-items: flex-end;
+    justify-content: space-between; padding: 0 7px 6px; }
+.art-lk-th i { font-style: normal; font-size: 13px; font-weight: 700; }
+.art-lk-th b { width: 16px; height: 4px; border-radius: 2px; }
+.art-lk-col[aria-checked="true"] .art-lk-th { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ヘッダー: スマホは1行 (閲覧= ← / タイトル(省略) / 編集 / ⋯、編集= ← / 見た目 / 公開 / 完了 / ⋯)。
+   狭い幅では見た目・公開をアイコンのみ (aria-label/title あり)。タイトルは編集状態では記事の h1 で直接打つ */
+@media (max-width: 600px) {
+    #art-edit-view .art-hd { flex-wrap: nowrap; gap: 6px; }
+    #art-edit-view .art-hd .art-hd-publish-group { margin-left: 0; }
+    #art-edit-view[data-art-mode="edit"] .art-hd .art-hd-title { display: none; }
+    #art-edit-view[data-art-mode="edit"] .art-hd #art-look-btn { margin-left: auto; }
+    #art-edit-view[data-art-mode="view"] .art-hd .art-title-input { border-color: transparent; background: none; text-overflow: ellipsis;
+        pointer-events: none; padding-left: 0; }
+    #art-edit-view[data-art-mode="view"] .art-hd .art-save-status { display: none; }
+}
+@media (max-width: 600px) {
+    #art-edit-view .art-hd .art-hd-title { flex: 1 1 auto; order: 0; }
+}
+/* 既存 .art-shelf-list .art-shelf-item (グリッド領域指定) より強く、全画面の行の並びに置き換える */
+#art-edit-view .art-shelf-list.art-fs-list .art-shelf-item.art-fs-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) 34px;
+    grid-template-areas: none; gap: 10px; align-items: start; padding: 10px 0; min-height: 0; background: none; }
+#art-edit-view .art-shelf-list.art-fs-list .art-fs-row > * { grid-area: auto; }
