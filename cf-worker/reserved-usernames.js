@@ -6,6 +6,10 @@
 //   ② EXCLUDED_PATHS:      3文字未満、またはドット/拡張子を含み、制約上そもそも取得できない語
 //                           → 配信 Worker のルーティングで username 解決を試みず素通りする
 // どちらも「bookshelf.asayake.org の第1階層パスセグメント」としては予約済み扱いにする点は同じ。
+//
+// なりすまし・コンプライアンス違反のおそれがある語 (部分一致・ADR-114・イシュー#269 step2) は
+// RESERVED_USERNAMES (完全一致) とは別ファイルで保守する (username-blocklist.js)。
+import { containsBlockedWord } from './username-blocklist.js';
 
 export const RESERVED_USERNAMES = [
     'top', 'about', 'legal', 'help', 'api', 'username',
@@ -27,12 +31,15 @@ export const ALL_RESERVED_TOP_LEVEL = [...RESERVED_USERNAMES, ...EXCLUDED_PATHS]
 
 const USERNAME_RE = /^[a-z0-9-]{3,30}$/;
 
-// username として登録可能か (制約 + 予約語チェック)。配信ルーティングの除外判定には isReservedTopLevel を使う。
+// username として登録可能か (制約 + 予約語 + ブロックリストチェック)。
+// 配信ルーティングの除外判定には isReservedTopLevel を使う (ブロックリストは登録 API 専用・
+// 配信ルーティングには影響させない。既存登録 username にブロックリスト該当語は無い)。
 export function isValidUsername(u) {
     if (typeof u !== 'string') return false;
     if (!USERNAME_RE.test(u)) return false;
     if (u.startsWith('-') || u.endsWith('-')) return false;
     if (RESERVED_USERNAMES.includes(u)) return false;
+    if (containsBlockedWord(u)) return false;
     return true;
 }
 
