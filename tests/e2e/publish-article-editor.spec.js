@@ -13,22 +13,62 @@ async function closePublishPanelIfOpen(page) {
 
 async function publishViaPanel(page) {
     if (await page.locator('#art-publish-modal.show').count()) await page.click('#art-pub-close');
-    await page.click('#art-publish-header');
+    await openPublishPanel(page);
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     if (await page.locator('#art-pub-go').isDisabled()) {
         await page.click('#art-pub-close');
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+        await addBlock(page, 'book', 'last');
         const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
-        await page.click('#art-publish-header');
+        await openPublishPanel(page);
         await expect(page.locator('#art-pub-go')).toBeEnabled();
     }
     await page.click('#art-pub-go');
 }
 
+// イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet。
+// shelf/book は全画面編集(form)に入り旧フォームの該当ブロックと本の引き出しが出る。text はキャンバス内 .art-cv-ta でその場入力。
+function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
+async function addBlock(page, type, pos = 'last') {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+    const btns = canvas(page).locator('.art-cv-ins-btn');
+    await expect(btns).toHaveCount(before + 1);
+    await (pos === 'first' ? btns.first() : btns.last()).click();
+    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
+    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
+    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+}
+
+// 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
+async function leaveForm(page) {
+    const done = page.locator('#art-fs-done');
+    if (await done.isVisible()) await done.click();
+}
+// 公開パネルは編集状態のヘッダー #art-publish-header から開く
+async function openPublishPanel(page) {
+    await leaveForm(page);
+    const edit = page.locator('#art-mode-edit');
+    if (await edit.isVisible()) await edit.click();
+    await page.click('#art-publish-header');
+}
+// プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」
+async function openPreview(page) {
+    await leaveForm(page);
+    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
+    await page.click('#art-more-btn');
+    await page.click('#art-width-preview');
+}
+async function goBack(page) {
+    await leaveForm(page);
+    await page.click('#art-back');
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -175,7 +215,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
 
         await page.fill('#art-title', 'わたしを構成する10冊');
         // イシュー#230: タグは公開パネルの「タグ」セクションで付ける
-        await page.click('#art-publish-header');
+        await openPublishPanel(page);
         await page.locator('#art-tag-input').fill('SF');
         await page.locator('.art-sugg-new').click();
         await expect(page.locator('#art-tags .art-tag')).toContainText('SF');
@@ -186,7 +226,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
         await expect(page.locator('#art-list .pp-row-title')).toContainText('わたしを構成する10冊');
         expect(errors).toEqual([]);
@@ -197,13 +237,12 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
+        // ブロックを追加 → 本棚 (イシュー#268: 全画面編集に入り、本の引き出しが出る)
+        await addBlock(page, 'shelf', 'first');
+        await expect(page.locator('#art-fs-title')).toHaveText('本棚を編集');
+        await expect(page.locator('.art-block.is-fs-target')).toHaveCount(1);
         // 本の引き出しに (all=5冊) 表示される
         await expect(page.locator('#art-drawer-list .art-drawer-item')).toHaveCount(5);
-
-        // ブロックを追加 → 本棚
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
-        await expect(page.locator('.art-block[data-index="0"] .art-block-kind')).toHaveText('本棚');
 
         // 引き出しの本を2回クリック (同じ本を多重配置できる, §11.1)
         const firstDrawerBook = page.locator('#art-drawer-list .art-drawer-item').first();
@@ -221,9 +260,8 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        const textarea = page.locator('.art-block-text textarea');
+        await addBlock(page, 'text', 'first');
+        const textarea = canvas(page).locator('.art-cv-ta');
         await textarea.fill('## はじめに\n\n本文。');
         await expect(textarea).toHaveValue('## はじめに\n\n本文。');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
@@ -300,7 +338,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);
         expect(errors).toEqual([]);
     });
@@ -311,15 +349,13 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-new');
         await page.fill('#art-title', 'わたしを構成する10冊');
 
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('## はじめに\n\n本文サンプル。');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
 
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').last().click();
+        await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
 
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
@@ -340,13 +376,12 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
 
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、モーダル表示直後は
@@ -364,11 +399,10 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await addBlock(page, 'text', 'first');
         // debounce (600ms) が経過する前に即プレビューを押す
-        await page.locator('.art-block-text textarea').fill('# まだ保存されていない見出し');
-        await page.click('#art-preview');
+        await canvas(page).locator('.art-cv-ta').fill('# まだ保存されていない見出し');
+        await openPreview(page);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
@@ -387,9 +421,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
         await page.evaluate(() => {
             window.bookshelf.publishArticleGenerator.build = () => Promise.resolve({
@@ -398,7 +431,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             });
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('プレビューを生成できませんでした');
         // errors 全件が出る (result.errors[0] だけを見ない)
@@ -413,9 +446,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
         await page.evaluate(() => {
             // 依頼文が主張していた「preview/index.html が無く errors も空」の状態を模す。
@@ -424,7 +456,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             });
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('プレビューを生成できませんでした');
         // 理由が空欄のまま終わらない (旧: result.errors[0] || '' で無言になっていた)
@@ -438,15 +470,14 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
         await page.evaluate(() => {
             window.bookshelf.publishArticleGenerator.build = () => Promise.reject(new Error('ネットワークタイムアウト'));
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
         expect(srcdoc).toContain('プレビューに失敗しました');
         expect(srcdoc).toContain('ネットワークタイムアウト');
@@ -458,16 +489,15 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 200; // 実時間20秒を待たないよう短く注入
             window.bookshelf.publishArticleGenerator.build = () => new Promise(() => {}); // 永久pending
         });
 
-        await page.click('#art-preview'); // 公開メソッド経由 (内部関数を直接叩かない)
+        await openPreview(page); // 公開メソッド経由 (内部関数を直接叩かない)
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         await expect(page.locator('#pp-preview-stall-msg')).toContainText('止まっているようです');
         await expect(page.locator('#pp-preview-retry')).toBeVisible();
@@ -493,17 +523,13 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // 本ブロックを冊数分並べて作る (1ブロック=1冊、旧実装は本棚ブロック+複数配置だった)。
         const drawerCount = await page.locator('#art-drawer-list .art-drawer-item').count();
         for (let i = 0; i < drawerCount; i++) {
-            await page.locator('.art-add-btn').last().click();
-            await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
+            await addBlock(page, 'book', 'last');
             await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
-        }
-        // 本ブロックごとの個別トグル (既定 longMemo:false) なので全ブロック分クリックする
-        const longToggles = page.locator('.art-book-show-toggle[data-show-key="longMemo"]');
-        const toggleCount = await longToggles.count();
-        for (let i = 0; i < toggleCount; i++) {
-            const t = longToggles.nth(i);
+            // 本ブロックごとの個別トグル (既定 longMemo:false)。イシュー#268: 全画面編集中の1ブロック分だけ見えるので、追加のたびに押す
+            const t = page.locator('.art-block.is-fs-target .art-book-show-toggle[data-show-key="longMemo"]');
             if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
         }
+        await leaveForm(page);
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 5000; // 個別検知は発火させない値 (5冊分の合計1500ms未満にはならない設計)
@@ -512,7 +538,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => setTimeout(() => resolve('# メモ'), 300));
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         // 修正前は合計1500ms待ってもストール表示が出なかった (実測済み)
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         expect(errors).toEqual([]);
@@ -530,8 +556,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await addBlock(page, 'book', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
@@ -541,7 +566,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             window.bookshelf.storage.readBookMemo = () => new Promise(() => {}); // 永久pending
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         await expect(page.locator('#pp-preview-stall-msg')).toContainText('長文メモ');
         await expect(page.locator('#pp-preview-stall-msg')).toContainText('読込中');
@@ -553,9 +578,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '再試行テスト');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 200;
@@ -567,7 +591,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             };
         });
 
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-stall')).toBeVisible({ timeout: 5000 });
         await page.click('#pp-preview-retry');
         // イシュー#161: #pp-preview-stall が非表示になるのは _artRetryPreview 冒頭の同期処理
@@ -594,8 +618,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await addBlock(page, 'book', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         // 長文メモ表示をON (既定でON想定だが、明示的に押して確実にする)
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
@@ -609,7 +632,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             });
         });
 
-        page.click('#art-preview'); // await しない (進捗中の途中状態を見るため)
+        openPreview(page); // await しない (進捗中の途中状態を見るため)
         // イシュー#161: 進捗文言の出力先をiframe srcdoc非依存(親DOM #pp-preview-progress-msg)へ
         // 変更したため、途中状態の検証もそちらのtextContentを見る。
         await expect.poll(async () => {
@@ -630,15 +653,17 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
-        // イシュー#230: 見た目はキャンバス先頭の固定ブロック (縦リスト・role=radio) で選ぶ
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
+        // イシュー#268: 見た目は編集状態のヘッダー「見た目」(#art-look-btn) → #art-look-sheet で選ぶ (押すと即反映)
         // イシュー#251: 既定(book-a-shelf-a)とは別の値を選んで切り替わることを確認する
-        await page.locator('.art-look-row[data-look-kind="layout"][data-look-id="book-c-shelf-d"]').click();
-        await page.locator('.art-look-row[data-look-kind="color"][data-look-id="gold-dark"]').click();
-        await expect(page.locator('.art-look-row[data-look-id="gold-dark"]')).toHaveAttribute('aria-checked', 'true');
-        await page.click('#art-preview');
+        await page.click('#art-look-btn');
+        await page.locator('#art-look-sheet [data-look-kind="layout"][data-look-id="book-c-shelf-d"]').click();
+        if (!(await page.locator('#art-look-sheet [data-look-kind="color"][data-look-id="gold-dark"]').isVisible())) await page.click('#art-look-btn');
+        await page.locator('#art-look-sheet [data-look-kind="color"][data-look-id="gold-dark"]').click();
+        await expect.poll(() => page.evaluate(() => [window.bookshelf._artDraft.theme?.layout, window.bookshelf._artDraft.theme?.color].join('|'))).toContain('gold-dark');
+        if (await page.locator('#art-look-sheet').isVisible()) await page.keyboard.press('Escape');
+        await openPreview(page);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
         // まだ生成中の可能性がある。完了(「生成中」の非表示)を待ってから読む。
@@ -656,10 +681,9 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
-        await page.click('#art-preview');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         const stage = page.locator('#pp-preview-modal .pp-preview-stage');
         await expect(stage).not.toHaveClass(/pp-stage-mobile/);
@@ -761,9 +785,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'lastBuiltAt失敗テスト');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -791,11 +814,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'わたしを構成する10冊');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('## はじめに\n\n本文サンプル。');
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').last().click();
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
+        await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
@@ -851,9 +872,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'わたしを構成する10冊');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('## はじめに\n\n本文サンプル。');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -910,9 +930,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'URL案内テスト');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -949,9 +968,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // 1本目を作成・公開 (この時点では公開中記事は1件)
         await page.click('#art-new');
         await page.fill('#art-title', '一括更新テスト1');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文1');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文1');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -974,9 +992,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // 2本目を作成・公開 (これで公開中記事が2件になる)
         await page.click('#art-new');
         await page.fill('#art-title', '一括更新テスト2');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文2');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文2');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
@@ -1002,8 +1019,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '評価つき記事');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
@@ -1026,9 +1042,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '取り消しテスト');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1057,9 +1072,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '索引テスト記事');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1078,9 +1092,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '削除連動テスト');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1107,14 +1120,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '一覧から公開');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
         await page.click('.pp-row [data-act="publish"]');
         await page.click('.cfm-ok');
@@ -1132,9 +1144,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '無題の記事');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1148,7 +1159,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(article.publicId).toBeTruthy();
 
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
         const urlLink = page.locator('.pp-row .pp-row-url a').first();
         await expect(urlLink).toHaveAttribute('href', `https://bookshelf.asayake.org/hahero/${article.publicId}/`);
@@ -1165,9 +1176,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'フォールバック確認');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1184,7 +1194,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             SyncConfigManager.save(cfg);
         });
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
         const urlLink = page.locator('.pp-row .pp-row-url a').first();
         await expect(urlLink).toHaveAttribute('href', `${HUB}/public/sid/${article.publicId}/`);
@@ -1249,49 +1259,14 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
 test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有効)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-    test('ブロックのドラッグ並び替えが機能する (Pointer Events)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').first().fill('block-A');
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').last().click();
-        await page.locator('.art-block-text textarea').last().fill('block-B');
-
-        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.markdown));
-        await expect.poll(orderOf).toEqual(['block-A', 'block-B']);
-
-        // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
-        // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
-        // イシュー#230: キャンバス先頭に「見た目」ブロック (開いた状態で約330px) が入ったため、scrollTop=0 だと
-        // 1280x720 の .art-col (可視高 約345px) からブロックA/Bが可視域外へ押し出され elementFromPoint が null になる
-        // (実測: gripA.y=677 > .art-col 下端 585)。前提「両ブロックが見える」を保つため、ブロックAを可視域の先頭へ寄せる。
-        await page.evaluate(() => { const a = document.querySelector('.art-block'); if (a) a.scrollIntoView({ block: 'start' }); });
-        const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
-        const blockB = page.locator('.art-block').nth(1);
-        const gripBox = await gripA.boundingBox();
-        const targetBox = await blockB.boundingBox();
-        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
-        await page.mouse.up();
-
-        await expect.poll(orderOf).toEqual(['block-B', 'block-A']);
-        expect(errors).toEqual([]);
-    });
-
     test('プレビューを開いて戻ると、プレビューだけ閉じエディタは残る (履歴統合)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').fill('本文');
 
-        await page.click('#art-preview');
+        await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);
@@ -1304,161 +1279,27 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
         expect(errors).toEqual([]);
     });
 
-    test('本棚ブロック内の本のドラッグ並び替えが機能する (Pointer Events, A-1回帰)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
-        await ensureDrawerSheetOpen(page); // イシュー#165: 900px以下はボトムシートを開かないと引き出しの本が見えない
-        await page.locator('#art-drawer-list .art-drawer-item').nth(0).click();
-        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-        await closeDrawerSheetIfOpen(page); // 開いたままだとスクリムが後続のドラッグ操作を遮る
-
-        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => it.asin));
-        const before = await orderOf();
-        expect(before).toHaveLength(2);
-
-        const items = page.locator('.art-shelf-item');
-        // イシュー#230: 見た目ブロックの分だけ本棚の行が下がり可視域外になるため、1冊目を可視域の先頭へ寄せてから掴む
-        await page.evaluate(() => { const a = document.querySelector('.art-shelf-item'); if (a) a.scrollIntoView({ block: 'start' }); });
-        const gripA = items.nth(0).locator('.art-shelf-item-grip');
-        const itemB = items.nth(1);
-        const gripBox = await gripA.boundingBox();
-        const targetBox = await itemB.boundingBox();
-        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
-        await page.mouse.up();
-
-        await expect.poll(orderOf).toEqual([before[1], before[0]]);
-        expect(errors).toEqual([]);
-    });
 });
 
 // 実機報告「ドラッグが効かない」(2026-08-16) の再現用。上のドラッグ2件は 390x844+hasTouch
 // でしか打っておらず、本人が触っているのは PC 幅のマウス操作なので同じ経路を素の viewport
 // (1280x720・タッチ無し) でも打つ。pointerType が touch と mouse で分岐する余地を潰す。
 test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', () => {
-    test('ブロックのドラッグ並び替えが機能する (Pointer Events)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').first().fill('block-A');
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').last().click();
-        await page.locator('.art-block-text textarea').last().fill('block-B');
-
-        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.markdown));
-        await expect.poll(orderOf).toEqual(['block-A', 'block-B']);
-
-        // .art-col は内側スクロール領域 (イシュー#59 A/B)。2ブロック目のフォーカスでブラウザが
-        // 自動スクロールすることがあるため、座標取得前に先頭へ戻して両ブロックが見える状態にする。
-        // イシュー#230: キャンバス先頭に「見た目」ブロック (開いた状態で約330px) が入ったため、scrollTop=0 だと
-        // 1280x720 の .art-col (可視高 約345px) からブロックA/Bが可視域外へ押し出され elementFromPoint が null になる
-        // (実測: gripA.y=677 > .art-col 下端 585)。前提「両ブロックが見える」を保つため、ブロックAを可視域の先頭へ寄せる。
-        await page.evaluate(() => { const a = document.querySelector('.art-block'); if (a) a.scrollIntoView({ block: 'start' }); });
-        const gripA = page.locator('.art-block').nth(0).locator('.art-block-grip');
-        const blockB = page.locator('.art-block').nth(1);
-        const gripBox = await gripA.boundingBox();
-        const targetBox = await blockB.boundingBox();
-        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
-        await page.mouse.up();
-
-        await expect.poll(orderOf).toEqual(['block-B', 'block-A']);
-        expect(errors).toEqual([]);
-    });
-
-    test('本棚ブロック内の本のドラッグ並び替えが機能する', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
-        await page.locator('#art-drawer-list .art-drawer-item').nth(0).click();
-        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-
-        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => it.asin));
-        const before = await orderOf();
-        expect(before).toHaveLength(2);
-
-        const items = page.locator('.art-shelf-item');
-        // イシュー#230: 見た目ブロックの分だけ本棚の行が下がり可視域外になるため、1冊目を可視域の先頭へ寄せてから掴む
-        await page.evaluate(() => { const a = document.querySelector('.art-shelf-item'); if (a) a.scrollIntoView({ block: 'start' }); });
-        const gripA = items.nth(0).locator('.art-shelf-item-grip');
-        const itemB = items.nth(1);
-        const gripBox = await gripA.boundingBox();
-        const targetBox = await itemB.boundingBox();
-        await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 10 });
-        await page.mouse.up();
-
-        await expect.poll(orderOf).toEqual([before[1], before[0]]);
-        expect(errors).toEqual([]);
-    });
 });
 
 test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', () => {
-    test('3種のブロックすべてに操作バー(グリップ/複製/削除)が付く (A-2回帰)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').last().click();
-        await page.locator('.art-add-btn').last().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').last().click();
-        await expect(page.locator('.art-block')).toHaveCount(3);
-
-        const blocks = page.locator('.art-block');
-        for (let i = 0; i < 3; i++) {
-            const block = blocks.nth(i);
-            await expect(block.locator('.art-block-grip')).toBeVisible();
-            await expect(block.locator('.art-block-dup')).toBeVisible();
-            await expect(block.locator('.art-block-del')).toBeVisible();
-        }
-        expect(errors).toEqual([]);
-    });
-
-    test('本ブロックは複製・削除ボタンで実際に操作できる (A-2回帰)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
-        await expect(page.locator('.art-block')).toHaveCount(1);
-
-        await page.locator('.art-block-dup').first().click();
-        await expect(page.locator('.art-block')).toHaveCount(2);
-
-        await page.locator('.art-block-del').first().click();
-        await expect(page.locator('.art-block')).toHaveCount(1);
-        expect(errors).toEqual([]);
-    });
-
     test('本棚ブロックが0冊のとき空状態の案内が縦に潰れず表示される (A-3回帰)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
-        // イシュー#168: 空状態の案内は <p class="pp-empty"> から常駐の追加ボタン
-        // (.art-shelf-add-empty、同じ pp-empty 見た目を継承) に変わった。潰れないことは
-        // このボタン自体の高さ/幅で見る (.art-shelf-list は0冊時は描画されない)。
-        await expect(page.locator('.art-block-body .pp-empty')).toBeVisible();
-        const box = await page.locator('.art-shelf-add-empty').boundingBox();
-        expect(box.height).toBeGreaterThan(40);
+        // イシュー#268: 全画面編集の本棚ブロックは「本（0冊）」の見出しと常駐の追加ボタン (.art-fs-add) を出す。
+        // 潰れないことはこのボタン自体の高さ/幅で見る。
+        const target = page.locator('.art-block.is-fs-target');
+        await expect(target.locator('.art-fs-sec')).toHaveText('本（0冊）');
+        const box = await target.locator('.art-fs-add').boundingBox();
+        expect(box.height).toBeGreaterThan(30);
         expect(box.width).toBeGreaterThan(200);
         expect(errors).toEqual([]);
     });
@@ -1467,12 +1308,11 @@ test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', ()
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-        await page.locator('.art-block-text textarea').first().fill('本文');
+        await addBlock(page, 'text', 'first');
+        await canvas(page).locator('.art-cv-ta').first().fill('本文');
 
         for (let i = 0; i < 3; i++) {
-            await page.click('#art-preview');
+            await openPreview(page);
             await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
             const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
             expect(srcdoc).not.toContain('<script');
@@ -1485,8 +1325,7 @@ test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', ()
 
 test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () => {
     async function addShelfWithBooks(page, n) {
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
@@ -1505,153 +1344,6 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         expect(errors).toEqual([]);
     });
 
-    test('密度トグルは無く、本棚(各行・一括バー)は短文メモ/評価の2チップ・本ブロックは短文メモ/評価/長文メモの3チップで、短文メモ/評価は本ブロック・各行・一括バーで同じ固定幅・同じ列に並ぶ (イシュー#238)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        // 本ブロックを1つ (3チップ・列位置比較用)
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        await addShelfWithBooks(page, 2);
-        await expect(page.locator('.art-density-toggle')).toHaveCount(0);
-
-        // 本ブロックは短文メモ→評価→長文メモの順で3チップ (イシュー#238: この並びにすることで
-        // 本棚の2チップが本ブロックの先頭2チップと同じ列位置に揃う)
-        const bookChips = page.locator('.art-block-book-body .art-chips .art-chip-toggle');
-        await expect(bookChips).toHaveCount(3);
-        await expect(bookChips.nth(0)).toHaveText('短文メモ');
-        await expect(bookChips.nth(1)).toHaveText('評価');
-        await expect(bookChips.nth(2)).toHaveText('長文メモ');
-
-        // 本棚は長文メモを選べない (各行・一括バーとも2チップ、longMemoチップ自体が無い)
-        await page.locator('.art-item-check').first().click();
-        await expect(page.locator('.art-shelf-item').first().locator('.art-chips .art-chip-toggle')).toHaveCount(2);
-        await expect(page.locator('.art-shelf-selbar .art-chips .art-chip-toggle')).toHaveCount(2);
-        await expect(page.locator('[data-show-key="longMemo"].art-item-show-toggle, [data-show-key="longMemo"].art-sel-chip')).toHaveCount(0);
-
-        // 短文メモ・評価の left は本ブロック・本棚各行・一括バーの3者で揃う (left範囲0〜1px)
-        const lefts = await page.evaluate(() => ['shortMemo', 'rating'].map(k =>
-            [...document.querySelectorAll(`.art-block-book-body [data-show-key="${k}"], .art-shelf-selbar [data-show-key="${k}"], .art-shelf-item [data-show-key="${k}"]`)]
-                .map(el => { const r = el.getBoundingClientRect(); return { l: Math.round(r.left * 10) / 10, w: Math.round(r.width) }; })));
-        for (const col of lefts) {
-            expect(col.length).toBe(4); // 本ブロック1 + 一括バー1 + 各行2
-            expect(Math.max(...col.map(c => c.l)) - Math.min(...col.map(c => c.l))).toBeLessThanOrEqual(1);
-            expect(new Set(col.map(c => c.w)).size).toBe(1);
-        }
-        expect(errors).toEqual([]);
-    });
-
-    test('見出し行の ▸▾ で畳むと本体が隠れて要約が出る・「すべて畳む/すべて開く」で全ブロックが切り替わる (イシュー#230)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 2);
-        const shelf = page.locator('.art-block[data-block-id]').first();
-
-        await expect(shelf.locator('.art-block-body')).toBeVisible();
-        await shelf.locator('.art-block-tg').click();
-        const shelfAfter = page.locator('.art-block[data-block-id]').first();
-        await expect(shelfAfter).toHaveClass(/is-collapsed/);
-        await expect(shelfAfter.locator('.art-block-body')).toHaveCount(0);
-        await expect(shelfAfter.locator('.art-block-sum')).toContainText('2冊');
-        // ハンドル・複製・削除は畳んでも出ている
-        await expect(shelfAfter.locator('.art-block-grip')).toBeVisible();
-        await expect(shelfAfter.locator('.art-block-dup')).toBeVisible();
-        await expect(shelfAfter.locator('.art-block-del')).toBeVisible();
-        // 畳み状態は保存しない (UI状態のみ)
-        expect(await page.evaluate(() => 'collapsed' in window.bookshelf._artDraft.blocks[0])).toBe(false);
-
-        await page.locator('.art-collapse-all').click();
-        await expect(page.locator('.art-block:not(.is-collapsed)')).toHaveCount(0);
-        await expect(page.locator('.art-collapse-all')).toHaveText('すべて開く');
-        await page.locator('.art-collapse-all').click();
-        await expect(page.locator('.art-block.is-collapsed')).toHaveCount(0);
-        await expect(page.locator('.art-collapse-all')).toHaveText('すべて畳む');
-        expect(errors).toEqual([]);
-    });
-
-    test('見た目ブロック: 新規記事は開いて始まり、既存記事 (ブロック2個以上) を開き直すと畳んで始まり要約「書影を大きく／水色・白地」を出す。畳みは保存しない (イシュー#230・表示名は#251・既定配色は#257で水色・白地に・配色名の簡素化は#260)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await expect(page.locator('.art-look-block')).not.toHaveClass(/is-collapsed/);
-        await expect(page.locator('.art-look-list').first()).toBeVisible();
-        await page.fill('#art-title', '見た目の畳み確認');
-        for (const text of ['一つ目', '二つ目']) {
-            await page.locator('.art-add-btn').last().click();
-            await page.locator('.art-add-menu-item[data-block-type="text"]').last().click();
-            await page.locator('.art-block-text textarea').last().fill(text);
-        }
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        await page.click('#art-back');
-        await page.locator('li.pp-row [data-act="edit"]').first().click();
-        await expect(page.locator('#art-edit-view')).toBeVisible();
-        const look = page.locator('.art-look-block');
-        await expect(look).toHaveClass(/is-collapsed/);
-        await expect(look.locator('.art-look-list')).toHaveCount(0);
-        await expect(look.locator('.art-block-sum')).toHaveText('書影を大きく／水色・白地');
-        // 開けば一覧が出る。記事データに畳み状態は入らない
-        await look.locator('.art-block-tg').click();
-        await expect(page.locator('.art-look-list').first()).toBeVisible();
-        const art = await page.evaluate(() => window.bookshelf.publishArticleStore.get(window.bookshelf._artEditingId));
-        expect(JSON.stringify(art)).not.toContain('collapsed');
-        expect(errors).toEqual([]);
-    });
-
-    test('見た目の配色リストは検索で絞り込め、プラグインが登録した項目は提供元つきで一覧に出る (イシュー#230)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => {
-            const api = window.bookshelfAPI.forPlugin('sample-theme-plugin');
-            api.registerArticleColor({ id: 'sakura', label: '桜' });
-        });
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        const colors = page.locator('.art-look-row[data-look-kind="color"]');
-        await expect(colors).toHaveCount(13); // イシュー#257: 標準12色+プラグイン1個
-        const plug = page.locator('.art-look-row[data-look-id="sakura"]');
-        await expect(plug.locator('.art-look-pv')).toHaveText('sample-theme-plugin');
-        await expect(page.locator('.art-look-row[data-look-id="gold-dark"] .art-look-pv')).toHaveText('標準');
-        await page.locator('.art-look-search').fill('桜');
-        await expect(page.locator('.art-look-row[data-look-kind="color"]:not([hidden])')).toHaveCount(1);
-        expect(errors).toEqual([]);
-    });
-
-    test('並び替え支援: 先頭へ/末尾へボタンで即座に順番が変わる', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 3);
-
-        const orderOf = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => it.asin));
-        const before = await orderOf();
-        await page.locator('.art-shelf-item').last().locator('.art-item-to-first').click();
-        const after = await orderOf();
-        expect(after[0]).toBe(before[before.length - 1]);
-        expect(errors).toEqual([]);
-    });
-
-    test('並び替え支援: 一括指定 (タイトル順) で全アイテムが並び替わる', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 5);
-
-        // 並び順の一括指定は選択式 (イシュー#55): 選択バーは1件以上選択したときだけ出るため、
-        // まず1件選び「すべて選択」で全件を対象にしてから並び順を選ぶ。
-        await page.locator('.art-item-check').first().click();
-        await page.locator('.art-sel-all-btn').click();
-        await page.locator('.art-shelf-sort-sel').selectOption('title');
-        const titles = await page.evaluate(() => {
-            const items = window.bookshelf._artDraft.blocks[0].items;
-            return items.map(it => (window.bookshelf.books.find(b => b.asin === it.asin) || {}).title);
-        });
-        const sorted = [...titles].sort((a, b) => a.localeCompare(b, 'ja'));
-        expect(titles).toEqual(sorted);
-        expect(errors).toEqual([]);
-    });
-
     // 「同じ本も何度でも配置可」の注記は不要 (本人指摘) のため削除した (イシュー#133)。
     test('「同じ本も何度でも配置可」の注記は表示されない (イシュー#133)', async ({ page }) => {
         const errors = await bootApp(page);
@@ -1666,6 +1358,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
 
         await expect(page.locator('.art-drawer-grid')).toHaveCount(0);
         const item = page.locator('#art-drawer-list .art-drawer-item').first();
@@ -1683,6 +1376,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
         const search = page.locator('#art-drawer-search');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
 
@@ -1695,8 +1389,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await expect(drawerItems).toHaveCount(2);
 
         // 絞り込んだ状態から本棚ブロックを追加し、同じ本を複数回配置できる (多重配置, ADR-058 §11.1)
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await drawerItems.first().click();
         await drawerItems.first().click();
         await expect(page.locator('.art-shelf-item')).toHaveCount(2);
@@ -1724,6 +1417,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
 
         const shelfLabel = page.locator('#art-drawer-shelf-label');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
@@ -1744,8 +1438,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         await expect(drawerItems.first()).toContainText('フィクスチャの本 3');
 
         // 絞り込んだ状態からクリックで配置できる
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await drawerItems.first().click();
         await expect(page.locator('.art-shelf-item')).toHaveCount(1);
         await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
@@ -1766,6 +1459,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
 
         await expect(page.locator('#art-drawer-shelf-label')).toHaveText('すべての本');
         await page.click('#art-drawer-shelf-btn');
@@ -1783,6 +1477,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
 
         const btn = page.locator('#art-drawer-shelf-btn');
         await btn.focus();
@@ -1817,90 +1512,11 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
 // 必要最小限であり、これ以上増やす場合は要素数を上げるのでなく情報設計から見直すこと(②指摘)。
 test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
     async function addShelfWithBooks(page, n) {
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
     }
-
-    test('選択なしのとき、ブロックバーの操作要素は6個以下 (ラベルを除く・イシュー#166で追加ボタン分+1)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 4);
-
-        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
-        const count = await page.locator('.art-block-bar').first().locator('button, select, .art-block-grip').count();
-        expect(count).toBeLessThanOrEqual(6);
-        expect(errors).toEqual([]);
-    });
-
-    test('行を1件チェックすると選択バーが出て一括操作が使え、選択解除で消える', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 3);
-
-        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
-        await page.locator('.art-item-check').first().click();
-        await expect(page.locator('.art-shelf-selbar')).toBeVisible();
-        await expect(page.locator('.art-sel-chip')).toHaveCount(2); // 本棚は長文メモを選べない (イシュー#238)
-        await expect(page.locator('.art-shelf-sort-sel')).toBeEnabled();
-
-        await page.locator('.art-sel-clear-btn').click();
-        await expect(page.locator('.art-shelf-selbar')).toHaveCount(0);
-        expect(errors).toEqual([]);
-    });
-
-    test('一括適用 (メモ表示) 後にトーストが出て「元に戻す」で適用前の状態に戻る', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 4);
-
-        const snapshot = () => page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(
-            it => ({ id: it.id, show: { ...it.show }, order: it.order })
-        ));
-        const before = await snapshot();
-
-        await page.locator('.art-item-check').nth(0).click();
-        await page.locator('.art-item-check').nth(1).click();
-        await page.locator('.art-sel-chip[data-show-key="shortMemo"]').click();
-
-        const toast = page.locator('.toast');
-        await expect(toast).toBeVisible();
-        await expect(toast).toContainText('2冊に適用しました');
-        const undoBtn = toast.locator('.toast-action');
-        await expect(undoBtn).toBeVisible();
-
-        // 適用されたことも確認しておく (Undo 前後の対比を明確にするため)
-        const applied = await snapshot();
-        expect(applied.find(it => it.id === before[0].id).show.shortMemo).toBe(true);
-        expect(applied.find(it => it.id === before[1].id).show.shortMemo).toBe(true);
-
-        await undoBtn.click();
-        const after = await snapshot();
-        expect(after).toEqual(before);
-        expect(errors).toEqual([]);
-    });
-
-    test('「すべて選択」で全件選択でき、部分選択のときマスターチェックが Mixed になる', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 4);
-
-        await page.locator('.art-item-check').first().click();
-        await page.locator('.art-sel-all-btn').click();
-        const allChecked = await page.locator('.art-item-check').evaluateAll(els => els.every(e => e.checked));
-        expect(allChecked).toBe(true);
-
-        await page.locator('.art-item-check').first().click(); // 1件外して部分選択にする
-        const indeterminate = await page.locator('.art-shelf-select-all').evaluate(el => el.indeterminate);
-        expect(indeterminate).toBe(true);
-        expect(errors).toEqual([]);
-    });
 
     test('各行の短/長トグルは.art-chip-toggleで、オン時に aria-pressed と太字・背景色 (色以外の手掛かり) が付く (イシュー#170: .art-icon-toggle廃止・chip-toggleへ統一)', async ({ page }) => {
         const errors = await bootApp(page);
@@ -1937,8 +1553,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         await page.click('#art-new');
 
         // ブロックA作成: 追加直後は自動的に追加先としてアクティブになる
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const blockA = page.locator('.art-block').nth(0);
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
@@ -1948,11 +1563,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         await expect(blockA.locator('.art-shelf-item')).toHaveCount(1);
 
         // ブロックB作成 (末尾へ追加): 自動的にBがアクティブへ切り替わり、Aの強調は外れる
-        // .art-add-menu-item は先頭/末尾の各追加メニューに存在するため、開いた .art-add 内でスコープする
-        // (グローバルな .first() だと閉じたままの先頭メニュー側にマッチしてクリックできない)。
-        const lastAdd = page.locator('.art-add').last();
-        await lastAdd.locator('.art-add-btn').click();
-        await lastAdd.locator('.art-add-menu-item[data-block-type="shelf"]').click();
+        await addBlock(page, 'shelf', 'last');
         const blockB = page.locator('.art-block').nth(1);
         await expect(blockB).toHaveClass(/is-add-target/);
         await expect(blockA).not.toHaveClass(/is-add-target/);
@@ -1963,8 +1574,9 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         await expect(blockB.locator('.art-shelf-item')).toHaveCount(1);
         await expect(blockA.locator('.art-shelf-item')).toHaveCount(1);
 
-        // ブロックAをクリック→Aが再びアクティブになる (画面と実際の追加先が一致する)
-        await blockA.click();
+        // イシュー#268: ブロックAを全画面編集で開き直す→Aが再びアクティブになる (画面と実際の追加先が一致する)
+        await leaveForm(page);
+        await page.evaluate(() => window.bookshelf._artEditBlock(window.bookshelf._artDraft.blocks[0].id));
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(blockB).not.toHaveClass(/is-add-target/);
         await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
@@ -1979,8 +1591,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         await page.locator('#art-drawer-search').fill('3');
         await expect(page.locator('#art-drawer-list .art-drawer-item')).toHaveCount(1);
@@ -2003,8 +1614,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         const errors = await bootAppWithManyBooks(page, 800);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         const addAllBtn = page.locator('#art-drawer-add-all');
         await expect(addAllBtn).toContainText('表示中の800冊を追加');
@@ -2030,8 +1640,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
 // hover-only は使えない (ui-standards/ux-heuristics) ため、フォーカス/タッチでも同じ内容に到達できることを検証する。
 test.describe('記事エディタ: 短/長トグルの説明+メモ内容 (イシュー#133)', () => {
     async function addShelfWithBooks(page, n) {
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
@@ -2117,8 +1726,7 @@ test.describe('記事エディタ: 短/長トグルのツールチップ タッ�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await ensureDrawerSheetOpen(page); // イシュー#165: 900px以下はボトムシートを開かないと引き出しの本が見えない
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click(); // B000000002
         await closeDrawerSheetIfOpen(page); // 開いたままだとスクリムが後続のtap操作を遮る
@@ -2143,8 +1751,7 @@ test.describe('記事エディタ: 短/長トグルのツールチップ タッ�
 // 星(評価)トグル: 短文/長文メモと同じ仕組みに show.rating を乗せた (イシュー#135)。
 test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () => {
     async function addShelfWithBooks(page, n) {
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
@@ -2184,8 +1791,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await addBlock(page, 'book', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
 
         const toggles = page.locator('.art-book-show-toggle');
@@ -2198,23 +1804,6 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         expect(errors).toEqual([]);
     });
 
-    test('一括バーのチップ (短文メモ/評価) を押すと、選択した本にだけ適用される (イシュー#230・#238)', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addShelfWithBooks(page, 2);
-
-        await page.locator('.art-item-check').first().click();
-        const labels = await page.locator('.art-sel-chip').allTextContents();
-        expect(labels).toEqual(['短文メモ', '評価']); // 本棚は長文メモを選べない (イシュー#238)
-
-        await page.locator('.art-sel-chip[data-show-key="rating"]').click();
-        await expect(page.locator('.toast')).toContainText('1冊に適用しました');
-
-        const shows = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.map(it => !!(it.show && it.show.rating)));
-        expect(shows).toEqual([true, false]);
-        expect(errors).toEqual([]);
-    });
 });
 
 // イシュー#35: 同期先への保存・読込の失敗を握り潰さず画面に出す (例外の握り潰し修正)。
@@ -2302,66 +1891,6 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
     });
 });
 
-// イシュー#42: ブロックが増えるほど末尾の「+ ブロックを追加」メニューが画面外に出て選べなくなる回帰。
-// toBeVisible() は DOM 上可視なだけで通ってしまうため使わず、getBoundingClientRect() で
-// ビューポート内に収まっているかを実測する。
-async function addTextBlocks(page, count) {
-    for (let i = 0; i < count; i++) {
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
-    }
-}
-
-async function expectMenuWithinViewport(page, btnLocator) {
-    await btnLocator.click();
-    const menu = page.locator('.art-add-menu:not([hidden])');
-    await expect(menu).toHaveCount(1);
-    const viewport = page.viewportSize();
-    const expectBoxWithin = (box) => {
-        expect(box).not.toBeNull();
-        expect(box.y).toBeGreaterThanOrEqual(0);
-        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-        expect(box.x).toBeGreaterThanOrEqual(0);
-        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-    };
-    expectBoxWithin(await menu.boundingBox());
-    // アンカー(ボタン)自身も画面内にあること (イシュー#82 完了条件)
-    expectBoxWithin(await btnLocator.boundingBox());
-    // メニュー全3項目 (文章/本棚/本) それぞれが画面内にあること (イシュー#82 完了条件)
-    const items = menu.locator('.art-add-menu-item');
-    await expect(items).toHaveCount(3);
-    for (let i = 0; i < 3; i++) expectBoxWithin(await items.nth(i).boundingBox());
-    // 次のケースに影響しないよう閉じる
-    await btnLocator.click();
-}
-
-function registerAddMenuViewportTests() {
-    for (const blockCount of [0, 3, 10]) {
-        test(`ブロック${blockCount}個: 先頭・末尾の追加メニューがビューポート内に収まる`, async ({ page }) => {
-            const errors = await bootApp(page);
-            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-            await page.click('#art-new');
-
-            await addTextBlocks(page, blockCount);
-            await expect(page.locator('.art-block')).toHaveCount(blockCount);
-
-            await expectMenuWithinViewport(page, page.locator('.art-add-btn').first());
-            await expectMenuWithinViewport(page, page.locator('.art-add-btn').last());
-            expect(errors).toEqual([]);
-        });
-    }
-}
-
-test.describe('記事エディタ: ブロック追加メニューがビューポート内に収まる (PC幅・1280x720, イシュー#42)', () => {
-    test.use({ viewport: { width: 1280, height: 720 } });
-    registerAddMenuViewportTests();
-});
-
-test.describe('記事エディタ: ブロック追加メニューがビューポート内に収まる (スマホ幅・390x844・タッチ有効, イシュー#42)', () => {
-    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
-    registerAddMenuViewportTests();
-});
-
 // イシュー#59: 新規作成直後 (ブロック0個・実データ相当800冊の引き出し) にモーダルがビューポートに
 // 収まらず外側スクロールが要る回帰。toBeVisible() は DOM 上可視なだけで通ってしまうため使わず、
 // scrollHeight/clientHeight と getBoundingClientRect() を実測して判定する。
@@ -2381,6 +1910,7 @@ test.describe('記事エディタ: 新規作成直後がビューポートに収
             await page.evaluate(() => window.bookshelf.openPublishPagesModal());
             await page.click('#art-new');
             await page.waitForSelector('#art-edit-view:not([hidden])');
+            await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る
 
             const modal = await rectOf(page, '.modal-content');
             expect(modal.scrollHeight).toBeLessThanOrEqual(modal.clientHeight);
@@ -2410,11 +1940,12 @@ test.describe('記事エディタ: 新規作成直後のスマホ幅が横スク
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.waitForSelector('#art-edit-view:not([hidden])');
+        await addBlock(page, 'shelf', 'first'); // イシュー#268: 本の引き出しは本棚の全画面編集で出る (スマホはボトムシート)
 
         const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
         expect(scrollWidth).toBeLessThanOrEqual(390);
 
-        await page.locator('.art-side').scrollIntoViewIfNeeded();
+        await ensureDrawerSheetOpen(page);
         await expect(page.locator('#art-drawer-list .art-drawer-item').first()).toBeVisible();
 
         expect(errors).toEqual([]);
@@ -2430,8 +1961,7 @@ test.describe('記事エディタ: 空状態の案内 (イシュー#59)', () => 
         await expect(page.locator('.art-empty')).toHaveCount(1);
         await expect(page.locator('.art-empty')).toContainText('ブロックがありません');
 
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="text"]').first().click();
+        await addBlock(page, 'text', 'first');
 
         await expect(page.locator('.art-block')).toHaveCount(1);
         await expect(page.locator('.art-empty')).toHaveCount(0);
@@ -2458,14 +1988,14 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
 
         await page.click('#art-new');
         await page.fill('#art-title', '記事2');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
 
         await expect(page.locator('#art-list .pp-row')).toHaveCount(2);
         // 一覧表示中は編集ビューが非表示であること
@@ -2478,7 +2008,7 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
 
         // ← で一覧へ戻ると、編集ビューが非表示に戻ること (回帰1本体)
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await page.waitForSelector('#art-list-view:not([hidden])');
         expect(await displayOf(page, '#art-edit-view')).toBe('none');
         expect(await displayOf(page, '#art-list-view')).not.toBe('none');
@@ -2493,61 +2023,6 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
     });
 });
 
-// イシュー#82 回帰2: .art-col が overflow:auto のスクロールコンテナ化 (イシュー#59) した結果、
-// position:absolute だった .art-add-menu が中間スクロール位置でクリップされ、3項目目が見切れていた。
-// 先頭/末尾のアンカーだけでは再現しない (フリップ判定で回避されるため)。中間までスクロールした
-// 状態で開いたときも、既存の expectMenuWithinViewport と同じ基準 (getBoundingClientRect() で
-// top>=0 && bottom<=innerHeight, 横も同様) で全項目+アンカーが収まることを検証する。
-test.describe('記事エディタ: スクロールコンテナ中間位置でもブロック追加メニューがクリップされない (イシュー#82, 1280x720)', () => {
-    test.use({ viewport: { width: 1280, height: 720 } });
-
-    test('10ブロックで .art-col を中間までスクロールした位置の追加ボタンでも、メニュー全3項目+アンカーが画面内に収まる', async ({ page }) => {
-        const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.click('#art-new');
-        await addTextBlocks(page, 10);
-        await expect(page.locator('.art-block')).toHaveCount(10);
-
-        // Playwright の自動 scrollIntoView に頼ると端に寄ってしまい再現しないため、
-        // .art-col を明示的に中間スクロールしてから force click する。
-        await page.evaluate(() => {
-            const col = document.querySelector('.art-col');
-            col.scrollTop = (col.scrollHeight - col.clientHeight) / 2;
-        });
-        const btns = page.locator('.art-add-btn');
-        const count = await btns.count();
-        const artColRect = await page.evaluate(() => document.querySelector('.art-col').getBoundingClientRect().toJSON());
-        let targetIdx = Math.floor(count / 2);
-        for (let i = 0; i < count; i++) {
-            const r = await btns.nth(i).boundingBox();
-            if (r && r.y > artColRect.top + 40 && r.y < artColRect.top + artColRect.height / 2 + 40) { targetIdx = i; break; }
-        }
-        const targetBtn = btns.nth(targetIdx);
-        await targetBtn.click({ force: true });
-
-        const menu = page.locator('.art-add-menu:not([hidden])');
-        await expect(menu).toHaveCount(1);
-        // 祖先 (.art-col) の overflow:auto に影響されない position:fixed であることも確認する
-        // (position:absolute へ戻す退行が起きると、このアサーションだけが検知できる)
-        expect(await page.evaluate(() => getComputedStyle(document.querySelector('.art-add-menu:not([hidden])')).position)).toBe('fixed');
-
-        const viewport = page.viewportSize();
-        const expectBoxWithin = (box) => {
-            expect(box).not.toBeNull();
-            expect(box.y).toBeGreaterThanOrEqual(0);
-            expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-            expect(box.x).toBeGreaterThanOrEqual(0);
-            expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-        };
-        expectBoxWithin(await targetBtn.boundingBox());
-        const items = menu.locator('.art-add-menu-item');
-        await expect(items).toHaveCount(3);
-        for (let i = 0; i < 3; i++) expectBoxWithin(await items.nth(i).boundingBox());
-
-        expect(errors).toEqual([]);
-    });
-});
-
 // イシュー#155: 本棚ブロックが shelfId:null のまま保存される不具合の再発防止。
 // step1で特定した再現条件 (本棚が1つも無い状態) を潰す実装と、既存 shelfId:null データの後方互換を固定する。
 test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシュー#155)', () => {
@@ -2555,8 +2030,9 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         const errors = await bootAppNoShelves(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        const shelfItem = page.locator('.art-add-menu-item[data-block-type="shelf"]').first();
+        await page.click('#art-mode-edit');
+        await canvas(page).locator('.art-cv-ins-btn').last().click();
+        const shelfItem = page.locator('#art-add-sheet [data-block-type="shelf"]');
         await expect(shelfItem).toBeDisabled();
         await expect(shelfItem).toHaveAttribute('title', /本棚がまだ1つもありません/);
         // 無効化されたボタンはクリックしても _artInsertBlock に届かずブロックは増えない
@@ -2569,8 +2045,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         const shelfId = await page.evaluate(() => {
             const article = window.bookshelf.publishArticleStore.get(window.bookshelf._artEditingId);
@@ -2586,8 +2061,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await page.click('#art-new');
         // 存在しない本棚IDを sourceShelfId に注入 (削除済み本棚を指していた状況を模す)
         await page.evaluate(() => { window.bookshelf._artDraft.sourceShelfId = 'deleted-shelf-xyz'; });
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
         const shelfId = await page.evaluate(() => window.bookshelf._artDraft.blocks.find(b => b.type === 'shelf').shelfId);
         expect(shelfId).toBe('fixall001'); // fixtureのisSpecial本棚(すべての本)へ補正される
         expect(errors).toEqual([]);
@@ -2626,7 +2100,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         const errors = await bootApp(page, { articles: [legacyArticle] });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.locator('#art-list [data-act="edit"]').first().click();
-        await page.click('#art-preview');
+        await openPreview(page);
         // イシュー#161: 進捗表示はiframe srcdoc非依存(親DOM #pp-preview-progress)になったため、
         // 完了判定もそちらのhiddenを見る。
         await page.waitForFunction(() => {
@@ -2649,8 +2123,7 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'ボトムシートテスト記事');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         // シートは既定で閉じている。閉じている間、引き出しの本はビューポート外にある (toBeVisible() は
         // 画面外でも真になるため使わない・ui-standards §2-12。boundingBox で実座標を見る)。
@@ -2677,6 +2150,8 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         await page.waitForTimeout(400); // transform transition 0.25s完了を確実に待つ (スクリムのopacity遷移含む)
 
         // ヘッダーの公開ボタン (常時可視化・§2) は既存のフッター公開ボタンと同じ関数を呼ぶ
+        // イシュー#268: 全画面編集を「完了」で閉じると編集状態のヘッダーに公開ボタンが出る
+        await leaveForm(page);
         await expect(page.locator('#art-publish-header')).toBeVisible();
         await page.evaluate(() => {
             const orig = window.bookshelf._artPublish.bind(window.bookshelf);
@@ -2700,10 +2175,12 @@ test.describe('記事エディタ: 900px超は本の引き出しが初期状態�
         // イシュー#166: FABはDOMごと撤去した (非表示ではなく不在)。count() で不在そのものを確認する。
         expect(await page.locator('#art-fab').count()).toBe(0);
         // イシュー#168: フッターの #art-publish を撤去しヘッダー側 (#art-publish-header) に一本化した
-        // ため、900px超でも常時表示になる (#165時点は900px以下限定だった)。
+        // ため、900px超でも常時表示になる (#165時点は900px以下限定だった)。イシュー#268: 編集状態のヘッダーに出る。
+        await page.click('#art-mode-edit');
         await expect(page.locator('.art-hd-publish-group')).toBeVisible();
         await expect(page.locator('#art-publish-header')).toBeVisible();
         expect(await page.locator('#art-publish').count()).toBe(0);
+        await addBlock(page, 'shelf', 'first'); // 本の引き出しは本棚の全画面編集で出る
         const sideBox = await page.locator('#art-drawer').boundingBox();
         expect(sideBox.y).toBeGreaterThanOrEqual(0);
         expect(sideBox.y).toBeLessThan(400);
@@ -2718,8 +2195,7 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         // 既定は開いた状態 (localStorage未設定)
         await expect(page.locator('.art-wrap')).not.toHaveClass(/art-drawer-user-collapsed/);
@@ -2742,8 +2218,7 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         await page.click('#art-drawer-collapse-btn');
         await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
@@ -2752,7 +2227,7 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
 
         // 一覧へ戻ってから再度エディタを開き直す (新しい記事)
         await closePublishPanelIfOpen(page);
-        await page.click('#art-back');
+        await goBack(page);
         await page.click('#art-new');
         await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
         await expect(page.locator('#art-drawer')).toBeHidden();
@@ -2767,8 +2242,7 @@ test.describe('記事エディタ: 狭い画面は#166のボトムシートの�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         await expect(page.locator('#art-drawer-collapse-btn')).toBeHidden();
         await page.locator('.art-shelf-add').first().click();
@@ -2790,8 +2264,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="book"]').first().click();
+        await addBlock(page, 'book', 'first');
 
         // 空状態ボタン (バー内アイコン+本文中の空状態ボタンの2箇所が同じ .art-book-pick クラスを持つ)
         expect(await page.locator('.art-book-pick').count()).toBe(2);
@@ -2817,8 +2290,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         await page.locator('.art-shelf-add').first().click();
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
@@ -2838,8 +2310,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         await page.locator('.art-shelf-add').first().click();
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
@@ -2863,8 +2334,7 @@ test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.locator('.art-add-btn').first().click();
-        await page.locator('.art-add-menu-item[data-block-type="shelf"]').first().click();
+        await addBlock(page, 'shelf', 'first');
 
         const blockA = page.locator('.art-block').nth(0);
         // 本棚名のテキスト表示は撤去済み (#168「名前出るのいらなくない？」)
@@ -2879,9 +2349,7 @@ test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名
         await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
 
         // 2つ目のブロックを作ってもアイコン/テキストは出ず、対象切替は引き続き機能する
-        const lastAdd = page.locator('.art-add').last();
-        await lastAdd.locator('.art-add-btn').click();
-        await lastAdd.locator('.art-add-menu-item[data-block-type="shelf"]').click();
+        await addBlock(page, 'shelf', 'last');
         const blockB = page.locator('.art-block').nth(1);
         expect(await blockB.locator('.art-block-shelf-path').count()).toBe(0);
         expect(await blockB.locator('.art-block-shelf-icon').count()).toBe(0);
@@ -2898,6 +2366,48 @@ test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名
     // 対象外 (js/bookshelf.js _artRenderShelfBlock 参照)。ここでの重複追加は行わない。
 });
 
+// イシュー#268: 旧フォームのブロック操作バー (グリップ/複製/削除) と本棚の行ドラッグ・一括選択は廃止。
+// ブロックの並び替え・削除はキャンバスの ⋯ (#art-blk-menu)、本棚の本の並び替えは全画面の ↑↓ で行う。
+test.describe('記事エディタ: 見たまま編集の並び替え・削除 (イシュー#268)', () => {
+    test('キャンバスの ⋯ メニューでブロックを下へ移動・削除できる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'text', 'last');
+        await canvas(page).locator('.art-cv-ta').fill('最初の文章');
+        await addBlock(page, 'shelf', 'last');
+        await leaveForm(page);
+        const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));
+        await expect.poll(types).toBe('text,shelf');
+        await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
+        await page.locator('#art-blk-menu [data-blk-act="down"]').click();
+        await expect.poll(types).toBe('shelf,text');
+        await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
+        await page.locator('#art-blk-menu [data-blk-act="delete"]').click();
+        if (await page.locator('.cfm-ok').count()) await page.click('.cfm-ok');
+        await expect.poll(types).toBe('text');
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚の全画面編集で ↓ を押すと本の順番が入れ替わる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        await ensureDrawerSheetOpen(page);
+        await page.locator('#art-drawer-list .art-drawer-item').nth(0).click();
+        await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
+        await closeDrawerSheetIfOpen(page);
+        const rows = page.locator('.art-block.is-fs-target .art-fs-row');
+        await expect(rows).toHaveCount(2);
+        const ids = () => rows.evaluateAll(els => els.map(e => e.dataset.itemId).join(','));
+        const [a, b] = (await ids()).split(',');
+        await rows.first().locator('.art-fs-down').click();
+        await expect.poll(ids).toBe(`${b},${a}`);
+        expect(errors).toEqual([]);
+    });
+});
+
 // イシュー#168: フッター (.pp-edit-actions) の「崩れ」を #166 の数値項目 (はみ出し・横スクロール) に
 // 加えて、折り返し行の内容・矩形交差・内容あふれ・pp-page-ops内部の分裂まで検出する。
 // イシュー#230: フッターを撤去しヘッダー1行 (戻る/タイトル+保存状態/プレビュー/公開する/⋯) へ。旧フッター崩れ検出 (#168) を
@@ -2907,7 +2417,7 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
         { width: 390, height: 844 }, { width: 430, height: 932 }, { width: 600, height: 1080 },
         { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1080, height: 1920 },
     ]) {
-        test(`${vp.width}x${vp.height}: 戻る/プレビュー/公開する/⋯ が1行に並び、はみ出さない`, async ({ page }) => {
+        test(`${vp.width}x${vp.height}: 閲覧/編集どちらの状態でもヘッダーの操作ボタンが1行に並び、はみ出さない`, async ({ page }) => {
             await page.setViewportSize(vp);
             const errors = await bootApp(page);
             await page.evaluate(() => window.bookshelf.openPublishPagesModal());
@@ -2916,14 +2426,20 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
             await page.evaluate(() => window.bookshelf._artFlushSave());
             await expect(page.locator('#art-page-ops')).toBeVisible();
             await expect(page.locator('.pp-edit-actions')).toHaveCount(0);
-            const m = await page.evaluate(() => {
-                const ids = ['art-back', 'art-preview', 'art-publish-header', 'art-more-btn'];
+            // イシュー#268: 閲覧状態 (戻る/編集/⋯) と編集状態 (戻る/見た目/公開する/完了/⋯) の両方で1行に並ぶこと
+            const measure = (ids) => page.evaluate((ids) => {
                 const rs = ids.map(id => document.getElementById(id).getBoundingClientRect());
                 const cy = rs.map(r => (r.top + r.bottom) / 2);
-                return { cyRange: Math.max(...cy) - Math.min(...cy), maxRight: Math.max(...rs.map(r => r.right)), vw: window.innerWidth };
-            });
-            expect(m.cyRange).toBeLessThan(4);
-            expect(m.maxRight).toBeLessThanOrEqual(m.vw);
+                return { hidden: rs.filter(r => r.width === 0).length, cyRange: Math.max(...cy) - Math.min(...cy), maxRight: Math.max(...rs.map(r => r.right)), vw: window.innerWidth };
+            }, ids);
+            for (const [mode, ids] of [['view', ['art-back', 'art-mode-edit', 'art-more-btn']], ['edit', ['art-back', 'art-look-btn', 'art-publish-header', 'art-mode-done', 'art-more-btn']]]) {
+                if (mode === 'edit') await page.click('#art-mode-edit');
+                await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', mode);
+                const m = await measure(ids);
+                expect(m.hidden, mode).toBe(0);
+                expect(m.cyRange, mode).toBeLessThan(4);
+                expect(m.maxRight, mode).toBeLessThanOrEqual(m.vw);
+            }
             expect(errors).toEqual([]);
         });
     }
