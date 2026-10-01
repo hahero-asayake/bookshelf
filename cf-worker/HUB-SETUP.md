@@ -478,6 +478,7 @@ URL を変える必要が出たときの手順:
 1. kuroko が `editMonitor` (対象モニタの `url` を更新) で変更する。ダッシュボードで手動編集してもよい。
 2. **監視URLは `https://bookshelf.asayake.org/<自分のusername>/`** (未認証で200が返る具体パス)。
 3. `https://bookshelf.asayake.org/top` も S7 (イシュー#269) で実装済み＝未認証・D1未設定でも0件ページで200を返すため監視URLの候補になる (Phase I 参照)。個人ページ (`/<username>/`) は「自分のアカウント/KVが生きているか」、`/top` は「D1/一覧表示まで生きているか」を見る点が違う＝**どちらか一方で足りるなら個人ページのままでよい** (既存の監視を無理に切り替える必要は無い)。両方の経路を見たい場合だけ `/top` へ変更/追加する。
+   - **2026-10-01 実測 (イシュー#269 step5)**: 現在のモニタは2件 (`bookshelf hub (hahero)`=`/hahero/`・`Keyword on hub.asayake.org/backup-status`)。`getAccountDetails` の `monitor_limit=50`(使用中2件)＝**枠には十分余裕がある**ため、既存の `/hahero/` 監視を`/top`へ**差し替える必要は無い**。おすすめは**追加**＝`/top`を3件目として新設 (type=HTTP・既存と同じ通知先)。ただし **newMonitor は Free プランの制限で API からは403**(2026-09-28実測、変わらず)＝追加はハヘロ/kurokoがダッシュボード (dashboard.uptimerobot.com → 「+ Add New Monitor」) から手動で行う。このステップでは追加していない (報告のみ)。
 4. `getMonitors` の `status` が 2 (up) に戻ることを確認。
 
 ### H-6. ロールバック (何かおかしければ)
@@ -494,11 +495,13 @@ URL を変える必要が出たときの手順:
 3. 旧 `POST /community/sites` 由来の行 (`public_id=''`) が残っていれば (`SELECT COUNT(*) FROM sites WHERE public_id=''`)、export 済みを確認して `migrations/0002_purge_legacy_sites.sql` を実行する (0 件なら不要)。
 4. hub Worker を deploy (D1 適用の**後**。先に deploy すると `public_id`/`status` 列が無く索引の更新が失敗する = 公開自体は成功するが索引は空のまま)。
 
-※ kuroko の Cloudflare トークンに **D1 Edit** が無いと 1〜3 は実行できない (2026-09-25 実測: `wrangler d1 list` が Authentication error 10000)。**2026-10-01 追記 (イシュー#269 step1)**: 同トークンで `wrangler d1 execute asayake-community --remote --command "SELECT …"` (名前指定の読取クエリ) は成功した＝`d1 list` (データベース一覧) と「既知のDB名への実行」は別権限の可能性がある。ただし CREATE TABLE/INSERT (書込) は未確認＝Phase I 着手時に①の冪等確認コマンドで先に当たりを付けること。
+※ kuroko の Cloudflare トークンの D1 権限について: 2026-09-25 時点で `wrangler d1 list` は Authentication error 10000 だったが、これは「データベース一覧」専用の制限で、**既知のDB名を指定した `d1 execute`/`d1 export` (読取・書込とも) には別権限が効いている**。2026-10-01 (イシュー#269 step5) に `migrations/0003_site_tags.sql` (CREATE TABLE + INSERT) の本番適用で実際に書込/DDLが成功した (projects/detail/bookshelf.md #220 の 2026-09-26 追記のとおり)。D1 操作自体に技術的な制約は無い。
 
 ## Phase I. S7 本体 (`/top`・ページング・タグ横断検索: イシュー#269)
 
-> `/top` (全ユーザー横断の公開記事一覧)・`GET /community/sites` の cursor ページング・`?tag=` タグ横断検索を実装。設計は 08 ADR (本 ADR 番号は 07_残検討事項・08_意思決定記録を参照)・09 §11.12。コード実装・単体テスト (vitest・実SQLite) は完了済み。以下は**ハヘロが実行する Cloudflare 本番操作**。
+> `/top` (全ユーザー横断の公開記事一覧)・`GET /community/sites` の cursor ページング・`?tag=` タグ横断検索を実装。設計は ADR-115 (08_意思決定記録)・09 §11.12。コード実装・単体テスト (vitest・実SQLite) は完了済み。以下は**ハヘロが実行する Cloudflare 本番操作**。
+>
+> ✅ **本番適用済み (2026-10-01・イシュー#269 step5)**。下記 I-1〜I-3 の手順どおり実行し、kurokotest (kuroko の Google アカウント) でテスト記事2本を実際に公開して /top掲載・cursorページング・?tag=絞り込み・site_tags連動削除を実機確認した (結果は ADR-115 に転記)。デプロイ後の version id: hub=`164f119d-c6d0-4c90-80b5-a33b36fdfafa`、bookshelf-cdn=`4e49b690-dc89-4b95-bdc3-cf8fa430b2e8` (直前版=rollback先: hub=`f838189f-11b0-42b9-98ab-e3533db9cf7c`・cdn=`6d91316e-fedc-4693-ad95-68dcdb9d003a`)。D1 migration (0003) 適用も成功 (sites_n=0/site_tags_n=0 のまま・backfill対象データが無かったため想定どおり)。
 
 ### I-1. D1 migration (`migrations/0003_site_tags.sql`)
 
