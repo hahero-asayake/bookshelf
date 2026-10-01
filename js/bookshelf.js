@@ -27,6 +27,9 @@ const ART_CANVAS_CHROME_CSS = `
 .art-cv-ins{height:28px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
 .art-cv-ins-btn{width:28px;height:28px;border-radius:999px;border:none;background:var(--acc);color:var(--accT,#fff);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);padding:0}
 .art-cv-empty{min-height:56px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:14px}
+.art-cv-empty-editing{display:block}
+.art-cv-ta{display:block;width:100%;min-height:120px;font:inherit;font-size:16px;line-height:1.9;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;resize:none;overflow:hidden}
+.art-cv-ta:focus{outline:2px solid var(--acc);outline-offset:1px}
 `;
 
 // 記事プレビューのストール検知 (イシュー#143・#153)。build() が失敗も成功もせず無期限に pending
@@ -8187,6 +8190,7 @@ class VirtualBookshelf {
             const menu = document.getElementById('art-blk-menu');
             if (sheet && !sheet.hidden) this._artCloseAddSheet();
             else if (menu && !menu.hidden) this._artCloseBlkMenu();
+            else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
             else return;
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -8243,7 +8247,9 @@ class VirtualBookshelf {
         on('art-preview', 'click', () => this._artPreview());
         // イシュー#268: 閲覧⇄編集トグル・＋シート・ブロックの⋯メニュー
         on('art-mode-edit', 'click', () => this._artSetMode('edit'));
-        on('art-mode-done', 'click', () => this._artSetMode(this._artMode === 'form' ? 'edit' : 'view'));
+        on('art-mode-done', 'click', () => this._artSetMode('view'));
+        on('art-fs-done', 'click', () => this._artCloseBlockFs(true));
+        on('art-fs-cancel', 'click', () => this._artCloseBlockFs(false));
         const addSheet = document.getElementById('art-add-sheet');
         if (addSheet) {
             addSheet.addEventListener('click', (e) => {
@@ -8251,7 +8257,13 @@ class VirtualBookshelf {
                 const item = e.target.closest('.art-add-sheet-item');
                 if (!item || item.disabled) return;
                 this._artCloseAddSheet();
-                this._artInsertBlock(item.dataset.blockType, this._artAddIndex == null ? (this._artDraft.blocks || []).length : this._artAddIndex);
+                const at = this._artAddIndex == null ? (this._artDraft.blocks || []).length : this._artAddIndex;
+                this._artInsertBlock(item.dataset.blockType, at);
+                const added = (this._artDraft.blocks || [])[at];
+                if (added) {
+                    if (added.type === 'text') this._artPendingInlineId = added.id; // キャンバスの描き直し後に入力欄を出す
+                    else this._artEditBlock(added.id);
+                }
             });
         }
         const blkMenu = document.getElementById('art-blk-menu');
@@ -8499,6 +8511,7 @@ class VirtualBookshelf {
     async _artRenderCanvas() {
         const frame = document.getElementById('art-canvas-frame');
         if (!frame || !this._artDraft || !this.publishArticleGenerator) return;
+        if (this._artInlineBlockId) return; // 文章をその場で入力中 (blur で描き直す)
         const gen = (this._artCanvasGen || 0) + 1;
         this._artCanvasGen = gen;
         const tempArticle = { ...this._artDraft, id: this._artDraft.id || '_preview', slug: 'preview', publicId: 'preview' };
@@ -8524,6 +8537,11 @@ class VirtualBookshelf {
                 this._artCanvasRO.observe(doc.body);
             }
             this._artApplyCanvasChrome();
+            if (this._artPendingInlineId && this._artMode === 'edit') {
+                const id = this._artPendingInlineId;
+                this._artPendingInlineId = null;
+                this._artEditTextInline(id);
+            }
         };
         frame.srcdoc = html;
     }
@@ -8587,6 +8605,10 @@ class VirtualBookshelf {
                     if (ins) { e.preventDefault(); this._artOpenAddSheet(Number(ins.dataset.insIndex)); return; }
                     const more = e.target.closest('.art-cv-more');
                     if (more) { e.preventDefault(); this._artOpenBlkMenu(Number(more.dataset.blkIdx), more); return; }
+                    // 編集状態で文章ブロックの本文をタップしたら、その場入力を始める
+                    const sec = this._artMode === 'edit' && !e.target.closest('.art-cv-ta') ? e.target.closest('section.art-cv-blk') : null;
+                    const tb = sec ? (this._artDraft.blocks || [])[Number(sec.dataset.artIdx)] : null;
+                    if (tb && tb.type === 'text') { e.preventDefault(); this._artCloseBlkMenu(); this._artEditTextInline(tb.id); return; }
                     if (this._artMode === 'edit' && e.target.closest('a')) e.preventDefault(); // 編集中は書影・書名のリンクで外へ出ない
                     this._artCloseBlkMenu();
                 });
@@ -8658,11 +8680,75 @@ class VirtualBookshelf {
         }
     }
 
-    // step3 でブロック別の編集 (文章=その場・本棚/本=全画面) に置き換える。それまでは旧フォームの該当ブロックを出す
+    // ブロックの編集 (step1 決裁): 文章=キャンバス上でその場入力／本棚・本=全画面で一括確定 (キャンセル/完了)。
+    // 全画面の中身は既存の部品 (本の行・短文メモ・チップ・本の引き出し/リストピッカー) をそのまま使う＝
+    // 旧フォーム (#art-blocks) を対象ブロック1つだけに絞って出す ('form' モード)。
     _artEditBlock(blockId) {
+        const blocks = this._artDraft.blocks || [];
+        const b = blocks.find(x => x.id === blockId);
+        if (!b) return;
+        if (b.type === 'text') { this._artEditTextInline(blockId); return; }
+        this._artFsBlockId = blockId;
+        this._artFsSnapshot = JSON.stringify(b);
+        if (b.type === 'shelf') this._artActiveShelfBlockId = blockId;
+        if (b.type === 'book' && !b.asin) this._artPendingBookBlockId = blockId;
+        const t = document.getElementById('art-fs-title');
+        if (t) t.textContent = b.type === 'shelf' ? '本棚を編集' : '本を編集';
         this._artSetMode('form');
-        const el = document.querySelector(`#art-blocks .art-block[data-block-id="${CSS.escape(blockId)}"]`);
-        if (el) el.scrollIntoView({ block: 'start' });
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        const col = document.querySelector('#art-edit-view .art-col');
+        if (col) col.scrollTop = 0;
+    }
+
+    // commit=false (キャンセル) は全画面を開いた時点のブロックへ戻す。途中の自動保存分も戻した内容で上書き保存する
+    _artCloseBlockFs(commit) {
+        const id = this._artFsBlockId;
+        const blocks = this._artDraft.blocks || [];
+        if (!commit && id && this._artFsSnapshot) {
+            const i = blocks.findIndex(x => x.id === id);
+            if (i >= 0) blocks[i] = JSON.parse(this._artFsSnapshot);
+            this._artScheduleSave();
+        }
+        this._artFsBlockId = null;
+        this._artFsSnapshot = null;
+        this._artPendingBookBlockId = null;
+        this._artSetMode('edit');
+        this._artRenderBlocks();
+    }
+
+    // 文章ブロックのその場入力。キャンバス (iframe) の該当ブロックの中身を Markdown の入力欄に置き換える。
+    // 入力のたびに下書きへ反映して自動保存する。入力中はキャンバスを描き直さない (入力欄が消えるため)。
+    _artEditTextInline(blockId) {
+        const frame = document.getElementById('art-canvas-frame');
+        const doc = frame && frame.contentDocument;
+        const blocks = this._artDraft.blocks || [];
+        const idx = blocks.findIndex(x => x.id === blockId);
+        const b = blocks[idx];
+        if (!doc || !b) return;
+        if (this._artMode !== 'edit') { this._artSetMode('edit'); this._artPendingInlineId = blockId; return; }
+        const sec = doc.querySelector(`section[data-art-idx="${idx}"]`);
+        if (!sec || sec.querySelector('.art-cv-ta')) return;
+        this._artInlineBlockId = blockId;
+        [...sec.children].forEach(c => { if (!c.classList.contains('art-cv-ops')) c.style.display = 'none'; });
+        if (sec.classList.contains('art-cv-empty')) {
+            sec.classList.add('art-cv-empty-editing');
+            [...sec.childNodes].forEach(n => { if (n.nodeType === 3) n.remove(); }); // 「空の文章ブロック」の仮表示を消す
+        }
+        const ta = doc.createElement('textarea');
+        ta.className = 'art-cv-ui art-cv-ta';
+        ta.value = b.markdown || '';
+        ta.placeholder = '## 見出し\n本文を書く（Markdown）';
+        ta.setAttribute('aria-label', '文章（見出しと本文・Markdown）');
+        const fit = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; this._artFitCanvas(); };
+        ta.addEventListener('input', () => { b.markdown = ta.value; this._artScheduleSave(); fit(); });
+        ta.addEventListener('blur', () => {
+            this._artInlineBlockId = null;
+            this._artRenderBlocks(); // 旧フォーム側の値も揃え、キャンバスを公開ページの見た目へ描き直す
+        });
+        sec.appendChild(ta);
+        fit();
+        ta.focus();
     }
 
     _artOpenEditor(id) {
@@ -9019,6 +9105,10 @@ class VirtualBookshelf {
         }
         blocks.forEach((b, i) => { html += this._artRenderBlock(b, i); html += addHtml; });
         host.innerHTML = html;
+        if (this._artFsBlockId) {
+            const t = host.querySelector(`.art-block[data-block-id="${CSS.escape(this._artFsBlockId)}"]`);
+            if (t) t.classList.add('is-fs-target');
+        }
         const allBtn = host.querySelector('.art-collapse-all');
         if (allBtn) allBtn.addEventListener('click', () => {
             if (allBtn.dataset.mode === 'open') col.clear();

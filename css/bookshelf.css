@@ -7788,3 +7788,36 @@ body.select-mode .drag-handle { display: none; }
 /* 閲覧状態は記事だけを見せる (本の引き出しは編集状態でだけ出す。step3 で本棚の全画面の中へ移す) */
 #art-edit-view[data-art-mode="view"] .art-wrap { grid-template-columns: 1fr; }
 #art-edit-view[data-art-mode="view"] .art-side { display: none; }
+/* 本棚/本ブロックの全画面編集 ('form'): 上端は キャンセル/題/完了 だけ。中身は対象ブロック1つと本の引き出し */
+.art-fs-hd { display: none; }
+#art-edit-view[data-art-mode="form"] .art-fs-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.art-fs-title { font-size: 15px; font-weight: 700; color: var(--fg); }
+#art-edit-view[data-art-mode="form"] .art-hd,
+#art-edit-view[data-art-mode="form"] .art-block:not(.is-fs-target),
+#art-edit-view[data-art-mode="form"] .art-look-block,
+#art-edit-view[data-art-mode="form"] .art-add,
+#art-edit-view[data-art-mode="form"] .art-canvas-head,
+#art-edit-view[data-art-mode="form"] .art-empty,
+#art-edit-view[data-art-mode="form"] .art-block-grip,
+#art-edit-view[data-art-mode="form"] .art-block-tg,
+/* 複製は持たない (②決裁)・削除はキャンバスの⋯から行う */
+#art-edit-view[data-art-mode="form"] .art-block-dup,
+#art-edit-view[data-art-mode="form"] .art-block-del { display: none; }
+/* スマホ: 記事エディタは全画面 (モーダルの余白なし)。キャンバス幅=画面幅＝公開ページと同じ幅で描く (②決裁 step3) */
+@media (max-width: 600px) {
+    #publish-pages-modal .art-modal-content.art-editing { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0;
+        border-radius: 0; padding: 0; }
+    #publish-pages-modal .art-modal-content.art-editing .modal-header { display: none; }
+    #publish-pages-modal .art-modal-content.art-editing #art-edit-view .art-hd,
+    #publish-pages-modal .art-modal-content.art-editing #art-edit-view .art-fs-hd { padding: 8px 10px; margin: 0; }
+    #publish-pages-modal .art-modal-content.art-editing .art-wrap { gap: 0; }
+    #publish-pages-modal .art-modal-content.art-editing .art-col { padding: 0; }
+    #publish-pages-modal .art-modal-content.art-editing #art-edit-view[data-art-mode="form"] .art-col { padding: 0 10px; }
+    #publish-pages-modal .art-modal-content.art-editing .art-canvas-frame { border-radius: 0; }
+}
+@media (max-width: 600px) {
+    #publish-pages-modal .art-modal-content.art-editing #art-edit-view { padding-left: 0; padding-right: 0; }
+    /* 全画面ではモーダルの×がヘッダー右端の「完了」に重なる。編集中は ← (一覧へ) とキャンセル/完了で抜ける */
+    #publish-pages-modal .art-modal-content.art-editing > .modal-close { display: none; }
+}

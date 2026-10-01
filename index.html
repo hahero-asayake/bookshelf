@@ -889,6 +889,12 @@
                     </span>
                 </div>
 
+                <!-- イシュー#268: 本棚/本ブロックの全画面編集のヘッダー (data-art-mode="form" の時だけ出す。キャンセル=開いた時点へ戻す・完了=確定) -->
+                <div class="art-fs-hd" id="art-fs-hd">
+                    <button type="button" id="art-fs-cancel" class="btn btn-secondary btn-small">キャンセル</button>
+                    <span id="art-fs-title" class="art-fs-title">本棚を編集</span>
+                    <button type="button" id="art-fs-done" class="btn btn-primary btn-small">完了</button>
+                </div>
                 <!-- イシュー#268: ＋で出すブロック追加シート (下から・3択) -->
                 <div id="art-add-sheet" class="art-add-sheet" role="dialog" aria-modal="true" aria-label="ブロックを追加" hidden>
                     <div class="art-add-sheet-backdrop" data-close></div>
