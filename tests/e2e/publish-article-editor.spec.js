@@ -1254,6 +1254,43 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(article.publicId).toBeTruthy();
         await expect(row.locator('.pp-row-url a')).toHaveAttribute('href', `https://bookshelf.asayake.org/hahero/${article.publicId}/`);
     });
+
+    // U1 (イシュー#276): updatedAt > lastBuiltAt (公開中・未反映の変更あり) の表示切り替え
+    test('公開直後は「公開する」のまま。その後の編集で「公開中・未反映の変更あり」と「更新」に変わる (U1)', async ({ page }) => {
+        const { errors } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', '更新前のタイトル');
+        await addBlock(page, 'book', 'last');
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await publishViaPanel(page);
+        // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect(page.locator('#art-pub-done')).toBeVisible();
+
+        // 公開直後: updatedAt <= lastBuiltAt のため通常表記のまま
+        await expect(page.locator('#art-pub-title-text')).toHaveText('公開');
+        await expect(page.locator('#art-pub-go-label')).toHaveText('公開する');
+        await closePublishPanelIfOpen(page);
+        await expect(page.locator('#art-publish-header .art-hd-lbl')).toHaveText('公開する');
+        await expect(page.locator('#art-save-status')).not.toHaveClass(/is-stale/);
+
+        // タイトルを変更して保存 (リモートへも反映) → updatedAt が lastBuiltAt を追い越す
+        await page.fill('#art-title', '更新後のタイトル');
+        await page.evaluate(() => window.bookshelf._artFlushSave());
+        await page.evaluate(() => window.bookshelf._artFlushRemoteNow());
+        await expect(page.locator('#art-save-status')).toHaveText('● 公開中・未反映の変更あり');
+        await expect(page.locator('#art-save-status')).toHaveClass(/is-stale/);
+        await expect(page.locator('#art-publish-header .art-hd-lbl')).toHaveText('更新');
+        await expect(page.locator('#art-publish-header')).toHaveAttribute('aria-label', '更新');
+
+        // 公開パネルの見出し/ボタンも更新表記になる
+        await openPublishPanel(page);
+        await expect(page.locator('#art-pub-title-text')).toHaveText('公開中の記事を更新');
+        await expect(page.locator('#art-pub-go-label')).toHaveText('更新する');
+        expect(errors).toEqual([]);
+    });
 });
 
 test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有効)', () => {
@@ -2493,4 +2530,143 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
             expect(errors).toEqual([]);
         });
     }
+});
+
+// イシュー#276 (すぐ直す5件): D・U1・K-B・C・K。詳細は 15_記事エディタ_スマホUX分析_20261012.md §3・§7。
+test.describe('記事エディタ: ブロック削除のUndoトースト (D・イシュー#276)', () => {
+    test('ブロックを削除すると約5秒の「元に戻す」付きトーストが出て、押すと同じ位置に復元する', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'text', 'last');
+        await canvas(page).locator('.art-cv-ta').fill('最初の文章');
+        await addBlock(page, 'shelf', 'last');
+        await leaveForm(page);
+        const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));
+        await expect.poll(types).toBe('text,shelf');
+
+        // 先頭 (text) を削除
+        await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
+        await page.locator('#art-blk-menu [data-blk-act="delete"]').click();
+        await expect.poll(types).toBe('shelf');
+        const undoBtn = page.locator('.toast .toast-action');
+        await expect(undoBtn).toBeVisible();
+        await expect(undoBtn).toHaveText('元に戻す');
+        await undoBtn.click();
+        // 同じ位置 (先頭) に戻る
+        await expect.poll(types).toBe('text,shelf');
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: キーボード自動スクロール (K-B・イシュー#276)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('visualViewport が縮む (キーボード表示) と、フォーカス中の入力欄が隠れない位置までスクロールする', async ({ page }) => {
+        // 実キーボードは headless で開かないため、差し替え可能な visualViewport を仕込んで resize を模す。
+        // _artBindViewportScroll はエディタ初回表示時に window.visualViewport を1度だけ捕まえるため、
+        // bootApp (page.goto) より前に仕込む必要がある。
+        await page.addInitScript(() => {
+            class FakeVisualViewport extends EventTarget {
+                constructor() { super(); this.height = window.innerHeight; this.offsetTop = 0; this.width = window.innerWidth; }
+            }
+            Object.defineProperty(window, 'visualViewport', { value: new FakeVisualViewport(), configurable: true });
+        });
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        await ensureDrawerSheetOpen(page);
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await closeDrawerSheetIfOpen(page);
+
+        const memoInput = page.locator('.art-fs-memo').first();
+        await memoInput.scrollIntoViewIfNeeded();
+        await memoInput.focus();
+        // キーボード表示を模す: visualViewport を縮めて resize を発火
+        await page.evaluate(() => {
+            const vv = window.visualViewport;
+            vv.height = Math.round(window.innerHeight * 0.5);
+            vv.dispatchEvent(new Event('resize'));
+        });
+        await expect.poll(() => page.evaluate(() => {
+            const el = document.activeElement;
+            const vv = window.visualViewport;
+            const rect = el.getBoundingClientRect();
+            return rect.bottom - (vv.height + vv.offsetTop);
+        }), { timeout: 3000 }).toBeLessThanOrEqual(1);
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 本棚・本の全画面キャンセルの確認 (C・イシュー#276)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('変更なしでキャンセルすれば確認は出ない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        await page.click('#art-fs-cancel');
+        await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        expect(errors).toEqual([]);
+    });
+
+    test('本を追加してからキャンセルすると確認が出る。「編集を続ける」で変更は残り、「変更を破棄」で破棄される', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // form モードで開始 (スナップショット = 空の棚)
+        await ensureDrawerSheetOpen(page);
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await closeDrawerSheetIfOpen(page);
+        await expect(page.locator('.art-block.is-fs-target .art-fs-row')).toHaveCount(1);
+
+        await page.click('#art-fs-cancel');
+        await expect(page.locator('.cfm-overlay')).toBeVisible();
+        await expect(page.locator('.cfm-title')).toHaveText('変更を破棄しますか？');
+
+        // 「編集を続ける」→ 閉じずに変更は残る
+        await page.click('.cfm-cancel');
+        await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await expect(page.locator('.art-block.is-fs-target .art-fs-row')).toHaveCount(1);
+
+        // もう一度キャンセル→「変更を破棄」→ 開いた時点 (0冊) へ戻る
+        await page.click('#art-fs-cancel');
+        await page.click('.cfm-ok');
+        await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        expect(itemCount).toBe(0);
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ: 本の追加ピッカーで追加済みに印 (K・イシュー#276)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('対象の棚ブロックに既に入っている本には「追加済み」が出る。クリックすれば従来どおり多重配置もできる (ADR-058 §11.1)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        await ensureDrawerSheetOpen(page);
+        const firstItem = page.locator('#art-drawer-list .art-drawer-item').first();
+        const asin = await firstItem.getAttribute('data-asin');
+        await firstItem.click(); // 1冊追加 (シェルフ追加は自動クローズしない)
+        const addedRow = page.locator(`#art-drawer-list .art-drawer-item[data-asin="${asin}"]`);
+        await expect(addedRow).toHaveClass(/is-added/);
+        await expect(addedRow.locator('.art-drawer-item-added')).toHaveText(/追加済み/);
+        // 他の本 (未追加) には印が付かない
+        const otherRow = page.locator('#art-drawer-list .art-drawer-item').nth(1);
+        await expect(otherRow).not.toHaveClass(/is-added/);
+        // 印が付いていてもクリックは禁じない=同じ本の多重配置 (既存仕様) を壊さない
+        const beforeCount = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.length);
+        await addedRow.click();
+        const afterCount = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.length);
+        expect(afterCount).toBe(beforeCount + 1);
+        expect(errors).toEqual([]);
+    });
 });

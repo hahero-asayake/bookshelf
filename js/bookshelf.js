@@ -8175,6 +8175,7 @@ class VirtualBookshelf {
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => { this._artFlushRemoteNow(); this._artShowList(); });
         this._artSetupDrawerShelfPicker();
+        this._artBindViewportScroll(); // K-B (イシュー#276)
         // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
         // フェーズ) がモーダル自体を閉じてしまう前に、ツールチップだけを閉じて消費する。ツールチップが
         // 非表示のときは何もしないため、通常の Esc→モーダルを閉じる動作は妨げない。
@@ -8500,6 +8501,46 @@ class VirtualBookshelf {
         return set;
     }
 
+    // K-B (イシュー#276): visualViewport (キーボード表示でビューポートが縮む) に合わせて、
+    // フォーカス中の入力欄が隠れていれば隠れない位置までスクロールする。記事エディタ本体と
+    // 公開パネル (タグ入力) のみが対象＝app全体の全inputへは広げない (影響範囲を絞る)。
+    // visualViewport 非対応環境 (旧ブラウザ・PC) では何もしない no-op。
+    _artBindViewportScroll() {
+        if (this._artViewportBound) return;
+        this._artViewportBound = true;
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const inScope = (el) => !!(el && el.matches && el.matches('input, textarea')
+            && el.closest('#art-edit-view, #art-publish-modal'));
+        const findScrollParent = (el) => {
+            let node = el && el.parentElement;
+            while (node && node !== document.body) {
+                const cs = getComputedStyle(node);
+                if (/(auto|scroll)/.test(cs.overflowY) && node.scrollHeight > node.clientHeight) return node;
+                node = node.parentElement;
+            }
+            return document.scrollingElement || document.documentElement;
+        };
+        const reveal = () => {
+            const el = document.activeElement;
+            if (!inScope(el)) return;
+            const rect = el.getBoundingClientRect();
+            const visibleBottom = vv.height + vv.offsetTop;
+            const overlap = rect.bottom - visibleBottom;
+            if (overlap > 0) {
+                const scroller = findScrollParent(el);
+                if (scroller.scrollBy) scroller.scrollBy({ top: overlap + 12, behavior: 'smooth' });
+                else scroller.scrollTop += overlap + 12;
+            }
+        };
+        vv.addEventListener('resize', reveal);
+        document.addEventListener('focusin', (e) => {
+            if (!inScope(e.target)) return;
+            // キーボードのアニメーション/visualViewport のリサイズ確定を少し待つ
+            setTimeout(reveal, 250);
+        });
+    }
+
     // ===== イシュー#268: 見たまま編集 (案1・閲覧⇄編集トグル) =====
     // 記事は公開生成器の出力を iframe srcdoc でそのまま描く (閲覧=公開ページと1px一致)。
     // 編集状態では iframe 内へ枠・⋯・＋ (.art-cv-ui) を注入する。注入物は閲覧状態では全部取り除く。
@@ -8757,15 +8798,35 @@ class VirtualBookshelf {
         if (col) col.scrollTop = 0;
     }
 
-    // commit=false (キャンセル) は全画面を開いた時点のブロックへ戻す。途中の自動保存分も戻した内容で上書き保存する
-    _artCloseBlockFs(commit, { fromHistory = false } = {}) {
+    // commit=false (キャンセル) は全画面を開いた時点のブロックへ戻す。変更があれば確認を出す
+    // (C・イシュー#276: P21 対応)。「編集に戻る」を選んだら閉じず false を返す (popstate 経由の
+    // 呼び出しなら汎用モーダル履歴ハンドラ (6210行台) が history を積み直す)。短文メモ (.art-fs-memo)
+    // はこのスナップショットに含まれず saveNote() で都度即保存される別経路のため、確認の対象外
+    // (ここで戻すのはブロック自体の並び・追加・削除・表示トグルのみ・決めたルールは04へ記載)。
+    async _artCloseBlockFs(commit, { fromHistory = false } = {}) {
         if (this._artMode !== 'form') return;
-        this._modalHistPop('art-fs', { fromHistory });
         const id = this._artFsBlockId;
         const blocks = this._artDraft.blocks || [];
-        if (!commit && id && this._artFsSnapshot) {
-            const i = blocks.findIndex(x => x.id === id);
-            if (i >= 0) blocks[i] = JSON.parse(this._artFsSnapshot);
+        const i = id ? blocks.findIndex(x => x.id === id) : -1;
+        if (!commit && i >= 0 && this._artFsSnapshot) {
+            const changed = JSON.stringify(blocks[i]) !== this._artFsSnapshot;
+            if (changed) {
+                const isShelf = blocks[i].type === 'shelf';
+                const ok = await confirmDialog({
+                    title: '変更を破棄しますか？',
+                    message: isShelf
+                        ? 'この本棚で行った変更（並び替え・追加・削除）を取り消します。\n短文メモは本ごとに保存済みのため残ります。'
+                        : 'この本で行った変更を取り消します。',
+                    okLabel: '変更を破棄',
+                    cancelLabel: '編集を続ける',
+                    danger: true
+                });
+                if (!ok) return false; // 閉じなかった
+            }
+        }
+        this._modalHistPop('art-fs', { fromHistory });
+        if (!commit && i >= 0 && this._artFsSnapshot) {
+            blocks[i] = JSON.parse(this._artFsSnapshot);
             this._artScheduleSave();
         }
         this._artFsBlockId = null;
@@ -8839,6 +8900,7 @@ class VirtualBookshelf {
         this._artActiveShelfBlockId = null;
         this._artShelfSel = {};
         this._artBulkUndo = null;
+        this._artBlockUndo = null; // D (イシュー#276): ブロック削除の Undo トースト。エディタを開き直したら破棄する
         this._artCollapsed = new Set(); // 畳み状態はエディタを開いている間だけのUI状態 (保存しない・イシュー#230)
         this._artLookQuery = '';
         this._artDrawerQuery = '';
@@ -8868,6 +8930,7 @@ class VirtualBookshelf {
         this._artRenderDrawerShelfSelect();
         this._artRenderDrawer();
         this._artSetSaveStatus('');
+        this._artRefreshPublishBadge(); // U1 (イシュー#276): 公開中・未反映の変更ありなら開いた直後から出す
         this._artSetMode('view'); // イシュー#268: 開いた直後は閲覧状態 (公開ページと同じ見た目)
         this._artShowEditor();
         if (restoredFromDraft) {
@@ -9874,13 +9937,33 @@ class VirtualBookshelf {
         this._artScheduleSave();
     }
 
+    // D (イシュー#276): 削除直後に Undo トースト (約5秒) を出す。1段だけ保持 (_artBulkUndo と同型・イシュー#55)。
     _artRemoveBlock(blockId) {
         const blocks = this._artDraft.blocks || [];
         const i = blocks.findIndex(b => b.id === blockId);
         if (i < 0) return;
-        blocks.splice(i, 1);
+        const [removed] = blocks.splice(i, 1);
         if (this._artActiveShelfBlockId === blockId) this._artActiveShelfBlockId = null;
         if (this._artShelfSel) delete this._artShelfSel[blockId];
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        this._artScheduleSave();
+        this._artBlockUndo = { block: removed, index: i };
+        window.toast('ブロックを削除しました', {
+            type: 'success',
+            action: { label: '元に戻す', onClick: () => this._artUndoRemoveBlock() },
+            duration: 5000
+        });
+    }
+
+    _artUndoRemoveBlock() {
+        const undo = this._artBlockUndo;
+        if (!undo) return;
+        this._artBlockUndo = null;
+        if (!this._artDraft.blocks) this._artDraft.blocks = [];
+        const blocks = this._artDraft.blocks;
+        const at = Math.min(undo.index, blocks.length);
+        blocks.splice(at, 0, undo.block);
         this._artRenderBlocks();
         this._artRenderDrawer();
         this._artScheduleSave();
@@ -10196,6 +10279,7 @@ class VirtualBookshelf {
         }
         if (wrap) wrap.classList.remove('art-drawer-collapsed');
         const usedAsins = this._artUsedAsins();
+        const addedToTarget = this._artDrawerAddedToTargetAsins(); // K (イシュー#276)
         const esc = PublishArticleGenerator.esc;
         // イシュー#166: 新着バッジはシート内(art-drawer-badge)のみ維持。FAB上の予告バッジ(art-fab-badge)は
         // FAB廃止に伴い廃止 (ブロック単位の情報ではないためブロック内ボタンへの移設もしない、理由は設計レポート参照)。
@@ -10216,15 +10300,34 @@ class VirtualBookshelf {
             const title = book ? book.title : asin;
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
             const isNew = !usedAsins.has(asin);
-            return `<div class="art-drawer-item" data-asin="${esc(asin)}" title="クリックで記事に追加">
+            // K (イシュー#276): 追加先のブロックに既に入っている本は「追加済み」を出す (NEW バッジより優先)。
+            // 同じ本を複数回配置する多重配置 (ADR-058 §11.1) は既存仕様のため、印を付けるだけでクリックは禁じない。
+            const added = addedToTarget.has(asin);
+            const badge = added
+                ? `<span class="art-drawer-item-added"><span class="h-icon" data-icon="check" data-icon-size="12"></span>追加済み</span>`
+                : (isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>');
+            return `<div class="art-drawer-item${added ? ' is-added' : ''}" data-asin="${esc(asin)}" title="${added ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">
                 <div class="art-cover">${cover}</div>
                 <div class="art-drawer-item-title">${esc(title)}</div>
-                ${isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>'}
+                ${badge}
             </div>`;
         }).join('');
         listHost.querySelectorAll('.art-drawer-item').forEach(el => {
             el.addEventListener('click', () => this._artOnDrawerBookClick(el.dataset.asin));
         });
+        if (typeof window.applyIcons === 'function') window.applyIcons(listHost);
+    }
+
+    // K (イシュー#276): 現在の追加先ブロック (_artActiveShelfBlockId の本棚ブロック / _artPendingBookBlockId
+    // の本ブロック) に既に入っている asin の集合。追加先がまだ無い (新規本棚ブロックを作る) ときは空集合。
+    _artDrawerAddedToTargetAsins() {
+        if (this._artPendingBookBlockId) {
+            const pending = this._artFindBlock(this._artPendingBookBlockId);
+            return new Set(pending && pending.type === 'book' && pending.asin ? [pending.asin] : []);
+        }
+        const block = this._artFindBlock(this._artActiveShelfBlockId);
+        if (block && block.type === 'shelf') return new Set((block.items || []).map(it => it.asin));
+        return new Set();
     }
 
     // 閾値超は confirmDialog で件数を明示して確認 (783冊の "all" 誤爆防止)。
@@ -10359,6 +10462,7 @@ class VirtualBookshelf {
         try {
             await this.publishArticleStore.retryPersist();
             this._artSetSaveStatus('保存しました');
+            this._artRefreshPublishBadge(); // U1: 公開中・未反映のままなら「保存しました」をこの表示で上書きする
             this._artClearLocalDraft();
             return { ok: true };
         } catch (e) {
@@ -10404,14 +10508,40 @@ class VirtualBookshelf {
         }
     }
 
-    _artSetSaveStatus(text, { error = false, retry = false } = {}) {
+    _artSetSaveStatus(text, { error = false, retry = false, stale = false } = {}) {
         const el = document.getElementById('art-save-status');
         if (el) {
             el.textContent = text;
             el.classList.toggle('is-error', error);
+            el.classList.toggle('is-stale', stale);
         }
         const retryBtn = document.getElementById('art-save-retry');
         if (retryBtn) retryBtn.hidden = !retry;
+    }
+
+    // U1 (イシュー#276): updatedAt > lastBuiltAt (公開中かつ未反映の変更あり) のときだけヘッダーに
+    // 「公開中・未反映の変更あり」を出し、公開ボタンの表記を「更新」にする (条件は分析 15_…L222 のとおり
+    // 厳密に updatedAt > lastBuiltAt のときだけ＝公開済みでも反映済みなら「公開する」のまま)。
+    // 保存成功後 (_artFlushRemote) ・公開成功後 (_artPublishArticle) ・エディタを開いた直後 (_artOpenEditor)
+    // の3箇所から呼ぶ。公開パネルの見出し/ボタン文言は _artRenderPublishPanel が別途同じ条件で出す。
+    _artRefreshPublishBadge() {
+        const article = this._artEditingId ? this.publishArticleStore.get(this._artEditingId) : null;
+        const stale = !!(article && article.published && (article.updatedAt || 0) > (article.lastBuiltAt || 0));
+        this._artPublishStale = stale;
+        const btn = document.getElementById('art-publish-header');
+        if (btn) {
+            const lbl = btn.querySelector('.art-hd-lbl');
+            if (lbl) lbl.textContent = stale ? '更新' : '公開する';
+            btn.title = stale ? '更新' : '公開';
+            btn.setAttribute('aria-label', stale ? '更新' : '公開');
+        }
+        if (stale) {
+            this._artSetSaveStatus('● 公開中・未反映の変更あり', { stale: true });
+        } else {
+            const el = document.getElementById('art-save-status');
+            if (el && el.classList.contains('is-stale')) this._artSetSaveStatus('');
+        }
+        return stale;
     }
 
     // 記事 1 つの公開 URL (siteUrl + publicId/)。siteUrl の末尾スラッシュ有無を問わない (イシュー#152:
@@ -10488,6 +10618,7 @@ class VirtualBookshelf {
         const publishUrl = published ? this._artArticleUrl(r.result.siteUrl, published.publicId) : r.result.siteUrl;
         toast(`「${article.title}」を公開しました。\n公開 URL: ${publishUrl}${errSummary}${noteSummary}`, { type: 'success' });
         this._artRenderList();
+        if (this._artEditingId === id) this._artRefreshPublishBadge(); // U1: lastBuiltAt 更新を受けて「未反映の変更あり」を消す
         return publishUrl;
     }
 
@@ -10556,6 +10687,12 @@ class VirtualBookshelf {
 
     _artRenderPublishPanel() {
         const esc = PublishArticleGenerator.esc;
+        // U1 (イシュー#276): 公開中・updatedAt > lastBuiltAt のときだけ見出し/ボタンを更新表記にする
+        const stale = this._artRefreshPublishBadge();
+        const titleText = document.getElementById('art-pub-title-text');
+        if (titleText) titleText.textContent = stale ? '公開中の記事を更新' : '公開';
+        const goLabel = document.getElementById('art-pub-go-label');
+        if (goLabel) goLabel.textContent = stale ? '更新する' : '公開する';
         const check = this._artPublishCheck();
         const det = document.getElementById('art-pub-check');
         const sum = document.getElementById('art-pub-check-sum');

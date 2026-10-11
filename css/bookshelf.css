@@ -4532,6 +4532,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-theme-group { display: flex; align-items: center; gap: 0.45rem; flex-wrap: nowrap; flex-shrink: 0; }
 .art-save-status { font-size: 0.78rem; color: var(--muted); }
 .art-save-status.is-error { color: var(--danger); font-weight: 600; }
+/* U1 (イシュー#276): 公開中・updatedAt > lastBuiltAt のときの「公開中・未反映の変更あり」表示 */
+.art-save-status.is-stale { color: var(--warning); font-weight: 600; }
 /* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2) */
 #art-save-retry[hidden] { display: none; }
 
@@ -4898,6 +4900,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-drawer-item .art-cover { width: 34px; height: 34px; aspect-ratio: unset; max-height: none; border-radius: 3px; font-size: 0.5rem; padding: 0.1rem; }
 .art-drawer-item-badge { background: var(--accent); color: #fff; border-radius: 999px; font-size: 0.6rem; padding: 0.05rem 0.35rem; font-weight: 700; flex: 0 0 auto; }
 .art-drawer-item-title { font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* K (イシュー#276): 追加先のブロックに既に入っている本には「追加済み」を出す (印のみ・クリックは禁じない=
+   同じ本の多重配置は既存仕様 ADR-058 §11.1 のため) */
+.art-drawer-item-added { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--success, #3aa657); font-size: 0.7rem; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 .art-drawer-empty { padding: 1rem 0.7rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 900px) {

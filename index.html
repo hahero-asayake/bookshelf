@@ -1010,7 +1010,8 @@
     <div id="art-publish-modal" class="modal art-publish-modal" role="dialog" aria-modal="true" aria-labelledby="art-pub-title">
         <div class="modal-content art-pub-content">
             <button class="modal-close" id="art-pub-close" aria-label="閉じる">×</button>
-            <div class="modal-header"><h2 id="art-pub-title"><span class="h-icon" data-icon="upload-cloud" data-icon-size="20"></span>公開</h2></div>
+            <!-- U1 (イシュー#276): updatedAt > lastBuiltAt (公開中かつ未反映の変更あり) のときだけ見出し/ボタンを「更新」表記に切り替える (_artRenderPublishPanel) -->
+            <div class="modal-header"><h2 id="art-pub-title"><span class="h-icon" data-icon="upload-cloud" data-icon-size="20"></span><span id="art-pub-title-text">公開</span></h2></div>
             <div class="art-pub-body">
                 <details class="art-pub-sec art-pub-check" id="art-pub-check">
                     <summary id="art-pub-check-sum"></summary>
@@ -1042,7 +1043,7 @@
             </div>
             <div class="art-pub-foot">
                 <button type="button" id="art-pub-cancel" class="btn btn-secondary btn-small">閉じる</button>
-                <button type="button" id="art-pub-go" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span>公開する</button>
+                <button type="button" id="art-pub-go" class="btn btn-primary btn-small"><span class="h-icon" data-icon="upload-cloud" data-icon-size="14"></span><span id="art-pub-go-label">公開する</span></button>
             </div>
         </div>
     </div>
