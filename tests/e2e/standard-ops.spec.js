@@ -96,6 +96,20 @@ async function openEditorInEditMode(page) {
     await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().waitFor();
 }
 
+// 構成A (イシュー#276): 600px以下は見た目/公開ボタンがヘッダーでなく下部バー (#art-bar-look/#art-bar-publish)
+// にある。このファイルは390x844固定 (標準操作マトリクス) のため常に下部バー側だが、
+// ヘッダー側が見えていればそちらを優先するフォールバックにして viewport 非依存にしておく。
+async function clickLookBtn(page) {
+    const headerBtn = page.locator('#art-look-btn');
+    if (await headerBtn.isVisible()) await headerBtn.click();
+    else await page.click('#art-bar-look');
+}
+async function clickPublishHeader(page) {
+    const headerBtn = page.locator('#art-publish-header');
+    if (await headerBtn.isVisible()) await headerBtn.click();
+    else await page.click('#art-bar-publish');
+}
+
 test('ESC/枠外クリック: ＋追加シートは自分だけ閉じ、エディタは残る (イシュー#268)', async ({ page }) => {
     const errors = await bootApp(page);
     await openEditorInEditMode(page);
@@ -288,7 +302,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.goBack();
         await expect(page.locator('#art-add-sheet')).toBeHidden();
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
-        await page.click('#art-look-btn');
+        await clickLookBtn(page);
         await expect(page.locator('#art-look-sheet')).toBeVisible();
         await page.goBack();
         await expect(page.locator('#art-look-sheet')).toBeHidden();
@@ -334,8 +348,8 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.click('#art-mode-edit'); // イシュー#268: 公開は編集状態のヘッダー
-        await page.click('#art-publish-header');
+        await page.click('#art-mode-edit'); // イシュー#268: 公開は編集状態のヘッダー (構成A・600px以下は下部バー)
+        await clickPublishHeader(page);
         await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#art-publish-modal')).not.toHaveClass(/show/);

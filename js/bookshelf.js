@@ -8256,6 +8256,12 @@ class VirtualBookshelf {
         on('art-mode-done', 'click', () => this._artSetMode('view'));
         on('art-fs-done', 'click', () => this._artCloseBlockFs(true));
         on('art-look-btn', 'click', () => this._artOpenLookSheet());
+        // 構成A (イシュー#276): 下部アクションバー (600px以下・編集状態)。見た目・公開・完了はヘッダーの
+        // ハンドラをそのまま呼ぶ (同じ処理・置き場所だけ違う)。追加は末尾への挿入 (index省略=末尾、8270行と同型)
+        on('art-bar-add', 'click', () => this._artOpenAddSheet());
+        on('art-bar-look', 'click', () => this._artOpenLookSheet());
+        on('art-bar-publish', 'click', () => this._artOpenPublishPanel());
+        on('art-bar-done', 'click', () => this._artSetMode('view'));
         const lookSheet = document.getElementById('art-look-sheet');
         if (lookSheet) lookSheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) this._artCloseLookSheet(); });
         on('art-width-preview', 'click', () => { const m = document.getElementById('art-more-menu'); if (m) m.hidden = true; this._artPreview(); });
@@ -10534,6 +10540,15 @@ class VirtualBookshelf {
             if (lbl) lbl.textContent = stale ? '更新' : '公開する';
             btn.title = stale ? '更新' : '公開';
             btn.setAttribute('aria-label', stale ? '更新' : '公開');
+        }
+        // 構成A (イシュー#276・②指示): 下部バーの公開/更新ボタンにも同じ判定を反映する
+        const barBtn = document.getElementById('art-bar-publish');
+        if (barBtn) {
+            const lbl = barBtn.querySelector('.art-bar-lbl');
+            if (lbl) lbl.textContent = stale ? '更新' : '公開';
+            barBtn.classList.toggle('is-stale', stale);
+            barBtn.title = stale ? '更新' : '公開';
+            barBtn.setAttribute('aria-label', stale ? '更新' : '公開');
         }
         if (stale) {
             this._artSetSaveStatus('● 公開中・未反映の変更あり', { stale: true });

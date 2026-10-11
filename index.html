@@ -963,6 +963,16 @@
                 <!-- #133 項目6: 短/長トグルの説明+メモ内容 (hover/focus/タッチ共通到達。position:fixed で _placeAnchoredMenu と同じ方式で配置) -->
                 <div id="art-item-tooltip" class="art-item-tooltip" role="tooltip" hidden></div>
 
+                <!-- 構成A (イシュー#276・②決裁2026-10-12): 600px以下・編集状態だけで出す下部アクションバー。
+                     見た目・公開(または更新)・完了はヘッダーから移設、追加は新規導線 (末尾に追加)。
+                     キーボード表示中の補助バーは次ステップ (step3) で追加する。 -->
+                <div id="art-edit-bottom-bar" class="art-edit-bottom-bar" role="toolbar" aria-label="記事の操作">
+                    <button type="button" id="art-bar-add" class="art-bar-btn"><span class="h-icon" data-icon="plus" data-icon-size="18"></span><span>追加</span></button>
+                    <button type="button" id="art-bar-look" class="art-bar-btn"><span class="h-icon" data-icon="palette" data-icon-size="18"></span><span>見た目</span></button>
+                    <button type="button" id="art-bar-publish" class="art-bar-btn"><span class="h-icon" data-icon="upload-cloud" data-icon-size="18"></span><span class="art-bar-lbl">公開</span></button>
+                    <button type="button" id="art-bar-done" class="art-bar-btn art-bar-btn-primary"><span class="h-icon" data-icon="check" data-icon-size="18"></span><span>完了</span></button>
+                </div>
+
             </div>
         </div>
     </div>

@@ -51,12 +51,22 @@ async function leaveForm(page) {
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
 }
-// 公開パネルは編集状態のヘッダー #art-publish-header から開く
+// 編集状態を「完了」で閉じ閲覧状態に戻す。
+// 構成A (イシュー#276): 600px以下は完了ボタンがヘッダーでなく下部バー (#art-bar-done) にある。
+async function clickDone(page) {
+    const headerBtn = page.locator('#art-mode-done');
+    if (await headerBtn.isVisible()) await headerBtn.click();
+    else await page.click('#art-bar-done');
+}
+// 公開パネルは編集状態のヘッダー #art-publish-header から開く。
+// 構成A (イシュー#276): 600px以下は公開ボタンがヘッダーでなく下部バー (#art-bar-publish) にある。
 async function openPublishPanel(page) {
     await leaveForm(page);
     const edit = page.locator('#art-mode-edit');
     if (await edit.isVisible()) await edit.click();
-    await page.click('#art-publish-header');
+    const headerBtn = page.locator('#art-publish-header');
+    if (await headerBtn.isVisible()) await headerBtn.click();
+    else await page.click('#art-bar-publish');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」
 async function openPreview(page) {
@@ -2186,10 +2196,10 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         await page.waitForTimeout(400); // transform transition 0.25s完了を確実に待つ (スクリムのopacity遷移含む)
 
-        // ヘッダーの公開ボタン (常時可視化・§2) は既存のフッター公開ボタンと同じ関数を呼ぶ
-        // イシュー#268: 全画面編集を「完了」で閉じると編集状態のヘッダーに公開ボタンが出る
+        // イシュー#268: 全画面編集を「完了」で閉じると編集状態になる。
+        // 構成A (イシュー#276・390px): 公開ボタンはヘッダーでなく下部バー (#art-bar-publish) に出る
         await leaveForm(page);
-        await expect(page.locator('#art-publish-header')).toBeVisible();
+        await expect(page.locator('#art-bar-publish')).toBeVisible();
         await page.evaluate(() => {
             const orig = window.bookshelf._artPublish.bind(window.bookshelf);
             window.bookshelf._artPublishCalled = false;
@@ -2465,7 +2475,7 @@ test.describe('記事エディタ: 新規記事のタイトル入口 (イシュ�
 
             // (2) 否定チェック (②指摘): 空タイトルのまま閲覧状態に戻すと、プレースホルダ文字はキャンバスに出ない
             //     (公開ページには存在しない状態のため・#268の1px一致を閲覧状態では崩さない設計)
-            await page.locator('#art-mode-done').click();
+            await clickDone(page);
             await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'view');
             await expect(canvas(page).locator('.article > h1')).toHaveText('');
             await expect(canvas(page).locator('.article > h1.art-cv-h1-ph')).toHaveCount(0);
@@ -2513,19 +2523,41 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
             await page.evaluate(() => window.bookshelf._artFlushSave());
             await expect(page.locator('#art-page-ops')).toBeVisible();
             await expect(page.locator('.pp-edit-actions')).toHaveCount(0);
-            // イシュー#268: 閲覧状態 (戻る/編集/⋯) と編集状態 (戻る/見た目/公開する/完了/⋯) の両方で1行に並ぶこと
+            // イシュー#268: 閲覧状態 (戻る/編集/⋯) は常に1行。
+            // 構成A (イシュー#276・②決裁2026-10-12): 編集状態は600px以下だと見た目/公開/完了が
+            // 下部バーへ移り、ヘッダーは戻る/⋯だけになる (600px超は従来どおりヘッダーに並ぶ)。
             const measure = (ids) => page.evaluate((ids) => {
                 const rs = ids.map(id => document.getElementById(id).getBoundingClientRect());
                 const cy = rs.map(r => (r.top + r.bottom) / 2);
                 return { hidden: rs.filter(r => r.width === 0).length, cyRange: Math.max(...cy) - Math.min(...cy), maxRight: Math.max(...rs.map(r => r.right)), vw: window.innerWidth };
             }, ids);
-            for (const [mode, ids] of [['view', ['art-back', 'art-mode-edit', 'art-more-btn']], ['edit', ['art-back', 'art-look-btn', 'art-publish-header', 'art-mode-done', 'art-more-btn']]]) {
+            const isCompact = vp.width <= 600;
+            for (const [mode, ids] of [
+                ['view', ['art-back', 'art-mode-edit', 'art-more-btn']],
+                ['edit', isCompact ? ['art-back', 'art-more-btn'] : ['art-back', 'art-look-btn', 'art-publish-header', 'art-mode-done', 'art-more-btn']],
+            ]) {
                 if (mode === 'edit') await page.click('#art-mode-edit');
                 await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', mode);
                 const m = await measure(ids);
                 expect(m.hidden, mode).toBe(0);
                 expect(m.cyRange, mode).toBeLessThan(4);
                 expect(m.maxRight, mode).toBeLessThanOrEqual(m.vw);
+            }
+            // 構成A: 600px以下の下部バー4項目も1行に並び、各44px以上・画面内に収まる
+            if (isCompact) {
+                const barIds = ['art-bar-add', 'art-bar-look', 'art-bar-publish', 'art-bar-done'];
+                const m = await measure(barIds);
+                expect(m.hidden, 'bottom-bar').toBe(0);
+                expect(m.cyRange, 'bottom-bar').toBeLessThan(4);
+                expect(m.maxRight, 'bottom-bar').toBeLessThanOrEqual(m.vw);
+                const sizes = await page.evaluate((ids) => ids.map(id => {
+                    const r = document.getElementById(id).getBoundingClientRect();
+                    return { id, w: r.width, h: r.height };
+                }), barIds);
+                for (const s of sizes) {
+                    expect(s.h, `${s.id} height`).toBeGreaterThanOrEqual(44);
+                    expect(s.w, `${s.id} width`).toBeGreaterThanOrEqual(44);
+                }
             }
             expect(errors).toEqual([]);
         });
