@@ -114,7 +114,8 @@ async function run390() {
     await page.click('#art-blk-menu [data-blk-act="delete"]');
     await page.waitForTimeout(200);
     await shotKeep(page, '3-undo-toast', '276-final-3-undo-toast-390x844.png');
-    await page.waitForTimeout(400);
+    // ②差し戻し対応: 以降のコマに前操作のトーストが写り込まないよう、即座にDOMから消す (1コマ1状態)
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
 
     // (4) 文章ブロックの全画面 (EasyMDE)
     const ins2 = page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last();
@@ -123,21 +124,55 @@ async function run390() {
     await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
     await page.evaluate(() => { window.bookshelf._artTextFsEditor.value('## はじめに\n\n10月はSFを集中して読んだ。'); });
     await page.waitForTimeout(300);
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await shotKeep(page, '4-text-fs', '276-final-4-text-fs-390x844.png');
     const fsDone = page.locator('#art-fs-done');
     if (await fsDone.isVisible().catch(() => false)) await fsDone.click();
 
-    // (5) キーボード補助バー (fake visualViewport で近似)
+    // (5) キーボード補助バー (fake visualViewport で近似)。入力欄にフォーカスし、
+    // キーボード近似の暗い帯も重ねて位置関係が分かるようにする (②差し戻し対応)。
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await page.evaluate(() => {
         class FakeVV extends EventTarget { constructor() { super(); this.height = window.innerHeight; this.offsetTop = 0; this.width = window.innerWidth; } }
         const fake = new FakeVV();
         Object.defineProperty(window, 'visualViewport', { value: fake, configurable: true });
     });
-    // visualViewport を差し替えたので一度リロードしてバインドし直す必要がある → 代わりに is-kb-open を直接付けて見た目だけ確認
-    await page.evaluate(() => { document.getElementById('art-edit-view').classList.add('is-kb-open'); const bar = document.getElementById('art-kb-bar'); if (bar) bar.style.top = `${Math.round(window.innerHeight * 0.6)}px`; });
-    await page.waitForTimeout(200);
+    const ins3 = page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last();
+    await ins3.click();
+    await page.click('#art-add-sheet [data-block-type="shelf"]');
+    await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+    const kbItems = page.locator('#art-drawer-list .art-drawer-item');
+    const kbN = Math.min(2, await kbItems.count());
+    for (let i = 0; i < kbN; i++) await kbItems.nth(i).click();
+    await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+    const memo = page.locator('.art-fs-memo').first();
+    await memo.focus();
+    // 実アプリの _artBindViewportScroll は実visualViewport(フルサイズ)にbind済みのため、
+    // focus()が発火させる本物のfocusinハンドラ(50/250/450ms遅延)がis-kb-openを消してしまう。
+    // その遅延分だけ待ってから、最後にもう一度手動でキーボード近似状態を適用する。
+    await page.waitForTimeout(500);
+    const kbHeight = Math.round(844 * 0.42);
+    await page.evaluate((kbH) => {
+        document.getElementById('art-edit-view').classList.add('is-kb-open');
+        const bar = document.getElementById('art-kb-bar');
+        if (bar) bar.style.top = `${window.innerHeight - kbH - 1}px`;
+        let overlay = document.getElementById('__kb_fake_overlay__');
+        if (!overlay) { overlay = document.createElement('div'); overlay.id = '__kb_fake_overlay__'; document.body.appendChild(overlay); }
+        overlay.style.cssText = `position:fixed;left:0;right:0;bottom:0;height:${kbH}px;background:rgba(20,20,30,.78);z-index:1040;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;`;
+        overlay.textContent = 'キーボード (近似)';
+    }, kbHeight);
+    await page.waitForTimeout(100);
+    const diag = await page.evaluate(() => {
+        const bar = document.getElementById('art-kb-bar');
+        const view = document.getElementById('art-edit-view');
+        const cs = bar ? getComputedStyle(bar) : null;
+        return { hasBar: !!bar, isKbOpen: view && view.classList.contains('is-kb-open'), display: cs && cs.display, top: bar && bar.style.top, rect: bar && bar.getBoundingClientRect() };
+    });
+    console.log('KB-BAR DIAG:', JSON.stringify(diag));
     await shotKeep(page, '5-kb-bar', '276-final-5-kb-bar-390x844.png');
-    await page.evaluate(() => { document.getElementById('art-edit-view').classList.remove('is-kb-open'); });
+    await page.evaluate(() => { document.getElementById('art-edit-view').classList.remove('is-kb-open'); const o = document.getElementById('__kb_fake_overlay__'); if (o) o.remove(); });
+    const fsDone2 = page.locator('#art-fs-done');
+    if (await fsDone2.isVisible().catch(() => false)) await fsDone2.click();
 
     // (6) 公開中・未反映の変更あり (U1)
     await page.evaluate(() => {
@@ -147,6 +182,7 @@ async function run390() {
         a.publicId = 'testpub01';
     });
     await page.evaluate(() => window.bookshelf._artRefreshPublishBadge());
+    await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     await page.waitForTimeout(100);
     await shotKeep(page, '6-stale', '276-final-6-stale-390x844.png');
 

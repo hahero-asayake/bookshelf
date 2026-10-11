@@ -8541,28 +8541,53 @@ class VirtualBookshelf {
                 if (bar) bar.style.top = `${Math.round(vv.height + vv.offsetTop)}px`;
             }
         };
+        // ②差し戻し (2026-10-12・#277実測): 入力欄の下端を可視域 (visualViewport.height) より
+        // 8px以上内側に入れる。MARGINは要求の8pxに安全margin分を足した値。
+        // 実測した根本原因 (#277): スクロールコンテナ (.art-col 等) はウィンドウ全体の高さを基準に
+        // レイアウトされており、visualViewport が縮んでもそれ自体の clientHeight は変わらない。
+        // そのため scrollHeight-clientHeight (可動域) がもともと小さい場合、scrollTop をいくら
+        // 増やしても可動域の上限 (実測63px) で頭打ちになり、キーボードの下に隠れたままになっていた。
+        // 対策: キーボード表示中はスクロールコンテナの max-height を可視域の下端に合わせて縮め、
+        // 可動域そのものを広げてからスクロールする (キーボードが閉じたら元に戻す)。
+        const KB_REVEAL_MARGIN = 16;
+        let kbShrunkScroller = null;
         const reveal = () => {
             updateKbBar();
             const el = document.activeElement;
             if (!inScope(el)) return;
-            const rect = el.getBoundingClientRect();
             const visibleBottom = vv.height + vv.offsetTop;
-            const overlap = rect.bottom - visibleBottom;
-            if (overlap > 0) {
-                const scroller = findScrollParent(el);
-                if (scroller.scrollBy) scroller.scrollBy({ top: overlap + 12, behavior: 'smooth' });
-                else scroller.scrollTop += overlap + 12;
+            const scroller = findScrollParent(el);
+            if (scroller && scroller !== document.scrollingElement && scroller !== document.documentElement) {
+                const top = scroller.getBoundingClientRect().top;
+                const maxH = Math.max(80, Math.round(visibleBottom - top));
+                scroller.style.maxHeight = `${maxH}px`;
+                kbShrunkScroller = scroller;
             }
+            const rect = el.getBoundingClientRect();
+            const overlap = rect.bottom - visibleBottom + KB_REVEAL_MARGIN;
+            if (overlap > 0) {
+                const current = scroller.scrollTop || 0;
+                const target = Math.round(current + overlap);
+                if (scroller.scrollTo) scroller.scrollTo({ top: target });
+                else scroller.scrollTop = target;
+            }
+        };
+        const restoreScrollerHeight = () => {
+            if (kbShrunkScroller) { kbShrunkScroller.style.maxHeight = ''; kbShrunkScroller = null; }
         };
         vv.addEventListener('resize', reveal);
         document.addEventListener('focusin', (e) => {
             if (!inScope(e.target)) return;
-            // キーボードのアニメーション/visualViewport のリサイズ確定を少し待つ
+            // キーボードのアニメーション/visualViewport のリサイズ確定を待つ (環境差があるため複数回試行)
+            setTimeout(reveal, 50);
             setTimeout(reveal, 250);
+            setTimeout(reveal, 450);
         });
         document.addEventListener('focusout', (e) => {
             if (!inScope(e.target)) return;
-            setTimeout(updateKbBar, 250); // フォーカスが外れてキーボードが閉じるのを少し待ってから判定し直す
+            // フォーカスが外れてキーボードが閉じるのを少し待ってから判定し直す。
+            // スクロールコンテナの高さ縮小 (上記) も元に戻す (閉じたままだと通常時にコンテンツが切れる)
+            setTimeout(() => { updateKbBar(); restoreScrollerHeight(); }, 250);
         });
         const kbDone = document.getElementById('art-kb-bar-done');
         if (kbDone) kbDone.addEventListener('click', () => { if (document.activeElement) document.activeElement.blur(); });
@@ -8849,6 +8874,7 @@ class VirtualBookshelf {
             toolbar: ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',
                 'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'],
         });
+        this._mdeApplyToolbarLabels(this._artTextFsEditor);
         this._artTextFsEditor.codemirror.on('change', () => {
             const blocks = this._artDraft.blocks || [];
             const idx = blocks.findIndex(x => x.id === b.id);
@@ -11318,6 +11344,26 @@ class VirtualBookshelf {
         }
     }
 
+    // EasyMDEツールバーのボタン文字ラベル (②決裁2026-10-12・イシュー#276差し戻し対応)。
+    // autoDownloadFontAwesome:false のためデフォルトのFontAwesomeアイコンは空ボタンになる
+    // (FontAwesomeは読み込まない方針を維持)。editor.toolbarElements (EasyMDE公式API・
+    // ボタンname→DOM要素のマップ) を使って短い日本語ラベルに差し替える。長文メモ
+    // (_openBookMemoInAppEditor) ・文章ブロック全画面 (_artOpenTextFsEditor) の両方で使う共通関数。
+    _mdeApplyToolbarLabels(easymde) {
+        const els = easymde && easymde.toolbarElements;
+        if (!els) return;
+        const LABELS = {
+            bold: '太字', italic: '斜体', heading: '見出し', 'unordered-list': '箇条書き',
+            'ordered-list': '番号付き', quote: '引用', link: 'リンク', image: '画像', table: '表',
+            'horizontal-rule': '区切り線', preview: 'プレビュー', 'side-by-side': '並べて表示',
+            fullscreen: '全画面', guide: 'ガイド',
+        };
+        for (const [name, label] of Object.entries(LABELS)) {
+            const btn = els[name];
+            if (btn) btn.textContent = label;
+        }
+    }
+
     // EasyMDE (106KB・css+js) は起動時に読み込まず、長文メモのアプリ内エディタを開く時だけ
     // 動的読み込みする (イシュー#247 決裁5・mobile Perf)。1回だけ挿入し、以降は同じPromiseを返す。
     _ensureEasyMDELoaded() {
@@ -11408,6 +11454,7 @@ class VirtualBookshelf {
                 'guide'
             ]
         });
+        this._mdeApplyToolbarLabels(this._bookMemoEditor);
         this._bookMemoEditorContext = { asin, title: book.title };
         this._bookMemoInitial = body;   // 閉じる時の破棄確認用 (未保存の変更検出)
         if (statusEl) statusEl.textContent = '';

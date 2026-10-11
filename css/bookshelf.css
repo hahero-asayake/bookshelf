@@ -2969,6 +2969,19 @@ html.bs-likely-has-data #dashboard-welcome {
     height: auto !important;
 }
 
+/* EasyMDEツールバー共通 (長文メモ・文章ブロック全画面の両方、②決裁2026-10-12・イシュー#276差し戻し対応):
+   autoDownloadFontAwesome:false のためデフォルトアイコンは空になる。JS側 (_mdeApplyToolbarLabels)
+   が短い文字ラベルへ差し替える分、ボタン自体を44px以上・ラベルが収まる幅に広げる。 */
+.editor-toolbar button {
+    min-width: 44px;
+    min-height: 44px;
+    height: auto;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .book-memo-modal-footer {
     display: flex;
     align-items: center;

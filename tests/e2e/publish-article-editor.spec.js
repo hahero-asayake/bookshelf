@@ -2607,7 +2607,7 @@ test.describe('記事エディタ: ブロック削除のUndoトースト (D・�
 test.describe('記事エディタ: キーボード自動スクロール (K-B・イシュー#276)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-    test('visualViewport が縮む (キーボード表示) と、フォーカス中の入力欄が隠れない位置までスクロールする', async ({ page }) => {
+    test('visualViewport が縮む (キーボード表示) と、一番下の本の短文メモ欄の下端が可視域より8px以上内側に入る (②差し戻し2026-10-12・#277実測)', async ({ page }) => {
         // 実キーボードは headless で開かないため、差し替え可能な visualViewport を仕込んで resize を模す。
         // _artBindViewportScroll はエディタ初回表示時に window.visualViewport を1度だけ捕まえるため、
         // bootApp (page.goto) より前に仕込む必要がある。
@@ -2621,12 +2621,14 @@ test.describe('記事エディタ: キーボード自動スクロール (K-B・�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
+        // 複数冊入れて「一番下の本」が実際にスクロールしないと見えない状態を作る (②指示どおり)
         await ensureDrawerSheetOpen(page);
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        const items = page.locator('#art-drawer-list .art-drawer-item');
+        const n = Math.min(5, await items.count());
+        for (let i = 0; i < n; i++) await items.nth(i).click();
         await closeDrawerSheetIfOpen(page);
 
-        const memoInput = page.locator('.art-fs-memo').first();
-        await memoInput.scrollIntoViewIfNeeded();
+        const memoInput = page.locator('.art-fs-memo').last();
         await memoInput.focus();
         // キーボード表示を模す: visualViewport を縮めて resize を発火
         await page.evaluate(() => {
@@ -2634,12 +2636,13 @@ test.describe('記事エディタ: キーボード自動スクロール (K-B・�
             vv.height = Math.round(window.innerHeight * 0.5);
             vv.dispatchEvent(new Event('resize'));
         });
+        // focusin側の複数回試行(50/250/450ms)が収束するのを待つ
         await expect.poll(() => page.evaluate(() => {
             const el = document.activeElement;
             const vv = window.visualViewport;
             const rect = el.getBoundingClientRect();
-            return rect.bottom - (vv.height + vv.offsetTop);
-        }), { timeout: 3000 }).toBeLessThanOrEqual(1);
+            return vv.height + vv.offsetTop - rect.bottom; // 可視域下端 - 入力欄下端 = 余白(px)
+        }), { timeout: 3000 }).toBeGreaterThanOrEqual(8);
         expect(errors).toEqual([]);
     });
 });
