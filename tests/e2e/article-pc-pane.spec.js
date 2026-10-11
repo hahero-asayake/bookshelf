@@ -278,3 +278,39 @@ test.describe('記事エディタ 390幅: つまみは出ない (イシュー#27
         expect(errors).toEqual([]);
     });
 });
+
+// イシュー#278 ②指摘 (push前): つまみは枠の上辺の線の上 (⋯と同じ縦位置) で本文の文字と交差しない／右ペインのツールバーは7ボタン1段
+test.describe('記事エディタ PC 1280幅: ②指摘の2点 (イシュー#278)', () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test('つまみと⋯は同じ縦位置でブロック枠の上辺に乗り、ブロック内の最初のテキスト要素と交差しない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await setupThreeBlocks(page);
+        for (let i = 0; i < 3; i++) {
+            const r = await page.evaluate((k) => {
+                const d = document.getElementById('art-canvas-frame').contentDocument;
+                const sec = d.querySelectorAll('section.art-cv-blk')[k];
+                const g = sec.querySelector('.art-cv-grip').getBoundingClientRect();
+                const m = sec.querySelector('.art-cv-more').getBoundingClientRect();
+                const s = sec.getBoundingClientRect();
+                const t = sec.querySelector('h1,h2,h3,h4,p,li').getBoundingClientRect();
+                const hit = !(g.right <= t.left || t.right <= g.left || g.bottom <= t.top || t.bottom <= g.top);
+                return { gTop: g.top, mTop: m.top, gBottom: g.bottom, secTop: s.top, hit };
+            }, i);
+            expect(Math.abs(r.gTop - r.mTop)).toBeLessThanOrEqual(1);
+            expect(r.hit).toBe(false);
+            expect(Math.abs(r.gBottom - (r.secTop - 4))).toBeLessThanOrEqual(1); // 下端=枠線 (outline-offset 4px)
+        }
+        expect(errors).toEqual([]);
+    });
+
+    test('右ペインの EasyMDE ツールバーは7ボタンで1段 (全ボタンの top が同じ)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await newArticleWithText(page);
+        await openTextBlock(page);
+        const tops = await page.evaluate(() => [...document.querySelectorAll('#art-blocks .editor-toolbar button')].map(b => Math.round(b.getBoundingClientRect().top)));
+        expect(tops.length).toBe(7);
+        expect(new Set(tops).size).toBe(1);
+        expect(errors).toEqual([]);
+    });
+});

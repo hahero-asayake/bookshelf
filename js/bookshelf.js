@@ -23,9 +23,10 @@ const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
 const ART_CANVAS_CHROME_CSS = `
 .art-cv-blk{position:relative;outline:1.5px dashed var(--acc);outline-offset:4px;border-radius:6px}
 .art-cv-ops{position:absolute;top:-14px;right:4px;z-index:10}
-.art-cv-grip{position:absolute;top:-14px;left:4px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:grab;padding:0;touch-action:none;z-index:10}
+.art-cv-grip{position:absolute;top:-32px;left:4px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:grab;padding:0;touch-action:none;z-index:10}
 .art-cv-grip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 .art-cv-dragging{opacity:.45}
+body.art-cv-pc .art-cv-ops{top:-32px}
 .art-cv-dropline{position:absolute;height:2px;background:var(--acc);border-radius:1px;pointer-events:none;z-index:20}
 .art-cv-more{position:relative;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:pointer;padding:0}
 .art-cv-more::after{content:'';position:absolute;inset:-8px}
@@ -8711,6 +8712,8 @@ class VirtualBookshelf {
             }
             const sections = new Map([...doc.querySelectorAll('section[data-art-idx]')].map(el => [Number(el.dataset.artIdx), el]));
             const pcReorder = !!(window.matchMedia && window.matchMedia('(min-width: 901px)').matches);
+            // PC はつまみと⋯をブロック枠の上辺の線の上に乗せる (下端=枠線・左右対称)。先頭の見出しの文字と重ならない (イシュー#278 ②指摘)
+            doc.body.classList.toggle('art-cv-pc', pcReorder);
             const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
             const mkInserter = (index) => {
                 const row = doc.createElement('div');
@@ -8974,13 +8977,16 @@ class VirtualBookshelf {
         if (!ta) return;
         if (this._artTextFsEditor) { try { this._artTextFsEditor.toTextArea(); } catch (_) {} this._artTextFsEditor = null; }
         ta.value = b.markdown || '';
+        // 右ペインで開いているか = 文章ブロックの form で #art-blocks がペイン配置 (position:absolute) になっているか
+        const blocksHost = document.getElementById('art-blocks');
+        const inPane = !!blocksHost && getComputedStyle(blocksHost).position === 'absolute';
         this._artTextFsEditor = new EasyMDE({
             element: ta,
             autoDownloadFontAwesome: false,
             spellChecker: false,
             autosave: { enabled: false },
             status: false,
-            toolbar: this._mdeToolbarConfig(),
+            toolbar: this._mdeToolbarConfig({ compact: inPane }),
         });
         this._mdeApplyToolbarLabels(this._artTextFsEditor);
         // イシュー#278: PC (900px超・右ペイン) は開いたらすぐ書けるよう入力欄へフォーカス (スマホはキーボードが出るので従来どおり)
@@ -11514,8 +11520,9 @@ class VirtualBookshelf {
     // 区切り線("|")は390px幅では7ボタン(各min-width 44px)と合わせて折り返しを招くため外す
     // (差し戻し3回目: getBoundingClientRectで全ボタンtop一致=1段を実測)。
     // PC (600px超) は変更なし (従来の14ボタン)。長文メモ・文章ブロック全画面の両方で使う。
-    _mdeToolbarConfig() {
-        if (window.innerWidth <= 600) {
+    // compact: スマホ幅、または PC の右ペイン (幅416px) で開いた時 (イシュー#278: 判定は画面幅ではなくペインかどうか)
+    _mdeToolbarConfig({ compact = false } = {}) {
+        if (compact || window.innerWidth <= 600) {
             return ['heading', 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', 'preview'];
         }
         return ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',

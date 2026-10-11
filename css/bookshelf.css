@@ -7837,6 +7837,9 @@ body.select-mode .drag-handle { display: none; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-blocks .art-block.is-fs-target,
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-blocks .art-fs-text-editor { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-fs-text-editor .EasyMDEContainer .CodeMirror { min-height: 0; }
+    /* 右ペイン (幅416px) のツールバーはスマホと同じ7ボタンに絞り (_mdeToolbarConfig compact)、同じ詰め方で1段に収める */
+    #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .editor-toolbar { padding: 9px 4px !important; }
+    #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .editor-toolbar button { padding: 4px 4px !important; }
 }
 /* 本棚/本ブロックの全画面編集 ('form'): 上端は キャンセル/題/完了 だけ。中身は対象ブロック1つと本の引き出し */
 .art-fs-hd { display: none; }
