@@ -31,6 +31,7 @@ const ART_CANVAS_CHROME_CSS = `
 .art-cv-ta{display:block;width:100%;min-height:120px;font:inherit;font-size:16px;line-height:1.9;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;resize:none;overflow:hidden}
 .art-cv-ta:focus{outline:2px solid var(--acc);outline-offset:1px}
 .article>h1{cursor:text}
+.article>h1.art-cv-h1-ph::before{content:attr(data-ph);color:var(--sub)}
 .art-cv-title{display:block;width:100%;font:inherit;font-size:34px;line-height:1.28;font-weight:700;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:0 0 12px}
 `;
 
@@ -8577,6 +8578,14 @@ class VirtualBookshelf {
             doc.head.appendChild(style);
             const article = doc.querySelector('.article');
             const blocks = this._artDraft.blocks || [];
+            // タイトル空の記事は生成器が空の<h1>を出す (高さ0pxでタップ不可、イシュー#275)。
+            // 編集状態でだけ ::before でプレースホルダを足して、その場入力 (_artEditTitleInline) への入口を作る。
+            // 閲覧状態 (このブロックの外) はこの処理を通らないため、公開ページとの1px一致は崩れない。
+            const h1 = article && article.querySelector(':scope > h1');
+            if (h1) {
+                if (!String(this._artDraft.title || '').trim()) { h1.classList.add('art-cv-h1-ph'); h1.setAttribute('data-ph', 'タイトルを入力'); }
+                else { h1.classList.remove('art-cv-h1-ph'); h1.removeAttribute('data-ph'); }
+            }
             const sections = new Map([...doc.querySelectorAll('section[data-art-idx]')].map(el => [Number(el.dataset.artIdx), el]));
             const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
             const mkInserter = (index) => {
@@ -8776,7 +8785,7 @@ class VirtualBookshelf {
         inp.type = 'text';
         inp.className = 'art-cv-ui art-cv-title';
         inp.value = src.value;
-        inp.placeholder = '記事タイトル';
+        inp.placeholder = 'タイトルを入力';
         inp.setAttribute('aria-label', '記事タイトル');
         h1.style.display = 'none';
         h1.after(inp);

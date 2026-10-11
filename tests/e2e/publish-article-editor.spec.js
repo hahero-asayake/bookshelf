@@ -2408,6 +2408,56 @@ test.describe('記事エディタ: 見たまま編集の並び替え・削除 (�
     });
 });
 
+// イシュー#275: 新規記事はキャンバス先頭のh1が空(高さ0px)で、編集状態でもヘッダー#art-titleが
+// 隠される/押せない幅があり、タイトルを入れる場所が無かった(#268での後退)。
+// 空タイトルのh1にプレースホルダ「タイトルを入力」を出し、そこからその場入力できることをスマホ/PC両幅で確認する。
+test.describe('記事エディタ: 新規記事のタイトル入口 (イシュー#275)', () => {
+    for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+        test(`${vp.width}x${vp.height}: キャンバスのプレースホルダh1からタイトルを入力でき、公開前チェックがタイトル必須で止まらない`, async ({ page }) => {
+            await page.setViewportSize(vp);
+            const errors = await bootApp(page);
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.click('#art-new');
+            await page.locator('#art-mode-edit').click();
+            await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+
+            // (1) タイトル空の新規記事: キャンバスのh1はプレースホルダで高さを持ち、クリックできる
+            const h1 = canvas(page).locator('.article > h1').first();
+            await expect.poll(async () => (await h1.boundingBox())?.height ?? 0).toBeGreaterThan(0);
+            await expect(h1).toHaveClass(/art-cv-h1-ph/);
+
+            // (2) 否定チェック (②指摘): 空タイトルのまま閲覧状態に戻すと、プレースホルダ文字はキャンバスに出ない
+            //     (公開ページには存在しない状態のため・#268の1px一致を閲覧状態では崩さない設計)
+            await page.locator('#art-mode-done').click();
+            await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'view');
+            await expect(canvas(page).locator('.article > h1')).toHaveText('');
+            await expect(canvas(page).locator('.article > h1.art-cv-h1-ph')).toHaveCount(0);
+
+            // (3) 編集へ戻り、h1を実クリックしてその場入力でタイトルを打つ
+            await page.locator('#art-mode-edit').click();
+            await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+            await h1.click();
+            const inlineTitle = canvas(page).locator('.art-cv-title');
+            await expect(inlineTitle).toBeVisible();
+            await inlineTitle.fill('わたしを構成する10冊');
+            await inlineTitle.press('Tab');
+            await expect.poll(() => page.locator('#art-title').inputValue()).toBe('わたしを構成する10冊');
+
+            // (4) ＋で文章ブロックを追加
+            await addBlock(page, 'text', 'last');
+            await canvas(page).locator('.art-cv-ta').fill('本文です。');
+
+            // (5) 公開パネルを開くと、公開前チェックのタイトル行が ok で「タイトルを入れてください」は出ない
+            await openPublishPanel(page);
+            const titleRow = page.locator('#art-pub-check-list [data-check="title"]');
+            await expect(titleRow).toHaveClass(/is-ok/);
+            await expect(titleRow).not.toContainText('タイトルを入れてください');
+
+            expect(errors).toEqual([]);
+        });
+    }
+});
+
 // イシュー#168: フッター (.pp-edit-actions) の「崩れ」を #166 の数値項目 (はみ出し・横スクロール) に
 // 加えて、折り返し行の内容・矩形交差・内容あふれ・pp-page-ops内部の分裂まで検出する。
 // イシュー#230: フッターを撤去しヘッダー1行 (戻る/タイトル+保存状態/プレビュー/公開する/⋯) へ。旧フッター崩れ検出 (#168) を
