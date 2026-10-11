@@ -7717,7 +7717,9 @@ body.select-mode .drag-handle { display: none; }
 .art-hd .art-hd-publish-group { margin-left: 0; }
 .art-more-host { position: relative; display: inline-flex; flex: 0 0 auto; }
 .art-more-host[hidden] { display: none; }
-.art-more-btn { padding-left: 0.5rem; padding-right: 0.5rem; }
+.art-more-btn { padding-left: 0.5rem; padding-right: 0.5rem; position: relative; }
+/* ②決裁(2026-10-12): 見た目の大きさは変えず、::afterでタップ領域だけ44px以上に広げる */
+.art-more-btn::after { content: ''; position: absolute; inset: -6px; }
 .art-more-menu { position: fixed; z-index: 1300; min-width: 11rem; padding: 0.3rem; background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14); display: grid; }
 .art-more-menu[hidden] { display: none; }
@@ -7854,6 +7856,10 @@ body.select-mode .drag-handle { display: none; }
     border: 1.5px dashed var(--accent); border-radius: 9px; background: var(--panel); color: var(--accent); font-size: 14px;
     font-weight: 700; cursor: pointer; }
 .art-fs-note { font-size: 12px; color: var(--fg2); margin: 10px 0 0; line-height: 1.6; }
+/* 文章ブロックの全画面編集 (EasyMDE・イシュー#276 step3)。長文メモと同じエディタをここでも使う */
+.art-fs-text-editor { display: flex; flex-direction: column; min-height: 0; }
+.art-fs-text-editor .EasyMDEContainer { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.art-fs-text-editor .EasyMDEContainer .CodeMirror { flex: 1 1 auto; min-height: 50vh; font-size: 16px; }
 /* 見た目シート */
 .art-look-sheet .art-add-sheet-panel { max-width: 440px; max-height: 88dvh; overflow-y: auto; }
 .art-look-sheet-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
@@ -7886,6 +7892,10 @@ body.select-mode .drag-handle { display: none; }
     #art-edit-view[data-art-mode="edit"] .art-hd .art-title-input { border-color: transparent; background: none; text-overflow: ellipsis;
         pointer-events: none; padding-left: 0; }
     #art-edit-view[data-art-mode="view"] .art-hd .art-save-status { display: none; }
+    /* ②決裁(2026-10-12): 編集状態はモックどおりタイトル(1行目)+状態表示(2行目)の2段にする */
+    #art-edit-view[data-art-mode="edit"] .art-hd .art-hd-title { flex-direction: column; align-items: flex-start; gap: 1px; }
+    #art-edit-view[data-art-mode="edit"] .art-hd .art-title-input { font-weight: 700; font-size: 0.95rem; width: 100%; }
+    #art-edit-view[data-art-mode="edit"] .art-hd .art-save-status { display: block; }
 }
 @media (max-width: 600px) {
     #art-edit-view .art-hd .art-hd-title { flex: 1 1 auto; order: 0; }
@@ -7918,6 +7928,22 @@ body.select-mode .drag-handle { display: none; }
     #art-edit-bottom-bar #art-bar-done { color: var(--accent); font-weight: 700; }
     /* バーの実高さ (44px+上下padding+safe-area) 分だけ本文を持ち上げ、最終ブロックが隠れないようにする */
     #art-edit-view[data-art-mode="edit"] .art-wrap { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+}
+
+/* 構成A: キーボード表示中の補助バー (イシュー#276 step3・モック pair-A-kb)。
+   JS (_artBindViewportScroll) が visualViewport の縮みで #art-edit-view に is-kb-open を付け、
+   #art-kb-bar の top を visualViewport の下端 (=キーボード直上) に追従させる。
+   edit モードの下部アクションバーはキーボード表示中だけ隠す (form モードはもともと#art-edit-bottom-barが出ない)。 */
+#art-kb-bar { display: none; }
+@media (max-width: 600px) {
+    #art-edit-view.is-kb-open #art-edit-bottom-bar { display: none; }
+    #art-edit-view.is-kb-open #art-kb-bar {
+        display: flex; align-items: center; justify-content: flex-end;
+        position: fixed; left: 0; right: 0;
+        padding: 6px 10px; background: var(--panel); border-top: 1px solid var(--line);
+        z-index: 1050;
+    }
+    #art-kb-bar #art-kb-bar-done { min-height: 44px; }
 }
 
 /* 既存 .art-shelf-list .art-shelf-item (グリッド領域指定) より強く、全画面の行の並びに置き換える */

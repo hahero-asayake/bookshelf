@@ -29,7 +29,8 @@ async function publishViaPanel(page) {
 }
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet。
-// shelf/book は全画面編集(form)に入り旧フォームの該当ブロックと本の引き出しが出る。text はキャンバス内 .art-cv-ta でその場入力。
+// shelf/book/text いずれも全画面編集(form)に入る (イシュー#276 step3: 文章も#247のEasyMDEを流用する全画面に統一・
+// その場入力は廃止)。shelf/bookは旧フォームの該当ブロックと本の引き出し、textはEasyMDE(長文メモと同じ)が出る。
 function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
 async function addBlock(page, type, pos = 'last') {
     const done = page.locator('#art-fs-done');
@@ -42,14 +43,23 @@ async function addBlock(page, type, pos = 'last') {
     await expect(btns).toHaveCount(before + 1);
     await (pos === 'first' ? btns.first() : btns.last()).click();
     await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
-    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    // text は EasyMDE が #247 の遅延読込 (非同期) で生えるため、インスタンス生成を待つ
+    if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
 }
 
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
+}
+
+// 文章ブロックの全画面 (EasyMDE) へ markdown を書き込み、完了で編集状態へ戻す
+// (イシュー#276 step3: canvas内 .art-cv-ta のその場入力を置き換え)。
+async function fillTextBlock(page, markdown) {
+    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+    await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);
+    await leaveForm(page);
 }
 // 編集状態を「完了」で閉じ閲覧状態に戻す。
 // 構成A (イシュー#276): 600px以下は完了ボタンがヘッダーでなく下部バー (#art-bar-done) にある。
@@ -265,15 +275,18 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         expect(errors).toEqual([]);
     });
 
-    test('文章ブロックは生 Markdown の textarea で編集できる', async ({ page }) => {
+    test('文章ブロックは長文メモと同じEasyMDEの全画面で編集できる (イシュー#276 step3)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
 
         await addBlock(page, 'text', 'first');
-        const textarea = canvas(page).locator('.art-cv-ta');
-        await textarea.fill('## はじめに\n\n本文。');
-        await expect(textarea).toHaveValue('## はじめに\n\n本文。');
+        await expect(page.locator('#art-fs-title')).toHaveText('文章を編集');
+        await expect(page.locator('.art-fs-text-editor .CodeMirror')).toBeVisible();
+        await fillTextBlock(page, '## はじめに\n\n本文。');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit'); // 完了で戻る
+        const markdown = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].markdown);
+        expect(markdown).toBe('## はじめに\n\n本文。');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         expect(errors).toEqual([]);
@@ -360,7 +373,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.fill('#art-title', 'わたしを構成する10冊');
 
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
+        await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
 
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
@@ -411,7 +424,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
         // debounce (600ms) が経過する前に即プレビューを押す
-        await canvas(page).locator('.art-cv-ta').fill('# まだ保存されていない見出し');
+        await fillTextBlock(page, '# まだ保存されていない見出し');
         await openPreview(page);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
         // (メインスレッド占有中でも進捗表示がpaintされる保険実装) ため、クリック直後は
@@ -432,7 +445,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await page.evaluate(() => {
             window.bookshelf.publishArticleGenerator.build = () => Promise.resolve({
@@ -457,7 +470,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await page.evaluate(() => {
             // 依頼文が主張していた「preview/index.html が無く errors も空」の状態を模す。
@@ -481,7 +494,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await page.evaluate(() => {
             window.bookshelf.publishArticleGenerator.build = () => Promise.reject(new Error('ネットワークタイムアウト'));
@@ -500,7 +513,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 200; // 実時間20秒を待たないよう短く注入
@@ -589,7 +602,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-new');
         await page.fill('#art-title', '再試行テスト');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 200;
@@ -664,7 +677,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         // イシュー#268: 見た目は編集状態のヘッダー「見た目」(#art-look-btn) → #art-look-sheet で選ぶ (押すと即反映)
         // イシュー#251: 既定(book-a-shelf-a)とは別の値を選んで切り替わることを確認する
         await page.click('#art-look-btn');
@@ -692,7 +705,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
         const stage = page.locator('#pp-preview-modal .pp-preview-stage');
@@ -796,7 +809,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', 'lastBuiltAt失敗テスト');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -825,7 +838,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', 'わたしを構成する10冊');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
+        await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
@@ -883,7 +896,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', 'わたしを構成する10冊');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('## はじめに\n\n本文サンプル。');
+        await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -941,7 +954,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', 'URL案内テスト');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -979,7 +992,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '一括更新テスト1');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文1');
+        await fillTextBlock(page, '本文1');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1003,7 +1016,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '一括更新テスト2');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文2');
+        await fillTextBlock(page, '本文2');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
@@ -1053,7 +1066,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '取り消しテスト');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1083,7 +1096,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '索引テスト記事');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1103,7 +1116,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '削除連動テスト');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1131,7 +1144,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '一覧から公開');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1155,7 +1168,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', '無題の記事');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1187,7 +1200,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('#art-new');
         await page.fill('#art-title', 'フォールバック確認');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
@@ -1311,7 +1324,7 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').fill('本文');
+        await fillTextBlock(page, '本文');
 
         await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
@@ -1356,7 +1369,7 @@ test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', ()
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
-        await canvas(page).locator('.art-cv-ta').first().fill('本文');
+        await fillTextBlock(page, '本文');
 
         for (let i = 0; i < 3; i++) {
             await openPreview(page);
@@ -2421,7 +2434,7 @@ test.describe('記事エディタ: 見たまま編集の並び替え・削除 (�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'last');
-        await canvas(page).locator('.art-cv-ta').fill('最初の文章');
+        await fillTextBlock(page, '最初の文章');
         await addBlock(page, 'shelf', 'last');
         await leaveForm(page);
         const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));
@@ -2492,7 +2505,7 @@ test.describe('記事エディタ: 新規記事のタイトル入口 (イシュ�
 
             // (4) ＋で文章ブロックを追加
             await addBlock(page, 'text', 'last');
-            await canvas(page).locator('.art-cv-ta').fill('本文です。');
+            await fillTextBlock(page, '本文です。');
 
             // (5) 公開パネルを開くと、公開前チェックのタイトル行が ok で「タイトルを入れてください」は出ない
             await openPublishPanel(page);
@@ -2571,7 +2584,7 @@ test.describe('記事エディタ: ブロック削除のUndoトースト (D・�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'last');
-        await canvas(page).locator('.art-cv-ta').fill('最初の文章');
+        await fillTextBlock(page, '最初の文章');
         await addBlock(page, 'shelf', 'last');
         await leaveForm(page);
         const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));

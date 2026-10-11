@@ -307,9 +307,13 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.goBack();
         await expect(page.locator('#art-look-sheet')).toBeHidden();
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
-        // ⋯メニュー (ブロックを1つ作ってから)
+        // ⋯メニュー (ブロックを1つ作ってから)。イシュー#276: 文章も挿入直後は全画面(EasyMDE)に入るため、
+        // 戻る(=完了)で編集状態へ戻してからキャンバスの⋯を操作する
         await frame.locator('.art-cv-ins-btn').last().click();
         await page.click('#art-add-sheet [data-block-type="text"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await page.goBack();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await frame.locator('.art-cv-more').first().click();
         await expect(page.locator('#art-blk-menu')).toBeVisible();
         await page.goBack();
@@ -343,6 +347,57 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(errors).toEqual([]);
     });
 
+    // イシュー#276 step3: 文章ブロックも本棚・本と同じ全画面 (EasyMDE) に入るため、戻る/ESCとも「完了」扱いになる。
+    test('記事エディタ: 文章ブロックの全画面 (EasyMDE) も戻る/ESCで「完了」扱いになり、エディタは残る (イシュー#276)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await openEditorInEditMode(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-ins-btn').last().click();
+        await page.click('#art-add-sheet [data-block-type="text"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await expect(page.locator('#art-fs-title')).toHaveText('文章を編集');
+        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+        await page.evaluate(() => { window.bookshelf._artTextFsEditor.value('ESCテスト本文'); });
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        expect(await page.evaluate(() => window.bookshelf._artDraft.blocks[0].markdown)).toBe('ESCテスト本文');
+        // もう一度開いて今度は戻る (物理バック) で確認
+        await frame.locator('.art-cv-more').first().click();
+        await page.click('#art-blk-menu [data-blk-act="edit"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+        await page.goBack();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#276 step1(C)・step3: 本棚・本・文章いずれの全画面でも「キャンセル」で変更があれば確認が出て、
+    // その確認ダイアログ自体はESC/枠外クリックで「編集を続ける」(=閉じない) 扱いになる (confirmDialog既定動作)。
+    test('記事エディタ: 全画面キャンセルの確認ダイアログはESC/枠外クリックで「編集を続ける」になる (イシュー#276)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await openEditorInEditMode(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-ins-btn').last().click();
+        await page.click('#art-add-sheet [data-block-type="shelf"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        // 本を1冊追加 (変更あり状態を作る)
+        await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await page.click('#art-fs-cancel');
+        await expect(page.locator('.cfm-overlay')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form'); // 閉じていない
+        await page.click('#art-fs-cancel');
+        await expect(page.locator('.cfm-overlay')).toBeVisible();
+        await page.locator('.cfm-overlay').click({ position: { x: 5, y: 5 } }); // 枠外クリック
+        await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        expect(errors).toEqual([]);
+    });
+
     test('公開管理→公開パネル: 戻るはパネルだけ閉じ、公開管理は残る (イシュー#230)', async ({ page }) => {
         const errors = await bootApp(page);
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
@@ -368,6 +423,10 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.click('#art-mode-edit');
         await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().click();
         await page.click('#art-add-sheet [data-block-type="text"]');
+        // イシュー#276: 文章も挿入直後は全画面(EasyMDE)に入るため、完了で編集状態へ戻してから操作する
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await page.click('#art-fs-done');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await page.evaluate(() => window.bookshelf._artFlushSave());
         await page.click('#art-more-btn');
         await page.click('#art-width-preview');
