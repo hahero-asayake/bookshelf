@@ -172,3 +172,109 @@ test.describe('記事エディタ 390幅は従来どおり全画面 (イシュ�
         expect(errors).toEqual([]);
     });
 });
+
+// イシュー#278 step3: PCのブロック並べ替え (つまみのドラッグ・Alt+↑↓・aria-live・Undo)。
+// 並べ替え対象の3ブロックは下書きへ直接置く (準備だけ)。並べ替え操作そのものは実マウス/実キー入力で打つ。
+async function setupThreeBlocks(page) {
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.click('#art-new');
+    await enterEdit(page);
+    await page.evaluate(() => {
+        const app = window.bookshelf;
+        app._artDraft.blocks = ['A', 'B', 'C'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}\n\n本文${t}` }));
+        app._artRenderBlocks();
+    });
+    await expect(canvas(page).locator('.art-cv-grip')).toHaveCount(3);
+}
+const order = (page) => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.id.replace('blk_', '')).join(''));
+// iframe 内要素の rect をページ座標へ (frame の位置を足す)
+async function rectIn(page, sel, i = 0) {
+    const f = await page.locator('#art-canvas-frame').boundingBox();
+    const r = await page.evaluate(([s, k]) => { const el = document.getElementById('art-canvas-frame').contentDocument.querySelectorAll(s)[k]; const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; }, [sel, i]);
+    return { x: f.x + r.x, y: f.y + r.y, w: r.w, h: r.h };
+}
+
+test.describe('記事エディタ PC 1280幅: ブロックの並べ替え (イシュー#278)', () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test('つまみはブロック左端に揃い、ドラッグ中はブロック間の中央に挿入線が出て、離すと順序が変わり Undo で戻る', async ({ page }) => {
+        const errors = await bootApp(page);
+        await setupThreeBlocks(page);
+        // 整列: つまみは右上の⋯と左右対称 (上端が同じ・ブロック左端からの距離=ブロック右端から⋯までの距離。1px以内)
+        for (let i = 0; i < 3; i++) {
+            const g = await rectIn(page, '.art-cv-grip', i);
+            const m = await rectIn(page, '.art-cv-more', i);
+            const s = await rectIn(page, 'section.art-cv-blk', i);
+            expect(Math.abs(g.y - m.y)).toBeLessThanOrEqual(1);
+            expect(Math.abs((g.x - s.x) - ((s.x + s.w) - (m.x + m.w)))).toBeLessThanOrEqual(1);
+            expect(Math.abs(g.h - m.h)).toBeLessThanOrEqual(1);
+            expect(g.x).toBeGreaterThanOrEqual((await page.locator('#art-canvas-frame').boundingBox()).x); // キャンバスの外へはみ出さない
+        }
+        const g0 = await rectIn(page, '.art-cv-grip', 0);
+        const s0 = await rectIn(page, 'section.art-cv-blk', 0);
+        const endIns = await rectIn(page, '.art-cv-ins', 3); // 最後のブロックの後ろ
+        await page.mouse.move(g0.x + g0.w / 2, g0.y + g0.h / 2);
+        await page.mouse.down();
+        await page.mouse.move(g0.x + g0.w / 2, endIns.y + endIns.h / 2, { steps: 8 });
+        // 挿入線: 縦はブロック間 (「ここに追加」行) の中央・横はブロックと同じ左端と幅 (1px以内)
+        // (下端近くでは外側が自動スクロールするため、比較する座標は線と同じ時点で測り直す)
+        const line = await rectIn(page, '.art-cv-dropline');
+        const endNow = await rectIn(page, '.art-cv-ins', 3);
+        const s0Now = await rectIn(page, 'section.art-cv-blk', 0);
+        expect(Math.abs((line.y + line.h / 2) - (endNow.y + endNow.h / 2))).toBeLessThanOrEqual(1);
+        expect(Math.abs(line.x - s0Now.x)).toBeLessThanOrEqual(1);
+        expect(Math.abs(line.w - s0.w)).toBeLessThanOrEqual(1);
+        await page.mouse.up();
+        await expect.poll(() => order(page)).toBe('BCA');
+        await expect(canvas(page).locator('.art-cv-dropline')).toHaveCount(0);
+        const undoBtn = page.locator('.toast .toast-action');
+        await expect(undoBtn).toHaveText('元に戻す');
+        await undoBtn.click();
+        await expect.poll(() => order(page)).toBe('ABC');
+        expect(errors).toEqual([]);
+    });
+
+    test('つまみにフォーカスして Alt+↓/↑ で1つずつ動き、aria-live で読み上げ、フォーカスが追従する', async ({ page }) => {
+        const errors = await bootApp(page);
+        await setupThreeBlocks(page);
+        await canvas(page).locator('.art-cv-grip[data-blk-idx="0"]').focus();
+        await page.keyboard.press('Alt+ArrowDown');
+        await expect.poll(() => order(page)).toBe('BAC');
+        await expect(page.locator('#art-live')).toHaveAttribute('aria-live', 'polite');
+        await expect(page.locator('#art-live')).toHaveText('文章ブロックを2番目に移動しました（全3ブロック）');
+        // フォーカスは移動先 (2番目) のつまみへ追従 → もう一度 Alt+↓ で3番目へ
+        await expect.poll(() => page.evaluate(() => document.getElementById('art-canvas-frame').contentDocument.activeElement?.dataset?.blkIdx)).toBe('1');
+        await page.keyboard.press('Alt+ArrowDown');
+        await expect.poll(() => order(page)).toBe('BCA');
+        await expect(page.locator('#art-live')).toHaveText('文章ブロックを3番目に移動しました（全3ブロック）');
+        await page.keyboard.press('Alt+ArrowUp');
+        await expect.poll(() => order(page)).toBe('BAC');
+        // Undo は直前の1回分 (BCA→BAC) を戻す
+        await page.locator('.toast .toast-action').last().click();
+        await expect.poll(() => order(page)).toBe('BCA');
+        expect(errors).toEqual([]);
+    });
+});
+
+test.describe('記事エディタ 390幅: つまみは出ない (イシュー#278 回帰)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('スマホは⋯→上へ/下へのまま (つまみ無し・上へ/下へで Undo トーストは出ない)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await enterEdit(page);
+        await page.evaluate(() => {
+            const app = window.bookshelf;
+            app._artDraft.blocks = ['A', 'B'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}` }));
+            app._artRenderBlocks();
+        });
+        await expect(canvas(page).locator('.art-cv-more')).toHaveCount(2);
+        await expect(canvas(page).locator('.art-cv-grip')).toHaveCount(0);
+        await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
+        await page.locator('#art-blk-menu [data-blk-act="down"]').click();
+        await expect.poll(() => order(page)).toBe('BA');
+        await expect(page.locator('.toast .toast-action')).toHaveCount(0);
+        expect(errors).toEqual([]);
+    });
+});

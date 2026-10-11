@@ -23,6 +23,10 @@ const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
 const ART_CANVAS_CHROME_CSS = `
 .art-cv-blk{position:relative;outline:1.5px dashed var(--acc);outline-offset:4px;border-radius:6px}
 .art-cv-ops{position:absolute;top:-14px;right:4px;z-index:10}
+.art-cv-grip{position:absolute;top:-14px;left:4px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:grab;padding:0;touch-action:none;z-index:10}
+.art-cv-grip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.art-cv-dragging{opacity:.45}
+.art-cv-dropline{position:absolute;height:2px;background:var(--acc);border-radius:1px;pointer-events:none;z-index:20}
 .art-cv-more{position:relative;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:pointer;padding:0}
 .art-cv-more::after{content:'';position:absolute;inset:-8px}
 .art-cv-ins{min-height:44px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
@@ -8706,6 +8710,7 @@ class VirtualBookshelf {
                 else { h1.classList.remove('art-cv-h1-ph'); h1.removeAttribute('data-ph'); }
             }
             const sections = new Map([...doc.querySelectorAll('section[data-art-idx]')].map(el => [Number(el.dataset.artIdx), el]));
+            const pcReorder = !!(window.matchMedia && window.matchMedia('(min-width: 901px)').matches);
             const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
             const mkInserter = (index) => {
                 const row = doc.createElement('div');
@@ -8732,10 +8737,28 @@ class VirtualBookshelf {
                 ops.className = 'art-cv-ui art-cv-ops';
                 ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="ブロックの操作" aria-haspopup="menu">${svg('more-horizontal')}</button>`;
                 sec.appendChild(ops);
+                // イシュー#278: PC (900px超) だけブロック左につまみ。マウスでドラッグ・Alt+↑↓で並べ替え (スマホは⋯→上へ/下へのまま)
+                if (pcReorder) {
+                    const grip = doc.createElement('button');
+                    grip.type = 'button';
+                    grip.className = 'art-cv-ui art-cv-grip';
+                    grip.dataset.blkIdx = String(i);
+                    grip.dataset.blkId = b.id; // 描き直し前の古いキャンバスで続けて押されても、同じブロックを動かす
+                    grip.title = 'ドラッグで並べ替え（Alt+↑↓でも移動）';
+                    grip.setAttribute('aria-label', `${i + 1}番目のブロックを並べ替え（Alt+上下矢印で移動）`);
+                    grip.innerHTML = svg('grip-vertical');
+                    sec.appendChild(grip);
+                }
                 last = sec;
             });
             const endIns = mkInserter(blocks.length);
             if (last && last.parentNode) last.after(endIns); else if (article) article.appendChild(endIns);
+            // キーボードで動かした直後は、移動先ブロックのつまみへフォーカスを追従させる
+            if (this._artGripFocusIdx != null) {
+                const g = doc.querySelector(`.art-cv-grip[data-blk-idx="${this._artGripFocusIdx}"]`);
+                this._artGripFocusIdx = null;
+                if (g) g.focus();
+            }
             if (!doc.body.dataset.artCvBound) {
                 doc.body.dataset.artCvBound = '1';
                 // iframe 内にフォーカスがある時の Esc は親文書へ届かない。シート/メニューを閉じる処理へ中継する
@@ -8744,6 +8767,61 @@ class VirtualBookshelf {
                     // 開いている面がある時だけ中継する (何も開いていない時に中継すると記事エディタごと閉じてしまう)
                     const open = ['art-add-sheet', 'art-look-sheet', 'art-blk-menu'].some(id => { const el = document.getElementById(id); return el && !el.hidden; });
                     if (open) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                });
+                // イシュー#278: つまみの Alt+↑↓ (1つ移動)
+                doc.addEventListener('keydown', (e) => {
+                    const g = e.target.closest && e.target.closest('.art-cv-grip');
+                    if (!g || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+                    e.preventDefault();
+                    const from = (this._artDraft.blocks || []).findIndex(x => x.id === g.dataset.blkId);
+                    if (from < 0) return;
+                    this._artMoveBlock(from, e.key === 'ArrowUp' ? from - 1 : from + 1, { undo: true, announce: true, focusGrip: true });
+                });
+                // イシュー#278: つまみのドラッグ。挿入位置＝ブロック間の「ここに追加」行の縦中央 (ブロック間の中央) に線を出す
+                doc.addEventListener('pointerdown', (e) => {
+                    const g = e.target.closest && e.target.closest('.art-cv-grip');
+                    if (!g || e.button !== 0) return;
+                    e.preventDefault();
+                    const from = Number(g.dataset.blkIdx);
+                    const sec = g.closest('section');
+                    const art = doc.querySelector('.article');
+                    const gaps = [...doc.querySelectorAll('.art-cv-ins')].map(row => { const r = row.getBoundingClientRect(); return (r.top + r.bottom) / 2; });
+                    if (!sec || !art || !gaps.length) return;
+                    const sr = sec.getBoundingClientRect();
+                    const line = doc.createElement('div');
+                    line.className = 'art-cv-ui art-cv-dropline';
+                    line.style.left = `${sr.left + doc.defaultView.scrollX}px`;
+                    line.style.width = `${sr.width}px`;
+                    line.hidden = true;
+                    doc.body.appendChild(line);
+                    sec.classList.add('art-cv-dragging');
+                    let target = null;
+                    const onMove = (ev) => {
+                        let best = 0;
+                        gaps.forEach((y, k) => { if (Math.abs(y - ev.clientY) < Math.abs(gaps[best] - ev.clientY)) best = k; });
+                        target = best;
+                        line.hidden = best === from || best === from + 1; // 元の位置と同じ所には線を出さない
+                        line.style.top = `${gaps[best] - 1 + doc.defaultView.scrollY}px`;
+                        line.dataset.gap = String(best);
+                        // 記事の外側 (.art-col) が縦スクロールの本体。上下端40px以内に来たら少しずつ送る (長い記事で画面外へ運べるように)
+                        const col = document.querySelector('#art-edit-view .art-col');
+                        const fr = document.getElementById('art-canvas-frame').getBoundingClientRect();
+                        if (col) {
+                            const y = fr.top + ev.clientY, cr = col.getBoundingClientRect();
+                            if (y > cr.bottom - 40) col.scrollTop += 16;
+                            else if (y < cr.top + 40) col.scrollTop -= 16;
+                        }
+                    };
+                    const onUp = () => {
+                        doc.removeEventListener('pointermove', onMove);
+                        doc.removeEventListener('pointerup', onUp);
+                        line.remove();
+                        sec.classList.remove('art-cv-dragging');
+                        if (target == null || target === from || target === from + 1) return;
+                        this._artMoveBlock(from, target > from ? target - 1 : target, { undo: true, announce: true });
+                    };
+                    doc.addEventListener('pointermove', onMove);
+                    doc.addEventListener('pointerup', onUp);
                 });
                 doc.addEventListener('click', (e) => {
                     const ins = e.target.closest('.art-cv-ins-btn');
@@ -8837,12 +8915,7 @@ class VirtualBookshelf {
         this._artCloseBlkMenu({ keepHistory: toFs });
         if (!b) return;
         if (act === 'up' || act === 'down') {
-            const to = act === 'up' ? idx - 1 : idx + 1;
-            if (to < 0 || to >= blocks.length) return;
-            blocks.splice(idx, 1);
-            blocks.splice(to, 0, b);
-            this._artRenderBlocks();
-            this._artScheduleSave();
+            this._artMoveBlock(idx, act === 'up' ? idx - 1 : idx + 1);
         } else if (act === 'delete') {
             this._artRemoveBlock(b.id);
         } else if (act === 'edit') {
@@ -10066,10 +10139,60 @@ class VirtualBookshelf {
         });
     }
 
+    // ブロックを from→to へ1回で移す (⋯の上へ/下へ・PCのドラッグ・Alt+↑↓ の共通経路・イシュー#278)。
+    // undo: #276 の Undo トースト (削除と同じ1段保持の _artBlockUndo) を出す。⋯の上へ/下へは従来どおり出さない。
+    // announce: 結果を aria-live で読み上げる。focusGrip: 描き直し後に移動先のつまみへフォーカスを戻す。
+    _artMoveBlock(from, to, { undo = false, announce = false, focusGrip = false } = {}) {
+        const blocks = this._artDraft.blocks || [];
+        if (from < 0 || from >= blocks.length || to < 0 || to >= blocks.length || from === to) return false;
+        const before = blocks.map(b => b.id);
+        const [b] = blocks.splice(from, 1);
+        blocks.splice(to, 0, b);
+        if (focusGrip) this._artGripFocusIdx = to;
+        this._artRenderBlocks();
+        this._artScheduleSave();
+        if (announce) {
+            const name = b.type === 'shelf' ? '本棚ブロック' : b.type === 'book' ? '本ブロック' : '文章ブロック';
+            this._artAnnounce(`${name}を${to + 1}番目に移動しました（全${blocks.length}ブロック）`);
+        }
+        if (undo) {
+            this._artBlockUndo = { order: before };
+            window.toast('ブロックを移動しました', {
+                type: 'success',
+                action: { label: '元に戻す', onClick: () => this._artUndoRemoveBlock() },
+                duration: 5000
+            });
+        }
+        return true;
+    }
+
+    // スクリーンリーダー向けの読み上げ (aria-live=polite)。キャンバスは描き直しで中身が消えるため親文書側に1つ置く
+    _artAnnounce(text) {
+        let el = document.getElementById('art-live');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'art-live';
+            el.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+            el.setAttribute('aria-live', 'polite');
+            el.setAttribute('role', 'status');
+            document.body.appendChild(el);
+        }
+        el.textContent = '';
+        requestAnimationFrame(() => { el.textContent = text; });
+    }
+
     _artUndoRemoveBlock() {
         const undo = this._artBlockUndo;
         if (!undo) return;
         this._artBlockUndo = null;
+        if (undo.order) { // 並べ替えの取り消し (イシュー#278): 移動前の並びへ戻す
+            const blocks = this._artDraft.blocks || [];
+            const byId = new Map(blocks.map(b => [b.id, b]));
+            this._artDraft.blocks = [...undo.order.map(id => byId.get(id)).filter(Boolean), ...blocks.filter(b => !undo.order.includes(b.id))];
+            this._artRenderBlocks();
+            this._artScheduleSave();
+            return;
+        }
         if (!this._artDraft.blocks) this._artDraft.blocks = [];
         const blocks = this._artDraft.blocks;
         const at = Math.min(undo.index, blocks.length);
