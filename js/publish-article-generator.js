@@ -116,6 +116,8 @@ const ARTICLE_COLOR_TOKENS = {
 // イシュー#251: 3テンプレ(本A×棚A・本C×棚C・本C×棚D)への統合に合わせ、モック正本
 // (bookshelf/_local/mock-templates-v5-20260928/build_v5.mjs)の確定値を反映する。
 //   - .article の幅を760px→600px(全角35〜40字の1カラム、TEXT_CSS)に変更。
+//   イシュー#278 (ハヘロ決裁2026-10-12「3,860」): .article を600px→860pxへ。エディタのキャンバスはこの出力を
+//   そのまま描くため、閲覧状態と公開ページの1px一致 (#268) は保たれる。狭い画面は max-width なので従来どおり縮む。
 //   - 見出しh2/h3・本文p/ul/ol・引用の文字サイズ/行間をTEXT_CSSの値に統一(h4-h6は既存のcolor:accのみ据え置き)。
 //   - 表・引用線・リスト記号(GLOBAL_PROSE_CSS)を.blk-text/.bk-detail共通に追加。表はv3の見た目(枠線1px・
 //     thのみ背景・padding 7px 10px・文字14px)に統一(以前はテーブル用のCSSが無く素のまま出ていた)。
@@ -128,7 +130,7 @@ const ARTICLE_BASE_CSS = `
 body{font-family:system-ui,"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;line-height:1.75;background:var(--bg);color:var(--txt)}
 img{max-width:100%;display:block}
 a{color:var(--acc)}
-.article{max-width:600px;margin:0 auto;padding:48px 24px 60px}
+.article{max-width:860px;margin:0 auto;padding:48px 24px 60px}
 .blk{margin:0 0 36px}
 .article>h1{font-size:34px;line-height:1.28;margin:0 0 12px}
 .tags{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 36px;list-style:none}

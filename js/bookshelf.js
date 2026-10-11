@@ -8665,6 +8665,31 @@ class VirtualBookshelf {
         if (!doc || !doc.body) return;
         doc.querySelectorAll('.art-cv-ui').forEach(el => el.remove());
         doc.querySelectorAll('.art-cv-blk').forEach(el => el.classList.remove('art-cv-blk'));
+        // イシュー#278: PCの文章ブロック右ペイン編集中は、左の記事で対象ブロックを枠で示し、開いた直後だけその位置へ送る
+        // (入力のたびには送らない=読んでいる位置が飛ばない)。枠は .art-cv-ui で次の描画時に外れる。
+        if (this._artMode === 'form' && this._artFsBlockId) {
+            const i = (this._artDraft.blocks || []).findIndex(x => x.id === this._artFsBlockId);
+            const sec = i >= 0 ? doc.querySelector(`section[data-art-idx="${i}"]`) : null;
+            if (sec) {
+                const style = doc.createElement('style');
+                style.className = 'art-cv-ui';
+                style.textContent = '.art-cv-fs-target{outline:2px solid #3d52ff;outline-offset:6px;border-radius:4px}';
+                doc.head.appendChild(style);
+                sec.classList.add('art-cv-blk', 'art-cv-fs-target');
+                // 左の記事をクリックした後 (フォーカスが iframe 内) でも Esc=完了 が効くよう親へ中継する (スマホ全画面と同じ規則)
+                if (!doc.body.dataset.artFsEscBound) {
+                    doc.body.dataset.artFsEscBound = '1';
+                    doc.addEventListener('keydown', (e) => {
+                        if (e.key === 'Escape' && this._artMode === 'form') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                    });
+                }
+                if (this._artFsScrollPending) {
+                    this._artFsScrollPending = false;
+                    const col = document.querySelector('#art-edit-view .art-col');
+                    if (col) col.scrollTop = Math.max(0, frame.offsetTop - col.offsetTop + sec.offsetTop - 16);
+                }
+            }
+        }
         if (this._artMode === 'edit') {
             const style = doc.createElement('style');
             style.className = 'art-cv-ui';
@@ -8838,7 +8863,12 @@ class VirtualBookshelf {
         if (b.type === 'book' && !b.asin) this._artPendingBookBlockId = blockId;
         const t = document.getElementById('art-fs-title');
         if (t) t.textContent = b.type === 'shelf' ? '本棚を編集' : b.type === 'book' ? '本を編集' : '文章を編集';
+        // イシュー#278: ブロック種別を data-art-fs-type に出す (900px超の文章は CSS で右ペイン表示＋左に記事)
+        const ev = document.getElementById('art-edit-view');
+        if (ev) ev.dataset.artFsType = b.type;
+        this._artFsScrollPending = b.type === 'text';
         this._artSetMode('form');
+        if (b.type === 'text') this._artQueueCanvas();
         this._artRenderBlocks();
         this._artRenderDrawer();
         // スマホの「戻る」= 完了 (Esc と同じ・②決裁)。直前のシート/⋯メニューの段があれば引き継ぐ
@@ -8880,6 +8910,8 @@ class VirtualBookshelf {
             toolbar: this._mdeToolbarConfig(),
         });
         this._mdeApplyToolbarLabels(this._artTextFsEditor);
+        // イシュー#278: PC (900px超・右ペイン) は開いたらすぐ書けるよう入力欄へフォーカス (スマホはキーボードが出るので従来どおり)
+        if (window.matchMedia && window.matchMedia('(min-width: 901px)').matches) this._artTextFsEditor.codemirror.focus();
         this._artTextFsEditor.codemirror.on('change', () => {
             const blocks = this._artDraft.blocks || [];
             const idx = blocks.findIndex(x => x.id === b.id);
@@ -8926,7 +8958,10 @@ class VirtualBookshelf {
         }
         this._artFsBlockId = null;
         this._artFsSnapshot = null;
+        this._artFsScrollPending = false;
         this._artPendingBookBlockId = null;
+        const ev = document.getElementById('art-edit-view');
+        if (ev) delete ev.dataset.artFsType;
         if (this._artTextFsEditor) { try { this._artTextFsEditor.toTextArea(); } catch (_) {} this._artTextFsEditor = null; }
         this._artSetMode('edit');
         this._artRenderBlocks();
