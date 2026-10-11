@@ -8538,7 +8538,13 @@ class VirtualBookshelf {
             view.classList.toggle('is-kb-open', open);
             if (open) {
                 const bar = document.getElementById('art-kb-bar');
-                if (bar) bar.style.top = `${Math.round(vv.height + vv.offsetTop)}px`;
+                // ②差し戻し2回目 (2026-10-12・実測): top を可視域の下端にすると、バー自身の高さの分だけ
+                // 可視域からはみ出し (=キーボードに隠れた位置に描かれ)、赤枠が空白を囲む見た目になっていた。
+                // バーの「下端」を可視域の下端に合わせる (= top は可視域下端 - バー自身の高さ)。
+                if (bar) {
+                    const barHeight = bar.offsetHeight || 56;
+                    bar.style.top = `${Math.round(vv.height + vv.offsetTop - barHeight)}px`;
+                }
             }
         };
         // ②差し戻し (2026-10-12・#277実測): 入力欄の下端を可視域 (visualViewport.height) より
@@ -8871,8 +8877,7 @@ class VirtualBookshelf {
             spellChecker: false,
             autosave: { enabled: false },
             status: false,
-            toolbar: ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',
-                'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'],
+            toolbar: this._mdeToolbarConfig(),
         });
         this._mdeApplyToolbarLabels(this._artTextFsEditor);
         this._artTextFsEditor.codemirror.on('change', () => {
@@ -11344,6 +11349,19 @@ class VirtualBookshelf {
         }
     }
 
+    // EasyMDEツールバーの構成 (②決裁2026-10-12・イシュー#276差し戻し2回目対応)。
+    // 600px以下 (構成Aと同じ既存ブレークポイント) は文字ラベル化した14ボタンが3段になり
+    // 本文より目立っていたため、見出し・太字・箇条書き・番号付き・引用・リンク・プレビューの
+    // 7個 (1段) に絞る。画像・表・区切り線・並べて表示・全画面・ガイドはスマホでは出さない。
+    // PC (600px超) は変更なし (従来の14ボタン)。長文メモ・文章ブロック全画面の両方で使う。
+    _mdeToolbarConfig() {
+        if (window.innerWidth <= 600) {
+            return ['heading', 'bold', '|', 'unordered-list', 'ordered-list', 'quote', '|', 'link', '|', 'preview'];
+        }
+        return ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',
+            'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'];
+    }
+
     // EasyMDEツールバーのボタン文字ラベル (②決裁2026-10-12・イシュー#276差し戻し対応)。
     // autoDownloadFontAwesome:false のためデフォルトのFontAwesomeアイコンは空ボタンになる
     // (FontAwesomeは読み込まない方針を維持)。editor.toolbarElements (EasyMDE公式API・
@@ -11446,13 +11464,7 @@ class VirtualBookshelf {
             spellChecker: false,
             autosave: { enabled: false },
             status: ['lines', 'words'],
-            toolbar: [
-                'bold', 'italic', 'heading', '|',
-                'unordered-list', 'ordered-list', 'quote', '|',
-                'link', 'image', 'table', 'horizontal-rule', '|',
-                'preview', 'side-by-side', 'fullscreen', '|',
-                'guide'
-            ]
+            toolbar: this._mdeToolbarConfig(),
         });
         this._mdeApplyToolbarLabels(this._bookMemoEditor);
         this._bookMemoEditorContext = { asin, title: book.title };

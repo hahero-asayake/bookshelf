@@ -92,7 +92,11 @@ async function shotState(staticDir, port, name, width, height, fn) {
     await bootApp(page, base);
     await setupArticle(page);
     await fn(page);
-    await page.waitForTimeout(150);
+    // ②差し戻し3回目: header/bottombarの下端が切れていた原因は、setupArticle()内の本棚ドロワー
+    // (.art-side) クローズ時の transition:transform 0.25s (css/bookshelf.css) が完了する前に撮影していたこと。
+    // 閉じきる前のシート上端(.art-sheet-handleの丸いつまみ)が画面下にわずかに覗き、下部バーのラベルに重なっていた。
+    // 250ms+マージンで確実に閉じきってから撮る。
+    await page.waitForTimeout(400);
     const outPath = join(SHOT_DIR, `.raw-276-${name}.png`);
     await page.screenshot({ path: outPath });
     await browser.close();
@@ -133,15 +137,26 @@ const CASES = {
         },
     },
     kbbar: {
-        caption: 'キーボード表示中は下部バーを隠し、キーボード直上に「確定」の補助バーを出す',
+        caption: 'キーボード表示中は下部バーを隠し、キーボード直上(可視域の下端)に「確定」の補助バーを出す',
         async run(page) {
-            await page.evaluate(() => {
-                document.querySelectorAll('.art-fs-memo, #art-title').forEach(() => {});
-            });
+            // ②差し戻し2回目: 短文メモ欄に実フォーカスを当てる (入力欄・補助バー・キーボード帯の関係を見せる)。
+            // .art-fs-memo は本棚ブロックの全画面編集ビュー内にのみ存在する (setupArticle() は
+            // そのビューを#art-fs-doneで閉じて終わるため、ここで「⋯→編集」から開き直す必要がある)。
+            const more = page.frameLocator('#art-canvas-frame').locator('.art-cv-more').first();
+            await more.click();
+            await page.click('#art-blk-menu [data-blk-act="edit"]');
+            await page.waitForFunction(() => !!document.querySelector('.art-fs-memo'), null, { timeout: 5000 });
             const memo = page.locator('.art-fs-memo').first();
-            const hasMemo = await memo.count().then(c => c > 0).catch(() => false);
-            // キーボード近似: 下部を暗い帯で覆い、art-kb-bar (存在すれば) を表示状態にする
-            await page.evaluate(() => {
+            await memo.focus();
+            // 実アプリの _artBindViewportScroll は実visualViewport(フルサイズ)にbind済みのため、
+            // focus()が発火させる本物のfocusinハンドラ(50/250/450ms遅延)が、後段で手動付与する
+            // is-kb-openを消してしまう (shot-276-step4-final.mjsと同じ既知の罠)。遅延分だけ待ってから
+            // 最後に手動でキーボード近似状態を適用することで、実ハンドラの上書きに勝つ。
+            await page.waitForTimeout(500);
+            // キーボード近似: 下部を暗い帯で覆い、art-kb-bar を表示する。
+            // バーの「下端」が可視域下端(=キーボード上端)に一致するよう、バー自身の高さを引いてtopを決める
+            // (js/bookshelf.js _artBindViewportScroll の updateKbBar と同じ計算式に揃える)。
+            const diag = await page.evaluate(() => {
                 const kbHeight = Math.round(window.innerHeight * 0.42);
                 const overlay = document.createElement('div');
                 overlay.id = '__kb_fake_overlay__';
@@ -152,10 +167,15 @@ const CASES = {
                 const bar = document.getElementById('art-kb-bar');
                 if (view && bar) {
                     view.classList.add('is-kb-open');
-                    bar.style.top = `${window.innerHeight - kbHeight - 1}px`;
+                    const visibleBottom = window.innerHeight - kbHeight;
+                    const barHeight = bar.offsetHeight || 56;
+                    bar.style.top = `${Math.round(visibleBottom - barHeight)}px`;
                     bar.style.zIndex = 5001;
                 }
+                const r = bar ? bar.getBoundingClientRect() : null;
+                return { visibleBottom: window.innerHeight - kbHeight, barBottom: r ? r.bottom : null };
             });
+            console.log('kbbar numeric check: visibleBottom(≈visualViewport.height)=', diag.visibleBottom, 'barBottom=', diag.barBottom, 'diff=', diag.barBottom != null ? Math.abs(diag.visibleBottom - diag.barBottom) : 'n/a');
         },
     },
 };
