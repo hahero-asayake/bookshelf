@@ -21,8 +21,15 @@ async function addBlock(page, type, pos = 'last') {
     await expect(btns).toHaveCount(before + 1);
     await (pos === 'first' ? btns.first() : btns.last()).click();
     await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
-    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    // イシュー#276 step3: text も shelf/book と同じ全画面(form)に入る (旧キャンバスその場入力は廃止)
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+}
+// 文章ブロックの全画面(EasyMDE)へmarkdownを書き込み、完了で編集状態へ戻す (イシュー#276 step3)
+async function fillTextBlock(page, markdown) {
+    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+    await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);
+    await leaveForm(page);
 }
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {
@@ -134,7 +141,7 @@ async function createArticle(page, title) {
     await page.click('#art-new');
     await page.fill('#art-title', title);
     await addBlock(page, 'text', 'first');
-    await canvas(page).locator('.art-cv-ta').fill('本文サンプル。');
+    await fillTextBlock(page, '本文サンプル。');
     await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
     await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 }
