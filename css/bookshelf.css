@@ -2971,15 +2971,26 @@ html.bs-likely-has-data #dashboard-welcome {
 
 /* EasyMDEツールバー共通 (長文メモ・文章ブロック全画面の両方、②決裁2026-10-12・イシュー#276差し戻し対応):
    autoDownloadFontAwesome:false のためデフォルトアイコンは空になる。JS側 (_mdeApplyToolbarLabels)
-   が短い文字ラベルへ差し替える分、ボタン自体を44px以上・ラベルが収まる幅に広げる。 */
+   が短い文字ラベルへ差し替える分、ボタン自体を44px以上・ラベルが収まる幅に広げる。
+   js/vendor/easymde.min.css は _ensureEasyMDELoaded() が実行時に <head> 末尾へ動的追加するため
+   このファイル(index.htmlで静的に先読み)より後にロードされ、同じ詳細度の `.editor-toolbar button`
+   (height:30px・min-width:30px・padding:0 6px 等) が後勝ちでこちらを上書きしてしまう
+   (差し戻し3回目・実測で発覚)。!important で確実に勝たせる。 */
 .editor-toolbar button {
-    min-width: 44px;
-    min-height: 44px;
-    height: auto;
-    padding: 4px 8px;
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    height: auto !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+}
+
+/* 構成A: 390px幅では7ボタン(区切り線無し)がmin-width/paddingそのままだと1段に収まらず
+   「プレビュー」だけ2段目に落ちる (②差し戻し3回目・実測)。余白を詰めて1段に収める。 */
+@media (max-width: 600px) {
+    .editor-toolbar { padding: 9px 4px !important; }
+    .editor-toolbar button { padding: 4px 4px !important; }
 }
 
 .book-memo-modal-footer {

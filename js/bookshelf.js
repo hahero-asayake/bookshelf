@@ -11349,14 +11349,16 @@ class VirtualBookshelf {
         }
     }
 
-    // EasyMDEツールバーの構成 (②決裁2026-10-12・イシュー#276差し戻し2回目対応)。
+    // EasyMDEツールバーの構成 (②決裁2026-10-12・イシュー#276差し戻し3回目対応)。
     // 600px以下 (構成Aと同じ既存ブレークポイント) は文字ラベル化した14ボタンが3段になり
     // 本文より目立っていたため、見出し・太字・箇条書き・番号付き・引用・リンク・プレビューの
     // 7個 (1段) に絞る。画像・表・区切り線・並べて表示・全画面・ガイドはスマホでは出さない。
+    // 区切り線("|")は390px幅では7ボタン(各min-width 44px)と合わせて折り返しを招くため外す
+    // (差し戻し3回目: getBoundingClientRectで全ボタンtop一致=1段を実測)。
     // PC (600px超) は変更なし (従来の14ボタン)。長文メモ・文章ブロック全画面の両方で使う。
     _mdeToolbarConfig() {
         if (window.innerWidth <= 600) {
-            return ['heading', 'bold', '|', 'unordered-list', 'ordered-list', 'quote', '|', 'link', '|', 'preview'];
+            return ['heading', 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', 'preview'];
         }
         return ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',
             'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'];
