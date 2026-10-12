@@ -2955,6 +2955,17 @@ html.bs-likely-has-data #dashboard-welcome {
     flex-direction: column;
 }
 
+/* 長文メモの外枠B型ヘッダー(イシュー#282)。.art-fs-hd/.art-fs-title 自体の宣言は
+   `#art-edit-view[data-art-mode="form"] .art-fs-hd` (このファイル内) にスコープされ
+   #book-memo-modal には当たらないため、同じ値をここで複製する(新規デザインは起こさない)。
+   .book-memo-modal-body の最初の子として差し込むため、EasyMDEツールバーと同じ水平paddingを
+   共有し、完了ボタンの右端とツールバーの右端が自然に揃う。 */
+#book-memo-modal .art-fs-hd {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px;
+}
+.book-memo-fs-title-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
 .book-memo-modal-body .EasyMDEContainer {
     flex: 1;
     display: flex;
@@ -3017,19 +3028,6 @@ html.bs-likely-has-data #dashboard-welcome {
     background: var(--line) !important; margin: auto 4px !important; border: none !important; opacity: 1 !important;
 }
 
-.book-memo-modal-footer {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.8rem 1.5rem 1.2rem;
-    border-top: 1px solid var(--line);
-}
-
-.book-memo-modal-footer .book-memo-status {
-    flex: 1;
-    font-size: 0.85rem;
-    color: #6c7a8a;
-}
 
 /* 長文メモ設定 */
 .memo-config-row label {

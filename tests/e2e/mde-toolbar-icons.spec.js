@@ -146,7 +146,7 @@ test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び (イ�
         const errors = await bootApp(page);
         await openMemo(page);
         const memoBtnHtml = await page.evaluate(() => window.bookshelf._bookMemoEditor.toolbarElements.bold.innerHTML);
-        await page.click('#book-memo-modal-close'); // 未変更なので確認ダイアログは出ない (closeBookMemoModal)
+        await page.click('#book-memo-fs-done'); // 未変更なので確認なしで保存して閉じる (イシュー#282・_bookMemoFsDone)
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
 
         await newArticleWithTextBlock(page);

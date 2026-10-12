@@ -844,13 +844,30 @@ class VirtualBookshelf {
         const settingsSideBtn = document.getElementById('sidebar-settings');
         if (settingsSideBtn) settingsSideBtn.addEventListener('click', () => this._openSettingsModal());
 
-        // 長文メモ モーダル
-        const memoSaveBtn = document.getElementById('book-memo-save-btn');
-        if (memoSaveBtn) memoSaveBtn.addEventListener('click', () => this.saveBookMemoFromModal());
-        const memoCloseBtn = document.getElementById('book-memo-close-btn');
-        if (memoCloseBtn) memoCloseBtn.addEventListener('click', () => this.closeBookMemoModal());
-        const memoModalCloseBtn = document.getElementById('book-memo-modal-close');
-        if (memoModalCloseBtn) memoModalCloseBtn.addEventListener('click', () => this.closeBookMemoModal());
+        // 長文メモ モーダル: 外枠をB型(#art-fs-hd)に統一(イシュー#282・②決裁B)。ヘッダーDOMは
+        // _mountFsHeader が生成(文章ブロック等と同じCSSクラスを流用・二重実装を避ける)。
+        // 生成はここで1回だけ行い(以降 _openBookMemoInAppEditor はタイトル/2行目の更新だけ)、
+        // クリック配線もここで1回だけ張る(再生成しないので再バインドの心配もない)。
+        const memoBody = document.querySelector('#book-memo-modal .book-memo-modal-body');
+        const memoHd = this._mountFsHeader(memoBody, { idPrefix: 'book-memo-fs', title: '長文メモ', subId: 'book-memo-status' });
+        if (memoHd) {
+            memoHd.cancelBtn.addEventListener('click', () => this._bookMemoFsCancel());
+            memoHd.doneBtn.addEventListener('click', () => this._bookMemoFsDone());
+        }
+        // Esc・戻る(履歴)は完了扱い(記事エディタの art-fs-done と同じ規則・②決裁)。全モーダル共通の
+        // Escハンドラ(622行, bubblingフェーズ)はモーダルに .modal-close が無いとただ閉じる(保存しない)
+        // ため、それより先に処理して消費する(art-item-tooltipと同型・ui-standards §1)。
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const modal = document.getElementById('book-memo-modal');
+            if (!modal || !modal.classList.contains('show')) return;
+            // 確認ダイアログ(キャンセルの破棄確認等)が上に開いていれば、そちらのEscを優先して奪わない
+            // (_artCloseBlockFs のEscハンドラ・8212行と同型のガード)
+            if (document.querySelector('.cfm-overlay')) return;
+            this._bookMemoFsDone();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
 
         // 長文メモ: 開き方セレクタ (settings.bookMemoOpenWith)
         const openWithSel = document.getElementById('book-memo-open-with');
@@ -11653,15 +11670,54 @@ class VirtualBookshelf {
         return this._easyMDELoadPromise;
     }
 
+    // 共通: B型ヘッダー(キャンセル/タイトル(+2行目)/完了)のDOM生成(イシュー#282)。
+    // 文章ブロック・本棚・本の全画面は #art-fs-hd (index.html) が静的に持ち、_artBindBlocksEvents
+    // 側で個別配線済みのため対象外(型は元々Bで変更不要)。長文メモは唯一の非B型だったため、ここで
+    // 同じDOM構造・CSSクラス(.art-fs-hd/.art-fs-title/.btn.btn-secondary.btn-small/
+    // .btn.btn-primary.btn-small/.art-save-status)を動的生成して流用する(二重実装を避ける・
+    // ②決裁B)。host: ヘッダーを差し込む親要素の先頭。idPrefix: 生成するid群の接頭辞。
+    // subId省略時は `${idPrefix}-sub`。呼び出しは起動時1回だけを想定(既に生成済みならテキスト更新
+    // のみ行い、DOM・クリック配線は再生成しない=呼び出し元で二重バインドを気にしなくてよい)。
+    _mountFsHeader(host, { idPrefix, title = '', subText = '', subId } = {}) {
+        if (!host) return null;
+        const resolvedSubId = subId || `${idPrefix}-sub`;
+        let hd = host.querySelector(`#${idPrefix}-hd`);
+        if (!hd) {
+            hd = document.createElement('div');
+            hd.className = 'art-fs-hd';
+            hd.id = `${idPrefix}-hd`;
+            hd.innerHTML = `
+                <button type="button" id="${idPrefix}-cancel" class="btn btn-secondary btn-small">キャンセル</button>
+                <span class="book-memo-fs-title-col">
+                    <span id="${idPrefix}-title" class="art-fs-title"></span>
+                    <span id="${resolvedSubId}" class="art-save-status"></span>
+                </span>
+                <button type="button" id="${idPrefix}-done" class="btn btn-primary btn-small">完了</button>`;
+            host.insertBefore(hd, host.firstChild);
+        }
+        const titleEl = hd.querySelector(`#${idPrefix}-title`);
+        const subEl = hd.querySelector(`#${resolvedSubId}`);
+        if (titleEl) titleEl.textContent = title;
+        if (subEl) subEl.textContent = subText;
+        return { hd, cancelBtn: hd.querySelector(`#${idPrefix}-cancel`), doneBtn: hd.querySelector(`#${idPrefix}-done`), titleEl, subEl };
+    }
+
+    // ヘッダー2行目に出す行数・文字数 (イシュー#282・②決裁=タイトル下2行目に小さく表示)
+    _bookMemoFsSubText(markdown) {
+        const v = markdown || '';
+        const lines = v.length ? v.split('\n').length : 0;
+        return `${lines}行・${v.length}字`;
+    }
+
     // アプリ内 Markdown エディタ (EasyMDE) でメモを開く
     async _openBookMemoInAppEditor(asin, book) {
         const modal = document.getElementById('book-memo-modal');
-        const titleEl = document.getElementById('book-memo-modal-title');
+        const titleEl = document.getElementById('book-memo-fs-title');
         const textareaEl = document.getElementById('book-memo-textarea');
         const statusEl = document.getElementById('book-memo-status');
         if (!modal || !textareaEl) return;
 
-        titleEl.textContent = book.title || asin;
+        if (titleEl) titleEl.textContent = `長文メモ: ${book.title || asin}`;
         if (statusEl) statusEl.textContent = '読み込み中...';
 
         // 旧 EasyMDE インスタンスがあれば破棄
@@ -11677,11 +11733,12 @@ class VirtualBookshelf {
             // 読込失敗 (通信/認証/権限エラー等) は「まだ書いていない」と取り違えない。
             // テンプレートで開いて保存すると、既存の長文メモを空/テンプレで上書きしてしまうため、
             // ここで止めてエディタを作らない (保存導線の _bookMemoEditorContext も張らない)。
+            // ctx/editorが無い間は完了(_bookMemoFsDone)も保存せず閉じるだけになる(イシュー#282)。
             console.error('長文メモ読み込みに失敗:', e);
             this._bookMemoEditorContext = null;
             textareaEl.value = '';
             modal.classList.add('show');
-            this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
+            this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o));
             if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
             return;
         }
@@ -11694,7 +11751,7 @@ class VirtualBookshelf {
         textareaEl.value = body;
 
         modal.classList.add('show');
-        this._modalHistPush('book-memo-modal', (o) => this.closeBookMemoModal(o));
+        this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o));
 
         try {
             await this._ensureEasyMDELoaded();
@@ -11706,18 +11763,24 @@ class VirtualBookshelf {
         // モーダルを開いた後の非同期読み込みなので、待っている間にモーダルが閉じられている
         // 可能性がある (閉じた後に旧テキストエリアへエディタを生やさないためのガード)。
         if (!modal.classList.contains('show')) return;
-        // イシュー#279: EasyMDE生成は _openMdEditor (文章ブロック全画面と共通)
-        this._bookMemoEditor = this._openMdEditor({ textareaEl, compact: false, showStatus: true, autoFocusIfWide: false });
+        // イシュー#279: EasyMDE生成は _openMdEditor (文章ブロック全画面と共通)。
+        // showStatus:false (EasyMDE内蔵の行数/単語数バーは使わない) + onChange で行数・文字数を
+        // ヘッダー2行目(#book-memo-status)へ出す (イシュー#282)。
+        const updateSub = (md) => { if (statusEl) statusEl.textContent = this._bookMemoFsSubText(md); };
+        this._bookMemoEditor = this._openMdEditor({ textareaEl, compact: false, showStatus: false, autoFocusIfWide: false, onChange: updateSub });
         this._bookMemoEditorContext = { asin, title: book.title };
         this._bookMemoInitial = body;   // 閉じる時の破棄確認用 (未保存の変更検出)
-        if (statusEl) statusEl.textContent = '';
+        updateSub(body);
     }
 
-    async saveBookMemoFromModal() {
+    // 長文メモ: 完了 (保存して閉じる)。Esc・戻るもこれを呼ぶ (記事エディタの art-fs-done と同じ
+    // 規則・イシュー#282・②決裁B)。保存失敗時は閉じずにステータス表示のまま編集を続けさせる。
+    // 読込失敗時 (_bookMemoEditorContext/_bookMemoEditor が無い) は保存せず閉じるだけ。
+    async _bookMemoFsDone({ fromHistory = false } = {}) {
         const ctx = this._bookMemoEditorContext;
         const editor = this._bookMemoEditor;
+        if (!ctx || !editor) return this._bookMemoFsClose({ fromHistory });
         const statusEl = document.getElementById('book-memo-status');
-        if (!ctx || !editor) return;
         if (statusEl) statusEl.textContent = '保存中...';
         try {
             // body のみ編集させ、保持していた frontmatter (updated を自動更新) と再結合 (ADR-024)
@@ -11726,30 +11789,34 @@ class VirtualBookshelf {
             if (!this.userData.notes[ctx.asin]) this.userData.notes[ctx.asin] = { memo: '', rating: 0 };
             this.userData.notes[ctx.asin].hasDetailMemo = true;
             await this.saveUserData();
-            this._bookMemoInitial = editor.value();   // 保存済み = 破棄確認の基準を更新
-            if (statusEl) {
-                statusEl.textContent = '保存しました';
-                setTimeout(() => { if (statusEl.textContent === '保存しました') statusEl.textContent = ''; }, 2500);
-            }
+            this._bookMemoInitial = editor.value();
+            return this._bookMemoFsClose({ fromHistory });
         } catch (e) {
             console.error('長文メモ保存失敗:', e);
             if (statusEl) statusEl.textContent = `${e.message}`;
+            return false; // 閉じない (保存失敗時は編集を続けさせる・detail指定どおり)
         }
     }
 
-    async closeBookMemoModal({ fromHistory = false } = {}) {
-        // 未保存の変更があれば破棄確認 (このメモは明示保存・自動保存なしのため、黙って消さない)
+    // 長文メモ: キャンセル (変更があれば破棄確認)。文言は _artCloseBlockFs (本棚/本/文章ブロック)
+    // と同じ型に揃える (イシュー#282)
+    async _bookMemoFsCancel({ fromHistory = false } = {}) {
         const editor = this._bookMemoEditor;
         if (editor && this._bookMemoInitial != null && editor.value() !== this._bookMemoInitial) {
             const ok = await confirmDialog({
-                title: '長文メモを閉じる',
-                message: '保存していない変更があります。破棄して閉じますか？',
-                okLabel: '破棄して閉じる',
-                cancelLabel: '編集に戻る',
+                title: '変更を破棄しますか？',
+                message: 'この長文メモで行った変更を取り消します。',
+                okLabel: '変更を破棄',
+                cancelLabel: '編集を続ける',
                 danger: true
             });
             if (!ok) return false; // 閉じなかった (popstate 経由なら履歴が積み直される)
         }
+        return this._bookMemoFsClose({ fromHistory });
+    }
+
+    // 長文メモ: モーダルを閉じて状態をリセットする共通処理 (完了/キャンセルの両方から呼ぶ)
+    _bookMemoFsClose({ fromHistory = false } = {}) {
         const modal = document.getElementById('book-memo-modal');
         if (modal) modal.classList.remove('show');
         this._modalHistPop('book-memo-modal', { fromHistory });
@@ -11760,6 +11827,7 @@ class VirtualBookshelf {
         this._bookMemoEditorContext = null;
         this._bookMemoFrontmatter = null;
         this._bookMemoInitial = null;
+        return true;
     }
 
     // スマホ: モーダルを履歴に積む (物理戻る/スワイプバック = アプリ離脱でなくモーダルを閉じる)。

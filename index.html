@@ -1187,20 +1187,14 @@
         </div>
     </div>
 
-    <!-- Book Memo Modal (アプリ内 Markdown エディタ) -->
+    <!-- Book Memo Modal (アプリ内 Markdown エディタ)。外枠は文章ブロック・本棚・本の全画面(#art-fs-hd)と
+         同じB型(キャンセル/タイトル/完了)に統一(イシュー#282・②決裁B)。ヘッダーDOMは
+         VirtualBookshelf._mountFsHeader (js/bookshelf.js) が生成する(初期は空、setupEventListeners
+         実行時に1回だけ生成) -->
     <div id="book-memo-modal" class="modal book-memo-modal">
         <div class="modal-content book-memo-modal-content">
-            <button class="modal-close" id="book-memo-modal-close" type="button">×</button>
-            <div class="modal-header">
-                <h2><span class="h-icon" data-icon="notebook-pen" data-icon-size="20"></span>長文メモ: <span id="book-memo-modal-title">（未選択）</span></h2>
-            </div>
             <div class="modal-body book-memo-modal-body">
                 <textarea id="book-memo-textarea"></textarea>
-            </div>
-            <div class="book-memo-modal-footer">
-                <span id="book-memo-status" class="book-memo-status"></span>
-                <button id="book-memo-save-btn" class="btn btn-primary" type="button"><span class="h-icon" data-icon="save" data-icon-size="14"></span>保存</button>
-                <button id="book-memo-close-btn" class="btn btn-secondary" type="button">閉じる</button>
             </div>
         </div>
     </div>
