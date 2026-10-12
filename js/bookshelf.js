@@ -11819,7 +11819,14 @@ class VirtualBookshelf {
         const statusEl = document.getElementById('book-memo-status');
         if (!modal || !textareaEl) return;
 
-        if (titleEl) titleEl.textContent = `長文メモ: ${book.title || asin}`;
+        // ハヘロ追加決裁(2026-10-13 01:22): ヘッダーの「長文メモ: 」接頭辞を外し書名だけ出す
+        // (書名を少しでも長く見せるため)。読み上げ用に aria-label/title には接頭辞つきを残す。
+        if (titleEl) {
+            const plain = book.title || asin;
+            titleEl.textContent = plain;
+            titleEl.setAttribute('aria-label', `長文メモ: ${plain}`);
+            titleEl.setAttribute('title', `長文メモ: ${plain}`);
+        }
         if (statusEl) statusEl.textContent = '読み込み中...';
 
         // 旧 EasyMDE インスタンスがあれば破棄
