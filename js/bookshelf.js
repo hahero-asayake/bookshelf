@@ -11593,24 +11593,41 @@ class VirtualBookshelf {
             'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'];
     }
 
-    // EasyMDEツールバーのボタン文字ラベル (②決裁2026-10-12・イシュー#276差し戻し対応)。
+    // EasyMDEツールバーのボタン (②決裁2026-10-12・イシュー#281「案1」)。
     // autoDownloadFontAwesome:false のためデフォルトのFontAwesomeアイコンは空ボタンになる
     // (FontAwesomeは読み込まない方針を維持)。editor.toolbarElements (EasyMDE公式API・
-    // ボタンname→DOM要素のマップ) を使って短い日本語ラベルに差し替える。長文メモ
-    // (_openBookMemoInAppEditor) ・文章ブロック全画面 (_artOpenTextFsEditor) の両方で使う共通関数。
+    // ボタンname→DOM要素のマップ) を使って「アイコン(SVG)+下にラベル」の縦並びに差し替える。
+    // 見せ方は下部アクションバー (#art-edit-bottom-bar .art-bar-btn) に揃える (CSSは
+    // css/bookshelf.css の .editor-toolbar.mde-iconized 配下)。長文メモ (_openBookMemoInAppEditor)
+    // ・文章ブロック全画面 (_artOpenTextFsEditor) の両方で使う共通関数。
     _mdeApplyToolbarLabels(easymde) {
         const els = easymde && easymde.toolbarElements;
         if (!els) return;
+        const ICONS = {
+            bold: 'bold', italic: 'italic', heading: 'heading', 'unordered-list': 'list',
+            'ordered-list': 'list-ordered', quote: 'quote', link: 'link', image: 'image', table: 'table',
+            'horizontal-rule': 'minus', preview: 'eye', 'side-by-side': 'columns-2',
+            fullscreen: 'maximize', guide: 'circle-help',
+        };
         const LABELS = {
             bold: '太字', italic: '斜体', heading: '見出し', 'unordered-list': '箇条書き',
             'ordered-list': '番号付き', quote: '引用', link: 'リンク', image: '画像', table: '表',
             'horizontal-rule': '区切り線', preview: 'プレビュー', 'side-by-side': '並べて表示',
             fullscreen: '全画面', guide: 'ガイド',
         };
+        let toolbarEl = null;
         for (const [name, label] of Object.entries(LABELS)) {
             const btn = els[name];
-            if (btn) btn.textContent = label;
+            if (!btn) continue; // compact構成(7個)には無いキーがある
+            const iconSvg = typeof window.renderIcon === 'function' ? window.renderIcon(ICONS[name], { size: 20 }) : '';
+            btn.innerHTML = `<span class="mde-tb-ico">${iconSvg}</span><span class="mde-tb-lbl">${label}</span>`;
+            btn.setAttribute('aria-label', label);
+            btn.setAttribute('title', label);
+            if (!toolbarEl) toolbarEl = btn.closest('.editor-toolbar');
         }
+        // EasyMDEのCSS (vendor) がこの関数より後に読み込まれ、文字色等が上書きされる罠が
+        // あった (イシュー#276) ため、見た目はクラス付与でCSS側に委ね、ここではDOM/属性のみ触る。
+        if (toolbarEl) toolbarEl.classList.add('mde-iconized');
     }
 
     // EasyMDE (106KB・css+js) は起動時に読み込まず、長文メモのアプリ内エディタを開く時だけ

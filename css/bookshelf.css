@@ -2969,28 +2969,52 @@ html.bs-likely-has-data #dashboard-welcome {
     height: auto !important;
 }
 
-/* EasyMDEツールバー共通 (長文メモ・文章ブロック全画面の両方、②決裁2026-10-12・イシュー#276差し戻し対応):
-   autoDownloadFontAwesome:false のためデフォルトアイコンは空になる。JS側 (_mdeApplyToolbarLabels)
-   が短い文字ラベルへ差し替える分、ボタン自体を44px以上・ラベルが収まる幅に広げる。
+/* EasyMDEツールバー共通 (長文メモ・文章ブロック全画面の両方、②決裁2026-10-12・イシュー#281「案1」):
+   アイコン(SVG 20px)の下に10pxラベルを縦に並べる (_mdeApplyToolbarLabels が button.innerHTML を
+   アイコン+ラベルのspan 2つに差し替えて .mde-iconized クラスを付与)。見せ方は下部アクションバー
+   (#art-edit-bottom-bar .art-bar-btn 参照) に揃える。flex: 1 1 0 でツールバー幅に均等配分し、
+   7ボタン(スマホ/PC右ペイン)・14ボタン+区切り(PC全幅長文メモ)のいずれも1段に収まる (_local/issue280/
+   boxes.json で実測済みの型)。
    js/vendor/easymde.min.css は _ensureEasyMDELoaded() が実行時に <head> 末尾へ動的追加するため
    このファイル(index.htmlで静的に先読み)より後にロードされ、同じ詳細度の `.editor-toolbar button`
-   (height:30px・min-width:30px・padding:0 6px 等) が後勝ちでこちらを上書きしてしまう
-   (差し戻し3回目・実測で発覚)。!important で確実に勝たせる。 */
-.editor-toolbar button {
+   (height:30px・min-width:30px・padding:0 6px 等) が後勝ちでこちらを上書きしてしまう罠がある
+   (イシュー#276)。.mde-iconized は余分なクラス1つ分だけ詳細度が高く勝つが、念のため !important も残す。 */
+.editor-toolbar.mde-iconized {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    padding: 2px 0 !important;
+}
+.editor-toolbar.mde-iconized button {
+    flex: 1 1 0 !important;
     min-width: 44px !important;
     min-height: 44px !important;
+    width: auto !important;
     height: auto !important;
-    padding: 4px 8px !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
+    margin: 0 !important;
+    padding: 3px 1px !important;
+    display: inline-flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px !important;
+    color: var(--fg2) !important;
+    font-size: 10px !important;
+    font-weight: 400 !important;
+    line-height: 1.1 !important;
     white-space: nowrap !important;
 }
-
-/* 構成A: 390px幅では7ボタン(区切り線無し)がmin-width/paddingそのままだと1段に収まらず
-   「プレビュー」だけ2段目に落ちる (②差し戻し3回目・実測)。余白を詰めて1段に収める。 */
-@media (max-width: 600px) {
-    .editor-toolbar { padding: 9px 4px !important; }
-    .editor-toolbar button { padding: 4px 4px !important; }
+.editor-toolbar.mde-iconized button.active,
+.editor-toolbar.mde-iconized button:hover { background: var(--side) !important; }
+.editor-toolbar.mde-iconized .mde-tb-ico { width: 20px; height: 20px; display: block; }
+.editor-toolbar.mde-iconized .mde-tb-ico svg { width: 100%; height: 100%; display: block; }
+.editor-toolbar.mde-iconized .mde-tb-lbl { font-size: 10px; white-space: nowrap; }
+/* EasyMDE公式の区切り (`<i class="separator">`、ツールバー直下の button 兄弟要素) を細い縦線に */
+.editor-toolbar.mde-iconized i.separator {
+    display: inline-block !important;
+    width: 1px !important; height: 24px !important;
+    background: var(--line) !important; margin: auto 4px !important; border: none !important; opacity: 1 !important;
 }
 
 .book-memo-modal-footer {
@@ -7837,9 +7861,8 @@ body.select-mode .drag-handle { display: none; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-blocks .art-block.is-fs-target,
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-blocks .art-fs-text-editor { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-fs-text-editor .EasyMDEContainer .CodeMirror { min-height: 0; }
-    /* 右ペイン (幅416px) のツールバーはスマホと同じ7ボタンに絞り (_mdeToolbarConfig compact)、同じ詰め方で1段に収める */
-    #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .editor-toolbar { padding: 9px 4px !important; }
-    #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .editor-toolbar button { padding: 4px 4px !important; }
+    /* 右ペイン (幅416px) のツールバーはスマホと同じ7ボタンに絞る (_mdeToolbarConfig compact)。
+       詰め方 (flex: 1 1 0 で1段に収める) は .editor-toolbar.mde-iconized 側で共通化済み (イシュー#281)。 */
 }
 /* 本棚/本ブロックの全画面編集 ('form'): 上端は キャンセル/題/完了 だけ。中身は対象ブロック1つと本の引き出し */
 .art-fs-hd { display: none; }
