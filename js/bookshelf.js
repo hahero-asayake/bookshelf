@@ -8980,24 +8980,18 @@ class VirtualBookshelf {
         // 右ペインで開いているか = 文章ブロックの form で #art-blocks がペイン配置 (position:absolute) になっているか
         const blocksHost = document.getElementById('art-blocks');
         const inPane = !!blocksHost && getComputedStyle(blocksHost).position === 'absolute';
-        this._artTextFsEditor = new EasyMDE({
-            element: ta,
-            autoDownloadFontAwesome: false,
-            spellChecker: false,
-            autosave: { enabled: false },
-            status: false,
-            toolbar: this._mdeToolbarConfig({ compact: inPane }),
-        });
-        this._mdeApplyToolbarLabels(this._artTextFsEditor);
-        // イシュー#278: PC (900px超・右ペイン) は開いたらすぐ書けるよう入力欄へフォーカス (スマホはキーボードが出るので従来どおり)
-        if (window.matchMedia && window.matchMedia('(min-width: 901px)').matches) this._artTextFsEditor.codemirror.focus();
-        this._artTextFsEditor.codemirror.on('change', () => {
-            const blocks = this._artDraft.blocks || [];
-            const idx = blocks.findIndex(x => x.id === b.id);
-            if (idx < 0) return;
-            blocks[idx].markdown = this._artTextFsEditor.value();
-            this._artScheduleSave();
-            this._artQueueCanvas();
+        // イシュー#279: EasyMDE生成は _openMdEditor (長文メモと共通)。保存方式は自動保存のまま
+        // (onChange で都度 markdown へ反映)・フォーカスは PC (900px超・右ペイン) のみ (イシュー#278踏襲)。
+        this._artTextFsEditor = this._openMdEditor({
+            textareaEl: ta, compact: inPane, showStatus: false, autoFocusIfWide: true,
+            onChange: (md) => {
+                const blocks = this._artDraft.blocks || [];
+                const idx = blocks.findIndex(x => x.id === b.id);
+                if (idx < 0) return;
+                blocks[idx].markdown = md;
+                this._artScheduleSave();
+                this._artQueueCanvas();
+            },
         });
     }
 
@@ -11513,6 +11507,29 @@ class VirtualBookshelf {
         }
     }
 
+    // 共通 Markdown エディタ (EasyMDE) 生成 (イシュー#279)。長文メモ (_openBookMemoInAppEditor) と
+    // 文章ブロック全画面 (_artOpenTextFsEditor) は、別々に EasyMDE を new していた (コンストラクタ
+    // オプション・ツールバー設定・ラベル適用・フォーカス制御が二重実装)。ここへ統合し、両者はこの
+    // 関数を呼ぶだけにする。DOM (ヘッダー/保存ボタンの配置) は呼び出し元がそれぞれ持つ (長文メモ=
+    // #book-memo-modal・文章ブロック=#art-fs-hd+.art-fs-text-editor、本棚/本の全画面と共有する
+    // 枠のため今回は手を入れない)。状態・保存方式の違いは呼び出し元が onChange の有無で切り替える
+    // (showStatus/compact/autoFocusIfWide も同様に引数化)。
+    _openMdEditor({ textareaEl, compact = false, showStatus = false, autoFocusIfWide = false, onChange } = {}) {
+        if (!textareaEl) return null;
+        const editor = new EasyMDE({
+            element: textareaEl,
+            autoDownloadFontAwesome: false,
+            spellChecker: false,
+            autosave: { enabled: false },
+            status: showStatus ? ['lines', 'words'] : false,
+            toolbar: this._mdeToolbarConfig({ compact }),
+        });
+        this._mdeApplyToolbarLabels(editor);
+        if (autoFocusIfWide && window.matchMedia && window.matchMedia('(min-width: 901px)').matches) editor.codemirror.focus();
+        if (onChange) editor.codemirror.on('change', () => onChange(editor.value()));
+        return editor;
+    }
+
     // EasyMDEツールバーの構成 (②決裁2026-10-12・イシュー#276差し戻し3回目対応)。
     // 600px以下 (構成Aと同じ既存ブレークポイント) は文字ラベル化した14ボタンが3段になり
     // 本文より目立っていたため、見出し・太字・箇条書き・番号付き・引用・リンク・プレビューの
@@ -11625,15 +11642,8 @@ class VirtualBookshelf {
         // モーダルを開いた後の非同期読み込みなので、待っている間にモーダルが閉じられている
         // 可能性がある (閉じた後に旧テキストエリアへエディタを生やさないためのガード)。
         if (!modal.classList.contains('show')) return;
-        this._bookMemoEditor = new EasyMDE({
-            element: textareaEl,
-            autoDownloadFontAwesome: false,
-            spellChecker: false,
-            autosave: { enabled: false },
-            status: ['lines', 'words'],
-            toolbar: this._mdeToolbarConfig(),
-        });
-        this._mdeApplyToolbarLabels(this._bookMemoEditor);
+        // イシュー#279: EasyMDE生成は _openMdEditor (文章ブロック全画面と共通)
+        this._bookMemoEditor = this._openMdEditor({ textareaEl, compact: false, showStatus: true, autoFocusIfWide: false });
         this._bookMemoEditorContext = { asin, title: book.title };
         this._bookMemoInitial = body;   // 閉じる時の破棄確認用 (未保存の変更検出)
         if (statusEl) statusEl.textContent = '';
