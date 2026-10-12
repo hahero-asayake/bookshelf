@@ -2964,7 +2964,7 @@ html.bs-likely-has-data #dashboard-welcome {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px;
 }
-.book-memo-fs-title-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.book-memo-fs-title-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 
 .book-memo-modal-body .EasyMDEContainer {
     flex: 1;
@@ -3029,27 +3029,23 @@ html.bs-likely-has-data #dashboard-welcome {
 }
 .editor-toolbar.mde-iconized button.active { background: var(--side) !important; }
 
-/* 書式ツールバーの「⋯その他」パネル (compact構成=スマホ/PC右ペインのみ存在、イシュー#282)。
-   中身は .editor-toolbar から移した本物のEasyMDEボタン(クリックハンドラ込み)なので、
-   .mde-iconized 配下の縦並び(アイコン上/ラベル下)スタイルは当たらなくなる(祖先セレクタが
-   .editor-toolbar でなくなるため)。ここでアイコン+名前の横並び行として作り直す。
-   位置(top/left)は _placeAnchoredMenu が付与する(.art-more-menuと同型)。 */
-.mde-overflow-menu {
+/* 見出しボタンの3択メニュー (イシュー#282・ハヘロ精査後の方針)。_placeAnchoredMenuが
+   position(top/left)を付与する(.art-more-menuと同型)。クリックのたびに生成し閉じたら
+   DOMごと消す(永続パネルを持たない=#282 step3の「その他」パネル孤児化バグを踏まない設計)。 */
+.mde-heading-menu {
     position: fixed; z-index: 1300; min-width: 11rem; padding: 0.3rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
     box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14); display: grid;
 }
-.mde-overflow-menu[hidden] { display: none; }
-.mde-overflow-menu button {
-    display: flex; align-items: center; gap: 0.5rem; width: 100%;
+.mde-heading-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; width: 100%;
     padding: 0.5rem 0.6rem; margin: 0; border: none; border-radius: 6px;
     background: none; cursor: pointer; font: inherit; font-size: 0.84rem;
     color: var(--fg); text-align: left;
 }
-.mde-overflow-menu button:hover { background: var(--accent-bg); }
-.mde-overflow-menu .mde-tb-ico { width: 18px; height: 18px; flex: 0 0 auto; }
-.mde-overflow-menu .mde-tb-ico svg { width: 100%; height: 100%; display: block; }
-.mde-overflow-menu .mde-tb-lbl { font-size: 0.84rem; white-space: nowrap; }
+.mde-heading-item:hover { background: var(--accent-bg); }
+.mde-heading-check { width: 16px; height: 16px; flex: 0 0 auto; visibility: hidden; }
+.mde-heading-item.is-current .mde-heading-check { visibility: visible; }
 
 
 /* 長文メモ設定 */
@@ -7889,7 +7885,12 @@ body.select-mode .drag-handle { display: none; }
 .art-fs-hd { display: none; }
 #art-edit-view[data-art-mode="form"] .art-fs-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
-.art-fs-title { font-size: 15px; font-weight: 700; color: var(--fg); }
+/* 長いタイトルの1行省略(イシュー#282・ハヘロ精査後の方針)。.art-fs-hd/#book-memo-modal .art-fs-hd
+   共通: ボタン(キャンセル/完了)はflex-shrink:0で縮まず、タイトル側だけがflex:1 1 autoで
+   縮小対象になりellipsisが効く(2行目の.art-save-statusは別要素なので崩れない)。 */
+.art-fs-title { font-size: 15px; font-weight: 700; color: var(--fg); flex: 1 1 auto; min-width: 0;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.art-fs-hd .btn-secondary, .art-fs-hd .btn-primary { flex: 0 0 auto; }
 #art-edit-view[data-art-mode="form"] .art-hd,
 #art-edit-view[data-art-mode="form"] .art-block:not(.is-fs-target),
 #art-edit-view[data-art-mode="form"] .art-look-block,

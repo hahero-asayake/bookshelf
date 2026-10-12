@@ -1,7 +1,8 @@
 // イシュー#281 (②決裁2026-10-12「案1」): EasyMDEツールバーの「アイコン+小さいラベル」縦並びを
 // 長文メモ・文章ブロックの両方・4場面 (長文メモ390・文章ブロック390・PC右ペイン・長文メモ1280) で確認する。
-// _mdeApplyToolbarLabels (js/bookshelf.js) が共通で使われる関数なので、1関数の変更が全場面に効くことを
-// 実機で裏取りする (関数の直呼びでなく、実際にモーダル/全画面を開く経路を通す)。
+// イシュー#282 (②決裁2026-10-13差し戻し): どの画面でも共通8個(見出し・太字・箇条書き・番号付き・
+// 引用・リンク・表・プレビュー)に統一。PC全幅だけ区切りの後ろに並べて表示・全画面を追加。
+// 見出しは押すと3択メニュー(大見出し/小見出し/見出しを外す)になる(_mdeToggleHeadingMenu)。
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -65,8 +66,10 @@ async function newArticleWithTextBlock(page) {
     await page.waitForSelector('.editor-toolbar.mde-iconized', { timeout: 8000 });
 }
 
+const COMMON8 = ['見出し', '太字', '箇条書き', '番号付き', '引用', 'リンク', '表', 'プレビュー'];
+
 // 共通アサーション: ツールバーのボタン全てが svg+ラベルを持ち、1段・44px以上・ラベル非切れであること
-async function expectIconizedToolbar(page, toolbarSel, { expectCount } = {}) {
+async function expectIconizedToolbar(page, toolbarSel, { expectCount, expectLabels } = {}) {
     const toolbar = page.locator(toolbarSel);
     await expect(toolbar).toHaveCount(1);
     const buttons = toolbar.locator('button');
@@ -89,6 +92,7 @@ async function expectIconizedToolbar(page, toolbarSel, { expectCount } = {}) {
             const lbl = b.querySelector('.mde-tb-lbl');
             return {
                 w: r.width, h: r.height,
+                label: lbl ? lbl.textContent : '',
                 labelOverflow: lbl ? lbl.scrollWidth > lbl.clientWidth + 1 : false,
             };
         });
@@ -101,43 +105,43 @@ async function expectIconizedToolbar(page, toolbarSel, { expectCount } = {}) {
         expect(d.h).toBeGreaterThanOrEqual(44);
         expect(d.labelOverflow).toBe(false); // ラベルが切れていない (scrollWidth<=clientWidth)
     }
+    if (expectLabels) expect(measured.dims.map(d => d.label)).toEqual(expectLabels);
 }
 
-test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び (イシュー#281)', () => {
-    test('長文メモ390: 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び・機能共通化 (イシュー#281/#282)', () => {
+    test('長文メモ390: 共通8個・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 8 });
+        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 8, expectLabels: COMMON8 });
         expect(errors).toEqual([]);
     });
 
-    test('文章ブロック390 (全画面): 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('文章ブロック390 (全画面): 共通8個・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await newArticleWithTextBlock(page);
         await expect(page.locator('#art-canvas')).toBeHidden(); // 390幅は全画面 (イシュー#278回帰)
-        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8 });
+        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8, expectLabels: COMMON8 });
         expect(errors).toEqual([]);
     });
 
-    test('PC右ペイン (文章ブロック,1280幅): 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('PC右ペイン (文章ブロック,1280幅): 共通8個・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 800 });
         const errors = await bootApp(page);
         await newArticleWithTextBlock(page);
         await expect(page.locator('#art-canvas')).toBeVisible(); // PC900超は右ペイン (イシュー#278)
-        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8 });
+        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8, expectLabels: COMMON8 });
         expect(errors).toEqual([]);
     });
 
-    test('長文メモ1280 (PC全幅): 14ボタン+区切り・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('長文メモ1280 (PC全幅): 共通8個+区切り+並べて表示/全画面の10個・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 800 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 14 });
-        // 区切り (`<i class="separator">`) が4本 (_mdeToolbarConfig の '|' も4個・js/bookshelf.js)
+        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 10, expectLabels: [...COMMON8, '並べて表示', '全画面'] });
         const seps = await page.locator('#book-memo-modal .editor-toolbar.mde-iconized i.separator').count();
-        expect(seps).toBe(4);
+        expect(seps).toBe(1); // 共通8個の後ろに区切り1本だけ (イシュー#282)
         expect(errors).toEqual([]);
     });
 
@@ -156,67 +160,97 @@ test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び (イ�
     });
 });
 
-// イシュー#282: compact構成(スマホ・PC右ペイン)の「⋯その他」パネル。実体はEasyMDEの本物の
-// ボタン(_mdeSetupOverflowMenu が移動)なので、中身を動かすと実際に書式が変わることまで確認する
-// (アイコン化の見た目だけでなく機能も揃っていることの裏取り)。
-test.describe('書式ツールバーの「⋯その他」(イシュー#282)', () => {
-    test('長文メモ390: その他を開くと5項目(斜体/画像/表/区切り線/ガイド)がビューポート内に出る', async ({ page }) => {
+// イシュー#282差し戻し: 見出しボタンは押すと3択メニュー(大見出し##/小見出し###/見出しを外す)。
+// 現在行のレベルに✓・EasyMDE.toggleHeading2/3を使う(すでにそのレベルなら外す挙動も標準装備)。
+test.describe('見出しボタンの3択メニュー (イシュー#282)', () => {
+    test('長文メモ390: クリックで3項目がビューポート内に出て、選ぶと実際に見出しが付きパネルは閉じる', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await page.click('#book-memo-modal .mde-overflow-btn');
-        const panel = page.locator('.mde-overflow-menu');
-        await expect(panel).toBeVisible();
-        const labels = await panel.locator('.mde-tb-lbl').allTextContents();
-        expect(labels).toEqual(['斜体', '画像', '表', '区切り線', 'ガイド']);
-        const box = await panel.boundingBox();
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('本文行'));
+        await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]');
+        const menu = page.locator('.mde-heading-menu');
+        await expect(menu).toBeVisible();
+        const labels = await menu.locator('.mde-heading-item').allTextContents();
+        expect(labels.map(s => s.trim())).toEqual(['大見出し（##）', '小見出し（###）', '見出しを外す']);
+        const box = await menu.boundingBox();
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.y).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(390);
         expect(box.y + box.height).toBeLessThanOrEqual(844);
+
+        await page.locator('.mde-heading-item', { hasText: '大見出し' }).click();
+        expect(await page.evaluate(() => window.bookshelf._bookMemoEditor.value())).toBe('## 本文行');
+        await expect(menu).toHaveCount(0);
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // エディタは残る
         expect(errors).toEqual([]);
     });
 
-    test('長文メモ390: 斜体を選ぶと実際に本文へ反映され、パネルは閉じる(エディタは開いたまま)', async ({ page }) => {
+    test('現在のレベルに✓が付き、同じレベルをもう一度選ぶと見出しが外れる(トグル)', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        const before = await page.evaluate(() => window.bookshelf._bookMemoEditor.value());
-        await page.click('#book-memo-modal .mde-overflow-btn');
-        await page.locator('.mde-overflow-menu button', { hasText: '斜体' }).click();
-        const after = await page.evaluate(() => window.bookshelf._bookMemoEditor.value());
-        expect(after).not.toBe(before); // 実物のEasyMDEアクションが動いている (移植後も機能が保たれている)
-        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
-        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // エディタ自体は閉じない
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('## 本文行'));
+        await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]');
+        await expect(page.locator('.mde-heading-item.is-current')).toHaveText(/大見出し/);
+        await page.locator('.mde-heading-item', { hasText: '大見出し' }).click();
+        expect(await page.evaluate(() => window.bookshelf._bookMemoEditor.value())).toBe('本文行');
         expect(errors).toEqual([]);
     });
 
-    test('ESC/枠外クリック: その他パネルは自分だけ閉じ、エディタは残る (長文メモ・文章ブロック共通)', async ({ page }) => {
+    test('ESC/枠外クリック: メニューは自分だけ閉じ、エディタは残る (長文メモ・文章ブロック共通)', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await page.click('#book-memo-modal .mde-overflow-btn');
-        await expect(page.locator('.mde-overflow-menu')).toBeVisible();
+        await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]');
+        await expect(page.locator('.mde-heading-menu')).toBeVisible();
         await page.keyboard.press('Escape');
-        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
+        await expect(page.locator('.mde-heading-menu')).toHaveCount(0);
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // Escが丸ごと完了扱いになっていない
         await page.click('#book-memo-fs-done'); // 次の経路(記事エディタ)を開く前に閉じる(未変更なので確認なし)
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
 
         await newArticleWithTextBlock(page);
-        await page.click('#art-blocks .mde-overflow-btn');
-        await expect(page.locator('.mde-overflow-menu')).toBeVisible();
+        await page.click('#art-blocks .editor-toolbar button[title="見出し"]');
+        await expect(page.locator('.mde-heading-menu')).toBeVisible();
         await page.mouse.click(5, 5); // 枠外
-        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
+        await expect(page.locator('.mde-heading-menu')).toHaveCount(0);
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form'); // 全画面は残る
         expect(errors).toEqual([]);
     });
+});
 
-    test('PC全幅(長文メモ1280): その他は出ない(12機能+表示切替2個が既に1段)', async ({ page }) => {
-        await page.setViewportSize({ width: 1280, height: 800 });
+// イシュー#282差し戻し: 長文メモ・記事エディタのヘッダーのタイトルは1行+末尾省略。
+test.describe('ヘッダーのタイトル1行省略 (イシュー#282)', () => {
+    test('長文メモ390: 60字級の書名でも1行のまま省略され、ボタンは押し出されず縦中心差1px以内', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
-        await openMemo(page);
-        await expect(page.locator('#book-memo-modal .mde-overflow-btn')).toHaveCount(0);
+        const LONG_TITLE = 'ハリー・ポッターと賢者の石　ハリー・ポッターシリーズ第一巻　完全版（静山社ペガサス文庫・携書サイズ・新装版・限定カバー）';
+        await page.evaluate(async (title) => {
+            const app = window.bookshelf;
+            await app._openBookMemoInAppEditor('B000000001', { title });
+        }, LONG_TITLE);
+        await page.waitForSelector('#book-memo-modal.show .editor-toolbar', { timeout: 8000 });
+        const r = await page.evaluate(() => {
+            const title = document.getElementById('book-memo-fs-title');
+            const cancel = document.querySelector('#book-memo-modal .btn-secondary');
+            const done = document.querySelector('#book-memo-modal .btn-primary');
+            const titleCol = cancel.nextElementSibling;
+            const rc = (el) => el.getBoundingClientRect();
+            const cy = (el) => { const b = rc(el); return b.top + b.height / 2; };
+            return {
+                isTruncated: title.scrollWidth > title.clientWidth,
+                isSingleLine: rc(title).height < 30,
+                centerYDiffMax: Math.max(Math.abs(cy(cancel) - cy(titleCol)), Math.abs(cy(cancel) - cy(done)), Math.abs(cy(titleCol) - cy(done))),
+                doneRight: rc(done).right,
+                cancelLeft: rc(cancel).left,
+            };
+        });
+        expect(r.isTruncated).toBe(true);
+        expect(r.isSingleLine).toBe(true);
+        expect(r.centerYDiffMax).toBeLessThanOrEqual(1);
+        expect(r.cancelLeft).toBeGreaterThanOrEqual(0);
+        expect(r.doneRight).toBeLessThanOrEqual(390);
         expect(errors).toEqual([]);
     });
 });

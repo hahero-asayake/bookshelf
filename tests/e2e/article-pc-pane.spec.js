@@ -304,7 +304,7 @@ test.describe('記事エディタ PC 1280幅: ②指摘の2点 (イシュー#278
         expect(errors).toEqual([]);
     });
 
-    test('右ペインの EasyMDE ツールバーは8ボタン(よく使う7個+その他)で1段 (全ボタンの top が同じ・イシュー#282)', async ({ page }) => {
+    test('右ペインの EasyMDE ツールバーは共通8ボタンで1段 (全ボタンの top が同じ・イシュー#282)', async ({ page }) => {
         const errors = await bootApp(page);
         await newArticleWithText(page);
         await openTextBlock(page);

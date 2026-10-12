@@ -854,27 +854,22 @@ class VirtualBookshelf {
             memoHd.cancelBtn.addEventListener('click', () => this._bookMemoFsCancel());
             memoHd.doneBtn.addEventListener('click', () => this._bookMemoFsDone());
         }
-        // 書式ツールバーの「⋯その他」メニュー (イシュー#282)。長文メモ・文章ブロックのEasyMDEを
-        // 開くたびに動的生成されるため (_mdeSetupOverflowMenu)、個別バインドではなくグローバルに
-        // 1回だけ Esc/外側クリックの配線をし、都度 document から開いているパネルを探して閉じる
-        // (art-more-menu・8236行と同型)。下の長文メモEscハンドラより**先に**登録する(同じ
-        // documentのcaptureフェーズは登録順に実行される=パネルが開いていればエディタ全体を
-        // 閉じる前にパネルだけを閉じて消費したい)。
+        // 見出しボタンの3択メニュー (イシュー#282)。クリックのたびに作って閉じたら消す永続しない
+        // DOMのため、個別バインドではなくグローバルに1回だけ Esc/外側クリックの配線をし、都度
+        // document から開いているメニューを探して閉じる (art-more-menu・8236行と同型)。下の
+        // 長文メモEscハンドラより**先に**登録する(同じdocumentのcaptureフェーズは登録順に実行
+        // される=メニューが開いていればエディタ全体を閉じる前にメニューだけを閉じて消費したい)。
         document.addEventListener('click', (e) => {
-            const panel = document.querySelector('.mde-overflow-menu:not([hidden])');
-            if (!panel) return;
-            const btn = panel._mdeOverflowBtn;
-            if (panel.contains(e.target) || (btn && btn.contains(e.target))) return;
-            panel.hidden = true;
-            if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('active'); }
+            const menu = document.querySelector('.mde-heading-menu');
+            if (!menu) return;
+            const btn = menu._mdeAnchorBtn;
+            if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+            this._mdeCloseHeadingMenu();
         });
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
-            const panel = document.querySelector('.mde-overflow-menu:not([hidden])');
-            if (!panel) return;
-            panel.hidden = true;
-            const btn = panel._mdeOverflowBtn;
-            if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('active'); btn.focus(); }
+            if (!document.querySelector('.mde-heading-menu')) return;
+            this._mdeCloseHeadingMenu();
             e.stopImmediatePropagation();
             e.preventDefault();
         }, true);
@@ -886,11 +881,11 @@ class VirtualBookshelf {
             if (e.key !== 'Escape') return;
             const modal = document.getElementById('book-memo-modal');
             if (!modal || !modal.classList.contains('show')) return;
-            // 確認ダイアログ(キャンセルの破棄確認等)や「その他」パネルが上に開いていれば、
+            // 確認ダイアログ(キャンセルの破棄確認等)や見出しメニューが上に開いていれば、
             // そちらのEscを優先して奪わない(_artCloseBlockFs のEscハンドラ・8212行と同型のガード。
-            // 「その他」は上のハンドラが先に登録されているため通常はここへ来る前に消費されるが、
+            // 見出しメニューは上のハンドラが先に登録されているため通常はここへ来る前に消費されるが、
             // 二重の安全網として明示チェックも残す)。
-            if (document.querySelector('.cfm-overlay') || document.querySelector('.mde-overflow-menu:not([hidden])')) return;
+            if (document.querySelector('.cfm-overlay') || document.querySelector('.mde-heading-menu')) return;
             this._bookMemoFsDone();
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -8253,7 +8248,7 @@ class VirtualBookshelf {
             if (sheet && !sheet.hidden) this._artCloseAddSheet();
             else if (lk && !lk.hidden) this._artCloseLookSheet();
             else if (menu && !menu.hidden) this._artCloseBlkMenu();
-            else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.querySelector('.mde-overflow-menu:not([hidden])') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
+            else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.querySelector('.mde-heading-menu') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
             else return;
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -11621,127 +11616,136 @@ class VirtualBookshelf {
         return editor;
     }
 
-    // EasyMDEツールバーの構成 (②決裁2026-10-13・イシュー#282「PCとスマホで書式ボタンの機能を
-    // 揃える」)。方針: 編集機能はどの画面でも同じ12個(見出し・太字・斜体・箇条書き・番号付き・
-    // 引用・リンク・画像・表・区切り線・プレビュー・ガイド)にする。
-    // compact (スマホ、またはPCの右ペイン幅416px・イシュー#278): 12個すべてをEasyMDEに生成させた
-    // 上で、よく使う7個(見出し・太字・箇条書き・番号付き・引用・リンク・プレビュー)だけを主列に
-    // 残し、末尾にカスタムボタン「その他」を追加する。残り5個(斜体・画像・表・区切り線・ガイド)
-    // は _mdeSetupOverflowMenu が実体ごと(クリックハンドラ込み)パネルへ移す(イシュー#276差し戻し
-    // 3回目の「1段に収める」制約を維持したまま機能を落とさないための構成・②決裁)。
-    // PC全幅 (600px超): 変更なし。元々12機能+表示切替2個(並べて表示・全画面)が1段に収まっており
-    // ②推し案と一致する(イシュー#282 step1 実測)。
+    // EasyMDEツールバーの構成 (②決裁2026-10-13・イシュー#282差し戻し。ハヘロとの精査でPCと
+    // スマホの機能差を無くす方針に確定)。どの画面でも同じ8個(見出し・太字・箇条書き・番号付き・
+    // 引用・リンク・表・プレビュー)。斜体・画像・区切り線・ガイドと「⋯その他」(step3実装)は廃止
+    // =記号は手書きすれば従来どおり効く(コア境界は変えない)。PC全幅(600px超)だけ区切りの後ろに
+    // 並べて表示・全画面を足す(画面の広さに依存する表示切替のため・ハヘロ了承済み)。
+    // 見出しはカスタムボタン(押すと3択メニュー・_mdeToggleHeadingMenu)にする。
     _mdeToolbarConfig({ compact = false } = {}) {
-        if (compact || window.innerWidth <= 600) {
-            return ['heading', 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', 'preview',
-                'italic', 'image', 'table', 'horizontal-rule', 'guide',
-                { name: 'overflow', action: (editor) => this._mdeToggleOverflowMenu(editor), className: 'mde-overflow-btn', title: 'その他' }];
-        }
-        return ['bold', 'italic', 'heading', '|', 'unordered-list', 'ordered-list', 'quote', '|',
-            'link', 'image', 'table', 'horizontal-rule', '|', 'preview', 'side-by-side', 'fullscreen', '|', 'guide'];
+        const headingBtn = { name: 'heading', action: (editor) => this._mdeToggleHeadingMenu(editor), className: 'mde-heading-btn', title: '見出し' };
+        const base = [headingBtn, 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', 'table', 'preview'];
+        if (compact || window.innerWidth <= 600) return base; // スマホ・PC右ペイン: 8個のみ
+        return [...base, '|', 'side-by-side', 'fullscreen'];
     }
 
-    // EasyMDEツールバーのボタン (②決裁2026-10-12・イシュー#281「案1」)。
-    // autoDownloadFontAwesome:false のためデフォルトのFontAwesomeアイコンは空ボタンになる
-    // (FontAwesomeは読み込まない方針を維持)。editor.toolbarElements (EasyMDE公式API・
-    // ボタンname→DOM要素のマップ) を使って「アイコン(SVG)+下にラベル」の縦並びに差し替える。
-    // 見せ方は下部アクションバー (#art-edit-bottom-bar .art-bar-btn) に揃える (CSSは
-    // css/bookshelf.css の .editor-toolbar.mde-iconized 配下)。長文メモ (_openBookMemoInAppEditor)
-    // ・文章ブロック全画面 (_artOpenTextFsEditor) の両方で使う共通関数。
+    // EasyMDEツールバーのボタン (②決裁2026-10-12・イシュー#281「案1」・2026-10-13イシュー#282で
+    // 対象ボタンを8個+PC2個に絞り込み)。autoDownloadFontAwesome:false のためデフォルトの
+    // FontAwesomeアイコンは空ボタンになる (FontAwesomeは読み込まない方針を維持)。
+    // editor.toolbarElements (EasyMDE公式API・ボタンname→DOM要素のマップ) を使って
+    // 「アイコン(SVG)+下にラベル」の縦並びに差し替える。長文メモ・文章ブロック全画面の両方で使う。
     _mdeApplyToolbarLabels(easymde) {
         const els = easymde && easymde.toolbarElements;
         if (!els) return;
         const ICONS = {
-            bold: 'bold', italic: 'italic', heading: 'heading', 'unordered-list': 'list',
-            'ordered-list': 'list-ordered', quote: 'quote', link: 'link', image: 'image', table: 'table',
-            'horizontal-rule': 'minus', preview: 'eye', 'side-by-side': 'columns-2',
-            fullscreen: 'maximize', guide: 'circle-help',
+            bold: 'bold', heading: 'heading', 'unordered-list': 'list', 'ordered-list': 'list-ordered',
+            quote: 'quote', link: 'link', table: 'table', preview: 'eye',
+            'side-by-side': 'columns-2', fullscreen: 'maximize',
         };
         const LABELS = {
-            bold: '太字', italic: '斜体', heading: '見出し', 'unordered-list': '箇条書き',
-            'ordered-list': '番号付き', quote: '引用', link: 'リンク', image: '画像', table: '表',
-            'horizontal-rule': '区切り線', preview: 'プレビュー', 'side-by-side': '並べて表示',
-            fullscreen: '全画面', guide: 'ガイド',
+            bold: '太字', heading: '見出し', 'unordered-list': '箇条書き', 'ordered-list': '番号付き',
+            quote: '引用', link: 'リンク', table: '表', preview: 'プレビュー',
+            'side-by-side': '並べて表示', fullscreen: '全画面',
         };
         let toolbarEl = null;
         for (const [name, label] of Object.entries(LABELS)) {
             const btn = els[name];
-            if (!btn) continue; // compact構成(7個)には無いキーがある
+            if (!btn) continue;
             const iconSvg = typeof window.renderIcon === 'function' ? window.renderIcon(ICONS[name], { size: 20 }) : '';
             btn.innerHTML = `<span class="mde-tb-ico">${iconSvg}</span><span class="mde-tb-lbl">${label}</span>`;
             btn.setAttribute('aria-label', label);
             btn.setAttribute('title', label);
             if (!toolbarEl) toolbarEl = btn.closest('.editor-toolbar');
         }
+        if (els.heading) {
+            els.heading.setAttribute('aria-haspopup', 'menu');
+            els.heading.setAttribute('aria-expanded', 'false');
+        }
         // EasyMDEのCSS (vendor) がこの関数より後に読み込まれ、文字色等が上書きされる罠が
         // あった (イシュー#276) ため、見た目はクラス付与でCSS側に委ね、ここではDOM/属性のみ触る。
         if (toolbarEl) toolbarEl.classList.add('mde-iconized');
-
-        // 「その他」(イシュー#282・compact構成のみ存在)。残り5個(斜体・画像・表・区切り線・ガイド)
-        // を実体ごとパネルへ移す
-        const overflowBtn = els.overflow;
-        if (overflowBtn && toolbarEl) this._mdeSetupOverflowMenu(easymde, toolbarEl, overflowBtn, ICONS, LABELS);
     }
 
-    // 「その他」パネルの生成 (イシュー#282)。別実装は持たない: 本物のEasyMDEボタン(_mdeToolbarConfig
-    // のcompact構成で実際に生成されたもの、クリックハンドラ込み)を .editor-toolbar から
-    // このパネルへ appendChild で移すだけ (DOM移動はイベントリスナーを保持する)。
-    // 見た目だけアイコン+名前の横並び行に作り直す (主列の縦並び用クラスとは別見た目)。
-    _mdeSetupOverflowMenu(easymde, toolbarEl, overflowBtn, ICONS, LABELS) {
-        const OVERFLOW_NAMES = ['italic', 'image', 'table', 'horizontal-rule', 'guide'];
-        const overflowLabel = 'その他';
-        overflowBtn.innerHTML = `<span class="mde-tb-ico">${typeof window.renderIcon === 'function' ? window.renderIcon('more-horizontal', { size: 20 }) : ''}</span><span class="mde-tb-lbl">${overflowLabel}</span>`;
-        overflowBtn.setAttribute('aria-haspopup', 'menu');
-        overflowBtn.setAttribute('aria-expanded', 'false');
-        overflowBtn.setAttribute('aria-label', overflowLabel);
-        overflowBtn.setAttribute('title', overflowLabel);
-
-        const panel = document.createElement('div');
-        panel.className = 'mde-overflow-menu';
-        panel.hidden = true;
-        panel.setAttribute('role', 'menu');
-        const els = easymde.toolbarElements;
-        for (const name of OVERFLOW_NAMES) {
-            const btn = els[name];
-            if (!btn) continue;
-            const iconSvg = typeof window.renderIcon === 'function' ? window.renderIcon(ICONS[name], { size: 18 }) : '';
-            // 主列は縦並び(アイコン上/ラベル下)だが、パネル内はアイコン+名前の横並びにする
-            // (依頼の見た目どおり・CSSは .mde-overflow-menu button で別定義)
-            btn.innerHTML = `<span class="mde-tb-ico">${iconSvg}</span><span class="mde-tb-lbl">${LABELS[name]}</span>`;
-            btn.setAttribute('role', 'menuitem');
-            btn.addEventListener('click', () => this._mdeToggleOverflowMenu(easymde, false)); // 選択後は閉じる
-            panel.appendChild(btn);
-        }
-        // 位置は _placeAnchoredMenu で動的決定するため、アンカー(overflowBtn)と同じ祖先に依存しない
-        // body直下に置く (#art-more-menu と同型)
-        document.body.appendChild(panel);
-        overflowBtn._mdeOverflowPanel = panel;
-        panel._mdeOverflowBtn = overflowBtn;
+    // 見出しボタン: 押すと「大見出し(##)/小見出し(###)/見出しを外す」の3択メニュー(イシュー#282・
+    // ハヘロ了承済み方針)。現在行のレベルに✓。EasyMDE.toggleHeading2/3(すでにそのレベルなら外す
+    // 挙動も標準装備)をそのまま使う。メニューはクリックのたびに作って閉じたら消す(永続DOMを
+    // 持たない=#282 step3で踏んだ「その他」パネルの孤児DOM化バグを再発させない設計)。
+    _mdeToggleHeadingMenu(easymde) {
+        const existing = document.querySelector('.mde-heading-menu');
+        if (existing) { this._mdeCloseHeadingMenu(); return; }
+        const btn = easymde.toolbarElements && easymde.toolbarElements.heading;
+        if (!btn) return;
+        const level = this._mdeCurrentHeadingLevel(easymde);
+        const items = [
+            { label: '大見出し（##）', level: 2 },
+            { label: '小見出し（###）', level: 3 },
+            { label: '見出しを外す', level: 0 },
+        ];
+        const esc = (typeof PublishArticleGenerator !== 'undefined' && PublishArticleGenerator.esc) || ((s) => s);
+        const menu = document.createElement('div');
+        menu.className = 'mde-heading-menu';
+        menu.setAttribute('role', 'menu');
+        menu.innerHTML = items.map((it) => {
+            const isCurrent = it.level === level;
+            const checkSvg = typeof window.renderIcon === 'function' ? window.renderIcon('check', { size: 16 }) : '✓';
+            return `<button type="button" class="mde-heading-item${isCurrent ? ' is-current' : ''}" role="menuitemradio" aria-checked="${isCurrent}" data-level="${it.level}">
+                <span>${esc(it.label)}</span><span class="mde-heading-check">${checkSvg}</span></button>`;
+        }).join('');
+        document.body.appendChild(menu);
+        menu.querySelectorAll('.mde-heading-item').forEach((item) => {
+            item.addEventListener('click', () => {
+                this._mdeApplyHeadingLevel(easymde, Number(item.dataset.level));
+                this._mdeCloseHeadingMenu();
+            });
+        });
+        this._placeAnchoredMenu(btn, menu);
+        btn.setAttribute('aria-expanded', 'true');
+        menu._mdeAnchorBtn = btn;
     }
 
-    // 「その他」の開閉 (_mdeToolbarConfig の custom button action から呼ばれる)。
-    // show省略時はトグル。Esc・外側クリックで閉じる配線は setupEventListeners (グローバル1回だけ) 側。
-    _mdeToggleOverflowMenu(easymde, show) {
-        const btn = easymde && easymde.toolbarElements && easymde.toolbarElements.overflow;
-        const panel = btn && btn._mdeOverflowPanel;
-        if (!btn || !panel) return;
-        const willShow = show != null ? show : panel.hidden;
-        panel.hidden = !willShow;
-        btn.setAttribute('aria-expanded', String(willShow));
-        btn.classList.toggle('active', willShow);
-        if (willShow) this._placeAnchoredMenu(btn, panel);
+    _mdeCloseHeadingMenu() {
+        const menu = document.querySelector('.mde-heading-menu');
+        if (!menu) return;
+        if (menu._mdeAnchorBtn) menu._mdeAnchorBtn.setAttribute('aria-expanded', 'false');
+        menu.remove();
     }
 
-    // EasyMDEインスタンスを破棄する共通処理 (イシュー#282)。toTextArea() はツールバーDOMを
-    // 片付けるが、「その他」パネルは document.body 直下に独立して追加している (_mdeSetupOverflowMenu)
-    // ため、ここで明示的に取り除かないと次に開いた時のパネルと重複して残る (孤児DOM)。
-    // 長文メモ・文章ブロックの両方の破棄箇所がこれを通す。
+    _mdeCurrentHeadingLevel(easymde) {
+        try {
+            const cm = easymde.codemirror;
+            const line = cm.getLine(cm.getCursor().line) || '';
+            const m = line.match(/^(#{1,6})\s/);
+            return m ? m[1].length : 0;
+        } catch (e) { return 0; }
+    }
+
+    // level: 2=大見出し／3=小見出し／0=見出しを外す。EasyMDE.toggleHeading2/3は「すでにそのレベル
+    // なら外す」挙動を標準で持つため、2/3の選択はそのまま呼ぶだけでよい。0(外す)は現在のレベルに
+    // 応じて対応するtoggleを呼んで外す(2/3以外の見出しが手入力で付いていた場合だけ手動で剥がす)。
+    _mdeApplyHeadingLevel(easymde, targetLevel) {
+        try {
+            if (targetLevel === 2) EasyMDE.toggleHeading2(easymde);
+            else if (targetLevel === 3) EasyMDE.toggleHeading3(easymde);
+            else {
+                const current = this._mdeCurrentHeadingLevel(easymde);
+                if (current === 2) EasyMDE.toggleHeading2(easymde);
+                else if (current === 3) EasyMDE.toggleHeading3(easymde);
+                else if (current > 0) {
+                    const cm = easymde.codemirror;
+                    const ln = cm.getCursor().line;
+                    const line = cm.getLine(ln);
+                    cm.replaceRange(line.replace(/^#{1,6}\s/, ''), { line: ln, ch: 0 }, { line: ln, ch: line.length });
+                }
+            }
+        } catch (e) { console.error('見出し変更に失敗:', e); }
+        try { easymde.codemirror.focus(); } catch (_) {}
+    }
+
+    // EasyMDEインスタンスを破棄する共通処理 (イシュー#282)。開いていた見出しメニューが残らないよう
+    // 併せて閉じる。長文メモ・文章ブロックの両方の破棄箇所がこれを通す。
     _mdeDestroyEditor(editor) {
         if (!editor) return;
-        try {
-            const panel = editor.toolbarElements && editor.toolbarElements.overflow && editor.toolbarElements.overflow._mdeOverflowPanel;
-            if (panel) panel.remove();
-        } catch (_) {}
+        this._mdeCloseHeadingMenu();
         try { editor.toTextArea(); } catch (_) {}
     }
 
