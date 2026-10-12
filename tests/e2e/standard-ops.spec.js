@@ -513,31 +513,65 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(errors).toEqual([]);
     });
 
-    test('長文メモ: 変更なしは戻るで閉じる・未保存変更は確認→キャンセルで残り履歴も積み直る (C-281)', async ({ page }) => {
+    // イシュー#282 (②決裁B): 長文メモの外枠を文章ブロック等と同じ型に統一したのに合わせ、閉じ方の
+    // 規則も揃えた。戻る/Escは「完了」扱い(保存して閉じる・確認なし)、キャンセル(ボタン)だけが
+    // 変更があれば確認を出す (旧C-281の「戻る=未保存確認」は撤廃。記事エディタの art-fs-done と
+    // 同じ規則・この表現の元ネタは standard-ops.spec.js:382「文章ブロックの全画面も戻る/ESCで
+    // 『完了』扱い」と同型)。保存の永続化は readText/写writeText のメモリMap (bootApp) 経由で
+    // 再オープンして確かめる。
+    test('長文メモ: 戻る/Escは完了扱い(保存して閉じる・確認なし)、キャンセルのみ破棄確認 (イシュー#282・旧C-281置き換え)', async ({ page }) => {
         const errors = await bootApp(page);
         const openMemo = () => page.evaluate(() => {
             const b = window.bookshelf.books[0];
             return window.bookshelf._openBookMemoInAppEditor(b.asin, b);
         });
+        const waitEditor = () => page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
+        const memoValue = () => page.evaluate(() => window.bookshelf._bookMemoEditor.value());
+
         await openMemo();
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
-        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
-        // 変更なし → 戻るで閉じる
+        await waitEditor();
+        // 変更なし → 戻るで閉じる (確認なし)
         await page.goBack();
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
-        // 変更あり → 戻る → 破棄確認 → キャンセル → モーダルは残り、履歴も積み直される
+
+        // 変更あり → 戻る → 確認は出ず、保存して閉じる (新規則)
         await openMemo();
-        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('未保存の変更テスト'));
+        await waitEditor();
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('戻るテスト本文'));
         await page.goBack();
-        await expect(page.locator('.cfm-box')).toBeVisible();
-        await page.locator('.cfm-cancel').click();
-        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
-        // もう一度戻ると再び確認が出る (= 履歴の積み直しが効いている)。破棄して閉じる
-        await page.goBack();
-        await expect(page.locator('.cfm-box')).toBeVisible();
-        await page.locator('.cfm-ok').click();
+        await expect(page.locator('.cfm-box')).toHaveCount(0);
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+        // 永続化確認: 開き直すと保存された内容が読み込める
+        await openMemo();
+        await waitEditor();
+        expect(await memoValue()).toBe('戻るテスト本文');
+
+        // 変更あり → Esc → 同じく確認は出ず、保存して閉じる
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('Escテスト本文'));
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.cfm-box')).toHaveCount(0);
+        await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+        await openMemo();
+        await waitEditor();
+        expect(await memoValue()).toBe('Escテスト本文');
+
+        // キャンセル(ボタン)は変更があれば確認。「編集を続ける」なら閉じず変更も残る
+        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('キャンセルテスト本文'));
+        await page.click('#book-memo-fs-cancel');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.locator('.cfm-cancel').click(); // 編集を続ける
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        expect(await memoValue()).toBe('キャンセルテスト本文');
+        // 「変更を破棄」なら保存せず閉じる (直前の保存=Escテスト本文のまま残るはず)
+        await page.click('#book-memo-fs-cancel');
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.locator('.cfm-ok').click(); // 変更を破棄
+        await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+        await openMemo();
+        await waitEditor();
+        expect(await memoValue()).toBe('Escテスト本文');
+
         expect(errors.filter(e => !/easymde|fontawesome|cdn|net::ERR/i.test(e))).toEqual([]);
     });
 });
