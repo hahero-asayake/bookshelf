@@ -104,29 +104,29 @@ async function expectIconizedToolbar(page, toolbarSel, { expectCount } = {}) {
 }
 
 test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び (イシュー#281)', () => {
-    test('長文メモ390: 7ボタン・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('長文メモ390: 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 7 });
+        await expectIconizedToolbar(page, '#book-memo-modal .editor-toolbar.mde-iconized', { expectCount: 8 });
         expect(errors).toEqual([]);
     });
 
-    test('文章ブロック390 (全画面): 7ボタン・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('文章ブロック390 (全画面): 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await newArticleWithTextBlock(page);
         await expect(page.locator('#art-canvas')).toBeHidden(); // 390幅は全画面 (イシュー#278回帰)
-        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 7 });
+        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8 });
         expect(errors).toEqual([]);
     });
 
-    test('PC右ペイン (文章ブロック,1280幅): 7ボタン・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
+    test('PC右ペイン (文章ブロック,1280幅): 8ボタン(よく使う7個+その他)・アイコン+ラベル・1段・44px以上・ラベル非切れ', async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 800 });
         const errors = await bootApp(page);
         await newArticleWithTextBlock(page);
         await expect(page.locator('#art-canvas')).toBeVisible(); // PC900超は右ペイン (イシュー#278)
-        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 7 });
+        await expectIconizedToolbar(page, '#art-blocks .editor-toolbar.mde-iconized', { expectCount: 8 });
         expect(errors).toEqual([]);
     });
 
@@ -152,6 +152,71 @@ test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び (イ�
         await newArticleWithTextBlock(page);
         const blockBtnHtml = await page.evaluate(() => window.bookshelf._artTextFsEditor.toolbarElements.bold.innerHTML);
         expect(blockBtnHtml).toBe(memoBtnHtml);
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#282: compact構成(スマホ・PC右ペイン)の「⋯その他」パネル。実体はEasyMDEの本物の
+// ボタン(_mdeSetupOverflowMenu が移動)なので、中身を動かすと実際に書式が変わることまで確認する
+// (アイコン化の見た目だけでなく機能も揃っていることの裏取り)。
+test.describe('書式ツールバーの「⋯その他」(イシュー#282)', () => {
+    test('長文メモ390: その他を開くと5項目(斜体/画像/表/区切り線/ガイド)がビューポート内に出る', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const errors = await bootApp(page);
+        await openMemo(page);
+        await page.click('#book-memo-modal .mde-overflow-btn');
+        const panel = page.locator('.mde-overflow-menu');
+        await expect(panel).toBeVisible();
+        const labels = await panel.locator('.mde-tb-lbl').allTextContents();
+        expect(labels).toEqual(['斜体', '画像', '表', '区切り線', 'ガイド']);
+        const box = await panel.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(390);
+        expect(box.y + box.height).toBeLessThanOrEqual(844);
+        expect(errors).toEqual([]);
+    });
+
+    test('長文メモ390: 斜体を選ぶと実際に本文へ反映され、パネルは閉じる(エディタは開いたまま)', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const errors = await bootApp(page);
+        await openMemo(page);
+        const before = await page.evaluate(() => window.bookshelf._bookMemoEditor.value());
+        await page.click('#book-memo-modal .mde-overflow-btn');
+        await page.locator('.mde-overflow-menu button', { hasText: '斜体' }).click();
+        const after = await page.evaluate(() => window.bookshelf._bookMemoEditor.value());
+        expect(after).not.toBe(before); // 実物のEasyMDEアクションが動いている (移植後も機能が保たれている)
+        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // エディタ自体は閉じない
+        expect(errors).toEqual([]);
+    });
+
+    test('ESC/枠外クリック: その他パネルは自分だけ閉じ、エディタは残る (長文メモ・文章ブロック共通)', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const errors = await bootApp(page);
+        await openMemo(page);
+        await page.click('#book-memo-modal .mde-overflow-btn');
+        await expect(page.locator('.mde-overflow-menu')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // Escが丸ごと完了扱いになっていない
+        await page.click('#book-memo-fs-done'); // 次の経路(記事エディタ)を開く前に閉じる(未変更なので確認なし)
+        await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
+
+        await newArticleWithTextBlock(page);
+        await page.click('#art-blocks .mde-overflow-btn');
+        await expect(page.locator('.mde-overflow-menu')).toBeVisible();
+        await page.mouse.click(5, 5); // 枠外
+        await expect(page.locator('.mde-overflow-menu')).toBeHidden();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form'); // 全画面は残る
+        expect(errors).toEqual([]);
+    });
+
+    test('PC全幅(長文メモ1280): その他は出ない(12機能+表示切替2個が既に1段)', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        const errors = await bootApp(page);
+        await openMemo(page);
+        await expect(page.locator('#book-memo-modal .mde-overflow-btn')).toHaveCount(0);
         expect(errors).toEqual([]);
     });
 });

@@ -3027,6 +3027,29 @@ html.bs-likely-has-data #dashboard-welcome {
     width: 1px !important; height: 24px !important;
     background: var(--line) !important; margin: auto 4px !important; border: none !important; opacity: 1 !important;
 }
+.editor-toolbar.mde-iconized button.active { background: var(--side) !important; }
+
+/* 書式ツールバーの「⋯その他」パネル (compact構成=スマホ/PC右ペインのみ存在、イシュー#282)。
+   中身は .editor-toolbar から移した本物のEasyMDEボタン(クリックハンドラ込み)なので、
+   .mde-iconized 配下の縦並び(アイコン上/ラベル下)スタイルは当たらなくなる(祖先セレクタが
+   .editor-toolbar でなくなるため)。ここでアイコン+名前の横並び行として作り直す。
+   位置(top/left)は _placeAnchoredMenu が付与する(.art-more-menuと同型)。 */
+.mde-overflow-menu {
+    position: fixed; z-index: 1300; min-width: 11rem; padding: 0.3rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14); display: grid;
+}
+.mde-overflow-menu[hidden] { display: none; }
+.mde-overflow-menu button {
+    display: flex; align-items: center; gap: 0.5rem; width: 100%;
+    padding: 0.5rem 0.6rem; margin: 0; border: none; border-radius: 6px;
+    background: none; cursor: pointer; font: inherit; font-size: 0.84rem;
+    color: var(--fg); text-align: left;
+}
+.mde-overflow-menu button:hover { background: var(--accent-bg); }
+.mde-overflow-menu .mde-tb-ico { width: 18px; height: 18px; flex: 0 0 auto; }
+.mde-overflow-menu .mde-tb-ico svg { width: 100%; height: 100%; display: block; }
+.mde-overflow-menu .mde-tb-lbl { font-size: 0.84rem; white-space: nowrap; }
 
 
 /* 長文メモ設定 */
