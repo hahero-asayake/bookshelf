@@ -334,13 +334,44 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1);
-        // ⋯→編集 で開き直し、戻るで閉じる。さらに戻るでエディタ (公開記事モーダル) が閉じる＝段が余らない
+        // ⋯→編集 で開き直し、戻るで閉じる。公開記事モーダルはまだ残る (段飛ばししない・イシュー#279)
         await frame.locator('.art-cv-more').first().click();
         await page.click('#art-blk-menu [data-blk-act="edit"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         await page.goBack();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#279 (②承認4段構造): 編集→閲覧→一覧→エディタを閉じる、の4段を1回のgoBackで1段だけ
+    // 閉じる。編集中のブロック追加は、一覧へ戻る前に保存される。
+    test('記事エディタ: 戻るは編集→閲覧→一覧→エディタを閉じる、の順に1段ずつ (イシュー#279)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await openEditorInEditMode(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-ins-btn').last().click();
+        await page.click('#art-add-sheet [data-block-type="text"]');
+        await page.goBack(); // 文章ブロック全画面→完了→edit
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+
+        // 1段目: edit→view (完了扱いで保存)
+        await page.goBack();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'view');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-list-view')).toBeHidden();
+        expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1); // 保存済み
+
+        // 2段目: view→一覧 (エディタは残る)
+        await page.goBack();
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect(page.locator('#art-edit-view')).toBeHidden();
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-list .pp-row')).toHaveCount(1); // 一覧に保存済みの記事が反映
+
+        // 3段目: 一覧→エディタごと閉じ、元の画面(アプリ本体)に戻る
         await page.goBack();
         await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
         expect(page.url()).toContain('index.html');

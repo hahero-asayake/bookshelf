@@ -7944,11 +7944,13 @@ body.select-mode .drag-handle { display: none; }
     #art-edit-view .art-hd .art-hd-title { flex: 1 1 auto; order: 0; }
 }
 
-/* ===== 構成A: 下部アクションバー (600px以下・編集状態限定、イシュー#276) =====
+/* ===== 構成A: 下部アクションバー (600px以下・編集状態限定、イシュー#276・#279で3ボタン化) =====
    .mobile-bottom-nav (7423行) と同じ視覚言語 (position:fixed・アイコン上/ラベル下・
    safe-area-inset-bottom)。z-index は .modal(1000) より上、編集中に開き得るシート/メニュー
    (.art-add-sheet 1250・.art-publish-modal 1150・.cfm-overlay 1210・.art-more-menu 1300) より下＝
-   それらが開いたときはバーの上に正しく被さる。 */
+   それらが開いたときはバーの上に正しく被さる。
+   イシュー#279: 「追加」ボタンはブロック間/末尾の「＋ここに追加」(.art-cv-ins-btn) と役割が
+   重なるため撤去。見た目/公開/完了の3ボタンは flex:1 1 0 で均等幅のまま (各44px以上を維持)。 */
 #art-edit-bottom-bar { display: none; }
 @media (max-width: 600px) {
     #art-edit-view[data-art-mode="edit"] #art-edit-bottom-bar {

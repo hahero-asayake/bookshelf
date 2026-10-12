@@ -1331,6 +1331,17 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
         await page.goBack();
         await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+
+        // イシュー#279: さらに戻ると「編集状態」の段が閉じ、閲覧状態に戻る (段飛ばししない)
+        await page.goBack();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'view');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+
+        // さらに戻ると「閲覧状態」の段が閉じ、一覧に戻る (エディタはまだ残る)
+        await page.goBack();
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
 
         // さらに戻ると記事エディタモーダル自体も閉じる
         await page.goBack();
@@ -2020,6 +2031,10 @@ test.describe('記事エディタ: 空状態の案内 (イシュー#59)', () => 
 
         await expect(page.locator('.art-empty')).toHaveCount(1);
         await expect(page.locator('.art-empty')).toContainText('ブロックがありません');
+        // イシュー#279: 下部バーから「追加」を外した分、ブロック0個でも「＋ここに追加」(キャンバス内) が
+        // 唯一の追加入口になる。編集状態にすると空でも必ず1個出ることを確認する。
+        await page.click('#art-mode-edit');
+        await expect(canvas(page).locator('.art-cv-ins-btn')).toHaveCount(1);
 
         await addBlock(page, 'text', 'first');
 
@@ -2556,9 +2571,9 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
                 expect(m.cyRange, mode).toBeLessThan(4);
                 expect(m.maxRight, mode).toBeLessThanOrEqual(m.vw);
             }
-            // 構成A: 600px以下の下部バー4項目も1行に並び、各44px以上・画面内に収まる
+            // 構成A (イシュー#279: 「追加」撤去で3項目に): 600px以下の下部バー3項目も1行に並び、各44px以上・画面内に収まる
             if (isCompact) {
-                const barIds = ['art-bar-add', 'art-bar-look', 'art-bar-publish', 'art-bar-done'];
+                const barIds = ['art-bar-look', 'art-bar-publish', 'art-bar-done'];
                 const m = await measure(barIds);
                 expect(m.hidden, 'bottom-bar').toBe(0);
                 expect(m.cyRange, 'bottom-bar').toBeLessThan(4);

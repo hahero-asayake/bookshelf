@@ -8168,6 +8168,13 @@ class VirtualBookshelf {
     }
 
     closePublishPagesModal({ fromHistory = false } = {}) {
+        // イシュー#279: ×ボタンは編集/閲覧状態からでも押せるため、残っている履歴段を先に畳む
+        // (段を残したまま閉じると、次に開いた時や次回の戻る操作で不整合になる・②指示「段を残さない」)。
+        if (this._artMode === 'edit' || this._artMode === 'form') this._artFlushSave().catch(() => {});
+        const st = this._modalHistStack;
+        if (st && st.some((e) => e.id === 'art-edit-mode')) this._modalHistPop('art-edit-mode', {});
+        if (st && st.some((e) => e.id === 'art-viewing')) this._modalHistPop('art-viewing', {});
+        this._artMode = 'view';
         const modal = document.getElementById('publish-pages-modal');
         if (modal) modal.classList.remove('show');
         this._modalHistPop('publish-pages-modal', { fromHistory });
@@ -8263,8 +8270,9 @@ class VirtualBookshelf {
         on('art-fs-done', 'click', () => this._artCloseBlockFs(true));
         on('art-look-btn', 'click', () => this._artOpenLookSheet());
         // 構成A (イシュー#276): 下部アクションバー (600px以下・編集状態)。見た目・公開・完了はヘッダーの
-        // ハンドラをそのまま呼ぶ (同じ処理・置き場所だけ違う)。追加は末尾への挿入 (index省略=末尾、8270行と同型)
-        on('art-bar-add', 'click', () => this._artOpenAddSheet());
+        // ハンドラをそのまま呼ぶ (同じ処理・置き場所だけ違う)。
+        // イシュー#279: 「追加」ボタンはブロック間/末尾の「＋ここに追加」(.art-cv-ins-btn) と役割が
+        // 重なるため撤去 (3ボタンに削減)。
         on('art-bar-look', 'click', () => this._artOpenLookSheet());
         on('art-bar-publish', 'click', () => this._artOpenPublishPanel());
         on('art-bar-done', 'click', () => this._artSetMode('view'));
@@ -8299,7 +8307,7 @@ class VirtualBookshelf {
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
         on('art-unpublish', 'click', async () => { if (!this._artEditingId) return; await this._artUnpublish(this._artEditingId); });
-        on('art-del', 'click', async () => { if (!this._artEditingId) return; const did = await this._artDelete(this._artEditingId); if (did) this._artShowList(); });
+        on('art-del', 'click', async () => { if (!this._artEditingId) return; const did = await this._artDelete(this._artEditingId); if (did) this._artShowList({ skipSave: true }); });
         // タグ入力: サジェスト表示・Enter で確定・外側クリックで閉じる
         on('art-tag-input', 'input', () => this._artRenderTagSuggest());
         on('art-tag-input', 'focus', () => this._artRenderTagSuggest());
@@ -8317,8 +8325,18 @@ class VirtualBookshelf {
         if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._artClosePreviewModal(); });
     }
 
-    _artShowList() {
+    // イシュー#279 (②承認4段構造の3→4): 一覧へ戻る唯一の経路。←ボタン・複製後・削除後・戻る操作
+    // (popstate 経由の art-viewing close) のいずれから呼ばれても、まだ畳んでいない「編集状態」
+    // 「閲覧状態」の履歴段をここで一括して畳む (history.back相当・②指示「段を残さない」)。
+    // 編集中の変更はここで保存してから一覧へ戻す (②指示「編集中に一覧へ戻る時は保存してから戻る」)。
+    // skipSave: 削除直後 (_artEditingId が既に削除済みの記事を指す) は保存するとエラーになるため呼び出し元が true を渡す。
+    _artShowList({ skipSave = false } = {}) {
         this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
+        if (!skipSave && (this._artMode === 'edit' || this._artMode === 'form')) this._artFlushSave().catch(() => {});
+        const st = this._modalHistStack;
+        if (st && st.some((e) => e.id === 'art-edit-mode')) this._modalHistPop('art-edit-mode', {});
+        if (st && st.some((e) => e.id === 'art-viewing')) this._modalHistPop('art-viewing', {});
+        this._artMode = 'view'; // 次に記事を開いた時の _artSetMode 判定のため状態を正規化
         document.getElementById('art-list-view').hidden = false;
         document.getElementById('art-edit-view').hidden = true;
         const content = document.querySelector('.art-modal-content');
@@ -8334,11 +8352,14 @@ class VirtualBookshelf {
         this._artRenderList();
     }
 
+    // イシュー#279 (②承認4段構造の3): 個別記事 (閲覧/編集) を履歴の1段にする。戻る=一覧に戻る
+    // (_artShowList が保存・段の後始末まで一括で行う)。
     _artShowEditor() {
         document.getElementById('art-list-view').hidden = true;
         document.getElementById('art-edit-view').hidden = false;
         const content = document.querySelector('.art-modal-content');
         if (content) content.classList.add('art-editing');
+        this._modalHistPush('art-viewing', (o) => this._artShowList(o));
     }
 
     _artCountBooks(blocks) {
@@ -8608,14 +8629,40 @@ class VirtualBookshelf {
     // 記事は公開生成器の出力を iframe srcdoc でそのまま描く (閲覧=公開ページと1px一致)。
     // 編集状態では iframe 内へ枠・⋯・＋ (.art-cv-ui) を注入する。注入物は閲覧状態では全部取り除く。
     // mode: 'view' | 'edit' | 'form' ('form' は step3 でブロック別編集に置き換えるまでの旧フォーム表示)
+    // イシュー#279 (②承認4段構造の2): view→edit の遷移だけを履歴の1段にする (form は art-fs 側 (_artEditBlock/
+    // _artHistHandOver) が別途管理するので対象外・prevMode==='form' の時は push/pop どちらの条件にも
+    // 合致しない)。edit→view の能動遷移 (#art-mode-done/#art-bar-done) は積んだ段を history.back 相当で畳む。
     _artSetMode(mode) {
-        this._artMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
+        const newMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
+        const prevMode = this._artMode;
+        if (prevMode === 'view' && newMode === 'edit') {
+            this._modalHistPush('art-edit-mode', (o) => this._artCompleteEdit(o));
+        } else if (prevMode === 'edit' && newMode === 'view') {
+            this._modalHistPop('art-edit-mode', {});
+        }
+        this._artMode = newMode;
         const view = document.getElementById('art-edit-view');
         if (view) view.dataset.artMode = this._artMode;
         this._artCloseBlkMenu();
         this._artCloseAddSheet();
         this._artCloseLookSheet();
         if (this._artMode !== 'form') this._artQueueCanvas();
+    }
+
+    // イシュー#279: 戻る操作 (popstate 経由) で「編集状態」の段が閉じられた時の後始末。
+    // ②指示どおり「完了扱いで保存し、閲覧状態に戻る」。_artSetMode('view') を能動的に呼ぶ経路とは
+    // 別口 (popstate ハンドラは _modalHistStack から既に pop 済みのエントリの close を呼ぶだけなので、
+    // ここで再度 _modalHistPop は呼ばない・呼ぶと二重popになる)。
+    async _artCompleteEdit({ fromHistory = false } = {}) {
+        if (this._artMode !== 'edit') return; // 既に別モードへ遷移済みなら何もしない (二重発火ガード)
+        await this._artFlushSave().catch(() => {});
+        this._artMode = 'view';
+        const view = document.getElementById('art-edit-view');
+        if (view) view.dataset.artMode = 'view';
+        this._artCloseBlkMenu();
+        this._artCloseAddSheet();
+        this._artCloseLookSheet();
+        this._artQueueCanvas();
     }
 
     _artQueueCanvas() {
