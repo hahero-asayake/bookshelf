@@ -637,6 +637,9 @@ class VirtualBookshelf {
             this._globalModalEscBound = true;
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape' || e.defaultPrevented) return;
+                // プラグイン設定 (.modal でない独自モーダル) が設定の上に開いている時は、そちらの Esc に任せる
+                // (先に登録されたこのハンドラが下の設定を閉じていた・イシュー#284 X11)
+                if (document.querySelector('.plugin-settings-modal.show') && !document.querySelector('#icon-picker-modal.show')) return;
                 const open = Array.from(document.querySelectorAll('.modal.show'));
                 if (!open.length) return;
                 const top = open[open.length - 1];
@@ -6904,7 +6907,9 @@ class VirtualBookshelf {
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape' || e.defaultPrevented) return;
                 if (!modal.classList.contains('show')) return;
-                if (document.querySelector('.modal.show')) return;
+                // プラグイン設定の上に開き得る .modal はアイコンピッカーだけ (設定モーダルは常に下)。
+                // 「.modal が1つでも開いていれば譲る」だと設定の上では誰も閉じなかった (イシュー#284 X11)
+                if (document.querySelector('#icon-picker-modal.show')) return;
                 close();
                 e.preventDefault();
             });
@@ -8298,7 +8303,7 @@ class VirtualBookshelf {
         on('art-bar-done', 'click', () => this._artSetMode('view'));
         const lookSheet = document.getElementById('art-look-sheet');
         if (lookSheet) lookSheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) this._artCloseLookSheet(); });
-        on('art-width-preview', 'click', () => { const m = document.getElementById('art-more-menu'); if (m) m.hidden = true; this._artPreview(); });
+        on('art-width-preview', 'click', () => { this._artToggleMoreMenu(false); this._artPreview(); }); // 履歴の段も畳む (イシュー#284)
         on('art-fs-cancel', 'click', () => this._artCloseBlockFs(false));
         const addSheet = document.getElementById('art-add-sheet');
         if (addSheet) {
@@ -11442,8 +11447,14 @@ class VirtualBookshelf {
     }
 
     _artSetPreview(html) {
-        const frame = document.getElementById('pp-preview-frame');
-        if (frame) frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
+        const old = document.getElementById('pp-preview-frame');
+        if (!old) return;
+        // WebKit は同じ iframe への srcdoc 再代入をセッション履歴に積み、スマホの「戻る」が iframe 側で消費されて
+        // プレビューが閉じなかった (イシュー#284 A30)。キャンバスと同じく新しい要素へ差し替える
+        const frame = old.cloneNode(false);
+        frame.removeAttribute('srcdoc');
+        frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
+        old.replaceWith(frame);
     }
 
     // イシュー#161: #160でブロック境界ごとに進捗表示を更新するようにしたため、進捗のたびに

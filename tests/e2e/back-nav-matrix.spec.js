@@ -605,3 +605,598 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         expect(errors).toEqual([]);
     });
 });
+
+// ===== 表 §4-3 の残り (その1: ルーター・⌘K・ドロワー・設定・取込・幅820=K6) =====
+// 1ケース=1テスト。ケースIDは表と同じ。B2b (端スワイプ) は chromium/webkit に手段が無いため表で「不可」。
+async function shelfInfo(page) {
+    return page.evaluate(() => {
+        const sh = window.bookshelf.userData.bookshelves.find((b) => !b.isSpecial);
+        return { id: sh.id, slug: sh.slug || sh.id, name: sh.name };
+    });
+}
+async function openDrawerTap(page) { await tap(page, '#mobile-bottom-nav [data-mobile-nav="shelves"]'); await settle(page); }
+async function openPaletteTap(page) { await tap(page, '#mobile-bottom-nav [data-mobile-nav="search"]'); await settle(page); }
+const paletteOpen = (page) => page.evaluate(() => !document.getElementById('command-palette').hidden);
+async function pickShelfInPalette(page) {
+    const { name } = await shelfInfo(page);
+    await page.fill('#command-palette input', name);
+    await settle(page, 200);
+    await page.keyboard.press('Enter');
+    await settle(page, 600);
+}
+async function caseRun(page, ti, id, body) {
+    const errors = await bootApp(page);
+    const r = recorder(ti, id);
+    const before = await snap(page);
+    await r.step(page, 'before');
+    try { await body(r, before); } finally { await r.save(page); }
+    // about:blank を経由するケース (URL直) では、addInitScript の localStorage 書き込みが about:blank 上で
+    // SecurityError になる (アプリの不具合ではない) ので除外する
+    expect(errors.filter((e) => !/localStorage' property from 'Window': Access is denied|SecurityError: The operation is insecure/.test(e))).toEqual([]);
+}
+
+test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻し)', () => {
+    test('R03 ドロワー→本棚→history.back() でホーム', async ({ page }, ti) => caseRun(page, ti, 'R03', async (r, before) => {
+        await openDrawerTap(page);
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        await page.evaluate(() => history.back()); await settle(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.hash).toEqual(before.hash);
+        expect.soft(s.drawer).toBe(false);
+    }));
+    test('R04 ⌘K→本棚を選ぶ→戻る1回でホーム', async ({ page }, ti) => caseRun(page, ti, 'R04', async (r, before) => {
+        await openPaletteTap(page);
+        await pickShelfInPalette(page);
+        await r.step(page, 'shelf');
+        expect.soft((await snap(page)).hash).toContain('bookshelf/');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.hash, 'ホームへ').toEqual(before.hash);
+        expect.soft(await paletteOpen(page), 'パレットは出ない').toBe(false);
+    }));
+    test('R06 本棚→本を開く→戻る＝本棚・スクロール位置を保持 (D07)', async ({ page }, ti) => caseRun(page, ti, 'R06', async (r) => {
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        await page.evaluate(() => { const el = document.scrollingElement; el.scrollTop = Math.min(300, el.scrollHeight); });
+        const y0 = await page.evaluate(() => document.scrollingElement.scrollTop);
+        const asin = await firstBook(page);
+        await page.evaluate((a) => window.bookshelf.router.navigateBook(a), asin);
+        await settle(page, 600);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        const y1 = await page.evaluate(() => document.scrollingElement.scrollTop);
+        r.rec.scroll = { y0, y1 };
+        expect.soft(s.hash).toContain('bookshelf/');
+        expect.soft(Math.abs(y1 - y0), 'スクロール位置 (±2px)').toBeLessThanOrEqual(2);
+    }));
+    for (const [cid, hashOf] of [['R10', (sh) => `#/bookshelf/${encodeURIComponent(sh.slug)}`], ['R11', () => '#book/B000000001']]) {
+        test(`${cid} URL直で開いて戻る＝アプリ外 (D08)`, async ({ page }, ti) => caseRun(page, ti, cid, async (r) => {
+            const sh = await shelfInfo(page);
+            await page.goto('about:blank');
+            await page.goto('/index.html' + hashOf(sh));
+            await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+            await settle(page, 500);
+            const s0 = await snap(page); r.rec.opened = s0;
+            await page.goBack({ waitUntil: 'commit', timeout: 3000 }).catch(() => {});
+            await settle(page);
+            r.rec.url = page.url();
+            expect.soft(page.url(), 'アプリの前のページ (about:blank) へ出る').toBe('about:blank');
+            await page.goForward().catch(() => {});
+            await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData).catch(() => {});
+        }));
+    }
+    test('R12 本棚で再読込→戻る＝ホーム', async ({ page }, ti) => caseRun(page, ti, 'R12', async (r, before) => {
+        await openDrawerTap(page);
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await settle(page, 500);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.hash, 'ホームへ').toEqual(before.hash);
+        expect.soft(s.openModals).toEqual([]);
+    }));
+    test('R13 URL直 ?report= →通報ダイアログ→戻る＝閉じ、クエリは消えたまま', async ({ page }, ti) => caseRun(page, ti, 'R13', async (r) => {
+        await page.goto('about:blank');
+        await page.goto('/index.html?report=' + encodeURIComponent('https://example.org/a/b/'));
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await settle(page, 600);
+        // 未ログインでは通報ダイアログの前に確認ダイアログ (ログインの案内) が出る＝どちらか一方が最前面
+        const s0 = await snap(page); await r.step(page, 'opened');
+        r.rec.firstSurface = s0.stack;
+        expect.soft(s0.stack.length, '通報か確認のどちらかが1段積まれている').toBe(1);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).not.toContain('report-modal');
+        expect.soft(s.menus.confirm).toBe(false);
+        expect.soft(page.url()).not.toContain('report=');
+        expect.soft(s.stack).toEqual([]);
+    }));
+    test('R16 ドロワー→スクリムをタップ＝閉じ、段が余らない', async ({ page }, ti) => caseRun(page, ti, 'R16', async (r, before) => {
+        await openDrawerTap(page);
+        await page.locator('#mobile-scrim').tap({ position: { x: 370, y: 400 } });
+        await settle(page);
+        const s = await snap(page); await r.step(page, 'scrim');
+        expect.soft(s.drawer).toBe(false);
+        expectSameHistory(before, s);
+    }));
+    test('R18 ドロワーを開いて再読込→段が畳まれ、戻るが空振りしない (D06)', async ({ page }, ti) => caseRun(page, ti, 'R18', async (r) => {
+        await openDrawerTap(page);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.waitForFunction(() => history.state === null, null, { timeout: 3000 }).catch(() => {});
+        const s = await snap(page); await r.step(page, 'reloaded');
+        expect.soft(s.state).toBeNull();
+        expect.soft(s.drawer).toBe(false);
+    }));
+    for (const [cid, how] of [['R19', 'back'], ['R20', 'backdrop'], ['R21', 'esc']]) {
+        test(`${cid} ⌘K を開いて ${how} で閉じる・段が余らない`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await openPaletteTap(page);
+            expect.soft(await paletteOpen(page)).toBe(true);
+            if (how === 'back') await back(page);
+            else if (how === 'backdrop') { await page.locator('#cmdk-backdrop').tap({ position: { x: 5, y: 5 } }); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await paletteOpen(page)).toBe(false);
+            expectSameHistory(before, s);
+        }));
+    }
+    test('R22 ドロワー→⌘K→戻る＝パレットだけ閉じ、段が余らない', async ({ page }, ti) => caseRun(page, ti, 'R22', async (r, before) => {
+        await openDrawerTap(page);
+        await page.evaluate(() => document.querySelector('#mobile-bottom-nav [data-mobile-nav="search"]').click());
+        await settle(page);
+        await r.step(page, 'palette');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(await paletteOpen(page)).toBe(false);
+        expect.soft(s.drawer).toBe(false);
+        expectSameHistory(before, s);
+    }));
+
+    // ===== 設定・取込 =====
+    async function openSettingsTap(page) { await tap(page, '#mobile-bottom-nav [data-mobile-nav="settings"]'); await settle(page); }
+    const settingsView = (page) => page.locator('.settings-modal-content').getAttribute('data-settings-view');
+    test('X01 下部ナビ→設定→戻る＝閉じる', async ({ page }, ti) => caseRun(page, ti, 'X01', async (r, before) => {
+        await openSettingsTap(page);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).not.toContain('settings-modal');
+        expectSameHistory(before, s);
+    }));
+    test('X05 設定 詳細→‹戻るボタン＝一覧・段は1つ', async ({ page }, ti) => caseRun(page, ti, 'X05', async (r) => {
+        await openSettingsTap(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
+        await tap(page, '#settings-back');
+        await settle(page);
+        const s = await snap(page); await r.step(page, 'backbtn');
+        expect.soft(await settingsView(page)).toBe('master');
+        expect.soft(s.stack).toEqual(['settings-modal']);
+        expect.soft(s.state && s.state.d).toBe(1);
+    }));
+    test('X07 カテゴリA→‹戻る→カテゴリB→戻る＝一覧', async ({ page }, ti) => caseRun(page, ti, 'X07', async (r) => {
+        await openSettingsTap(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
+        await tap(page, '#settings-back');
+        await settle(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="about-section"]');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(await settingsView(page)).toBe('master');
+        expect.soft(s.stack).toEqual(['settings-modal']);
+    }));
+    test('X08 設定 詳細で Esc＝閉じ、段が余らない', async ({ page }, ti) => caseRun(page, ti, 'X08', async (r, before) => {
+        await openSettingsTap(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
+        await page.keyboard.press('Escape'); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(s.openModals).not.toContain('settings-modal');
+        expectSameHistory(before, s);
+    }));
+    test('X09 設定の項目へジャンプ→戻る＝一覧 (D11)→戻る＝閉じる', async ({ page }, ti) => caseRun(page, ti, 'X09', async (r, before) => {
+        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-section'));
+        await settle(page);
+        await back(page);
+        expect.soft(await settingsView(page)).toBe('master');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back2');
+        expect.soft(s.openModals).not.toContain('settings-modal');
+        expectSameHistory(before, s);
+    }));
+    test('X10/X11 設定→プラグイン設定→戻る/Esc＝プラグイン設定だけ閉じる', async ({ page }, ti) => caseRun(page, ti, 'X10', async (r) => {
+        await openSettingsTap(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="plugins-section"]');
+        for (const how of ['back', 'esc']) {
+            await page.evaluate(() => window.bookshelf._openPluginSettings('fixture-plugin'));
+            await settle(page);
+            const opened = await page.locator('#plugin-settings-modal').isVisible().catch(() => false);
+            r.rec[how] = { opened };
+            if (how === 'back') await back(page); else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await page.locator('#plugin-settings-modal').isVisible().catch(() => false), `${how}: プラグイン設定が閉じる`).toBe(false);
+            expect.soft(s.openModals, `${how}: 設定は残る`).toContain('settings-modal');
+            expect.soft(s.stack, `${how}: 設定の段は2つ (一覧+詳細)`).toEqual(['settings-modal', 'settings-cat']);
+        }
+    }));
+    for (const [cid, how] of [['X13', 'back'], ['X14', 'close'], ['X14e', 'esc']]) {
+        test(`${cid} 取込モーダル ${how}＝閉じ、段が余らない`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await page.evaluate(() => window.bookshelf.showImportModal());
+            await expect(page.locator('#import-modal')).toHaveClass(/show/);
+            if (how === 'back') await back(page);
+            else if (how === 'close') { await tap(page, '#import-modal-close'); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).not.toContain('import-modal');
+            expectSameHistory(before, s);
+        }));
+    }
+    test('X15 設定(蔵書)→取込→戻る＝取込だけ閉じ、設定は残る (D12)', async ({ page }, ti) => caseRun(page, ti, 'X15', async (r) => {
+        await openSettingsTap(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="library-section"]');
+        await tap(page, '#import-kindle');
+        await expect(page.locator('#import-modal')).toHaveClass(/show/);
+        await r.step(page, 'import');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).not.toContain('import-modal');
+        expect.soft(s.openModals).toContain('settings-modal');
+        expect.soft(await settingsView(page)).toBe('detail');
+    }));
+});
+
+// ===== K6: 幅 820 (769〜900) でも全ての面が履歴に積まれ、1段ずつ戻る (D10) =====
+test.describe('戻る網羅マトリクス 幅820 (K6)', () => {
+    test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true });
+    test('A40 幅820: 記事の引き出しシート→戻る＝シートだけ閉じる', async ({ page }, ti) => caseRun(page, ti, 'A40', async (r) => {
+        await openNewArticleEdit(page);
+        await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await settle(page);
+        const s0 = await snap(page); await r.step(page, 'sheet');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s0.stack, 'シートも記事の段も積まれている').toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode', 'art-sheet']);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        expect.soft(s.artMode).toBe('edit');
+    }));
+    test('A41 幅820: 編集→全画面→戻る＝編集 (完了扱い)', async ({ page }, ti) => caseRun(page, ti, 'A41', async (r) => {
+        await openNewArticleEdit(page);
+        await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
+        await tap(page, '#art-add-sheet [data-block-type="text"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.artMode).toBe('edit');
+        expect.soft(s.openModals).toContain('publish-pages-modal');
+    }));
+    test('K6 幅820: 設定→戻る＝閉じる (768〜900 でも積まれる)', async ({ page }, ti) => caseRun(page, ti, 'K6-settings', async (r, before) => {
+        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await settle(page);
+        const s0 = await snap(page); await r.step(page, 'open');
+        expect.soft(s0.stack).toEqual(['settings-modal']);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).not.toContain('settings-modal');
+        expectSameHistory(before, s);
+    }));
+});
+
+// ===== 表 §4-3 の残り (その2: 記事エディタ・長文メモ) =====
+const artMode = (page) => page.locator('#art-edit-view').getAttribute('data-art-mode');
+async function openArticleListTap(page) {
+    await openArticleList(page);
+}
+async function newArticleView(page) {
+    await openArticleListTap(page);
+    await tap(page, '#art-new');
+    await page.fill('#art-title', '戻る284');
+}
+async function insText(page) {
+    await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
+    await tap(page, '#art-add-sheet [data-block-type="text"]');
+    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+}
+const draftHas = (page, t) => page.evaluate((x) => JSON.stringify(window.bookshelf._artDraft || {}).includes(x) || JSON.stringify(window.bookshelf.publishArticleStore).includes(x), t);
+async function lookBtn(page) { const h = page.locator('#art-look-btn'); if (await h.isVisible()) await h.tap(); else await tap(page, '#art-bar-look'); await settle(page); }
+async function pubBtn(page) { const h = page.locator('#art-publish-header'); if (await h.isVisible()) await h.tap(); else await tap(page, '#art-bar-publish'); await settle(page); }
+
+test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュー#284 差し戻し)', () => {
+    for (const [cid, how] of [['A01', 'back'], ['A02', 'close'], ['A03', 'esc']]) {
+        test(`${cid} 記事モーダル(一覧) ${how}＝閉じ、段が余らない`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await openArticleListTap(page);
+            if (how === 'back') await back(page);
+            else if (how === 'close') { await tap(page, '#publish-pages-close'); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).not.toContain('publish-pages-modal');
+            expectSameHistory(before, s);
+        }));
+    }
+    test('A04/A06 閲覧→戻る(goBack/history.back)＝一覧', async ({ page }, ti) => caseRun(page, ti, 'A04', async (r) => {
+        for (const how of ['goBack', 'history']) {
+            await openArticleListTap(page);
+            await tap(page, '#art-new');
+            if (how === 'goBack') await back(page); else { await page.evaluate(() => history.back()); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await page.locator('#art-list-view').isVisible(), `${how}: 一覧`).toBe(true);
+            expect.soft(s.stack, `${how}: 段`).toEqual(['publish-pages-modal']);
+            await back(page);
+        }
+    }));
+    test('A07/A08 閲覧→編集(変更あり)→戻る＝閲覧・保存', async ({ page }, ti) => caseRun(page, ti, 'A08', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await page.fill('#art-title', '戻る284変更');
+        await back(page);
+        await r.step(page, 'back1');
+        expect.soft(await artMode(page)).toBe('view');
+        expect.soft(await draftHas(page, '戻る284変更'), '保存').toBe(true);
+    }));
+    test('A11/A13/A16 全画面(変更あり)→戻る/完了/Esc＝編集・保存', async ({ page }, ti) => caseRun(page, ti, 'A11', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        for (const how of ['back', 'done', 'esc']) {
+            await insText(page);
+            await page.evaluate((t) => window.bookshelf._artTextFsEditor.value(t), `本文${how}`);
+            if (how === 'back') await back(page);
+            else if (how === 'done') { await tap(page, '#art-fs-done'); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await artMode(page), `${how}: 編集へ`).toBe('edit');
+            expect.soft(await draftHas(page, `本文${how}`), `${how}: 保存`).toBe(true);
+            expect.soft(s.stack, `${how}: 段`).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        }
+    }));
+    test('A14 全画面(変更あり)→キャンセル→確認OK＝編集・破棄・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'A14', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await insText(page);
+        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('破棄される本文'));
+        await tap(page, '#art-fs-cancel');
+        await tap(page, '.cfm-overlay .cfm-ok');
+        await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'ok');
+        expect.soft(await artMode(page)).toBe('edit');
+        expect.soft(await draftHas(page, '破棄される本文'), '破棄').toBe(false);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        expect.soft(s.state && s.state.d).toBe(3);
+    }));
+    test('A17/A18 ＋追加シート→戻る＝シートだけ／シート→本棚全画面→戻る＝編集(1段)', async ({ page }, ti) => caseRun(page, ti, 'A17', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
+        await back(page);
+        let s = await snap(page); await r.step(page, 'A17');
+        expect.soft(await page.locator('#art-add-sheet').isHidden()).toBe(true);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
+        await tap(page, '#art-add-sheet [data-block-type="shelf"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        s = await snap(page); expect.soft(s.stack.length, 'A18: シートの段を引き継ぎ二重に積まない').toBe(4);
+        await back(page);
+        s = await snap(page); await r.step(page, 'A18');
+        expect.soft(await artMode(page)).toBe('edit');
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+    }));
+    test('A19/A20 ブロック⋯→戻る＝メニューだけ／⋯→編集(全画面)→戻る＝編集', async ({ page }, ti) => caseRun(page, ti, 'A19', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await insText(page);
+        await back(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-more').first().tap();
+        await back(page);
+        let s = await snap(page); await r.step(page, 'A19');
+        expect.soft(await page.locator('#art-blk-menu').isHidden()).toBe(true);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        await frame.locator('.art-cv-more').first().tap();
+        await tap(page, '#art-blk-menu [data-blk-act="edit"]');
+        await back(page);
+        s = await snap(page); await r.step(page, 'A20');
+        expect.soft(await artMode(page)).toBe('edit');
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+    }));
+    test('A21/A22 見た目シート→戻る／閉じる＝シートだけ', async ({ page }, ti) => caseRun(page, ti, 'A21', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        for (const how of ['back', 'backdrop']) {
+            await lookBtn(page);
+            if (how === 'back') await back(page); else { await page.locator('#art-look-sheet [data-close]').first().tap({ position: { x: 10, y: 10 } }); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await page.locator('#art-look-sheet').isHidden(), how).toBe(true);
+            expect.soft(s.stack, how).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        }
+    }));
+    test('A24 記事⋯メニュー→Esc＝メニューだけ', async ({ page }, ti) => caseRun(page, ti, 'A24', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await tap(page, '#art-more-btn');
+        await page.keyboard.press('Escape'); await settle(page);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(s.menus.artMore).toBe(false);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+    }));
+    test('A25/A26 文章全画面の見出しメニュー→戻る／Esc＝メニューだけ', async ({ page }, ti) => caseRun(page, ti, 'A25', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await insText(page);
+        for (const how of ['back', 'esc']) {
+            await tap(page, '#art-edit-view .mde-heading-btn');
+            if (how === 'back') await back(page); else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.menus.heading, how).toBe(false);
+            expect.soft(await artMode(page), how).toBe('form');
+            expect.soft(s.stack.length, how).toBe(4);
+        }
+    }));
+    test('A27/A28 公開パネル→戻る／×／Esc＝パネルだけ', async ({ page }, ti) => caseRun(page, ti, 'A27', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        for (const how of ['back', 'close', 'esc']) {
+            await pubBtn(page);
+            await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
+            if (how === 'back') await back(page); else if (how === 'close') { await tap(page, '#art-pub-close'); await settle(page); } else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals, how).not.toContain('art-publish-modal');
+            expect.soft(s.stack, how).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        }
+    }));
+    test('A30/A31 プレビュー→戻る／Esc＝プレビューだけ', async ({ page }, ti) => caseRun(page, ti, 'A30', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        // プレビューはブロックが1つ以上ないと開かない (トーストのみ) ため、文章ブロックを1つ置く
+        await insText(page);
+        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('本文'));
+        await back(page);
+        for (const how of ['back', 'esc']) {
+            await tap(page, '#art-more-btn');
+            await tap(page, '#art-width-preview');
+            await settle(page, 600);
+            await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
+            if (how === 'back') await back(page); else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals, how).not.toContain('pp-preview-modal');
+            expect.soft(s.openModals, how).toContain('publish-pages-modal');
+            expect.soft(s.stack, how).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        }
+    }));
+    test('A37 編集中に Esc＝記事モーダルごと閉じる (D09)・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'A37', async (r, before) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await page.keyboard.press('Escape'); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(s.openModals).not.toContain('publish-pages-modal');
+        expectSameHistory(before, s);
+    }));
+    test('A38 閲覧で下へスクロール→編集→戻る＝閲覧の同じ位置 (D07)', async ({ page }, ti) => caseRun(page, ti, 'A38', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        for (let i = 0; i < 3; i++) { await insText(page); await page.evaluate(() => window.bookshelf._artTextFsEditor.value('段落\n\n'.repeat(30))); await back(page); }
+        await back(page); // 閲覧へ
+        const col = '#art-edit-view .art-col';
+        await page.evaluate((c) => { const el = document.querySelector(c); el.scrollTop = 400; }, col);
+        const y0 = await page.evaluate((c) => document.querySelector(c).scrollTop, col);
+        await tap(page, '#art-mode-edit');
+        await back(page);
+        const y1 = await page.evaluate((c) => document.querySelector(c).scrollTop, col);
+        r.rec.scroll = { y0, y1 };
+        expect.soft(await artMode(page)).toBe('view');
+        expect.soft(Math.abs(y1 - y0), 'スクロール位置 (±2px)').toBeLessThanOrEqual(2);
+    }));
+    test('A39 編集中に再読込→段が畳まれ空振りしない (D06)', async ({ page }, ti) => caseRun(page, ti, 'A39', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.waitForFunction(() => history.state === null, null, { timeout: 3000 }).catch(() => {});
+        const s = await snap(page); await r.step(page, 'reloaded');
+        expect.soft(s.state).toBeNull();
+        expect.soft(s.openModals).toEqual([]);
+    }));
+});
+
+test.describe('戻る網羅マトリクス 残り2 長文メモ (イシュー#284 差し戻し)', () => {
+    async function openMemo2(page) {
+        await page.evaluate(async () => { const bs = window.bookshelf; const b = bs.bookManager.getAllBooks()[0]; await bs._openBookMemoInAppEditor(b.asin, b); });
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor, null, { timeout: 10000 }).catch(() => {});
+    }
+    const memoSaved = (page, t) => page.evaluate((x) => JSON.stringify(Array.from(window.__mem.values())).includes(x), t);
+    const setMemo = (page, t) => page.evaluate((x) => window.bookshelf._bookMemoEditor.value(x), t);
+    test('L01/L03 変更なし→戻る(goBack/history.back)＝閉じる・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'L01', async (r, before) => {
+        for (const how of ['goBack', 'history']) {
+            await openMemo2(page);
+            if (how === 'goBack') await back(page); else { await page.evaluate(() => history.back()); await settle(page, 600); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals, how).not.toContain('book-memo-modal');
+            expectSameHistory(before, s);
+        }
+    }));
+    test('L06 変更あり→完了＝保存して閉じる・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'L06', async (r, before) => {
+        await openMemo2(page);
+        await setMemo(page, '完了284');
+        await tap(page, '#book-memo-fs-done'); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'done');
+        expect.soft(await memoSaved(page, '完了284')).toBe(true);
+        expectSameHistory(before, s);
+    }));
+    test('L07 変更なし→キャンセル＝確認なしで閉じる', async ({ page }, ti) => caseRun(page, ti, 'L07', async (r, before) => {
+        await openMemo2(page);
+        await tap(page, '#book-memo-fs-cancel'); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'cancel');
+        expect.soft(s.menus.confirm).toBe(false);
+        expectSameHistory(before, s);
+    }));
+    test('L08/L09 変更あり→キャンセル→確認OK＝破棄／確認キャンセル＝留まる', async ({ page }, ti) => caseRun(page, ti, 'L08', async (r, before) => {
+        await openMemo2(page);
+        await setMemo(page, '破棄284');
+        await tap(page, '#book-memo-fs-cancel');
+        await tap(page, '.cfm-overlay .cfm-cancel'); await settle(page);
+        let s = await snap(page); await r.step(page, 'L09');
+        expect.soft(s.openModals, 'L09 留まる').toContain('book-memo-modal');
+        expect.soft(s.stack, 'L09 段は1つ').toEqual(['book-memo-modal']);
+        await tap(page, '#book-memo-fs-cancel');
+        await tap(page, '.cfm-overlay .cfm-ok'); await settle(page, 600);
+        s = await snap(page); await r.step(page, 'L08');
+        expect.soft(await memoSaved(page, '破棄284'), 'L08 破棄').toBe(false);
+        expectSameHistory(before, s);
+    }));
+    test('L11 変更あり→Esc＝保存して閉じる', async ({ page }, ti) => caseRun(page, ti, 'L11', async (r, before) => {
+        await openMemo2(page);
+        await setMemo(page, 'Esc284');
+        await page.keyboard.press('Escape'); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(await memoSaved(page, 'Esc284')).toBe(true);
+        expectSameHistory(before, s);
+    }));
+    test('L12 保存失敗で戻る＝閉じず段を積み直す', async ({ page }, ti) => caseRun(page, ti, 'L12', async (r) => {
+        await openMemo2(page);
+        await setMemo(page, '失敗284');
+        await page.evaluate(() => { window.bookshelf.storage.adapter.writeText = async () => { throw new Error('write fail (test)'); }; });
+        await back(page); await settle(page, 600);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).toContain('book-memo-modal');
+        expect.soft(s.stack).toEqual(['book-memo-modal']);
+        expect.soft(s.state && s.state.d).toBe(1);
+    }));
+    test('L13 読込失敗の状態で戻る＝閉じる', async ({ page }, ti) => caseRun(page, ti, 'L13', async (r, before) => {
+        await page.evaluate(() => { window.bookshelf.storage.adapter.readText = async () => { throw new Error('read fail (test)'); }; });
+        await page.evaluate(async () => { const bs = window.bookshelf; const b = bs.bookManager.getAllBooks()[0]; await bs._openBookMemoInAppEditor(b.asin, b); }).catch(() => {});
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.openModals).not.toContain('book-memo-modal');
+        expectSameHistory(before, s);
+    }));
+    test('L15 見出しメニュー→Esc＝メニューだけ', async ({ page }, ti) => caseRun(page, ti, 'L15', async (r) => {
+        await openMemo2(page);
+        await tap(page, '#book-memo-modal .mde-heading-btn');
+        await page.keyboard.press('Escape'); await settle(page);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(s.menus.heading).toBe(false);
+        expect.soft(s.stack).toEqual(['book-memo-modal']);
+    }));
+    test('L16 長文メモを開いて再読込→段が畳まれる (D06)', async ({ page }, ti) => caseRun(page, ti, 'L16', async (r) => {
+        await openMemo2(page);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.waitForFunction(() => history.state === null, null, { timeout: 3000 }).catch(() => {});
+        const s = await snap(page); await r.step(page, 'reloaded');
+        expect.soft(s.state).toBeNull();
+    }));
+    test('L17 本文を下へスクロール→見出しメニュー→Esc＝本文の位置を保持', async ({ page }, ti) => caseRun(page, ti, 'L17', async (r) => {
+        await openMemo2(page);
+        await setMemo(page, '行\n'.repeat(200));
+        const sc = '#book-memo-modal .CodeMirror-scroll';
+        await page.evaluate((c) => { const el = document.querySelector(c); if (el) el.scrollTop = 500; }, sc);
+        const y0 = await page.evaluate((c) => (document.querySelector(c) || {}).scrollTop, sc);
+        await tap(page, '#book-memo-modal .mde-heading-btn');
+        await page.keyboard.press('Escape'); await settle(page);
+        const y1 = await page.evaluate((c) => (document.querySelector(c) || {}).scrollTop, sc);
+        r.rec.scroll = { y0, y1 };
+        expect.soft(Math.abs(y1 - y0)).toBeLessThanOrEqual(2);
+    }));
+});

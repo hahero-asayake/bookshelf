@@ -12,8 +12,8 @@
 
 | 面 | × | ESC (PC) | スマホ戻る (履歴統合) | 枠外クリック | 備考 |
 |---|---|---|---|---|---|
-| 設定モーダル | ✅ | ✅ | ✅ pushState + popstate（詳細→一覧→閉の2段） | — (誤爆防止で閉じない) | `_bindSettingsPopstate` (個別実装) |
-| 取込モーダル | ✅ | ✅ | ✅ | — | `showImportModal`/`closeImportModal` (個別実装) |
+| 設定モーダル | ✅ | ✅ | ✅ 詳細→一覧→閉の2段 | — (誤爆防止で閉じない) | 汎用 (`settings-modal`・`settings-cat` の2段・イシュー#284 で個別実装から移行) |
+| 取込モーダル | ✅ | ✅ | ✅ | — | 汎用 (`import-modal`・`showImportModal`/`closeImportModal`・イシュー#284 で個別実装から移行) |
 | 除外一覧モーダル | ✅ | ✅ | ✅ | — | 汎用 `_modalHistPush/Pop` |
 | 手動追加モーダル | ✅ | ✅ | ✅ | — | 汎用 |
 | 記事の通報ダイアログ | ✅ | ✅ | ✅ (スマホのみ履歴統合) | — (入力途中の誤爆防止で閉じない) | 汎用 (`#report-modal`・ADR-099)。公開記事フッタの `?report=<記事URL>` から開く。打鍵は `report-moderation.spec.js` (PC=ESC/×/キャンセル/枠外・スマホ=戻る) |
@@ -28,7 +28,7 @@
 | アイコンピッカー (モーダル内モーダル) | ✅ | ✅ | ✅ (C-281。戻る=キャンセル・Promise は必ず resolve) | — | 汎用。DOM は親候補より後ろに置く (ESC 最前面判定) |
 | 長文メモエディタ | — (×を撤去し #art-fs-hd 型に統一) | ✅ (完了扱い=保存して閉じる) | ✅ (完了扱い) | — | `#book-memo-fs-cancel`/`#book-memo-fs-done`・`_bookMemoFsDone`/`_bookMemoFsCancel` (イシュー#282・②決裁B)。外枠は記事エディタのブロック全画面と同じ型。キャンセルは変更があれば確認、確認なしのESC/戻るは完了 (保存失敗時は閉じない)。打鍵は `standard-ops.spec.js` |
 | 子孫選択モーダル | ✅ | ✅ | ✅ (C-281。戻る=スキップ・Promise は必ず resolve) | — | 汎用 |
-| プラグイン設定モーダル | ✅ (psm-close) | ✅ (C-281 で追加。独自 keydown・上の .modal 優先) | ✅ (C-281) | ✅ backdrop | 汎用。`.modal` でなく JS 生成 `.plugin-settings-modal` |
+| プラグイン設定モーダル | ✅ (psm-close) | ✅ (C-281 で追加。独自 keydown。上に開き得る .modal はアイコンピッカーだけ＝それ以外の .modal (設定) が下にあっても自分が閉じる・イシュー#284 X11) | ✅ (C-281) | ✅ backdrop | 汎用。`.modal` でなく JS 生成 `.plugin-settings-modal` |
 | コマンドパレット (⌘K) | — | ✅ (独自 keydown) | ✅ (C-281) | ✅ backdrop | 汎用。`.modal` でなく hidden 制御 |
 | ドロワー (SP 左ナビ) | スクリム | ✅ | ✅ (C-281。`_openDrawer/_closeDrawer` に集約) | ✅ | 汎用。ビュー切替でも閉じる (no-op ガード) |
 | 本詳細シート (SP) | 戻るバー | — | ✅ | — | 戻るバーは `#book/` で開いている時 `history.back()` で閉じる (段を残さない・イシュー#284 D03) |
