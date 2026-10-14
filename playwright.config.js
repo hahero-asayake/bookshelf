@@ -1,4 +1,9 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+
+// webkit (iPhone相当) は CI では入れていないため、BACKNAV_WEBKIT=1 のときだけ戻る網羅マトリクスに限って足す (イシュー#284)
+const extraProjects = process.env.BACKNAV_WEBKIT === '1'
+    ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js/, use: { ...devices['iPhone 13'] } }]
+    : [];
 
 export default defineConfig({
     testDir: 'tests/e2e',
@@ -17,6 +22,7 @@ export default defineConfig({
         serviceWorkers: 'block'
     },
     projects: [
-        { name: 'chromium', use: { browserName: 'chromium' } }
+        { name: 'chromium', use: { browserName: 'chromium' } },
+        ...extraProjects
     ]
 });

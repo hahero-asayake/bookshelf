@@ -20,9 +20,9 @@
 | 公開記事モーダル (一覧＋エディタ) | ✅ | ✅ | ✅ (C-281) | — | 汎用。`closePublishPagesModal`（公開v2 S3 で記事モデルへ刷新・DOM ID は不変） |
 | 公開プレビューモーダル | ✅ | ✅ | ✅ (C-281。戻るはプレビューだけ閉じ親は残る) | ✅ | 汎用。`.modal-close` 無し=ESC は fallback+pop 安全網。生成本体は `PublishArticleGenerator.build()`（公開v2 S3） |
 | 公開パネル (記事エディタの「公開する」) | ✅ | ✅ | ✅ (戻るはパネルだけ閉じエディタは残る) | ✅ | 汎用 (`#art-publish-modal`・イシュー#230)。DOM は公開記事モーダルより後ろ。設定へのリンクを押すとパネルを閉じてから設定を開く。打鍵は `standard-ops.spec.js`・`publish-panel.spec.js` |
-| 記事エディタの ⋯ メニュー (複製・公開の取消・削除) | — | ✅ (メニューだけ閉じエディタは残る) | — (メニューは履歴に積まない) | ✅ | `#art-more-menu`・イシュー#230。ESC は capture で消費してモーダル共通 ESC より先に閉じる。削除は確認ダイアログつき |
+| 記事エディタの ⋯ メニュー (複製・公開の取消・削除) | — | ✅ (メニューだけ閉じエディタは残る) | ✅ (メニューだけ閉じる・イシュー#284 D01。開いた時に1段積む) | ✅ | `#art-more-menu`・イシュー#230。ESC は capture で消費してモーダル共通 ESC より先に閉じる。削除は確認ダイアログつき |
 | 記事エディタのブロック全画面 / PCの文章ブロック右ペイン | — (キャンセル/完了) | ✅ (完了扱い。左の記事 iframe 内にフォーカスがあっても中継) | ✅ (完了扱い) | — (PC右ペインは左の記事をクリックしても閉じない＝書きながら記事を操作するため) | `#art-fs-cancel`/`#art-fs-done`・`_artCloseBlockFs`。キャンセルは変更があれば確認 (イシュー#276)。900px超の文章ブロックは引き出しの列を置き換える右ペイン (イシュー#278・ADR-117)。打鍵は `article-pc-pane.spec.js`・`standard-ops.spec.js` |
-| 書式ツールバーの見出しボタンの3択メニュー (大見出し/小見出し/見出しを外す・長文メモ・文章ブロック共通) | — | ✅ (メニューだけ閉じエディタは残る) | — (メニューは履歴に積まない) | ✅ | `.mde-heading-menu`・イシュー#282 (②決裁2026-10-13差し戻し後の方針)。ESC は capture で消費してモーダル共通/`_bookMemoFsDone`/`_artCloseBlockFs` の ESC より先に閉じる。クリックのたびに生成し閉じたらDOMごと消す(永続パネルを持たない)。現在行の見出しレベルに✓・`EasyMDE.toggleHeading2/3`を使用。打鍵は `mde-toolbar-icons.spec.js` |
+| 書式ツールバーの見出しボタンの3択メニュー (大見出し/小見出し/見出しを外す・長文メモ・文章ブロック共通) | — | ✅ (メニューだけ閉じエディタは残る) | ✅ (メニューだけ閉じる・イシュー#284 D01) | ✅ | `.mde-heading-menu`・イシュー#282 (②決裁2026-10-13差し戻し後の方針)。ESC は capture で消費してモーダル共通/`_bookMemoFsDone`/`_artCloseBlockFs` の ESC より先に閉じる。クリックのたびに生成し閉じたらDOMごと消す(永続パネルを持たない)。現在行の見出しレベルに✓・`EasyMDE.toggleHeading2/3`を使用。打鍵は `mde-toolbar-icons.spec.js` |
 | 本棚管理モーダル | ✅ | ✅ | ✅ (C-281) | — | 汎用 |
 | 本棚フォームモーダル | ✅ | ✅ | ✅ (C-281。管理の上でも1段ずつ戻る) | — | 汎用。保存成功でも close 経由 |
 | アイコンピッカー (モーダル内モーダル) | ✅ | ✅ | ✅ (C-281。戻る=キャンセル・Promise は必ず resolve) | — | 汎用。DOM は親候補より後ろに置く (ESC 最前面判定) |
@@ -31,14 +31,15 @@
 | プラグイン設定モーダル | ✅ (psm-close) | ✅ (C-281 で追加。独自 keydown・上の .modal 優先) | ✅ (C-281) | ✅ backdrop | 汎用。`.modal` でなく JS 生成 `.plugin-settings-modal` |
 | コマンドパレット (⌘K) | — | ✅ (独自 keydown) | ✅ (C-281) | ✅ backdrop | 汎用。`.modal` でなく hidden 制御 |
 | ドロワー (SP 左ナビ) | スクリム | ✅ | ✅ (C-281。`_openDrawer/_closeDrawer` に集約) | ✅ | 汎用。ビュー切替でも閉じる (no-op ガード) |
-| 本詳細シート (SP) | 戻るバー | — | ✅ | — | |
-| confirmDialog (2択) | — | ✅=cancel | — | ✅=cancel | Enter=OK。短命のため履歴統合なし |
+| 本詳細シート (SP) | 戻るバー | — | ✅ | — | 戻るバーは `#book/` で開いている時 `history.back()` で閉じる (段を残さない・イシュー#284 D03) |
+| 記事エディタの多段 (イシュー#279) | — | (PC の Esc はモーダルごと閉じる・D09) | ✅ 戻る1回で1段: 全画面/シート/メニュー → 編集 → 閲覧 → 一覧 → 閉じる。編集から戻る=完了扱いで保存 | — | 段 = `art-fs`・`art-add-sheet`・`art-blk-menu`・`art-look-sheet`・`art-sheet`・`art-more-menu` → `art-edit-mode` → `art-viewing` → `publish-pages-modal`。打鍵は `back-nav-matrix.spec.js` |
+| confirmDialog (2択) | — | ✅=cancel | ✅=cancel (下の面は残す・Promise は必ず解決。イシュー#284 D04＝`window.confirmDialog` を包んで積む) | ✅=cancel | Enter=OK |
 | 同期衝突ダイアログ (3択) | — | ✅=何もしない | — | ✅=何もしない | 破壊選択を既定にしない。履歴統合なし |
 | 容量アラートバナー | ✅ | — | — | — | 閉じたら同レベルで再表示しない・深刻化で再表示 |
 
 - **iOS スワイプバックの感触は実機でのみ確認可**。アプリ側の前提（履歴統合）はテストで担保する。
 - モーダル内モーダル（IconPicker 等）は ESC が最前面だけを閉じること。共通 ESC ハンドラは「`.modal.show` の DOM 順で最後」を最前面とみなすため、**子になり得るモーダルは親候補より後ろの DOM 位置に置く**（C-281 で IconPicker の並び順バグを修正）。
-- **履歴統合は `_modalHistPush(id, close)` / `_modalHistPop(id, {fromHistory})` を使う**（show で push・close で pop）。個別フラグの複製 (`_importHist` 型) をこれ以上増やさない。契約: close は `{fromHistory}` を受け取り必ず pop を呼ぶ / 閉じなかったときだけ `false` を返す (履歴が積み直される) / Promise 系モーダルは戻るでも必ず resolve する。
+- **履歴統合は `_modalHistPush(id, close)` / `_modalHistPop(id, {fromHistory})` を使う**（show で push・close で pop）。設定 (一覧/詳細の2段)・取込もこの仕組みに載せた (イシュー#284・旧 `_settingsHist`/`_importHist` は廃止)。判定幅は 900px 以下に統一 (`_isHistMobile`・D10)。段には深さ `{bsModal, d}` を持たせ、popstate では着地した段の d とスタック長を数え合わせて上の面を閉じる。能動的に閉じた時は同じ操作内の pop をまとめて `history.go(-n)` 1回 (抑制カウンタは廃止・WebKit で連続 back がまとめられてカウンタが余る事故の再発防止)。閉じてすぐ別の面を開く時は、残っている段を新しい面へ引き継ぐ (replaceState・#259型の競合を作らない)。再読込後に残った段は起動時に畳む (D06)。網羅の打鍵は `tests/e2e/back-nav-matrix.spec.js` (表＝obsidian 17_戻る挙動テスト表)。契約: close は `{fromHistory}` を受け取り必ず pop を呼ぶ / 閉じなかったときだけ `false` を返す (履歴が積み直される) / Promise 系モーダルは戻るでも必ず resolve する。
 
 ## §2 実装規約（再発防止の帰納先）
 

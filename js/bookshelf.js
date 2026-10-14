@@ -619,6 +619,19 @@ class VirtualBookshelf {
         }
         // フッターの「閉じる」(#settings-modal-done) は ADR-047 P2 で廃止 (× と同機能の二重を解消)。
 
+        // D04: confirmDialog を履歴に積む。戻る=キャンセル (Esc と同じ経路で Promise を解決)
+        if (!this._confirmHistWrapped && typeof window.confirmDialog === 'function') {
+            this._confirmHistWrapped = true;
+            const orig = window.confirmDialog;
+            window.confirmDialog = (...args) => {
+                const p = orig(...args);
+                this._modalHistPush('confirm-dialog', () => {
+                    if (document.querySelector('.cfm-overlay')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                });
+                return Promise.resolve(p).finally(() => this._modalHistPop('confirm-dialog', {}));
+            };
+        }
+        this._modalHistNormalizeOnBoot();
         // 全モーダル共通: Esc で最前面の開いているモーダルを閉じる (各モーダルの × と同じ処理を呼ぶ)
         if (!this._globalModalEscBound) {
             this._globalModalEscBound = true;
@@ -5375,6 +5388,7 @@ class VirtualBookshelf {
                 this._closeDrawer();
                 this._openPalette();
             } else if (action === 'settings') {
+                // 閉じたドロワーの段は設定へ引き継がれる (_modalHistPush・イシュー#284 K2)
                 this._closeDrawer();
                 this._openSettingsModal();
             }
@@ -5382,7 +5396,8 @@ class VirtualBookshelf {
 
         // 詳細シートの戻る
         const back = document.getElementById('mobile-detail-back');
-        if (back) back.addEventListener('click', () => body.classList.remove('book-detail-pinned'));
+        // D03: #book/ で開いている時は履歴で戻す (ハッシュの段を残さない)。それ以外は従来どおり
+        if (back) back.addEventListener('click', () => { if (location.hash.startsWith('#book/')) history.back(); else body.classList.remove('book-detail-pinned'); });
 
         // Esc でドロワーを閉じる
         if (!this._mobileEscBound) {
@@ -6145,9 +6160,7 @@ class VirtualBookshelf {
         this._buildSettingsMaster();
         modal.classList.add('show');
         // スワイプ戻る用に履歴ベースを 1 つ積む (スマホのみ)。× / 戻るで巻き戻す。
-        this._settingsHist = 0;
-        this._bindSettingsPopstate();
-        if (this._isSettingsMobile()) { history.pushState({ bsSettings: 'open' }, ''); this._settingsHist = 1; }
+        this._modalHistPush('settings-modal', (o) => this._closeSettingsModal(o));
         // 開くたびに最新化 (プラン変化・別端末更新に追従)。軽い再描画のみ。重い market/プラグイン一覧は
         // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
         this._reflectAffiliateField();
@@ -6193,10 +6206,8 @@ class VirtualBookshelf {
         const target = document.getElementById(id);
         if (!content || !detail || !target || !detail.contains(target)) return;
         const mobile = this._isSettingsMobile();
-        if (mobile && push) {
-            if (this._settingsHist >= 2) history.replaceState({ bsSettings: 'cat', id }, '');
-            else { history.pushState({ bsSettings: 'cat', id }, ''); this._settingsHist = 2; }
-        }
+        // スマホは一覧→詳細で1段積む (戻る=一覧へ)。詳細から別の詳細へは積み増さない
+        if (mobile && push) this._modalHistPush('settings-cat', () => this._showSettingsMaster());
         detail.querySelectorAll('.settings-section.pane-active').forEach(el => el.classList.remove('pane-active'));
         target.open = true;
         target.classList.add('pane-active');
@@ -6244,37 +6255,8 @@ class VirtualBookshelf {
         if (this._settingsPopstateBound) return;
         this._settingsPopstateBound = true;
         const backBtn = document.getElementById('settings-back');
-        if (backBtn) backBtn.addEventListener('click', () => history.back());
-        window.addEventListener('popstate', async () => {
-            // _modalHistPop が能動クローズの後始末として呼んだ history.back() が発火させた
-            // popstate はここで消費して無視する (ユーザーの戻る操作と区別できないと、入れ子
-            // モーダルで次の要素を誤って閉じる二重pop事故になる。イシュー#165で発見・#170で対策)。
-            if (this._modalHistSuppress > 0) { this._modalHistSuppress--; return; }
-            // 汎用モーダル履歴: 戻る = 最前面のモーダルを閉じてアプリに留まる
-            const mhs = this._modalHistStack;
-            if (mhs && mhs.length) {
-                const top = mhs.pop();
-                const res = await top.close({ fromHistory: true });
-                // close が false = 閉じなかった (長文メモの未保存確認でキャンセル等)。
-                // 消費された履歴を積み直して「まだ開いている」状態と揃える
-                if (res === false) {
-                    history.pushState({ bsModal: top.id }, '');
-                    mhs.push(top);
-                }
-                return;
-            }
-            // 取込モーダル (スマホで履歴に積んである場合): 戻る = 閉じてアプリに留まる
-            const im = document.getElementById('import-modal');
-            if (im && im.classList.contains('show') && this._importHist) {
-                this._importHist = false;
-                this.closeImportModal({ fromHistory: true });
-                return;
-            }
-            const modal = document.getElementById('settings-modal');
-            if (!modal || !modal.classList.contains('show')) return; // 閉じている間は無視 (× の go(-n) 吸収)
-            if (this._settingsHist >= 2) { this._settingsHist = 1; this._showSettingsMaster(); }       // 詳細→一覧
-            else if (this._settingsHist === 1) { this._settingsHist = 0; this._closeSettingsModal({ fromHistory: true }); } // 一覧→閉じる
-        });
+        if (backBtn) backBtn.addEventListener('click', () => { this._modalHistPop('settings-cat'); this._showSettingsMaster(); });
+        window.addEventListener('popstate', (ev) => this._onModalHistPopstate(ev));
     }
 
     // 設定モーダル内の特定要素/節へジャンプ (該当カテゴリを開いて要素へフォーカス)。
@@ -7209,10 +7191,9 @@ class VirtualBookshelf {
     _closeSettingsModal(opts = {}) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        modal.classList.remove('show'); // 先に閉じる → 以降の popstate は早期 return で吸収
-        const n = opts.fromHistory ? 0 : (this._settingsHist || 0);
-        this._settingsHist = 0;
-        if (n > 0) { try { history.go(-n); } catch (_) {} } // 積んだ履歴ベース/詳細を巻き戻す
+        modal.classList.remove('show');
+        this._modalHistPop('settings-cat');
+        this._modalHistPop('settings-modal', { fromHistory: !!opts.fromHistory });
         this._showSettingsMaster(); // 次回開いた時のために一覧へ戻す
     }
 
@@ -8710,7 +8691,7 @@ class VirtualBookshelf {
     }
 
     async _artRenderCanvas() {
-        const frame = document.getElementById('art-canvas-frame');
+        let frame = document.getElementById('art-canvas-frame');
         if (!frame || !this._artDraft || !this.publishArticleGenerator) return;
         if (this._artInlineBlockId) return; // 文章をその場で入力中 (blur で描き直す)
         const gen = (this._artCanvasGen || 0) + 1;
@@ -8727,8 +8708,15 @@ class VirtualBookshelf {
             return;
         }
         if (gen !== this._artCanvasGen) return; // 後から始まった描画がある＝この結果は古い
+        // WebKit (iOS Safari) は同じ iframe への srcdoc 再代入をセッション履歴に積むため、スマホの「戻る」が
+        // iframe 側の履歴で消費され、アプリの段 (編集→閲覧 等) が1回おきに空振りしていた (イシュー#284・#279 の
+        // 「WebKit で閲覧→一覧が効かない」の原因)。毎回新しい iframe 要素へ差し替えて履歴を積ませない。
+        // 参照はすべて getElementById で都度引いているため、要素の差し替えで壊れる参照は無い。
+        const old = frame;
+        frame = old.cloneNode(false);
+        frame.removeAttribute('srcdoc');
         // 差し替え中に高さが0へ潰れると外側 (.art-col) のスクロール位置が飛ぶ。直前の高さを保ったまま差し替える
-        frame.style.minHeight = `${frame.offsetHeight}px`;
+        frame.style.minHeight = `${old.offsetHeight}px`;
         frame.onload = () => {
             frame.style.minHeight = '';
             const doc = frame.contentDocument;
@@ -8740,6 +8728,7 @@ class VirtualBookshelf {
             this._artApplyCanvasChrome();
         };
         frame.srcdoc = html;
+        old.replaceWith(frame);
     }
 
     // iframe を中身の高さまで伸ばす＝スクロールは外側1本 (二重スクロールにしない)
@@ -10532,9 +10521,8 @@ class VirtualBookshelf {
     // (fromHistory:false→history.back()) に発生する popstate を汎用ハンドラ (5923行台。スタック末尾を
     // 無条件 pop する設計) が処理し、既に自分で splice 済みの次の要素 (publish-pages-modal) を誤って
     // 閉じてしまう実測バグがあった (二重 pop・#165で発見・実機のE2Eで再現確認済み)。既存21箇所の
-    // 履歴統合ロジックを無変更で通すため、汎用ハンドラ自体は変えず、_modalHistPop の history.back()
-    // 直前に抑制カウンタ (_modalHistSuppress) を立て、それが発火させる popstate をハンドラ先頭で
-    // 消費して無視する方式で二重popを解消した (_modalHistPop/popstateハンドラの実装参照)。
+    // 履歴統合ロジックを無変更で通すため、当時は抑制カウンタで二重popを解消した。イシュー#284 で
+    // 段に深さを持たせて数え合わせる方式 (_onModalHistPopstate) に置き換え、カウンタは廃止した。
     // イシュー#168: 900px超では本の引き出しが「畳める」ようになったため、本エリアの常駐ボタン
     // (art-shelf-add/art-book-pick) から共通で呼べるよう、ここで「開く」意味に幅で分岐させる。
     // _artCloseSheet() 側は分岐させない (ビュー切替時の自動クローズ等・900px以下専用の複数箇所から
@@ -10965,9 +10953,13 @@ class VirtualBookshelf {
         const btn = document.getElementById('art-more-btn');
         if (!menu || !btn) return;
         const open = typeof force === 'boolean' ? force : menu.hidden;
+        const wasOpen = !menu.hidden;
         menu.hidden = !open;
         btn.setAttribute('aria-expanded', String(open));
         if (open) this._placeAnchoredMenu(btn, menu);
+        // 戻る=メニューだけ閉じる (D01)。開いた時だけ1段積み、閉じたら畳む
+        if (open && !wasOpen) this._modalHistPush('art-more-menu', (o) => this._artToggleMoreMenu(false, o));
+        else if (!open && wasOpen) this._modalHistPop('art-more-menu', { fromHistory: !!(arguments[1] && arguments[1].fromHistory) });
     }
 
     // ===== 公開パネル (イシュー#230): 公開前チェック / 公開先 / タグ / 広告 =====
@@ -11079,7 +11071,7 @@ class VirtualBookshelf {
         document.querySelectorAll('#art-publish-modal .art-pub-link[data-settings]').forEach(a => a.addEventListener('click', (e) => {
             e.preventDefault();
             const id = a.dataset.settings;
-            this._artClosePublishPanel();
+            // パネルを閉じる処理は _openSettingsModal 側で段の引き継ぎと一緒に行う (D05)
             this._openSettingsModal(id);
         }));
         const m = document.getElementById('art-publish-modal');
@@ -11692,6 +11684,7 @@ class VirtualBookshelf {
                 <span>${esc(it.label)}</span><span class="mde-heading-check">${checkSvg}</span></button>`;
         }).join('');
         document.body.appendChild(menu);
+        this._modalHistPush('mde-heading-menu', (o) => this._mdeCloseHeadingMenu(o)); // D01
         menu.querySelectorAll('.mde-heading-item').forEach((item) => {
             item.addEventListener('click', () => {
                 this._mdeApplyHeadingLevel(easymde, Number(item.dataset.level));
@@ -11703,11 +11696,12 @@ class VirtualBookshelf {
         menu._mdeAnchorBtn = btn;
     }
 
-    _mdeCloseHeadingMenu() {
+    _mdeCloseHeadingMenu({ fromHistory = false } = {}) {
         const menu = document.querySelector('.mde-heading-menu');
         if (!menu) return;
         if (menu._mdeAnchorBtn) menu._mdeAnchorBtn.setAttribute('aria-expanded', 'false');
         menu.remove();
+        this._modalHistPop('mde-heading-menu', { fromHistory }); // D01
     }
 
     _mdeCurrentHeadingLevel(easymde) {
@@ -11940,18 +11934,36 @@ class VirtualBookshelf {
     }
 
     // スマホ: モーダルを履歴に積む (物理戻る/スワイプバック = アプリ離脱でなくモーダルを閉じる)。
-    // 設定・取込は個別実装 (_settingsHist/_importHist)。それ以外の単純モーダルはこの汎用版を使う。
-    // 新しいモーダルを作ったら show で _modalHistPush、close で _modalHistPop を呼ぶ (ui-standards §1)。
-    // isMobile: 既定は _isSettingsMobile() (768px)。判定幅が異なる面 (例: 900px の記事エディタ
-    // ボトムシート・イシュー#165) は個別に判定関数を渡す。既存呼び出しは無変更で従来どおり動く。
+    // 新しい面を作ったら show で _modalHistPush、close で _modalHistPop を呼ぶ (ui-standards §1)。
+    // 設定 (一覧/詳細の2段)・取込・メニュー・確認ダイアログもすべてこの仕組みに載る (イシュー#284・D12)。
+    // 方式 (イシュー#284 K5): 積んだ段に深さ d (= 積んだ後のスタック長) を持たせ、popstate では
+    // 着地した段の d とスタック長を数え合わせて、d より上の面を閉じる。能動的に閉じた時は
+    // 同じ操作内の pop をまとめて history.go(-n) を1回だけ呼ぶ。旧方式 (pop ごとに history.back()
+    // + 抑制カウンタ) は WebKit で連続 back がまとめられた時にカウンタが余り、次のユーザーの戻るを
+    // 食っていた (イシュー#284 H1)。数え合わせ方式は余分な popstate が来ても来なくても自己修復する。
+    // isMobile: 既定は _isHistMobile() (900px 以下・イシュー#284 K6 で判定幅を統一)。
+    _isHistMobile() {
+        try { return window.matchMedia('(max-width: 900px)').matches; } catch (_) { return false; }
+    }
+
+    _histStateDepth(st) {
+        if (!st) return 0;
+        if (typeof st.d === 'number') return st.d;
+        return (st.bsModal || st.bsSettings || st.bsImport) ? 1 : 0; // 旧形式の段 (更新前のセッション)
+    }
+
     _modalHistPush(id, close, { isMobile } = {}) {
-        const mobile = isMobile ? isMobile() : this._isSettingsMobile();
+        const mobile = isMobile ? isMobile() : this._isHistMobile();
         if (!mobile) return;
         this._bindSettingsPopstate();
-        this._modalHistStack = this._modalHistStack || [];
-        if (this._modalHistStack.some((e) => e.id === id)) return; // 二重オープンで積み増さない
-        history.pushState({ bsModal: id }, '');
-        this._modalHistStack.push({ id, close });
+        const st = this._modalHistStack = this._modalHistStack || [];
+        if (st.some((e) => e.id === id)) return; // 二重オープンで積み増さない
+        // 同じ操作の中で直前に閉じた段 (まだ履歴に残っている段) があれば、back→push にせず
+        // その段を新しい面へ引き継ぐ (イシュー#259/#284 K2: 非同期の back が新しい段を消す罠を作らない)
+        const excess = this._histStateDepth(history.state) - st.length;
+        st.push({ id, close });
+        if (excess >= 1 && !this._histGoPending) history.replaceState({ bsModal: id, d: st.length }, '');
+        else history.pushState({ bsModal: id, d: st.length }, '');
     }
 
     _modalHistPop(id, { fromHistory = false } = {}) {
@@ -11960,14 +11972,63 @@ class VirtualBookshelf {
         const i = st.findIndex((e) => e.id === id);
         if (i === -1) return;
         st.splice(i, 1);
-        // × や ESC で閉じたときは自前で積んだ履歴を掃除する。popstate 経由なら消費済み。
-        // この history.back() が発火させる popstate は「能動的に閉じた後始末」であって
-        // ユーザーの戻る操作ではないため、抑制カウンタで popstate ハンドラ側に無視させる
-        // (イシュー#170: 入れ子時に次の要素を誤って閉じる二重pop対策)。
-        if (!fromHistory) {
-            this._modalHistSuppress = (this._modalHistSuppress || 0) + 1;
-            try { history.back(); } catch (_) { this._modalHistSuppress--; }
+        // × や ESC で閉じたときは自前で積んだ段を巻き戻す。popstate 経由なら消費済み。
+        // 同じ操作の中の複数の pop はマイクロタスクでまとめ、history.go(-n) 1回にする。
+        if (!fromHistory) this._modalHistScheduleSync();
+    }
+
+    _modalHistScheduleSync() {
+        if (this._histSyncQueued) return;
+        this._histSyncQueued = true;
+        queueMicrotask(() => { this._histSyncQueued = false; this._modalHistSync(); });
+    }
+
+    _modalHistSync() {
+        if (this._histGoPending) return; // 先の go の着地 (popstate) で改めて数え合わせる
+        const st = this._modalHistStack || [];
+        const n = this._histStateDepth(history.state) - st.length;
+        if (n <= 0) return;
+        this._histGoPending = true;
+        this._histExpect = st.length;
+        clearTimeout(this._histGoTimer);
+        // 着地の popstate が来ない環境 (古い WebKit 等) でも詰まらないよう、一定時間で待ちを解く
+        this._histGoTimer = setTimeout(() => { this._histGoPending = false; this._histExpect = null; }, 1500);
+        try { history.go(-n); } catch (_) { this._histGoPending = false; this._histExpect = null; }
+    }
+
+    async _onModalHistPopstate(ev) {
+        const d = this._histStateDepth(ev.state);
+        const st = this._modalHistStack = this._modalHistStack || [];
+        if (this._histGoPending) {
+            const exp = this._histExpect;
+            this._histGoPending = false; this._histExpect = null; clearTimeout(this._histGoTimer);
+            if (d === exp) { this._modalHistSync(); return; } // 自分の go の着地 (その間に閉じた分があれば続けて畳む)
         }
+        if (st.length > d) {
+            // 戻る = 着地した段より上の面を、上から1つずつ閉じる (通常は1つ)
+            while (st.length > d) {
+                const top = st.pop();
+                const res = await top.close({ fromHistory: true });
+                // close が false = 閉じなかった (長文メモの保存失敗等)。段を積み直して「まだ開いている」と揃える
+                if (res === false) {
+                    st.push(top);
+                    history.pushState({ bsModal: top.id, d: st.length }, '');
+                    return;
+                }
+            }
+            return;
+        }
+        // 行き先の無い段 (再読込後に残った段・引き継ぎで余った段) に着地した: 空振りさせずにさらに戻る (D06)
+        if (d > 0 && d >= st.length) { try { history.back(); } catch (_) {} }
+    }
+
+    // 起動時: 再読込前に積んだ段が残っていれば、開いている面は無いので段を畳んで元の位置へ戻す (イシュー#284 K4・D06)
+    _modalHistNormalizeOnBoot() {
+        const d = this._histStateDepth(history.state);
+        if (d <= 0) return;
+        this._bindSettingsPopstate();
+        this._modalHistStack = this._modalHistStack || [];
+        this._modalHistSync();
     }
 
     showExclusionsModal() {
@@ -12519,11 +12580,7 @@ class VirtualBookshelf {
         modal.classList.add('show');
         // スマホ: 物理戻る/ブラウザバックで「アプリ離脱でなくモーダルを閉じる」ため履歴に積む (設定モーダルと同作法・ui-standards §1)
         // popstate 配線は設定モーダル初回オープン時だけだったので、取込単独オープンでも配線する
-        if (this._isSettingsMobile()) {
-            this._bindSettingsPopstate();
-            history.pushState({ bsImport: 'open' }, '');
-            this._importHist = true;
-        }
+        this._modalHistPush('import-modal', (o) => this.closeImportModal(o));
     }
 
     /**
@@ -12538,8 +12595,7 @@ class VirtualBookshelf {
         resultsDiv.style.display = 'none';
         resultsDiv.innerHTML = '';
         // 自前で積んだ履歴を掃除 (×/ESC で閉じた場合)。popstate 経由なら不要
-        if (this._importHist && !fromHistory) { this._importHist = false; try { history.back(); } catch (_) {} }
-        this._importHist = false;
+        this._modalHistPop('import-modal', { fromHistory });
     }
 
     /** 取込モーダルの端末レーンを UA から自動判定 ('pc' | 'ios' | 'android') */
