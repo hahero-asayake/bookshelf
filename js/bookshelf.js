@@ -4329,7 +4329,8 @@ class VirtualBookshelf {
         document.getElementById('report-reason').value = '';
         this._setReportError('');
         modal.classList.add('show');
-        this._modalHistPush('report-modal', (o) => this.closeReportModal(o));
+        this._modalHistPush('report-modal', (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)));
+        this._formSnapTake('report-modal');
     }
 
     closeReportModal({ fromHistory = false } = {}) {
@@ -5103,7 +5104,7 @@ class VirtualBookshelf {
             box.querySelector('.cfm-cancel').textContent = '何もしない';
             box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
             box.querySelector('.cfm-ok').textContent = '再読込して最新版を取得';
-            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(r); };
+            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); this._modalHistPop('sync-conflict'); resolve(r); };
             const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
             box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
             box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
@@ -5113,6 +5114,8 @@ class VirtualBookshelf {
             overlay.appendChild(box);
             document.body.appendChild(overlay);
             box.querySelector('.cfm-ok').focus();
+            // スマホの戻る = 「何もしない」(破壊的な選択を既定にしない・イシュー#284 D04)
+            this._modalHistPush('sync-conflict', () => done('cancel'));
         });
     }
 
@@ -7665,7 +7668,8 @@ class VirtualBookshelf {
         this.currentEditingBookshelf = bookshelfToEdit;
 
         modal.classList.add('show');
-        this._modalHistPush('bookshelf-form-modal', (o) => this.closeBookshelfForm(o));
+        this._modalHistPush('bookshelf-form-modal', (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)));
+        this._formSnapTake('bookshelf-form-modal');
         nameInput.focus();
     }
 
@@ -11957,6 +11961,39 @@ class VirtualBookshelf {
         try { return window.matchMedia('(max-width: 900px)').matches; } catch (_) { return false; }
     }
 
+    // D13 (イシュー#284): 入力途中のフォームを「戻る」で閉じる時、開いた時から変更があれば破棄を確認する。
+    // 開いた時に入力欄の値を控え (_formSnapTake)、戻る (fromHistory) の close でだけ比べる。
+    // 変更があれば、先にフォームの段を積み直してから確認を出す (確認も1段積む)。「編集を続ける」なら
+    // そのまま留まり、「破棄する」なら能動的に閉じる (段は通常の pop で畳む)。popstate の中で段を
+    // 積み直す時に確認の段と順序が競合しないよう、ハンドラ側の「false で積み直す」経路は使わない。
+    _formSnapOf(id) {
+        const el = document.getElementById(id);
+        if (!el) return '';
+        return JSON.stringify(Array.from(el.querySelectorAll('input, textarea, select'))
+            .filter((x) => x.type !== 'hidden' && x.type !== 'file')
+            .map((x) => (x.type === 'checkbox' || x.type === 'radio') ? x.checked : x.value));
+    }
+
+    _formSnapTake(id) {
+        this._formSnaps = this._formSnaps || {};
+        this._formSnaps[id] = this._formSnapOf(id);
+    }
+
+    async _formBackGuard(id, o, doClose) {
+        const snaps = this._formSnaps || {};
+        if (o && o.fromHistory && id in snaps && snaps[id] !== this._formSnapOf(id)) {
+            this._modalHistPush(id, (o2) => this._formBackGuard(id, o2, doClose));
+            const ok = await window.confirmDialog({ title: '入力した内容を破棄しますか？', message: '戻ると、入力した内容は保存されません。', okLabel: '破棄する', cancelLabel: '編集を続ける', danger: true });
+            if (!ok) return true;
+            delete snaps[id];
+            doClose({});
+            return true;
+        }
+        delete snaps[id];
+        doClose(o);
+        return true;
+    }
+
     _histStateDepth(st) {
         if (!st) return 0;
         if (typeof st.d === 'number') return st.d;
@@ -13322,7 +13359,8 @@ class VirtualBookshelf {
     showAddBookModal() {
         const modal = document.getElementById('add-book-modal');
         modal.classList.add('show');
-        this._modalHistPush('add-book-modal', (o) => this.closeAddBookModal(o));
+        this._modalHistPush('add-book-modal', (o) => this._formBackGuard('add-book-modal', o, (oo) => this.closeAddBookModal(oo)));
+        this._formSnapTake('add-book-modal');
     }
 
     /**

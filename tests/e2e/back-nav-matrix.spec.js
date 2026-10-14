@@ -1200,3 +1200,171 @@ test.describe('戻る網羅マトリクス 残り2 長文メモ (イシュー#28
         expect.soft(Math.abs(y1 - y0)).toBeLessThanOrEqual(2);
     }));
 });
+
+// ===== 表 §4-3 の残り (その3: 管理系モーダル 2-5・確認/トースト 2-6) =====
+test.describe('戻る網羅マトリクス 残り3 管理系・確認 (イシュー#284 差し戻し)', () => {
+    const openMgr = (page) => page.evaluate(() => window.bookshelf.showBookshelfManager());
+    for (const [cid, how] of [['G01', 'back'], ['G03', 'close'], ['G04', 'esc'], ['G05', 'history']]) {
+        test(`${cid} 本棚管理 ${how}＝閉じ、段が余らない`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await openMgr(page); await settle(page);
+            if (how === 'back') await back(page);
+            else if (how === 'history') { await page.evaluate(() => history.back()); await settle(page); }
+            else if (how === 'close') { await tap(page, '#bookshelf-modal .modal-close'); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).not.toContain('bookshelf-modal');
+            expectSameHistory(before, s);
+        }));
+    }
+    for (const [cid, how] of [['G08', 'close'], ['G09', 'esc']]) {
+        test(`${cid} 本棚管理→フォーム ${how}＝フォームだけ閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r) => {
+            await openMgr(page);
+            await page.evaluate(() => window.bookshelf.showBookshelfForm()); await settle(page);
+            if (how === 'close') await tap(page, '#bookshelf-form-modal .modal-close'); else await page.keyboard.press('Escape');
+            await settle(page);
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).toEqual(['bookshelf-modal']);
+            expect.soft(s.stack).toEqual(['bookshelf-modal']);
+        }));
+    }
+    test('G10 フォーム(名前入力あり)→戻る＝破棄確認 (D13)。続ける＝留まる／破棄＝閉じる', async ({ page }, ti) => caseRun(page, ti, 'G10', async (r) => {
+        await openMgr(page);
+        await page.evaluate(() => window.bookshelf.showBookshelfForm()); await settle(page);
+        await page.fill('#bookshelf-name', '入力途中284');
+        await back(page);
+        let s = await snap(page); await r.step(page, 'confirm');
+        expect.soft(s.menus.confirm, '破棄確認が出る').toBe(true);
+        expect.soft(s.openModals, 'フォームは開いたまま').toContain('bookshelf-form-modal');
+        r.rec.overlays = await page.locator('.cfm-overlay').count();
+        await tap(page, '.cfm-overlay .cfm-cancel'); await settle(page, 600);
+        s = await snap(page); await r.step(page, 'keep');
+        expect.soft(s.openModals, '続ける＝留まる').toContain('bookshelf-form-modal');
+        expect.soft(s.stack, '続ける＝段は2つ').toEqual(['bookshelf-modal', 'bookshelf-form-modal']);
+        expect.soft(await page.inputValue('#bookshelf-name')).toBe('入力途中284');
+        await back(page);
+        await tap(page, '.cfm-overlay .cfm-ok'); await settle(page, 600);
+        s = await snap(page); await r.step(page, 'discard');
+        expect.soft(s.openModals, '破棄＝フォームだけ閉じる').toEqual(['bookshelf-modal']);
+        expect.soft(s.stack).toEqual(['bookshelf-modal']);
+        await back(page);
+        s = await snap(page); await r.step(page, 'back-mgr');
+        expect.soft(s.openModals, 'もう1回で管理も閉じる').toEqual([]);
+        expect.soft(s.state).toBeNull();
+    }));
+    for (const [cid, how] of [['G13', 'close'], ['G14', 'esc']]) {
+        test(`${cid} フォーム→アイコンピッカー ${how}＝ピッカーだけ閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r) => {
+            await page.evaluate(() => window.bookshelf.showBookshelfForm()); await settle(page);
+            await page.locator('#bookshelf-form-modal [id*="icon"]:visible').first().tap(); await settle(page);
+            expect.soft(await page.locator('#icon-picker-modal.show').count()).toBe(1);
+            if (how === 'close') await tap(page, '#icon-picker-modal .modal-close'); else await page.keyboard.press('Escape');
+            await settle(page);
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).toEqual(['bookshelf-form-modal']);
+            expect.soft(s.stack).toEqual(['bookshelf-form-modal']);
+        }));
+    }
+    for (const [cid, how] of [['G16', 'back'], ['G18', 'close'], ['G19', 'esc']]) {
+        test(`${cid} 子孫選択 ${how}＝スキップ ([] で解決)・段が余らない`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await page.evaluate(() => { const bs = window.bookshelf; window.__pick = 'pending'; bs._chooseDescendantsToAddTo(bs.userData.bookshelves.filter((b) => !b.isSpecial)).then((v) => { window.__pick = v; }); });
+            await expect(page.locator('#descendants-pick-modal')).toHaveClass(/show/);
+            if (how === 'back') await back(page);
+            else if (how === 'close') { await tap(page, '#descendants-pick-modal-close'); await settle(page); }
+            else { await page.keyboard.press('Escape'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await page.evaluate(() => window.__pick), 'Promise は [] で解決').toEqual([]);
+            expect.soft(s.openModals).toEqual([]);
+            expectSameHistory(before, s);
+        }));
+    }
+    test('G28 手動追加(入力途中)→戻る＝破棄確認 (D13)', async ({ page }, ti) => caseRun(page, ti, 'G28', async (r, before) => {
+        await page.evaluate(() => window.bookshelf.showAddBookModal()); await settle(page);
+        const input = page.locator('#add-book-modal input:visible').first();
+        await input.fill('B0TEST2840');
+        await back(page);
+        let s = await snap(page); await r.step(page, 'confirm');
+        expect.soft(s.menus.confirm).toBe(true);
+        await tap(page, '.cfm-overlay .cfm-ok'); await settle(page, 600);
+        s = await snap(page); await r.step(page, 'discard');
+        expect.soft(s.openModals).toEqual([]);
+        expectSameHistory(before, s);
+    }));
+    const openReport = (page) => page.evaluate(() => { window.bookshelf.openReportModal('https://example.org/a/b/'); }); // 戻り値の Promise (ログイン案内等) を待たない
+    for (const [cid, how] of [['G29', 'back'], ['G31', 'close'], ['G32', 'esc']]) {
+        test(`${cid} 通報ダイアログ(入力なし) ${how}＝閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await openReport(page); await settle(page);
+            if (await page.locator('.cfm-overlay').count()) { r.rec.note = '未ログインの確認が先に出た'; await tap(page, '.cfm-overlay .cfm-cancel'); await settle(page); }
+            const opened = await page.locator('#report-modal.show').count();
+            r.rec.opened = opened;
+            if (opened) {
+                if (how === 'back') await back(page);
+                else if (how === 'close') { await tap(page, '#report-modal-close'); await settle(page); }
+                else { await page.keyboard.press('Escape'); await settle(page); }
+            }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(s.openModals).not.toContain('report-modal');
+            expectSameHistory(before, s);
+        }));
+    }
+    test('G33 通報ダイアログ(入力途中)→戻る＝破棄確認 (D13)', async ({ page }, ti) => caseRun(page, ti, 'G33', async (r) => {
+        await openReport(page); await settle(page);
+        if (await page.locator('.cfm-overlay').count()) { await tap(page, '.cfm-overlay .cfm-cancel'); await settle(page); }
+        const opened = await page.locator('#report-modal.show').count();
+        r.rec.opened = opened;
+        test.skip(!opened, '通報ダイアログが開かない環境 (未ログイン確認で中断)');
+        await page.fill('#report-reason', '入力途中');
+        await back(page);
+        const s = await snap(page); await r.step(page, 'confirm');
+        expect.soft(s.menus.confirm).toBe(true);
+        expect.soft(s.openModals).toContain('report-modal');
+    }));
+    for (const [cid, how] of [['G34', 'back'], ['G35', 'close']]) {
+        test(`${cid} プラグイン設定(単独) ${how}＝閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
+            await page.evaluate(() => window.bookshelf._openPluginSettings('fixture-plugin')); await settle(page);
+            if (how === 'back') await back(page); else { await tap(page, '#plugin-settings-modal .psm-close'); await settle(page); }
+            const s = await snap(page); await r.step(page, how);
+            expect.soft(await page.locator('#plugin-settings-modal').isVisible()).toBe(false);
+            expectSameHistory(before, s);
+        }));
+    }
+    test('D01c 記事⋯→削除→確認中に戻る＝確認だけキャンセル (D04)', async ({ page }, ti) => caseRun(page, ti, 'D01c', async (r) => {
+        await openArticleList(page);
+        await tap(page, '#art-new');
+        await page.fill('#art-title', '削除確認284');
+        await tap(page, '#art-more-btn');
+        await tap(page, '#art-del');
+        await expect(page.locator('.cfm-overlay')).toBeVisible();
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.menus.confirm).toBe(false);
+        expect.soft(s.openModals).toContain('publish-pages-modal');
+        expect.soft(await page.locator('#art-edit-view').isVisible(), '記事は残る').toBe(true);
+    }));
+    test('D02c 確認ダイアログ→Esc＝キャンセル・下の面は残る', async ({ page }, ti) => caseRun(page, ti, 'D02c', async (r) => {
+        await openArticleList(page);
+        await tap(page, '#art-new');
+        await page.fill('#art-title', '削除確認284');
+        await tap(page, '#art-more-btn');
+        await tap(page, '#art-del');
+        await page.keyboard.press('Escape'); await settle(page);
+        const s = await snap(page); await r.step(page, 'esc');
+        expect.soft(s.menus.confirm).toBe(false);
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing']);
+    }));
+    test('D03c 同期衝突ダイアログ→戻る＝「何もしない」で閉じる (D04)', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r, before) => {
+        await page.evaluate(() => { window.bookshelf._conflictNotified = false; window.__cf = window.bookshelf._showConflictDialog('GitHub'); window.__cf.then((v) => { window.__cfv = v; }); });
+        await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(await page.locator('#sync-conflict-dialog').count()).toBe(0);
+        expect.soft(await page.evaluate(() => window.__cfv)).toBe('cancel');
+        expectSameHistory(before, s);
+    }));
+    test('D04c トースト表示中にドロワー→戻る＝ドロワーだけ閉じる', async ({ page }, ti) => caseRun(page, ti, 'D04c', async (r, before) => {
+        await page.evaluate(() => window.toast && window.toast('テスト284'));
+        await openDrawerTap(page);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.drawer).toBe(false);
+        expectSameHistory(before, s);
+    }));
+});
