@@ -702,6 +702,8 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         expect.soft(s.openModals).toEqual([]);
     }));
     test('R13 URL直 ?report= →通報ダイアログ→戻る＝閉じ、クエリは消えたまま', async ({ page }, ti) => caseRun(page, ti, 'R13', async (r) => {
+        // 通報はハブのログインが前提。起動時に ?report= を処理するので、保存済みの同期設定にハブの鍵を入れておく
+        await page.addInitScript(() => { try { const c = JSON.parse(localStorage.getItem('bookshelf_sync') || '{}'); c.hub = { key: 'test-key', apiBase: 'https://hub.example.invalid' }; localStorage.setItem('bookshelf_sync', JSON.stringify(c)); } catch (_) {} });
         await page.goto('about:blank');
         await page.goto('/index.html?report=' + encodeURIComponent('https://example.org/a/b/'));
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
@@ -1288,7 +1290,15 @@ test.describe('戻る網羅マトリクス 残り3 管理系・確認 (イシュ
         expect.soft(s.openModals).toEqual([]);
         expectSameHistory(before, s);
     }));
-    const openReport = (page) => page.evaluate(() => { window.bookshelf.openReportModal('https://example.org/a/b/'); }); // 戻り値の Promise (ログイン案内等) を待たない
+    // 通報はハブのログインが前提 (未ログインはログイン案内の確認だけが出る)。SyncConfigManager.load を差し替えてログイン状態にする
+const openReport = (page) => page.evaluate(() => {
+    if (!window.__hubStub) {
+        window.__hubStub = true;
+        const orig = SyncConfigManager.load.bind(SyncConfigManager);
+        SyncConfigManager.load = () => ({ ...orig(), hub: { key: 'test-key', apiBase: 'https://hub.example.invalid' } });
+    }
+    window.bookshelf.openReportModal('https://example.org/a/b/');
+});
     for (const [cid, how] of [['G29', 'back'], ['G31', 'close'], ['G32', 'esc']]) {
         test(`${cid} 通報ダイアログ(入力なし) ${how}＝閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
             await openReport(page); await settle(page);
@@ -1310,7 +1320,7 @@ test.describe('戻る網羅マトリクス 残り3 管理系・確認 (イシュ
         if (await page.locator('.cfm-overlay').count()) { await tap(page, '.cfm-overlay .cfm-cancel'); await settle(page); }
         const opened = await page.locator('#report-modal.show').count();
         r.rec.opened = opened;
-        test.skip(!opened, '通報ダイアログが開かない環境 (未ログイン確認で中断)');
+        expect(opened, 'ログイン状態で通報ダイアログが開く').toBe(1);
         await page.fill('#report-reason', '入力途中');
         await back(page);
         const s = await snap(page); await r.step(page, 'confirm');
@@ -1350,14 +1360,18 @@ test.describe('戻る網羅マトリクス 残り3 管理系・確認 (イシュ
         expect.soft(s.menus.confirm).toBe(false);
         expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing']);
     }));
-    test('D03c 同期衝突ダイアログ→戻る＝「何もしない」で閉じる (D04)', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r, before) => {
+    test('D03c 同期衝突ダイアログ→戻る＝「何もしない」で閉じる (D04)・下の面は残る', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r) => {
+        // 確認ダイアログは履歴に積まない規則 (②決裁)。下に面 (ここではドロワー) がある時、戻る＝確認だけキャンセルで下は残る
+        await openDrawerTap(page);
         await page.evaluate(() => { window.bookshelf._conflictNotified = false; window.__cf = window.bookshelf._showConflictDialog('GitHub'); window.__cf.then((v) => { window.__cfv = v; }); });
         await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
         await back(page);
         const s = await snap(page); await r.step(page, 'back1');
         expect.soft(await page.locator('#sync-conflict-dialog').count()).toBe(0);
         expect.soft(await page.evaluate(() => window.__cfv)).toBe('cancel');
-        expectSameHistory(before, s);
+        expect.soft(s.drawer, 'ドロワーは残る').toBe(true);
+        expect.soft(s.stack).toEqual(['drawer']);
+        expect.soft(s.state && s.state.d).toBe(1);
     }));
     test('D04c トースト表示中にドロワー→戻る＝ドロワーだけ閉じる', async ({ page }, ti) => caseRun(page, ti, 'D04c', async (r, before) => {
         await page.evaluate(() => window.toast && window.toast('テスト284'));

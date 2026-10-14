@@ -619,18 +619,6 @@ class VirtualBookshelf {
         }
         // フッターの「閉じる」(#settings-modal-done) は ADR-047 P2 で廃止 (× と同機能の二重を解消)。
 
-        // D04: confirmDialog を履歴に積む。戻る=キャンセル (Esc と同じ経路で Promise を解決)
-        if (!this._confirmHistWrapped && typeof window.confirmDialog === 'function') {
-            this._confirmHistWrapped = true;
-            const orig = window.confirmDialog;
-            window.confirmDialog = (...args) => {
-                const p = orig(...args);
-                this._modalHistPush('confirm-dialog', () => {
-                    if (document.querySelector('.cfm-overlay')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                });
-                return Promise.resolve(p).finally(() => this._modalHistPop('confirm-dialog', {}));
-            };
-        }
         this._modalHistNormalizeOnBoot();
         // 全モーダル共通: Esc で最前面の開いているモーダルを閉じる (各モーダルの × と同じ処理を呼ぶ)
         if (!this._globalModalEscBound) {
@@ -5104,7 +5092,7 @@ class VirtualBookshelf {
             box.querySelector('.cfm-cancel').textContent = '何もしない';
             box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
             box.querySelector('.cfm-ok').textContent = '再読込して最新版を取得';
-            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); this._modalHistPop('sync-conflict'); resolve(r); };
+            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(r); };
             const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
             box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
             box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
@@ -5114,8 +5102,6 @@ class VirtualBookshelf {
             overlay.appendChild(box);
             document.body.appendChild(overlay);
             box.querySelector('.cfm-ok').focus();
-            // スマホの戻る = 「何もしない」(破壊的な選択を既定にしない・イシュー#284 D04)
-            this._modalHistPush('sync-conflict', () => done('cancel'));
         });
     }
 
@@ -11963,9 +11949,8 @@ class VirtualBookshelf {
 
     // D13 (イシュー#284): 入力途中のフォームを「戻る」で閉じる時、開いた時から変更があれば破棄を確認する。
     // 開いた時に入力欄の値を控え (_formSnapTake)、戻る (fromHistory) の close でだけ比べる。
-    // 変更があれば、先にフォームの段を積み直してから確認を出す (確認も1段積む)。「編集を続ける」なら
-    // そのまま留まり、「破棄する」なら能動的に閉じる (段は通常の pop で畳む)。popstate の中で段を
-    // 積み直す時に確認の段と順序が競合しないよう、ハンドラ側の「false で積み直す」経路は使わない。
+    // 変更があれば確認を出す (確認は履歴に積まない)。「編集を続ける」なら false を返し、popstate ハンドラが
+    // 段を積み直してフォームに留まる。「破棄する」ならそのまま閉じる (段は戻る操作で消費済み)。
     _formSnapOf(id) {
         const el = document.getElementById(id);
         if (!el) return '';
@@ -11982,12 +11967,8 @@ class VirtualBookshelf {
     async _formBackGuard(id, o, doClose) {
         const snaps = this._formSnaps || {};
         if (o && o.fromHistory && id in snaps && snaps[id] !== this._formSnapOf(id)) {
-            this._modalHistPush(id, (o2) => this._formBackGuard(id, o2, doClose));
             const ok = await window.confirmDialog({ title: '入力した内容を破棄しますか？', message: '戻ると、入力した内容は保存されません。', okLabel: '破棄する', cancelLabel: '編集を続ける', danger: true });
-            if (!ok) return true;
-            delete snaps[id];
-            doClose({});
-            return true;
+            if (!ok) return false; // 留まる: popstate ハンドラが段を積み直す
         }
         delete snaps[id];
         doClose(o);
@@ -12051,6 +12032,16 @@ class VirtualBookshelf {
             const exp = this._histExpect;
             this._histGoPending = false; this._histExpect = null; clearTimeout(this._histGoTimer);
             if (d === exp) { this._modalHistSync(); return; } // 自分の go の着地 (その間に閉じた分があれば続けて畳む)
+        }
+        // 確認ダイアログ (confirmDialog・同期衝突。どちらも .cfm-overlay) は履歴に積まない (イシュー#284 D04)。
+        // 出ている間の戻るは「確認のキャンセル」(Esc と同じ経路) とし、消費された段は積み直して下の面を残す
+        if (document.querySelector('.cfm-overlay')) {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            if (st.length > d) {
+                const top = st[st.length - 1];
+                history.pushState({ bsModal: top.id, d: st.length }, '');
+            }
+            return;
         }
         if (st.length > d) {
             // 戻る = 着地した段より上の面を、上から1つずつ閉じる (通常は1つ)
