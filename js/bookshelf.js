@@ -21,7 +21,7 @@ const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
 // 生成器の .blk の box-model (margin/padding) は一切変えない＝outline と absolute/行の追加だけ。
 // 色は記事の配色トークン (--acc/--line/--sub) を使い、どの配色12案の上でも馴染ませる。
 const ART_CANVAS_CHROME_CSS = `
-.art-cv-blk{position:relative;outline:1.5px dashed var(--acc);outline-offset:4px;border-radius:6px}
+.art-cv-blk{position:relative;outline:1.5px dashed var(--acc);outline-offset:4px;border-radius:6px;padding-top:26px}
 .art-cv-ops{position:absolute;top:-14px;right:4px;z-index:10}
 .art-cv-grip{position:absolute;top:-32px;left:4px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:grab;padding:0;touch-action:none;z-index:10}
 .art-cv-grip:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
@@ -32,7 +32,14 @@ body.art-cv-pc .art-cv-ops{top:-32px}
 .art-cv-more::after{content:'';position:absolute;inset:-8px}
 .art-cv-ins{min-height:44px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
 .art-cv-ins-btn{min-height:44px;min-width:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--acc);background:var(--bg);color:var(--acc);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700}
-.art-cv-empty{min-height:56px;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:14px}
+/* イシュー#288: 枠の左上、⋯(.art-cv-ops)と同じ上辺の線上に乗せる。#278のつまみ(.art-cv-grip)と同じ型(負のtopで枠の外側)。
+   本文側は .art-cv-blk の padding-top で避け、縦の重なりを作らない(②指摘: 見出しの1文字目に重なっていた)。 */
+.art-cv-chip{position:absolute;top:-14px;left:4px;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px;border-radius:999px;background:var(--line2);color:var(--fg2);font-size:12px;font-weight:600;white-space:nowrap;z-index:10;box-sizing:border-box}
+.art-cv-chip svg{width:14px;height:14px;flex:0 0 auto}
+body.art-cv-pc .art-cv-chip{top:-32px;left:36px}
+.art-cv-empty{min-height:64px;padding-top:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-sizing:border-box}
+.art-cv-empty-guide{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:38px;border:none;background:transparent;color:var(--sub);font:inherit;font-size:13px;cursor:pointer;padding:8px;text-align:center}
+.art-cv-empty-guide:hover{color:var(--acc)}
 .art-cv-empty-editing{display:block}
 .art-cv-ta{display:block;width:100%;min-height:120px;font:inherit;font-size:16px;line-height:1.9;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;resize:none;overflow:hidden}
 .art-cv-ta:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -2253,6 +2260,12 @@ class VirtualBookshelf {
             const fromInternalId = this._currentBookshelfInternalId();
             this.router.navigateBook(book.asin, fromInternalId);
         }
+        // イシュー#288: 本詳細の履歴も、他モーダルと同じ深さ数え合わせ方式 (_modalHistStack) の管理下に置く。
+        // #book/ の hash 遷移は router が location.hash 代入で済ませる (state=null の新エントリ) ため、
+        // その直後に replaceState で深さ情報だけ上書きして「積んだ」ことにする (pushState の二重呼びはしない＝
+        // 1回の遷移で段が2つ増える事故を避ける)。これで「進む」で着地した時、_onModalHistPopstate の D06
+        // ルール (行き先の無い段には history.back() で自己修復) がそのまま効き、開き直さなくなる。
+        if (this._isHistMobile()) this._bookDetailHistAdopt();
         // PC v2: 本詳細は右ペインに表示する。modal は使わず、右ペインの #book-detail-pane に inject。
         // ホームビューでは右ペインを表示するため book-detail-pinned を付ける。
         const modal = document.getElementById('book-modal');
@@ -7487,6 +7500,27 @@ class VirtualBookshelf {
         // 旧 modal-body も互換のためクリア
         const oldBody = document.getElementById('modal-body');
         if (oldBody) oldBody.innerHTML = '';
+        // イシュー#288: _modalHistStack の記帳を外す (history 自体は呼び出し元の遷移で既に動いている=ここでは触らない)
+        this._bookDetailHistRelease();
+    }
+
+    // イシュー#288: 本詳細を _modalHistStack の深さ管理下に「積む」。navigateBook の hash 遷移(state=null の
+    // 新エントリ)に、replaceState で深さ情報だけ上書きする。別の本へ連続遷移した場合も新しいエントリ1つに
+    // 付け替える(段数は変えない=1冊分のまま)。
+    _bookDetailHistAdopt() {
+        const st = this._modalHistStack = this._modalHistStack || [];
+        this._bindSettingsPopstate();
+        const i = st.findIndex((e) => e.id === 'book-detail');
+        if (i !== -1) st.splice(i, 1);
+        st.push({ id: 'book-detail', close: () => { this._closeBookModalDom(); return true; } });
+        history.replaceState({ bsModal: 'book-detail', d: st.length }, '');
+    }
+
+    _bookDetailHistRelease() {
+        const st = this._modalHistStack;
+        if (!st) return;
+        const i = st.findIndex((e) => e.id === 'book-detail');
+        if (i !== -1) st.splice(i, 1);
     }
 
     showBookshelfManager() {
@@ -8791,21 +8825,50 @@ class VirtualBookshelf {
                 row.innerHTML = `<button type="button" class="art-cv-ins-btn" data-ins-index="${index}" aria-label="ここに追加">${svg('plus')}<span>ここに追加</span></button>`;
                 return row;
             };
+            // イシュー#288: ブロック種別のチップ。アイコンはLucide(#262で使用のfile-text/book/library)。
+            // 空のときは「文章（空）」のように何を入れる場所か分かる文言にする(依頼どおり)。
+            const CHIP_ICON = { text: 'file-text', book: 'book', shelf: 'library' };
+            const chipLabel = (b) => {
+                if (b.type === 'text') return (b.markdown || '').trim() ? '文章' : '文章（空）';
+                if (b.type === 'book') return b.asin ? '本' : '本（未選択）';
+                const n = (b.items || []).length;
+                return n ? `本棚・${n}冊` : '本棚（本なし）';
+            };
+            const mkChip = (b, i) => {
+                const chip = doc.createElement('span');
+                chip.className = 'art-cv-ui art-cv-chip';
+                chip.dataset.blkIdx = String(i);
+                chip.innerHTML = `${svg(CHIP_ICON[b.type] || 'file-text')}<span>${PublishArticleGenerator.esc(chipLabel(b))}</span>`;
+                return chip;
+            };
+            const EMPTY_GUIDE = { text: 'タップして文章を書く', book: 'タップして本を選ぶ', shelf: 'タップして本を追加' };
             // 挿入の基準点: ブロックが1つも描かれていない時はタイトル (とタグ) の直後
             let last = null;
             if (article) last = article.querySelector(':scope > .tags') || article.querySelector(':scope > h1');
+            // イシュー#288 ②指摘: 本棚ブロックは0冊でも生成器が(ほぼ高さ0の)sectionを出すため、
+            // 「sectionが無い」だけでなく「ブロックが論理的に空」かどうかで判定する(3種とも同じ扱いに揃える)。
+            const isEmptyBlock = (b) => (b.type === 'text' && !(b.markdown || '').trim())
+                || (b.type === 'book' && !b.asin)
+                || (b.type === 'shelf' && !(b.items || []).length);
             blocks.forEach((b, i) => {
                 let sec = sections.get(i);
                 if (!sec) {
                     // 生成器が何も出さないブロック (空の文章・本未選択) は公開ページには出ない。編集状態でだけ仮の枠を出す
                     sec = doc.createElement('section');
-                    sec.className = 'blk art-cv-ui art-cv-empty';
+                    sec.className = 'blk art-cv-ui';
                     sec.dataset.artIdx = String(i);
-                    sec.textContent = b.type === 'text' ? '空の文章ブロック' : b.type === 'book' ? '本が未選択の本ブロック' : '本が無い本棚ブロック';
                     if (last && last.parentNode) last.after(sec); else if (article) article.appendChild(sec);
+                }
+                if (isEmptyBlock(b)) {
+                    // 生成器が仮に何か出していても(例: 0冊の本棚)、編集状態では案内1つに統一して上書きする
+                    sec.classList.add('art-cv-empty');
+                    sec.innerHTML = `<button type="button" class="art-cv-empty-guide" data-blk-idx="${i}">${PublishArticleGenerator.esc(EMPTY_GUIDE[b.type] || 'タップして編集')}</button>`;
+                } else {
+                    sec.classList.remove('art-cv-empty');
                 }
                 sec.classList.add('art-cv-blk');
                 sec.before(mkInserter(i));
+                sec.appendChild(mkChip(b, i));
                 const ops = doc.createElement('div');
                 ops.className = 'art-cv-ui art-cv-ops';
                 ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="ブロックの操作" aria-haspopup="menu">${svg('more-horizontal')}</button>`;
@@ -8903,6 +8966,9 @@ class VirtualBookshelf {
                     if (more) { e.preventDefault(); this._artOpenBlkMenu(Number(more.dataset.blkIdx), more); return; }
                     const h1 = this._artMode === 'edit' && !e.target.closest('.art-cv-title') ? e.target.closest('.article > h1') : null;
                     if (h1) { e.preventDefault(); this._artEditTitleInline(h1); return; }
+                    // イシュー#288: 空ブロックの案内 (文章/本/本棚いずれも) をタップしたら、そのブロックの編集を開く
+                    const guide = e.target.closest('.art-cv-empty-guide');
+                    if (guide) { e.preventDefault(); this._artCloseBlkMenu(); const gb = (this._artDraft.blocks || [])[Number(guide.dataset.blkIdx)]; if (gb) this._artEditBlock(gb.id); return; }
                     // 編集状態で文章ブロックの本文をタップしたら全画面 (EasyMDE) を開く (イシュー#276 step3: その場入力は廃止)
                     const sec = this._artMode === 'edit' ? e.target.closest('section.art-cv-blk') : null;
                     const tb = sec ? (this._artDraft.blocks || [])[Number(sec.dataset.artIdx)] : null;
