@@ -1382,3 +1382,162 @@ const openReport = (page) => page.evaluate(() => {
         expectSameHistory(before, s);
     }));
 });
+
+// ===== イシュー#288: 「進む」(iOS端スワイプ=ブラウザの進む相当) で閉じた面を開き直さないこと =====
+// chromium/webkitは page.goForward()、Androidはback284.mjsで物理ジェスチャ相当を使う。
+test.describe('進む 網羅 (イシュー#288)', () => {
+    async function forwardCheck(page, ti, id, openFn, assertClosed, assertStillClosed) {
+        const errors = await bootApp(page);
+        const r = recorder(ti, id);
+        await openFn(page);
+        await settle(page, 500);
+        await r.step(page, 'opened');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await assertClosed(await snap(page));
+        // 進む直後0~480msをバーストで撮る(修正前後比較用)
+        const dir = join(OUT_ROOT, ti.project.name, 'burst', id);
+        mkdirSync(dir, { recursive: true });
+        const p = page.goForward().catch(() => {});
+        for (let i = 0; i < 6; i++) { await page.screenshot({ path: join(dir, `${String(i).padStart(2, '0')}.png`) }).catch(() => {}); await page.waitForTimeout(80); }
+        await p;
+        await settle(page, 400);
+        const s2 = await snap(page);
+        await r.step(page, 'forward1');
+        await assertStillClosed(s2);
+        await r.save(page);
+        expect(errors).toEqual([]);
+    }
+
+    test('R09f 本詳細: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'R09f',
+            async (p) => { const asin = await firstBook(p); await p.evaluate((a) => window.bookshelf.router.navigateBook(a), asin); },
+            (s) => expect.soft(s.hash).not.toContain('book/'),
+            (s) => { expect.soft(s.hash, '進んでも#book/へ戻らない').not.toContain('book/'); expect.soft(s.detailPinned, '進んでもピン留めされない').toBe(false); });
+    });
+
+    test('X16f 設定モーダル: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'X16f',
+            async (p) => p.evaluate(() => window.bookshelf._openSettingsModal()),
+            (s) => expect.soft(s.openModals).not.toContain('settings-modal'),
+            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('settings-modal'));
+    });
+
+    test('R24f ドロワー: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'R24f',
+            async (p) => p.evaluate(() => window.bookshelf._openDrawer()),
+            (s) => expect.soft(s.drawer).toBe(false),
+            (s) => expect.soft(s.drawer, '進んでも開かない').toBe(false));
+    });
+
+    test('A42f 記事一覧モーダル: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A42f',
+            async (p) => p.evaluate(() => window.bookshelf.openPublishPagesModal()),
+            (s) => expect.soft(s.openModals).not.toContain('publish-pages-modal'),
+            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('publish-pages-modal'));
+    });
+
+    test('L15f 長文メモ: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'L15f',
+            async (p) => {
+                const asin = await firstBook(p);
+                await p.evaluate(async (a) => {
+                    const bs = window.bookshelf;
+                    const b = bs.bookManager.getAllBooks().find((x) => x.asin === a);
+                    await bs._openBookMemoInAppEditor(a, b);
+                }, asin);
+            },
+            (s) => expect.soft(s.openModals).not.toContain('book-memo-modal'),
+            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('book-memo-modal'));
+    });
+
+    test('A43f 記事編集(全画面): 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A43f',
+            async (p) => {
+                await openNewArticleEdit(p);
+                const frame = p.frameLocator('#art-canvas-frame');
+                await frame.locator('.art-cv-ins-btn').last().tap();
+                await tap(p, '#art-add-sheet [data-block-type="text"]');
+                await expect(p.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+            },
+            (s) => expect.soft(s.artMode).not.toBe('form'),
+            (s) => expect.soft(s.artMode, '進んでも全画面に戻らない').not.toBe('form'));
+    });
+});
+
+// ===== イシュー#288: 記事エディタのブロックチップ =====
+test.describe('ブロックのチップ (イシュー#288)', () => {
+    async function setupChipBlocks(page) {
+        await openNewArticleEdit(page);
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            const mk = (type, extra) => ({ id: `blk-${type}-${Math.random().toString(36).slice(2, 8)}`, type, ...extra });
+            bs._artDraft.blocks = [
+                mk('text', { markdown: '' }),
+                mk('book', { asin: null, show: {} }),
+                mk('shelf', { shelfId: 'fixshelf', items: [] }),
+                mk('text', { markdown: '## 見出し\n本文のサンプルです。' }),
+            ];
+            bs._artRenderBlocks();
+        });
+        await page.waitForTimeout(400);
+    }
+
+    test('チップ: ⋯との縦中心差が1px以内・空ブロックは高さ64px以上・本文と交差しない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await setupChipBlocks(page);
+        const measure = await page.evaluate(() => {
+            const doc = document.getElementById('art-canvas-frame').contentDocument;
+            const intersect = (a, b) => !!(a && b && !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom));
+            return Array.from(doc.querySelectorAll('.art-cv-blk')).map((sec) => {
+                const chip = sec.querySelector('.art-cv-chip');
+                const more = sec.querySelector('.art-cv-more');
+                const guide = sec.querySelector('.art-cv-empty-guide');
+                const content = sec.querySelector('h2,h1,p');
+                const cr = chip && chip.getBoundingClientRect();
+                const mr = more && more.getBoundingClientRect();
+                return {
+                    idx: sec.dataset.artIdx,
+                    centerDiff: cr && mr ? Math.abs((cr.top + cr.bottom) / 2 - (mr.top + mr.bottom) / 2) : null,
+                    height: Math.round(sec.getBoundingClientRect().height),
+                    guideText: guide ? guide.textContent : null,
+                    chipTextOverlap: intersect(cr, content && content.getBoundingClientRect()),
+                };
+            });
+        });
+        for (const m of measure) {
+            expect.soft(m.centerDiff, `idx${m.idx} チップと⋯の縦中心差`).toBeLessThanOrEqual(1);
+            expect.soft(m.chipTextOverlap, `idx${m.idx} チップが本文と交差しない`).toBe(false);
+        }
+        expect.soft(measure[0].height, '空の文章ブロックは64px以上').toBeGreaterThanOrEqual(64);
+        expect.soft(measure[0].guideText).toBe('タップして文章を書く');
+        expect.soft(measure[1].height, '空の本ブロックは64px以上').toBeGreaterThanOrEqual(64);
+        expect.soft(measure[1].guideText).toBe('タップして本を選ぶ');
+        expect.soft(measure[2].height, '空の本棚ブロックは64px以上').toBeGreaterThanOrEqual(64);
+        expect.soft(measure[2].guideText).toBe('タップして本を追加');
+        expect(errors).toEqual([]);
+    });
+
+    test('チップ: 閲覧状態では0件・公開ページと同じDOM', async ({ page }) => {
+        await bootApp(page);
+        await setupChipBlocks(page);
+        const done = page.locator('#art-mode-done:visible, #art-bar-done:visible').first();
+        await done.click();
+        await settle(page, 400);
+        const count = await page.evaluate(() => {
+            const doc = document.getElementById('art-canvas-frame').contentDocument;
+            return doc ? doc.querySelectorAll('.art-cv-chip').length : -1;
+        });
+        expect(count).toBe(0);
+    });
+
+    test('空ブロックの案内をタップ→そのブロックの編集(全画面)が開く', async ({ page }) => {
+        await bootApp(page);
+        await setupChipBlocks(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-empty-guide').first().click();
+        await settle(page, 300);
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    });
+});
