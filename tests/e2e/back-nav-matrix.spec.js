@@ -1383,6 +1383,83 @@ const openReport = (page) => page.evaluate(() => {
     }));
 });
 
+// ===== イシュー#288 ②差し戻し指示3: 本詳細シートの開き方の残り(検索・ホーム・URL直・再読込後)とシート外タップ =====
+test.describe('本詳細シート: 開き方・閉じ方の残り (イシュー#288)', () => {
+    test('R08d 本詳細: ⌘K検索から開く→戻るで閉じる', async ({ page }, ti) => caseRun(page, ti, 'R08d', async (r, before) => {
+        await openPaletteTap(page);
+        await page.fill('#command-palette input', 'フィクスチャの本 1');
+        await settle(page, 300);
+        await page.keyboard.press('Enter');
+        await settle(page, 600);
+        const s0 = await snap(page); await r.step(page, 'opened');
+        expect.soft(s0.detailPinned, '検索選択で本詳細が開く').toBe(true);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.detailPinned, '戻るで閉じる').toBe(false);
+        expect.soft(s.hash).toEqual(before.hash);
+    }));
+
+    test('R08e 本詳細: ホームの本タイルから開く→戻るで閉じる', async ({ page }, ti) => caseRun(page, ti, 'R08e', async (r, before) => {
+        await page.evaluate(() => window.bookshelf.router.navigateMain());
+        await settle(page, 400);
+        const tile = page.locator('[data-asin]').first();
+        await tile.waitFor({ state: 'visible', timeout: 5000 });
+        await tile.tap();
+        await settle(page, 600);
+        const s0 = await snap(page); await r.step(page, 'opened');
+        expect.soft(s0.detailPinned, 'ホームの本タイルから本詳細が開く').toBe(true);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.detailPinned, '戻るで閉じる').toBe(false);
+    }));
+
+    test('R08f 本詳細: URL直で開く→戻る＝アプリ外 (D08と同型)', async ({ page }, ti) => caseRun(page, ti, 'R08f', async (r) => {
+        const asin = await firstBook(page);
+        await page.goto('about:blank');
+        await page.goto('/index.html#book/' + encodeURIComponent(asin));
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await settle(page, 600);
+        const s0 = await snap(page); r.rec.opened = s0;
+        expect.soft(s0.detailPinned, 'URL直で本詳細が開く').toBe(true);
+        await page.goBack({ waitUntil: 'commit', timeout: 3000 }).catch(() => {});
+        await settle(page);
+        r.rec.url = page.url();
+        expect.soft(page.url(), 'アプリの前のページ(about:blank)へ出る').toBe('about:blank');
+    }));
+
+    test('R08g 本詳細: 開いた状態で再読込→段が畳まれ戻るが空振りしない (D06)', async ({ page }, ti) => caseRun(page, ti, 'R08g', async (r) => {
+        const asin = await firstBook(page);
+        await page.evaluate((a) => window.bookshelf.router.navigateBook(a), asin);
+        await settle(page, 600);
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await settle(page, 1200);
+        const s0 = await snap(page); await r.step(page, 'reloaded');
+        r.rec.hashAfterReload = s0.hash;
+        expect.soft(s0.detailPinned, `再読込後も本詳細のまま(URLのhashを引き継ぐ・hash=${s0.hash})`).toBe(true);
+        await back(page);
+        const s = await snap(page); await r.step(page, 'back1');
+        expect.soft(s.detailPinned, '戻るで閉じる(空振りしない)').toBe(false);
+    }));
+
+    test('R08h 本詳細: シート外タップは存在しない(フルスクリーンシートのため・CSS実測)', async ({ page }) => {
+        await bootApp(page);
+        const asin = await firstBook(page);
+        await page.evaluate((a) => window.bookshelf.router.navigateBook(a), asin);
+        await settle(page, 600);
+        // .app-detail は position:fixed; inset:0 のフルスクリーンシート(css/bookshelf.css実測)。
+        // ドロワー(#mobile-scrim)やコマンドパレット(#cmdk-backdrop)のような可視の背景(スクリム)を持たない=
+        // 「シート外タップ」に対応する専用UIが無いことをDOMで確認する(無いことの実測・ベストエフォートではなく仕様として確定)。
+        const hasBackdrop = await page.evaluate(() => {
+            const detail = document.querySelector('.app-detail');
+            const r = detail.getBoundingClientRect();
+            return { fullscreen: r.top === 0 && r.left === 0 && r.width === window.innerWidth && r.height === window.innerHeight, scrimCount: document.querySelectorAll('.bd-scrim, .detail-scrim, .book-detail-scrim').length };
+        });
+        expect.soft(hasBackdrop.fullscreen, '本詳細シートはフルスクリーン(枠外が存在しない)').toBe(true);
+        expect.soft(hasBackdrop.scrimCount, '専用スクリム要素は無い').toBe(0);
+    });
+});
+
 // ===== イシュー#288: 「進む」(iOS端スワイプ=ブラウザの進む相当) で閉じた面を開き直さないこと =====
 // chromium/webkitは page.goForward()、Androidはback284.mjsで物理ジェスチャ相当を使う。
 test.describe('進む 網羅 (イシュー#288)', () => {
@@ -1484,42 +1561,69 @@ test.describe('ブロックのチップ (イシュー#288)', () => {
         await page.waitForTimeout(400);
     }
 
-    test('チップ: ⋯との縦中心差が1px以内・空ブロックは高さ64px以上・本文と交差しない', async ({ page }) => {
+    test('ピル(種別+⋯統合): 文言は種類名のみ・タップ領域44px以上・空ブロックは高さ64px以上・本文と交差しない', async ({ page }) => {
         const errors = await bootApp(page);
         await setupChipBlocks(page);
         const measure = await page.evaluate(() => {
             const doc = document.getElementById('art-canvas-frame').contentDocument;
             const intersect = (a, b) => !!(a && b && !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom));
             return Array.from(doc.querySelectorAll('.art-cv-blk')).map((sec) => {
-                const chip = sec.querySelector('.art-cv-chip');
                 const more = sec.querySelector('.art-cv-more');
                 const guide = sec.querySelector('.art-cv-empty-guide');
                 const content = sec.querySelector('h2,h1,p');
-                const cr = chip && chip.getBoundingClientRect();
                 const mr = more && more.getBoundingClientRect();
+                // .art-cv-more::after{inset:-8px} が実タップ領域 (CSSで固定・疑似要素は直接測れないため計算で出す)
+                const tapW = mr ? mr.width + 16 : null;
+                const tapH = mr ? mr.height + 16 : null;
                 return {
                     idx: sec.dataset.artIdx,
-                    centerDiff: cr && mr ? Math.abs((cr.top + cr.bottom) / 2 - (mr.top + mr.bottom) / 2) : null,
+                    label: more ? more.querySelector('span')?.textContent : null,
+                    tapW, tapH,
                     height: Math.round(sec.getBoundingClientRect().height),
                     guideText: guide ? guide.textContent : null,
-                    chipTextOverlap: intersect(cr, content && content.getBoundingClientRect()),
+                    pillTextOverlap: intersect(mr, content && content.getBoundingClientRect()),
                 };
             });
         });
         for (const m of measure) {
-            expect.soft(m.centerDiff, `idx${m.idx} チップと⋯の縦中心差`).toBeLessThanOrEqual(1);
-            expect.soft(m.chipTextOverlap, `idx${m.idx} チップが本文と交差しない`).toBe(false);
+            expect.soft(m.tapW, `idx${m.idx} ピルのタップ幅44px以上`).toBeGreaterThanOrEqual(44);
+            expect.soft(m.tapH, `idx${m.idx} ピルのタップ高さ44px以上`).toBeGreaterThanOrEqual(44);
+            expect.soft(m.pillTextOverlap, `idx${m.idx} ピルが本文と交差しない`).toBe(false);
         }
+        expect.soft(measure[0].label, '空の文章ブロックの文言は種類名のみ').toBe('文章');
         expect.soft(measure[0].height, '空の文章ブロックは64px以上').toBeGreaterThanOrEqual(64);
         expect.soft(measure[0].guideText).toBe('タップして文章を書く');
+        expect.soft(measure[1].label, '空の本ブロックの文言は種類名のみ').toBe('本');
         expect.soft(measure[1].height, '空の本ブロックは64px以上').toBeGreaterThanOrEqual(64);
         expect.soft(measure[1].guideText).toBe('タップして本を選ぶ');
+        expect.soft(measure[2].label, '空の本棚ブロックの文言は「本棚」のみ(冊数なし)').toBe('本棚');
         expect.soft(measure[2].height, '空の本棚ブロックは64px以上').toBeGreaterThanOrEqual(64);
         expect.soft(measure[2].guideText).toBe('タップして本を追加');
+        expect.soft(measure[3].label, '中身ありの文章ブロックの文言は種類名のみ').toBe('文章');
         expect(errors).toEqual([]);
     });
 
-    test('チップ: 閲覧状態では0件・公開ページと同じDOM', async ({ page }) => {
+    test('ピル: 中身ありの本棚は「本棚・N冊」', async ({ page }) => {
+        const errors = await bootApp(page);
+        await openNewArticleEdit(page);
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            bs._artDraft.blocks = [{ id: 'blk-shelf-1', type: 'shelf', shelfId: 'fixshelf', items: [
+                { id: 'it1', asin: 'B000000001', order: 0, show: {} },
+                { id: 'it2', asin: 'B000000002', order: 1, show: {} },
+            ] }];
+            bs._artRenderBlocks();
+        });
+        await page.waitForTimeout(400);
+        const label = await page.evaluate(() => {
+            const doc = document.getElementById('art-canvas-frame').contentDocument;
+            return doc.querySelector('.art-cv-blk .art-cv-more span')?.textContent;
+        });
+        expect(label).toBe('本棚・2冊');
+        expect(errors).toEqual([]);
+    });
+
+    test('ピル: 閲覧状態では0件', async ({ page }) => {
         await bootApp(page);
         await setupChipBlocks(page);
         const done = page.locator('#art-mode-done:visible, #art-bar-done:visible').first();
@@ -1527,9 +1631,18 @@ test.describe('ブロックのチップ (イシュー#288)', () => {
         await settle(page, 400);
         const count = await page.evaluate(() => {
             const doc = document.getElementById('art-canvas-frame').contentDocument;
-            return doc ? doc.querySelectorAll('.art-cv-chip').length : -1;
+            return doc ? doc.querySelectorAll('.art-cv-ops').length : -1;
         });
         expect(count).toBe(0);
+    });
+
+    test('ピルを押すと⋯メニュー(編集/上へ/下へ/削除)が開く', async ({ page }) => {
+        await bootApp(page);
+        await setupChipBlocks(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-more').first().click();
+        await settle(page, 300);
+        await expect(page.locator('#art-blk-menu')).toBeVisible();
     });
 
     test('空ブロックの案内をタップ→そのブロックの編集(全画面)が開く', async ({ page }) => {

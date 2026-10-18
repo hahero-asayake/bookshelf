@@ -28,15 +28,13 @@ const ART_CANVAS_CHROME_CSS = `
 .art-cv-dragging{opacity:.45}
 body.art-cv-pc .art-cv-ops{top:-32px}
 .art-cv-dropline{position:absolute;height:2px;background:var(--acc);border-radius:1px;pointer-events:none;z-index:20}
-.art-cv-more{position:relative;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--bg);border:1px solid var(--line);color:var(--sub);cursor:pointer;padding:0}
+/* イシュー#288(ハヘロ2026-10-19 03:51決裁): 種別アイコン+文言+⋯を1つの不透明ピルに統合。
+   枠の上辺の線上(つまみと同じ型・負のtopで枠の外側)、つまみ(左)とは左右反対側。タップ領域は縦28px+外側8pxの::afterで44px以上。 */
+.art-cv-more{position:relative;display:inline-flex;align-items:center;gap:4px;height:28px;min-height:28px;padding:0 10px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--fg2);cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;box-sizing:border-box}
+.art-cv-more svg{width:14px;height:14px;flex:0 0 auto}
 .art-cv-more::after{content:'';position:absolute;inset:-8px}
 .art-cv-ins{min-height:44px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
 .art-cv-ins-btn{min-height:44px;min-width:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--acc);background:var(--bg);color:var(--acc);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700}
-/* イシュー#288: 枠の左上、⋯(.art-cv-ops)と同じ上辺の線上に乗せる。#278のつまみ(.art-cv-grip)と同じ型(負のtopで枠の外側)。
-   本文側は .art-cv-blk の padding-top で避け、縦の重なりを作らない(②指摘: 見出しの1文字目に重なっていた)。 */
-.art-cv-chip{position:absolute;top:-14px;left:4px;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px;border-radius:999px;background:var(--line2);color:var(--fg2);font-size:12px;font-weight:600;white-space:nowrap;z-index:10;box-sizing:border-box}
-.art-cv-chip svg{width:14px;height:14px;flex:0 0 auto}
-body.art-cv-pc .art-cv-chip{top:-32px;left:36px}
 .art-cv-empty{min-height:64px;padding-top:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-sizing:border-box}
 .art-cv-empty-guide{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:38px;border:none;background:transparent;color:var(--sub);font:inherit;font-size:13px;cursor:pointer;padding:8px;text-align:center}
 .art-cv-empty-guide:hover{color:var(--acc)}
@@ -7524,7 +7522,8 @@ class VirtualBookshelf {
         const i = st.findIndex((e) => e.id === 'book-detail');
         if (i !== -1) st.splice(i, 1);
         st.push({ id: 'book-detail', close: () => { this._closeBookModalDom(); return true; } });
-        history.replaceState({ bsModal: 'book-detail', d: st.length }, '');
+        // url引数を省略すると稀に現在のhashが引き継がれない実機差が出たため(イシュー#288 R08g実測)、明示的にlocation.hrefを渡す
+        history.replaceState({ bsModal: 'book-detail', d: st.length }, '', location.href);
     }
 
     _bookDetailHistRelease() {
@@ -8836,21 +8835,15 @@ class VirtualBookshelf {
                 row.innerHTML = `<button type="button" class="art-cv-ins-btn" data-ins-index="${index}" aria-label="ここに追加">${svg('plus')}<span>ここに追加</span></button>`;
                 return row;
             };
-            // イシュー#288: ブロック種別のチップ。アイコンはLucide(#262で使用のfile-text/book/library)。
-            // 空のときは「文章（空）」のように何を入れる場所か分かる文言にする(依頼どおり)。
+            // イシュー#288(ハヘロ2026-10-19 03:51決裁で作り直し): ブロック種別は種類名だけ(空/未選択の接尾辞は出さない。
+            // 空であることは案内文言 EMPTY_GUIDE 側で伝える)。アイコンはLucide(#262で使用のfile-text/book/library)。
+            // 左上の独立チップはやめ、右上の⋯ボタンと1つのピルに統合する(mkOps 参照)。
             const CHIP_ICON = { text: 'file-text', book: 'book', shelf: 'library' };
             const chipLabel = (b) => {
-                if (b.type === 'text') return (b.markdown || '').trim() ? '文章' : '文章（空）';
-                if (b.type === 'book') return b.asin ? '本' : '本（未選択）';
+                if (b.type === 'text') return '文章';
+                if (b.type === 'book') return '本';
                 const n = (b.items || []).length;
-                return n ? `本棚・${n}冊` : '本棚（本なし）';
-            };
-            const mkChip = (b, i) => {
-                const chip = doc.createElement('span');
-                chip.className = 'art-cv-ui art-cv-chip';
-                chip.dataset.blkIdx = String(i);
-                chip.innerHTML = `${svg(CHIP_ICON[b.type] || 'file-text')}<span>${PublishArticleGenerator.esc(chipLabel(b))}</span>`;
-                return chip;
+                return n ? `本棚・${n}冊` : '本棚';
             };
             const EMPTY_GUIDE = { text: 'タップして文章を書く', book: 'タップして本を選ぶ', shelf: 'タップして本を追加' };
             // 挿入の基準点: ブロックが1つも描かれていない時はタイトル (とタグ) の直後
@@ -8879,10 +8872,12 @@ class VirtualBookshelf {
                 }
                 sec.classList.add('art-cv-blk');
                 sec.before(mkInserter(i));
-                sec.appendChild(mkChip(b, i));
+                // イシュー#288: 種別アイコン+文言+⋯を1つのピルボタンに統合(ハヘロ2026-10-19決裁「右で3点メニューと統合」)。
+                // 押すと従来どおりブロック操作メニュー(編集/上へ/下へ/削除)を開く(.art-cv-more のクリック委譲をそのまま使う)。
                 const ops = doc.createElement('div');
                 ops.className = 'art-cv-ui art-cv-ops';
-                ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="ブロックの操作" aria-haspopup="menu">${svg('more-horizontal')}</button>`;
+                const label = chipLabel(b);
+                ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="${PublishArticleGenerator.esc(label)}ブロックの操作" aria-haspopup="menu">${svg(CHIP_ICON[b.type] || 'file-text')}<span>${PublishArticleGenerator.esc(label)}</span>${svg('more-horizontal')}</button>`;
                 sec.appendChild(ops);
                 // イシュー#278: PC (900px超) だけブロック左につまみ。マウスでドラッグ・Alt+↑↓で並べ替え (スマホは⋯→上へ/下へのまま)
                 if (pcReorder) {
@@ -12144,6 +12139,14 @@ class VirtualBookshelf {
         if (d <= 0) return;
         this._bindSettingsPopstate();
         this._modalHistStack = this._modalHistStack || [];
+        // イシュー#288: 本詳細(#book/)はURLで直接開き直せる面(R10/R11と同じ性質)。再読込時にまだ同じ
+        // 本のhashが残っていれば、他モーダルと違って「古い残骸」ではなく「意図した表示」として扱い、
+        // history.go(-n)で巻き戻さず採用し直す(採用し直さないと本詳細が閉じてしまい、再読込後に消える
+        // 不具合になる・R08g実測)。
+        if (history.state && history.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) {
+            this._bookDetailHistAdopt();
+            return;
+        }
         this._modalHistSync();
     }
 
