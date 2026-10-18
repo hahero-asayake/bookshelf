@@ -2265,7 +2265,12 @@ class VirtualBookshelf {
         // その直後に replaceState で深さ情報だけ上書きして「積んだ」ことにする (pushState の二重呼びはしない＝
         // 1回の遷移で段が2つ増える事故を避ける)。これで「進む」で着地した時、_onModalHistPopstate の D06
         // ルール (行き先の無い段には history.back() で自己修復) がそのまま効き、開き直さなくなる。
-        if (this._isHistMobile()) this._bookDetailHistAdopt();
+        // 起動直後の最初の route dispatch (URL直/再読込で #book/ から始まった場合) だけ採用を見送る。
+        // この回は同一セッション内の「戻る/進む」履歴がまだ無く、ここで replaceState すると実ナビゲーション
+        // 中の再入で止まる (イシュー#288、R11 URL直/戻るで実測: timeout 60s)。back/forward 由来の
+        // 以降の dispatch (_suppressRouterUpdate=true だが _routeDispatchIsBoot=false) では引き続き採用する
+        // (この回収を外すと「進む」で本詳細が開き直るバグが再発する、R09f で実測)。
+        if (this._isHistMobile() && !this._routeDispatchIsBoot) this._bookDetailHistAdopt();
         // PC v2: 本詳細は右ペインに表示する。modal は使わず、右ペインの #book-detail-pane に inject。
         // ホームビューでは右ペインを表示するため book-detail-pinned を付ける。
         const modal = document.getElementById('book-modal');
@@ -7433,6 +7438,11 @@ class VirtualBookshelf {
      */
     _applyRoute(route) {
         if (!route) return;
+        // イシュー#288: 初回(起動直後)のdispatchだけ区別する。URL直/再読込で #book/ から始まった場合は
+        // まだ「戻る/進む」のセッション内履歴が無く、ここでreplaceStateすると戻る実ナビゲーション中の
+        // 再入(timeout, R11で実測)を招くため、本詳細の履歴採用(_bookDetailHistAdopt)をこの回だけ見送る。
+        this._routeDispatchIsBoot = !this._routeBooted;
+        this._routeBooted = true;
         this._suppressRouterUpdate = true;
         try {
             if (route.view === 'main') {
@@ -7476,6 +7486,7 @@ class VirtualBookshelf {
             }
         } finally {
             this._suppressRouterUpdate = false;
+            this._routeDispatchIsBoot = false;
         }
     }
 
