@@ -1460,10 +1460,12 @@ test.describe('本詳細シート: 開き方・閉じ方の残り (イシュー#
     });
 });
 
-// ===== イシュー#288: 「進む」(iOS端スワイプ=ブラウザの進む相当) で閉じた面を開き直さないこと =====
+// ===== イシュー#291 (②決裁2026-10-19): 「進む」(iOS端スワイプ=ブラウザの進む相当) で、
+// 開き直せる面は本当に開き直す(一瞬映って消える違和感を無くす)。開き直せない面は、進む候補
+// 自体を履歴から消す(段を残さない)。方針の根拠は obsidian 17_戻る挙動テスト表・ADR 参照。
 // chromium/webkitは page.goForward()、Androidはback284.mjsで物理ジェスチャ相当を使う。
-test.describe('進む 網羅 (イシュー#288)', () => {
-    async function forwardCheck(page, ti, id, openFn, assertClosed, assertStillClosed) {
+test.describe('進む 網羅 (イシュー#291)', () => {
+    async function forwardCheck(page, ti, id, openFn, assertClosed, assertAfterForward) {
         const errors = await bootApp(page);
         const r = recorder(ti, id);
         await openFn(page);
@@ -1472,7 +1474,8 @@ test.describe('進む 網羅 (イシュー#288)', () => {
         await back(page);
         await settle(page, 400);
         await r.step(page, 'back1');
-        await assertClosed(await snap(page));
+        const s1 = await snap(page);
+        await assertClosed(s1);
         // 進む直後0~480msをバーストで撮る(修正前後比較用)
         const dir = join(OUT_ROOT, ti.project.name, 'burst', id);
         mkdirSync(dir, { recursive: true });
@@ -1482,40 +1485,40 @@ test.describe('進む 網羅 (イシュー#288)', () => {
         await settle(page, 400);
         const s2 = await snap(page);
         await r.step(page, 'forward1');
-        await assertStillClosed(s2);
+        await assertAfterForward(s2, s1);
         await r.save(page);
         expect(errors).toEqual([]);
     }
 
-    test('R09f 本詳細: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('R09f 本詳細: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'R09f',
             async (p) => { const asin = await firstBook(p); await p.evaluate((a) => window.bookshelf.router.navigateBook(a), asin); },
             (s) => expect.soft(s.hash).not.toContain('book/'),
-            (s) => { expect.soft(s.hash, '進んでも#book/へ戻らない').not.toContain('book/'); expect.soft(s.detailPinned, '進んでもピン留めされない').toBe(false); });
+            (s) => { expect.soft(s.hash, '進むと#book/へ戻る').toContain('book/'); expect.soft(s.detailPinned, '進むとピン留めされる').toBe(true); });
     });
 
-    test('X16f 設定モーダル: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('X16f 設定モーダル: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'X16f',
             async (p) => p.evaluate(() => window.bookshelf._openSettingsModal()),
             (s) => expect.soft(s.openModals).not.toContain('settings-modal'),
-            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('settings-modal'));
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('settings-modal'));
     });
 
-    test('R24f ドロワー: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('R24f ドロワー: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'R24f',
             async (p) => p.evaluate(() => window.bookshelf._openDrawer()),
             (s) => expect.soft(s.drawer).toBe(false),
-            (s) => expect.soft(s.drawer, '進んでも開かない').toBe(false));
+            (s) => expect.soft(s.drawer, '進むと開く').toBe(true));
     });
 
-    test('A42f 記事一覧モーダル: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('A42f 記事一覧モーダル: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'A42f',
             async (p) => p.evaluate(() => window.bookshelf.openPublishPagesModal()),
             (s) => expect.soft(s.openModals).not.toContain('publish-pages-modal'),
-            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('publish-pages-modal'));
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('publish-pages-modal'));
     });
 
-    test('L15f 長文メモ: 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('L15f 長文メモ: 戻った直後に積んだ進む項目は消え、進んでもURL・state・画面が変わらない (#291・段を残さない方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'L15f',
             async (p) => {
                 const asin = await firstBook(p);
@@ -1526,10 +1529,15 @@ test.describe('進む 網羅 (イシュー#288)', () => {
                 }, asin);
             },
             (s) => expect.soft(s.openModals).not.toContain('book-memo-modal'),
-            (s) => expect.soft(s.openModals, '進んでも開かない').not.toContain('book-memo-modal'));
+            (s2, s1) => {
+                expect.soft(s2.openModals, '進んでも開かない').not.toContain('book-memo-modal');
+                expect.soft(s2.len, '進む項目が無い(history.lengthが閉じた直後から不変)').toBe(s1.len);
+                expect.soft(s2.hash, '進んでもhashが変わらない').toBe(s1.hash);
+                expect.soft(JSON.stringify(s2.state), '進んでもstateが変わらない').toBe(JSON.stringify(s1.state));
+            });
     });
 
-    test('A43f 記事編集(全画面): 戻った後に進んでも開き直さない (#288)', async ({ page }, ti) => {
+    test('A43f 記事編集(全画面): 戻った直後に積んだ進む項目は消え、進んでもURL・state・画面が変わらない (#291・段を残さない方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'A43f',
             async (p) => {
                 await openNewArticleEdit(p);
@@ -1539,7 +1547,12 @@ test.describe('進む 網羅 (イシュー#288)', () => {
                 await expect(p.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
             },
             (s) => expect.soft(s.artMode).not.toBe('form'),
-            (s) => expect.soft(s.artMode, '進んでも全画面に戻らない').not.toBe('form'));
+            (s2, s1) => {
+                expect.soft(s2.artMode, '進んでも全画面に戻らない').not.toBe('form');
+                expect.soft(s2.len, '進む項目が無い(history.lengthが閉じた直後から不変)').toBe(s1.len);
+                expect.soft(s2.hash, '進んでもhashが変わらない').toBe(s1.hash);
+                expect.soft(JSON.stringify(s2.state), '進んでもstateが変わらない').toBe(JSON.stringify(s1.state));
+            });
     });
 });
 
