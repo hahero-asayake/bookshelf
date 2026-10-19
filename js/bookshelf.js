@@ -9092,7 +9092,12 @@ class VirtualBookshelf {
         // スマホの「戻る」= 完了 (Esc と同じ・②決裁)。直前のシート/⋯メニューの段があれば引き継ぐ
         const closeFs = (o) => this._artCloseBlockFs(true, o);
         if (!this._artHistHandOver('art-add-sheet', 'art-fs', closeFs) && !this._artHistHandOver('art-blk-menu', 'art-fs', closeFs)) {
-            this._modalHistPush('art-fs', closeFs);
+            this._modalHistPush('art-fs', closeFs, { extra: { blockId } });
+        } else if (this._isHistMobile()) {
+            // イシュー#291: handover(段を引き継ぐ)経路は _modalHistPush を通らず history も触らない
+            // ため、state に blockId が入らない。進むで開き直せるよう、現在の段を blockId 付きで
+            // replaceState しておく(段数・位置は変えない)。
+            history.replaceState(Object.assign({}, history.state, { blockId }), '', location.href);
         }
         const col = document.querySelector('#art-edit-view .art-col');
         if (col) col.scrollTop = 0;
@@ -11914,7 +11919,7 @@ class VirtualBookshelf {
             this._bookMemoEditorContext = null;
             textareaEl.value = '';
             modal.classList.add('show');
-            this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o));
+            this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
             if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
             return;
         }
@@ -11927,7 +11932,7 @@ class VirtualBookshelf {
         textareaEl.value = body;
 
         modal.classList.add('show');
-        this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o));
+        this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
 
         try {
             await this._ensureEasyMDELoaded();
@@ -12053,7 +12058,7 @@ class VirtualBookshelf {
         return (st.bsModal || st.bsSettings || st.bsImport) ? 1 : 0; // 旧形式の段 (更新前のセッション)
     }
 
-    _modalHistPush(id, close, { isMobile } = {}) {
+    _modalHistPush(id, close, { isMobile, extra } = {}) {
         const mobile = isMobile ? isMobile() : this._isHistMobile();
         if (!mobile) return;
         this._bindSettingsPopstate();
@@ -12063,15 +12068,12 @@ class VirtualBookshelf {
         // その段を新しい面へ引き継ぐ (イシュー#259/#284 K2: 非同期の back が新しい段を消す罠を作らない)
         const excess = this._histStateDepth(history.state) - st.length;
         st.push({ id, close });
-        if (excess >= 1 && !this._histGoPending) history.replaceState({ bsModal: id, d: st.length }, '');
-        else history.pushState({ bsModal: id, d: st.length }, '');
+        // イシュー#291 (②決裁2026-10-19): extra は「進む」で開き直すのに必要な文脈(asin・blockId等)。
+        // state に入れておけば、進むで着地した時にそのまま読める。
+        const state = Object.assign({ bsModal: id, d: st.length }, extra || {});
+        if (excess >= 1 && !this._histGoPending) history.replaceState(state, '');
+        else history.pushState(state, '');
     }
-
-    // イシュー#291: state からコンテキスト(どの本・どのブロックか等)を復元できない面は、「進む」で
-    // 開き直せない。開き直せない面を「進む」先に残すと一瞬映って消える違和感が出るため、閉じたら
-    // その段を履歴の進む側から切り捨てる(_modalHistSnuffForward・他の面は state.bsModal から開き直す
-    // ため対象外・面ごとの方針は 17_戻る挙動テスト表 / ADR 参照)。
-    _HIST_SNUFF_FORWARD_IDS = new Set(['book-memo-modal', 'art-fs']);
 
     _modalHistPop(id, { fromHistory = false } = {}) {
         const st = this._modalHistStack;
@@ -12079,7 +12081,6 @@ class VirtualBookshelf {
         const i = st.findIndex((e) => e.id === id);
         if (i === -1) return;
         st.splice(i, 1);
-        if (this._HIST_SNUFF_FORWARD_IDS.has(id)) this._histSnuffPending = true;
         // × や ESC で閉じたときは自前で積んだ段を巻き戻す。popstate 経由なら消費済み。
         // 同じ操作の中の複数の pop はマイクロタスクでまとめ、history.go(-n) 1回にする。
         if (!fromHistory) this._modalHistScheduleSync();
@@ -12094,12 +12095,8 @@ class VirtualBookshelf {
     _modalHistSync() {
         if (this._histGoPending) return; // 先の go の着地 (popstate) で改めて数え合わせる
         const st = this._modalHistStack || [];
-        let n = this._histStateDepth(history.state) - st.length;
+        const n = this._histStateDepth(history.state) - st.length;
         if (n <= 0) return;
-        // dup 段(_modalHistSnuffForward が積んだ、元の段と同じ深さ値 d を持つ段)を経由する場合、
-        // 1回の go では1段しか進まず d が変わらないため数え合わせが1段ズレる(#291 実測・c3f5d98 回帰の教訓)。
-        if (this._histSnuffedAtDepth != null && this._histStateDepth(history.state) === this._histSnuffedAtDepth) n += 1;
-        this._histSnuffedAtDepth = null;
         this._histGoPending = true;
         this._histExpect = st.length;
         clearTimeout(this._histGoTimer);
@@ -12108,26 +12105,13 @@ class VirtualBookshelf {
         try { history.go(-n); } catch (_) { this._histGoPending = false; this._histExpect = null; }
     }
 
-    // イシュー#291: 閉じ終わって着地した段と同じ内容をもう1段 push し、ブラウザ履歴上の「進む」項目
-    // (閉じる前に開いていた面) を切り捨てる。state の内容は変えない(「閉じたら history.state が
-    // 開く前と同じ」という既存の戻る系テストの前提を壊さないため・c3f5d98 実測の教訓)。
-    _modalHistSnuffForward() {
-        if (!this._isHistMobile()) return;
-        history.pushState(history.state, '', location.href);
-        this._histSnuffedAtDepth = this._histStateDepth(history.state);
-    }
-
     async _onModalHistPopstate(ev) {
         const d = this._histStateDepth(ev.state);
         const st = this._modalHistStack = this._modalHistStack || [];
         if (this._histGoPending) {
             const exp = this._histExpect;
             this._histGoPending = false; this._histExpect = null; clearTimeout(this._histGoTimer);
-            if (d === exp) {
-                this._modalHistSync();
-                if (this._histSnuffPending) { this._histSnuffPending = false; this._modalHistSnuffForward(); }
-                return;
-            } // 自分の go の着地 (その間に閉じた分があれば続けて畳む)
+            if (d === exp) { this._modalHistSync(); return; } // 自分の go の着地 (その間に閉じた分があれば続けて畳む)
         }
         // 確認ダイアログ (confirmDialog・同期衝突。どちらも .cfm-overlay) は履歴に積まない (イシュー#284 D04)。
         // 出ている間の戻るは「確認のキャンセル」(Esc と同じ経路) とし、消費された段は積み直して下の面を残す
@@ -12143,43 +12127,63 @@ class VirtualBookshelf {
             // 戻る = 着地した段より上の面を、上から1つずつ閉じる (通常は1つ)
             while (st.length > d) {
                 const top = st.pop();
-                // top は pop 済みなので、top.close() の中で呼ばれる _modalHistPop は「見つからない」で
-                // 早期 return しフラグが立たない(#291実測)。ここで直接チェックする。
-                if (this._HIST_SNUFF_FORWARD_IDS.has(top.id)) this._histSnuffPending = true;
                 const res = await top.close({ fromHistory: true });
                 // close が false = 閉じなかった (長文メモの保存失敗等)。段を積み直して「まだ開いている」と揃える
                 if (res === false) {
                     st.push(top);
                     history.pushState({ bsModal: top.id, d: st.length }, '');
-                    this._histSnuffPending = false;
                     return;
                 }
             }
-            if (this._histSnuffPending) { this._histSnuffPending = false; this._modalHistSnuffForward(); }
             return;
         }
         // 行き先の無い段 (再読込後に残った段・引き継ぎで余った段・イシュー#291 の「進む」で着地した段) に
         // 着地した場合の扱い。
         if (d > 0 && d >= st.length) {
             // イシュー#291 (②決裁2026-10-19): 「進む」で一瞬映って消える違和感を無くすため、開き直せる面は
-            // 本当に開き直す。本詳細(#book/)はルーターが hashchange を別途購読しており、ここで
-            // history.back() を呼ばず何もしなければ、後続の hashchange(popstate と同一ナビゲーションで
-            // 発火する)が自動的に _applyRoute → showBookDetail → _bookDetailHistAdopt を実行して開き直る。
+            // 本当に開き直す(空振りを生む「進む候補を消す」方式は②指示により不採用)。本詳細(#book/)は
+            // ルーターが hashchange を別途購読しており、ここで history.back() を呼ばず何もしなければ、
+            // 後続の hashchange(popstate と同一ナビゲーションで発火する)が自動的に
+            // _applyRoute → showBookDetail → _bookDetailHistAdopt を実行して開き直る。
             if (ev.state && ev.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) return;
-            // hash を使わない面は、state.bsModal から対応する「開く」関数を直接呼んで開き直す
-            // (state にはモーダル固有の詳細コンテキストは残っていないため、一覧/先頭状態での再現になる・
-            // 面ごとの方針は 17_戻る挙動テスト表 / ADR 参照)。
+            // hash を使わない面は、state.bsModal から対応する「開く」関数を直接呼んで開き直す。
+            // extra(asin・blockId等)を state に入れておいた面はそれを使って文脈ごと復元する
+            // (面ごとの方針は 17_戻る挙動テスト表 / ADR 参照)。
             const bsm = ev.state && ev.state.bsModal;
+            // art-fs は _artHistHandOver で段を引き継ぐ経路があり、その場合 bsModal は旧名
+            // (art-add-sheet/art-blk-menu) のまま残る。blockId の有無で判定する(bsModal より優先)。
+            if (ev.state && ev.state.blockId) { this._reopenArtFs(ev.state); return; }
             const reopen = {
                 'settings-modal': () => this._openSettingsModal(),
-                'settings-cat': () => this._openSettingsModal(),
+                'settings-cat': () => this._openSettingsModal(ev.state && ev.state.cat),
                 'drawer': () => this._openDrawer(),
                 'publish-pages-modal': () => this.openPublishPagesModal(),
+                'book-memo-modal': () => this._reopenBookMemo(ev.state && ev.state.asin),
+                'art-fs': () => this._reopenArtFs(ev.state),
             }[bsm];
             if (reopen) { reopen(); return; }
             // 空振りさせずにさらに戻る (D06・開き直せない面はここに来る)
             try { history.back(); } catch (_) {}
         }
+    }
+
+    // イシュー#291: 「進む」で長文メモを開き直す。state.asin から本を特定する。
+    async _reopenBookMemo(asin) {
+        if (!asin) return;
+        const book = this.bookManager.getAllBooks().find((b) => b.asin === asin);
+        if (!book) return;
+        await this._openBookMemoInAppEditor(asin, book);
+    }
+
+    // イシュー#291: 「進む」で記事のブロック全画面(フォーム)を開き直す。記事一覧が開いていなければ
+    // まず記事一覧→該当記事の閲覧/編集状態→ブロックフォームの順に積み直す必要があるため、
+    // 現状は「記事編集中にブロックフォームを閉じて進む」場面(記事モーダル自体は開いたまま)に限る。
+    async _reopenArtFs(state) {
+        if (!state || !this._artDraft || this._artMode === 'form') return;
+        const blockId = state.blockId;
+        const block = blockId && (this._artDraft.blocks || []).find((b) => b.id === blockId);
+        if (!block) return;
+        this._artEditBlock(block.id);
     }
 
     // 起動時: 再読込前に積んだ段が残っていれば、開いている面は無いので段を畳んで元の位置へ戻す (イシュー#284 K4・D06)

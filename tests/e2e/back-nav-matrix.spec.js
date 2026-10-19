@@ -1518,7 +1518,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
             (s) => expect.soft(s.openModals, '進むと開く').toContain('publish-pages-modal'));
     });
 
-    test('L15f 長文メモ: 戻った直後に積んだ進む項目は消え、進んでもURL・state・画面が変わらない (#291・段を残さない方針)', async ({ page }, ti) => {
+    test('L15f 長文メモ: 戻った後に進むと開き直る (#291・開き直す方針・stateにasin)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'L15f',
             async (p) => {
                 const asin = await firstBook(p);
@@ -1529,15 +1529,10 @@ test.describe('進む 網羅 (イシュー#291)', () => {
                 }, asin);
             },
             (s) => expect.soft(s.openModals).not.toContain('book-memo-modal'),
-            (s2, s1) => {
-                expect.soft(s2.openModals, '進んでも開かない').not.toContain('book-memo-modal');
-                expect.soft(s2.len, '進む項目が無い(history.lengthが閉じた直後から不変)').toBe(s1.len);
-                expect.soft(s2.hash, '進んでもhashが変わらない').toBe(s1.hash);
-                expect.soft(JSON.stringify(s2.state), '進んでもstateが変わらない').toBe(JSON.stringify(s1.state));
-            });
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('book-memo-modal'));
     });
 
-    test('A43f 記事編集(全画面): 戻った直後に積んだ進む項目は消え、進んでもURL・state・画面が変わらない (#291・段を残さない方針)', async ({ page }, ti) => {
+    test('A43f 記事編集(全画面): 戻った後に進むと開き直る (#291・開き直す方針・stateにblockId)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'A43f',
             async (p) => {
                 await openNewArticleEdit(p);
@@ -1547,12 +1542,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
                 await expect(p.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
             },
             (s) => expect.soft(s.artMode).not.toBe('form'),
-            (s2, s1) => {
-                expect.soft(s2.artMode, '進んでも全画面に戻らない').not.toBe('form');
-                expect.soft(s2.len, '進む項目が無い(history.lengthが閉じた直後から不変)').toBe(s1.len);
-                expect.soft(s2.hash, '進んでもhashが変わらない').toBe(s1.hash);
-                expect.soft(JSON.stringify(s2.state), '進んでもstateが変わらない').toBe(JSON.stringify(s1.state));
-            });
+            (s) => expect.soft(s.artMode, '進むと全画面が開く').toBe('form'));
     });
 });
 
