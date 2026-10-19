@@ -1544,6 +1544,89 @@ test.describe('進む 網羅 (イシュー#291)', () => {
             (s) => expect.soft(s.artMode).not.toBe('form'),
             (s) => expect.soft(s.artMode, '進むと全画面が開く').toBe('form'));
     });
+
+    test('G36f 本棚フォーム: 戻った後に進むと開き直る (#291・開き直す方針・stateにbsKey)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'G36f',
+            async (p) => { await p.evaluate(() => window.bookshelf.showBookshelfForm()); await settle(p); },
+            (s) => expect.soft(s.openModals).not.toContain('bookshelf-form-modal'),
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('bookshelf-form-modal'));
+    });
+
+    test('G37f アイコンピッカー: 戻った後に進むと開き直る (#291・開き直す方針・stateにtitle/current)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'G37f',
+            async (p) => {
+                await p.evaluate(() => window.bookshelf.showBookshelfForm()); await settle(p);
+                await p.locator('#bookshelf-form-modal [id*="icon"]:visible').first().tap(); await settle(p);
+                await expect(p.locator('#icon-picker-modal')).toHaveClass(/show/);
+            },
+            (s) => expect.soft(s.openModals).not.toContain('icon-picker-modal'),
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('icon-picker-modal'));
+    });
+
+    test('G38f 子孫選択: 戻った後に進むと開き直る (#291・開き直す方針・stateにdescIds)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'G38f',
+            async (p) => {
+                await p.evaluate(() => { const bs = window.bookshelf; window.__pick = 'pending'; bs._chooseDescendantsToAddTo(bs.userData.bookshelves.filter((b) => !b.isSpecial)).then((v) => { window.__pick = v; }); });
+                await expect(p.locator('#descendants-pick-modal')).toHaveClass(/show/);
+            },
+            (s) => expect.soft(s.openModals).not.toContain('descendants-pick-modal'),
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('descendants-pick-modal'));
+    });
+
+    test('A44f 記事閲覧状態: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A44f',
+            async (p) => { await newArticleView(p); },
+            (s) => expect.soft(s.stack).not.toContain('art-viewing'),
+            (s) => expect.soft(s.stack, '進むと開く').toContain('art-viewing'));
+    });
+
+    test('A45f 記事編集状態: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A45f',
+            async (p) => { await newArticleView(p); await tap(p, '#art-mode-edit'); },
+            (s) => expect.soft(s.stack).not.toContain('art-edit-mode'),
+            (s) => expect.soft(s.stack, '進むと開く').toContain('art-edit-mode'));
+    });
+
+    test('A46f 追加シート: 戻った後に進むと開き直る (#291・開き直す方針・stateにmenuIndex)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A46f',
+            async (p) => {
+                await newArticleView(p); await tap(p, '#art-mode-edit');
+                await p.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
+                await expect(p.locator('#art-add-sheet')).toBeVisible();
+            },
+            (s) => expect.soft(s.stack).not.toContain('art-add-sheet'),
+            (s) => expect.soft(s.stack, '進むと開く').toContain('art-add-sheet'));
+    });
+
+    test('A47f 見た目シート: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A47f',
+            async (p) => { await newArticleView(p); await tap(p, '#art-mode-edit'); await lookBtn(p); await expect(p.locator('#art-look-sheet')).toBeVisible(); },
+            (s) => expect.soft(s.stack).not.toContain('art-look-sheet'),
+            (s) => expect.soft(s.stack, '進むと開く').toContain('art-look-sheet'));
+    });
+
+    test('A48f 公開パネル: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A48f',
+            async (p) => { await newArticleView(p); await tap(p, '#art-mode-edit'); await pubBtn(p); await expect(p.locator('#art-publish-modal')).toHaveClass(/show/); },
+            (s) => expect.soft(s.openModals).not.toContain('art-publish-modal'),
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('art-publish-modal'));
+    });
+
+    test('A49f プレビュー: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
+        await forwardCheck(page, ti, 'A49f',
+            async (p) => {
+                await newArticleView(p); await tap(p, '#art-mode-edit');
+                await insText(p);
+                await p.evaluate(() => window.bookshelf._artTextFsEditor.value('本文291'));
+                await back(p);
+                await tap(p, '#art-more-btn');
+                await tap(p, '#art-width-preview');
+                await settle(p, 600);
+                await expect(p.locator('#pp-preview-modal')).toHaveClass(/show/);
+            },
+            (s) => expect.soft(s.openModals).not.toContain('pp-preview-modal'),
+            (s) => expect.soft(s.openModals, '進むと開く').toContain('pp-preview-modal'));
+    });
 });
 
 // ===== イシュー#288: 記事エディタのブロックチップ =====

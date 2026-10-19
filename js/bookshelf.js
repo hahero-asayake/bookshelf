@@ -12214,11 +12214,15 @@ class VirtualBookshelf {
     // 戻り値 false = articleId が無い、または記事が見つからない(開き直せない)。
     async _reopenArtContext(state) {
         const id = state && state.articleId;
+        const showEditorIfHidden = () => { if (document.getElementById('art-edit-view').hidden) this._artShowEditor(); };
         if (id == null) {
             // 新規記事(自動保存の600msデバウンス前)は push 時点では articleId が未確定。進むで
             // 着地するまでの間に自動保存が完了して確定することがあるため、articleId の有無ではなく
             // 「その下書きが(同じ _artDraft のまま)まだ開いているか」で判定する。
-            return !!(this._artDraft && document.getElementById('publish-pages-modal').classList.contains('show'));
+            if (!(this._artDraft && document.getElementById('publish-pages-modal').classList.contains('show'))) return false;
+            showEditorIfHidden();
+            if (state.artMode === 'edit' && this._artMode !== 'edit' && this._artMode !== 'form') this._artSetMode('edit');
+            return true;
         }
         if (!document.getElementById('publish-pages-modal').classList.contains('show')) {
             await this.openPublishPagesModal();
@@ -12227,6 +12231,11 @@ class VirtualBookshelf {
             const exists = this.publishArticleStore.get(id);
             if (!exists) return false;
             this._artOpenEditor(id);
+        } else {
+            // 戻るで _artShowList まで戻った後の「進む」: 同じ記事はまだ開いているが
+            // 一覧ビューに表示が切り替わっているため、編集ビューを再表示する(push し直すのは
+            // _artShowEditor 自身・_modalHistPush の二重オープン防止で安全・イシュー#291)。
+            showEditorIfHidden();
         }
         if (state.artMode === 'edit' && this._artMode !== 'edit' && this._artMode !== 'form') this._artSetMode('edit');
         return true;
