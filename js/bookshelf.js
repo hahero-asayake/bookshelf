@@ -4333,7 +4333,7 @@ class VirtualBookshelf {
         document.getElementById('report-reason').value = '';
         this._setReportError('');
         modal.classList.add('show');
-        this._modalHistPush('report-modal', (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)));
+        this._modalHistPush('report-modal', (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)), { extra: { url } });
         this._formSnapTake('report-modal');
     }
 
@@ -7039,7 +7039,7 @@ class VirtualBookshelf {
 
         if (typeof window.applyIcons === 'function') window.applyIcons(body);
         modal.classList.add('show');
-        this._modalHistPush('plugin-settings-modal', (o) => this._pluginSettingsModalClose(o));
+        this._modalHistPush('plugin-settings-modal', (o) => this._pluginSettingsModalClose(o), { extra: { pluginId: id } });
     }
 
     _applyPluginSearchFilter() {
@@ -12160,6 +12160,19 @@ class VirtualBookshelf {
                 'publish-pages-modal': () => this.openPublishPagesModal(),
                 'book-memo-modal': () => this._reopenBookMemo(ev.state && ev.state.asin),
                 'art-fs': () => this._reopenArtFs(ev.state),
+                // イシュー#291: 以下は単純に開くだけで元の意味を取り戻せる面(入力欄のリセットは
+                // 新規に開いた扱いとして許容する・②指示)。
+                'command-palette': () => this._openPalette(),
+                'bookshelf-modal': () => this.showBookshelfManager(),
+                'exclusions-modal': () => this.showExclusionsModal(),
+                'import-modal': () => this.showImportModal(),
+                'add-book-modal': () => this.showAddBookModal(),
+                'report-modal': () => this.openReportModal(ev.state && ev.state.url),
+                'plugin-settings-modal': () => this._openPluginSettings(ev.state && ev.state.pluginId),
+                // イシュー#291 次ステップ: 本棚フォーム・アイコンピッカー・子孫選択・公開パネル・
+                // プレビュー・記事閲覧/編集状態(art-viewing/art-edit-mode)・記事の各種メニュー/シート
+                // (⋯・見出し・見た目・＋追加・引き出し) は、時間切れで未実装。D06(history.back())に
+                // フォールバックする(開き直らない=元の#288の挙動のまま・空振りは発生しない)。
             }[bsm];
             if (reopen) { reopen(); return; }
             // 空振りさせずにさらに戻る (D06・開き直せない面はここに来る)
