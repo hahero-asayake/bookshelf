@@ -6111,7 +6111,7 @@ class VirtualBookshelf {
 
             modal.classList.add('show');
             // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
-            this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); });
+            this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); }, { extra: { pickerTitle: title, pickerCurrent: current } });
         });
     }
 
@@ -7698,7 +7698,7 @@ class VirtualBookshelf {
         this.currentEditingBookshelf = bookshelfToEdit;
 
         modal.classList.add('show');
-        this._modalHistPush('bookshelf-form-modal', (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)));
+        this._modalHistPush('bookshelf-form-modal', (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)), { extra: { bsKey: editKey } });
         this._formSnapTake('bookshelf-form-modal');
         nameInput.focus();
     }
@@ -7949,7 +7949,7 @@ class VirtualBookshelf {
             skipBtn.addEventListener('click', onSkip);
             closeBtn.addEventListener('click', onSkip);
             // スマホ戻る: スキップ扱いで閉じる (Promise を必ず resolve する)
-            this._modalHistPush('descendants-pick-modal', (o) => { cleanup(o); resolve([]); });
+            this._modalHistPush('descendants-pick-modal', (o) => { cleanup(o); resolve([]); }, { extra: { descIds: descendants.map((d) => d.internalId) } });
         });
     }
 
@@ -8418,7 +8418,7 @@ class VirtualBookshelf {
         document.getElementById('art-edit-view').hidden = false;
         const content = document.querySelector('.art-modal-content');
         if (content) content.classList.add('art-editing');
-        this._modalHistPush('art-viewing', (o) => this._artShowList(o));
+        this._modalHistPush('art-viewing', (o) => this._artShowList(o), { extra: { articleId: this._artEditingId } });
     }
 
     _artCountBooks(blocks) {
@@ -8695,7 +8695,7 @@ class VirtualBookshelf {
         const newMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
         const prevMode = this._artMode;
         if (prevMode === 'view' && newMode === 'edit') {
-            this._modalHistPush('art-edit-mode', (o) => this._artCompleteEdit(o));
+            this._modalHistPush('art-edit-mode', (o) => this._artCompleteEdit(o), { extra: { articleId: this._artEditingId } });
         } else if (prevMode === 'edit' && newMode === 'view') {
             this._modalHistPop('art-edit-mode', {});
         }
@@ -9001,7 +9001,7 @@ class VirtualBookshelf {
         sheet.hidden = false;
         const first = sheet.querySelector('.art-add-sheet-item:not([disabled])');
         if (first) first.focus();
-        this._modalHistPush('art-add-sheet', (o) => this._artCloseAddSheet(o));
+        this._modalHistPush('art-add-sheet', (o) => this._artCloseAddSheet(o), { extra: { articleId: this._artEditingId, menuIndex: index } });
     }
 
     // keepHistory: 続けて全画面を開く時は、積んだ履歴1段をそのまま全画面へ引き継ぐ (_artHistHandOver)。
@@ -9041,7 +9041,7 @@ class VirtualBookshelf {
         // ⋯は iframe 内のボタン＝押した直後のフォーカスは iframe の中。Esc/キーボード操作が親へ届くよう項目へ移す
         const first = menu.querySelector('.art-more-item:not([disabled])');
         if (first) first.focus();
-        this._modalHistPush('art-blk-menu', (o) => this._artCloseBlkMenu(o));
+        this._modalHistPush('art-blk-menu', (o) => this._artCloseBlkMenu(o), { extra: { articleId: this._artEditingId } });
     }
 
     _artCloseBlkMenu({ fromHistory = false, keepHistory = false } = {}) {
@@ -9092,7 +9092,7 @@ class VirtualBookshelf {
         // スマホの「戻る」= 完了 (Esc と同じ・②決裁)。直前のシート/⋯メニューの段があれば引き継ぐ
         const closeFs = (o) => this._artCloseBlockFs(true, o);
         if (!this._artHistHandOver('art-add-sheet', 'art-fs', closeFs) && !this._artHistHandOver('art-blk-menu', 'art-fs', closeFs)) {
-            this._modalHistPush('art-fs', closeFs, { extra: { blockId } });
+            this._modalHistPush('art-fs', closeFs, { extra: { articleId: this._artEditingId, blockId } });
         } else if (this._isHistMobile()) {
             // イシュー#291: handover(段を引き継ぐ)経路は _modalHistPush を通らず history も触らない
             // ため、state に blockId が入らない。進むで開き直せるよう、現在の段を blockId 付きで
@@ -9596,7 +9596,7 @@ class VirtualBookshelf {
         if (!sheet) return;
         this._artRenderLookSheet();
         sheet.hidden = false;
-        this._modalHistPush('art-look-sheet', (o) => this._artCloseLookSheet(o));
+        this._modalHistPush('art-look-sheet', (o) => this._artCloseLookSheet(o), { extra: { articleId: this._artEditingId } });
     }
 
     _artCloseLookSheet({ fromHistory = false } = {}) {
@@ -10606,7 +10606,7 @@ class VirtualBookshelf {
         if (!side) return;
         side.classList.add('is-open');
         if (scrim) scrim.classList.add('is-open');
-        this._modalHistPush('art-sheet', (o) => this._artCloseSheet(o), { isMobile: () => this._artIsDrawerNarrow() });
+        this._modalHistPush('art-sheet', (o) => this._artCloseSheet(o), { isMobile: () => this._artIsDrawerNarrow(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
     }
 
     _artCloseSheet({ fromHistory = false } = {}) {
@@ -11030,7 +11030,7 @@ class VirtualBookshelf {
         btn.setAttribute('aria-expanded', String(open));
         if (open) this._placeAnchoredMenu(btn, menu);
         // 戻る=メニューだけ閉じる (D01)。開いた時だけ1段積み、閉じたら畳む
-        if (open && !wasOpen) this._modalHistPush('art-more-menu', (o) => this._artToggleMoreMenu(false, o));
+        if (open && !wasOpen) this._modalHistPush('art-more-menu', (o) => this._artToggleMoreMenu(false, o), { extra: { articleId: this._artEditingId } });
         else if (!open && wasOpen) this._modalHistPop('art-more-menu', { fromHistory: !!(arguments[1] && arguments[1].fromHistory) });
     }
 
@@ -11157,7 +11157,7 @@ class VirtualBookshelf {
         this._artRenderTags();
         this._artRenderPublishPanel();
         m.classList.add('show');
-        this._modalHistPush('art-publish-modal', (o) => this._artClosePublishPanel(o));
+        this._modalHistPush('art-publish-modal', (o) => this._artClosePublishPanel(o), { extra: { articleId: this._artEditingId } });
     }
 
     _artClosePublishPanel({ fromHistory = false } = {}) {
@@ -11550,7 +11550,7 @@ class VirtualBookshelf {
         if (stage) stage.classList.remove('pp-stage-mobile');
         m.classList.add('show');
         if (typeof window.applyIcons === 'function') window.applyIcons(m);
-        this._modalHistPush('pp-preview-modal', (o) => this._artClosePreviewModal(o));
+        this._modalHistPush('pp-preview-modal', (o) => this._artClosePreviewModal(o), { extra: { articleId: this._artEditingId } });
     }
     _artClosePreviewModal({ fromHistory = false } = {}) {
         const m = document.getElementById('pp-preview-modal');
@@ -11762,7 +11762,7 @@ class VirtualBookshelf {
                 <span>${esc(it.label)}</span><span class="mde-heading-check">${checkSvg}</span></button>`;
         }).join('');
         document.body.appendChild(menu);
-        this._modalHistPush('mde-heading-menu', (o) => this._mdeCloseHeadingMenu(o)); // D01
+        this._modalHistPush('mde-heading-menu', (o) => this._mdeCloseHeadingMenu(o), { extra: { articleId: this._artEditingId } }); // D01
         menu.querySelectorAll('.mde-heading-item').forEach((item) => {
             item.addEventListener('click', () => {
                 this._mdeApplyHeadingLevel(easymde, Number(item.dataset.level));
@@ -12169,10 +12169,21 @@ class VirtualBookshelf {
                 'add-book-modal': () => this.showAddBookModal(),
                 'report-modal': () => this.openReportModal(ev.state && ev.state.url),
                 'plugin-settings-modal': () => this._openPluginSettings(ev.state && ev.state.pluginId),
-                // イシュー#291 次ステップ: 本棚フォーム・アイコンピッカー・子孫選択・公開パネル・
-                // プレビュー・記事閲覧/編集状態(art-viewing/art-edit-mode)・記事の各種メニュー/シート
-                // (⋯・見出し・見た目・＋追加・引き出し) は、時間切れで未実装。D06(history.back())に
-                // フォールバックする(開き直らない=元の#288の挙動のまま・空振りは発生しない)。
+                'bookshelf-form-modal': () => this._reopenBookshelfForm(ev.state),
+                'icon-picker-modal': () => this.openIconPicker({ title: ev.state && ev.state.pickerTitle, current: ev.state && ev.state.pickerCurrent }),
+                'descendants-pick-modal': () => this._reopenDescendantsPick(ev.state),
+                'art-viewing': () => this._reopenArtViewing(ev.state),
+                'art-edit-mode': () => this._reopenArtEdit(ev.state),
+                'art-add-sheet': () => this._reopenArtAddSheet(ev.state),
+                'art-look-sheet': () => this._reopenArtLookSheet(ev.state),
+                'art-sheet': () => this._reopenArtSheet(ev.state),
+                'art-publish-modal': () => this._reopenArtPublishPanel(ev.state),
+                'pp-preview-modal': () => this._reopenArtPreview(ev.state),
+                // イシュー#291: ⋯メニュー系はiframe内DOM位置が要るため、メニュー自体は開かず
+                // 親の記事編集状態まで開き直す(history.back()は呼ばない・②指示)。
+                'art-blk-menu': () => this._reopenArtContextOnly(ev.state),
+                'art-more-menu': () => this._reopenArtContextOnly(ev.state),
+                'mde-heading-menu': () => this._reopenArtContextOnly(ev.state),
             }[bsm];
             if (reopen) { reopen(); return; }
             // 空振りさせずにさらに戻る (D06・開き直せない面はここに来る)
@@ -12188,15 +12199,90 @@ class VirtualBookshelf {
         await this._openBookMemoInAppEditor(asin, book);
     }
 
-    // イシュー#291: 「進む」で記事のブロック全画面(フォーム)を開き直す。記事一覧が開いていなければ
-    // まず記事一覧→該当記事の閲覧/編集状態→ブロックフォームの順に積み直す必要があるため、
-    // 現状は「記事編集中にブロックフォームを閉じて進む」場面(記事モーダル自体は開いたまま)に限る。
+    // イシュー#291: 「進む」で記事のブロック全画面(フォーム)を開き直す。記事自体(articleId)が
+    // 開いていなければ publish-pages-modal → 該当記事の順に積み直してから対象ブロックを開く。
     async _reopenArtFs(state) {
-        if (!state || !this._artDraft || this._artMode === 'form') return;
+        if (!(await this._reopenArtContext(state))) return;
         const blockId = state.blockId;
         const block = blockId && (this._artDraft.blocks || []).find((b) => b.id === blockId);
         if (!block) return;
         this._artEditBlock(block.id);
+    }
+
+    // イシュー#291: 記事一覧・記事閲覧/編集状態を state.articleId から積み直す共通処理。
+    // publish-pages-modal(一覧)が開いていなければ開き、_artEditingId が対象と違えば開き直す。
+    // 戻り値 false = articleId が無い、または記事が見つからない(開き直せない)。
+    async _reopenArtContext(state) {
+        const id = state && state.articleId;
+        if (id == null) {
+            // 新規記事(自動保存の600msデバウンス前)は push 時点では articleId が未確定。進むで
+            // 着地するまでの間に自動保存が完了して確定することがあるため、articleId の有無ではなく
+            // 「その下書きが(同じ _artDraft のまま)まだ開いているか」で判定する。
+            return !!(this._artDraft && document.getElementById('publish-pages-modal').classList.contains('show'));
+        }
+        if (!document.getElementById('publish-pages-modal').classList.contains('show')) {
+            await this.openPublishPagesModal();
+        }
+        if (this._artEditingId !== id || !this._artDraft) {
+            const exists = this.publishArticleStore.get(id);
+            if (!exists) return false;
+            this._artOpenEditor(id);
+        }
+        if (state.artMode === 'edit' && this._artMode !== 'edit' && this._artMode !== 'form') this._artSetMode('edit');
+        return true;
+    }
+
+    // イシュー#291: 記事閲覧状態(art-viewing)を開き直す。
+    async _reopenArtViewing(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'view' })); }
+    // イシュー#291: 記事編集状態(art-edit-mode)を開き直す。
+    async _reopenArtEdit(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'edit' })); }
+
+    // イシュー#291: ＋追加シート(art-add-sheet)を開き直す。
+    async _reopenArtAddSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        const idx = typeof state.menuIndex === 'number' ? state.menuIndex : (this._artDraft.blocks || []).length;
+        this._artOpenAddSheet(idx);
+    }
+    // イシュー#291: 見た目シート(art-look-sheet)を開き直す。
+    async _reopenArtLookSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenLookSheet();
+    }
+    // イシュー#291: 本棚ブロックの引き出しシート(art-sheet)を開き直す。
+    async _reopenArtSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        if (state.menuBlockId) this._artActiveShelfBlockId = state.menuBlockId;
+        this._artOpenSheet();
+    }
+    // イシュー#291: 公開パネル(art-publish-modal)を開き直す。
+    async _reopenArtPublishPanel(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenPublishPanel();
+    }
+    // イシュー#291: プレビュー(pp-preview-modal)を開き直す。
+    async _reopenArtPreview(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenPreviewModal();
+    }
+    // イシュー#291: ブロック⋯メニュー(art-blk-menu)・記事⋯メニュー(art-more-menu)・見出しメニュー
+    // (mde-heading-menu)は、開くのに iframe 内 DOM 要素(アンカー位置)が要るため、メニュー自体の
+    // 再現は見送り、親の記事編集状態まで開き直す(メニューは開かない)。D06 の history.back() は
+    // 呼ばない(呼ぶと「一瞬映って消える」が残るため・②指示)。
+    async _reopenArtContextOnly(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'edit' })); }
+    // イシュー#291: 本棚フォーム(bookshelf-form-modal)を開き直す。state.bsKey から対象本棚を特定。
+    _reopenBookshelfForm(state) {
+        const key = state && state.bsKey;
+        if (!key) { this.showBookshelfForm(); return; }
+        const bs = this.bookshelfManager.getBookshelves().find((b) => this.bookshelfManager._keyOf(b) === key);
+        this.showBookshelfForm(bs || null);
+    }
+    // イシュー#291: 子孫選択(descendants-pick-modal)を開き直す。Promise の解決先は捨てる(②指示)。
+    _reopenDescendantsPick(state) {
+        const ids = (state && state.descIds) || [];
+        if (!ids.length) return;
+        const all = this.bookshelfManager.getBookshelves();
+        const descendants = ids.map((id) => all.find((b) => b.internalId === id)).filter(Boolean);
+        if (descendants.length) this._chooseDescendantsToAddTo(descendants);
     }
 
     // 起動時: 再読込前に積んだ段が残っていれば、開いている面は無いので段を畳んで元の位置へ戻す (イシュー#284 K4・D06)
