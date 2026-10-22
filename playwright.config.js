@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// webkit (iPhone相当) は CI では入れていないため、BACKNAV_WEBKIT=1 のときだけ戻る網羅マトリクスに限って足す (イシュー#284)
+// webkit (iPhone相当) は CI では入れていないため、BACKNAV_WEBKIT=1 のときだけ戻る網羅マトリクス
+// (イシュー#284) とチェックリスト自動化 (イシュー#295) に限って足す
 const extraProjects = process.env.BACKNAV_WEBKIT === '1'
-    ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js/, use: { ...devices['iPhone 13'] } }]
+    ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js|checklist-timing\.spec\.js/, use: { ...devices['iPhone 13'] } }]
     : [];
 
 export default defineConfig({
