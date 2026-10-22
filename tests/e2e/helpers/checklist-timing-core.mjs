@@ -40,10 +40,18 @@ function stateKey(r) { return JSON.stringify(SNAPSHOT_KEYS.map((k) => r[k])); }
 // 操作直後から ms 間、step 間隔で DOM/URL を記録する。dir を渡すとフレーム毎にスクショも残す
 // (番号0始まり・3桁ゼロ埋め)。実時間は page.evaluate 等のオーバーヘッド分 ms を超えることがある
 // (「100ms間隔程度」で足りる・厳密同期は不要)。
-export async function observe(page, { ms = 3000, step = 100, dir = null } = {}) {
+// phases (イシュー#326 step2追加): [{until, step}, ...] を渡すと、経過時間 tWall < until の
+// 間隔を順に適用する可変間隔撮影ができる (未指定時は従来通り step 固定・後方互換)。
+// 例: phases=[{until:1000, step:50}, {until:3000, step:100}] = 1秒まで50ms間隔・以降100ms間隔。
+export async function observe(page, { ms = 3000, step = 100, dir = null, phases = null } = {}) {
     const records = [];
     const start = Date.now();
     let i = 0;
+    const stepAt = (tWall) => {
+        if (!phases) return step;
+        for (const p of phases) { if (tWall < p.until) return p.step; }
+        return phases[phases.length - 1].step;
+    };
     while (Date.now() - start <= ms) {
         const s = await snapState(page);
         const tWall = Date.now() - start;
@@ -52,7 +60,7 @@ export async function observe(page, { ms = 3000, step = 100, dir = null } = {}) 
             await page.screenshot({ path: `${dir}/${String(i).padStart(3, '0')}.png` }).catch(() => {});
         }
         i++;
-        await page.waitForTimeout(step);
+        await page.waitForTimeout(stepAt(tWall));
     }
     return records;
 }
