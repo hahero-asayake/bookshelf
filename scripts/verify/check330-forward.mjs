@@ -14,7 +14,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 
 const browserType = process.argv[2] || 'chromium';
 const REPEAT = Number(process.argv[3] || 20);
-const URL = 'http://localhost:8000/index.html';
+const URL = process.env.CHECK330_URL || 'http://localhost:8000/index.html';
 const fixtureUserData = readFileSync('tests/fixtures/fixture-userdata.json', 'utf-8');
 const fixtureLibrary = readFileSync('tests/fixtures/fixture-library.json', 'utf-8');
 const LABEL = process.argv[4] || 'before';
@@ -152,7 +152,8 @@ async function burstSample(page, sheetSel, { frames = 10, step = 50, dir = null 
     const browser = await launcher.launch(launchOpts);
     const faceResults = [];
 
-    for (const face of FACES) {
+    const faceFilter = process.env.CHECK330_FACE;
+    for (const face of FACES.filter((f) => !faceFilter || f.id === faceFilter)) {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
         const pageErrors = [];
         page.on('pageerror', (e) => pageErrors.push(String(e)));
