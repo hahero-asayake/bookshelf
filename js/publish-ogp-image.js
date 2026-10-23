@@ -3,10 +3,8 @@
 // 方針:
 //  - 自前生成のみ。Amazon の表紙画像は使わない (加工・合成不可, §11.10)。グラデーション・影・画像なし。
 //  - 2 色構成 = 背景 bg (単色) + アクセント acc。文字は txt/sub。色は記事本体と同じ ARTICLE_COLOR_TOKENS。
-//  - 要素はタイトル・タグ・発行者名・サイト名のみ。
-//  - layout() は記事エディタのテンプレ3型 (ADR-103: book-a-shelf-a/book-c-shelf-c/book-c-shelf-d) の
-//    「配置の構造」を rect/pill/text だけで表す (書影は使えないため意匠化、イシュー#340・2026-10-24)。
-//    未知の theme.layout は既定の book-a-shelf-a へ倒す。paint() は描画指示を塗るだけで型を知らない (変更なし)。
+//  - 要素はタイトル・タグ・発行者名・サイト名のみ。記事エディタのテンプレ 3 型 (#211) には依存しない。
+//    #211 の結論が出たら layout() だけ差し替える (paint() は描画指示を塗るだけで型を知らない)。
 //  - layout(article, theme, opts) → 描画指示 (純データ。Canvas 不要・unit で検証可)
 //    paint(ctx2d, plan)          → 描画指示を Canvas へ塗る
 //    render(article, theme, opts) → PNG を作って { ok, base64, hash, bytes } か { ok:false, reason } を返す。
@@ -17,8 +15,7 @@ class PublishOgpImage {
     static get MAX_BYTES() { return 200 * 1024; }   // og.png は保存容量 (quota) に計上されるため 1 枚の上限を持つ
     static get MAX_TITLE_LINES() { return 3; }
     static get MAX_TAGS() { return 5; }
-    static get LAYOUT_VERSION() { return 2; }        // layout を変えたら上げる (入力ハッシュが変わり再生成される)。#340: テンプレ3型対応で 1→2。
-    static get LAYOUTS() { return ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d']; }   // ADR-103。未知値は既定 (先頭) へ倒す。
+    static get LAYOUT_VERSION() { return 1; }        // layout を変えたら上げる (入力ハッシュが変わり再生成される)
     // 端末ごとに入っている日本語フォントが違う。存在するものが先に当たり、無ければ sans-serif (ブラウザの字形フォールバック)。
     static get FONT_STACK() {
         return '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans CJK JP","Noto Sans JP",sans-serif';
@@ -34,99 +31,21 @@ class PublishOgpImage {
         const siteName = String(opts.siteName || 'AsayakeBookshelf');
         const title = PublishOgpImage._oneLine(article && article.title) || '（無題）';
         const rawTags = ((article && article.tags) || []).map(t => PublishOgpImage._oneLine(t)).filter(Boolean);
-        // 未知の theme.layout は既定 (book-a-shelf-a) へ倒す (ADR-103・#340)。
-        const tpl = PublishOgpImage.LAYOUTS.includes(theme && theme.layout) ? theme.layout : PublishOgpImage.LAYOUTS[0];
-        const ctx = { W, H, stack, colors, measure, publisher, siteName, title, rawTags };
+
+        const padL = 96, padR = 80, textW = W - padL - padR;
+        const titleFont = `bold 60px ${stack}`;
+        const titleLines = PublishOgpImage._wrap(title, titleFont, textW, PublishOgpImage.MAX_TITLE_LINES, measure);
 
         const items = [];
         items.push({ kind: 'rect', x: 0, y: 0, w: W, h: H, fill: colors.bg });
+        items.push({ kind: 'rect', x: 0, y: 0, w: 24, h: H, fill: colors.acc });
+        // タイトルブロックは「上端〜タグ行の手前」(y=72..360) の縦中央に置く (3 行は y=96 から・1 行は下寄りになり上が空きすぎない)
+        const titleTop = 72 + Math.round((288 - titleLines.lines.length * 80) / 2);
+        titleLines.lines.forEach((line, i) => {
+            items.push({ kind: 'text', text: line, x: padL, y: titleTop + i * 80, font: titleFont, fill: colors.txt });
+        });
 
-        // テンプレごとに分岐を独立させる (一部だけ採用・現状維持に戻す判断が出ても、該当テンプレのメソッドだけ差し替えられるように)。
-        const built = tpl === 'book-c-shelf-c' ? PublishOgpImage._layoutBookCShelfC(items, ctx)
-            : tpl === 'book-c-shelf-d' ? PublishOgpImage._layoutBookCShelfD(items, ctx)
-            : PublishOgpImage._layoutBookAShelfA(items, ctx);
-
-        // 入力キー = 見た目を決める入力だけ (measure の結果は含めない＝端末が変わっても同じキー。テンプレを変えたら再生成されるよう tpl を含める)
-        const inputKey = JSON.stringify([PublishOgpImage.LAYOUT_VERSION, tpl, title, rawTags.slice(0, PublishOgpImage.MAX_TAGS), publisher, siteName, colors.bg, colors.txt, colors.sub, colors.acc]);
-        return { version: PublishOgpImage.LAYOUT_VERSION, layout: tpl, width: W, height: H, colors, items, title: built.titleLines, tags: built.tags, inputKey };
-    }
-
-    // フォントの ascent/descent の近似 (render() の opts は measure(幅)しか渡さないため、実測 (ascent/descent)
-    // は使えない。固定比で近似する＝書体により多少ずれるが、上下余白の対称性判定は8px の許容幅で吸収する、2026-10-24②承認)。
-    static _approxAscentDescent(font) {
-        const m = /(\d+(?:\.\d+)?)px/.exec(font || '');
-        const size = m ? Number(m[1]) : 16;
-        return { ascent: size * 0.88, descent: size * 0.12 };
-    }
-
-    // book-a-shelf-a (「書影を大きく」=本を中央・上下1px線で区切る): 全要素を中央揃えにし、
-    // 上下の罫線とフッターの位置を (近似 ascent/descent から) 逆算して対称性・余白を確保する。
-    static _layoutBookAShelfA(items, { W, H, stack, colors, measure, publisher, siteName, title, rawTags }) {
-        const contentW = 960, padL = (W - contentW) / 2, cx = W / 2;
-        const footerText = `${publisher} の本棚 ・ ${siteName}`;
-        const footerFont = `bold 26px ${stack}`;
-        const ruleH = 2, gap = 16, footerBottomMarginTarget = 44;   // 44px 目標 (>=40px を確保するマージン込み)
-
-        const fm = PublishOgpImage._approxAscentDescent(footerFont);
-        const footerBaselineY = Math.round(H - footerBottomMarginTarget - fm.descent);
-        const footerTopY = footerBaselineY - fm.ascent;
-        const bottomRuleY = Math.round(footerTopY - gap - ruleH);
-        const bottomMarginFromEdge = H - (bottomRuleY + ruleH);
-        const topRuleY = bottomMarginFromEdge;   // 上罫線の上端からの余白 = 下罫線の下端からの余白 (対称)
-
-        items.push({ kind: 'rect', x: padL, y: topRuleY, w: contentW, h: ruleH, fill: colors.acc });
-        items.push({ kind: 'rect', x: padL, y: bottomRuleY, w: contentW, h: ruleH, fill: colors.acc });
-
-        const titleAreaTop = topRuleY + ruleH, titleAreaBottom = bottomRuleY;
-        const titleCenterY = (titleAreaTop + titleAreaBottom) / 2;
-        const titleFont = `bold 58px ${stack}`;
-        const titleLines = PublishOgpImage._wrap(title, titleFont, contentW - 40, PublishOgpImage.MAX_TITLE_LINES, measure);
-        const lineGap = 78;
-        const lm = PublishOgpImage._approxAscentDescent(titleFont);
-        const n = titleLines.lines.length;
-        const blockHeight = (n - 1) * lineGap + lm.ascent + lm.descent;
-        const firstBaseline = titleCenterY - blockHeight / 2 + lm.ascent;
-        titleLines.lines.forEach((line, i) => items.push({ kind: 'text', text: line, x: cx, y: Math.round(firstBaseline + i * lineGap), font: titleFont, fill: colors.txt, align: 'center', baseline: 'alphabetic' }));
-        const lastBaseline = firstBaseline + (n - 1) * lineGap;
-        const visualCenter = ((firstBaseline - lm.ascent) + (lastBaseline + lm.descent)) / 2;
-
-        const tagFont = `24px ${stack}`;
-        const tagDefs = [];
-        let totalW = 0;
-        for (const raw of rawTags.slice(0, PublishOgpImage.MAX_TAGS)) {
-            const label = Array.from(raw).length > 12 ? Array.from(raw).slice(0, 12).join('') + '…' : raw;
-            const w = Math.ceil(measure(label, tagFont)) + 40;
-            if (totalW + w + (tagDefs.length ? 14 : 0) > contentW) break;
-            tagDefs.push({ label, w });
-            totalW += w + (tagDefs.length > 1 ? 14 : 0);
-        }
-        const tagY = Math.min(titleAreaBottom - 70, Math.round(visualCenter + 110));
-        let tx = cx - totalW / 2;
-        const tags = [];
-        for (const { label, w } of tagDefs) {
-            items.push({ kind: 'pill', x: tx, y: tagY, w, h: 46, r: 23, stroke: colors.acc, lineWidth: 2 });
-            items.push({ kind: 'text', text: label, x: tx + w / 2, y: tagY + 23, font: tagFont, fill: colors.txt, align: 'center', baseline: 'middle' });
-            tags.push(label);
-            tx += w + 14;
-        }
-
-        items.push({ kind: 'text', text: footerText, x: cx, y: footerBaselineY, font: footerFont, fill: colors.sub, align: 'center', baseline: 'alphabetic' });
-        return { titleLines, tags };
-    }
-
-    // book-c-shelf-c (「文章に書影を添える」=書影88pxが左floatで文章が回り込む): 書影の比率 (縦長 200x300) の
-    // 色ブロックを左に置き、上下に余白を持たせて縦中央配置。文章はその右から回り込む。
-    static _layoutBookCShelfC(items, { W, H, stack, colors, measure, publisher, siteName, title, rawTags }) {
-        const coverW = 200, coverH = 300;
-        const coverX = 64, coverY = Math.round((H - coverH) / 2);
-        items.push({ kind: 'rect', x: coverX, y: coverY, w: coverW, h: coverH, fill: colors.acc });
-
-        const padL = coverX + coverW + 64, padR = 80, textW = W - padL - padR;
-        const titleFont = `bold 56px ${stack}`;
-        const titleLines = PublishOgpImage._wrap(title, titleFont, textW, PublishOgpImage.MAX_TITLE_LINES, measure);
-        const titleTop = 72 + Math.round((288 - titleLines.lines.length * 74) / 2);
-        titleLines.lines.forEach((line, i) => items.push({ kind: 'text', text: line, x: padL, y: titleTop + i * 74, font: titleFont, fill: colors.txt }));
-
+        // タグ (最大 5 個。1 行に収まらないものは落とす)
         const tagFont = `24px ${stack}`;
         const tags = [];
         let x = padL;
@@ -135,52 +54,21 @@ class PublishOgpImage {
             const w = Math.ceil(measure(label, tagFont)) + 40;
             if (x + w > padL + textW) break;
             items.push({ kind: 'pill', x, y: 380, w, h: 46, r: 23, stroke: colors.acc, lineWidth: 2 });
+            // タグ内の文字はピルの縦中央 (フォントの em 箱の中央＝グリフの形に依存しない) に置く
             items.push({ kind: 'text', text: label, x: x + 20, y: 380 + 23, font: tagFont, fill: colors.txt, baseline: 'middle' });
             tags.push(label);
             x += w + 14;
         }
 
+        // フッター: 区切り線 (acc) + 発行者名 / サイト名 (sub)
         items.push({ kind: 'rect', x: padL, y: 500, w: textW, h: 2, fill: colors.acc });
+        // 大きさの違う 2 つの文字は同じ基線 (alphabetic) に揃える。左は左端 96・右は右端 1120 (=W-padR) に揃う
         items.push({ kind: 'text', text: `${publisher} の本棚`, x: padL, y: 572, font: `bold 30px ${stack}`, fill: colors.sub, baseline: 'alphabetic' });
         items.push({ kind: 'text', text: siteName, x: padL + textW, y: 572, font: `26px ${stack}`, fill: colors.sub, align: 'right', baseline: 'alphabetic' });
-        return { titleLines, tags };
-    }
 
-    // book-c-shelf-d (「番号つきで並べる」=CSSの counter(n,decimal-leading-zero) が視覚的特徴): 大きな通し番号
-    // 「01」とタイトルを同じ左端・同じベースラインで横に並べる。タグは他テンプレと同じ pill (番号は振らない=本の順位に読めるのを避ける)。
-    static _layoutBookCShelfD(items, { W, H, stack, colors, measure, publisher, siteName, title, rawTags }) {
-        const padL = 96, padR = 80, textW = W - padL - padR;
-        const numFont = `800 54px ${stack}`;
-        const titleFont = `bold 54px ${stack}`;
-        const numWidth = Math.ceil(measure('01', numFont));
-        const gap = 16;
-        const titleX = padL + numWidth + gap;
-        const titleMaxW = textW - numWidth - gap;
-        const titleLines = PublishOgpImage._wrap(title, titleFont, titleMaxW, PublishOgpImage.MAX_TITLE_LINES, measure);
-        const titleTop = 72 + Math.round((288 - titleLines.lines.length * 70) / 2);
-        const titleAscent = PublishOgpImage._approxAscentDescent(titleFont).ascent;
-        const firstBaselineY = titleTop + titleAscent;
-        // '01' とタイトル1行目は明示的に同じ baseline y に揃える (top基準の共有だとフォントウェイト差でずれるため)。
-        items.push({ kind: 'text', text: '01', x: padL, y: Math.round(firstBaselineY), font: numFont, fill: colors.acc, baseline: 'alphabetic' });
-        titleLines.lines.forEach((line, i) => items.push({ kind: 'text', text: line, x: titleX, y: Math.round(firstBaselineY + i * 70), font: titleFont, fill: colors.txt, baseline: 'alphabetic' }));
-
-        const tagFont = `24px ${stack}`;
-        const tags = [];
-        let tx = padL;
-        for (const raw of rawTags.slice(0, PublishOgpImage.MAX_TAGS)) {
-            const label = Array.from(raw).length > 12 ? Array.from(raw).slice(0, 12).join('') + '…' : raw;
-            const w = Math.ceil(measure(label, tagFont)) + 40;
-            if (tx + w > padL + textW) break;
-            items.push({ kind: 'pill', x: tx, y: 380, w, h: 46, r: 23, stroke: colors.acc, lineWidth: 2 });
-            items.push({ kind: 'text', text: label, x: tx + 20, y: 380 + 23, font: tagFont, fill: colors.txt, baseline: 'middle' });
-            tags.push(label);
-            tx += w + 14;
-        }
-
-        items.push({ kind: 'rect', x: padL, y: 500, w: textW, h: 2, fill: colors.acc });
-        items.push({ kind: 'text', text: `${publisher} の本棚`, x: padL, y: 572, font: `bold 28px ${stack}`, fill: colors.sub, baseline: 'alphabetic' });
-        items.push({ kind: 'text', text: siteName, x: padL + textW, y: 572, font: `24px ${stack}`, fill: colors.sub, align: 'right', baseline: 'alphabetic' });
-        return { titleLines, tags };
+        // 入力キー = 見た目を決める入力だけ (measure の結果は含めない＝端末が変わっても同じキー)
+        const inputKey = JSON.stringify([PublishOgpImage.LAYOUT_VERSION, title, rawTags.slice(0, PublishOgpImage.MAX_TAGS), publisher, siteName, colors.bg, colors.txt, colors.sub, colors.acc]);
+        return { version: PublishOgpImage.LAYOUT_VERSION, width: W, height: H, colors, items, title: titleLines, tags, inputKey };
     }
 
     // ---- 描画 (描画指示を塗るだけ) ----
