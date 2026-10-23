@@ -2221,6 +2221,7 @@ class VirtualBookshelf {
             drag.pointerY = e.clientY;
 
             drag.ghost.style.display = 'none';
+            void drag.ghost.offsetHeight; // force reflow (display切替を同期反映させる)
             const el = document.elementFromPoint(e.clientX, e.clientY);
             drag.ghost.style.display = '';
             const targetEl = el && el.closest(opts.itemSelector);
@@ -2254,6 +2255,9 @@ class VirtualBookshelf {
             drag.itemEl.classList.remove(opts.dragClass);
             drag.itemEl.style.touchAction = '';
             drag.ghost.remove();
+            document.body.style.userSelect = drag.prevUserSelect || '';
+            document.removeEventListener('selectstart', preventSelectDuringDrag);
+            (drag.suppressedFormEls || []).forEach(el => { el.style.pointerEvents = el.dataset._prevPointerEvents || ''; delete el.dataset._prevPointerEvents; });
             clearZoneMarks();
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup', onUp);
@@ -2273,12 +2277,25 @@ class VirtualBookshelf {
             finishDrag();
         };
         const onCancel = () => finishDrag();
+        const preventSelectDuringDrag = (ev) => ev.preventDefault();
 
         const beginDrag = (e, itemEl) => {
             e.preventDefault();
             try { itemEl.setPointerCapture(e.pointerId); } catch (_) {}
             itemEl.classList.add(opts.dragClass);
             itemEl.style.touchAction = 'none';
+            // ドラッグ経路が textarea 等を跨ぐと、マウスの既定動作(テキスト選択)が走り、
+            // 選択処理中は document.elementFromPoint が一時的に null を返す実ブラウザの挙動を
+            // 実測した(イシュー#337 bd-section)。textarea は CSS user-select が効かないフォーム
+            // コントロールのため、selectstart 自体を止めて踏み抜きを防ぐ。
+            const prevUserSelect = document.body.style.userSelect;
+            document.body.style.userSelect = 'none';
+            document.addEventListener('selectstart', preventSelectDuringDrag);
+            // textarea/input 等のフォームコントロールは user-select:none でも選択/フォーカス処理が残り、
+            // ドラッグ経路上で elementFromPoint が一時的に null を返す実測挙動があった。ドラッグ中だけ
+            // コンテナ内のフォームコントロールへのポインタ到達を止め、背後の並べ替え対象を拾わせる。
+            const suppressedFormEls = Array.from(container.querySelectorAll('textarea, input, select'));
+            suppressedFormEls.forEach(el => { el.dataset._prevPointerEvents = el.style.pointerEvents; el.style.pointerEvents = 'none'; });
             const rect = itemEl.getBoundingClientRect();
             const ghost = itemEl.cloneNode(true);
             ghost.className = itemEl.className + ' drag-ghost';
@@ -2289,7 +2306,7 @@ class VirtualBookshelf {
             ].join(';');
             document.body.appendChild(ghost);
             drag = {
-                pointerId: e.pointerId, itemEl, ghost,
+                pointerId: e.pointerId, itemEl, ghost, prevUserSelect, suppressedFormEls,
                 offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, pointerY: e.clientY,
                 dragKey: opts.getKey(itemEl), lastTarget: null, lastZone: null, lastIndex: null,
             };

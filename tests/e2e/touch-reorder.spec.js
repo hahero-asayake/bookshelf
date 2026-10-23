@@ -28,12 +28,23 @@ const userData = {
 
 async function bootApp(page) {
     const errors = [];
-    page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+    page.on('console', (msg) => {
+        if (msg.type() !== 'error') return;
+        // listInstalledPlugins だけモックしているため、pluginLoader 側の実ファイル読み込み(未配置)が
+        // 警告を出すことがある(webkitで実測)。今回のPointer Events化とは無関係なテスト用モック不足。
+        if (/\[pluginLoader\] .+ 読み込み失敗/.test(msg.text())) return;
+        errors.push(msg.text());
+    });
     page.on('pageerror', (err) => errors.push(String(err)));
     await page.addInitScript(([u, l]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        // webkit(iPhone UA)では _setupMobileBanner が「クラウド未設定」の全画面案内を出し、
+        // ツリー等の通常UIが隠れる(js/bookshelf.js:246 hasDirPicker判定)。method変更では
+        // SyncConfigManager側のフォールバックで消えなかったため、showDirectoryPicker を
+        // ダミーで生やして早期returnさせる(実際には呼ばれない、_isSyncReady差し替え済み)。
+        if (!('showDirectoryPicker' in window)) window.showDirectoryPicker = () => {};
     }, [JSON.stringify(userData), JSON.stringify(library)]);
     await page.goto('/index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
@@ -45,6 +56,9 @@ async function bootApp(page) {
         // で上書きしてしまう現象を実測した(bd-sectionテスト用、直接関数呼び出しとURLハッシュが不整合なため)。
         // E2E専用の割り切りとして _applyRoute を無効化する。
         app._applyRoute = () => {};
+        // モバイル幅(webkit=iPhone 13)ではサイドバーがドロワーで畳まれており、ツリー/ヘッダーの
+        // 要素は DOM 上に存在しても画面外にある(elementFromPointがnullを返す)。開いておく。
+        if (typeof app._openDrawer === 'function') app._openDrawer();
         app.pluginLoader = app.pluginLoader || {};
         app.pluginLoader.listInstalledPlugins = async () => ([
             { id: 'reading-goal', manifest: { name: '読書目標', version: '1.0', description: 'd1', icon: 'target' } },
@@ -97,7 +111,9 @@ async function mouseDrag(page, fromBox, toPoint) {
 test.describe('touch-reorder (イシュー#337)', () => {
     // hasTouch: CDP Input.dispatchTouchEvent / PointerEvent(pointerType:'touch') のどちらも、
     // context が touch 非対応だと無視されることがあるため明示的に有効化する。
-    test.use({ hasTouch: true });
+    // viewport 未指定だとデフォルト(1280x720)のままになり、本詳細パネル下部の bd-section が
+    // 画面外に出て elementFromPoint が null を返す(イシュー#337 bd-section 原因切り分けで実測)。
+    test.use({ hasTouch: true, viewport: { width: 1280, height: 900 } });
 
     test('サイドバーツリー: 長押しで並べ替え、順序が保存される', async ({ page, context, browserName }) => {
         await context.grantPermissions?.([]).catch(() => {});
@@ -177,16 +193,14 @@ test.describe('touch-reorder (イシュー#337)', () => {
         expect(errors).toEqual([]);
     });
 
-    // 既知の問題 (原因未特定、時間切れで保留): bd-section のドラッグ開始 (is-dragging 付与・ghost 生成)
-    // は実測できるが、ドロップ確定後の並び替えが `playwright test` ランナー経由だけ反映されない。
-    // 単体の Node スクリプト(Playwright同梱Chromiumを直接起動、tests/e2e外の一時スクリプトで確認)では
-    // 同一ロジック(長押しdispatch・マウスドラッグとも)で並び替えが成功する(.bd-grip 4個・is-dragging
-    // 付与・DOM順序変化まで実測確認)。ツリー/プラグインカード/ヘッダーの他3テストでは起きず
-    // bd-section だけで再現し、座標・待機時間・タッチ/マウスの違い・context拡張(GIS mock/route)の
-    // 有無では再現しなかった(切り分け済み)。_bindDetailSectionReorder のロジック自体(onDrop内の
-    // DOM移動・保存)は本カードと同じ共通部品を使っており、他4箇所で正しく動くことは確認済みのため、
-    // 実装側のバグというより E2E 環境固有の問題を疑っている。次ステップ以降で要再調査。
-    test.fixme('bd-section: グリップのマウスドラッグで並べ替え、detailSectionOrder に保存される (環境固有の問題で保留)', async ({ page }) => {
+    // 原因判明・解消済み: このファイルに viewport 指定が無く、デフォルト(1280x720)のままだった。
+    // bd-section は本詳細パネルの下の方にあるため、720px高だと grip のドラッグ先(長文メモ/基本情報)が
+    // 画面外に出て document.elementFromPoint が null を返し、ドロップ位置を一度も検出できなかった
+    // (describe 先頭の test.use に viewport:900 を追加して解消、console.log デバッグで実測)。
+    // 合わせて実装側(_bindPointerReorder)にも、ドラッグ経路が textarea 等を跨いだ時に備えた
+    // 保険を追加した(user-select:none・selectstart抑止・reflow強制・フォームコントロールの
+    // pointer-events一時無効化)。これらは直接の原因ではなかったが、害が無く頑健性が上がるため残す。
+    test('bd-section: グリップのマウスドラッグで並べ替え、detailSectionOrder に保存される', async ({ page }) => {
         const errors = await bootApp(page);
         // 本詳細パネルは開いた直後ごく短時間だけ要素が入れ替わるタイミング依存があり (step2 note参照)、
         // Playwright の locator 経由 (auto-waitで安定を待つ) だとタイムアウトする。
@@ -196,6 +210,7 @@ test.describe('touch-reorder (イシュー#337)', () => {
             window.bookshelf.showBookDetail(book, true);
         });
         await page.waitForFunction(() => document.querySelectorAll('#bd-sections .bd-grip').length > 0);
+        await page.waitForTimeout(300); // レイアウト安定待ち(showBookDetail直後の描画完了を待つ)
         const before = await page.evaluate(() => [...document.querySelectorAll('#bd-sections .bd-section')].map(s => s.dataset.section));
         expect(before).toEqual(['bookshelves', 'short-memo', 'long-memo', 'basic-info']);
 
