@@ -5002,6 +5002,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     }
     .art-side.is-open { transform: translateY(0); }
 
+    /* イシュー#330: 「戻る/進む」(履歴復元)で開閉する時だけ、スライドのtransitionを無効化して
+       即座に表示/非表示する(本詳細・左ドロワーと同じ規則・②決裁2026-10-23)。
+       付与/解除は _histNoAnimOnce() (js/bookshelf.js)。 */
+    .art-side.hist-no-anim { transition: none !important; }
+
     .art-sheet-scrim {
         display: block; position: fixed; inset: 0; background: rgba(0,0,0,.35);
         z-index: 1055; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
@@ -7578,6 +7583,15 @@ body.select-mode .drag-handle { display: none; }
         padding-top: env(safe-area-inset-top);
     }
     body.book-detail-pinned .app-detail { transform: translateX(0); }
+
+    /* イシュー#330: 「戻る/進む」(履歴復元)で開閉する時だけ、スライドのtransitionを無効化して
+       即座に表示/非表示する。iOS実機はスワイプ中に既に開いた/閉じたスナップショットを見せているため、
+       律儀にアニメーションを再生すると一瞬閉じてから開き直る(または開いてから閉じ直る)二重表示に見える
+       (②決裁2026-10-23)。付与/解除は _histNoAnimOnce() (js/bookshelf.js)。 */
+    .app-detail.hist-no-anim,
+    .app-sidebar.hist-no-anim,
+    .mobile-scrim.hist-no-anim { transition: none !important; }
+
     .app-detail .detail-body {
         flex: 1;
         min-height: 0;

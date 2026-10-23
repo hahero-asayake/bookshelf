@@ -2253,6 +2253,19 @@ class VirtualBookshelf {
     }
 
     showBookDetail(book, isEditMode = false) {
+        // イシュー#330: 冪等化(安全策)。既に同じ本が同じモードで開いていれば何もしない
+        // (「進む」で開く処理が2回走っても、2回目はここで止まり二重アニメーションにならない)。
+        if (book && this._lastDetailBook && this._lastDetailBook.asin === book.asin
+            && !!this._lastDetailEditMode === !!isEditMode
+            && document.body.classList.contains('book-detail-pinned')) return;
+        // イシュー#330: 「戻る/進む」(popstate経由のhashchange)で開き直す時だけ、開くtransitionを
+        // 無効化して即座に表示する(iOS実機はスワイプ中に既に開いた状態のスナップショットを見せているため、
+        // ここで律儀にスライドインを再生すると二重表示に見える・②決裁2026-10-23)。_histRestoreNoAnim は
+        // _onModalHistPopstate の早期return直前(L12148相当)でだけ立てる一回限りのフラグ。
+        if (this._histRestoreNoAnim) {
+            this._histRestoreNoAnim = false;
+            this._histNoAnimOnce(document.getElementById('app-detail'));
+        }
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.router && !this._suppressRouterUpdate && book && book.asin) {
             const fromInternalId = this._currentBookshelfInternalId();
@@ -5352,7 +5365,18 @@ class VirtualBookshelf {
     // ===== モバイル UI (<=768px): ドロワー + 下部ナビ + 詳細フルシート =====
 
     // ドロワー開閉 (C-281 で関数に集約。旧: classList 直接操作が7箇所に散在し履歴統合が不可能だった)
+    // イシュー#330: 「戻る/進む」で開き直す/閉じ直す時だけ、対象要素のCSS transitionを1回分だけ
+    // 無効化して即座に表示・非表示する(開くアニメーションの二重見え対策)。ユーザー操作(タップ/ボタン)
+    // 由来の通常の開閉では呼ばない=今までどおりアニメーションが残る。
+    _histNoAnimOnce(el) {
+        if (!el) return;
+        el.classList.add('hist-no-anim');
+        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('hist-no-anim')));
+    }
+
     _openDrawer() {
+        // イシュー#330: 冪等化(安全策)。既に開いていれば何もしない。
+        if (document.body.classList.contains('drawer-open')) return;
         document.body.classList.add('drawer-open');
         this._modalHistPush('drawer', (o) => this._closeDrawer(o));
     }
@@ -5360,6 +5384,12 @@ class VirtualBookshelf {
     _closeDrawer({ fromHistory = false, silent = false } = {}) {
         // ビュー切替 (_setBodyView) から無条件に呼ばれるため、開いていない時は何もしない
         if (!document.body.classList.contains('drawer-open')) return;
+        // イシュー#330: 「戻る」で閉じ直す時(fromHistory)だけ、閉じるtransitionを無効化する
+        // (iOSは戻るでもスナップショットを見せるため、スライドアウトも二重に見える・②決裁2026-10-23)。
+        if (fromHistory) {
+            this._histNoAnimOnce(document.getElementById('app-sidebar'));
+            this._histNoAnimOnce(document.querySelector('.mobile-scrim'));
+        }
         document.body.classList.remove('drawer-open');
         if (silent) {
             // イシュー#259: 呼び出し元 (switchBookshelf) がこの直後に history.replaceState で
@@ -7521,7 +7551,15 @@ class VirtualBookshelf {
         this._bindSettingsPopstate();
         const i = st.findIndex((e) => e.id === 'book-detail');
         if (i !== -1) st.splice(i, 1);
-        st.push({ id: 'book-detail', close: () => { this._closeBookModalDom(); return true; } });
+        st.push({
+            id: 'book-detail',
+            close: (o) => {
+                // イシュー#330: 「戻る」で閉じる時だけ閉じるtransitionを無効化する(②決裁2026-10-23)。
+                if (o && o.fromHistory) this._histNoAnimOnce(document.getElementById('app-detail'));
+                this._closeBookModalDom();
+                return true;
+            },
+        });
         // url引数を省略すると稀に現在のhashが引き継がれない実機差が出たため(イシュー#288 R08g実測)、明示的にlocation.hrefを渡す
         history.replaceState({ bsModal: 'book-detail', d: st.length }, '', location.href);
     }
@@ -10604,6 +10642,8 @@ class VirtualBookshelf {
         const side = document.getElementById('art-drawer');
         const scrim = document.getElementById('art-sheet-scrim');
         if (!side) return;
+        // イシュー#330: 冪等化(安全策)。既に開いていれば何もしない。
+        if (side.classList.contains('is-open')) return;
         side.classList.add('is-open');
         if (scrim) scrim.classList.add('is-open');
         this._modalHistPush('art-sheet', (o) => this._artCloseSheet(o), { isMobile: () => this._artIsDrawerNarrow(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
@@ -10612,6 +10652,8 @@ class VirtualBookshelf {
     _artCloseSheet({ fromHistory = false } = {}) {
         const side = document.getElementById('art-drawer');
         if (!side || !side.classList.contains('is-open')) return;
+        // イシュー#330: 「戻る」で閉じ直す時だけ閉じるtransitionを無効化する(②決裁2026-10-23)。
+        if (fromHistory) this._histNoAnimOnce(side);
         side.classList.remove('is-open');
         const scrim = document.getElementById('art-sheet-scrim');
         if (scrim) scrim.classList.remove('is-open');
@@ -12145,7 +12187,12 @@ class VirtualBookshelf {
             // ルーターが hashchange を別途購読しており、ここで history.back() を呼ばず何もしなければ、
             // 後続の hashchange(popstate と同一ナビゲーションで発火する)が自動的に
             // _applyRoute → showBookDetail → _bookDetailHistAdopt を実行して開き直る。
-            if (ev.state && ev.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) return;
+            if (ev.state && ev.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) {
+                // イシュー#330: 後続の hashchange → showBookDetail が開き直す時、開くtransitionを
+                // 無効化するための一回限りのフラグ(②決裁2026-10-23)。
+                this._histRestoreNoAnim = true;
+                return;
+            }
             // hash を使わない面は、state.bsModal から対応する「開く」関数を直接呼んで開き直す。
             // extra(asin・blockId等)を state に入れておいた面はそれを使って文脈ごと復元する
             // (面ごとの方針は 17_戻る挙動テスト表 / ADR 参照)。
@@ -12156,7 +12203,7 @@ class VirtualBookshelf {
             const reopen = {
                 'settings-modal': () => this._openSettingsModal(),
                 'settings-cat': () => this._openSettingsModal(ev.state && ev.state.cat),
-                'drawer': () => this._openDrawer(),
+                'drawer': () => { this._histNoAnimOnce(document.getElementById('app-sidebar')); this._histNoAnimOnce(document.querySelector('.mobile-scrim')); this._openDrawer(); },
                 'publish-pages-modal': () => this.openPublishPagesModal(),
                 'book-memo-modal': () => this._reopenBookMemo(ev.state && ev.state.asin),
                 'art-fs': () => this._reopenArtFs(ev.state),
@@ -12261,6 +12308,8 @@ class VirtualBookshelf {
     async _reopenArtSheet(state) {
         if (!(await this._reopenArtContext(state))) return;
         if (state.menuBlockId) this._artActiveShelfBlockId = state.menuBlockId;
+        // イシュー#330: 「進む」で開き直す時は開くtransitionを無効化する(②決裁2026-10-23)。
+        this._histNoAnimOnce(document.getElementById('art-drawer'));
         this._artOpenSheet();
     }
     // イシュー#291: 公開パネル(art-publish-modal)を開き直す。
