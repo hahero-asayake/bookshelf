@@ -3,13 +3,28 @@
 // 「js/css 変更後の検証は ?v= バンプ + リロード必須」(08_意思決定記録「実装上の教訓」) を
 // 人間の注意力に頼らず機械的に検出するための npm script (npm run check:version)。
 //
-// 判定は直近コミット HEAD との比較 (作業ツリー + ステージ済みの変更が対象)。
+// 判定の起点: origin/main が取れれば origin/main と HEAD の merge-base (未分岐なら origin/main と同一コミット)。
+// 取れない (origin/main が無い・未fetch・merge-base 失敗) 場合は HEAD に戻す。
+// 起点との比較対象は commit 済み・未push の変更 + ステージ済み + 作業ツリーの変更 (git diff <起点>)。
+// どちらを起点にしたかは実行時に1行ログへ出す。
 // 値そのものは決めない (自動修正はしない) — 何を書くかは実装者の判断のため、検査のみ行う。
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 function git(args) {
     return execFileSync('git', args, { encoding: 'utf-8' });
+}
+
+function resolveBaseRef() {
+    try {
+        git(['rev-parse', '--verify', '--quiet', 'origin/main']);
+        const base = git(['merge-base', 'origin/main', 'HEAD']).trim();
+        console.log(`[check-version-bump] 起点: origin/main (merge-base ${base.slice(0, 7)})`);
+        return base;
+    } catch {
+        console.log('[check-version-bump] 起点: HEAD (origin/main が取れないため)');
+        return 'HEAD';
+    }
 }
 
 function extractVersions(html) {
@@ -20,9 +35,11 @@ function extractVersions(html) {
     return map;
 }
 
+const baseRef = resolveBaseRef();
+
 let changed;
 try {
-    changed = git(['diff', '--name-only', 'HEAD', '--', 'js', 'css']).split('\n').filter(Boolean);
+    changed = git(['diff', '--name-only', baseRef, '--', 'js', 'css']).split('\n').filter(Boolean);
 } catch (e) {
     console.error('[check-version-bump] git diff に失敗:', e.message);
     process.exit(1);
@@ -33,19 +50,19 @@ if (changed.length === 0) {
     process.exit(0);
 }
 
-let headHtml;
+let baseHtml;
 try {
-    headHtml = git(['show', 'HEAD:index.html']);
+    baseHtml = git(['show', `${baseRef}:index.html`]);
 } catch (e) {
-    console.error('[check-version-bump] HEAD の index.html 取得に失敗:', e.message);
+    console.error('[check-version-bump] 起点の index.html 取得に失敗:', e.message);
     process.exit(1);
 }
 const nowHtml = readFileSync('index.html', 'utf-8');
 
-const headVers = extractVersions(headHtml);
+const baseVers = extractVersions(baseHtml);
 const nowVers = extractVersions(nowHtml);
 
-const stale = changed.filter((file) => nowVers.has(file) && headVers.get(file) === nowVers.get(file));
+const stale = changed.filter((file) => nowVers.has(file) && baseVers.get(file) === nowVers.get(file));
 
 if (stale.length > 0) {
     console.error('[check-version-bump] 以下は変更されていますが index.html の ?v= が更新されていません:');
