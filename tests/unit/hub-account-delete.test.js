@@ -275,12 +275,19 @@ describe('退会の掃除範囲・順序・墓標の塩 (設計: uid 先行削�
         expect((await setUsername(c.key, 'taro')).status).toBe(409);
     });
 
-    it('掃除中に R2 が失敗したら uid レコードを戻し、同じキーで退会を再実行できる (全キーは失効しない)', async () => {
+    it('掃除中に R2 が失敗したら uid レコードを戻し、同じキーで退会を再実行できる (全キーは失効しない)。メイン fetch ハンドラの catch が console.error に記録し (#339)、トークン・メール等は出さない', async () => {
         const a = await login(); tick();
         const b = await login();
         const realList = R2.list;
         R2.list = async () => { throw new Error('r2 down'); };
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         expect((await call('DELETE', '/account', { key: a.key })).status).toBe(500);
+        expect(errSpy).toHaveBeenCalledWith('[hub] unhandled:', expect.anything());
+        const logged = errSpy.mock.calls.flat().map(x => (x && x.stack) || String(x)).join(' ');
+        expect(logged).not.toContain(a.key);
+        expect(logged).not.toContain(EMAIL);
+        expect(logged).not.toMatch(/Bearer\s+\S+/);
+        errSpy.mockRestore();
         R2.list = realList;
         expect((await putData(b.key)).status).toBe(200);                       // アカウントは生きている
         expect((await call('DELETE', '/account', { key: a.key })).status).toBe(200);

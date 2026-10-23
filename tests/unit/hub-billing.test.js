@@ -400,6 +400,10 @@ describe('stale Stripe ID 自己修復 (ADR-039)', () => {
         expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_DEAD'))).toBe(false);
         expect(await KV.get('uid:u1', 'json')).toBeNull();
         expect(warn).toHaveBeenCalledWith('[account-delete] stale subscription解約失敗:', 'stripe: No such subscription');
+        const logged = warn.mock.calls.flat().join(' ');
+        expect(logged).not.toContain('e@x');
+        expect(logged).not.toMatch(/Bearer\s+\S+/);
+        expect(logged).not.toMatch(/\bcus_1\b|\bsub_STALE\b/);
         warn.mockRestore();
     });
 
