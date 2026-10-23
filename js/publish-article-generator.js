@@ -774,8 +774,9 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const indexArticle = { title: `${publisher} の本棚`, tags: [], theme: {} };
         const indexCanonical = opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '';
         // 一覧ページなので og:type は article ではなく website (T11・イシュー#335で修正)。
-        // ogDescription/ogImage は本棚ごとの個別生成ではなく、全ページ共通のブランド画像を使う(決裁B案)。
-        const indexOgDescription = `${publisher} が AsayakeBookshelf で公開している本棚記事、${articleLinks.length}件。`;
+        // ogDescription/ogImage は本棚ごとの個別生成ではなく、全ページ共通のブランド画像・仮の説明文を使う
+        // (決裁B案。文言は2026-10-24 ②判断でPROVISIONAL_DESCRIPTIONへ統一＝コンセプトが固まったら差し替える)。
+        const indexOgDescription = PublishArticleGenerator.PROVISIONAL_DESCRIPTION;
         const doc = this._wrapDoc(indexArticle, publisher, body, {
             siteHasAffiliate: !!opts.siteHasAffiliate,
             canonical: indexCanonical,
@@ -836,7 +837,14 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
     // 本棚トップ(_indexHtml)・/top 共通のブランドOGP画像の絶対URL (T11・イシュー#335決裁B案)。
     // 記事別の自前生成(ADR-098・og.png)とは別物＝記事ページでは使わない。GitHub Pages配信のicons/を
     // そのまま参照するためcf-worker側の追加ホスティングは不要。
-    static get SHARED_OG_IMAGE() { return `${PublishArticleGenerator.APP_URL}icons/og-image.png?v=20261024`; }
+    // ?v= は画像を差し替えるたびに上げる (2026-10-24: キャッチ文言・バッジを外しロゴのみに変更)。
+    static get SHARED_OG_IMAGE() { return `${PublishArticleGenerator.APP_URL}icons/og-image.png?v=2026102402`; }
+
+    // 仮の説明文 (T11・イシュー#335・2026-10-24 ②判断)。ハヘロ決裁「共有画像のデザインは概ね良いが文言に
+    // 課題あり。コンセプトを明確にして宣伝用記事作成などをしながら文言を固める」を受け、固まるまでは
+    // 宣伝調を避け機能だけを並べた仮の文言に統一する。index.html の description/og:description/
+    // twitter:description/JSON-LDのdescription (4箇所・同一文字列) と同文＝差し替え時は両方を直す。
+    static get PROVISIONAL_DESCRIPTION() { return 'Kindle の蔵書を本棚ごとに整理し、メモや評価を付けて、読書記録を公開できるアプリ。'; }
 
     // og:description: 本文先頭のテキストブロックから約120字 (Markdown 記号は除く)。無ければタグ列、それも無ければ発行者名。
     _ogDescription(article, resolvedBlocks, publisher) {

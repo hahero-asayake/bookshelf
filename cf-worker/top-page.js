@@ -9,7 +9,14 @@ import { OPERATOR_EMAIL } from './suspended-page.js';
 // 全ページ共通のブランドOGP画像 (T11・イシュー#335決裁B案)。GitHub Pages配信の
 // js/publish-article-generator.js `SHARED_OG_IMAGE` と同一アセット・同一URLを指す
 // (cf-worker からは別ファイルのため定数を共有できず、ここは値を直書きで同期する)。
-const OG_IMAGE_URL = 'https://asayake.org/bookshelf/icons/og-image.png?v=20261024';
+// ?v= は画像を差し替えるたびに上げる (2026-10-24: キャッチ文言・バッジを外しロゴのみに変更)。
+const OG_IMAGE_URL = 'https://asayake.org/bookshelf/icons/og-image.png?v=2026102402';
+
+// 仮の説明文 (T11・イシュー#335・2026-10-24 ②判断)。ハヘロ決裁「共有画像のデザインは概ね良いが文言に
+// 課題あり。コンセプトを明確にして宣伝用記事作成などをしながら文言を固める」を受け、固まるまでは
+// 宣伝調を避け機能だけを並べた仮の文言に統一する。js/publish-article-generator.js の
+// PublishArticleGenerator.PROVISIONAL_DESCRIPTION と同文＝差し替え時は両方を直す。
+const PROVISIONAL_DESCRIPTION = 'Kindle の蔵書を本棚ごとに整理し、メモや評価を付けて、読書記録を公開できるアプリ。';
 
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -50,7 +57,7 @@ export async function renderTopPage(env, url) {
     const clearTag = tag ? `<a class="clear-tag" href="/top">すべての記事に戻る</a>` : '';
     const description = tag
         ? `「#${tag}」タグの公開記事一覧です。`
-        : 'AsayakeBookshelf で公開された本棚記事の一覧です。';
+        : PROVISIONAL_DESCRIPTION;
     const canonical = `${url.origin}/top${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`;
     const jsonLd = {
         '@context': 'https://schema.org',

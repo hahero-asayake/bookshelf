@@ -99,12 +99,15 @@ async function compose(paths, outName) {
 const mockAB = await shotMock(join(ROOT, 'mockups/og-export.html'), '335-ogp-mockAB-raw.png');
 const dataAB = await toDataUrl(mockAB);
 
+// 仮の説明文 (2026-10-24 ②判断。index.html/js/publish-article-generator.js/cf-worker/top-page.js と同文)。
+const PROVISIONAL_DESCRIPTION = 'Kindle の蔵書を本棚ごとに整理し、メモや評価を付けて、読書記録を公開できるアプリ。';
+
 const xAB = await shotPreview(
-    xCardHtml({ title: 'AsayakeBookshelf', desc: '積読から読了まで、本棚ごと育てる読書ライブラリ', imgDataUrl: dataAB, domain: 'asayake.org' }),
+    xCardHtml({ title: 'AsayakeBookshelf', desc: PROVISIONAL_DESCRIPTION, imgDataUrl: dataAB, domain: 'asayake.org' }),
     '335-ogp-mockAB-x-raw.png', { width: 540, height: 420 }
 );
 const discordAB = await shotPreview(
-    discordHtml({ title: 'AsayakeBookshelf', desc: '積読から読了まで、本棚ごと育てる読書ライブラリ', imgDataUrl: dataAB, domain: 'asayake.org' }),
+    discordHtml({ title: 'AsayakeBookshelf', desc: PROVISIONAL_DESCRIPTION, imgDataUrl: dataAB, domain: 'asayake.org' }),
     '335-ogp-mockAB-discord-raw.png', { width: 560, height: 440 }
 );
 await compose([mockAB, xAB, discordAB], '335-ogp-compare-AB.png');
