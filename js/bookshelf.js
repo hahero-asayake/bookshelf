@@ -2140,6 +2140,210 @@ class VirtualBookshelf {
         if (this._dragRAF) { cancelAnimationFrame(this._dragRAF); this._dragRAF = null; }
     }
 
+    // ===== Pointer Events 汎用ドラッグ並べ替え (P4残り, イシュー#337) =====
+    // 本カード(_onBookPointerDown系)と同じ型(ghost複製/setPointerCapture/elementFromPointでのドロップ先判定)を
+    // サイドバーツリー・ヘッダーutility行・プラグインカード・本棚管理モーダル・bd-sectionの5箇所で共有する。
+    // 専用ハンドル(opts.handleSelector)があれば本カードと同じくpointerdownで即時開始。無ければ要素全体が
+    // クリック操作(選択/トグル等)と兼用のため、マウスは移動量しきい値・touch/penは長押しで開始を遅らせて誤爆を防ぐ
+    // (この2値=MOVE_THRESHOLD/LONG_PRESS_MSは本カードに実装が無かったため新設、イシュー#337 着手前確認で判明)。
+    //
+    // opts: {
+    //   itemSelector,        // ドラッグ可能アイテムの選択子
+    //   handleSelector,      // 専用ハンドルの選択子 (無ければ null = アイテム全体がトリガー)
+    //   excludeSelector,     // ここに closest match したら開始しない (操作系要素除け)
+    //   canDrag(itemEl),     // 開始可否の追加判定 (特殊本棚など)
+    //   dragClass,           // ドラッグ中に付けるクラス
+    //   zoneMode,            // 'segment' (before/after/inside 3ゾーン) | 'index' (挿入インジケータ)
+    //   zoneClassPrefix,     // segmentモードで使うクラス接頭辞 (例: 'tree-drop-')
+    //   computeZone(targetEl, clientY),  // segmentモードのゾーン判定
+    //   indicatorClass,      // indexモードの挿入インジケータのクラス名
+    //   computeInsertIndex(container, clientX, clientY), // indexモードの挿入位置計算
+    //   getKey(itemEl),      // アイテムの識別子
+    //   onDrop(dragKey, targetKeyOrIndex, zone),  // ドロップ確定時 (既存の保存/並べ替え関数をそのまま呼ぶ)
+    //   scrollContainer,     // 自動スクロール対象 (要素 or 要素を返す関数, 省略可)
+    // }
+    _bindPointerReorder(container, opts) {
+        if (!container || container._pointerReorderBound) return;
+        container._pointerReorderBound = true;
+        const MOVE_THRESHOLD = 6;
+        const LONG_PRESS_MS = 450;
+        let drag = null;
+        let pending = null;
+        let scrollRAF = null;
+
+        const clearPending = () => {
+            if (!pending) return;
+            pending.el.removeEventListener('pointermove', pending.onMove);
+            pending.el.removeEventListener('pointerup', pending.onUp);
+            pending.el.removeEventListener('pointercancel', pending.onUp);
+            if (pending.timer) clearTimeout(pending.timer);
+            pending = null;
+        };
+
+        const clearZoneMarks = () => {
+            container.querySelectorAll(opts.itemSelector).forEach(el => {
+                if (opts.zoneClassPrefix) {
+                    el.classList.remove(`${opts.zoneClassPrefix}before`, `${opts.zoneClassPrefix}after`, `${opts.zoneClassPrefix}inside`);
+                }
+                delete el.dataset.dropZone;
+            });
+            if (opts.indicatorClass) {
+                container.querySelectorAll(`.${opts.indicatorClass}`).forEach(el => el.remove());
+                document.querySelectorAll(`.${opts.indicatorClass}`).forEach(el => el.remove());
+            }
+        };
+
+        const stopAutoScroll = () => { if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; } };
+        const startAutoScroll = () => {
+            if (scrollRAF || !opts.scrollContainer) return;
+            const EDGE = 60, MAX = 18;
+            const step = () => {
+                if (!drag) { scrollRAF = null; return; }
+                const scroller = typeof opts.scrollContainer === 'function' ? opts.scrollContainer() : opts.scrollContainer;
+                if (scroller) {
+                    const r = scroller.getBoundingClientRect();
+                    const y = drag.pointerY || 0;
+                    let dy = 0;
+                    if (y < r.top + EDGE) dy = -Math.ceil(MAX * Math.min(1, (r.top + EDGE - y) / EDGE));
+                    else if (y > r.bottom - EDGE) dy = Math.ceil(MAX * Math.min(1, (y - (r.bottom - EDGE)) / EDGE));
+                    if (dy) scroller.scrollTop += dy;
+                }
+                scrollRAF = requestAnimationFrame(step);
+            };
+            scrollRAF = requestAnimationFrame(step);
+        };
+
+        const onMove = (e) => {
+            if (!drag) return;
+            e.preventDefault();
+            drag.ghost.style.left = (e.clientX - drag.offsetX) + 'px';
+            drag.ghost.style.top = (e.clientY - drag.offsetY) + 'px';
+            drag.pointerY = e.clientY;
+
+            drag.ghost.style.display = 'none';
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            drag.ghost.style.display = '';
+            const targetEl = el && el.closest(opts.itemSelector);
+
+            clearZoneMarks();
+            drag.lastTarget = null; drag.lastZone = null; drag.lastIndex = null;
+            if (!targetEl || targetEl === drag.itemEl || !container.contains(targetEl)) return;
+
+            if (opts.zoneMode === 'segment') {
+                const zone = opts.computeZone(targetEl, e.clientY);
+                targetEl.classList.add(`${opts.zoneClassPrefix}${zone}`);
+                targetEl.dataset.dropZone = zone;
+                drag.lastTarget = targetEl; drag.lastZone = zone;
+            } else {
+                const idx = opts.computeInsertIndex(container, e.clientX, e.clientY);
+                const items = Array.from(container.querySelectorAll(opts.itemSelector)).filter(el => el !== drag.itemEl);
+                const indicator = document.createElement('div');
+                indicator.className = opts.indicatorClass;
+                if (idx >= items.length) {
+                    (items[items.length - 1] || container).after ? items[items.length - 1]?.after(indicator) : container.appendChild(indicator);
+                    if (!items.length) container.appendChild(indicator);
+                } else {
+                    items[idx].before(indicator);
+                }
+                drag.lastTarget = targetEl; drag.lastIndex = idx;
+            }
+        };
+
+        const finishDrag = () => {
+            if (!drag) return;
+            drag.itemEl.classList.remove(opts.dragClass);
+            drag.itemEl.style.touchAction = '';
+            drag.ghost.remove();
+            clearZoneMarks();
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onCancel);
+            stopAutoScroll();
+            drag = null;
+        };
+
+        const onUp = () => {
+            if (!drag) return;
+            const { dragKey, lastTarget, lastZone, lastIndex } = drag;
+            if (opts.zoneMode === 'segment') {
+                if (lastTarget && lastZone) opts.onDrop(dragKey, opts.getKey(lastTarget), lastZone);
+            } else if (typeof lastIndex === 'number') {
+                opts.onDrop(dragKey, lastIndex);
+            }
+            finishDrag();
+        };
+        const onCancel = () => finishDrag();
+
+        const beginDrag = (e, itemEl) => {
+            e.preventDefault();
+            try { itemEl.setPointerCapture(e.pointerId); } catch (_) {}
+            itemEl.classList.add(opts.dragClass);
+            itemEl.style.touchAction = 'none';
+            const rect = itemEl.getBoundingClientRect();
+            const ghost = itemEl.cloneNode(true);
+            ghost.className = itemEl.className + ' drag-ghost';
+            ghost.style.cssText = [
+                'position:fixed', `width:${rect.width}px`, `height:${rect.height}px`,
+                `left:${rect.left}px`, `top:${rect.top}px`, 'pointer-events:none',
+                'z-index:9999', 'opacity:0.78', 'box-shadow:0 6px 24px rgba(0,0,0,.35)', 'transition:none',
+            ].join(';');
+            document.body.appendChild(ghost);
+            drag = {
+                pointerId: e.pointerId, itemEl, ghost,
+                offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, pointerY: e.clientY,
+                dragKey: opts.getKey(itemEl), lastTarget: null, lastZone: null, lastIndex: null,
+            };
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onCancel);
+            startAutoScroll();
+        };
+
+        container.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (opts.excludeSelector && e.target.closest(opts.excludeSelector)) return;
+            const handleEl = opts.handleSelector ? e.target.closest(opts.handleSelector) : null;
+            if (opts.handleSelector && !handleEl) return;
+            const itemEl = e.target.closest(opts.itemSelector);
+            if (!itemEl || !container.contains(itemEl)) return;
+            if (opts.canDrag && !opts.canDrag(itemEl)) return;
+
+            if (opts.handleSelector) { beginDrag(e, itemEl); return; }
+
+            // ハンドルが無い: マウス=移動しきい値／touch・pen=長押しで開始を遅らせる
+            const startX = e.clientX, startY = e.clientY;
+            const onPreMove = (ev) => {
+                const dx = ev.clientX - startX, dy = ev.clientY - startY;
+                if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+                    if (ev.pointerType === 'mouse') { clearPending(); beginDrag(ev, itemEl); }
+                    else clearPending(); // touch/pen は移動したら長押しキャンセル (スクロール優先)
+                }
+            };
+            const onPreUp = () => clearPending();
+            itemEl.addEventListener('pointermove', onPreMove);
+            itemEl.addEventListener('pointerup', onPreUp);
+            itemEl.addEventListener('pointercancel', onPreUp);
+            pending = { el: itemEl, onMove: onPreMove, onUp: onPreUp, timer: null };
+            if (e.pointerType !== 'mouse') {
+                pending.timer = setTimeout(() => {
+                    const p = pending; clearPending();
+                    if (p) beginDrag(e, itemEl);
+                }, LONG_PRESS_MS);
+            }
+        });
+    }
+
+    // indexモード用: 縦1列のリストで clientY のみを見て挿入位置を返す汎用ヘルパー
+    // (ヘッダーutility行は「同じ行で左寄り」判定が要るため個別の computeInsertIndex を使う)
+    _computeInsertIndexByY(container, itemSelector, clientY) {
+        const items = Array.from(container.querySelectorAll(itemSelector));
+        for (let i = 0; i < items.length; i++) {
+            const r = items[i].getBoundingClientRect();
+            if (clientY < r.top + r.height / 2) return i;
+        }
+        return items.length;
+    }
+
     reorderBooks(draggedASIN, targetASIN) {
         const currentBookshelfId = this.currentBookshelf || 'all';
         if (!this.userData.bookOrder) this.userData.bookOrder = {};
@@ -2208,36 +2412,32 @@ class VirtualBookshelf {
         await this.saveUserData();
     }
 
-    // 編集モード時のセクション drag&drop 並び替え
+    // 編集モード時のセクション drag&drop 並び替え (Pointer Events化=イシュー#337、②承認で対象に追加)。
+    // .bd-grip 上の pointerdown で開始 (本カードと同じ型)。ドロップ確定時に DOM 要素を実際に動かしてから保存する
+    // (モーダル全体の再描画は showBookDetail の冪等化ガードに阻まれるため、再描画せず直接反映する)。
     _bindDetailSectionReorder(root, book) {
         const container = root.querySelector('#bd-sections');
         if (!container) return;
-        let dragEl = null;
-        container.querySelectorAll('.bd-section[draggable="true"]').forEach(sec => {
-            sec.addEventListener('dragstart', (e) => {
-                dragEl = sec;
-                sec.classList.add('is-dragging');
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            sec.addEventListener('dragend', () => {
-                sec.classList.remove('is-dragging');
-                dragEl = null;
-            });
-            sec.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                if (!dragEl || dragEl === sec) return;
-                const rect = sec.getBoundingClientRect();
-                const after = (e.clientY - rect.top) > rect.height / 2;
-                if (after) sec.after(dragEl);
-                else sec.before(dragEl);
-            });
-        });
-        container.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            const newOrder = Array.from(container.querySelectorAll('.bd-section'))
-                .map(s => s.dataset.section)
-                .filter(Boolean);
-            await this._saveDetailSectionOrder(newOrder);
+        this._bindPointerReorder(container, {
+            itemSelector: '.bd-section',
+            handleSelector: '.bd-grip',
+            dragClass: 'is-dragging',
+            zoneMode: 'index',
+            indicatorClass: 'bd-section-drop-indicator',
+            computeInsertIndex: (c, cx, cy) => this._computeInsertIndexByY(c, '.bd-section', cy),
+            getKey: (el) => el.dataset.section,
+            onDrop: async (sectionId, idx) => {
+                const draggedEl = container.querySelector(`.bd-section[data-section="${sectionId}"]`);
+                const items = Array.from(container.querySelectorAll('.bd-section')).filter(el => el !== draggedEl);
+                if (draggedEl) {
+                    if (idx >= items.length) container.appendChild(draggedEl);
+                    else items[idx].before(draggedEl);
+                }
+                const newOrder = Array.from(container.querySelectorAll('.bd-section'))
+                    .map(s => s.dataset.section)
+                    .filter(Boolean);
+                await this._saveDetailSectionOrder(newOrder);
+            },
         });
     }
 
@@ -2428,7 +2628,7 @@ class VirtualBookshelf {
             const def = sectionDefs[id];
             if (!def) return '';
             return `
-                <div class="bd-section${def.context ? ' has-context' : ''}" data-section="${id}" ${isEditMode ? 'draggable="true"' : ''}>
+                <div class="bd-section${def.context ? ' has-context' : ''}" data-section="${id}">
                     <div class="bd-section-head">
                         ${isEditMode ? `<span class="bd-grip" title="ドラッグで並び替え">${grip}</span>` : ''}
                         <span class="bd-section-title">${ico(def.icon, 12)}${def.title}</span>
@@ -5599,6 +5799,7 @@ class VirtualBookshelf {
             node.className = `tree-node lv${Math.min(depth, 4)}${isActive ? ' is-active' : ''}`;
             node.dataset.bookshelfId = bs.id;
             node.dataset.internalId = bs.internalId;
+            node.dataset.special = bs.isSpecial ? '1' : '0';
             const toggleIconName = isExpanded ? 'chevron-down' : 'chevron-right';
             // 本棚の「アイコン+名前+冊数」は共通コンポーネントで描画 (ツリー固有の indent/more/toggle だけ付加)
             node.innerHTML = `
@@ -5633,48 +5834,8 @@ class VirtualBookshelf {
                     this._renderSidebarTree();
                 });
             }
-            // ===== D&D: 並び替え (同階層) + 親変更 (Phase H2-2) =====
-            if (!bs.isSpecial) {
-                node.draggable = true;
-                node.addEventListener('dragstart', (e) => {
-                    this._treeDragId = nodeKey;
-                    node.classList.add('tree-dragging');
-                    e.dataTransfer.effectAllowed = 'move';
-                    try { e.dataTransfer.setData('text/plain', nodeKey); } catch (_) {}
-                });
-                node.addEventListener('dragend', () => {
-                    node.classList.remove('tree-dragging');
-                    this._treeDragId = null;
-                    this._clearTreeDropIndicators();
-                });
-            }
-            // どのノードもドロップ先になれる (ALL は「中に入れる」= ルート直下 用)
-            node.addEventListener('dragover', (e) => {
-                if (!this._treeDragId || this._treeDragId === nodeKey) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                const rect = node.getBoundingClientRect();
-                const y = e.clientY - rect.top;
-                const zone = bs.isSpecial ? 'inside'
-                    : (y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside'));
-                this._clearTreeDropIndicators();
-                node.classList.add(`tree-drop-${zone}`);
-                node.dataset.dropZone = zone;
-            });
-            node.addEventListener('dragleave', (e) => {
-                if (!node.contains(e.relatedTarget)) {
-                    node.classList.remove('tree-drop-before', 'tree-drop-inside', 'tree-drop-after');
-                }
-            });
-            node.addEventListener('drop', (e) => {
-                if (!this._treeDragId) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const draggedId = this._treeDragId;
-                const zone = node.dataset.dropZone || 'inside';
-                this._clearTreeDropIndicators();
-                this._onTreeDrop(draggedId, nodeKey, zone);
-            });
+            // ===== D&D: 並び替え (同階層) + 親変更 (Phase H2-2, Pointer Events化=イシュー#337) =====
+            // 実際のバインドは container 単位 (_bindPointerReorder、_renderSidebarTree 末尾で1回だけ) で行う。
 
             container.appendChild(node);
             if (hasChildren && isExpanded) {
@@ -5692,12 +5853,21 @@ class VirtualBookshelf {
             return 0;
         });
         roots.forEach(bs => renderNode(bs, 0));
-    }
 
-    _clearTreeDropIndicators() {
-        document.querySelectorAll('#sidebar-bookshelf-tree .tree-node').forEach(n => {
-            n.classList.remove('tree-drop-before', 'tree-drop-inside', 'tree-drop-after');
-            delete n.dataset.dropZone;
+        this._bindPointerReorder(container, {
+            itemSelector: '.tree-node',
+            canDrag: (el) => el.dataset.special !== '1',
+            dragClass: 'tree-dragging',
+            zoneMode: 'segment',
+            zoneClassPrefix: 'tree-drop-',
+            computeZone: (targetEl, clientY) => {
+                if (targetEl.dataset.special === '1') return 'inside';
+                const rect = targetEl.getBoundingClientRect();
+                const y = clientY - rect.top;
+                return y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside');
+            },
+            getKey: (el) => el.dataset.internalId,
+            onDrop: (draggedId, targetId, zone) => this._onTreeDrop(draggedId, targetId, zone),
         });
     }
 
@@ -6489,7 +6659,6 @@ class VirtualBookshelf {
             span.className = 'header-item plugin-button-item';
             span.dataset.headerItem = key;
             span.dataset.placementId = placementId;
-            span.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
             const btn = document.createElement('button');
             btn.className = 'btn-icon-square plugin-ui-button';
             if (entry.active) btn.classList.add('is-on'); // ON/OFF 型ボタンの現在状態 (再描画後も復元)
@@ -6512,7 +6681,6 @@ class VirtualBookshelf {
         const tpl = this._headerTemplates?.get(key);
         if (!tpl) return null;
         tpl.dataset.placementId = placementId;
-        tpl.setAttribute('draggable', 'true'); // サイドバーで D&D 並び替え
         // 静的アイテムにも override を適用
         {
             const override = this.getHeaderIconOverride(key);
@@ -6569,57 +6737,26 @@ class VirtualBookshelf {
     }
 
     /**
-     * サイドバー下部ユーティリティのボタンを D&D で並び替え。
+     * サイドバー下部ユーティリティのボタンを D&D で並び替え (Pointer Events化=イシュー#337)。
      * 各 .header-item は data-placement-id を持つ。order は headerLayoutV8 に保存。
      */
     _bindSidebarUtilityDnD(host) {
-        if (!host || host._utilityDnDBound) return;
-        host._utilityDnDBound = true;
-        const drag = { pid: null };
-
-        const computeInsertIndex = (clientX, clientY) => {
-            const items = Array.from(host.querySelectorAll('.header-item'));
-            for (let i = 0; i < items.length; i++) {
-                const r = items[i].getBoundingClientRect();
-                if (clientY < r.top) return i;                       // この行より上
-                if (clientY <= r.bottom && clientX < r.left + r.width / 2) return i; // 同じ行で左寄り
-            }
-            return items.length;
-        };
-        const showIndicator = (index) => {
-            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
-            const items = Array.from(host.querySelectorAll('.header-item'));
-            const ind = document.createElement('span');
-            ind.className = 'hdr-utility-drop-indicator';
-            if (index >= items.length) host.appendChild(ind);
-            else host.insertBefore(ind, items[index]);
-        };
-
-        host.addEventListener('dragstart', (e) => {
-            const item = e.target.closest('.header-item');
-            if (!item || !host.contains(item)) return;
-            drag.pid = item.dataset.placementId || null;
-            if (!drag.pid) return;
-            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', drag.pid); } catch (_) {} }
-            item.classList.add('hdr-item-dragging');
-        });
-        host.addEventListener('dragend', () => {
-            host.querySelectorAll('.hdr-item-dragging').forEach(el => el.classList.remove('hdr-item-dragging'));
-            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
-            drag.pid = null;
-        });
-        host.addEventListener('dragover', (e) => {
-            if (!drag.pid) return;
-            e.preventDefault();
-            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            showIndicator(computeInsertIndex(e.clientX, e.clientY));
-        });
-        host.addEventListener('drop', (e) => {
-            if (!drag.pid) return;
-            e.preventDefault();
-            const idx = computeInsertIndex(e.clientX, e.clientY);
-            host.querySelectorAll('.hdr-utility-drop-indicator').forEach(el => el.remove());
-            this._reorderHeaderPlacement(drag.pid, idx);
+        this._bindPointerReorder(host, {
+            itemSelector: '.header-item',
+            dragClass: 'hdr-item-dragging',
+            zoneMode: 'index',
+            indicatorClass: 'hdr-utility-drop-indicator',
+            computeInsertIndex: (container, clientX, clientY) => {
+                const items = Array.from(container.querySelectorAll('.header-item'));
+                for (let i = 0; i < items.length; i++) {
+                    const r = items[i].getBoundingClientRect();
+                    if (clientY < r.top) return i;                       // この行より上
+                    if (clientY <= r.bottom && clientX < r.left + r.width / 2) return i; // 同じ行で左寄り
+                }
+                return items.length;
+            },
+            getKey: (el) => el.dataset.placementId || null,
+            onDrop: (pid, idx) => { if (pid) this._reorderHeaderPlacement(pid, idx); },
         });
     }
 
@@ -6720,7 +6857,7 @@ class VirtualBookshelf {
                 : '';
             // 縦型カード: 1行目=アイコン+名前+メタ+トグル / 分類バッジ / 説明(2行省略) / 設定・削除
             return `
-                <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}" draggable="true">
+                <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}">
                     <div class="pcard-head">
                         ${iconChip}
                         <div class="pcard-headtext">
@@ -7118,59 +7255,18 @@ class VirtualBookshelf {
             searchInput.addEventListener('input', () => this._applyPluginSearchFilter(), { signal });
         }
 
-        // ===== D&D による並び替え (ヘッダー設定と同じく行間ハイライト) =====
-        const dragState = { id: null };
-
-        const computeInsertIndex = (clientY) => {
-            const cards = Array.from(host.querySelectorAll('.plugin-card-v2'));
-            for (let i = 0; i < cards.length; i++) {
-                const r = cards[i].getBoundingClientRect();
-                if (clientY < r.top + r.height / 2) return i;
-            }
-            return cards.length;
-        };
-        const showInsertIndicator = (index) => {
-            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
-            const cards = Array.from(host.querySelectorAll('.plugin-card-v2'));
-            const indicator = document.createElement('div');
-            indicator.className = 'plugin-drop-indicator';
-            if (index >= cards.length) host.appendChild(indicator);
-            else host.insertBefore(indicator, cards[index]);
-        };
-
-        host.addEventListener('dragstart', (e) => {
+        // ===== D&D による並び替え (Pointer Events化=イシュー#337、行間ハイライトは踏襲) =====
+        this._bindPointerReorder(host, {
+            itemSelector: '.plugin-card-v2',
             // 操作系 (トグル/ボタン/入力) の上ではドラッグ開始しない (誤操作防止)
-            if (e.target.closest('.plugin-card-actions, .pcard-toggle, label, button, input, select')) { e.preventDefault(); return; }
-            const card = e.target.closest('.plugin-card-v2');
-            if (!card) return;
-            dragState.id = card.dataset.pluginId;
-            if (e.dataTransfer) {
-                e.dataTransfer.effectAllowed = 'move';
-                try { e.dataTransfer.setData('text/plain', dragState.id); } catch (_) {}
-            }
-            card.classList.add('is-dragging');
-        }, { signal });
-
-        host.addEventListener('dragend', () => {
-            host.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
-            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
-            dragState.id = null;
-        }, { signal });
-
-        host.addEventListener('dragover', (e) => {
-            if (!dragState.id) return;
-            e.preventDefault();
-            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            showInsertIndicator(computeInsertIndex(e.clientY));
-        }, { signal });
-
-        host.addEventListener('drop', (e) => {
-            if (!dragState.id) return;
-            e.preventDefault();
-            const idx = computeInsertIndex(e.clientY);
-            host.querySelectorAll('.plugin-drop-indicator').forEach(el => el.remove());
-            this._reorderPluginByIndex(dragState.id, idx);
-        }, { signal });
+            excludeSelector: '.plugin-card-actions, .pcard-toggle, label, button, input, select',
+            dragClass: 'is-dragging',
+            zoneMode: 'index',
+            indicatorClass: 'plugin-drop-indicator',
+            computeInsertIndex: (container, clientX, clientY) => this._computeInsertIndexByY(container, '.plugin-card-v2', clientY),
+            getKey: (el) => el.dataset.pluginId,
+            onDrop: (id, idx) => this._reorderPluginByIndex(id, idx),
+        });
 
         // 有効/無効トグル (checkbox の change)
         host.addEventListener('change', (e) => {
@@ -7624,7 +7720,7 @@ class VirtualBookshelf {
             const bsEffectiveIcon = bookshelf.iconName || 'library';
             const bsIconSvg = window.renderIcon(bsEffectiveIcon, { size: 16 });
             html += `
-                <div class="bookshelf-item" data-id="${bookshelf.id}" data-internal-id="${bm._keyOf(bookshelf)}" data-special="${isSpecial ? '1' : '0'}" draggable="${!isSpecial}" style="margin-left:${depth * 1.5}rem;">
+                <div class="bookshelf-item" data-id="${bookshelf.id}" data-internal-id="${bm._keyOf(bookshelf)}" data-special="${isSpecial ? '1' : '0'}" style="margin-left:${depth * 1.5}rem;">
                     <div class="bookshelf-drag-handle">${dragHandle}</div>
                     <div class="bookshelf-info">
                         <h4><span class="bookshelf-list-icon" data-icon-value="${bsEffectiveIcon.replace(/"/g,'&quot;')}">${bsIconSvg}</span>${bookshelf.name} ${specialBadge}</h4>
@@ -14109,61 +14205,27 @@ class VirtualBookshelf {
         }
     }
 
+    // 本棚管理モーダルの D&D 並び替え (Pointer Events化=イシュー#337)。
+    // .bookshelf-drag-handle 上の pointerdown で開始 (本カードと同じ型)。ゾーン判定は左ペインツリーと共用。
     setupBookshelfDragAndDrop(container) {
-        const clearDrop = () => container.querySelectorAll('.bookshelf-item').forEach(i => {
-            i.classList.remove('bsm-drop-before', 'bsm-drop-after', 'bsm-drop-inside');
-            delete i.dataset.dropZone;
-        });
-
-        container.addEventListener('dragstart', (e) => {
-            const item = e.target.closest('.bookshelf-item');
-            if (!item || item.dataset.special === '1') return;
-            this._modalDragKey = item.dataset.internalId;
-            item.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            try { e.dataTransfer.setData('text/plain', this._modalDragKey); } catch (_) {}
-        });
-
-        container.addEventListener('dragover', (e) => {
-            const item = e.target.closest('.bookshelf-item');
-            if (!this._modalDragKey || !item || item.dataset.internalId === this._modalDragKey) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            // 左ペインツリーと同じ 3 ゾーン判定 (上=前 / 中=子にする / 下=後)
-            const rect = item.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-            const isSpecial = item.dataset.special === '1';
-            const zone = isSpecial ? 'inside'
-                : (y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside'));
-            clearDrop();
-            item.classList.add(`bsm-drop-${zone}`);
-            item.dataset.dropZone = zone;
-        });
-
-        container.addEventListener('dragleave', (e) => {
-            const item = e.target.closest('.bookshelf-item');
-            if (item && !item.contains(e.relatedTarget)) {
-                item.classList.remove('bsm-drop-before', 'bsm-drop-after', 'bsm-drop-inside');
-            }
-        });
-
-        container.addEventListener('drop', (e) => {
-            const item = e.target.closest('.bookshelf-item');
-            if (!this._modalDragKey || !item) { clearDrop(); return; }
-            e.preventDefault();
-            const targetKey = item.dataset.internalId;
-            const zone = item.dataset.dropZone || 'inside';
-            clearDrop();
+        this._bindPointerReorder(container, {
+            itemSelector: '.bookshelf-item',
+            handleSelector: '.bookshelf-drag-handle',
+            canDrag: (el) => el.dataset.special !== '1',
+            dragClass: 'dragging',
+            zoneMode: 'segment',
+            zoneClassPrefix: 'bsm-drop-',
+            computeZone: (targetEl, clientY) => {
+                if (targetEl.dataset.special === '1') return 'inside';
+                const rect = targetEl.getBoundingClientRect();
+                const y = clientY - rect.top;
+                return y < rect.height * 0.3 ? 'before' : (y > rect.height * 0.7 ? 'after' : 'inside');
+            },
+            getKey: (el) => el.dataset.internalId,
             // 左ペインと同じ並び替え/親子整合ロジックを共用 (子は親に追従、reparent は確認ダイアログ)
-            if (targetKey && targetKey !== this._modalDragKey) {
-                this._onTreeDrop(this._modalDragKey, targetKey, zone);
-            }
-        });
-
-        container.addEventListener('dragend', () => {
-            container.querySelectorAll('.dragging').forEach(i => i.classList.remove('dragging'));
-            clearDrop();
-            this._modalDragKey = null;
+            onDrop: (draggedKey, targetKey, zone) => {
+                if (targetKey && targetKey !== draggedKey) this._onTreeDrop(draggedKey, targetKey, zone);
+            },
         });
     }
 

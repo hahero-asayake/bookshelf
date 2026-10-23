@@ -1062,8 +1062,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     background: var(--panel);
     border-style: solid;
 }
-.bd.editing .bd-section[draggable="true"] { cursor: grab; }
 .bd-section.is-dragging { opacity: 0.45; }
+.bd-section-drop-indicator {
+    height: 3px;
+    background: #3b82f6;
+    border-radius: 2px;
+    margin: 0 0 0.6rem;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
 .bd-section.has-context {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-bg);
@@ -1078,6 +1084,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: inline-flex;
     cursor: grab;
     color: var(--muted);
+    touch-action: none; /* Pointer Events が touch スクロールより優先 (イシュー#337) */
 }
 .bd-section-title {
     font-size: 0.72rem;
@@ -5277,8 +5284,8 @@ body.right-collapsed .app-detail { border-left: none; }
     justify-content: flex-start;
     position: relative;
 }
-/* サイドバーユーティリティのボタンを D&D 並び替え (ヘッダーカスタマイザ廃止後) */
-.sidebar-utility .header-item[draggable="true"] {
+/* サイドバーユーティリティのボタンを D&D 並び替え (ヘッダーカスタマイザ廃止後、Pointer Events化=イシュー#337) */
+.sidebar-utility .header-item {
     cursor: grab;
 }
 .sidebar-utility .header-item.hdr-item-dragging {
@@ -6978,6 +6985,7 @@ input.art-shelf-select-all.is-mixed::after {
     padding: 0.5rem;
     display: inline-flex;
     align-items: center;
+    touch-action: none; /* Pointer Events が touch スクロールより優先 (イシュー#337) */
 }
 
 .bookshelf-drag-handle:hover {
