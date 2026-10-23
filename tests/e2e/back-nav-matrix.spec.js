@@ -1458,6 +1458,34 @@ test.describe('本詳細シート: 開き方・閉じ方の残り (イシュー#
         expect.soft(hasBackdrop.fullscreen, '本詳細シートはフルスクリーン(枠外が存在しない)').toBe(true);
         expect.soft(hasBackdrop.scrimCount, '専用スクリム要素は無い').toBe(0);
     });
+
+    // イシュー#350: showBookDetail(book, true) が navigateBook() 経由でhashを書き換えると、
+    // 今のhashと異なる場合にブラウザが非同期にhashchangeを発火し、_applyRoute (js/bookshelf.js
+    // :7608〜) が固定値 false で showBookDetail を呼び直してしまい、開いた直後に編集モードが
+    // 静かに view へ戻っていた(_lastDetailEditModeが数ms後にfalseへ戻り.bd-gripが消える)。
+    // 本番の3呼び出し元(編集切替ボタン・本棚追加後の再表示)は「既に同じ本が同じhashで開いている」
+    // 状態からしか呼ばれないため通常は再現しないが、hashが未確定(空など)の状態から直接呼ぶと
+    // 再現する。再現には起動直後(hash='')から直接呼ぶ条件を使う。
+    test('R08i 本詳細: hash未確定の状態からshowBookDetail(book,true)で開く→編集モードが静かに戻らない (イシュー#350)', async ({ page }) => {
+        await bootApp(page);
+        const before = await snap(page);
+        expect.soft(before.hash, '前提: 起動直後はhashが空').toBe('');
+        const book = await page.evaluate(() => {
+            const bs = window.bookshelf;
+            return (bs.books && bs.books[0]) || bs.bookManager.getAllBooks()[0];
+        });
+        await page.evaluate((b) => window.bookshelf.showBookDetail(b, true), book);
+        // hashchange(非同期)が落ち着くのを待つ(段差があった場合はここで false に戻っていた)
+        await settle(page, 500);
+        const after = await page.evaluate(() => ({
+            isEditMode: window.bookshelf._lastDetailEditMode,
+            grips: document.querySelectorAll('.bd-grip').length,
+            hash: location.hash,
+        }));
+        expect.soft(after.isEditMode, '編集モードがhashchange後も true のまま').toBe(true);
+        expect.soft(after.grips, '並べ替えハンドル(.bd-grip)が消えていない').toBeGreaterThan(0);
+        expect.soft(after.hash).toContain('book/' + encodeURIComponent(book.asin));
+    });
 });
 
 // ===== イシュー#291 (②決裁2026-10-19): 「進む」(iOS端スワイプ=ブラウザの進む相当) で、

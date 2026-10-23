@@ -7623,7 +7623,13 @@ class VirtualBookshelf {
                     this.router.navigateMain({ replace: true });
                     return;
                 }
-                this.showBookDetail(book, false);
+                // イシュー#350: showBookDetail(book, true) は内部で router.navigateBook() を呼び、
+                // 今のhashと異なる場合はブラウザが非同期にhashchangeを発火する。その結果ここが
+                // 固定値 false で呼び直してしまい、開いた直後に編集モードが静かに戻っていた。
+                // 「同じ本をまだ編集中」の時だけ編集モードを引き継ぐ (reRenderForDisplay:916-919 と
+                // 同型)。別の本への遷移・deep link・再読込では常に閲覧モード (従来どおり)。
+                const keepEditMode = !!(this._lastDetailBook && this._lastDetailBook.asin === book.asin && this._lastDetailEditMode);
+                this.showBookDetail(book, keepEditMode);
             }
         } finally {
             this._suppressRouterUpdate = false;
