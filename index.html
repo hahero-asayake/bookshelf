@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>AsayakeBookshelf</title>
-    <meta name="description" content="ローカルファイル正本＋本棚を一級概念＋プラグイン拡張可能な読書ライブラリ">
+    <title>AsayakeBookshelf — 本棚で育てる読書ライブラリ</title>
+    <meta name="description" content="蔵書を本棚ごとに整理し、メモや評価をつけて管理できる読書ライブラリ。プラグインで拡張、読書記録の公開・共有もできます。">
+    <link rel="canonical" href="https://asayake.org/bookshelf/">
+    <meta name="robots" content="index,follow">
     <!-- Google AdSense（審査用スニペットのみ・広告ユニットは配置しない方針 2026-07-29） -->
     <script
         async
@@ -12,10 +14,33 @@
         crossorigin="anonymous"
     ></script>
 
-    <!-- Open Graph for social sharing -->
+    <!-- Open Graph / Twitter Card for social sharing (T11・イシュー#335) -->
     <meta property="og:title" content="AsayakeBookshelf">
-    <meta property="og:description" content="読書ライブラリ">
+    <meta property="og:description" content="蔵書を本棚ごとに整理し、メモや評価をつけて管理できる読書ライブラリ。プラグインで拡張、読書記録の公開・共有もできます。">
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://asayake.org/bookshelf/">
+    <meta property="og:image" content="https://asayake.org/bookshelf/icons/og-image.png?v=20261024">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="AsayakeBookshelf">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AsayakeBookshelf">
+    <meta name="twitter:description" content="蔵書を本棚ごとに整理し、メモや評価をつけて管理できる読書ライブラリ。プラグインで拡張、読書記録の公開・共有もできます。">
+    <meta name="twitter:image" content="https://asayake.org/bookshelf/icons/og-image.png?v=20261024">
+
+    <!-- 構造化データ (JSON-LD・T11) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "AsayakeBookshelf",
+      "description": "蔵書を本棚ごとに整理し、メモや評価をつけて管理できる読書ライブラリ。プラグインで拡張、読書記録の公開・共有もできます。",
+      "url": "https://asayake.org/bookshelf/",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Web",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" }
+    }
+    </script>
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.webmanifest?v=20260613">
@@ -1403,7 +1428,7 @@
     <script defer src="js/publish-article-store.js?v=2026093001"></script>
     <script defer src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script defer src="js/publish-ogp-image.js?v=2026092903"></script>
-    <script defer src="js/publish-article-generator.js?v=2026101201"></script>
+    <script defer src="js/publish-article-generator.js?v=2026102401"></script>
     <script defer src="js/exporter.js?v=2026092601"></script>
     <script defer src="js/plugin-api.js?v=2026092601"></script>
     <script defer src="js/plugin-loader.js?v=2026072701"></script>

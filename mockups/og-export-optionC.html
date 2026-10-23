@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  T11 (イシュー#335) OGP画像 案C「本棚ごとに動的生成」のコンセプトモック。1200×630。
+  本棚の書影を並べたコラージュ＋ユーザー名。実データではなくプレースホルダ色ブロックで構図のみ示す
+  （実装すると exporter.js に ADR-098 の PublishOgpImage.render 相当を本棚トップ用に追加で書く必要がある＝
+  本イシューの承認範囲「公開側は不足補修のみ」を超える新規生成パイプラインになる、という判断材料用）。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  .canvas {
+    width: 1200px; height: 630px; position: relative; overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    background: linear-gradient(135deg, #181b2c 0%, #3c3550 55%, #a8678a 100%);
+    padding: 56px 64px;
+  }
+  .header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 28px; }
+  .brand { font-size: 22px; color: #ffd9b0; font-weight: 600; }
+  .user { font-size: 38px; color: #fff; font-weight: 800; }
+  .sub { font-size: 20px; color: #f4e9e2cc; margin-bottom: 30px; }
+  .covers { display: flex; gap: 16px; }
+  .cover { width: 150px; height: 210px; border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.35); display: flex; align-items: flex-end; padding: 10px; font-size: 12px; color: rgba(255,255,255,.75); }
+  .c1 { background: linear-gradient(160deg, #ff9e7d, #c9607a); }
+  .c2 { background: linear-gradient(160deg, #ffecd2, #fcb69f); }
+  .c3 { background: linear-gradient(160deg, #7d8bff, #4a3b4e); }
+  .c4 { background: linear-gradient(160deg, #7dd6ff, #3550a8); }
+  .c5 { background: linear-gradient(160deg, #ffd27d, #a86b35); }
+  .badge { position: absolute; right: 64px; bottom: 56px; font-size: 16px; color: #2d2638; background: #ffe8d1; padding: 8px 18px; border-radius: 999px; font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="canvas" id="canvas">
+    <div class="header"><span class="brand">AsayakeBookshelf</span><span class="user">asayake.hahero の本棚</span></div>
+    <div class="sub">公開中の本棚から、最近追加した本を自動で並べる（案）</div>
+    <div class="covers">
+      <div class="cover c1">本1</div>
+      <div class="cover c2">本2</div>
+      <div class="cover c3">本3</div>
+      <div class="cover c4">本4</div>
+      <div class="cover c5">本5</div>
+    </div>
+    <div class="badge">42冊を公開中</div>
+  </div>
+</body>
+</html>

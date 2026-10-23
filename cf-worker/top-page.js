@@ -5,6 +5,11 @@
 
 import { queryActiveSitesPage, encodeSitesCursor } from './community-sites-query.js';
 
+// 全ページ共通のブランドOGP画像 (T11・イシュー#335決裁B案)。GitHub Pages配信の
+// js/publish-article-generator.js `SHARED_OG_IMAGE` と同一アセット・同一URLを指す
+// (cf-worker からは別ファイルのため定数を共有できず、ここは値を直書きで同期する)。
+const OG_IMAGE_URL = 'https://asayake.org/bookshelf/icons/og-image.png?v=20261024';
+
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -42,13 +47,43 @@ export async function renderTopPage(env, url) {
         ? `<a class="next" href="/top?${tagQS}cursor=${encodeURIComponent(nextCursor)}">次へ →</a>`
         : '';
     const clearTag = tag ? `<a class="clear-tag" href="/top">すべての記事に戻る</a>` : '';
+    const description = tag
+        ? `「#${tag}」タグの公開記事一覧です。`
+        : 'AsayakeBookshelf で公開された本棚記事の一覧です。';
+    const canonical = `${url.origin}/top${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`;
+    const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'CollectionPage',
+        name: heading,
+        description,
+        url: canonical,
+        mainEntity: {
+            '@type': 'ItemList',
+            itemListElement: rows.map((s, i) => ({ '@type': 'ListItem', position: i + 1, url: s.url, name: s.title }))
+        }
+    };
     const html = `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${heading} | bookshelf.asayake.org</title>
-<meta name="description" content="AsayakeBookshelf で公開された本棚記事の一覧です。">
+<meta name="description" content="${escapeHtml(description)}">
+<link rel="canonical" href="${escapeHtml(canonical)}">
+<meta property="og:title" content="${escapeHtml(heading)}">
+<meta property="og:description" content="${escapeHtml(description)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AsayakeBookshelf">
+<meta property="og:url" content="${escapeHtml(canonical)}">
+<meta property="og:image" content="${OG_IMAGE_URL}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AsayakeBookshelf">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(heading)}">
+<meta name="twitter:description" content="${escapeHtml(description)}">
+<meta name="twitter:image" content="${OG_IMAGE_URL}">
+<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }

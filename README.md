@@ -1,91 +1,74 @@
 # AsayakeBookshelf
 
-朝焼けを背に本棚から本を取る——ローカルファイル（Obsidian vault 等の同期フォルダ）を正本に、本棚を一級概念として扱い、プラグインで拡張可能な個人読書ライブラリ。
+![AsayakeBookshelf](icons/og-image.png)
 
-> リポジトリ名・公開 URL は `bookshelf`（`hahero-asayake.github.io/bookshelf`）のまま、表示名のみ **AsayakeBookshelf** に統一（ADR-029）。
+**積読から読了まで、本棚ごと育てる読書ライブラリ。**
 
-[karaage0703/karaage-virtual-bookshelf](https://github.com/karaage0703/karaage-virtual-bookshelf) からフォーク → 全面再設計。
+蔵書を本棚ごとに整理し、メモや評価をつけて管理できます。プラグインで拡張でき、読んだ本を公開して共有することもできます。
+
+👉 **今すぐ使う: https://asayake.org/bookshelf/**（登録不要・fork不要）
+
+[karaage0703/karaage-virtual-bookshelf](https://github.com/karaage0703/karaage-virtual-bookshelf) からフォークし、全面再設計したものです。
 
 ---
 
-## コンセプト
+## スクリーンショット
 
-- **ローカルファイル正本**: 同期フォルダ（Obsidian vault など）に全データを保存。GitHub やバックエンド不要
-- **本棚が一級**: 親子継承・本棚ごとの短文メモ上書き・順引きと逆引きの整合
-- **編集と公開の完全分離**: 編集用 main.json と公開用 main.json を別ファイルで保持
-- **プラグインで拡張可能**: イベントフック + UI 拡張点 + GitHub からのインストール
-- **PC ブラウザ完結**: File System Access API でローカルディレクトリを直接読み書き
+| PC ホーム | モバイル | 公開記事（本の紹介カード） |
+|---|---|---|
+| ![PCホーム](assets/screenshot-pc-home.png) | ![モバイル](assets/screenshot-mobile.png) | ![公開記事の例](assets/screenshot-published-article.png) |
 
-## 同期フォルダ構造
+## 特徴
 
-```
-<同期フォルダ>/
-├── library.json              # Kindle 生データ
-├── exclusions.json           # all 本棚から除外する ASIN
-├── bookshelves.json          # 本棚一覧（メタ + isPublic）
-├── books/
-│   └── <ASIN>__<タイトル>.md  # 長文メモ（外部エディタで編集前提）
-├── bookshelves/
-│   ├── all.json              # 特殊本棚（本データ正本）
-│   └── <slug>.json           # ユーザ作成本棚（books順序 + 上書きnotes）
-├── private/
-│   ├── settings.json
-│   └── main.json             # 編集用メイン設定
-├── public/
-│   ├── settings.json
-│   └── main.json             # 公開用メイン設定（編集側からコピー）
-└── plugins/
-    └── <plugin-id>/
-        ├── manifest.json
-        └── index.js
-```
+- **本棚で整理** — 親子継承のある本棚に蔵書を仕分け。1冊を複数本棚に置ける
+- **メモ・評価** — 本ごとに短文メモ・星評価。長文メモは Markdown で別ファイル管理
+- **⌘K コマンドパレット** — 本・本棚・設定コマンドを横断検索してすぐ開く
+- **カスタマイズ可能なホームダッシュボード** — ウィジェットを並べ替えて自分用のホームに
+- **PWA 対応** — ホーム画面に追加してアプリのように使える（iOS / Android）
+- **3通りの同期方式** — この端末だけ（PC限定）/ GitHub リポジトリ / Asayake ハブ（Google ログイン）
+- **プラグインで拡張** — イベントフック・UI拡張点・GitHub からのインストール
+- **読書記録を公開** — 本棚を素材に記事を書いて、固有の URL で公開・共有できる
 
-詳細は [obsidian/80_🚀project/81_🚀development/bookshelf/設計.md](https://github.com/hahero-asayake/obsidian-private) を参照（vault 内、私的）。
+## 使い始める（一般ユーザー向け）
 
-## セットアップ
+**fork もアカウント登録も不要です。** [https://asayake.org/bookshelf/](https://asayake.org/bookshelf/) を開き、保存先を選ぶだけで使えます。
 
-### 1. リポジトリ取得
+1. アプリを開く
+2. 設定から保存先を選ぶ（下記いずれか1つ）
+3. Kindle の蔵書を取り込む、または本を手動で追加する
 
-```bash
-git clone https://github.com/hahero-asayake/bookshelf.git
-cd bookshelf
-```
+### 保存先の選択肢
 
-### 2. ローカルサーバー起動
+| 方式 | 対応環境 | 準備 |
+|---|---|---|
+| **この端末だけ**（ローカルファイル） | PC の Chrome / Edge のみ | フォルダを選ぶだけ |
+| **GitHub リポジトリ** | 全環境（PC・モバイル） | GitHub アカウントでログインし、保存先リポジトリを選ぶだけ |
+| **Asayake ハブ** | 全環境（PC・モバイル） | Google アカウントでログインするだけ |
 
-CORS 制約回避のため HTTP サーバーで開く必要がある:
+いずれも登録作業は不要です（GitHub App・Google ログインは運営側で用意済みの共用クライアントを使います）。
 
-```bash
-python -m http.server 8000
-# または
-npx serve .
-```
+## データとプライバシー
 
-ブラウザで `http://localhost:8000` を開く。
+- 蔵書データはあなたが選んだ保存先（この端末 / あなたの GitHub リポジトリ / Asayake ハブ）にだけ保存されます。
+- 「この端末だけ」「GitHub リポジトリ」を選んだ場合、運営者（アプリ提供者）はあなたのデータに一切アクセスできません。
+- 「Asayake ハブ」を選んだ場合のみ、運営者が管理者としてデータを平文で預かります（同期の利便性を優先する人向けの任意の選択肢）。
+- 公開は完全オプトイン。本棚を素材に記事を書いて明示的に「公開する」を押すまで、誰にも見えません。
 
-> ⚠️ **VS Code Live Server は非推奨**: 同期フォルダの書き込みでブラウザがリロードされる現象がある。詳細と回避策は [CLAUDE.md](CLAUDE.md) を参照。
+## 自己ホストしたい人へ（補助）
 
-### 3. 同期フォルダの接続
+このアプリは `asayake.org/bookshelf/` の1箇所でホストされており、ほとんどの人は fork する必要はありません。
 
-1. ブラウザで「📁 Obsidian フォルダを選択」を押す
-2. 同期フォルダを指定（初回のみ。FileSystemDirectoryHandle は IndexedDB に永続化される）
-3. 中身が空でも自動で初期構造を作成
+自分の環境で完全に独立して動かしたい場合は、fork した上で以下を自前に用意してください:
 
-## 主な機能
+1. GitHub App（Device Flow 対応）を登録
+2. OAuth proxy 用の Cloudflare Worker をデプロイ
+3. （任意）Asayake ハブ相当の課金・公開配信機能は自前では提供されないため、GitHub 同期のみの利用になります
 
-| 機能 | 説明 |
-|---|---|
-| 📥 **Kindle 取込** | Bookmarklet 方式（拡張不要）。Amazon ライブラリページで実行 → postMessage で受信 |
-| ➕ **手動追加** | ASIN・タイトル・著者・画像 URL・読んだ日付を入力 |
-| 🚫 **除外** | Kindle 再取込時もスキップされる ASIN リスト |
-| 📚 **本棚作成** | 親本棚継承・短文メモ上書き・本の並び替え（DnD）・isPublic フラグ |
-| 📤 **公開にコピー** | private/main.json → 公開対象だけを public/main.json に書き出し |
-| 📦 **エクスポート実行** | public/* + 該当本棚 + 本データ + 長文メモ + 編集 UI を抜いた html/js/css を `bookshelf-export/` に出力 |
-| 🧩 **プラグイン** | GitHub repo URL から install。`activate(api, manifest)` で UI ボタン追加・イベントハック・エクスポート変換 |
+手順の詳細は [CLAUDE.md](CLAUDE.md) の「GitHub 接続」節を参照してください。
 
-## プラグイン
+## プラグイン開発
 
-`plugins-sample/` にサンプル実装あり。最小スキーマ:
+`plugins-sample/` にサンプル実装があります。最小スキーマ:
 
 ```json
 {
@@ -105,26 +88,29 @@ export function activate(api, manifest) {
 }
 ```
 
-API 詳細は [js/plugin-api.js](js/plugin-api.js) と [plugins-sample/README.md](plugins-sample/README.md) を参照。
+API 詳細は [js/plugin-api.js](js/plugin-api.js) と [plugins-sample/README.md](plugins-sample/README.md) を参照してください。
 
-## アーキテクチャ
+## アーキテクチャ（開発者向け）
 
 | ファイル | 役割 |
 |---|---|
 | [js/bookshelf.js](js/bookshelf.js) | メインアプリケーションクラス（UI + ビジネスロジック） |
-| [js/storage.js](js/storage.js) | File System Access API ラッパ、新ファイル構造のマイグレーション |
+| [js/storage.js](js/storage.js) | 同期ストレージの高レベル読み書き |
 | [js/book-manager.js](js/book-manager.js) | 蔵書 CRUD |
 | [js/bookshelf-manager.js](js/bookshelf-manager.js) | 本棚操作・継承・逆引きマップ |
 | [js/exporter.js](js/exporter.js) | 公開エクスポート |
+| [js/publish-article-generator.js](js/publish-article-generator.js) | 公開記事 HTML 生成 |
 | [js/plugin-api.js](js/plugin-api.js) | プラグイン公開 API |
 | [js/plugin-loader.js](js/plugin-loader.js) | プラグイン読込・GitHub install |
 
+開発環境のセットアップ・コーディング規約は [CLAUDE.md](CLAUDE.md) を参照してください。
+
 ## モバイル
 
-ローカルファイル保存は **PC の Chrome / Edge 限定**（File System Access API が必須）。モバイル（iOS / Android）は **GitHub 同期 / Asayake ハブ** の 2 択で全機能が使える。iOS は PWA（ホーム画面に追加）で配布。**Android ネイティブ（Capacitor / APK）は廃止**（ADR-046）。
+ローカルファイル保存は **PC の Chrome / Edge 限定**（File System Access API が必須）。モバイル（iOS / Android）は **GitHub 同期 / Asayake ハブ** の2択で全機能が使えます。iOS は PWA（ホーム画面に追加）で配布しています。
 
-showDirectoryPicker 非対応環境では、同期セレクトの「ローカル」は選択不可とし、上部バナーでクラウド保存へ誘導する。
+## クレジット・ライセンス
 
-## ライセンス
+[karaage0703/karaage-virtual-bookshelf](https://github.com/karaage0703/karaage-virtual-bookshelf) からフォークしています。オリジナルの実装に感謝します。
 
-オリジナルは MIT License（karaage0703）。
+本リポジトリは [MIT License](LICENSE) です。

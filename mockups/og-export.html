@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  T11 (イシュー#335) OGP共通画像モック。1200×630固定。
+  icons/source-art.png（ADR-025採用のイラスト）を右側に配置し、左の朝焼け空の余白にロゴ文字を置く。
+  配色は08_意思決定記録.md ADR-025「朝焼けパレット」(夜空 #181b2c→#4a3b4e / グロー #ff9e7d / 暖色 #ffecd2→#fcb69f) を踏襲。
+  使い方: file:// または http://localhost:8000/mockups/og-export.html を1200x630で開き、.canvas要素をスクショする。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #111; }
+  .canvas {
+    width: 1200px; height: 630px; position: relative; overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    background: linear-gradient(135deg, #181b2c 0%, #3c3550 40%, #a8678a 68%, #ff9e7d 100%);
+  }
+  .art {
+    position: absolute; top: -80px; right: -120px; width: 760px; height: 760px;
+    opacity: 0.96;
+  }
+  .art img { width: 100%; height: 100%; object-fit: cover; }
+  .scrim {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(20,16,28,0.86) 0%, rgba(20,16,28,0.55) 38%, rgba(20,16,28,0.08) 58%, rgba(20,16,28,0) 66%);
+  }
+  .content {
+    position: absolute; left: 72px; top: 0; bottom: 0; width: 640px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .word { display: flex; align-items: baseline; gap: 4px; margin-bottom: 22px; }
+  .word .asayake { font-size: 30px; font-weight: 600; color: #ffd9b0; letter-spacing: 0.02em; }
+  .word .bookshelf { font-size: 54px; font-weight: 800; color: #ffffff; letter-spacing: -0.01em; }
+  .tagline { font-size: 26px; color: #f4e9e2; line-height: 1.55; font-weight: 500; max-width: 560px; text-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  .pill-row { display: flex; gap: 10px; margin-top: 30px; }
+  .pill { font-size: 16px; color: #2d2638; background: #ffe8d1; padding: 6px 16px; border-radius: 999px; font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="canvas" id="canvas">
+    <div class="art"><img src="../icons/source-art.png" alt=""></div>
+    <div class="scrim"></div>
+    <div class="content">
+      <div class="word"><span class="asayake">Asayake</span><span class="bookshelf">Bookshelf</span></div>
+      <div class="tagline">積読から読了まで、<br>本棚ごと育てる読書ライブラリ</div>
+      <div class="pill-row">
+        <div class="pill">本棚で整理</div>
+        <div class="pill">プラグイン拡張</div>
+        <div class="pill">読書記録を公開</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

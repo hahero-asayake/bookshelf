@@ -679,6 +679,8 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
         const siteHasAffiliate = !!opts.siteHasAffiliate;
         const ogImage = opts.ogImage || '';   // 自前生成 og.png の絶対 URL (無ければ画像なし・ADR-098)
         const ogDescription = opts.ogDescription || '';
+        const ogType = opts.ogType || 'article';   // 記事=article(既定)。一覧ページ(_indexHtml)はwebsiteを渡す(T11・イシュー#335)
+        const jsonLd = opts.jsonLd || null;   // 構造化データ(T11)。呼び出し側が型(Article/CollectionPage等)ごとに組み立てたオブジェクトをそのまま埋め込む
         const canonical = opts.canonical || '';
         const updated = PublishArticleGenerator._fmtDate(opts.updatedAt);
         const year = PublishArticleGenerator._year(opts.updatedAt);
@@ -714,7 +716,7 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
             canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
             ogDescription ? `<meta name="description" content="${esc(ogDescription)}">` : '',
             `<meta property="og:title" content="${esc(article.title)}">`,
-            `<meta property="og:type" content="article">`,
+            `<meta property="og:type" content="${esc(ogType)}">`,
             `<meta property="og:site_name" content="${esc(publisher)} の本棚">`,
             canonical ? `<meta property="og:url" content="${esc(canonical)}">` : '',
             ogDescription ? `<meta property="og:description" content="${esc(ogDescription)}">` : '',
@@ -725,7 +727,10 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
             ogImage ? `<meta name="twitter:card" content="summary_large_image">` : '<meta name="twitter:card" content="summary">',
             `<meta name="twitter:title" content="${esc(article.title)}">`,
             ogDescription ? `<meta name="twitter:description" content="${esc(ogDescription)}">` : '',
-            ogImage ? `<meta name="twitter:image" content="${esc(ogImage)}">` : ''
+            ogImage ? `<meta name="twitter:image" content="${esc(ogImage)}">` : '',
+            // 構造化データ (T11・イシュー#335)。</ を \u003c でエスケープし、title等のユーザ入力に
+            // "</script>" が含まれていてもスクリプトタグが早期終了しないようにする。
+            jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>` : ''
         ].filter(Boolean).join('\n');
 
         return `<!doctype html>
@@ -767,12 +772,35 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
         const updatedAt = articleLinks.reduce((m, a) => Math.max(m, a.updatedAt || 0), 0);
         // index はテーマを持たない一覧ページなので既定テーマ (_wrapDoc の normalizeTheme フォールバック) で包む
         const indexArticle = { title: `${publisher} の本棚`, tags: [], theme: {} };
+        const indexCanonical = opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '';
+        // 一覧ページなので og:type は article ではなく website (T11・イシュー#335で修正)。
+        // ogDescription/ogImage は本棚ごとの個別生成ではなく、全ページ共通のブランド画像を使う(決裁B案)。
+        const indexOgDescription = `${publisher} が AsayakeBookshelf で公開している本棚記事、${articleLinks.length}件。`;
         const doc = this._wrapDoc(indexArticle, publisher, body, {
             siteHasAffiliate: !!opts.siteHasAffiliate,
-            canonical: opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '',
+            canonical: indexCanonical,
             updatedAt,
             reportRef: opts.reportRef || '',
-            pluginFooter: opts.pluginFooter || ''
+            pluginFooter: opts.pluginFooter || '',
+            ogType: 'website',
+            ogDescription: indexOgDescription,
+            ogImage: PublishArticleGenerator.SHARED_OG_IMAGE,
+            jsonLd: {
+                '@context': 'https://schema.org',
+                '@type': 'CollectionPage',
+                name: `${publisher} の本棚`,
+                description: indexOgDescription,
+                url: indexCanonical || undefined,
+                mainEntity: {
+                    '@type': 'ItemList',
+                    itemListElement: articleLinks.map((a, i) => ({
+                        '@type': 'ListItem',
+                        position: i + 1,
+                        url: indexCanonical ? `${indexCanonical}${a.publicId}/` : undefined,
+                        name: a.title
+                    }))
+                }
+            }
         });
         // index には記事別テーマの CSS だけでなく一覧用の css を追加で差し込む
         return doc.replace('</style>', `${css}</style>`);
@@ -805,6 +833,10 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
     static get APP_URL() { return 'https://asayake.org/bookshelf/'; }
     static get OG_IMAGE_WIDTH() { return 1200; }
     static get OG_IMAGE_HEIGHT() { return 630; }
+    // 本棚トップ(_indexHtml)・/top 共通のブランドOGP画像の絶対URL (T11・イシュー#335決裁B案)。
+    // 記事別の自前生成(ADR-098・og.png)とは別物＝記事ページでは使わない。GitHub Pages配信のicons/を
+    // そのまま参照するためcf-worker側の追加ホスティングは不要。
+    static get SHARED_OG_IMAGE() { return `${PublishArticleGenerator.APP_URL}icons/og-image.png?v=20261024`; }
 
     // og:description: 本文先頭のテキストブロックから約120字 (Markdown 記号は除く)。無ければタグ列、それも無ければ発行者名。
     _ogDescription(article, resolvedBlocks, publisher) {
@@ -952,14 +984,28 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             }
 
             const ogDescription = this._ogDescription(article, resolvedBlocks, publisher);
+            const articleCanonical = siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '';
+            const articleUpdatedAt = article.updatedAt || article.lastBuiltAt || 0;
             const html = this._wrapDoc(article, publisher, body, {
                 pageHasAds, siteHasAffiliate, ogImage,
                 ogDescription,
-                canonical: siteBaseUrl ? `${siteBaseUrl}/${article.publicId}/` : '',
+                canonical: articleCanonical,
                 noindex: !article.published,
-                updatedAt: article.updatedAt || article.lastBuiltAt || 0,
+                updatedAt: articleUpdatedAt,
                 reportRef, pluginFooter,
-                reportAppUrl: target === 'hub' && siteBaseUrl ? `${PublishArticleGenerator.APP_URL}?report=${encodeURIComponent(`${siteBaseUrl}/${article.publicId}/`)}` : ''
+                reportAppUrl: target === 'hub' && siteBaseUrl ? `${PublishArticleGenerator.APP_URL}?report=${encodeURIComponent(`${siteBaseUrl}/${article.publicId}/`)}` : '',
+                // 構造化データ (T11・イシュー#335)。siteBaseUrl が無い(canonical未定)場合はurl/image等を省き、必須の最小限のみ出す。
+                jsonLd: {
+                    '@context': 'https://schema.org',
+                    '@type': 'Article',
+                    headline: article.title,
+                    description: ogDescription || undefined,
+                    image: ogImage || undefined,
+                    url: articleCanonical || undefined,
+                    datePublished: articleUpdatedAt ? new Date(articleUpdatedAt).toISOString() : undefined,
+                    dateModified: articleUpdatedAt ? new Date(articleUpdatedAt).toISOString() : undefined,
+                    author: { '@type': 'Person', name: publisher }
+                }
             });
             files.push({ path: `${article.publicId}/index.html`, content: html });
             // og.png はバイナリ (base64)。ogUnchanged = 入力が前回公開と同じ (GitHub は blob 書込を省ける。パスは出力集合に残す)
