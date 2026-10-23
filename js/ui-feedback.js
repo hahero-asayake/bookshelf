@@ -179,6 +179,13 @@
     }
     window.addEventListener('error', (e) => {
         if (!(e instanceof ErrorEvent) || e.target !== window) return;
+        // ResizeObserver のループ通知 (新文言 "...undelivered notifications."・旧文言
+        // "...loop limit exceeded") は Chromium/WebKit 共通の無害なブラウザ標準警告で、
+        // レイアウト変化が多い操作 (モーダル開閉・トースト表示等) で偶発的に発生するだけで
+        // 実害は無い。本物の例外と区別せず toast にすると公開成功時等に誤って「予期しない
+        // エラー」を出してしまう (イシュー#349・tests/e2e/publish-article-editor.spec.js の
+        // フレーク原因として実測)。toast は出さず、調査用に1行だけ残す。
+        if (/^ResizeObserver loop/.test(e.message)) { console.debug('[ui-feedback] ResizeObserver loop通知を抑制:', e.message); return; }
         notifyUnexpectedError();
     });
     window.addEventListener('unhandledrejection', () => {
