@@ -23,3 +23,6 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Smoke tests (Playwright)
         run: npm run test:e2e
+      - name: E2E 失敗テスト一覧 (annotation 補完・イシュー#349)
+        if: always()
+        run: npm run ci:annotate-e2e

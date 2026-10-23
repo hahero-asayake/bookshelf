@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "ci:annotate-e2e": "node scripts/ci-annotate-failures.mjs",
     "check:version": "node scripts/check-version-bump.mjs",
     "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md",
     "lint:css": "stylelint \"css/**/*.css\""

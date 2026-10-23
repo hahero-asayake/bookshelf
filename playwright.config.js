@@ -9,6 +9,12 @@ const extraProjects = process.env.BACKNAV_WEBKIT === '1'
 export default defineConfig({
     testDir: 'tests/e2e',
     timeout: 60_000,
+    // CI では github reporter で check-run の annotation に失敗テストを出す
+    // (未認証の公開APIでも読める、イシュー#349)。list は人間向けの進捗表示用に残す。
+    // json は自前の annotation 補完 (scripts/ci-annotate-failures.mjs) の入力。
+    reporter: process.env.CI
+        ? [['github'], ['list'], ['json', { outputFile: 'test-results/e2e.json' }]]
+        : 'list',
     // 開発サーバー。ローカルで既に :8000 が立っていればそれを使う
     webServer: {
         command: 'python3 -m http.server 8000',
