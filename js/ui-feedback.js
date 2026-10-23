@@ -161,4 +161,27 @@
             okBtn.focus();
         });
     };
+
+    // ===== グローバル例外 → toast (#339: ローンチ前漏れ精査・エラー監視の最小実装) =====
+    //
+    // window の bubble 段階 (capture 無し) で登録する。リソース読み込みエラー (img 等) は
+    // bubble せず window まで届かないため、既存の書影フォールバック用 document capture リスナ
+    // (js/bookshelf.js:1520 付近 _setupCoverFallback) とは自然に棲み分かれる。念のため
+    // ErrorEvent かどうか・e.target===window かも確認し、万一の混入を防ぐ。
+    const GLOBAL_ERROR_MESSAGE = '予期しないエラーが発生しました。しばらくしてからもう一度お試しください。';
+    const GLOBAL_ERROR_SUPPRESS_MS = 5000; // 連打防止: 同一メッセージ (固定文言1種のみ) を短時間は再表示しない
+    let lastGlobalErrorToastAt = 0;
+    function notifyUnexpectedError() {
+        const now = Date.now();
+        if (now - lastGlobalErrorToastAt < GLOBAL_ERROR_SUPPRESS_MS) return;
+        lastGlobalErrorToastAt = now;
+        window.toast(GLOBAL_ERROR_MESSAGE, { type: 'error' });
+    }
+    window.addEventListener('error', (e) => {
+        if (!(e instanceof ErrorEvent) || e.target !== window) return;
+        notifyUnexpectedError();
+    });
+    window.addEventListener('unhandledrejection', () => {
+        notifyUnexpectedError();
+    });
 })();
