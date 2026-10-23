@@ -3,7 +3,8 @@
 // 停止理由・解除の窓口を日本語で伝え、運営者のメールアドレス (privacy.html の開示請求窓口と同じ) を
 // 案内する。ステータスは 451 のまま・X-Robots-Tag: noindex を付けて検索に出さない。
 
-const OPERATOR_EMAIL = 'asayake.hahero@gmail.com'; // legal/privacy.html §8 の窓口と同一 (値はページ本文にのみ掲載)
+// top-page.js (/top フッター) も同じ宛先を使うため export する (#339・重複定義しない)。
+export const OPERATOR_EMAIL = 'asayake.hahero@gmail.com'; // legal/privacy.html §8 の窓口と同一 (値はページ本文にのみ掲載)
 
 export function suspendedResponse() {
     const html = `<!doctype html>

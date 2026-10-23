@@ -386,18 +386,37 @@ describe('stale Stripe ID 自己修復 (ADR-039)', () => {
         expect(calls.length).toBe(0);
     });
 
-    it('handleAccountDelete: stale サブは customer の全サブ(status=all)を list し active/trialing を解約・canceled は除外', async () => {
+    it('handleAccountDelete: stale サブは customer の全サブ(status=all)を list し active/trialing を解約・canceled は除外・解約失敗はwarnログに残す(#339)', async () => {
         const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_STALE' }, 'stripe:cus_1': 'u1' });
         const calls = stubFetch((c) => {
             if (c.method === 'DELETE' && c.url.includes('subscriptions/sub_STALE')) return { status: 404, json: { error: { code: 'resource_missing', param: 'subscription', message: 'No such subscription' } } };
             if (c.url.includes('subscriptions?customer=')) return { status: 200, json: { data: [{ id: 'sub_LIVE1', status: 'active' }, { id: 'sub_TRIAL', status: 'trialing' }, { id: 'sub_DEAD', status: 'canceled' }] } };
             return { status: 200, json: {} };
         });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         await handleAccountDelete(bReq('/account', 'DELETE', undefined), bEnv(KV, { STRIPE_SECRET_KEY: 'sk_live' }));
         expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_LIVE1'))).toBe(true);
         expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_TRIAL'))).toBe(true);
         expect(calls.some(c => c.method === 'DELETE' && c.url.includes('subscriptions/sub_DEAD'))).toBe(false);
         expect(await KV.get('uid:u1', 'json')).toBeNull();
+        expect(warn).toHaveBeenCalledWith('[account-delete] stale subscription解約失敗:', 'stripe: No such subscription');
+        warn.mockRestore();
+    });
+
+    it('handleAccountDelete: stale サブ解約後、customer一覧取得自体が失敗しても握り潰さずwarnログに残し、退会自体は成功する(#339)', async () => {
+        const KV = makeKV({ 'key:hk_a1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x', status: 'ok' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_STALE' }, 'stripe:cus_1': 'u1' });
+        stubFetch((c) => {
+            if (c.method === 'DELETE' && c.url.includes('subscriptions/sub_STALE')) return { status: 404, json: { error: { code: 'resource_missing', param: 'subscription', message: 'No such subscription' } } };
+            if (c.url.includes('subscriptions?customer=')) return { status: 400, json: { error: { message: 'rate limited' } } };
+            return { status: 200, json: {} };
+        });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const res = await handleAccountDelete(bReq('/account', 'DELETE', undefined), bEnv(KV, { STRIPE_SECRET_KEY: 'sk_live' }));
+        expect(res.status).toBe(200);
+        expect(await KV.get('uid:u1', 'json')).toBeNull();   // 退会自体はStripe一覧取得の失敗に関わらず完了する
+        expect(warn).toHaveBeenCalledWith('[account-delete] stale subscription解約失敗:', 'stripe: No such subscription');
+        expect(warn).toHaveBeenCalledWith('[account-delete] stale subscription一覧取得失敗:', 'stripe: rate limited');
+        warn.mockRestore();
     });
 });
 

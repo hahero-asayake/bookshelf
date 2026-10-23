@@ -127,6 +127,7 @@ export default {
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
+            console.error('[hub] unhandled:', e);
             return cors(json({ error: e.message || 'error' }, e.status || 500), env, request);
         }
     }
@@ -806,6 +807,7 @@ async function handleAccountDelete(request, env) {
         try {
             await stripeApi(env, 'DELETE', `subscriptions/${planRec.stripeSubscriptionId}`, null);
         } catch (e) {
+            console.warn('[account-delete] stale subscription解約失敗:', e && e.message);
             // 1本目が stale (No such subscription) なら、customer に紐づく生きたサブスクを全解約して課金継続を防ぐ (ADR-039)。
             // status=all で取り、終了済み (canceled/incomplete_expired) 以外を解約する (trialing/past_due 等も拾う)。
             if (isStripeMissing(e, 'subscription') && planRec.stripeCustomerId) {
@@ -815,7 +817,7 @@ async function handleAccountDelete(request, env) {
                         if (['canceled', 'incomplete_expired'].includes(s.status)) continue;
                         try { await stripeApi(env, 'DELETE', `subscriptions/${s.id}`, null); } catch (_) {}
                     }
-                } catch (_) {}
+                } catch (e2) { console.warn('[account-delete] stale subscription一覧取得失敗:', e2 && e2.message); }
             }
         }
     }

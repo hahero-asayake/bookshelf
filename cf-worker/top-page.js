@@ -4,6 +4,7 @@
 // status='active' AND hidden=0 のみを対象にするため、通報で隠した記事 (hidden/quarantined) は出ない。
 
 import { queryActiveSitesPage, encodeSitesCursor } from './community-sites-query.js';
+import { OPERATOR_EMAIL } from './suspended-page.js';
 
 // 全ページ共通のブランドOGP画像 (T11・イシュー#335決裁B案)。GitHub Pages配信の
 // js/publish-article-generator.js `SHARED_OG_IMAGE` と同一アセット・同一URLを指す
@@ -103,6 +104,8 @@ export async function renderTopPage(env, url) {
   .pager { display: flex; justify-content: center; margin-top: 20px; }
   .next { display: inline-block; padding: 10px 18px; background: #3d52ff; color: #fff; border-radius: 8px; text-decoration: none; font-size: 15px; }
   .clear-tag { display: inline-block; margin-bottom: 14px; font-size: 14px; color: #3d52ff; }
+  .site-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e3e3e6; font-size: 13px; color: #666; }
+  .site-footer a { color: #3d52ff; }
 </style>
 </head>
 <body>
@@ -110,6 +113,7 @@ export async function renderTopPage(env, url) {
 ${clearTag}
 ${rows.length ? `<ul class="list">\n${items}\n</ul>` : `<div class="empty">まだ公開された記事がありません。</div>`}
 <div class="pager">${nextLink}</div>
+<footer class="site-footer">お問い合わせ: <a href="mailto:${OPERATOR_EMAIL}">${OPERATOR_EMAIL}</a></footer>
 </body>
 </html>`;
     return new Response(html, {

@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import worker from '../../cf-worker/bookshelf-cdn.js';
 import { makeSqliteD1 } from './helpers/sqlite-d1.js';
+import { OPERATOR_EMAIL } from '../../cf-worker/suspended-page.js';
 
 function makeKV(initial = {}) {
     const store = new Map(Object.entries(initial).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
@@ -270,5 +271,11 @@ describe('/top (全ユーザー横断の公開記事一覧・S7・イシュー#2
         const res = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KV, makeBucket()), ctx);
         const body = await res.text();
         expect(body).toContain('<loc>https://bookshelf.asayake.org/top</loc>');
+    });
+
+    it('問い合わせ窓口の mailto フッターを含む (suspended-page.js の OPERATOR_EMAIL と共用・#339)', async () => {
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/top'), env({}, makeBucket(), DB), ctx);
+        const body = await res.text();
+        expect(body).toContain(`mailto:${OPERATOR_EMAIL}`);
     });
 });
