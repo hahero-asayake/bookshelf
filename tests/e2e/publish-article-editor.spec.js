@@ -1358,6 +1358,19 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
 test.describe('記事エディタ: PC幅での操作 (1280x720・マウス)', () => {
 });
 
+// イシュー#347: d16fdcc (#335) で記事プレビューに <script type="application/ld+json"> (JSON-LD) が
+// 追加されたため、旧来の「<script タグ丸ごと禁止」判定では正当な JSON-LD まで誤検出する。
+// type が application/ld+json の script だけを許可し、実行可能な script (type 無し・text/javascript・
+// module 等) の混入はこれまでどおり検出する。開始タグの配列 (空なら問題無し) を返す。
+function findDisallowedScriptTags(html) {
+    const openTags = html.match(/<script\b[^>]*>/gi) || [];
+    return openTags.filter(tag => {
+        const m = tag.match(/\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+        const type = (m ? (m[1] ?? m[2] ?? m[3]) : '').trim().toLowerCase();
+        return type !== 'application/ld+json';
+    });
+}
+
 test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', () => {
     test('本棚ブロックが0冊のとき空状態の案内が縦に潰れず表示される (A-3回帰)', async ({ page }) => {
         const errors = await bootApp(page);
@@ -1386,7 +1399,7 @@ test.describe('記事エディタ: A系実機バグ回帰 (イシュー#29)', ()
             await openPreview(page);
             await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
             const srcdoc = await page.evaluate(() => document.getElementById('pp-preview-frame').srcdoc);
-            expect(srcdoc).not.toContain('<script');
+            expect(findDisallowedScriptTags(srcdoc)).toEqual([]);
             await page.click('#pp-preview-close');
             await expect(page.locator('#pp-preview-modal')).not.toHaveClass(/show/);
         }
