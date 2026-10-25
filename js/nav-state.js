@@ -332,9 +332,20 @@
             url(route) { return `${L.pathname}${L.search}${formatRoute(route)}`; },
             _write(op) {
                 const snap = snapshot(this.state, ++this.seq);
-                const hs = historyState(snap);
+                // 段の無いエントリ (ホーム/本棚/PC の本詳細) は旧と同じく state=null (旧 router._setHash の replaceState(null) /
+                // location.hash 代入と同じ。E2E は「行き先の無い段が残らない」を history.state===null で見る)。着地時は hash から復元する
+                const hs = snap.faces.length ? historyState(snap) : null;
                 if (op === 'push') H.pushState(hs, '', this.url(snap.route));
                 else H.replaceState(hs, '', this.url(snap.route));
+            },
+            // × / ESC で閉じた段の go(-k) は microtask で1回にまとめる (旧 _modalHistScheduleSync と同じ)。同じ操作の中で
+            // 別の面を開いたら、閉じた段を新しい面へ引き継ぐ (push → replace・旧 _modalHistPush の excess と同じ・#259/#284 K2)
+            _pendingGo: 0, _goScheduled: false,
+            _scheduleGo() {
+                if (this._goScheduled) return;
+                this._goScheduled = true;
+                const micro = (typeof queueMicrotask === 'function') ? queueMicrotask : ((fn) => Promise.resolve().then(fn));
+                micro(() => { this._goScheduled = false; const n = this._pendingGo; this._pendingGo = 0; if (n < 0) { try { H.go(n); } catch (_) {} } });
             },
             // UI 入力の唯一の入口: reduce3 → historyOp → pushState / replaceState / go。履歴の操作が無くても写しが変わったら
             // (編集モード・extra 等) 現在のエントリを replace = エントリは常に「今」を映す (進む/戻るで開き直しても値が保たれる・R08i)
@@ -346,8 +357,9 @@
                 if (input.close) this.closers[input.type === 'openBook3' ? 'book-detail' : (input.type === 'rename' ? input.to : input.id)] = input.close;
                 let op = historyOp(prev, next, m);
                 if (op.op === 'none' && m.source !== 'history' && JSON.stringify(snapshot(prev, 0)) !== JSON.stringify(snapshot(next, 0))) op = { op: 'replace' };
+                if (op.op === 'push' && this._pendingGo < 0) { this._pendingGo += 1; op = { op: 'replace', reused: true }; }
                 if (op.op === 'push' || op.op === 'replace') this._write(op.op);
-                else if (op.op === 'go') { try { H.go(op.n); } catch (_) {} }
+                else if (op.op === 'go') { this._pendingGo += op.n; this._scheduleGo(); }
                 if (this.log.length < 400) this.log.push({ type: input.type, id: input.id || input.asin || null, op: op.op });
                 return op;
             },
@@ -381,13 +393,16 @@
                 const snap = snapIn
                     ? { ...snapIn, route: canonRoute(snapIn.route), faces: snapIn.faces || [] }
                     : { v: 1, seq: 0, route: hashRoute, book: hashRoute.view === 'book' ? { asin: hashRoute.asin || null, edit: false } : null, faces: [], view: this.state.view };
-                // 確認ダイアログ (.cfm-overlay) は履歴に積まない (D04): ESC を送り、今の写しを積み直す (旧 L12351-12358)
+                const diff = screenDiff(this.state, snap);
+                const same = !diff.close.length && !diff.open.length && !diff.routeChanged && !diff.bookChanged;
+                // 自分の go(-k) の着地 (写しが今と同じ) は何もしない (旧 _onModalHistPopstate の _histGoPending 分岐と同じ)。
+                // それ以外で確認ダイアログ (.cfm-overlay) が出ていれば履歴に積まない (D04): ESC を送り、今の写しを積み直す (旧 L12351-12358)
+                if (same) return { landed: true, diff, same: true };
                 if (D && D.querySelector && D.querySelector('.cfm-overlay')) {
                     D.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
                     this._write('push');
                     return { landed: false, reason: 'confirm' };
                 }
-                const diff = screenDiff(this.state, snap);
                 // 1) 閉じる (末尾から)。close が false = まだ開いている → 今の写しを積み直して終える (旧 L12365-12369)
                 for (const f of diff.close) {
                     this.state = { ...this.state, faces: this.state.faces.filter((x) => x.id !== f.id), source: 'history' };
@@ -397,6 +412,7 @@
                     if (close) { try { res = await close({ fromHistory: true }); } catch (_) { res = true; } }
                     if (res === false) {
                         this.state = { ...this.state, faces: [...this.state.faces, { id: f.id, extra: f.extra || null }] };
+                        if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory(f.id, f.extra || null); } catch (_) {} }
                         this._write('push');
                         return { landed: false, reason: 'close-refused', id: f.id };
                     }
@@ -405,10 +421,10 @@
                 //    book-detail は route/book 側 (onLanded) が開くので写しに足すだけ
                 for (const f of diff.open) {
                     this.state = { ...this.state, faces: [...this.state.faces, { id: f.id, extra: f.extra || null }], source: 'history' };
+                    if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory(f.id, f.extra || null); } catch (_) {} }
                     if (f.id === 'book-detail') continue;
                     const reopen = typeof this.reopeners === 'function' ? this.reopeners(f.id, f.extra || {}, snap) : this.reopeners[f.id];
                     if (!reopen) { try { H.back(); } catch (_) {} return { landed: false, reason: 'no-reopener', id: f.id }; }
-                    if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory(f.id, f.extra || null); } catch (_) {} }
                     try { await reopen(f.extra || {}, snap); } catch (_) { /* 開けなかった面も写しには残す (旧と同じ) */ }
                 }
                 // 3) route / book は画面側 (bookshelf.js の _applyRoute 相当) に任せる。source:'history' = アニメ無し (ADR-125 をここ1箇所で)
@@ -433,6 +449,7 @@
                     const top = snapIn && snapIn.faces ? snapIn.faces[snapIn.faces.length - 1] : (hs && hs.bsModal ? { id: hs.bsModal } : null);
                     if (top && top.id === 'book-detail' && route.view === 'book' && depth === 1) {
                         this.state = { ...this.state, faces: [{ id: 'book-detail', extra: null }] };
+                        if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory('book-detail', null); } catch (_) {} }
                         this.seq = (snapIn && snapIn.seq) | 0;
                         this._write('replace');
                         return { op: 'adopt' };

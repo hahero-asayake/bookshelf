@@ -36,8 +36,17 @@ describe('createNav: 書き手 (UI 入力 → 履歴)', () => {
         const nav = N.createNav(null, { history: H, location: L, document: D, parse });
         expect(nav.boot()).toEqual({ op: 'replace' });
         expect(last(H)[0]).toBe('replace');
-        expect(H.state.nav.route).toEqual({ view: 'bookshelf', slug: 'all' });
-        expect(H.state.d).toBe(0); expect(H.state.bsModal).toBeNull();
+        expect(H.state).toBeNull(); // 段の無いエントリは旧と同じく state=null (E2E「行き先の無い段が残らない」の判定)
+        expect(nav.state.route).toEqual({ view: 'bookshelf', slug: 'all' });
+    });
+    it('× で閉じた直後に別の面を開く: 閉じた段を新しい面へ引き継ぐ (push→replace・go は出ない)', async () => {
+        const { H, L, D } = env('');
+        const nav = N.createNav(null, { history: H, location: L, document: D, parse });
+        nav.boot(); nav.open('drawer', null, () => true, { mobile: true }); H.calls.length = 0;
+        nav.close('drawer');
+        expect(nav.open('settings-modal', null, () => true, { mobile: true })).toEqual({ op: 'replace', reused: true });
+        await Promise.resolve();
+        expect(H.calls.map((c) => c[0])).toEqual(['replace']); expect(H.state.bsModal).toBe('settings-modal'); expect(H.state.d).toBe(1);
     });
     it('面を開く: スマホは push (旧キー bsModal/d/extra も書く)・PC は履歴に触らない', () => {
         const { H, L, D } = env('');
@@ -58,7 +67,9 @@ describe('createNav: 書き手 (UI 入力 → 履歴)', () => {
         nav.boot(); const baseState = H.state;
         nav.open('drawer', null, () => true, { mobile: true });
         H.calls.length = 0;
-        expect(nav.close('drawer').op).toBe('go'); expect(last(H)).toEqual(['go', -1]);
+        expect(nav.close('drawer').op).toBe('go');
+        await Promise.resolve(); // go は microtask でまとめて1回
+        expect(last(H)).toEqual(['go', -1]);
         H.calls.length = 0;
         const r = await nav.onPopstate({ state: baseState });
         expect(r.landed).toBe(true); expect(r.diff.close).toEqual([]); expect(r.diff.open).toEqual([]);
@@ -75,14 +86,14 @@ describe('createNav: 書き手 (UI 入力 → 履歴)', () => {
         expect(H.state.nav.book).toEqual({ asin: 'B01', edit: true });
         H.calls.length = 0;
         expect(nav.closeBook({ view: 'bookshelf', slug: 'all' }).op).toBe('replace');
-        expect(last(H)[2]).toBe('/index.html#/bookshelf/all'); expect(H.state.d).toBe(0); expect(nav.state.book).toBeNull();
+        expect(last(H)[2]).toBe('/index.html#/bookshelf/all'); expect(H.state).toBeNull(); expect(nav.state.book).toBeNull();
     });
     it('ドロワーを開いたままホームへ: overlay を外して replace (深さ不変)', () => {
         const { H, L, D } = env('#/bookshelf/all');
         const nav = N.createNav(null, { history: H, location: L, document: D, parse });
         nav.boot(); nav.open('drawer', null, () => true, { mobile: true }); H.calls.length = 0;
         expect(nav.navigate({ view: 'main' }).op).toBe('replace');
-        expect(last(H)[2]).toBe('/index.html'); expect(H.state.d).toBe(0); expect(nav.state.faces).toEqual([]);
+        expect(last(H)[2]).toBe('/index.html'); expect(H.state).toBeNull(); expect(nav.state.faces).toEqual([]);
     });
 });
 
