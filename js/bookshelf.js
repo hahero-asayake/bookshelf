@@ -1783,42 +1783,96 @@ class VirtualBookshelf {
 
     updateDisplay() {
         const bookshelf = document.getElementById('bookshelf');
-        bookshelf.textContent = '';
-        
         // Apply view and cover size classes
         const coverSize = this.userData.settings?.coverSize || 'medium';
         // is-custom-order: カスタム順のときだけ本をドラッグ並べ替えできる (grab カーソルで示す)
         const customCls = (this.sortOrder === 'custom') ? ' is-custom-order' : '';
-        bookshelf.className = `bookshelf view-${this.currentView} size-${coverSize}${customCls}`;
-        
-        this.renderStandardView(bookshelf);
+        const cls = `bookshelf view-${this.currentView} size-${coverSize}${customCls}`;
+        // イシュー#359 段階④ (R1): 一覧の全件作り直しをやめ、asin ごとの要素を差分 (追加・削除・並び替え・内容変更) で更新する。
+        // ビュー/表紙サイズ/並べ替えモード (container の class) が変わった時と、まだカードが無い時は従来どおり全件描画。
+        // window.BOOKSHELF_LIST_DIFF_LEGACY === true で従来の全件作り直しに戻せる (段階⑤で撤去)。
+        const canDiff = window.BOOKSHELF_LIST_DIFF_LEGACY !== true && bookshelf.className === cls && !!bookshelf.querySelector(':scope > .book-item[data-asin]');
+        if (canDiff) {
+            this._renderListDiff(bookshelf);
+        } else {
+            bookshelf.textContent = '';
+            bookshelf.className = cls;
+            this.renderStandardView(bookshelf);
+        }
 
         this.setupPagination();
         this._updateViewSegUI();
     }
 
-
-
-    renderStandardView(container) {
-        // Apply custom book order only if sort order is set to 'custom'
+    // 一覧に描く順 (カスタム順は bookOrder に従い、未登録は末尾)。renderStandardView と _renderListDiff で共通
+    _orderedBooksToRender() {
         const currentBookshelfId = this.currentBookshelf || 'all';
-        let booksToRender = [...this.filteredBooks];
-        
+        const booksToRender = [...this.filteredBooks];
         if (this.sortOrder === 'custom' && this.userData.bookOrder && this.userData.bookOrder[currentBookshelfId]) {
             const customOrder = this.userData.bookOrder[currentBookshelfId];
-            
             // Sort books according to custom order, with unordered books at the end
             booksToRender.sort((a, b) => {
                 const aIndex = customOrder.indexOf(a.asin);
                 const bIndex = customOrder.indexOf(b.asin);
-                
                 if (aIndex === -1 && bIndex === -1) return 0; // Both not in custom order
                 if (aIndex === -1) return 1; // a not in custom order, put at end
                 if (bIndex === -1) return -1; // b not in custom order, put at end
                 return aIndex - bIndex; // Both in custom order, use custom order
             });
         }
-        
+        return booksToRender;
+    }
+
+    // イシュー#359 段階④ (R1): カードの内容を決める入力の指紋。同じなら要素をそのまま使い回す (createBookElement を呼ばない)
+    _bookCardKey(book, displayType) {
+        const n = (this.userData.notes && this.userData.notes[book.asin]) || {};
+        return [displayType, this._getStarVisibility(), this._getStarOverlay() ? 1 : 0, this._getMemoVisibility(),
+            book.title, book.authors, book.productImage, book.readStatus, book.updatedAsin, book.acquiredTime,
+            n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
+    }
+
+    // イシュー#359 段階④ (R1): 既存のカードを asin で引き、追加・削除・並び替え・内容変更だけ DOM を触る。
+    // 旧 updateDisplay が全件作り直しで落としていた状態 (選択・ホバーポップ・D&D の罫線) は使い回す要素でも落とす (見える挙動は同じ)。
+    _renderListDiff(container) {
+        const books = this._orderedBooksToRender();
+        if (books.length === 0) {
+            container.textContent = '';
+            container.appendChild(this._buildBookshelfEmptyState());
+            if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: 0 });
+            return;
+        }
+        const old = new Map();
+        for (const el of Array.from(container.children)) {
+            if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) old.set(el.dataset.asin, el);
+            else el.remove(); // 空状態・ゴースト等
+        }
+        let created = 0, moved = 0, removed = 0;
+        let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
+        for (const book of books) {
+            const key = this._bookCardKey(book, this.currentView);
+            let el = old.get(book.asin);
+            if (el && el.dataset.rkey === key) {
+                el.classList.remove('selected', 'show-pop');
+                el.style.borderLeft = '';
+            } else {
+                if (el) { if (el === cursor) cursor = cursor.nextElementSibling; el.remove(); removed++; }
+                el = this.createBookElement(book, this.currentView);
+                el.dataset.rkey = key;
+                created++;
+            }
+            old.delete(book.asin);
+            if (el !== cursor) { container.insertBefore(el, cursor); moved++; }
+            else cursor = cursor.nextElementSibling;
+        }
+        // 残り (新しい一覧に無い本) を外す
+        while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); removed++; cursor = next; }
+        // view 系プラグイン用: 一覧更新を従来どおり通知 (changed は加算情報・ADR-041)
+        if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: created + removed + moved });
+    }
+
+    renderStandardView(container) {
+        const booksToRender = this._orderedBooksToRender();
+
         // Phase H2-5: ページネーション廃止。全件を 1 リストで描画 (D&D がページを跨げる)。
         // Phase H2-7 改 (仮想化撤去 + content-visibility): JS 仮想化はスクロール時の再描画で
         // カクつくため廃止。画面外カードを CSS の content-visibility:auto (css: .book-item) で
@@ -1834,7 +1888,9 @@ class VirtualBookshelf {
         }
         const frag = document.createDocumentFragment();
         for (const book of booksToRender) {
-            frag.appendChild(this.createBookElement(book, this.currentView));
+            const el = this.createBookElement(book, this.currentView);
+            el.dataset.rkey = this._bookCardKey(book, this.currentView); // 段階④: 次回の差分更新で使い回す判定に使う
+            frag.appendChild(el);
         }
         container.appendChild(frag);
         // view 系プラグイン用: 一覧描画完了を通知
