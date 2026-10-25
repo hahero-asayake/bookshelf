@@ -297,7 +297,133 @@
         };
     }
 
+    // ===== 段階③ 骨組み: 履歴の唯一の書き手・popstate の唯一の聞き手 (未接続・bookshelf.js からの呼び出しは次の commit) =====
+    // 設計: tmp/359/stage3/design.md §3-4。opts は単体テスト用に差し替え可:
+    //   { history, location, document, parse(hash), isMobile(), reopeners: {id: (extra, snap) => void|Promise}, onLanded(snap, {animate:false,...}) }
+    function createNav(app, opts) {
+        const o = opts || {};
+        const H = o.history || window.history;
+        const L = o.location || window.location;
+        const D = o.document || (typeof document !== 'undefined' ? document : null);
+        const parse = o.parse || ((h) => (app && app.router ? app.router.parse(h) : { view: 'main' }));
+        const nav = {
+            state: EMPTY, seq: 0, closers: {}, reopeners: o.reopeners || {}, log: [],
+            // 旧 _modalHistStack 互換 (読み取りビュー): [{id, close}]
+            get facesCompat() { return this.state.faces.map((f) => ({ id: f.id, close: this.closers[f.id] || null })); },
+            url(route) { return `${L.pathname}${L.search}${formatRoute(route)}`; },
+            _write(op) {
+                const snap = snapshot(this.state, ++this.seq);
+                const hs = historyState(snap);
+                if (op === 'push') H.pushState(hs, '', this.url(snap.route));
+                else H.replaceState(hs, '', this.url(snap.route));
+            },
+            // UI 入力の唯一の入口: reduce3 → historyOp → pushState / replaceState / go。履歴の操作が無くても写しが変わったら
+            // (編集モード・extra 等) 現在のエントリを replace = エントリは常に「今」を映す (進む/戻るで開き直しても値が保たれる・R08i)
+            apply(input, meta) {
+                const m = meta || {};
+                const prev = this.state;
+                const next = reduce3(prev, input);
+                this.state = next;
+                if (input.close) this.closers[input.type === 'openBook3' ? 'book-detail' : (input.type === 'rename' ? input.to : input.id)] = input.close;
+                let op = historyOp(prev, next, m);
+                if (op.op === 'none' && m.source !== 'history' && JSON.stringify(snapshot(prev, 0)) !== JSON.stringify(snapshot(next, 0))) op = { op: 'replace' };
+                if (op.op === 'push' || op.op === 'replace') this._write(op.op);
+                else if (op.op === 'go') { try { H.go(op.n); } catch (_) {} }
+                if (this.log.length < 400) this.log.push({ type: input.type, id: input.id || input.asin || null, op: op.op });
+                return op;
+            },
+            // --- 入口 (bookshelf.js の各書き手が先頭で呼ぶ)。mobile=false (PC 幅) の面は履歴に積まない (旧 _modalHistPush L12297) ---
+            open(id, extra, close, meta) {
+                const m = meta || {};
+                const mobile = typeof m.mobile === 'boolean' ? m.mobile : (o.isMobile ? !!o.isMobile() : true);
+                if (!mobile) return { op: 'none', skipped: 'pc' };
+                return this.apply({ type: 'open', id, extra: extra || null, close }, m);
+            },
+            close(id, meta) { return this.apply({ type: 'close', id }, meta); },
+            navigate(route, meta) { const m = meta || {}; return this.apply({ type: 'navigate', route, shelfInternalId: m.shelfInternalId }, m); },
+            openBook(asin, edit, from, meta) {
+                const m = meta || {};
+                const mobile = typeof m.mobile === 'boolean' ? m.mobile : (o.isMobile ? !!o.isMobile() : true);
+                return this.apply({ type: 'openBook3', asin, edit: !!edit, from, mobile, close: m.close }, m);
+            },
+            closeBook(route, meta) { return this.apply({ type: 'closeBook3', route }, Object.assign({ replace: true }, meta || {})); },
+            rename(from, to, close, meta) { return this.apply({ type: 'rename', from, to, close }, Object.assign({ renamed: true }, meta || {})); },
+            setExtra(id, extra) {
+                const faces = this.state.faces.map((f) => (f.id === id ? { ...f, extra: Object.assign({}, f.extra || {}, extra || {}) } : f));
+                this.state = { ...this.state, faces };
+                this._write('replace');
+            },
+            // 唯一の聞き手。着地したエントリの写しに画面を合わせ、その写しをそのまま採用する (数え合わせ無し)
+            async onPopstate(ev) {
+                const snapIn = ev && ev.state && ev.state.nav;
+                const hashRoute = canonRoute(parse(L.hash));
+                const snap = snapIn
+                    ? { ...snapIn, route: canonRoute(snapIn.route), faces: snapIn.faces || [] }
+                    : { v: 1, seq: 0, route: hashRoute, book: hashRoute.view === 'book' ? { asin: hashRoute.asin || null, edit: false } : null, faces: [], view: this.state.view };
+                // 確認ダイアログ (.cfm-overlay) は履歴に積まない (D04): ESC を送り、今の写しを積み直す (旧 L12351-12358)
+                if (D && D.querySelector && D.querySelector('.cfm-overlay')) {
+                    D.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                    this._write('push');
+                    return { landed: false, reason: 'confirm' };
+                }
+                const diff = screenDiff(this.state, snap);
+                // 1) 閉じる (末尾から)。close が false = まだ開いている → 今の写しを積み直して終える (旧 L12365-12369)
+                for (const f of diff.close) {
+                    this.state = { ...this.state, faces: this.state.faces.filter((x) => x.id !== f.id), source: 'history' };
+                    const close = this.closers[f.id];
+                    let res = true;
+                    if (close) { try { res = await close({ fromHistory: true }); } catch (_) { res = true; } }
+                    if (res === false) {
+                        this.state = { ...this.state, faces: [...this.state.faces, { id: f.id, extra: f.extra || null }] };
+                        this._write('push');
+                        return { landed: false, reason: 'close-refused', id: f.id };
+                    }
+                }
+                // 2) 開き直す (reopen 表)。表に無い面は開き直せない = さらに戻る (旧 D06・L12432)
+                for (const f of diff.open) {
+                    const reopen = this.reopeners[f.id];
+                    if (!reopen) { try { H.back(); } catch (_) {} return { landed: false, reason: 'no-reopener', id: f.id }; }
+                    this.state = { ...this.state, faces: [...this.state.faces, { id: f.id, extra: f.extra || null }], source: 'history' };
+                    try { await reopen(f.extra || {}, snap); } catch (_) { /* 開けなかった面も写しには残す (旧と同じ) */ }
+                }
+                // 3) route / book は画面側 (bookshelf.js の _applyRoute 相当) に任せる。source:'history' = アニメ無し (ADR-125 をここ1箇所で)
+                if (diff.routeChanged || diff.bookChanged) {
+                    this.state = { ...this.state, route: snap.route, book: snap.book ? { ...snap.book } : null, source: 'history' };
+                    if (o.onLanded) await o.onLanded(snap, { animate: false, routeChanged: diff.routeChanged, bookChanged: diff.bookChanged });
+                }
+                // 4) 着地した写しをそのまま採用
+                this.state = { ...fromSnapshot(snap), source: 'history' };
+                this.seq = Math.max(this.seq, snap.seq | 0);
+                return { landed: true, diff };
+            },
+            // 起動: URL と body から初期状態。再読込で段が残っていれば旧 _modalHistNormalizeOnBoot と同じ結果 (D06・本詳細は採用)
+            boot() {
+                const route = canonRoute(parse(L.hash));
+                const view = D && D.body && D.body.classList && D.body.classList.contains('app-view-bookshelf') ? 'bookshelf' : 'main';
+                this.state = { ...EMPTY, route, view, book: route.view === 'book' ? { asin: route.asin || null, edit: false } : null, source: 'boot' };
+                const hs = H.state;
+                const snapIn = hs && hs.nav;
+                const depth = snapIn && snapIn.faces ? snapIn.faces.length : (hs && typeof hs.d === 'number' ? hs.d : 0);
+                if (depth > 0) {
+                    const top = snapIn && snapIn.faces ? snapIn.faces[snapIn.faces.length - 1] : (hs && hs.bsModal ? { id: hs.bsModal } : null);
+                    if (top && top.id === 'book-detail' && route.view === 'book' && depth === 1) {
+                        this.state = { ...this.state, faces: [{ id: 'book-detail', extra: null }] };
+                        this.seq = (snapIn && snapIn.seq) | 0;
+                        this._write('replace');
+                        return { op: 'adopt' };
+                    }
+                    try { H.go(-depth); } catch (_) {}
+                    return { op: 'go', n: -depth };
+                }
+                this._write('replace');
+                return { op: 'replace' };
+            },
+            start(win) { (win || o.window || window).addEventListener('popstate', (ev) => { this.onPopstate(ev); }); return this; },
+        };
+        return nav;
+    }
+
     const NavState = { EMPTY, reduce, project, canonRoute, formatRoute, install,
-        OVERLAY_FACES, SHELF_SWITCH_WITH_BOOK, snapshot, historyState, fromSnapshot, reduce3, historyOp, screenDiff };
+        OVERLAY_FACES, SHELF_SWITCH_WITH_BOOK, snapshot, historyState, fromSnapshot, reduce3, historyOp, screenDiff, createNav };
     window.NavState = NavState;
 })();
