@@ -1438,7 +1438,7 @@
     <script defer src="js/plugin-loader.js?v=2026072701"></script>
     <!-- イシュー#359 段階③: 画面遷移・履歴の正本は NavState (js/nav-state.js)。何かあれば次の1行を true にすると
          旧方式 (深さ数え合わせ・hashchange 購読) に戻る (kill-switch・1リリースの間だけ残す) -->
-    <script>window.BOOKSHELF_NAV_LEGACY = false;</script>
+    <script>window.BOOKSHELF_NAV_LEGACY = true; /* 段階③の接続は検証中 (chromium 22件要修正)。検証が揃うまで既定は旧経路 */</script>
     <script defer src="js/router.js?v=2026102605"></script>
     <script defer src="js/nav-state.js?v=2026102605"></script>
     <script defer src="js/dashboard.js?v=2026093003"></script>
