@@ -1160,7 +1160,7 @@ class VirtualBookshelf {
      * パレットで実行できるコマンド一覧 (ヘッダーから移設した操作を含む)。
      */
     _paletteCommands() {
-        const navMain = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
+        const navMain = () => { if (this.router) this._navigateFromUi('main'); else this._setBodyView('main'); };
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const cmds = [
             { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
@@ -2486,7 +2486,7 @@ class VirtualBookshelf {
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.router && !this._suppressRouterUpdate && book && book.asin) {
             const fromInternalId = this._currentBookshelfInternalId();
-            this.router.navigateBook(book.asin, fromInternalId);
+            this._navigateFromUi('book', book.asin, fromInternalId);
         }
         // イシュー#288: 本詳細の履歴も、他モーダルと同じ深さ数え合わせ方式 (_modalHistStack) の管理下に置く。
         // #book/ の hash 遷移は router が location.hash 代入で済ませる (state=null の新エントリ) ため、
@@ -5471,13 +5471,10 @@ class VirtualBookshelf {
         // setTimeout 等の時間待ちでは実機で再発しうる (②指摘)。back() 自体を呼ばせず、開いていた
         // ドロワー/パレットの履歴エントリをそのまま本棚のハッシュへ replaceState で書き換える
         // (履歴の深さを変えない = 戻るを1回押せば元のホームへ戻れる、実測: tmp/verify259/)。
-        const drawerWasOpen = document.body.classList.contains('drawer-open');
-        const paletteEl = document.getElementById('command-palette');
-        const paletteWasOpen = !!(paletteEl && !paletteEl.hidden);
-        const useReplace = drawerWasOpen || paletteWasOpen;
-        if (drawerWasOpen) this._closeDrawer({ silent: true });
-        if (paletteWasOpen) this._closePalette({ silent: true });
-
+        // イシュー#359 段階①: 上の判断 (開いていた面の段を本棚のハッシュへ replace で書き換える) は _navigateFromUi に
+        // 一般化した (下部ナビ「ホーム」等の同型経路にも同じ扱いが要るため)。
+        // 同じ本棚を既に表示中 (本詳細から「戻る」で来た hashchange 等) なら一覧を作り直さない
+        // (800冊で約400ms = step2 の最重項目)。絞り込み・並び替えの変更は別経路 (applyFilters 直呼び) なので影響しない。
         this.currentBookshelf = bookshelfId;
         this.applyFilters();
         // 本棚ビューに切替
@@ -5489,7 +5486,7 @@ class VirtualBookshelf {
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
             const slug = bs?.slug || bookshelfId;
-            this.router.navigateBookshelf(slug, { replace: useReplace });
+            this._navigateFromUi('bookshelf', slug);
         }
         // 複数選択中なら一括バーのボタン表示 (本棚から外す等) を本棚に合わせて更新
         if (this.selectMode) this._updateBulkBar();
@@ -5557,7 +5554,7 @@ class VirtualBookshelf {
         if (homeBtn && !homeBtn._bound) {
             homeBtn._bound = true;
             homeBtn.addEventListener('click', () => {
-                if (this.router) this.router.navigateMain();
+                if (this.router) this._navigateFromUi('main');
                 else { this._setBodyView('main'); }
             });
         }
@@ -5570,7 +5567,7 @@ class VirtualBookshelf {
             brand.setAttribute('role', 'button');
             brand.setAttribute('tabindex', '0');
             brand.setAttribute('title', 'ホーム');
-            const goHome = () => { if (this.router) this.router.navigateMain(); else this._setBodyView('main'); };
+            const goHome = () => { if (this.router) this._navigateFromUi('main'); else this._setBodyView('main'); };
             brand.addEventListener('click', goHome);
             brand.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
         }
@@ -5636,7 +5633,7 @@ class VirtualBookshelf {
             const action = btn.dataset.mobileNav;
             if (action === 'home') {
                 this._closeDrawer();
-                if (this.router) this.router.navigateMain(); else this._setBodyView('main');
+                if (this.router) this._navigateFromUi('main'); else this._setBodyView('main');
             } else if (action === 'shelves') {
                 if (body.classList.contains('drawer-open')) this._closeDrawer(); else this._openDrawer();
             } else if (action === 'search') {
@@ -7635,6 +7632,33 @@ class VirtualBookshelf {
             this._suppressRouterUpdate = false;
             this._routeDispatchIsBoot = false;
         }
+    }
+
+    // イシュー#359 段階①: UI 由来の hash 遷移 (ホーム/本棚/本) の唯一の入口。
+    // 履歴に段を積んだ面 (ドロワー/⌘Kパレット) を開いたまま hash を新エントリとして積むと、閉じた面の段が
+    // 履歴に残り「次の戻るが1回空振りする」(step1 H1・probe-h1 で再現)。イシュー#259 は switchBookshelf の中だけで
+    // 「面を静かに閉じ、その段を遷移先へ replace で書き換える」判断をしていたが、下部ナビ「ホーム」・パレットの
+    // 「ホーム」/プラグインコマンド・サイドバーの「ホーム」・ブランドロゴ・パレットから本を開く、の同型経路が残っていた。
+    // ここに一般化する (段階③で NavState の dispatch に置き換わる)。_applyRoute 由来 (_suppressRouterUpdate) では呼ばない。
+    _navigateFromUi(kind, ...args) {
+        if (!this.router) return false;
+        this._closeOverlayFacesSilently();
+        // 閉じた面の段がまだ履歴に残っている (= history.state の深さ > スタック長) なら、その段を遷移先で置き換える
+        // (履歴の深さを変えない = 戻る1回で元の画面へ)。残っていなければ従来どおり新エントリ。
+        const st = this._modalHistStack || [];
+        const replace = this._histStateDepth(history.state) > st.length;
+        if (kind === 'main') this.router.navigateMain({ replace });
+        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0], { replace });
+        else if (kind === 'book') this.router.navigateBook(args[0], args[1], { replace });
+        return true;
+    }
+
+    // ビューの上に重なる面 (ドロワー/パレット) を、履歴を動かさず静かに閉じる (silent オプションは #259 で既設)。
+    // 他のモーダルは hash 遷移の対象外 (従来どおり開いたまま) = 挙動を変えない。
+    _closeOverlayFacesSilently() {
+        if (document.body.classList.contains('drawer-open')) this._closeDrawer({ silent: true });
+        const pal = document.getElementById('command-palette');
+        if (pal && !pal.hidden) this._closePalette({ silent: true });
     }
 
     /**
