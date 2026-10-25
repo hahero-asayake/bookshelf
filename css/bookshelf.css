@@ -5851,7 +5851,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 }
 
 /* ===== プラグインごとの設定モーダル ===== */
-.plugin-settings-modal { position: fixed; inset: 0; z-index: 1200; display: none; }
+.plugin-settings-modal { position: fixed; inset: 0; display: none; } /* z-index は管理役の data-layer (イシュー#367 step5・旧 1200 は撤去) */
 .plugin-settings-modal.show { display: block; }
 .plugin-settings-modal .psm-backdrop { position: absolute; inset: 0; background: rgba(18,20,28,0.45); }
 .plugin-settings-modal .psm-panel {
@@ -7206,7 +7206,7 @@ body.plugin-dark .status-row.status-update { background: var(--accent-bg); }
 .cmdk {
     position: fixed;
     inset: 0;
-    z-index: 1100;
+    /* z-index は管理役の data-layer が決める (イシュー#367 step5・旧 1100 は撤去) */
     display: flex;
     align-items: flex-start;
     justify-content: center;

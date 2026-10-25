@@ -1180,6 +1180,8 @@ class VirtualBookshelf {
         const input = document.getElementById('cmdk-input');
         if (!pal || !input) return;
         pal.hidden = false;
+        // 重なり管理役 (イシュー#367 step5): 中 (md・ハヘロ 05:40「検索は中」)。表示は hidden 制御のまま (showClass:null)・旧 CSS の z-index 1100 は撤去
+        this._overlays().open(pal, { kind: 'modal', size: 'md', hist: false, showClass: null, sizeTarget: '.cmdk-panel' });
         document.body.classList.add('cmdk-open');
         input.value = '';
         this._renderPaletteResults('');
@@ -1191,6 +1193,7 @@ class VirtualBookshelf {
         const pal = document.getElementById('command-palette');
         if (!pal) return;
         pal.hidden = true;
+        this._overlays().close('command-palette', { reason: fromHistory ? 'history' : 'button' });
         document.body.classList.remove('cmdk-open');
         this._paletteItems = null;
         if (silent) {
@@ -4702,14 +4705,14 @@ class VirtualBookshelf {
         document.getElementById('report-category').value = '';
         document.getElementById('report-reason').value = '';
         this._setReportError('');
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this._modalHistPush('report-modal', (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)), { extra: { url } });
         this._formSnapTake('report-modal');
     }
 
     closeReportModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('report-modal');
-        if (modal) modal.classList.remove('show');
+        this._overlays().close('report-modal', { reason: fromHistory ? 'history' : 'button' });
         this._pendingReportClear();
         this._modalHistPop('report-modal', { fromHistory });
     }
@@ -7239,7 +7242,7 @@ class VirtualBookshelf {
                 </div>`;
             document.body.appendChild(modal);
             const close = ({ fromHistory = false } = {}) => {
-                modal.classList.remove('show');
+                this._overlays().close('plugin-settings-modal', { reason: 'button' });
                 this._modalHistPop('plugin-settings-modal', { fromHistory });
             };
             modal.querySelector('.psm-backdrop').addEventListener('click', () => close());
@@ -7376,7 +7379,7 @@ class VirtualBookshelf {
         }
 
         if (typeof window.applyIcons === 'function') window.applyIcons(body);
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this._modalHistPush('plugin-settings-modal', (o) => this._pluginSettingsModalClose(o), { extra: { pluginId: id } });
     }
 
@@ -7940,14 +7943,14 @@ class VirtualBookshelf {
 
     showBookshelfManager() {
         const modal = document.getElementById('bookshelf-modal');
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false }); // 重なり管理役 (イシュー#367 step5): lg
         this.renderBookshelfList();
         this._modalHistPush('bookshelf-modal', (o) => this.closeBookshelfModal(o));
     }
 
     closeBookshelfModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('bookshelf-modal');
-        modal.classList.remove('show');
+        this._overlays().close('bookshelf-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('bookshelf-modal', { fromHistory });
     }
 
@@ -8102,7 +8105,7 @@ class VirtualBookshelf {
 
         this.currentEditingBookshelf = bookshelfToEdit;
 
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this._modalHistPush('bookshelf-form-modal', (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)), { extra: { bsKey: editKey } });
         this._formSnapTake('bookshelf-form-modal');
         nameInput.focus();
@@ -8110,7 +8113,7 @@ class VirtualBookshelf {
 
     closeBookshelfForm({ fromHistory = false } = {}) {
         const modal = document.getElementById('bookshelf-form-modal');
-        modal.classList.remove('show');
+        this._overlays().close('bookshelf-form-modal', { reason: fromHistory ? 'history' : 'button' });
         this.currentEditingBookshelf = null;
         this._modalHistPop('bookshelf-form-modal', { fromHistory });
     }
@@ -12812,14 +12815,14 @@ class VirtualBookshelf {
     showExclusionsModal() {
         const modal = document.getElementById('exclusions-modal');
         if (!modal) return;
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this.renderExclusionsList();
         this._modalHistPush('exclusions-modal', (o) => this.closeExclusionsModal(o));
     }
 
     closeExclusionsModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('exclusions-modal');
-        if (modal) modal.classList.remove('show');
+        this._overlays().close('exclusions-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('exclusions-modal', { fromHistory });
     }
 
@@ -13355,7 +13358,7 @@ class VirtualBookshelf {
         // 受信待ち中でなければステータスを隠す（ポーリング / PC 待機の in-flight が正）
         const st = document.getElementById('import-relay-status');
         if (st && !this._kindleImportInFlight) st.hidden = true;
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false }); // 重なり管理役 (イシュー#367 step5): lg
         // スマホ: 物理戻る/ブラウザバックで「アプリ離脱でなくモーダルを閉じる」ため履歴に積む (設定モーダルと同作法・ui-standards §1)
         // popstate 配線は設定モーダル初回オープン時だけだったので、取込単独オープンでも配線する
         this._modalHistPush('import-modal', (o) => this.closeImportModal(o));
@@ -13367,7 +13370,7 @@ class VirtualBookshelf {
      */
     closeImportModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('import-modal');
-        modal.classList.remove('show');
+        this._overlays().close('import-modal', { reason: fromHistory ? 'history' : 'button' });
         // 結果表示をリセット
         const resultsDiv = document.getElementById('import-results');
         resultsDiv.style.display = 'none';
@@ -13546,13 +13549,13 @@ class VirtualBookshelf {
 
     async showPluginsModal() {
         const modal = document.getElementById('plugins-modal');
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         document.getElementById('plugin-repo-url').value = '';
         await this._renderPluginsList();
     }
 
     closePluginsModal() {
-        document.getElementById('plugins-modal').classList.remove('show');
+        this._overlays().close('plugins-modal', { reason: 'button' });
     }
 
     async _renderPluginsList() {
@@ -14088,7 +14091,7 @@ class VirtualBookshelf {
      */
     showAddBookModal() {
         const modal = document.getElementById('add-book-modal');
-        modal.classList.add('show');
+        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this._modalHistPush('add-book-modal', (o) => this._formBackGuard('add-book-modal', o, (oo) => this.closeAddBookModal(oo)));
         this._formSnapTake('add-book-modal');
     }
@@ -14098,7 +14101,7 @@ class VirtualBookshelf {
      */
     closeAddBookModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('add-book-modal');
-        modal.classList.remove('show');
+        this._overlays().close('add-book-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('add-book-modal', { fromHistory });
 
         // フォームをリセット（存在する要素のみ）
