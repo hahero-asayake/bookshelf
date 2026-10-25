@@ -2408,7 +2408,13 @@ class VirtualBookshelf {
 
         // Save and refresh display
         this.saveUserData();
-        this.updateDisplay();
+        // イシュー#359 段階①: 動かした1冊だけ DOM 上で移す (全件作り直しは約365ms)。移せない時だけ従来どおり作り直す。
+        // 一覧の更新としてプラグインには従来どおり ui:books-rendered を通知する (changed は加算情報・ADR-041)。
+        if (this._moveBookElement(draggedASIN, targetASIN)) {
+            if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: 1 });
+        } else {
+            this.updateDisplay();
+        }
     }
 
     // 本詳細ペインのセクション順序 (全本共通、settings 永続化)
@@ -3092,8 +3098,11 @@ class VirtualBookshelf {
                 await this.storage.migrateFromLegacy();
             }
             const state = await this.storage.loadAll();
+            const fpBefore = this._renderFingerprint();
             const loaded = this._applyLoadedState(state);
-            if (loaded) {
+            // イシュー#359 段階①: 同期先の内容が手元と同じなら一覧を作り直さない (800冊で約350ms・裏で走ると
+            // スクロール位置や操作中の状態が飛ぶ)。変わった時は従来どおり全件 (差分描画は段階④)。
+            if (loaded && fpBefore !== this._renderFingerprint()) {
                 this.updateDisplay();
                 this.updateStats();
                 this.updateBookshelfSelector();
@@ -3203,8 +3212,11 @@ class VirtualBookshelf {
                 await this.storage.migrateFromLegacy();
             }
             const state = await this.storage.loadAll();
+            const fpBefore = this._renderFingerprint();
             const loaded = this._applyLoadedState(state);
-            if (loaded) {
+            // イシュー#359 段階①: 同期先の内容が手元と同じなら一覧を作り直さない (800冊で約350ms・裏で走ると
+            // スクロール位置や操作中の状態が飛ぶ)。変わった時は従来どおり全件 (差分描画は段階④)。
+            if (loaded && fpBefore !== this._renderFingerprint()) {
                 this.updateDisplay();
                 this.updateStats();
                 this.updateBookshelfSelector();
@@ -5475,11 +5487,12 @@ class VirtualBookshelf {
         // 一般化した (下部ナビ「ホーム」等の同型経路にも同じ扱いが要るため)。
         // 同じ本棚を既に表示中 (本詳細から「戻る」で来た hashchange 等) なら一覧を作り直さない
         // (800冊で約400ms = step2 の最重項目)。絞り込み・並び替えの変更は別経路 (applyFilters 直呼び) なので影響しない。
+        const sameShelf = bookshelfId === this.currentBookshelf && document.body.classList.contains('app-view-bookshelf');
         this.currentBookshelf = bookshelfId;
-        this.applyFilters();
+        if (!sameShelf) this.applyFilters();
         // 本棚ビューに切替
         this._setBodyView('bookshelf');
-        this._updateBookshelfViewTitle();
+        if (!sameShelf) this._updateBookshelfViewTitle();
         // PC v2: 左サイドバーツリーのハイライト更新
         this._updateSidebarActive();
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
@@ -7384,12 +7397,15 @@ class VirtualBookshelf {
             iconEl.dataset.iconValue = effectiveTitleIcon;
             iconEl.innerHTML = window.renderIcon(effectiveTitleIcon, { size: 26 });
         }
+        // イシュー#359 段階①: _refreshMarquees は scrollWidth/clientWidth を読んで一覧800枚のレイアウトを同期で
+        // 強制する (step2 の self time 2位)。タイトル/説明が変わった時だけ呼ぶ。
+        const changed = titleEl.textContent !== title || (descEl && descEl.textContent !== desc);
         titleEl.textContent = title;
         if (descEl) {
             descEl.textContent = desc;
             descEl.style.display = desc ? '' : 'none';
         }
-        this._refreshMarquees();
+        if (changed || !this._marqueeInitDone) { this._marqueeInitDone = true; this._refreshMarquees(); }
     }
 
     /**
@@ -7659,6 +7675,38 @@ class VirtualBookshelf {
         if (document.body.classList.contains('drawer-open')) this._closeDrawer({ silent: true });
         const pal = document.getElementById('command-palette');
         if (pal && !pal.hidden) this._closePalette({ silent: true });
+    }
+
+    // イシュー#359 段階①: 同期完了時に「表示に影響する内容が変わったか」を比べるための指紋。
+    // 変わっていなければ一覧 (800冊で約350ms) を作り直さない。比較できない時は「変わった」扱い (描画する側に倒す)。
+    _renderFingerprint() {
+        try {
+            const ud = this.userData || {};
+            const { _storage, ...rest } = ud;
+            const st = _storage ? Object.assign({}, _storage, { libraryBooks: undefined }) : null;
+            return JSON.stringify([(this.books || []).map((b) => [b.asin, b.title, b.productImage, b.readStatus]), rest, st]);
+        } catch (_) { return `changed-${Date.now()}-${Math.random()}`; }
+    }
+
+    // イシュー#359 段階①: 並べ替えで動かした1冊だけを DOM 上で目標位置へ移す (_saveDetailSectionOrder と同型)。
+    // 一覧800枚の作り直し (約365ms) を避ける。要素が見つからない時は false を返し、呼び出し元が従来どおり作り直す。
+    _moveBookElement(draggedASIN, targetASIN) {
+        const container = document.getElementById('bookshelf');
+        if (!container) return false;
+        const sel = (asin) => container.querySelector(`.book-item[data-asin="${CSS.escape(asin)}"]`);
+        const dragged = sel(draggedASIN);
+        const target = sel(targetASIN);
+        if (!dragged || !target || dragged === target) return false;
+        target.before(dragged);
+        // 描画用配列も同じ順に揃える (次の全件描画・前後の本の参照で齟齬を出さない)
+        const fb = this.filteredBooks || [];
+        const di = fb.findIndex((b) => b.asin === draggedASIN);
+        if (di !== -1) {
+            const [item] = fb.splice(di, 1);
+            const ti = fb.findIndex((b) => b.asin === targetASIN);
+            if (ti !== -1) fb.splice(ti, 0, item); else fb.push(item);
+        }
+        return true;
     }
 
     /**
