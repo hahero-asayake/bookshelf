@@ -72,6 +72,8 @@ await page.evaluate(() => {
     P.reset = () => { P.lt = []; P.added = 0; P.removed = 0; P.shelfCleared = 0; P.shelfAdded = 0; P.shadow0 = window.__navShadow ? window.__navShadow.costMs : null; };
     window.__measure = async (fn) => { const t0 = performance.now(); const r = fn(); if (r && r.then) await r; await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))); return { tFrame: Math.round((performance.now() - t0) * 10) / 10 }; };
     window.__waitEvent = (type, ms) => new Promise((res) => { let done = false; const h = () => { if (done) return; done = true; window.removeEventListener(type, h); res(true); }; window.addEventListener(type, h); setTimeout(() => { if (!done) { done = true; window.removeEventListener(type, h); res(false); } }, ms); });
+    // イシュー#365 段階③: UI 由来の遷移は pushState で URL を書く (hashchange が起きない) ため、hash の値そのものを待つ
+    window.__waitHash = (pred, ms) => new Promise((res) => { const t0 = performance.now(); const tick = () => { if (pred(location.hash || '')) return res(true); if (performance.now() - t0 > ms) return res(false); requestAnimationFrame(tick); }; tick(); });
 });
 
 let cdp = null;
@@ -123,7 +125,7 @@ const A = {
     back: () => page.evaluate(() => window.__measure(async () => { const p = window.__waitEvent('hashchange', 3000); history.back(); await p; })),
     drawerOpen: () => page.evaluate((m) => window.__measure(() => m ? window.bookshelf._openDrawer() : window.bookshelf._togglePane('left')), MOBILE),
     drawerClose: () => page.evaluate((m) => window.__measure(() => m ? window.bookshelf._closeDrawer() : window.bookshelf._togglePane('left')), MOBILE),
-    navHome: () => page.evaluate(() => window.__measure(async () => { const p = window.__waitEvent('hashchange', 3000); const b = document.querySelector('[data-mobile-nav="home"]'); if (b && b.offsetParent !== null) b.click(); else window.bookshelf.router.navigateMain(); await p; })),
+    navHome: () => page.evaluate(() => window.__measure(async () => { const p = window.__waitHash((h) => h === '' || h === '#' || h === '#/', 3000); const b = document.querySelector('[data-mobile-nav="home"]'); if (b && b.offsetParent !== null) b.click(); else window.bookshelf.router.navigateMain(); await p; })),
     articleOpen: () => page.evaluate(() => window.__measure(async () => { await window.bookshelf.openPublishPagesModal(); window.bookshelf._artOpenEditor(null); })),
     articleClose: () => page.evaluate(() => window.__measure(() => window.bookshelf.closePublishPagesModal())),
     save: () => page.evaluate(() => window.__measure(() => window.bookshelf.saveUserData())),
