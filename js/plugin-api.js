@@ -127,6 +127,9 @@ class BookshelfPluginAPI {
             effectiveAsin: (bookOrAsin) => self.effectiveAsin(bookOrAsin),
             updateNote: (asin, partial) => self.updateNote(asin, partial),
             openBook: (asin) => self.openBook(asin),
+            // 重なる画面 (イシュー#367・ADR-041/042 の加算スロット): プラグインが自分の面を 1 枚開く。
+            // 大きさは sm|md のみ・コアの面の順序や大きさには触れない。戻り値 { element, close }
+            openOverlay: (spec) => self.openOverlay(pluginId, spec),
             openBookshelf: (slug) => self.openBookshelf(slug),
             refreshUI: () => self.refreshUI(),
             addUIButton: (opts) => {
@@ -342,6 +345,45 @@ class BookshelfPluginAPI {
 
     // ===== ナビゲーション =====
     /** 本詳細ペインを開く */
+    /**
+     * プラグインの重なる画面 (イシュー#367): 重なり管理役 (window.overlays) に kind:'modal'・owner:'plugin:<id>' で載せる。
+     * コアの .modal と同じ骨 (.modal > .modal-content > .modal-header + .modal-body) を作り、× / 枠外 / ESC は管理役の規約に従う。
+     * @param {string} pluginId
+     * @param {{ title?: string, content?: Node|string, size?: 'sm'|'md', onRequestClose?: (reason:string)=>boolean|Promise<boolean> }} spec
+     * @returns {{ element: HTMLElement, close: () => Promise<boolean> } | null}
+     */
+    openOverlay(pluginId, spec = {}) {
+        const ov = window.overlays;
+        if (!ov || typeof document === 'undefined') return null;
+        const id = `plugin-overlay-${pluginId}`;
+        document.getElementById(id)?.remove();
+        const root = document.createElement('div');
+        root.id = id;
+        root.className = 'modal plugin-overlay';
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button'; closeBtn.className = 'modal-close'; closeBtn.setAttribute('aria-label', '閉じる'); closeBtn.textContent = '×';
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        const h2 = document.createElement('h2'); h2.textContent = spec.title || ''; header.appendChild(h2);
+        const body = document.createElement('div');
+        body.className = 'modal-body';
+        if (spec.content instanceof Node) body.appendChild(spec.content); else if (spec.content != null) body.textContent = String(spec.content);
+        content.append(closeBtn, header, body);
+        root.appendChild(content);
+        document.body.appendChild(root);
+        const size = spec.size === 'sm' ? 'sm' : 'md';
+        ov.open(root, {
+            kind: 'modal', size, hist: false, owner: `plugin:${pluginId}`,
+            onRequestClose: typeof spec.onRequestClose === 'function' ? spec.onRequestClose : null,
+            onClose: () => root.remove(),
+        });
+        closeBtn.addEventListener('click', () => ov.requestClose(id, 'button'));
+        root.addEventListener('click', (e) => { if (e.target === root) ov.requestClose(id, 'backdrop'); });
+        return { element: body, close: () => ov.requestClose(id, 'program') };
+    }
+
     openBook(asin) {
         const b = this.getBook(asin);
         if (b && typeof this._app.showBookDetail === 'function') this._app.showBookDetail(b);

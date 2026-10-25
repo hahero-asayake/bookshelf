@@ -853,7 +853,7 @@ body.app-view-bookshelf .view-bookshelf {
 
 .tree-node-menu {
     position: fixed;
-    z-index: 1200;
+    /* z-index は管理役の data-layer (イシュー#367 step5・旧 1200 は撤去) */
     min-width: 170px;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -2092,7 +2092,7 @@ html.bs-likely-has-data #dashboard-welcome {
 .widget-picker-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1100;
+    /* z-index は管理役の data-layer (イシュー#367 step5・旧 1100 は撤去) */
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -7423,7 +7423,7 @@ body.select-mode .drag-handle { display: none; }
     left: 50%;
     bottom: 24px;
     transform: translateX(-50%);
-    z-index: 1200;
+    z-index: var(--ov-z-toast); /* 通知の帯 (イシュー#367 step5・旧 1200) */
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -7598,6 +7598,10 @@ body.select-mode .drag-handle { display: none; }
         transition: transform 0.25s ease;
         border-left: none;
         padding-top: env(safe-area-inset-top);
+        /* 常設の下部ナビ (950・50px+safe-area) より下に置いたまま、最下部がナビに隠れないよう余白を足す
+           (イシュー#367 ②決裁 2026-10-26: 本詳細を開いたまま下部ナビで移れる挙動は変えない・実例A はこれで解消) */
+        padding-bottom: calc(50px + env(safe-area-inset-bottom));
+        box-sizing: border-box;
     }
     body.book-detail-pinned .app-detail { transform: translateX(0); }
 

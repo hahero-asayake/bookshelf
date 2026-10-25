@@ -64,6 +64,8 @@
             if (!s.legacy) this._syncLegacy();
 
             const kind = KINDS.includes(s.kind) ? s.kind : 'modal';
+            // size:'none' = 段階を付けない (アンカー付きの popover/menu・自前の寸法を持つ面)。重なり順だけ管理役が決める
+            const noSize = s.size === 'none';
             const size = SIZES.includes(s.size) ? s.size : (SIZES.includes(el.dataset.ovSize) ? el.dataset.ovSize : 'md');
             const onOpen = s.onOpen || (TRANSIENT.includes(kind) ? 'closeOthers' : 'stack');
             if (onOpen === 'closeOthers') this.closeAll({ kinds: TRANSIENT, reason: 'closeOthers' });
@@ -84,7 +86,7 @@
                 : (s.sizeTarget || el.querySelector('.modal-content, .cfm-box') || el);
             face.content = target;
             face.legacy = !!s.legacy;   // 移行期の橋渡しで載った未移行の面 (大きさの段階は付けない・履歴も触らない)
-            if (!face.legacy) {
+            if (!face.legacy && !noSize) {
                 SIZES.forEach((x) => target.classList.remove('ov-' + x));
                 target.classList.add('ov-' + size);
                 el.dataset.ovSize = size;

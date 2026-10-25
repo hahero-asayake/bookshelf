@@ -1089,10 +1089,13 @@ class VirtualBookshelf {
             }}
         ];
 
+        // 重なり管理役 (イシュー#367 step5): popover は「移る前に閉じる」側 (kind:'popover'・onOpen:'closeOthers'・履歴に積まない)。
+        // 表示は hidden 属性のまま (showClass:null)。管理役から閉じられた時 (別の面を開いた等) も onClose で hidden に戻す
+        const hide = (pop, reason) => { if (!pop) return; pop.hidden = true; this._overlays().close(pop.id, { reason: reason || 'button' }); };
         const closeAll = (except) => {
             pairs.forEach(p => {
                 const pop = document.getElementById(p.popId);
-                if (pop && pop !== except) pop.hidden = true;
+                if (pop && pop !== except) hide(pop, 'closeOthers');
             });
         };
 
@@ -1104,8 +1107,13 @@ class VirtualBookshelf {
                 e.stopPropagation();
                 const wasHidden = pop.hidden;
                 closeAll(wasHidden ? pop : null);
-                pop.hidden = !wasHidden;
-                if (!pop.hidden && typeof onOpen === 'function') onOpen();
+                if (wasHidden) {
+                    pop.hidden = false;
+                    this._overlays().open(pop, { kind: 'popover', hist: false, showClass: null, onOpen: 'closeOthers', size: 'none', onClose: () => { pop.hidden = true; } });
+                    if (typeof onOpen === 'function') onOpen();
+                } else {
+                    hide(pop, 'button');
+                }
             });
         }
 
@@ -1117,7 +1125,7 @@ class VirtualBookshelf {
                 if (!pop || pop.hidden) continue;
                 if (pop.contains(e.target)) continue;
                 if (btn && btn.contains(e.target)) continue;
-                pop.hidden = true;
+                hide(pop, 'backdrop');
             }
         });
 
@@ -1126,7 +1134,7 @@ class VirtualBookshelf {
             if (e.key !== 'Escape') return;
             pairs.forEach(({ popId }) => {
                 const pop = document.getElementById(popId);
-                if (pop) pop.hidden = true;
+                if (pop && !pop.hidden) hide(pop, 'esc');
             });
         });
     }
@@ -5744,6 +5752,10 @@ class VirtualBookshelf {
         // イシュー#330: 冪等化(安全策)。既に開いていれば何もしない。
         if (document.body.classList.contains('drawer-open')) return;
         document.body.classList.add('drawer-open');
+        // 重なり管理役 (イシュー#367 step5): ドロワーは一時的な面 (kind:'sheet'・closeOthers・表示は body.drawer-open のまま)。
+        // 管理役から閉じられた時 (別の面を開いた等) は onClose → _closeDrawer
+        const side = document.getElementById('app-sidebar');
+        if (side) this._overlays().open(side, { kind: 'sheet', hist: false, showClass: null, size: 'none', onOpen: 'closeOthers', onClose: () => this._closeDrawer() });
         this._modalHistPush('drawer', (o) => this._closeDrawer(o));
     }
 
@@ -5757,6 +5769,7 @@ class VirtualBookshelf {
             this._histNoAnimOnce(document.querySelector('.mobile-scrim'));
         }
         document.body.classList.remove('drawer-open');
+        this._overlays().close('app-sidebar', { reason: fromHistory ? 'history' : 'button' }); // 重なり管理役 (イシュー#367 step5)
         if (silent) {
             // イシュー#259: 呼び出し元 (switchBookshelf) がこの直後に history.replaceState で
             // 履歴エントリを書き換えるため、ここでは history.back() を予約しない
@@ -6164,10 +6177,14 @@ class VirtualBookshelf {
         menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menuW - 8))}px`;
 
         const cleanup = () => {
+            if (!menu.isConnected) return; // 管理役の onClose 経由と二重に呼ばれても 1 回だけ
             menu.remove();
             document.removeEventListener('click', onOutside, true);
             document.removeEventListener('keydown', onKey, true);
+            this._overlays().close('tree-node-menu', { reason: 'button' });
         };
+        // 重なり管理役 (イシュー#367 step5): メニューは「移る前に閉じる」側 (kind:'menu'・closeOthers・履歴に積まない・旧 z-index 1200 は撤去)
+        this._overlays().open(menu, { kind: 'menu', hist: false, showClass: null, size: 'none', onClose: () => cleanup() });
         const onOutside = (e) => { if (!menu.contains(e.target)) cleanup(); };
         const onKey = (e) => { if (e.key === 'Escape') cleanup(); };
         menu.querySelector('[data-act="edit"]')?.addEventListener('click', () => { cleanup(); this.editBookshelf(bs.id); });

@@ -22,9 +22,11 @@ const FACES = [
     { name: 'exclusions', caption: '除外一覧モーダル = 中', box: '#exclusions-modal .modal-content', open: () => { window.bookshelf.showExclusionsModal(); } },
     { name: 'add-book', caption: '手動追加モーダル = 中', box: '#add-book-modal .modal-content', open: () => { window.bookshelf.showAddBookModal(); } },
     { name: 'import', caption: '取込モーダル = 大', box: '#import-modal .modal-content', open: () => { window.bookshelf.showImportModal(); } },
-    { name: 'plugins', caption: 'プラグイン一覧モーダル = 中', box: '#plugins-modal .modal-content', open: () => { window.bookshelf.showPluginsModal(); } },
-    { name: 'report', caption: '通報モーダル = 中', box: '#report-modal .modal-content', open: () => { window.bookshelf.openReportModal('https://bookshelf.asayake.org/u/tester/a/x'); } },
-    { name: 'palette', caption: '検索 ⌘K = 中', box: '#command-palette > *', open: () => { window.bookshelf._openPalette(); } },
+    { name: 'plugins', caption: 'プラグイン一覧モーダル = 中', box: '#plugins-modal .modal-content', open: async () => { await window.bookshelf.showPluginsModal(); } },
+    { name: 'report', caption: '通報モーダル = 中', box: '#report-modal .modal-content', open: async () => { await window.bookshelf.openReportModal('https://bookshelf.asayake.org/u/tester/a/x'); } },
+    { name: 'palette', caption: '検索 ⌘K = 中', box: '#command-palette .cmdk-panel', open: () => { window.bookshelf._openPalette(); } },
+    { name: 'book-detail-sp', caption: '本詳細シート (SP・下部ナビの分の余白)', box: '.app-detail',
+      open: async () => { const b = (window.bookshelf.bookManager.getAll ? window.bookshelf.bookManager.getAll() : Object.values(window.bookshelf.books || {}))[0]; await window.bookshelf.showBookDetail(b); window.scrollTo(0, 0); } },
 ];
 
 async function boot(ctx, base, width) {
@@ -34,7 +36,7 @@ async function boot(ctx, base, width) {
     await page.addInitScript(([u, l]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);
-        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', hub: { key: 'hk_test', apiBase: 'https://hub.example.test', plan: 'free', username: 'tester' } }));
     }, [userData, library]);
     await page.goto(base + '/index.html', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData, null, { timeout: 15000 });
@@ -63,7 +65,8 @@ for (const v of (COMPOSE_ONLY ? [] : VERSIONS)) {
                     return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height),
                         centerDx: Math.round((r.x + r.width / 2) - window.innerWidth / 2),
                         z: cs.zIndex, layer: root.dataset.layer ?? '-', ovSize: root.dataset.ovSize ?? '-',
-                        topIsFace: (() => { const t = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(20, r.height / 2)); return !!(t && box.contains(t)); })() };
+                        topIsFace: (() => { const t = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(20, r.height / 2)); return !!(t && box.contains(t)); })(),
+                        navGap: (() => { const nav = document.querySelector('.mobile-bottom-nav'); if (!nav || getComputedStyle(nav).display === 'none') return '-'; const nr = nav.getBoundingClientRect(); const pb = parseFloat(getComputedStyle(box).paddingBottom) || 0; return Math.round(nr.top - (r.bottom - pb)); })() };
                 }, f.box);
                 const file = join(SHOT, v.label, `${f.name}-${w}.png`);
                 await page.screenshot({ path: file });

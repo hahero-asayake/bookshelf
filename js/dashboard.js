@@ -529,7 +529,13 @@ class BookshelfDashboard {
             </div>`;
         document.body.appendChild(overlay);
 
-        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        // 重なり管理役 (イシュー#367 step5): 一時的な面として載せる (閉じると DOM ごと消す・履歴に積まない・旧 z-index 1100 は撤去)
+        const close = () => {
+            if (!overlay.isConnected) return; // 管理役の onClose 経由と二重に呼ばれても 1 回だけ
+            overlay.remove(); document.removeEventListener('keydown', onKey);
+            if (window.overlays) window.overlays.close('widget-picker-overlay', { reason: 'button' });
+        };
+        if (window.overlays) window.overlays.open(overlay, { kind: 'popover', hist: false, showClass: null, size: 'none', onClose: () => close() });
         const onKey = (e) => { if (e.key === 'Escape') close(); };
         document.addEventListener('keydown', onKey);
         overlay.querySelector('.widget-picker-backdrop').addEventListener('click', close);
