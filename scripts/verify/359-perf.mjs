@@ -18,6 +18,7 @@ const CPU = parseInt(arg('cpu', '1'), 10);
 const REPS = parseInt(arg('reps', '5'), 10);
 const OUT = arg('out', null);
 const BOOKS = parseInt(arg('books', '800'), 10);
+const SHADOW = arg('shadow', 'on'); // イシュー#365: NavState 影モード (E2E/webdriver では既定 ON)。off で localStorage.navShadow='0' を置き明示 OFF
 const BASE = process.argv.slice(2).find((a) => !a.startsWith('--')) || 'http://localhost:8000';
 const SETTLE_MS = 600;
 const MOBILE = WIDTH < 900;
@@ -43,11 +44,12 @@ await ctx.route('https://pagead2.googlesyndication.com/**', (r) => r.fulfill({ s
 await ctx.route('https://unpkg.com/lucide-static@*/icons/**', (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }));
 const page = await ctx.newPage();
 const errors = []; page.on('pageerror', (e) => errors.push(String(e)));
-await page.addInitScript(([u, l]) => {
+await page.addInitScript(([u, l, shadow]) => {
     localStorage.setItem('virtualBookshelf_userData', u);
     localStorage.setItem('virtualBookshelf_library', l);
     localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-}, [userDataStr, libraryStr]);
+    if (shadow === 'off') localStorage.setItem('navShadow', '0');
+}, [userDataStr, libraryStr, SHADOW]);
 const tBoot = Date.now();
 await page.goto(BASE + '/index.html');
 await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0);
@@ -152,7 +154,8 @@ async function reorder() {
     return { tFrame: tFrame == null ? null : Math.round(tFrame * 10) / 10, tDrag };
 }
 
-process.stderr.write(`[359-perf] ${BROWSER} ${WIDTH}px cpu x${CPU} books=${BOOKS} reps=${REPS} boot=${bootMs}ms version=${version}\n`);
+const shadowOn = await page.evaluate(() => !!(window.__navShadow && window.__navShadow.enabled));
+process.stderr.write(`[359-perf] ${BROWSER} ${WIDTH}px cpu x${CPU} books=${BOOKS} reps=${REPS} shadow=${shadowOn ? 'ON' : 'OFF'} boot=${bootMs}ms version=${version}\n`);
 for (let rep = 0; rep < REPS; rep++) {
     process.stderr.write(`-- rep ${rep + 1}/${REPS}\n`);
     await op('本棚(all・800冊)を開く', A.openShelf);
@@ -188,7 +191,7 @@ const summary = Object.entries(results).map(([name, rows]) => ({
     top: profiles[name] ? [...profiles[name].entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v.toFixed(0)}ms`) : [],
 })).sort((a, b) => (b.tFrameMed ?? -1) - (a.tFrameMed ?? -1));
 
-const cond = `${BROWSER} ${WIDTH}px CPU x${CPU}`;
+const cond = `${BROWSER} ${WIDTH}px CPU x${CPU} navShadow=${shadowOn ? 'ON' : 'OFF'}`;
 const lines = [];
 lines.push(`### ${cond} — books=${BOOKS} reps=${REPS} boot=${bootMs}ms`);
 lines.push(`?v= ${version.split('?')[1] || '(不明)'}／本詳細のカードclick不発→showBookDetail直呼び fallback: ${detailFallback}回／pageerror: ${errors.length}`);

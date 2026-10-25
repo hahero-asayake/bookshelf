@@ -84,8 +84,13 @@
         screen(state) { return { view: state.view, detailPinned: !!state.book }; },
     };
 
+    // ON: E2E (navigator.webdriver) か localStorage.navShadow==='1'。navShadow==='0' は明示 OFF (E2E でも切れる=計測の対照用)
     function isEnabled() {
-        try { return navigator.webdriver === true || localStorage.getItem('navShadow') === '1'; } catch (_) { return false; }
+        try {
+            const v = localStorage.getItem('navShadow');
+            if (v === '0') return false;
+            return navigator.webdriver === true || v === '1';
+        } catch (_) { return false; }
     }
 
     // 旧実装の書き手をラップして入力を流す。戻り値・副作用は変えない (after は try で包み、失敗は diffs に記す)
