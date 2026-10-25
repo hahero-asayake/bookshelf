@@ -448,11 +448,27 @@ body.right-collapsed  { --right-col: 0px; }
     padding: 0 0.9rem 1.4rem;
 }
 
-/* ===== View 切替 (router 経由で body.app-view-* を切り替える) ===== */
-body.app-view-main .view-bookshelf { display: none !important; }
+/* ===== View 切替 (router 経由で body.app-view-* を切り替える) =====
+   イシュー#371: ホーム表示中も本棚一覧の DOM を display:block のまま裏に置く (content-visibility:hidden)。
+   800枚の book-item (content-visibility:auto) が「表示 ⇄ 非表示」を display:none で往復するたびに
+   可視性判定をやり直していたのが切替コストの大半だったため、display:none をやめてレイアウトを保持したまま隠す。
+   view-bookshelf の要素自体は JS 側 (_setBodyView) で ホーム表示中 inert を付け、フォーカス/クリック/
+   スクリーンリーダーの対象から外す (display:none 相当のアクセシビリティ挙動を維持)。 */
+body.app-view-main .view-bookshelf {
+    display: block !important;
+    content-visibility: hidden !important;
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: -1 !important;
+}
 body.app-view-bookshelf .view-main { display: none !important; }
 .view-bookshelf { display: none; }
-body.app-view-bookshelf .view-bookshelf { display: block !important; }
+body.app-view-bookshelf .view-bookshelf {
+    display: block !important;
+    content-visibility: visible !important;
+    position: static !important;
+    z-index: auto !important;
+}
 
 /* ===== Sidebar / Detail 共通 (mockup: 内部スクロールで固定) ===== */
 .app-sidebar,

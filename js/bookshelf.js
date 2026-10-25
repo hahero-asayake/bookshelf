@@ -5643,6 +5643,10 @@ class VirtualBookshelf {
         if (view === 'main') {
             document.body.classList.remove('book-detail-pinned');
         }
+        // イシュー#371: CSS側は display:none をやめて content-visibility:hidden で裏に置く (切替コスト対策)。
+        // display:none 相当のアクセシビリティ挙動 (フォーカス/クリック/スクリーンリーダー対象外) は inert で明示的に保つ。
+        const shelfView = document.getElementById('view-bookshelf');
+        if (shelfView) shelfView.inert = (view !== 'bookshelf');
         // 左サイドバーの選択ハイライトを更新
         this._updateSidebarActive();
     }
