@@ -237,12 +237,13 @@ class VirtualBookshelf {
                 this.router._nav = this.nav;
                 this.router._shelfIdResolver = (slug) => { const bs = this.bookshelfManager?.getBySlug?.(slug); return bs ? (bs.internalId || bs.id) : undefined; };
             }
-            this.nav.start(window);
         }
         // イシュー#359 段階②: NavState を影モードで並走。既存の書き手をラップして入力を流し、遷移ごとに実状態と突き合わせて
         // ずれを window.__navShadow.diffs に積むだけ (画面・履歴は変えない)。段階③では nav 自身の自己検査になる。
         // E2E (navigator.webdriver) か localStorage.navShadow==='1' の時だけ有効。
+        // 影の popstate リスナーを nav より先に登録する (着地の URL を先に影へ入れないと、nav が段を閉じた瞬間の突合で route が古く見える)
         if (window.NavState) window.NavState.install(this);
+        if (this.nav) this.nav.start(window); // 唯一の聞き手 (popstate)
         // 公開は静的 SSG (公開ページ生成) へ移行済み (ADR-030)。
         // 旧 ?u= 公開閲覧モードは廃止。アプリは編集モード単一になった。
 
