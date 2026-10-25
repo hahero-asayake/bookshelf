@@ -5463,7 +5463,9 @@ class VirtualBookshelf {
             box.querySelector('.cfm-cancel').textContent = '何もしない';
             box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
             box.querySelector('.cfm-ok').textContent = '再読込して最新版を取得';
-            const done = (r) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(r); };
+            // 重なり管理役 (イシュー#367): ダイアログ帯・小 (sm)。履歴には積まない (D04)
+            let ov = null;
+            const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
             const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
             box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
             box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
@@ -5472,6 +5474,7 @@ class VirtualBookshelf {
             document.addEventListener('keydown', onKey, true);
             overlay.appendChild(box);
             document.body.appendChild(overlay);
+            if (window.overlays) ov = window.overlays.open(overlay, { id: 'sync-conflict-dialog', kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
             box.querySelector('.cfm-ok').focus();
         });
     }
@@ -6391,7 +6394,7 @@ class VirtualBookshelf {
 
             // ===== イベントハンドラ =====
             const cleanup = ({ fromHistory = false } = {}) => {
-                modal.classList.remove('show');
+                this._overlays().close('icon-picker-modal', { reason: fromHistory ? 'history' : 'button' });
                 this._modalHistPop('icon-picker-modal', { fromHistory });
                 lucideGrid.removeEventListener('click', onLucideGridClick);
                 textGrid.removeEventListener('click', onTextGridClick);
@@ -6450,7 +6453,9 @@ class VirtualBookshelf {
             closeBtn.addEventListener('click', onCancel);
             clearBtn.addEventListener('click', onClear);
 
-            modal.classList.add('show');
+            // 重なり管理役 (イシュー#367): 小 (sm)。親候補 (本棚フォーム等) の上に data-layer で積まれる
+            // (旧 CSS の z-index: 99999 !important は撤去)。履歴は従来どおり _modalHistPush/Pop (hist:false)
+            this._overlays().open(modal, { kind: 'modal', size: 'sm', hist: false });
             // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
             this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); }, { extra: { pickerTitle: title, pickerCurrent: current } });
         });
@@ -8288,10 +8293,11 @@ class VirtualBookshelf {
                 });
             });
 
-            modal.classList.add('show');
+            // 重なり管理役 (イシュー#367): 小 (sm)。履歴は従来どおり _modalHistPush/Pop (hist:false = 管理役は履歴に触らない)
+            this._overlays().open(modal, { kind: 'modal', size: 'sm', hist: false });
 
             const cleanup = ({ fromHistory = false } = {}) => {
-                modal.classList.remove('show');
+                this._overlays().close('descendants-pick-modal', { reason: fromHistory ? 'history' : 'button' });
                 this._modalHistPop('descendants-pick-modal', { fromHistory });
                 confirmBtn.removeEventListener('click', onConfirm);
                 skipBtn.removeEventListener('click', onSkip);
@@ -12478,6 +12484,12 @@ class VirtualBookshelf {
         if (!st) return 0;
         if (typeof st.d === 'number') return st.d;
         return (st.bsModal || st.bsSettings || st.bsImport) ? 1 : 0; // 旧形式の段 (更新前のセッション)
+    }
+
+    // 重なり管理役 (js/overlay-manager.js・イシュー#367)。読み込み前・単体テスト等で無い時は何もしない代替を返す
+    _overlays() {
+        if (window.overlays) return window.overlays;
+        return { open: () => null, close: () => false, requestClose: async () => false, closeAll: () => 0, top: () => null, isTop: () => false, has: () => false, stackInfo: () => [] };
     }
 
     _modalHistPush(id, close, { isMobile, extra } = {}) {

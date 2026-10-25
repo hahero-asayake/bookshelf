@@ -575,3 +575,37 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(errors.filter(e => !/easymde|fontawesome|cdn|net::ERR/i.test(e))).toEqual([]);
     });
 });
+
+// ===== 重なり管理役 (イシュー#367 step2): 小段階の面は data-layer (開いた順) と CSS の帯で重なり、決め打ち z-index を持たない =====
+test('重なり管理役: アイコンピッカー (面の帯 1000+n) の上に confirmDialog (ダイアログ帯 1800+n) が積まれ、閉じると data-layer が外れる (PC)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.evaluate(() => { window.__pick = window.bookshelf.openIconPicker({ title: 'テスト' }); });
+    const picker = page.locator('#icon-picker-modal');
+    await expect(picker).toHaveClass(/show/);
+    await expect(picker).toHaveAttribute('data-layer', '0');
+    expect(Number(await picker.evaluate((el) => getComputedStyle(el).zIndex))).toBe(1000); // 旧 99999 !important ではない
+    await expect(picker.locator('.modal-content')).toHaveClass(/ov-sm/);
+    await page.evaluate(() => { window.__cfm = window.confirmDialog({ title: '確認', message: 'テスト' }); });
+    const cfm = page.locator('.cfm-overlay');
+    await expect(cfm).toHaveAttribute('data-layer', '1');
+    expect(Number(await cfm.evaluate((el) => getComputedStyle(el).zIndex))).toBe(1801);
+    await expect(cfm.locator('.cfm-box')).toHaveClass(/ov-sm/);
+    expect(await page.evaluate(() => window.overlays.stackInfo().map((f) => f.kind))).toEqual(['modal', 'dialog']);
+    // 最前面は confirm (アイコンピッカーの中心点で elementFromPoint が .cfm-overlay 配下)
+    expect(await page.evaluate(() => {
+        const r = document.querySelector('#icon-picker-modal .modal-content').getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!(top && top.closest('.cfm-overlay'));
+    })).toBe(true);
+    await page.keyboard.press('Escape'); // confirm = cancel (下の面は残す)
+    await expect(cfm).toHaveCount(0);
+    expect(await page.evaluate(() => window.__cfm)).toBe(false);
+    await expect(picker).toHaveClass(/show/);
+    await expect(picker).toHaveAttribute('data-layer', '0');
+    await page.keyboard.press('Escape'); // ピッカー = キャンセル (共通 ESC → ×)
+    await expect(picker).not.toHaveClass(/show/);
+    await expect(picker).not.toHaveAttribute('data-layer');
+    expect(await page.evaluate(() => window.__pick)).toBeNull();
+    expect(await page.evaluate(() => window.overlays.stackInfo())).toEqual([]);
+    expect(errors).toEqual([]);
+});

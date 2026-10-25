@@ -1464,17 +1464,9 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .bd-chip.is-context .bd-chip-icon { color: #fff; }
 
 /* ===== Icon Picker (Lucide 共通) ===== */
-/* 他モーダル (z-index: 1000) より確実に上に被せる。
-   親要素に新規 stacking context (transform, opacity, filter) が無いことが前提。
-   念のため !important で他ルールに勝つ。 */
-.icon-picker-modal,
-.icon-picker-modal.show {
-    z-index: 99999 !important;
-}
-
-.icon-picker-modal-content {
-    max-width: 560px;
-}
+/* 重なり順は重なり管理役 (js/overlay-manager.js) が data-layer で決める (イシュー#367)。
+   旧「z-index: 99999 !important で他モーダルより確実に上」は決め打ちの最大値による個別回避だったため撤去。
+   大きさは小 (.ov-sm) = 管理役が付ける。 */
 
 .icon-picker-tabs {
     display: flex;
@@ -7475,7 +7467,7 @@ body.select-mode .drag-handle { display: none; }
 .cfm-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1210;
+    z-index: var(--ov-z-dialog); /* ダイアログ帯 (イシュー#367)。順序は管理役の data-layer が足す */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -8071,3 +8063,23 @@ body.select-mode .drag-handle { display: none; }
 .art-fs-sort-opts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .art-fs-sort-opts[hidden] { display: none; }
 .art-fs-sort-opt { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; font-size: 12px; padding: 4px 10px; cursor: pointer; }
+
+/* ===== 重なりの帯と大きさの段階 (重なり管理役 js/overlay-manager.js・イシュー#367・設計案 19 §5/§6) =====
+   z-index の固定値はこの節だけに置く。面の root には管理役が data-layer="n" (開いた順) と --layer を書き、
+   z-index は帯 + n で決まる = 新しく開いた面が常に最前面。他の節に z-index を書き足さない (帯の対象外は
+   部品内部の局所的な重ね 1〜100 と、ブックマークレットが Amazon のページへ注入する進行表示だけ)。 */
+:root {
+    --z-chrome: 900;        /* 常設 UI (SP 下部ナビ・ドロワーのスクリム等)。面は常にこれより上 */
+    --ov-z-base: 1000;      /* 面のスタック (modal・sheet・popover・menu): 1000 + data-layer */
+    --ov-z-dialog: 1800;    /* 確認ダイアログ・同期衝突 (履歴に積まない・常に面より上): 1800 + data-layer */
+    --ov-z-toast: 1900;     /* toast・バナー */
+}
+[data-layer] { z-index: calc(var(--ov-z-base) + var(--layer, 0)); }
+[data-layer][data-ov-kind="dialog"] { z-index: calc(var(--ov-z-dialog) + var(--layer, 0)); }
+
+/* 大きさの段階 (PC は固定幅・狭幅は既存の .modal-content の媒体ルールに従う = 現状踏襲)。
+   sm: 確認・選択のみ / md: 単機能フォーム / lg: 一覧+詳細 / full: 編集に集中 */
+.ov-sm { max-width: 440px; }
+.ov-md { max-width: 720px; }
+.ov-lg { max-width: min(900px, calc(100vw - 40px)); }
+.ov-full { width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0; }

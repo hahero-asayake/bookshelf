@@ -143,8 +143,12 @@
             cancelBtn.textContent = cancelLabel;
             overlay.appendChild(box);
 
+            // 重なり管理役 (js/overlay-manager.js・イシュー#367): ダイアログ帯 (--ov-z-dialog) に小 (sm) で載せる。
+            // 履歴には積まない (D04)。管理役が無い環境 (単体テスト等) では従来どおり CSS の帯だけで出す
+            let ov = null;
             const done = (result) => {
                 document.removeEventListener('keydown', onKey, true);
+                if (ov) ov.close(result ? 'button' : 'cancel');
                 overlay.remove();
                 resolve(result);
             };
@@ -158,6 +162,7 @@
             document.addEventListener('keydown', onKey, true);
 
             document.body.appendChild(overlay);
+            if (window.overlays) ov = window.overlays.open(overlay, { kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
             okBtn.focus();
         });
     };
