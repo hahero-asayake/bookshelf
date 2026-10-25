@@ -221,6 +221,10 @@ class VirtualBookshelf {
             this.router = new BookshelfRouter();
             this._suppressRouterUpdate = false;
         }
+        // イシュー#359 段階②: NavState を影モードで並走 (js/nav-state.js)。既存の書き手をラップして入力を流し、
+        // 遷移ごとに旧状態と突き合わせてずれを window.__navShadow.diffs に積むだけ (画面・履歴は変えない)。
+        // E2E (navigator.webdriver) か localStorage.navShadow==='1' の時だけ有効。段階③で履歴の書き手がこちらに移る。
+        if (window.NavState) window.NavState.install(this);
         // 公開は静的 SSG (公開ページ生成) へ移行済み (ADR-030)。
         // 旧 ?u= 公開閲覧モードは廃止。アプリは編集モード単一になった。
 

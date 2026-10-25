@@ -102,7 +102,7 @@ function installGisMock() {
 }
 
 export const test = base.extend({
-    context: async ({ context }, use) => {
+    context: async ({ context }, use, testInfo) => {
         await context.addInitScript(installGisMock);
         // index.html の AdSense 審査用スニペット (adsbygoogle.js) を止める。
         // このスクリプト自体を止めれば、それが内部で発生させる広告配信/不正検出通信
@@ -138,6 +138,26 @@ export const test = base.extend({
             body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
         }));
         await use(context);
+        // イシュー#359 段階②: NavState 影モードのずれ (window.__navShadow.diffs) を opt-in で検査する。
+        //   NAV_SHADOW_CHECK=log    … 各テスト終了時に diffs を NAV_SHADOW_LOG (jsonl) へ追記するだけ (集計用)
+        //   NAV_SHADOW_CHECK=strict … 上に加えて diffs が 1件でもあればそのテストを失敗にする
+        // 既定 (未設定) は何もしない = 既存スイートの結果に影響しない。
+        const mode = process.env.NAV_SHADOW_CHECK;
+        if (mode) {
+            const rows = [];
+            for (const p of context.pages()) {
+                try {
+                    const r = await p.evaluate(() => (window.__navShadow ? { diffs: window.__navShadow.diffs, inputs: window.__navShadow.inputs } : null));
+                    if (r) rows.push(r);
+                } catch (_) { /* 閉じたページ・遷移中は読めない = 対象外 */ }
+            }
+            const diffs = rows.flatMap((r) => r.diffs);
+            if (process.env.NAV_SHADOW_LOG) {
+                const { appendFileSync } = await import('node:fs');
+                appendFileSync(process.env.NAV_SHADOW_LOG, JSON.stringify({ test: testInfo.titlePath.join(' > '), project: testInfo.project.name, inputs: rows.reduce((s, r) => s + r.inputs, 0), diffs }) + '\n');
+            }
+            if (mode === 'strict') expect(diffs, 'nav-shadow diffs').toEqual([]);
+        }
     }
 });
 
