@@ -4454,7 +4454,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .publish-index-note[hidden] { display: none; }
 
 /* ===== 公開ページ管理モーダル (P1 静的SSG, ADR-030) ===== */
-.publish-pages-content { max-width: 680px; width: 94vw; }
+.publish-pages-content { width: 94vw; } /* 幅の上限は管理役の段階 (.ov-lg 900・編集中 .art-editing は専用ルール) に任せる (イシュー#367・旧 680px は撤去) */
 /* 本文 (一覧/編集) は .modal-body を使わない直下要素。ヘッダー左 (2rem) と揃え、
    端に密着しないよう左右・下に十分な余白を取る。上はヘッダーの margin-bottom と二重にしない */
 .publish-pages-content > #pp-list-view,
@@ -5035,7 +5035,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 }
 
 /* --- プレビュー別画面 (ほぼ全画面オーバーレイ) --- */
-.pp-preview-modal { z-index: 1200; }
+/* .pp-preview-modal の z-index 1200 は撤去: 重なり順は管理役の data-layer (イシュー#367 step4) */
 .pp-preview-dialog { position: relative; display: flex; flex-direction: column; width: 96vw; height: 92vh; max-width: 1100px; margin: 4vh auto 0; background: var(--panel); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
 .pp-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); background: var(--side); }
 .pp-preview-bar-title { display: inline-flex; align-items: center; font-weight: 700; font-size: 0.92rem; }
@@ -7831,7 +7831,7 @@ body.select-mode .drag-handle { display: none; }
     .art-hd .art-hd-publish-group { margin-left: auto; }
 }
 
-.art-publish-modal { z-index: 1150; }
+/* .art-publish-modal の z-index 1150 は撤去: 重なり順は管理役の data-layer (イシュー#367 step4) */
 .art-pub-content { max-width: 560px; }
 .art-pub-body { display: grid; gap: 1rem; padding: 1rem 1.25rem 0; }
 .art-pub-sec h3 { margin: 0 0 0.4rem; font-size: 0.86rem; color: var(--fg2); }
@@ -8100,7 +8100,8 @@ body.select-mode .drag-handle { display: none; }
 .ov-sm { max-width: 440px; }
 .ov-md { max-width: 720px; }
 .ov-lg { max-width: min(900px, calc(100vw - 40px)); }
-.ov-full { width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0; }
+.ov-full { width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0; margin: 0; }
+.modal[data-ov-size="full"].show { padding: 0; } /* 全画面は root の余白 (2rem) も外す = 箱がビューポートに一致 */
 /* 狭幅 (<=768px) は段階の上限を外し、各面の既存の媒体ルール (全画面シート等) に従う = 現状踏襲。
    (lg の min(900px, 100vw-40px) が 390 幅で 350px に効いて全画面シートが縮んだ・イシュー#367 step3 実測) */
 @media (max-width: 768px) {

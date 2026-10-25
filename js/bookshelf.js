@@ -670,7 +670,13 @@ class VirtualBookshelf {
                 const topFace = this._overlays().top();
                 if (topFace && topFace.kind !== 'dialog' && !topFace.legacy) {
                     const btn = topFace.el.querySelector('.modal-close');
-                    if (btn) btn.click(); else this._overlays().requestClose(topFace.id, 'esc');
+                    if (btn) btn.click();
+                    else {
+                        // .modal-close を持たない面 (プレビュー等): 管理役で閉じ、履歴を自前で積む面 (hist:false) は段も外す
+                        // (旧 fallback「remove('show') + _modalHistPop」と同じ・履歴を残留させない)
+                        this._overlays().requestClose(topFace.id, 'esc');
+                        if (!topFace.hist && topFace.id) this._modalHistPop(topFace.id, {});
+                    }
                     e.preventDefault();
                     return;
                 }
@@ -8622,7 +8628,8 @@ class VirtualBookshelf {
             }
         }
         this._artShowList();
-        modal.classList.add('show');
+        // 重なり管理役 (イシュー#367): 一覧は大 (lg)・編集に入ると全画面 (full・_artOpenEditor で setSize)。履歴は従来どおり _modalHistPush/Pop (hist:false)
+        this._overlays().open(modal, { kind: 'modal', size: this._artMode === 'edit' || this._artMode === 'form' ? 'full' : 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
         this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o));
     }
@@ -8635,8 +8642,7 @@ class VirtualBookshelf {
         if (st && st.some((e) => e.id === 'art-edit-mode')) this._modalHistPop('art-edit-mode', {});
         if (st && st.some((e) => e.id === 'art-viewing')) this._modalHistPop('art-viewing', {});
         this._artMode = 'view';
-        const modal = document.getElementById('publish-pages-modal');
-        if (modal) modal.classList.remove('show');
+        this._overlays().close('publish-pages-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('publish-pages-modal', { fromHistory });
     }
 
@@ -8801,6 +8807,7 @@ class VirtualBookshelf {
         document.getElementById('art-edit-view').hidden = true;
         const content = document.querySelector('.art-modal-content');
         if (content) content.classList.remove('art-editing');
+        this._overlays().setSize('publish-pages-modal', 'lg'); // 一覧 = 大 (イシュー#367)
         // C2: ハブ公開かつ無料プランのときだけ、運営アフィリエイトタグが付く旨の注記を出す
         const notice = document.getElementById('art-free-notice');
         if (notice) {
@@ -8819,6 +8826,8 @@ class VirtualBookshelf {
         document.getElementById('art-edit-view').hidden = false;
         const content = document.querySelector('.art-modal-content');
         if (content) content.classList.add('art-editing');
+        // 編集 = 全画面 (full・イシュー#367)。PC の幅は .art-modal-content.art-editing の専用ルール (min(1240px, 100vw-40px)) が優先、≤600px は元から全画面
+        this._overlays().setSize('publish-pages-modal', 'full');
         this._modalHistPush('art-viewing', (o) => this._artShowList(o), { extra: { articleId: this._artEditingId } });
     }
 
@@ -11567,14 +11576,15 @@ class VirtualBookshelf {
         const done = document.getElementById('art-pub-done'); if (done) done.hidden = true;
         this._artRenderTags();
         this._artRenderPublishPanel();
-        m.classList.add('show');
+        // 重なり管理役 (イシュー#367): 中 (md)。記事エディタ (publish-pages-modal) の上に data-layer で積まれる (旧 CSS の z-index 1150 は撤去)
+        this._overlays().open(m, { kind: 'modal', size: 'md', hist: false });
         this._modalHistPush('art-publish-modal', (o) => this._artClosePublishPanel(o), { extra: { articleId: this._artEditingId } });
     }
 
     _artClosePublishPanel({ fromHistory = false } = {}) {
         const m = document.getElementById('art-publish-modal');
         if (!m || !m.classList.contains('show')) return;
-        m.classList.remove('show');
+        this._overlays().close('art-publish-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('art-publish-modal', { fromHistory });
     }
 
@@ -11959,13 +11969,13 @@ class VirtualBookshelf {
         const stage = m.querySelector('.pp-preview-stage');
         if (btn) { btn.dataset.mode = 'desktop'; btn.innerHTML = '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅'; }
         if (stage) stage.classList.remove('pp-stage-mobile');
-        m.classList.add('show');
+        // 重なり管理役 (イシュー#367): 全画面 (full)。公開パネル/記事エディタの上に data-layer で積まれる (旧 CSS の z-index 1200 は撤去)
+        this._overlays().open(m, { kind: 'modal', size: 'full', hist: false, sizeTarget: '.pp-preview-dialog' });
         if (typeof window.applyIcons === 'function') window.applyIcons(m);
         this._modalHistPush('pp-preview-modal', (o) => this._artClosePreviewModal(o), { extra: { articleId: this._artEditingId } });
     }
     _artClosePreviewModal({ fromHistory = false } = {}) {
-        const m = document.getElementById('pp-preview-modal');
-        if (m) m.classList.remove('show');
+        this._overlays().close('pp-preview-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('pp-preview-modal', { fromHistory });
         // 進行中のビルド (進捗表示/ストール検知タイマー) を無効化する。build() 自体は裏で続いてよいが、
         // 結果が来ても閉じた後のプレビューへは反映しない (イシュー#143)。
@@ -12329,7 +12339,7 @@ class VirtualBookshelf {
             console.error('長文メモ読み込みに失敗:', e);
             this._bookMemoEditorContext = null;
             textareaEl.value = '';
-            modal.classList.add('show');
+            this._overlays().open(modal, { kind: 'modal', size: 'full', hist: false }); // 重なり管理役 (イシュー#367): 全画面
             this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
             if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
             return;
@@ -12342,7 +12352,8 @@ class VirtualBookshelf {
         this._bookMemoFrontmatter = frontmatter;
         textareaEl.value = body;
 
-        modal.classList.add('show');
+        // 重なり管理役 (イシュー#367): 全画面 (full・設計案 19 §5「編集に集中する」)。履歴は従来どおり _modalHistPush/Pop
+        this._overlays().open(modal, { kind: 'modal', size: 'full', hist: false });
         this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
 
         try {
@@ -12409,8 +12420,7 @@ class VirtualBookshelf {
 
     // 長文メモ: モーダルを閉じて状態をリセットする共通処理 (完了/キャンセルの両方から呼ぶ)
     _bookMemoFsClose({ fromHistory = false } = {}) {
-        const modal = document.getElementById('book-memo-modal');
-        if (modal) modal.classList.remove('show');
+        this._overlays().close('book-memo-modal', { reason: fromHistory ? 'history' : 'button' });
         this._modalHistPop('book-memo-modal', { fromHistory });
         if (this._bookMemoEditor) {
             this._mdeDestroyEditor(this._bookMemoEditor);

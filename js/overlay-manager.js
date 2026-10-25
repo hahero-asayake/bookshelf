@@ -153,6 +153,17 @@
             return targets.length;
         }
 
+        /** 開いたまま大きさの段階を変える (公開記事モーダル: 一覧=lg → 編集=full 等) */
+        setSize(id, size) {
+            const face = this.get(id);
+            if (!face || !SIZES.includes(size) || !face.content) return false;
+            SIZES.forEach((x) => face.content.classList.remove('ov-' + x));
+            face.content.classList.add('ov-' + size);
+            face.size = size;
+            face.el.dataset.ovSize = size;
+            return true;
+        }
+
         top() { return this.stack.length ? this.stack[this.stack.length - 1] : null; }
         isTop(id) { const t = this.top(); return !!t && t.id === id; }
         has(id) { return this.stack.some((f) => f.id === id); }

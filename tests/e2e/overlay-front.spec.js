@@ -140,6 +140,22 @@ for (const vp of [{ name: 'PC1280', width: 1280, height: 800 }, { name: 'SP390',
             assertSettingsFront(last);
         });
 
+        test(`公開記事一覧の読込エラー行「設定を開く」(ハブ認証切れ) → 設定モーダルが最前面に出る (${vp.name})`, async ({ page }) => {
+            await boot(page);
+            // 接続済みで load() が HubAuthError を投げる = 一覧にエラー行と「設定を開く」ボタン (js/bookshelf.js _artRenderList)
+            await page.evaluate(() => {
+                window.bookshelf.publishArticleStore.load = async () => { const e = new Error('認証切れ'); e.name = 'HubAuthError'; throw e; };
+            });
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+            const btn = page.locator('#publish-pages-modal [data-act="open-settings"]');
+            await expect(btn).toBeVisible();
+            await btn.click();
+            await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+            const last = await waitSettingsFront(page, `auth-error ${vp.name}`);
+            assertSettingsFront(last);
+        });
+
         // 対照: _confirmOpenSettings 経由 (公開に必要な設定が無い時の確認ダイアログ → 「設定を開く」) は
         // closePublishPagesModal() を先に呼ぶので、修正前でも設定が前面に出る＝入口ごとに閉じ方が違う実例
         test(`対照: 確認ダイアログの「設定を開く」経由は公開モーダルを閉じるので前面に出る (${vp.name})`, async ({ page }) => {
