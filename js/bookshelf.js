@@ -243,7 +243,12 @@ class VirtualBookshelf {
         // E2E (navigator.webdriver) か localStorage.navShadow==='1' の時だけ有効。
         // 影の popstate リスナーを nav より先に登録する (着地の URL を先に影へ入れないと、nav が段を閉じた瞬間の突合で route が古く見える)
         if (window.NavState) window.NavState.install(this);
-        if (this.nav) this.nav.start(window); // 唯一の聞き手 (popstate)
+        if (this.nav) {
+            this.nav.start(window); // 唯一の聞き手 (popstate)
+            // イシュー#359 段階⑤ (H8): bfcache から復帰した時 (pageshow persisted) は JS の台帳がそのまま、履歴エントリの写しは
+            // ブラウザが復元する。両者を突き合わせ、着地と同じ手順 (閉じる→開き直す→route/book) で写しを採用する。同じなら何もしない
+            window.addEventListener('pageshow', (ev) => { if (ev && ev.persisted) this.nav.onPopstate({ state: history.state }); });
+        }
         // 公開は静的 SSG (公開ページ生成) へ移行済み (ADR-030)。
         // 旧 ?u= 公開閲覧モードは廃止。アプリは編集モード単一になった。
 
@@ -354,14 +359,18 @@ class VirtualBookshelf {
             // 同期 (LocalFS / GitHub / Asayake ハブ) は下の finishStartup へ (起動2段化, C-277)
             // ページ離脱前に同期未完了分を localStorage に確定（async は保証されないので可能な範囲）
             // 重要な同期は flushSync() を明示的に呼ぶ運用とする
-            window.addEventListener('beforeunload', () => {
+            const flushOnLeave = () => {
                 if (this._syncDebounceTimer) {
                     clearTimeout(this._syncDebounceTimer);
                     this._syncDebounceTimer = null;
                     // 同期的に発火（await は出来ないので最小限）
                     this._runPendingSync();
                 }
-            });
+            };
+            window.addEventListener('beforeunload', flushOnLeave);
+            // イシュー#359 段階⑤ (H8): bfcache に入る時は beforeunload が来ない経路があるため pagehide でも同じ flush をする。
+            // beforeunload 自体は Chrome/Safari では bfcache を妨げない (妨げるのは unload。Firefox のみ beforeunload も対象)
+            window.addEventListener('pagehide', flushOnLeave);
             // ページ非表示時にも flush（モバイル等）
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden' && this._pendingSync) {
@@ -7540,8 +7549,15 @@ class VirtualBookshelf {
         }
     }
 
-    /** マーキー対象 (1行で省略されがちな箇所) をまとめて再評価。 */
+    /** マーキー対象 (1行で省略されがちな箇所) をまとめて再評価。
+     *  イシュー#359 段階⑤: scrollWidth/clientWidth の読みは一覧 800 枚のレイアウトを同期で強制するため、描画の後 (rAF) に回す
+     *  (同一フレーム内の複数回呼び出しは 1 回にまとめる)。 */
     _refreshMarquees() {
+        if (this._marqueeRaf) return;
+        this._marqueeRaf = requestAnimationFrame(() => { this._marqueeRaf = null; this._refreshMarqueesNow(); });
+    }
+
+    _refreshMarqueesNow() {
         const els = [
             document.getElementById('current-bookshelf-title'),
             document.getElementById('current-bookshelf-desc'),
@@ -7651,7 +7667,7 @@ class VirtualBookshelf {
         pane._ptrBound = true;
         const THRESHOLD = 72, MAX = 120;
         const txt = indicator.querySelector('.ptr-text');
-        let startY = 0, active = false, dist = 0;
+        let startY = 0, startX = 0, active = false, dist = 0;
         const scroller = () => document.body.classList.contains('app-view-main')
             ? document.getElementById('view-main') : document.getElementById('view-bookshelf');
 
@@ -7659,13 +7675,15 @@ class VirtualBookshelf {
             if (e.touches.length !== 1 || document.body.classList.contains('drawer-open')
                 || document.body.classList.contains('book-detail-pinned')) { active = false; return; }
             const sc = scroller();
-            if (sc && sc.scrollTop <= 0) { startY = e.touches[0].clientY; active = true; dist = 0; }
+            if (sc && sc.scrollTop <= 0) { startY = e.touches[0].clientY; startX = e.touches[0].clientX; active = true; dist = 0; }
             else active = false;
         }, { passive: true });
 
         pane.addEventListener('touchmove', (e) => {
             if (!active) return;
             dist = e.touches[0].clientY - startY;
+            // イシュー#359 段階⑤ (H11): 横の移動が縦より大きい (端スワイプの戻る/進む・横スクロール) は引っ張り更新にしない
+            if (Math.abs(e.touches[0].clientX - startX) > Math.abs(dist)) { active = false; indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); return; }
             if (dist <= 0) { active = false; indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); return; }
             if (e.cancelable) e.preventDefault(); // 自前のPTRに切替 (ネイティブのバウンス抑制)
             const pull = Math.min(dist * 0.5, MAX);
