@@ -203,5 +203,101 @@
         return shadow;
     }
 
-    window.NavState = { EMPTY, reduce, project, canonRoute, formatRoute, install };
+    // ===== 段階③ (イシュー#365 step2) の核: 純関数のみ・まだ bookshelf.js からは呼ばれていない (接続は次の commit) =====
+    // 設計: tmp/359/stage3/design.md §2-3・§6。
+    const OVERLAY_FACES = ['drawer', 'command-palette']; // hash 遷移で静かに閉じる面 (旧 _closeOverlayFacesSilently)
+    // 本詳細を開いたまま UI から本棚を切り替えた時の扱い (②指示=C。A/B は定数1つで切替・ハヘロ決裁待ち)
+    //   C: route は本棚・book はそのまま (現状)  A: book を閉じる  B: route を #book/asin?from=新本棚 に保つ
+    const SHELF_SWITCH_WITH_BOOK = 'C';
+
+    const sameRoute = (a, b) => JSON.stringify(canonRoute(a)) === JSON.stringify(canonRoute(b));
+
+    // 履歴エントリに入れる写し (close 関数は入れない)
+    function snapshot(state, seq) {
+        return {
+            v: 1, seq: seq | 0,
+            route: canonRoute(state.route),
+            book: state.book ? { asin: state.book.asin || null, edit: !!state.book.edit } : null,
+            faces: state.faces.map((f) => ({ id: f.id, extra: f.extra || null })),
+            view: state.view,
+        };
+    }
+    // history.state に書く形 = 新 (nav) + 旧キー (bsModal / d / extra)。kill-switch で旧経路へ戻しても _histStateDepth が読める
+    function historyState(snap) {
+        const top = snap.faces[snap.faces.length - 1] || null;
+        return Object.assign({}, top && top.extra ? top.extra : {}, { bsModal: top ? top.id : null, d: snap.faces.length, nav: snap });
+    }
+    // スナップショットから状態へ (着地したエントリをそのまま採用する)
+    function fromSnapshot(snap, closers) {
+        const s = snap || {};
+        return {
+            view: s.view || 'main',
+            route: canonRoute(s.route),
+            book: s.book ? { asin: s.book.asin || null, edit: !!s.book.edit } : null,
+            faces: (s.faces || []).map((f) => ({ id: f.id, extra: f.extra || null, close: closers && closers[f.id] ? closers[f.id] : null })),
+            source: 'history',
+        };
+    }
+
+    // 段階③の UI 入力 (段階②の reduce に 3 種を足す)。navigate / openBook3 / closeBook3 以外は reduce へ
+    function reduce3(state, input) {
+        const s = state || EMPTY;
+        switch (input.type) {
+            case 'navigate': { // ホーム/本棚へ (UI)。overlay を閉じ、本詳細の扱いは SHELF_SWITCH_WITH_BOOK
+                let faces = s.faces.filter((f) => !OVERLAY_FACES.includes(f.id));
+                let book = s.book;
+                let route = canonRoute(input.route);
+                if (book && route.view !== 'book') {
+                    const mode = NavState.SHELF_SWITCH_WITH_BOOK;
+                    if (mode === 'A') { book = null; faces = faces.filter((f) => f.id !== 'book-detail'); }
+                    else if (mode === 'B' && route.view === 'bookshelf') route = canonRoute({ view: 'book', asin: book.asin, from: input.shelfInternalId });
+                    // 'C': route は本棚・book はそのまま
+                }
+                return { ...s, faces, book, route, source: 'ui' };
+            }
+            case 'openBook3': { // showBookDetail (UI)。スマホ幅では book-detail を faces の末尾へ (既にあれば付け替え=旧 adopt)
+                let faces = s.faces;
+                if (input.mobile) faces = [...faces.filter((f) => f.id !== 'book-detail'), { id: 'book-detail', extra: null, close: input.close || null }];
+                return { ...s, route: canonRoute({ view: 'book', asin: input.asin, from: input.from }), book: { asin: input.asin || null, edit: !!input.edit }, faces, source: 'ui' };
+            }
+            case 'closeBook3': { // closeModal (× で閉じる)。route は from の本棚かホーム (旧 closeModal と同じ)
+                const faces = s.faces.filter((f) => f.id !== 'book-detail');
+                const route = input.route ? canonRoute(input.route) : { view: 'main' };
+                return { ...s, faces, book: null, route, source: 'ui' };
+            }
+            default:
+                return reduce(s, input);
+        }
+    }
+
+    // 履歴に何をするか (書き手は apply 1 つ)。meta: {source, replace, extraChanged}
+    //   面を開いた→push／×・ESC・silent で閉じた (route 不変)→go(-k)／route が変わった→push (閉じた面があるか replace 指定なら replace)
+    function historyOp(prev, next, meta) {
+        const m = meta || {};
+        if (m.source === 'history') return { op: 'none' };            // 着地は書かない
+        const dFaces = next.faces.length - prev.faces.length;
+        const routeChanged = !sameRoute(prev.route, next.route);
+        if (dFaces > 0) return { op: 'push' };
+        if (dFaces < 0 && !routeChanged) return { op: 'go', n: dFaces };
+        if (routeChanged) return { op: (dFaces < 0 || m.replace) ? 'replace' : 'push' };
+        if (m.extraChanged || m.renamed) return { op: 'replace' };
+        return { op: 'none' };
+    }
+
+    // popstate で着地したスナップショットに画面を合わせるための差分 (閉じる面は末尾から・開き直す面は reopen 表で)
+    function screenDiff(current, snap) {
+        const snapIds = new Set((snap.faces || []).map((f) => f.id));
+        const curIds = new Set(current.faces.map((f) => f.id));
+        return {
+            close: current.faces.filter((f) => !snapIds.has(f.id)).reverse(),
+            open: (snap.faces || []).filter((f) => !curIds.has(f.id)),
+            routeChanged: !sameRoute(current.route, snap.route),
+            bookChanged: JSON.stringify(current.book || null) !== JSON.stringify(snap.book || null),
+            animate: false, // source:'history' は常にアニメ無し (ADR-125 の意図をここ1箇所で)
+        };
+    }
+
+    const NavState = { EMPTY, reduce, project, canonRoute, formatRoute, install,
+        OVERLAY_FACES, SHELF_SWITCH_WITH_BOOK, snapshot, historyState, fromSnapshot, reduce3, historyOp, screenDiff };
+    window.NavState = NavState;
 })();
