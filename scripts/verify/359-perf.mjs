@@ -69,7 +69,7 @@ await page.evaluate(() => {
     try { new PerformanceObserver((list) => { for (const e of list.getEntries()) P.lt.push({ s: e.startTime, d: e.duration }); }).observe({ type: 'longtask', buffered: true }); } catch (_) { P.ltUnsupported = true; }
     const shelf = document.getElementById('bookshelf');
     new MutationObserver((muts) => { for (const m of muts) { P.added += m.addedNodes.length; P.removed += m.removedNodes.length; if (m.target === shelf) { P.shelfAdded += m.addedNodes.length; P.shelfCleared += m.removedNodes.length; } } }).observe(document.body, { childList: true, subtree: true });
-    P.reset = () => { P.lt = []; P.added = 0; P.removed = 0; P.shelfCleared = 0; P.shelfAdded = 0; };
+    P.reset = () => { P.lt = []; P.added = 0; P.removed = 0; P.shelfCleared = 0; P.shelfAdded = 0; P.shadow0 = window.__navShadow ? window.__navShadow.costMs : null; };
     window.__measure = async (fn) => { const t0 = performance.now(); const r = fn(); if (r && r.then) await r; await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))); return { tFrame: Math.round((performance.now() - t0) * 10) / 10 }; };
     window.__waitEvent = (type, ms) => new Promise((res) => { let done = false; const h = () => { if (done) return; done = true; window.removeEventListener(type, h); res(true); }; window.addEventListener(type, h); setTimeout(() => { if (!done) { done = true; window.removeEventListener(type, h); res(false); } }, ms); });
 });
@@ -106,8 +106,8 @@ async function op(name, action, { settle = SETTLE_MS } = {}) {
     await page.waitForTimeout(settle);
     const prof = cdp ? (await cdp.send('Profiler.stop')).profile : null;
     const m1 = await metrics();
-    const P = await page.evaluate(() => { const P = window.__perf; return { lt: P.lt, added: P.added, removed: P.removed, shelfCleared: P.shelfCleared, shelfAdded: P.shelfAdded, ltUnsupported: P.ltUnsupported }; });
-    const row = { ...r, ltCount: P.ltUnsupported ? null : P.lt.length, ltTotal: P.ltUnsupported ? null : Math.round(P.lt.reduce((s, e) => s + e.d, 0)), added: P.added, removed: P.removed, shelfCleared: P.shelfCleared, shelfAdded: P.shelfAdded,
+    const P = await page.evaluate(() => { const P = window.__perf; const S = window.__navShadow; return { lt: P.lt, added: P.added, removed: P.removed, shelfCleared: P.shelfCleared, shelfAdded: P.shelfAdded, ltUnsupported: P.ltUnsupported, shadowMs: (S && P.shadow0 != null) ? Math.round((S.costMs - P.shadow0) * 1000) / 1000 : null }; });
+    const row = { ...r, shadowMs: P.shadowMs, ltCount: P.ltUnsupported ? null : P.lt.length, ltTotal: P.ltUnsupported ? null : Math.round(P.lt.reduce((s, e) => s + e.d, 0)), added: P.added, removed: P.removed, shelfCleared: P.shelfCleared, shelfAdded: P.shelfAdded,
         layout: m0 && m1 ? Math.round(m1.LayoutCount - m0.LayoutCount) : null, recalc: m0 && m1 ? Math.round(m1.RecalcStyleCount - m0.RecalcStyleCount) : null, script: m0 && m1 ? Math.round((m1.ScriptDuration - m0.ScriptDuration) * 1000) : null };
     (results[name] || (results[name] = [])).push(row);
     if (prof) aggregateProfile(name, prof);
@@ -183,6 +183,7 @@ const max = (a) => { const v = a.filter((x) => x != null); return v.length ? Mat
 const summary = Object.entries(results).map(([name, rows]) => ({
     name,
     tFrameMed: med(rows.map((r) => r.tFrame)), tFrameMax: max(rows.map((r) => r.tFrame)),
+    shadowMs: med(rows.map((r) => r.shadowMs)), shadowMsMax: max(rows.map((r) => r.shadowMs)),
     ltCount: med(rows.map((r) => r.ltCount)), ltTotal: med(rows.map((r) => r.ltTotal)),
     layout: med(rows.map((r) => r.layout)), recalc: med(rows.map((r) => r.recalc)), script: med(rows.map((r) => r.script)),
     added: med(rows.map((r) => r.added)), removed: med(rows.map((r) => r.removed)),
@@ -196,10 +197,10 @@ const lines = [];
 lines.push(`### ${cond} — books=${BOOKS} reps=${REPS} boot=${bootMs}ms`);
 lines.push(`?v= ${version.split('?')[1] || '(不明)'}／本詳細のカードclick不発→showBookDetail直呼び fallback: ${detailFallback}回／pageerror: ${errors.length}`);
 lines.push('');
-lines.push('| 操作 | 入力→次フレーム 中央値ms | 最大ms | long task 件/合計ms | Layout/Recalc 回 | 追加/削除ノード | 一覧全消し(回/5) | 原因関数 top3 (self ms・5回合計) |');
-lines.push('|---|---:|---:|---:|---:|---:|---:|---|');
+lines.push('| 操作 | 入力→次フレーム 中央値ms | 最大ms | 影の費用ms 中央値/最大 | long task 件/合計ms | Layout/Recalc 回 | 追加/削除ノード | 一覧全消し(回/5) | 原因関数 top3 (self ms・5回合計) |');
+lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---|');
 for (const s of summary) {
-    lines.push(`| ${s.name}${s.na ? ` (N/A: ${s.na})` : ''} | ${s.tFrameMed ?? '-'} | ${s.tFrameMax ?? '-'} | ${s.ltCount ?? '-'}/${s.ltTotal ?? '-'} | ${s.layout ?? '-'}/${s.recalc ?? '-'} | ${s.added ?? '-'}/${s.removed ?? '-'} | ${s.shelfRebuilt}${s.shelfAdded ? `(+${s.shelfAdded})` : ''} | ${s.top.slice(0, 3).join('<br>') || '-'} |`);
+    lines.push(`| ${s.name}${s.na ? ` (N/A: ${s.na})` : ''} | ${s.tFrameMed ?? '-'} | ${s.tFrameMax ?? '-'} | ${s.shadowMs ?? '-'}/${s.shadowMsMax ?? '-'} | ${s.ltCount ?? '-'}/${s.ltTotal ?? '-'} | ${s.layout ?? '-'}/${s.recalc ?? '-'} | ${s.added ?? '-'}/${s.removed ?? '-'} | ${s.shelfRebuilt}${s.shelfAdded ? `(+${s.shelfAdded})` : ''} | ${s.top.slice(0, 3).join('<br>') || '-'} |`);
 }
 const md = lines.join('\n');
 console.log(md);

@@ -97,17 +97,20 @@
     function install(app) {
         if (!app || app.__navShadowInstalled || !isEnabled()) return null;
         app.__navShadowInstalled = true;
-        const shadow = window.__navShadow = { enabled: true, state: EMPTY, inputs: 0, diffs: [], log: [], reduce, project };
+        // costMs: dispatch(reduce)+compare に使った合計時間 (影モード自体の費用を直接測る・359-perf が読む)
+        const shadow = window.__navShadow = { enabled: true, state: EMPTY, inputs: 0, compares: 0, costMs: 0, diffs: [], log: [], reduce, project };
         let lastPopstateAt = -1e9;
         const sourceNow = () => (performance.now() - lastPopstateAt < 50 ? 'history' : 'ui');
         let queued = false;
-        const check = () => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; compare(); }); };
+        const check = () => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; const t0 = performance.now(); compare(); shadow.compares++; shadow.costMs += performance.now() - t0; }); };
         const dispatch = (input) => {
+            const t0 = performance.now();
             if (!input.source) input.source = sourceNow();
             shadow.state = reduce(shadow.state, input);
             shadow.inputs++;
             if (shadow.log.length < 400) shadow.log.push({ n: shadow.inputs, ...input });
             check();
+            shadow.costMs += performance.now() - t0;
         };
         const wrap = (obj, name, after) => {
             const orig = obj && obj[name];
