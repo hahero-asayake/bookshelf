@@ -583,8 +583,8 @@ test('重なり管理役: アイコンピッカー (面の帯 1000+n) の上に 
     const picker = page.locator('#icon-picker-modal');
     await expect(picker).toHaveClass(/show/);
     await expect(picker).toHaveAttribute('data-layer', '0');
-    expect(Number(await picker.evaluate((el) => getComputedStyle(el).zIndex))).toBe(1000); // 旧 99999 !important ではない
-    await expect(picker.locator('.modal-content')).toHaveClass(/ov-sm/);
+    expect(Number(await picker.evaluate((el) => getComputedStyle(el).zIndex))).toBe(1000); // 帯 1000+0 (旧 99999 !important ではない)
+    await expect(picker.locator('.modal-content')).toHaveClass(/ov-md/); // ②決裁 2026-10-26: ピッカーは中
     await page.evaluate(() => { window.__cfm = window.confirmDialog({ title: '確認', message: 'テスト' }); });
     const cfm = page.locator('.cfm-overlay');
     await expect(cfm).toHaveAttribute('data-layer', '1');

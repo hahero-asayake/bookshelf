@@ -665,6 +665,15 @@ class VirtualBookshelf {
                 // プラグイン設定 (.modal でない独自モーダル) が設定の上に開いている時は、そちらの Esc に任せる
                 // (先に登録されたこのハンドラが下の設定を閉じていた・イシュー#284 X11)
                 if (document.querySelector('.plugin-settings-modal.show') && !document.querySelector('#icon-picker-modal.show')) return;
+                // 重なり管理役 (イシュー#367): 管理役に載っている面があれば DOM 順ではなくスタックの最前面 (top) を閉じる
+                // (設定が公開モーダルの上に積まれている時に、DOM が後ろの公開側を閉じない)。確認ダイアログは自前の capture ESC
+                const topFace = this._overlays().top();
+                if (topFace && topFace.kind !== 'dialog' && !topFace.legacy) {
+                    const btn = topFace.el.querySelector('.modal-close');
+                    if (btn) btn.click(); else this._overlays().requestClose(topFace.id, 'esc');
+                    e.preventDefault();
+                    return;
+                }
                 const open = Array.from(document.querySelectorAll('.modal.show'));
                 if (!open.length) return;
                 const top = open[open.length - 1];
@@ -6453,9 +6462,10 @@ class VirtualBookshelf {
             closeBtn.addEventListener('click', onCancel);
             clearBtn.addEventListener('click', onClear);
 
-            // 重なり管理役 (イシュー#367): 小 (sm)。親候補 (本棚フォーム等) の上に data-layer で積まれる
-            // (旧 CSS の z-index: 99999 !important は撤去)。履歴は従来どおり _modalHistPush/Pop (hist:false)
-            this._overlays().open(modal, { kind: 'modal', size: 'sm', hist: false });
+            // 重なり管理役 (イシュー#367): 中 (md・②決裁 2026-10-26: sm だと列が減って縦に伸び選びにくい)。
+            // 親候補 (本棚フォーム等) の上に data-layer で積まれる (旧 CSS の z-index: 99999 !important は撤去)。
+            // 履歴は従来どおり _modalHistPush/Pop (hist:false)
+            this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false });
             // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
             this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); }, { extra: { pickerTitle: title, pickerCurrent: current } });
         });
@@ -6507,14 +6517,18 @@ class VirtualBookshelf {
     }
 
     async _openSettingsModal(targetId) {
-        // 公開パネル (記事エディタの上のモーダル) から設定へ移る時は、パネルを先に閉じる (設定の上に残らない・イシュー#230)
-        if (typeof this._artClosePublishPanel === 'function') this._artClosePublishPanel();
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
         this._buildSettingsMaster();
-        modal.classList.add('show');
-        // スワイプ戻る用に履歴ベースを 1 つ積む (スマホのみ)。× / 戻るで巻き戻す。
-        this._modalHistPush('settings-modal', (o) => this._closeSettingsModal(o));
+        // 設定は「別の仕事」= 公開まわりの面を閉じてから開く (§6-4「移る前に閉じる」・イシュー#367)。入口ごとの
+        // 個別の閉じ方 (旧: ここで公開パネルだけ・_confirmOpenSettings で公開モーダルだけ) をこの 1 か所に寄せた
+        this._closeOverlaysForTransition();
+        // 重なり管理役: 大 (lg・左に項目一覧・右に中身)。hist:true = 履歴の段 (settings-modal) は管理役の hooks 経由で
+        // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (settings-cat の段と一覧へ戻す) は onClose
+        this._overlays().open(modal, {
+            kind: 'modal', size: 'lg', hist: true,
+            onClose: () => { this._modalHistPop('settings-cat'); this._showSettingsMaster(); },
+        });
         // 開くたびに最新化 (プラン変化・別端末更新に追従)。軽い再描画のみ。重い market/プラグイン一覧は
         // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
         this._reflectAffiliateField();
@@ -7474,10 +7488,24 @@ class VirtualBookshelf {
     _closeSettingsModal(opts = {}) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
+        // 重なり管理役経由 (イシュー#367): .show を外し → onClose (settings-cat の段と一覧へ戻す) → hooks.onClose (settings-modal の段)
+        const fromHistory = !!opts.fromHistory;
+        if (this._overlays().close('settings-modal', { reason: fromHistory ? 'history' : 'button', fromHistory })) return;
+        // 管理役に載っていない (読み込み前等) 時の従来の閉じ方
         modal.classList.remove('show');
         this._modalHistPop('settings-cat');
-        this._modalHistPop('settings-modal', { fromHistory: !!opts.fromHistory });
+        this._modalHistPop('settings-modal', { fromHistory });
         this._showSettingsMaster(); // 次回開いた時のために一覧へ戻す
+    }
+
+    // 設定等の面を開く前に「移る前に閉じる」側の面を畳む (設計案 19 §6-4・イシュー#367)。閉じるのは一時的な面
+    // (管理役の popover/menu・未移行の公開パネル=記事エディタの上の 1 段) だけで、公開記事モーダル (多段) は閉じずに
+    // 設定を上に積む: 管理役の面は data-layer で未移行の .modal より上に出るので、どの入口から来ても設定が最前面になる。
+    // (多段をまとめて閉じてから開くと、NavState の go(-k) 合流が 1 段しか引き継げず着地時に設定が巻き戻される = SP390 で実測)。
+    // 同じパターン (設定へ移る入口) は全て _openSettingsModal を通るので、閉じ方はここだけ
+    _closeOverlaysForTransition() {
+        this._overlays().closeAll({ kinds: ['popover', 'menu'], reason: 'closeOthers' });
+        if (typeof this._artClosePublishPanel === 'function') this._artClosePublishPanel();
     }
 
     /**
@@ -8475,8 +8503,9 @@ class VirtualBookshelf {
     async _confirmOpenSettings(message, targetId) {
         const ok = await confirmDialog({ title: '設定が必要です', message, okLabel: '設定を開く', cancelLabel: '閉じる' });
         if (!ok) return;
-        // 公開モーダルが開いていれば閉じてから設定を開く (モーダルの積み重なりを避ける)。
-        // close 関数経由で閉じる (raw remove だと push 済み履歴が残留し、次の戻るが食われる)
+        // 確認を経て設定へ行く = 公開の仕事をやめる入口なので、公開モーダル (一覧状態・1 段) を閉じてから開く。
+        // close 関数経由で閉じる (raw remove だと push 済み履歴が残留し、次の戻るが食われる)。
+        // 記事編集中の設定リンクは閉じずに上に積む (_closeOverlaysForTransition・イシュー#367)
         this.closePublishPagesModal();
         await this._openSettingsModal(targetId);
     }
@@ -12486,10 +12515,18 @@ class VirtualBookshelf {
         return (st.bsModal || st.bsSettings || st.bsImport) ? 1 : 0; // 旧形式の段 (更新前のセッション)
     }
 
-    // 重なり管理役 (js/overlay-manager.js・イシュー#367)。読み込み前・単体テスト等で無い時は何もしない代替を返す
+    // 重なり管理役 (js/overlay-manager.js・イシュー#367)。読み込み前・単体テスト等で無い時は何もしない代替を返す。
+    // 履歴との接点 (設計 tmp/367/design.md §2-3): hist:true の面が開いた/閉じた時だけ hooks が呼ばれ、
+    // _modalHistPush/Pop (= NavState の nav.open/close) に委譲する。管理役は history.* を触らない
     _overlays() {
-        if (window.overlays) return window.overlays;
-        return { open: () => null, close: () => false, requestClose: async () => false, closeAll: () => 0, top: () => null, isTop: () => false, has: () => false, stackInfo: () => [] };
+        const ov = window.overlays;
+        if (!ov) return { open: () => null, close: () => false, requestClose: async () => false, closeAll: () => 0, top: () => null, isTop: () => false, has: () => false, stackInfo: () => [] };
+        if (!ov._histBound) {
+            ov._histBound = true;
+            ov.hooks.onOpen = (id, { closeFn }) => this._modalHistPush(id, closeFn);
+            ov.hooks.onClose = (id, { fromHistory }) => this._modalHistPop(id, { fromHistory: !!fromHistory });
+        }
+        return ov;
     }
 
     _modalHistPush(id, close, { isMobile, extra } = {}) {

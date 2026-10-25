@@ -3585,8 +3585,9 @@ html.bs-likely-has-data #dashboard-welcome {
 
 /* ===== Settings Modal ===== */
 .settings-modal-content {
-    max-width: 720px;
-    width: min(720px, 92vw);
+    /* 大きさは大 (lg) = 管理役が .ov-lg を付ける (max-width: min(900px, 100vw-40px)・イシュー#367 ハヘロ 05:40「設定は大」)。
+       幅の上限はここに書かず .ov-lg に任せる (旧 720px 固定は撤去) */
+    width: 100%;
     display: flex;
     flex-direction: column;
     height: min(680px, 88vh);
@@ -8070,7 +8071,8 @@ body.select-mode .drag-handle { display: none; }
    部品内部の局所的な重ね 1〜100 と、ブックマークレットが Amazon のページへ注入する進行表示だけ)。 */
 :root {
     --z-chrome: 900;        /* 常設 UI (SP 下部ナビ・ドロワーのスクリム等)。面は常にこれより上 */
-    --ov-z-base: 1000;      /* 面のスタック (modal・sheet・popover・menu): 1000 + data-layer */
+    --ov-z-base: 1000;      /* 面のスタック (modal・sheet・popover・menu): 1000 + data-layer。未移行の .modal も移行期の
+                               橋渡し (overlay-manager.js installLegacyBridge) でスタックに載るので、開いた順 = 重なり順 */
     --ov-z-dialog: 1800;    /* 確認ダイアログ・同期衝突 (履歴に積まない・常に面より上): 1800 + data-layer */
     --ov-z-toast: 1900;     /* toast・バナー */
 }
@@ -8083,3 +8085,8 @@ body.select-mode .drag-handle { display: none; }
 .ov-md { max-width: 720px; }
 .ov-lg { max-width: min(900px, calc(100vw - 40px)); }
 .ov-full { width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0; }
+/* 狭幅 (<=768px) は段階の上限を外し、各面の既存の媒体ルール (全画面シート等) に従う = 現状踏襲。
+   (lg の min(900px, 100vw-40px) が 390 幅で 350px に効いて全画面シートが縮んだ・イシュー#367 step3 実測) */
+@media (max-width: 768px) {
+    .ov-sm, .ov-md, .ov-lg { max-width: none; }
+}
