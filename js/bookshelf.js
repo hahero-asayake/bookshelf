@@ -1826,9 +1826,11 @@ class VirtualBookshelf {
     // イシュー#359 段階④ (R1): カードの内容を決める入力の指紋。同じなら要素をそのまま使い回す (createBookElement を呼ばない)
     _bookCardKey(book, displayType) {
         const n = (this.userData.notes && this.userData.notes[book.asin]) || {};
+        // 書誌は book 全体 (バッジ=利用終了/KU/Prime 等のフラグも含む・再取込で変わる) を JSON で持つ。800冊で 1ms 程度
+        let bib;
+        try { bib = JSON.stringify(book); } catch (_) { bib = `${book.title}\u0002${Date.now()}`; }
         return [displayType, this._getStarVisibility(), this._getStarOverlay() ? 1 : 0, this._getMemoVisibility(),
-            book.title, book.authors, book.productImage, book.readStatus, book.updatedAsin, book.acquiredTime,
-            n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
+            bib, n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
     }
 
     // イシュー#359 段階④ (R1): 既存のカードを asin で引き、追加・削除・並び替え・内容変更だけ DOM を触る。
