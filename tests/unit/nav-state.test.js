@@ -76,6 +76,12 @@ describe('reduce3 / historyOp (段階③)', () => {
         expect(next.book).toBeNull(); expect(next.faces).toEqual([]);
         expect(N.historyOp(prev, next, { source: 'ui', replace: true })).toEqual({ op: 'replace' });
     });
+    it('本を開いたままホームへ: 本詳細も閉じる (旧 _applyRoute main と同じ)・履歴は push (戻るで本詳細に戻れる)', () => {
+        const prev = st({ view: 'bookshelf', book: { asin: 'A', edit: false }, route: { view: 'book', asin: 'A', from: 's1' }, faces: [{ id: 'book-detail' }] });
+        const next = N.reduce3(prev, { type: 'navigate', route: { view: 'main' } });
+        expect(next.book).toBeNull(); expect(next.faces).toEqual([]);
+        expect(N.historyOp(prev, next, { source: 'ui' })).toEqual({ op: 'push' });
+    });
     it('履歴由来の入力は履歴を書かない', () => {
         const prev = st({ faces: [{ id: 'drawer' }] });
         const next = N.reduce3(prev, { type: 'close', id: 'drawer', source: 'history' });

@@ -34,7 +34,9 @@ class BookshelfRouter {
     }
 
     start() {
-        window.addEventListener('hashchange', this._onHashChange);
+        // イシュー#359 段階③: NavState 接続時 (this._nav) は hashchange を購読しない。戻る/進む・アドレスバー編集は
+        // popstate だけで受ける (nav.onPopstate → onLanded → _applyRoute)。旧経路 (BOOKSHELF_NAV_LEGACY) は従来どおり
+        if (!this._nav) window.addEventListener('hashchange', this._onHashChange);
         this._dispatch(this.parse(window.location.hash));
     }
 
@@ -109,6 +111,16 @@ class BookshelfRouter {
     // navigateBook は呼び出し元 (goHome 等) が画面更新をせず _applyRoute に委ねる設計のため
     // 対象外 (selfHandled を渡さない = 常に _applyRoute を実行させる)。
     _setHash(hash, replace, selfHandled = false) {
+        // イシュー#359 段階③: 履歴の書き手は NavState (this._nav) だけ。URL は pushState/replaceState で書く
+        // (location.hash 代入をしない = hashchange を起こさない)。画面は旧 replace 経路と同じく同期 dispatch で合わせる
+        // (selfHandled = 呼び出し元が画面を済ませている navigateBookshelf は dispatch しない・イシュー#104 と同じ意味)。
+        if (this._nav) {
+            const route = this.parse(hash);
+            if (route.view === 'book') this._nav.openBook(route.asin, false, route.from, { mobile: this._nav.isMobile ? this._nav.isMobile() : undefined });
+            else this._nav.navigate(route, { replace: !!replace, shelfInternalId: this._shelfIdResolver ? this._shelfIdResolver(route.slug) : undefined });
+            if (!selfHandled) this._dispatch(route);
+            return;
+        }
         const target = hash || ' '; // 空文字だと history が機能しないので半角空白
         if (replace) {
             const url = `${window.location.pathname}${window.location.search}${hash}`;

@@ -141,6 +141,18 @@
         // 起動時の URL と body を初期状態にする
         const bootView = document.body && document.body.classList.contains('app-view-bookshelf') ? 'bookshelf' : 'main';
         dispatch({ type: 'boot', route: app.router ? app.router.parse(location.hash) : { view: 'main' }, view: bootView, source: 'boot' });
+        // 段階③ (nav 接続後) の自己検査: popstate で nav が段を外す/開き直す時は旧関数を通らないので継ぎ目から入力を受ける
+        if (app.nav) {
+            app.nav.onFaceClosedByHistory = (id) => dispatch({ type: 'close', id, source: 'history' });
+            app.nav.onFaceReopenedByHistory = (id, extra) => dispatch({ type: 'open', id, extra: extra || null, source: 'history' });
+            // showBookDetail は router を通らず nav.openBook で URL と段を書く → 影にも同じ入力 (route・adopt) を流す
+            wrap(app.nav, 'openBook', function (args) {
+                const m = args[3] || {};
+                const mobile = typeof m.mobile === 'boolean' ? m.mobile : true;
+                dispatch({ type: 'route', route: { view: 'book', asin: args[0], from: args[2] }, source: 'ui' });
+                if (mobile) dispatch({ type: 'adopt' });
+            });
+        }
 
         // 履歴の由来 (popstate 直後の入力は 'history')。app 側のリスナーより先に登録される capture。
         // 戻る/進むでは、popstate の時点でブラウザが URL を既に書き換えている (hashchange は別タスクで後から来る=
@@ -247,11 +259,14 @@
                 let faces = s.faces.filter((f) => !OVERLAY_FACES.includes(f.id));
                 let book = s.book;
                 let route = canonRoute(input.route);
-                if (book && route.view !== 'book') {
+                if (book && route.view === 'main') {
+                    // ホームへ戻る時は本詳細も閉じる (旧 _applyRoute('main') → _setBodyView('main') + _closeBookModalDom と同じ)
+                    book = null; faces = faces.filter((f) => f.id !== 'book-detail');
+                } else if (book && route.view === 'bookshelf') {
                     const mode = NavState.SHELF_SWITCH_WITH_BOOK;
                     if (mode === 'A') { book = null; faces = faces.filter((f) => f.id !== 'book-detail'); }
-                    else if (mode === 'B' && route.view === 'bookshelf') route = canonRoute({ view: 'book', asin: book.asin, from: input.shelfInternalId });
-                    // 'C': route は本棚・book はそのまま
+                    else if (mode === 'B') route = canonRoute({ view: 'book', asin: book.asin, from: input.shelfInternalId });
+                    // 'C': route は本棚・book はそのまま (現状維持)
                 }
                 return { ...s, faces, book, route, source: 'ui' };
             }
@@ -277,9 +292,13 @@
         if (m.source === 'history') return { op: 'none' };            // 着地は書かない
         const dFaces = next.faces.length - prev.faces.length;
         const routeChanged = !sameRoute(prev.route, next.route);
+        const nextIds = new Set(next.faces.map((f) => f.id));
+        // hash 遷移で overlay (ドロワー/パレット) を閉じた = その段を遷移先で置き換える (旧 _navigateFromUi の replace・①-0)。
+        // 本詳細 (book-detail) が外れる遷移 (ホームへ) は旧と同じく新エントリ (戻るで本詳細に戻れる)
+        const closedOverlay = prev.faces.some((f) => OVERLAY_FACES.includes(f.id) && !nextIds.has(f.id));
         if (dFaces > 0) return { op: 'push' };
         if (dFaces < 0 && !routeChanged) return { op: 'go', n: dFaces };
-        if (routeChanged) return { op: (dFaces < 0 || m.replace) ? 'replace' : 'push' };
+        if (routeChanged) return { op: (closedOverlay || m.replace) ? 'replace' : 'push' };
         if (m.extraChanged || m.renamed) return { op: 'replace' };
         return { op: 'none' };
     }
@@ -353,6 +372,8 @@
                 this.state = { ...this.state, faces };
                 this._write('replace');
             },
+            setView(view) { if (this.state.view !== view) this.state = { ...this.state, view }; }, // body の app-view-* (履歴は書かない)
+            hasFace(id) { return this.state.faces.some((f) => f.id === id); },
             // 唯一の聞き手。着地したエントリの写しに画面を合わせ、その写しをそのまま採用する (数え合わせ無し)
             async onPopstate(ev) {
                 const snapIn = ev && ev.state && ev.state.nav;
@@ -370,6 +391,7 @@
                 // 1) 閉じる (末尾から)。close が false = まだ開いている → 今の写しを積み直して終える (旧 L12365-12369)
                 for (const f of diff.close) {
                     this.state = { ...this.state, faces: this.state.faces.filter((x) => x.id !== f.id), source: 'history' };
+                    if (this.onFaceClosedByHistory) { try { this.onFaceClosedByHistory(f.id); } catch (_) {} } // 影モードの自己検査用の継ぎ目
                     const close = this.closers[f.id];
                     let res = true;
                     if (close) { try { res = await close({ fromHistory: true }); } catch (_) { res = true; } }
@@ -379,11 +401,14 @@
                         return { landed: false, reason: 'close-refused', id: f.id };
                     }
                 }
-                // 2) 開き直す (reopen 表)。表に無い面は開き直せない = さらに戻る (旧 D06・L12432)
+                // 2) 開き直す (reopen 表 = 関数 (id, extra, snap) → thunk|null でも表でも可)。表に無い面は開き直せない = さらに戻る (旧 D06・L12432)。
+                //    book-detail は route/book 側 (onLanded) が開くので写しに足すだけ
                 for (const f of diff.open) {
-                    const reopen = this.reopeners[f.id];
-                    if (!reopen) { try { H.back(); } catch (_) {} return { landed: false, reason: 'no-reopener', id: f.id }; }
                     this.state = { ...this.state, faces: [...this.state.faces, { id: f.id, extra: f.extra || null }], source: 'history' };
+                    if (f.id === 'book-detail') continue;
+                    const reopen = typeof this.reopeners === 'function' ? this.reopeners(f.id, f.extra || {}, snap) : this.reopeners[f.id];
+                    if (!reopen) { try { H.back(); } catch (_) {} return { landed: false, reason: 'no-reopener', id: f.id }; }
+                    if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory(f.id, f.extra || null); } catch (_) {} }
                     try { await reopen(f.extra || {}, snap); } catch (_) { /* 開けなかった面も写しには残す (旧と同じ) */ }
                 }
                 // 3) route / book は画面側 (bookshelf.js の _applyRoute 相当) に任せる。source:'history' = アニメ無し (ADR-125 をここ1箇所で)
