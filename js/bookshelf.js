@@ -9227,7 +9227,7 @@ class VirtualBookshelf {
     }
 
     async _artRenderCanvas() {
-        let frame = document.getElementById('art-canvas-frame');
+        const frame = document.getElementById('art-canvas-frame');
         if (!frame || !this._artDraft || !this.publishArticleGenerator) return;
         if (this._artInlineBlockId) return; // 文章をその場で入力中 (blur で描き直す)
         const gen = (this._artCanvasGen || 0) + 1;
@@ -9244,27 +9244,26 @@ class VirtualBookshelf {
             return;
         }
         if (gen !== this._artCanvasGen) return; // 後から始まった描画がある＝この結果は古い
-        // WebKit (iOS Safari) は同じ iframe への srcdoc 再代入をセッション履歴に積むため、スマホの「戻る」が
-        // iframe 側の履歴で消費され、アプリの段 (編集→閲覧 等) が1回おきに空振りしていた (イシュー#284・#279 の
-        // 「WebKit で閲覧→一覧が効かない」の原因)。毎回新しい iframe 要素へ差し替えて履歴を積ませない。
-        // 参照はすべて getElementById で都度引いているため、要素の差し替えで壊れる参照は無い。
-        const old = frame;
-        frame = old.cloneNode(false);
-        frame.removeAttribute('srcdoc');
-        // 差し替え中に高さが0へ潰れると外側 (.art-col) のスクロール位置が飛ぶ。直前の高さを保ったまま差し替える
-        frame.style.minHeight = `${old.offsetHeight}px`;
-        frame.onload = () => {
-            frame.style.minHeight = '';
-            const doc = frame.contentDocument;
-            if (doc && doc.body && window.ResizeObserver) {
-                if (this._artCanvasRO) this._artCanvasRO.disconnect();
-                this._artCanvasRO = new ResizeObserver(() => this._artFitCanvas());
-                this._artCanvasRO.observe(doc.body);
-            }
-            this._artApplyCanvasChrome();
-        };
-        frame.srcdoc = html;
-        old.replaceWith(frame);
+        // イシュー#284/#279: WebKit は同じ iframe への srcdoc 再代入をセッション履歴に積むため、スマホの
+        // 「戻る」が iframe 側の履歴で消費され、アプリの段が1回おきに空振りする問題があった。
+        // イシュー#377: その対策として「iframe要素ごと新しいものに差し替える」実装にしていたが、要素を
+        // DOM から外す瞬間に外側 document の activeElement が <body> へ戻り、その「無フォーカスの窓」
+        // (計測で60〜90ms、負荷下はさらに伸びる) に届いたキー入力がどこにも処理されず消える不具合と、
+        // 同じ差し替えの非同期往復(onload待ち)が負荷下で積み重なり.article要素の取得が収束しない不具合の
+        // 両方の根になっていた。document.open/write/close は同じ iframe 要素・同じ Document オブジェクトの
+        // ままで中身だけを置き換えられる(=WebKitでもnavigation履歴を積まない・back-nav-matrix.spec.js
+        // A17-A22で確認済み)うえに同期的に完了する(onload待ちが無くなる)ため、要素差し替えをやめてこちらに
+        // 統一する。
+        const doc = frame.contentDocument;
+        doc.open();
+        doc.write(html);
+        doc.close();
+        if (doc.body && window.ResizeObserver) {
+            if (this._artCanvasRO) this._artCanvasRO.disconnect();
+            this._artCanvasRO = new ResizeObserver(() => this._artFitCanvas());
+            this._artCanvasRO.observe(doc.body);
+        }
+        this._artApplyCanvasChrome();
     }
 
     // iframe を中身の高さまで伸ばす＝スクロールは外側1本 (二重スクロールにしない)
@@ -9394,7 +9393,8 @@ class VirtualBookshelf {
             if (last && last.parentNode) last.after(endIns); else if (article) article.appendChild(endIns);
             // キーボードで動かした直後は、移動先ブロックのつまみへフォーカスを追従させる
             if (this._artGripFocusIdx != null) {
-                const g = doc.querySelector(`.art-cv-grip[data-blk-idx="${this._artGripFocusIdx}"]`);
+                const idx = this._artGripFocusIdx;
+                const g = doc.querySelector(`.art-cv-grip[data-blk-idx="${idx}"]`);
                 this._artGripFocusIdx = null;
                 if (g) g.focus();
             }
