@@ -58,9 +58,14 @@ async function newArticleWithText(page, md = LONG) {
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
 }
 
+// イシュー#372: iframe内クリックがCI実機でまれに届かない(アプリ側のハンドラ発火待ちと競合する)窓があり、
+// 1回のclickだけでは data-art-mode が 'form' に変わらず5秒timeoutすることがある(#351の型)。
+// 期待値(最終的に'form'になること)は変えず、届かなければclickをリトライする(toPass)。
 async function openTextBlock(page) {
-    await canvas(page).locator('section[data-art-idx="0"]').click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    await expect(async () => {
+        await canvas(page).locator('section[data-art-idx="0"]').click();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form', { timeout: 2000 });
+    }).toPass({ timeout: 15000 });
     await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
 }
 
@@ -162,7 +167,12 @@ test.describe('記事エディタ 390幅は従来どおり全画面 (イシュ�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await enterEdit(page);
-        await canvas(page).locator('.art-cv-ins-btn').first().click();
+        // イシュー#372: CI実機でins-btnのclickがhasTouch:true環境でまれに届かず、#art-add-sheetが
+        // 60秒経ってもvisibleにならないことがあった(#351の型)。期待値は変えず、clickをリトライする。
+        await expect(async () => {
+            await canvas(page).locator('.art-cv-ins-btn').first().click();
+            await expect(page.locator('#art-add-sheet')).toBeVisible({ timeout: 2000 });
+        }).toPass({ timeout: 15000 });
         await page.locator('#art-add-sheet [data-block-type="text"]').click();
         await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
         await expect(page.locator('#art-canvas')).toBeHidden();

@@ -23,6 +23,16 @@ async function bootApp(page) {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        // イシュー#372 (②承認・2026-10-26 10:41): 「戻る1回で履歴が2段消える」原因不明のまま証拠だけ残す。
+        // テスト側(addInitScript)だけのフック＝アプリのコードは常設で変えない。失敗時に recorder.save() が
+        // testInfo.attach でこの記録を保存する(popstate/hashchangeの発火回数と時刻)。
+        window.__navDiag = { popstate: [], hashchange: [] };
+        window.addEventListener('popstate', (ev) => {
+            window.__navDiag.popstate.push({ t: performance.now(), state: ev.state, hash: location.hash });
+        }, true);
+        window.addEventListener('hashchange', () => {
+            window.__navDiag.hashchange.push({ t: performance.now(), hash: location.hash });
+        }, true);
     }, [fixtureUserData, fixtureLibrary]);
     await page.goto('/index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
@@ -62,6 +72,9 @@ async function snap(page) {
                 heading: !!document.querySelector('.mde-heading-menu'),
                 confirm: !!document.querySelector('.cfm-overlay'),
             },
+            // イシュー#372: NavState本体(台帳)側のfaces/_pendingGoも記録する(証拠保存・②承認2026-10-26)
+            navFaces: bs.nav ? bs.nav.state.faces.map((f) => f.id) : null,
+            navPendingGo: bs.nav ? bs.nav._pendingGo : null,
         };
     });
 }
@@ -92,6 +105,15 @@ function recorder(testInfo, id) {
             writeFileSync(join(dir, `${id}.json`), JSON.stringify(rec, null, 2));
             if (process.env.BACKNAV_SHOT_ALWAYS === '1' || testInfo.status !== testInfo.expectedStatus || testInfo.errors.length) {
                 await page.screenshot({ path: join(dir, `${id}.png`) }).catch(() => {});
+                // イシュー#372 (②承認・2026-10-26 10:41): 「戻る1回で履歴が2段消える」証拠を失敗時だけ残す。
+                // popstate/hashchangeの発火回数と時刻・NavStateのfaces/_pendingGo・history.lengthを添付する。
+                const navDiag = await page.evaluate(() => window.__navDiag || null).catch(() => null);
+                if (navDiag) {
+                    await testInfo.attach(`${id}-navDiag`, {
+                        body: JSON.stringify({ navDiag, lastSteps: rec.steps.slice(-3) }, null, 2),
+                        contentType: 'application/json',
+                    }).catch(() => {});
+                }
             }
         },
     };
