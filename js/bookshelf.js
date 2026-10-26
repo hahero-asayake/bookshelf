@@ -5660,10 +5660,18 @@ class VirtualBookshelf {
         if (view === 'main') {
             document.body.classList.remove('book-detail-pinned');
         }
-        // イシュー#371: CSS側は display:none をやめて content-visibility:hidden で裏に置く (切替コスト対策)。
-        // display:none 相当のアクセシビリティ挙動 (フォーカス/クリック/スクリーンリーダー対象外) は inert で明示的に保つ。
+        // イシュー#371/#373(案D): CSS側は display:none をやめ、ホーム表示中は transform で画面外へ
+        // 移動するだけにした (切替コスト対策)。display:none 相当のアクセシビリティ挙動
+        // (フォーカス/クリック/スクリーンリーダー対象外) は inert と aria-hidden の両方で明示的に保つ
+        // (inert だけでも AT からは除外されるが、2026-10-26 ②指示によりホーム表示中に Tab で一覧へ
+        // フォーカスが入らないことを二重に保証する)。
         const shelfView = document.getElementById('view-bookshelf');
-        if (shelfView) shelfView.inert = (view !== 'bookshelf');
+        if (shelfView) {
+            const hidden = (view !== 'bookshelf');
+            shelfView.inert = hidden;
+            if (hidden) shelfView.setAttribute('aria-hidden', 'true');
+            else shelfView.removeAttribute('aria-hidden');
+        }
         // 左サイドバーの選択ハイライトを更新
         this._updateSidebarActive();
     }

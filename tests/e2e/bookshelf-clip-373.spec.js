@@ -100,3 +100,63 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
         expect(flagged, `${ROUNDS}周中に見切れ(平坦な表紙帯)が検出された行: ${JSON.stringify(flagged, null, 1)}`).toEqual([]);
     });
 });
+
+test.describe('#373 案D: ホーム表示中は一覧に Tab フォーカスが入らない', () => {
+    // transform で画面外へ移すだけの案D(見た目は display:none と違いレイアウトに残る)なので、
+    // inert/aria-hidden が外れているとホーム表示中でも Tab で画面外の一覧へフォーカスが移動しうる。
+    // chromium・webkit 両方で固定する(ブラウザ非依存のARIA/inert挙動のため webkit限定にしない)。
+    test('ホームでTabを連打しても、フォーカスは.view-bookshelf内へ入らない', async ({ page, context }) => {
+        const fixtureUserData = JSON.parse(readFileSync('tests/fixtures/fixture-userdata.json', 'utf-8'));
+        const books = Array.from({ length: 20 }, (_, i) => {
+            const n = i + 1; const asin = `B${String(n).padStart(9, '0')}`;
+            return { asin, title: `計測用の本 ${n}`, authors: `著者${n}`, acquiredTime: 1700000000000 + n * 1000, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000 + n * 1000 };
+        });
+        const userData = JSON.parse(JSON.stringify(fixtureUserData));
+        const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+        userData.notes = {};
+        const libraryStr = JSON.stringify({ books, metadata: { totalBooks: books.length } });
+        const userDataStr = JSON.stringify(userData);
+        await context.addInitScript(([u, l]) => {
+            localStorage.setItem('virtualBookshelf_userData', u);
+            localStorage.setItem('virtualBookshelf_library', l);
+            localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        }, [userDataStr, libraryStr]);
+        await page.setViewportSize({ width: 390, height: 844 });
+        const base = process.env.BASE_URL || '';
+        await page.goto(`${base}/index.html`);
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0);
+        await page.evaluate(() => {
+            const bs = window.bookshelf; const mem = new Map();
+            const a = bs.storage.adapter;
+            a.readJSON = async (p) => (mem.has(p) ? JSON.parse(JSON.stringify(mem.get(p))) : null);
+            a.writeJSON = async (p, d) => { mem.set(p, JSON.parse(JSON.stringify(d))); };
+            bs._isSyncReady = () => true;
+        });
+        // 一旦本棚を開いてから、ホームへ戻る (view-bookshelf の inert/aria-hidden が外れていないかを
+        // 「一度は表示された状態から隠した」経路で確認する・初回からホームのままだと検証にならない)
+        await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
+        await page.waitForTimeout(200);
+        await page.evaluate(() => { if (window.bookshelf.router) window.bookshelf._navigateFromUi('main'); else window.bookshelf._setBodyView('main'); });
+        await page.waitForTimeout(200);
+
+        const shelfState = await page.evaluate(() => {
+            const el = document.getElementById('view-bookshelf');
+            return { inert: el.inert, ariaHidden: el.getAttribute('aria-hidden'), bodyClass: document.body.className };
+        });
+        expect(shelfState.inert, 'view-bookshelf.inert').toBe(true);
+        expect(shelfState.ariaHidden, 'view-bookshelf[aria-hidden]').toBe('true');
+
+        // body先頭からTabを40回押し、都度フォーカス先が.view-bookshelf内かを見る
+        await page.evaluate(() => document.body.focus());
+        let enteredShelf = false;
+        for (let i = 0; i < 40; i++) {
+            await page.keyboard.press('Tab');
+            const inside = await page.evaluate(() => {
+                const shelf = document.getElementById('view-bookshelf');
+                return !!(document.activeElement && shelf.contains(document.activeElement));
+            });
+            if (inside) { enteredShelf = true; break; }
+        }
+        expect(enteredShelf, 'Tab連打でフォーカスが.view-bookshelf内に入った').toBe(false);
+    });
+});
