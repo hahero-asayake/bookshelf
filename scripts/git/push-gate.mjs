@@ -12,6 +12,13 @@
 // 正当な複数イシュー同梱push（②が明示承認したもの）は BOOKSHELF_PUSH_ALLOW に
 // 対象イシュー番号をカンマ区切りで列挙すると追加で許可される（無制限許可は作らない）。
 //
+// trailerを付け直せない事情のあるcommit（②が承認したtrailer無しcommitの同梱用。
+// 例: cherry-pick事故で作り直されIssue trailerが失われたcommit）は、イシュー番号
+// 単位ではなくcommit単位で BOOKSHELF_PUSH_ALLOW_SHA にカンマ区切りで短縮sha
+// (7文字以上・前方一致)を列挙すると個別に免除できる（6文字以下は無効・
+// ワイルドカードや無制限許可は作らない）。免除したcommitはpushのたびに
+// stdoutへ1行ずつ必ず出す。
+//
 // 呼び出し元は .githooks/pre-push（core.hooksPath=.githooks で有効化するまでは
 // git から呼ばれない＝このファイル単体を置くだけでは何も変わらない）。
 
@@ -78,6 +85,29 @@ function normalizeIssueNum(trailerValue) {
   return m ? m[1] : '';
 }
 
+// BOOKSHELF_PUSH_ALLOW_SHA の値をパースする。7文字以上の16進文字列だけを
+// 有効な免除エントリとして返す（6文字以下・16進以外の文字列は無効=無視）。
+function parseAllowedShas(envVal) {
+  const result = [];
+  if (!envVal) return result;
+  for (const tok of envVal.split(',')) {
+    const t = tok.trim().toLowerCase();
+    if (!t) continue;
+    if (!/^[0-9a-f]{7,40}$/.test(t)) continue;
+    result.push(t);
+  }
+  return result;
+}
+
+// commitのフルshaが、免除リストのいずれかの前方一致に当たればそのエントリを返す。
+function matchAllowedSha(fullSha, allowedShas) {
+  const full = String(fullSha || '').toLowerCase();
+  for (const entry of allowedShas) {
+    if (full.startsWith(entry)) return entry;
+  }
+  return null;
+}
+
 function printBlockedNoIssue() {
   console.error(`
 [push-gate] BOOKSHELF_ISSUE が指定されていないため push を止めた。
@@ -89,6 +119,10 @@ function printBlockedNoIssue() {
 
   複数イシューの同梱pushを②が明示承認した場合のみ:
          BOOKSHELF_ISSUE=<自分の番号> BOOKSHELF_PUSH_ALLOW=<許可された番号,...> git push origin main
+
+  trailerを付け直せないcommit（②が承認したtrailer無しcommitの同梱用）を
+  個別に免除する場合のみ:
+         BOOKSHELF_ISSUE=<自分の番号> BOOKSHELF_PUSH_ALLOW_SHA=<短縮sha(7文字以上),...> git push origin main
 
   このpushが人間(sei)の手動操作で、ゲートの対象外にしたい場合:
          git push --no-verify ...
@@ -115,6 +149,11 @@ ${lines}
     - 複数イシューの同梱pushを②が明示承認した場合のみ:
         BOOKSHELF_ISSUE=${issueEnv} BOOKSHELF_PUSH_ALLOW=<許可された番号,...> git push origin main
       （自己判断で付けない＝②の承認が前提）
+    - trailerを付け直せないcommit（②が承認したtrailer無しcommitの同梱用。
+      例: cherry-pick事故で作り直されIssue trailerが失われたcommit）を
+      個別に免除する場合のみ:
+        BOOKSHELF_ISSUE=${issueEnv} BOOKSHELF_PUSH_ALLOW_SHA=<短縮sha(7文字以上),...> git push origin main
+      （自己判断で付けない＝②の承認が前提。6文字以下やワイルドカードは無効）
 
   人間(sei)の手動操作でゲートの対象外にしたい場合:
         git push --no-verify ...
@@ -138,6 +177,7 @@ function main() {
   }
 
   const allowed = parseAllowed(issueEnv, process.env.BOOKSHELF_PUSH_ALLOW);
+  const allowedShas = parseAllowedShas(process.env.BOOKSHELF_PUSH_ALLOW_SHA);
 
   let result;
   try {
@@ -171,8 +211,18 @@ function main() {
   }
 
   const bad = [];
+  let exemptedCount = 0;
   for (const line of lines) {
     const [sha, subject, trailerRaw] = line.split(SEP);
+    const matchedSha = matchAllowedSha(sha, allowedShas);
+    if (matchedSha) {
+      exemptedCount += 1;
+      console.log(
+        `[push-gate] 免除: ${(sha || '').slice(0, 7)} ${subject || '(件名なし)'}` +
+          `（BOOKSHELF_PUSH_ALLOW_SHA=${matchedSha} ・ ②が承認したtrailer無しcommitの同梱用）`
+      );
+      continue;
+    }
     const num = normalizeIssueNum(trailerRaw);
     if (!num || !allowed.has(num)) {
       bad.push({
@@ -188,10 +238,11 @@ function main() {
     process.exit(1);
   }
 
+  const exemptedNote = exemptedCount > 0 ? `（うちBOOKSHELF_PUSH_ALLOW_SHAで免除: ${exemptedCount}件）` : '';
   console.log(
-    `[push-gate] OK: ${lines.length}件のcommitすべてが Issue #${issueEnv}` +
+    `[push-gate] OK: ${lines.length}件のcommit中、${lines.length - exemptedCount}件が Issue #${issueEnv}` +
       (allowed.size > 1 ? `（許可: ${[...allowed].join(', ')}）` : '') +
-      ` のtrailerを持つ。push を許可する。`
+      ` のtrailerを持つ${exemptedNote}。push を許可する。`
   );
   process.exit(0);
 }

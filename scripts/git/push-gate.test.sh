@@ -249,6 +249,42 @@ check_output "$out" "$sha374g" "contains" "(g) 混入commit($sha374g)のshaが�
 echo
 
 # =======================================================================
+echo "### (h) trailer無しcommitをBOOKSHELF_PUSH_ALLOW_SHAで免除 → 通る・免除行が出る ###"
+work=$(new_case_repo "h")
+commit_with_issue "$work" 373 "feat: 373の変更" > /dev/null
+shaNoTrailerH=$(commit_with_issue "$work" "" "perf: 事故で作り直されたcommit")
+out=$(cd "$work" && BOOKSHELF_ISSUE=373 BOOKSHELF_PUSH_ALLOW_SHA="$shaNoTrailerH" git push origin main 2>&1); code=$?
+echo "$out"
+check_exit 0 "$code" "(h) exit == 0"
+check_output "$out" "$shaNoTrailerH" "contains" "(h) 免除したcommit($shaNoTrailerH)のshaが出力される"
+check_output "$out" "免除" "contains" "(h) 免除の文言が出力される"
+echo
+
+# =======================================================================
+echo "### (i) 免除リストに無いtrailer無しcommitが別に混ざる → 引き続き止まる ###"
+work=$(new_case_repo "i")
+commit_with_issue "$work" 373 "feat: 373の変更" > /dev/null
+shaAllowedI=$(commit_with_issue "$work" "" "perf: 免除対象")
+shaNotAllowedI=$(commit_with_issue "$work" "" "fix: 免除対象外のtrailer無し")
+out=$(cd "$work" && BOOKSHELF_ISSUE=373 BOOKSHELF_PUSH_ALLOW_SHA="$shaAllowedI" git push origin main 2>&1); code=$?
+echo "$out"
+check_exit nonzero "$code" "(i) exit != 0（免除対象外は引き続き止まる）"
+check_output "$out" "$shaNotAllowedI" "contains" "(i) 免除対象外のcommit($shaNotAllowedI)が止まった一覧に出る"
+echo
+
+# =======================================================================
+echo "### (j) 6文字以下のshaはBOOKSHELF_PUSH_ALLOW_SHAとして無効 → 引き続き止まる ###"
+work=$(new_case_repo "j")
+commit_with_issue "$work" 373 "feat: 373の変更" > /dev/null
+shaNoTrailerJ=$(commit_with_issue "$work" "" "perf: 6文字指定では免除されない")
+short6="${shaNoTrailerJ:0:6}"
+out=$(cd "$work" && BOOKSHELF_ISSUE=373 BOOKSHELF_PUSH_ALLOW_SHA="$short6" git push origin main 2>&1); code=$?
+echo "$out"
+check_exit nonzero "$code" "(j) exit != 0（6文字以下の指定は無効）"
+check_output "$out" "$shaNoTrailerJ" "contains" "(j) 免除されないcommit($shaNoTrailerJ)が止まった一覧に出る"
+echo
+
+# =======================================================================
 echo "========================================"
 echo "結果: PASS=$PASS FAIL=$FAIL"
 echo "========================================"
