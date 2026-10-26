@@ -30,13 +30,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     *) continue ;;  # main以外へのpushはこのゲートの対象外
   esac
 
-  if [ "$remote_sha" = "$zero" ]; then
-    range="origin/main..$local_sha"  # 新規ブランチからmainへ初push相当
-  else
-    range="$remote_sha..$local_sha"
-  fi
-
-  if ! "$NODE_BIN" scripts/git/push-gate.mjs "$range"; then
+  if ! "$NODE_BIN" scripts/git/push-gate.mjs "$local_sha" "$remote_sha"; then
     blocked=1
   fi
 done

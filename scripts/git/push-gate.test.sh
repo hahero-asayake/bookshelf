@@ -204,6 +204,51 @@ check_output "$out" "fetch first\|non-fast-forward\|rejected" "contains" "(f) gi
 echo
 
 # =======================================================================
+echo "### (g) 未fetch＋ローカルに他イシューのcommitが混在 → --force でも止まる ###"
+gdir="$WORKDIR/g"
+mkdir -p "$gdir"
+git init --bare -q "$gdir/origin.git"
+git -C "$gdir/origin.git" symbolic-ref HEAD refs/heads/main  # bare側のHEADもmainへ明示
+git clone -q "$gdir/origin.git" "$gdir/work1"
+(
+  cd "$gdir/work1"
+  git symbolic-ref HEAD refs/heads/main  # initial branch名が環境依存(master等)なため明示する
+  git config user.email "a@example.com"; git config user.name "a"
+  cp -r "$REPO_ROOT/.githooks" .
+  mkdir -p scripts/git
+  cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
+  chmod +x .githooks/pre-push scripts/git/push-gate.mjs
+  git config core.hooksPath .githooks
+  echo base > README.md
+  git add README.md .githooks scripts/git/push-gate.mjs
+  git commit -q -m "chore: baseline"
+  git push -q --no-verify origin main
+)
+git clone -q "$gdir/origin.git" "$gdir/work2"
+(
+  cd "$gdir/work2"
+  git config user.email "b@example.com"; git config user.name "b"
+  echo "work2-change" >> README.md
+  git add README.md
+  git commit -q -m "feat: work2が先にpushする変更
+
+Issue: #999"
+  git push -q --no-verify origin main
+)
+# work1はwork2のpushを知らない(未fetch)状態のまま、374(混入)と373のcommitをローカルに追加する
+sha374g=$(commit_with_issue "$gdir/work1" 374 "feat: 374の変更(混入)")
+sha373g=$(commit_with_issue "$gdir/work1" 373 "feat: 373の変更")
+# --force を付けても、primary range(remote_sha..local_sha)が未fetchで解決不能な時は
+# ローカルの追跡ref(refs/remotes/origin/main=baseline)基点で再検査するため、374の混入を
+# 検出できるはず(無条件exit 0のフォールバックだと --force でゲートが素通りしてしまう)。
+out=$(cd "$gdir/work1" && BOOKSHELF_ISSUE=373 git push --force origin main 2>&1); code=$?
+echo "$out"
+check_exit nonzero "$code" "(g) exit != 0（--forceでも止まる）"
+check_output "$out" "混ざっているため止めた" "contains" "(g) 「混入のため止めた」ブロック判定が出る(--forceでもgit標準拒否に頼らず自前で検出)"
+check_output "$out" "$sha374g" "contains" "(g) 混入commit($sha374g)のshaがメッセージに出る"
+echo
+
+# =======================================================================
 echo "========================================"
 echo "結果: PASS=$PASS FAIL=$FAIL"
 echo "========================================"

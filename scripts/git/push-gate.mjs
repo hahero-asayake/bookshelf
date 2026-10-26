@@ -3,12 +3,11 @@
 
 // bookshelf push前ゲート（イシュー#375）。
 //
-// origin/main への push対象rangeに含まれる各commitの `Issue: #N` trailerを検査し、
-// 現在のイシュー番号(環境変数 BOOKSHELF_ISSUE)と一致しない/trailer無しのcommitが
-// あれば列挙して exit 1 する。
+// origin/main への push対象の各commitの `Issue: #N` trailerを検査し、現在のイシュー番号
+// (環境変数 BOOKSHELF_ISSUE)と一致しない/trailer無しのcommitがあれば列挙して exit 1 する。
 //
-// 使い方: BOOKSHELF_ISSUE=375 node scripts/git/push-gate.mjs <range>
-//   <range> は "remote_sha..local_sha" または "origin/main..local_sha"（新規ブランチ時）。
+// 使い方: BOOKSHELF_ISSUE=375 node scripts/git/push-gate.mjs <local_sha> <remote_sha>
+//   <remote_sha> は pre-push が渡す「push先の現在値」(40個の0=新規ブランチ)。
 //
 // 正当な複数イシュー同梱push（②が明示承認したもの）は BOOKSHELF_PUSH_ALLOW に
 // 対象イシュー番号をカンマ区切りで列挙すると追加で許可される（無制限許可は作らない）。
@@ -19,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 
 const SEP = '\x1f'; // 項目区切り（commit件名に出現しない制御文字）
+const ZERO_SHA = '0'.repeat(40);
 
 function gitLog(range) {
   const format = `%H${SEP}%s${SEP}%(trailers:key=Issue,valueonly,separator=${SEP})`;
@@ -26,17 +26,37 @@ function gitLog(range) {
     return execFileSync('git', ['log', '--format=' + format, range], { encoding: 'utf8' });
   } catch (err) {
     const detail = (err.stderr != null ? String(err.stderr) : '') + ' ' + (err.message || '');
-    // pre-pushのremote shaは「サーバー側の実際の現在値」を指すことがあり、ローカルが
-    // まだfetchしていないオブジェクトだと range が解決できず git log 自体が fatal になる
-    // （典型例: 別のpushが割り込んでリモートが先行したまま、fetchせずpushし直した場合）。
-    // これは「混入判定ができない」であって「混入している」ではない＝判定を保留して
-    // 通常のgit push処理（non-fast-forwardでの拒否等）に委ねる。
     if (/invalid revision range|bad revision|unknown revision/i.test(detail)) {
-      const e = new Error(`range ${range} を解決できない（リモートの最新commitを未fetch）`);
+      const e = new Error(`range ${range} を解決できない`);
       e.unresolvable = true;
       throw e;
     }
     throw new Error(`git log ${range} に失敗: ${err.message}`);
+  }
+}
+
+// pre-pushのremote shaは「サーバー側の実際の現在値」を指すことがあり、ローカルが
+// まだfetchしていないオブジェクトだと主rangeが解決できず git log が fatal になる
+// （典型例: 別のpushが割り込んでリモートが先行したまま、fetchせずpushし直した場合。
+// --force を付けている場合も同様に起こりうる）。
+// 「混入判定ができない」で無条件に通すと --force で混入commitがそのまま素通りして
+// しまうため、まず主range(remote_sha..local_sha)を試し、解決できなければローカルの
+// 追跡ref(refs/remotes/origin/main、最後にfetchした時点の記録)を基点に再検査する。
+// その追跡ref基点でも解決できない時（一度もfetchしていない等）だけ、本当に判定不能
+// として保留し、pushの成否をgitの通常処理（non-fast-forward拒否等）に委ねる。
+function resolveCommits(localSha, remoteSha) {
+  const primaryRange = remoteSha === ZERO_SHA ? `origin/main..${localSha}` : `${remoteSha}..${localSha}`;
+  try {
+    return { raw: gitLog(primaryRange), usedFallback: false };
+  } catch (primaryErr) {
+    if (!primaryErr.unresolvable) throw primaryErr;
+    const fallbackRange = `refs/remotes/origin/main..${localSha}`;
+    try {
+      return { raw: gitLog(fallbackRange), usedFallback: true, primaryErr };
+    } catch (fallbackErr) {
+      if (!fallbackErr.unresolvable) throw fallbackErr;
+      return { raw: null, bothUnresolvable: true, primaryErr, fallbackErr };
+    }
   }
 }
 
@@ -104,9 +124,10 @@ ${lines}
 }
 
 function main() {
-  const range = process.argv[2];
-  if (!range) {
-    console.error('[push-gate] usage: push-gate.mjs <range>（例: origin/main..HEAD）');
+  const localSha = process.argv[2];
+  const remoteSha = process.argv[3];
+  if (!localSha || !remoteSha) {
+    console.error('[push-gate] usage: push-gate.mjs <local_sha> <remote_sha>');
     process.exit(2);
   }
 
@@ -118,19 +139,32 @@ function main() {
 
   const allowed = parseAllowed(issueEnv, process.env.BOOKSHELF_PUSH_ALLOW);
 
-  let raw;
+  let result;
   try {
-    raw = gitLog(range);
+    result = resolveCommits(localSha, remoteSha);
   } catch (err) {
-    if (err.unresolvable) {
-      console.log(`[push-gate] ${err.message}。混入判定を保留し、pushの成否はgitの通常処理（non-fast-forward拒否等）に委ねる。`);
-      process.exit(0);
-    }
     console.error(`[push-gate] ${err.message}`);
     process.exit(2);
   }
 
-  const lines = raw.split('\n').filter(l => l.length > 0);
+  if (result.bothUnresolvable) {
+    console.log(
+      `[push-gate] ${result.primaryErr.message}（リモートの最新commitを未fetch）。` +
+        `ローカルの追跡ref基点(refs/remotes/origin/main)でも${result.fallbackErr.message}` +
+        `（一度もfetchしていない等）。混入判定を保留し、pushの成否はgitの通常処理` +
+        `（non-fast-forward拒否等）に委ねる。`
+    );
+    process.exit(0);
+  }
+
+  if (result.usedFallback) {
+    console.log(
+      `[push-gate] ${result.primaryErr.message}（リモートの最新commitを未fetch）。` +
+        `ローカルの追跡ref基点(refs/remotes/origin/main)を基準に代わりに検査する。`
+    );
+  }
+
+  const lines = result.raw.split('\n').filter(l => l.length > 0);
   if (lines.length === 0) {
     console.log('[push-gate] OK: push対象にcommitが無い（range が空）。');
     process.exit(0);
