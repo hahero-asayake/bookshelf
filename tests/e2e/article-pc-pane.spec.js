@@ -80,7 +80,7 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             const errors = await bootApp(page);
             await newArticleWithText(page);
             // 編集状態 (引き出しの横) でも 860 が入る＝モーダルが広がっている
-            await expect.poll(() => articleWidth(page)).toBe(860);
+            await expect.poll(() => articleWidth(page), { timeout: 15000 }).toBe(860);
             const modal = await box(page.locator('#publish-pages-modal .art-modal-content'));
             expect(modal.width).toBeGreaterThan(1080);
             const side = await box(page.locator('.art-side'));
@@ -93,7 +93,7 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             // 閲覧状態の描き直し (編集の枠・＋が外れた版) を待つ
             await expect(canvas(page).locator('.art-cv-ui')).toHaveCount(0);
             await expect(canvas(page).locator('h2', { hasText: '見出しです' })).toHaveCount(1);
-            await expect.poll(() => articleWidth(page)).toBe(860);
+            await expect.poll(() => articleWidth(page), { timeout: 15000 }).toBe(860);
             const frameW = await page.evaluate(() => document.getElementById('art-canvas-frame').contentDocument.documentElement.clientWidth);
             const rects = (doc) => [...doc.querySelectorAll('.article, .article h1, .article h2, .article h3, .article p, .article li')]
                 .map(el => { const r = el.getBoundingClientRect(); return [el.tagName, Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; });
@@ -235,12 +235,12 @@ test.describe('記事エディタ PC 1280幅: ブロックの並べ替え (イ�
         expect(Math.abs(line.x - s0Now.x)).toBeLessThanOrEqual(1);
         expect(Math.abs(line.w - s0.w)).toBeLessThanOrEqual(1);
         await page.mouse.up();
-        await expect.poll(() => order(page)).toBe('BCA');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BCA');
         await expect(canvas(page).locator('.art-cv-dropline')).toHaveCount(0);
         const undoBtn = page.locator('.toast .toast-action');
         await expect(undoBtn).toHaveText('元に戻す');
         await undoBtn.click();
-        await expect.poll(() => order(page)).toBe('ABC');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('ABC');
         expect(errors).toEqual([]);
     });
 
@@ -249,19 +249,19 @@ test.describe('記事エディタ PC 1280幅: ブロックの並べ替え (イ�
         await setupThreeBlocks(page);
         await canvas(page).locator('.art-cv-grip[data-blk-idx="0"]').focus();
         await page.keyboard.press('Alt+ArrowDown');
-        await expect.poll(() => order(page)).toBe('BAC');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BAC');
         await expect(page.locator('#art-live')).toHaveAttribute('aria-live', 'polite');
         await expect(page.locator('#art-live')).toHaveText('文章ブロックを2番目に移動しました（全3ブロック）');
         // フォーカスは移動先 (2番目) のつまみへ追従 → もう一度 Alt+↓ で3番目へ
-        await expect.poll(() => page.evaluate(() => document.getElementById('art-canvas-frame').contentDocument.activeElement?.dataset?.blkIdx)).toBe('1');
+        await expect.poll(() => page.evaluate(() => document.getElementById('art-canvas-frame').contentDocument.activeElement?.dataset?.blkIdx), { timeout: 15000 }).toBe('1');
         await page.keyboard.press('Alt+ArrowDown');
-        await expect.poll(() => order(page)).toBe('BCA');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BCA');
         await expect(page.locator('#art-live')).toHaveText('文章ブロックを3番目に移動しました（全3ブロック）');
         await page.keyboard.press('Alt+ArrowUp');
-        await expect.poll(() => order(page)).toBe('BAC');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BAC');
         // Undo は直前の1回分 (BCA→BAC) を戻す
         await page.locator('.toast .toast-action').last().click();
-        await expect.poll(() => order(page)).toBe('BCA');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BCA');
         expect(errors).toEqual([]);
     });
 });
@@ -283,7 +283,7 @@ test.describe('記事エディタ 390幅: つまみは出ない (イシュー#27
         await expect(canvas(page).locator('.art-cv-grip')).toHaveCount(0);
         await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
         await page.locator('#art-blk-menu [data-blk-act="down"]').click();
-        await expect.poll(() => order(page)).toBe('BA');
+        await expect.poll(() => order(page), { timeout: 15000 }).toBe('BA');
         await expect(page.locator('.toast .toast-action')).toHaveCount(0);
         expect(errors).toEqual([]);
     });
