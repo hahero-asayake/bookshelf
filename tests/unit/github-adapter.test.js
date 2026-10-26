@@ -107,6 +107,20 @@ describe('409: リモートで本文が実際に変わっているケース (他
         // 上書き用の PUT は発行されていないこと(2回目のPUTが飛んでいない)を確認
         expect(errorSpy).toHaveBeenCalled();
     });
+
+    it('リモートが削除されていた場合も上書きせず GitHubRemoteChangedError (削除後の無条件再作成を防ぐ・イシュー#381・StorageAdapter.recoverFromConflict共通修正)', async () => {
+        mockFetch([() => contentRes('A', 's1')]);
+        await adapter.readText('p.json'); // _lastKnownContent = 'A' (存在すると認識)
+
+        // write: sha=s1 で PUT → 409。リカバリの GET は「他タブ/他デバイスが削除した」ことを表す404
+        mockFetch([
+            () => putConflictRes(),
+            () => new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 }),
+        ]);
+
+        await expect(adapter.writeText('p.json', 'B')).rejects.toThrow(GitHubRemoteChangedError);
+        expect(errorSpy).toHaveBeenCalled();
+    });
 });
 
 describe('409: リトライしても本当の競合の場合', () => {

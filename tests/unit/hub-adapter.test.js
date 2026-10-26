@@ -138,6 +138,21 @@ describe('write + 楽観ロック', () => {
         expect(putCalls).toBe(1); // 不一致と分かった時点で再送しない (盲目的に上書きしない)
     });
 
+    it('412後、リモートが削除されていた場合も上書きせず HubRemoteChangedError (削除後の無条件再作成を防ぐ・イシュー#381)', async () => {
+        mockFetch({
+            'GET /data/private/del.json': () => res('{"a":1}', 200, { ETag: '"old"' })
+        });
+        await adapter.readJSON('private/del.json'); // _lastKnownContent = '{"a":1}' (存在すると認識)
+        let putCalls = 0;
+        // 412発生後のリカバリGETは「他タブ/他デバイスが削除した」ことを表す404を返す
+        mockFetch({
+            'GET /data/private/del.json': () => res(null, 404),
+            'PUT /data/private/del.json': () => { putCalls += 1; return res('conflict', 412); }
+        });
+        await expect(adapter.writeJSON('private/del.json', { a: 2 })).rejects.toBeInstanceOf(HubRemoteChangedError);
+        expect(putCalls).toBe(1); // 削除されたと分かった時点で再送しない (盲目的に再作成しない・以前は無条件で再送していた)
+    });
+
     it('同一パスへの write/delete は直列化される (連打しても同時に2つ走らない・イシュー#374案D)', async () => {
         let inFlight = 0;
         let maxConcurrent = 0;

@@ -35,7 +35,10 @@ function makeR2() {
         },
         async put(k, body, opts = {}) {
             const o = store.get(k);
-            if (opts.onlyIf && opts.onlyIf.etagMatches !== undefined) {
+            if (opts.onlyIf instanceof Headers) {
+                // If-None-Match:'*' (新規作成専用・イシュー#381)。本番R2と同じ意味: 既に存在すれば失敗(null)。
+                if (opts.onlyIf.get('If-None-Match') === '*' && o) return null;
+            } else if (opts.onlyIf && opts.onlyIf.etagMatches !== undefined) {
                 if (!o || o.etag !== opts.onlyIf.etagMatches) return null; // onlyIf 失敗 (本番 R2 と同じ: null 返却)
             }
             const etag = `e${++seq}`;
@@ -115,6 +118,16 @@ describe('ifNoneMatch:"*" (新規作成)', () => {
         const res = await batch([{ op: 'put', path: 'exists.txt', content: 'hello', ifNoneMatch: '*' }]);
         expect(res.status).toBe(412);
         expect(R2.store.get('data/u1/exists.txt').body).toBe('already-there');
+    });
+    it('段階1/段階2のhead判定が(TOCTOUで)見落としても、onlyIf(If-None-Match:"*")が既存物への作成を412で止める (イシュー#376/#381)', async () => {
+        // 本番実測(#376)で再現したTOCTOU: head()が「存在しない」と見た直後に別タブが作成する窓。
+        // head()を常にnullにして「見落とした」状態を模し、onlyIf単独で排他が効くことを確認する。
+        await R2.put('data/u1/race.txt', 'already-there');
+        const originalHead = R2.head.bind(R2);
+        R2.head = async (k) => (k === 'data/u1/race.txt' ? null : originalHead(k));
+        const res = await batch([{ op: 'put', path: 'race.txt', content: 'new-content', ifNoneMatch: '*' }]);
+        expect(res.status).toBe(412);
+        expect(R2.store.get('data/u1/race.txt').body).toBe('already-there'); // 上書きされていない
     });
     it('delete の ifNoneMatch は無効 (400)', async () => {
         const res = await batch([{ op: 'delete', path: 'a.txt', ifNoneMatch: '*' }]);

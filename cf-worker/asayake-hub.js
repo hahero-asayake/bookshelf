@@ -585,11 +585,16 @@ async function listDir(env, base, rel) {
 //     条件付き entry には onlyIf.etagMatches を付けて書く。途中で onlyIf 失敗 (段階1〜2 間の TOCTOU) し
 //     たら、それまでに書いた entry を逆順に退避内容へ戻し (新規作成分は delete)、usage 差分も戻して
 //     412 を返す。補償自体が失敗したら 409 + partial:true (この回では直せない=要人手介入)。
+// ifNoneMatch:'*' (新規作成) の排他 (2026-10-26 イシュー#381で修正):
+//   当初は段階1/段階2の head 判定のみで「存在しない」を確認しており、head 判定〜実際の put の間に
+//   別タブが新規作成すると TOCTOU で両方が成功する窓があった (#381 本番実測で確定再現=lost update)。
+//   Cloudflare 公式ドキュメント (R2 consistency model, developers.cloudflare.com/r2/reference/consistency/)
+//   に「Competing conditional writes to the same key are serialized」「two concurrent conditional
+//   writes can never both observe success」と明記されており、If-None-Match:'*' の create-only 書込みは
+//   完全同時でも R2 側で直列化される。これに基づき、put() に Headers 経由で onlyIf: If-None-Match:'*'
+//   を付与するよう修正した。head 判定は「よくある非競合ケースで無駄な put を避ける」事前フィルタとして
+//   残す (atomic な保証は onlyIf 側が担う)。
 // 残る窓 (ADR に明記):
-//   - ifNoneMatch:'*' は R2 の onlyIf (etagMatches/etagDoesNotMatch は「指定した値と一致/不一致」の意味
-//     で、対象が存在しない場合の挙動が公式ドキュメントに記載無く未確認) に頼らず、段階1/段階2の head
-//     判定のみで「存在しない」を確認する。段階2 の head 判定〜実際の put の間に別タブが新規作成すると
-//     稀に TOCTOU を検出できない窓が残る (次の head/書込で検出される・lost update ではなく上書き競合)。
 //   - 補償 (ロールバック) 自体が失敗した場合 (R2 側の一時障害等) は中途半端な状態が残り得る。
 async function handleBatch(request, env) {
     await enforceWriteLimit(request, env);
@@ -653,13 +658,14 @@ async function handleBatch(request, env) {
                 await addUsage(env, sess.uid, -head.size);
                 applied.push({ key, prevBody, sizeBefore: head.size, sizeAfter: 0, op: 'delete' });
             } else if (e.op === 'put') {
-                if (wantAbsent && head) { conflictPath = e.path; break; } // 段階1〜2間の窓 (上のコメント参照)
+                if (wantAbsent && head) { conflictPath = e.path; break; } // 非atomicな事前フィルタ(無駄なputを避けるだけ)。atomicな保証はonlyIf側(下記)
                 const content = e.content || '';
                 const size = new TextEncoder().encode(content).length;
                 const putOpts = {};
                 if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
+                else if (wantAbsent) putOpts.onlyIf = new Headers({ 'If-None-Match': '*' }); // R2が同一keyへの競合するIf-None-Match:'*'を直列化する(上のコメント参照)
                 const res = await env.BUCKET.put(key, content, putOpts);
-                if (!res) { conflictPath = e.path; break; } // onlyIf 失敗 (TOCTOU)
+                if (!res) { conflictPath = e.path; break; } // onlyIf 失敗 (TOCTOU、またはifNoneMatch不成立)
                 await addUsage(env, sess.uid, size - (head ? head.size : 0));
                 applied.push({ key, prevBody, sizeBefore: head ? head.size : 0, sizeAfter: size, op: 'put' });
             }

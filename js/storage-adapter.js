@@ -195,9 +195,12 @@ class StorageAdapter {
      * HubStorageAdapter もこれを使う (イシュー#374・案D)。
      *
      * 最新の内容を取り直し、「直前に自分が認識していたリモート内容 (knownContent)」と比較する。
-     *   一致 (= 誰も割り込んでいない。sha/etag キャッシュのズレだけ) → retryPut を1回だけ呼び、
-     *     その戻り値を返す (単なる自分の先行書き込みの再送として成功扱い)。
-     *   不一致 (= 他タブ/他デバイスが実際に内容を変えている) → 盲目的に上書きせず、
+     *   一致 (= 誰も割り込んでいない。sha/etag キャッシュのズレだけ。両者とも null = 相手も
+     *     自分と同じく「存在しない」と認識している、も含む) → retryPut を1回だけ呼び、その戻り値を
+     *     返す (単なる自分の先行書き込みの再送として成功扱い)。
+     *   不一致 (= 他タブ/他デバイスが実際に内容を変えている。相手が削除した結果 latestContent が
+     *     null になるケースも含む・2026-10-26 イシュー#381で修正=以前は latestContent===null を
+     *     無条件で「一致」扱いし、削除されたファイルを盲目的に再作成していた) → 盲目的に上書きせず、
      *     makeRemoteChangedError が作るエラーを投げて中断する (lost update 防止)。
      * retryPut が再び衝突エラーを投げた場合はそのまま呼び出し元へ伝播する (本当の競合)。
      *
@@ -211,7 +214,12 @@ class StorageAdapter {
     static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError }) {
         const latest = await getLatest();
         const latestContent = latest ? latest.content : null;
-        if (latestContent !== null && (knownContent === undefined || latestContent !== knownContent)) {
+        // 以前は `latestContent !== null` を先に見ていたため、相手が削除して latestContent が
+        // null になったケースが素通りして retryPut(null=無条件PUT) に落ち、削除された直後の
+        // ファイルを盲目的に再作成してしまっていた (イシュー#381・バッチ側の同種ギャップと対で修正)。
+        // null同士の一致 (= 相手も「存在しない」ままで、自分の知識と食い違っていない) だけは
+        // そのまま retryPut (= 新規作成の再送) を許す。
+        if (knownContent === undefined || latestContent !== knownContent) {
             throw makeRemoteChangedError(latestContent);
         }
         return retryPut(latest);
