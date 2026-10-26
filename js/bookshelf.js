@@ -8604,6 +8604,49 @@ class VirtualBookshelf {
         }
     }
 
+    /**
+     * 記事単位の公開系操作 (公開/公開取消/削除) を直列化するガード (イシュー#374・案D)。
+     * 同じ記事に対して2回目の呼び出しが来ても何もしない (何も起きないだけで toast も出さない。
+     * 一覧の公開ボタンは呼び出し側で disabled にするのが一次防御・これは連打やダブルクリックに
+     * 対する最後の防波堤)。_runPublishExport の _publishInFlight (処理全体で1本) とは独立に、
+     * 記事ごとの多重実行を防ぐ。
+     * @param {string} id
+     * @param {function():Promise<*>} task
+     */
+    async _artRunExclusive(id, task) {
+        if (!this._artOpInFlight) this._artOpInFlight = new Set();
+        if (this._artOpInFlight.has(id)) return;
+        this._artOpInFlight.add(id);
+        try {
+            return await task();
+        } finally {
+            this._artOpInFlight.delete(id);
+        }
+    }
+
+    /**
+     * export → 失敗時ロールバック、の共通パターン (_artPublishArticle/_artUnpublish/_artDelete の
+     * 3箇所重複を解消・イシュー#374・案D)。published の update 自体は呼び出し元が行う (update成功
+     * 直後に draft/badge へ即時反映するタイミングが関数ごとに異なるため、update はここに含めない)。
+     * ユーザーに見える文言・toast・URL 案内は呼び出し元が組み立てる (ここでは出さない・
+     * 設計書20番ノート§3制約・ADR-041/042＝コアの挙動は変えない)。
+     * @param {string} id
+     * @param {boolean} wasPublished ロールバック先の状態 (呼び出し元が変更前の値を渡す)
+     * @returns {Promise<{ok:true, result:object} | {ok:false, reason:string, error?:Error, rollbackFailed?:boolean}>}
+     */
+    async _artExportOrRollback(id, wasPublished) {
+        const r = await this._runPublishExport();
+        if (r.ok) return { ok: true, result: r.result };
+        let rollbackFailed = false;
+        try {
+            await this.publishArticleStore.update(id, { published: wasPublished });
+        } catch (e) {
+            rollbackFailed = true;
+            console.error('公開状態のロールバックに失敗:', e);
+        }
+        return { ok: false, reason: r.reason, error: r.error, rollbackFailed };
+    }
+
     // C2: ハブ無料プランで初めて公開する時、運営アフィリエイトタグが付く旨を明示し同意を取る。
     // 同意は settings.ackFreeAffiliate に記録し、以後は出さない。Plus は不要(true を返す)。
     // 公開先=github (自前 GitHub Pages) は運営タグを入れないので同意不要(true)。
@@ -8927,8 +8970,24 @@ class VirtualBookshelf {
             ul.querySelectorAll('.pp-row').forEach(row => {
                 const id = row.dataset.id;
                 const bind = (act, fn) => { const b = row.querySelector(`[data-act=${act}]`); if (b) b.addEventListener('click', fn); };
-                bind('publish', () => this._artPublishFromList(id));
-                bind('republish', () => this._artPublishFromList(id));
+                // 連打で同じ記事の公開処理が多重に走らないよう実行中 disabled にする (一次防御・
+                // ui-standards §2-6・イシュー#374案D)。_artRunExclusive (記事単位 in-flight ガード)
+                // は連打以外の経路 (エディタ内の公開等) も含めた最後の防波堤。
+                // 成功/失敗いずれでも _artPublishArticle が最後に _artRenderList() を呼び行ごと
+                // DOM が再生成されるため、通常は disabled=false への戻しも不要 (新しい行は初期状態)。
+                // _ensureFreeAffiliateConsent のキャンセル等、再描画なしで return する早期終了経路の
+                // ためだけに finally で戻す (要素が再生成されていれば isConnected===false で no-op)。
+                const publishBtn = row.querySelector('[data-act="publish"],[data-act="republish"]');
+                const runPublishFromList = async () => {
+                    if (publishBtn) publishBtn.disabled = true;
+                    try {
+                        await this._artPublishFromList(id);
+                    } finally {
+                        if (publishBtn && publishBtn.isConnected) publishBtn.disabled = false;
+                    }
+                };
+                bind('publish', runPublishFromList);
+                bind('republish', runPublishFromList);
                 bind('edit', () => this._artOpenEditor(id));
                 if (notConnected) row.querySelectorAll('button').forEach(b => { b.disabled = true; });
             });
@@ -11383,71 +11442,71 @@ class VirtualBookshelf {
     // opts.draftFlushFailed: 公開直前の下書きリモート反映 (_artFlushRemoteNow) が失敗していた場合に
     // _artPublish から渡される。公開自体の成否とは別に、成功 toast への付記に使う (イシュー#150)。
     async _artPublishArticle(id, { draftFlushFailed = false } = {}) {
-        const article = this.publishArticleStore.get(id);
-        if (!article) return;
-        // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
-        if (!(await this._ensureFreeAffiliateConsent())) return;
-        // S6 (ADR-076): 共有ハブ公開は username が無いと公開URLが確定しない (旧 siteId ベースのまま
-        // 配信され続ける) ため、公開前にブロックして設定を促す。username はハブの概念なので、この
-        // ゲートはハブ公開時のみ (自分の GitHub repo / ローカル書き出しには適用しない)。
-        const pub = this.exporter._resolvePublishConfig();
-        if (pub.target === 'hub') {
-            const hub = (SyncConfigManager.load().hub) || {};
-            if (!hub.username) {
-                await this._confirmOpenSettings('本棚を公開するには、まずユーザー名を設定してください（公開URLに使われます）。設定の「アカウント」で設定できます。', 'account-section');
+        return this._artRunExclusive(id, async () => {
+            const article = this.publishArticleStore.get(id);
+            if (!article) return;
+            // C2: 無料プランの公開では運営(Asayake)のアフィリエイトタグが付く旨を一度だけ明示・同意取得する。
+            if (!(await this._ensureFreeAffiliateConsent())) return;
+            // S6 (ADR-076): 共有ハブ公開は username が無いと公開URLが確定しない (旧 siteId ベースのまま
+            // 配信され続ける) ため、公開前にブロックして設定を促す。username はハブの概念なので、この
+            // ゲートはハブ公開時のみ (自分の GitHub repo / ローカル書き出しには適用しない)。
+            const pub = this.exporter._resolvePublishConfig();
+            if (pub.target === 'hub') {
+                const hub = (SyncConfigManager.load().hub) || {};
+                if (!hub.username) {
+                    await this._confirmOpenSettings('本棚を公開するには、まずユーザー名を設定してください（公開URLに使われます）。設定の「アカウント」で設定できます。', 'account-section');
+                    return;
+                }
+            }
+            // 公開 URL の publicId は初回公開時に1回だけ発番し以後不変 (S6・ADR-076)
+            if (!article.publicId) {
+                try { await this.publishArticleStore.ensurePublicId(id); }
+                catch (e) { toast('公開IDの発行に失敗しました: ' + e.message, { type: 'error' }); return; }
+            }
+            const wasPublished = !!article.published;   // 元の状態 (更新=true / 新規公開=false)
+            try { await this.publishArticleStore.update(id, { published: true }); }
+            catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+            if (this._artEditingId === id) {
+                this._artDraft.published = true;
+                const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = false;
+            }
+            // export→失敗時ロールバックの共通実体 (_artUnpublish/_artDelete と共通化・イシュー#374案D)
+            const r = await this._artExportOrRollback(id, wasPublished);
+            if (!r.ok) {
+                // 失敗時は「元の状態」へ戻す (更新の取り消しで実サイトからの誤消去を防ぐ)
+                if (r.rollbackFailed) {
+                    toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                }
+                if (this._artEditingId === id) {
+                    this._artDraft.published = wasPublished;
+                    const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !wasPublished;
+                }
+                this._artRenderList();
                 return;
             }
-        }
-        // 公開 URL の publicId は初回公開時に1回だけ発番し以後不変 (S6・ADR-076)
-        if (!article.publicId) {
-            try { await this.publishArticleStore.ensurePublicId(id); }
-            catch (e) { toast('公開IDの発行に失敗しました: ' + e.message, { type: 'error' }); return; }
-        }
-        const wasPublished = !!article.published;   // 元の状態 (更新=true / 新規公開=false)
-        try { await this.publishArticleStore.update(id, { published: true }); }
-        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        if (this._artEditingId === id) {
-            this._artDraft.published = true;
-            const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = false;
-        }
-        const r = await this._runPublishExport();
-        if (!r.ok) {
-            // 失敗時は「元の状態」へ戻す (更新の取り消しで実サイトからの誤消去を防ぐ)
-            try {
-                await this.publishArticleStore.update(id, { published: wasPublished });
-            } catch (e) {
-                toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
-                console.error('公開失敗時のロールバックに失敗:', e);
-            }
-            if (this._artEditingId === id) {
-                this._artDraft.published = wasPublished;
-                const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !wasPublished;
-            }
+            // lastBuiltAt 更新は _runPublishExport → _exportToGitHub/_exportToHub 内で対象記事も含め
+            // 全公開記事分まとめて1回だけ行う (イシュー#150: ここで再度 update() していたのは exporter 側
+            // と同じ書き込みの二重実行=公開1回でarticles.jsonへの書込が連続することが409の発生確率を
+            // 上げていたため一本化して削除。#104 の console.error は exporter.js 側に残っている)。
+            const lastBuiltAtFailed = !!r.result.lastBuiltAtFailed;
+            // ui-standards §2-11: 公開自体が成功した以上、付随する記録の失敗は独立したエラー toast に
+            // せず、成功 toast に「何が起きたか」を付記して 1 本化する (イシュー#150。公開成功なのに
+            // 「保存できませんでした」エラー toast が後から出て上書きし、公開失敗と誤認させていた再発)。
+            const notes = [];
+            if (draftFlushFailed) notes.push('直前の編集内容の保存に失敗しました。もう一度保存し直してください。');
+            if (lastBuiltAtFailed) notes.push('公開日時の記録に失敗しました（表示には影響ありません。しばらくしてからもう一度保存すると解消します）。');
+            const noteSummary = notes.length > 0 ? `\n（${notes.join(' ')}）` : '';
+            const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
+            // この記事自身の URL を案内する (イシュー#152: siteUrl はサイトのトップで記事へ直接飛べなかった)。
+            // 長文メモ読込失敗等でこの記事が生成対象から除外されていた場合は articles に含まれないため、
+            // その時だけサイトのトップへフォールバックする (errSummary の注意件数で気づける)。
+            const published = (r.result.articles || []).find(a => a.id === id);
+            const publishUrl = published ? this._artArticleUrl(r.result.siteUrl, published.publicId) : r.result.siteUrl;
+            toast(`「${article.title}」を公開しました。\n公開 URL: ${publishUrl}${errSummary}${noteSummary}`, { type: 'success' });
             this._artRenderList();
-            return;
-        }
-        // lastBuiltAt 更新は _runPublishExport → _exportToGitHub/_exportToHub 内で対象記事も含め
-        // 全公開記事分まとめて1回だけ行う (イシュー#150: ここで再度 update() していたのは exporter 側
-        // と同じ書き込みの二重実行=公開1回でarticles.jsonへの書込が連続することが409の発生確率を
-        // 上げていたため一本化して削除。#104 の console.error は exporter.js 側に残っている)。
-        const lastBuiltAtFailed = !!r.result.lastBuiltAtFailed;
-        // ui-standards §2-11: 公開自体が成功した以上、付随する記録の失敗は独立したエラー toast に
-        // せず、成功 toast に「何が起きたか」を付記して 1 本化する (イシュー#150。公開成功なのに
-        // 「保存できませんでした」エラー toast が後から出て上書きし、公開失敗と誤認させていた再発)。
-        const notes = [];
-        if (draftFlushFailed) notes.push('直前の編集内容の保存に失敗しました。もう一度保存し直してください。');
-        if (lastBuiltAtFailed) notes.push('公開日時の記録に失敗しました（表示には影響ありません。しばらくしてからもう一度保存すると解消します）。');
-        const noteSummary = notes.length > 0 ? `\n（${notes.join(' ')}）` : '';
-        const errSummary = r.result.errors.length > 0 ? `\n(注意 ${r.result.errors.length} 件)` : '';
-        // この記事自身の URL を案内する (イシュー#152: siteUrl はサイトのトップで記事へ直接飛べなかった)。
-        // 長文メモ読込失敗等でこの記事が生成対象から除外されていた場合は articles に含まれないため、
-        // その時だけサイトのトップへフォールバックする (errSummary の注意件数で気づける)。
-        const published = (r.result.articles || []).find(a => a.id === id);
-        const publishUrl = published ? this._artArticleUrl(r.result.siteUrl, published.publicId) : r.result.siteUrl;
-        toast(`「${article.title}」を公開しました。\n公開 URL: ${publishUrl}${errSummary}${noteSummary}`, { type: 'success' });
-        this._artRenderList();
-        if (this._artEditingId === id) this._artRefreshPublishBadge(); // U1: lastBuiltAt 更新を受けて「未反映の変更あり」を消す
-        return publishUrl;
+            if (this._artEditingId === id) this._artRefreshPublishBadge(); // U1: lastBuiltAt 更新を受けて「未反映の変更あり」を消す
+            return publishUrl;
+        });
     }
 
     async _artPublish() {
@@ -11639,68 +11698,69 @@ class VirtualBookshelf {
 
     // 記事の公開を取り消す (published=false にして再 push → 削除同期で実サイトから消える)
     async _artUnpublish(id) {
-        const article = this.publishArticleStore.get(id);
-        if (!article) return;
-        const ok = await confirmDialog({
-            title: '公開を取り消す',
-            message: `「${article.title}」を公開サイトから削除します。\n（他の公開中記事はそのまま残ります）`,
-            okLabel: '公開を取り消す', danger: true
-        });
-        if (!ok) return;
-        try { await this.publishArticleStore.update(id, { published: false }); }
-        catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
-        const r = await this._runPublishExport();
-        if (!r.ok) {
-            try {
-                await this.publishArticleStore.update(id, { published: true });
-            } catch (e) {
-                toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
-                console.error('公開取消失敗時のロールバックに失敗:', e);
+        return this._artRunExclusive(id, async () => {
+            const article = this.publishArticleStore.get(id);
+            if (!article) return;
+            const ok = await confirmDialog({
+                title: '公開を取り消す',
+                message: `「${article.title}」を公開サイトから削除します。\n（他の公開中記事はそのまま残ります）`,
+                okLabel: '公開を取り消す', danger: true
+            });
+            if (!ok) return;
+            try { await this.publishArticleStore.update(id, { published: false }); }
+            catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return; }
+            // export→失敗時ロールバックの共通実体 (_artPublishArticle/_artDelete と共通化・イシュー#374案D)
+            const r = await this._artExportOrRollback(id, true);
+            if (!r.ok) {
+                if (r.rollbackFailed) {
+                    toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                }
+                this._artRenderList();
+                return;
             }
+            if (this._artEditingId === id) {
+                this._artDraft.published = false;
+                const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = true;
+            }
+            toast(`「${article.title}」の公開を取り消しました。`, { type: 'success' });
             this._artRenderList();
-            return;
-        }
-        if (this._artEditingId === id) {
-            this._artDraft.published = false;
-            const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = true;
-        }
-        toast(`「${article.title}」の公開を取り消しました。`, { type: 'success' });
-        this._artRenderList();
+        });
     }
 
     async _artDelete(id) {
-        const a = this.publishArticleStore.get(id);
-        // 公開中の記事の削除 (ADR-099): ハブ公開なら公開を取り消して再 push してから削除する (R2 と索引から即座に消える)。
-        // 自前公開 (GitHub) は従来どおり記事だけ削除し、公開先のページは次回公開まで残る (ハブは自前公開を管理しない)。
-        const wasPublished = !!(a && a.published);
-        const viaHub = wasPublished && this.exporter._resolvePublishConfig().target === 'hub';
-        const note = viaHub ? '\n公開中のページも公開サイトから取り下げます。'
-            : (wasPublished ? '\n公開先のページは次回公開まで残ります。' : '');
-        const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。${note}`, okLabel: '削除', danger: true });
-        if (!ok) return false;
-        if (viaHub) {
-            // _artUnpublish と同じ順序: published=false にして再 push。失敗したら公開状態を戻し、記事は削除しない。
-            try { await this.publishArticleStore.update(id, { published: false }); }
-            catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return false; }
-            const r = await this._runPublishExport();
-            if (!r.ok) {
-                try { await this.publishArticleStore.update(id, { published: true }); }
-                catch (e) {
-                    toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
-                    console.error('記事削除の公開取消失敗時のロールバックに失敗:', e);
+        return this._artRunExclusive(id, async () => {
+            const a = this.publishArticleStore.get(id);
+            // 公開中の記事の削除 (ADR-099): ハブ公開なら公開を取り消して再 push してから削除する (R2 と索引から即座に消える)。
+            // 自前公開 (GitHub) は従来どおり記事だけ削除し、公開先のページは次回公開まで残る (ハブは自前公開を管理しない)。
+            const wasPublished = !!(a && a.published);
+            const viaHub = wasPublished && this.exporter._resolvePublishConfig().target === 'hub';
+            const note = viaHub ? '\n公開中のページも公開サイトから取り下げます。'
+                : (wasPublished ? '\n公開先のページは次回公開まで残ります。' : '');
+            const ok = await confirmDialog({ title: '記事を削除', message: `「${a ? a.title : ''}」を削除します。${note}`, okLabel: '削除', danger: true });
+            if (!ok) return false;
+            if (viaHub) {
+                // _artUnpublish と同じ順序: published=false にして再 push。失敗したら公開状態を戻し、記事は削除しない。
+                try { await this.publishArticleStore.update(id, { published: false }); }
+                catch (e) { toast('保存に失敗: ' + e.message, { type: 'error' }); return false; }
+                // export→失敗時ロールバックの共通実体 (_artPublishArticle/_artUnpublish と共通化・イシュー#374案D)
+                const r = await this._artExportOrRollback(id, true);
+                if (!r.ok) {
+                    if (r.rollbackFailed) {
+                        toast('公開状態の復元に失敗しました。記事一覧の表示と実際の公開状態が食い違っている可能性があります。', { type: 'error' });
+                    }
+                    this._artRenderList();
+                    return false;
                 }
-                this._artRenderList();
+            }
+            try {
+                await this.publishArticleStore.remove(id);
+            } catch (e) {
+                toast('削除できませんでした。保存先への接続を確認してください。', { type: 'error' });
+                console.error('記事の削除に失敗:', e);
                 return false;
             }
-        }
-        try {
-            await this.publishArticleStore.remove(id);
-        } catch (e) {
-            toast('削除できませんでした。保存先への接続を確認してください。', { type: 'error' });
-            console.error('記事の削除に失敗:', e);
-            return false;
-        }
-        return true;
+            return true;
+        });
     }
 
     async _artDuplicate(id) {
