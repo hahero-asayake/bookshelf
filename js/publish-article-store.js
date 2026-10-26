@@ -324,7 +324,16 @@ class PublishArticleStore {
         if (patch.published !== undefined) article.published = !!patch.published;
         if (patch.lastBuiltAt !== undefined) article.lastBuiltAt = patch.lastBuiltAt;
         if (patch.ogHash !== undefined) article.ogHash = patch.ogHash;
-        article.updatedAt = Date.now();
+        // イシュー#384 (②実機確認): lastBuiltAt・ogHash は公開処理の記録用フィールドで、ユーザーの
+        // 編集ではない。exporter.js は公開コミット後に now=Date.now() を1回だけ取り、各記事へ
+        // update(id, { lastBuiltAt: now, ogHash }) をループで呼ぶ (記事が複数あるほど後の記事ほど
+        // 時間が経つ)。ここで無条件に updatedAt=Date.now() を書き換えると、その取得時点のほうが
+        // now よりわずかに後になり updatedAt > lastBuiltAt (stale=true・「公開中・未反映の変更あり」)
+        // に先回りして化ける (負荷が無くても起き得る決定的なバグ・実機で確認済み)。記録用フィールド
+        // だけの更新では updatedAt を進めない。
+        const RECORD_ONLY_KEYS = new Set(['lastBuiltAt', 'ogHash']);
+        const touchesUserField = Object.keys(patch).some((k) => !RECORD_ONLY_KEYS.has(k));
+        if (touchesUserField) article.updatedAt = Date.now();
         this._dirty = true;
         if (persist) await this._persist();
         return article;

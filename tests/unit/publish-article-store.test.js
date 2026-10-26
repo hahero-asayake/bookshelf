@@ -555,3 +555,69 @@ describe('publicId (公開URLの発番, S6・ADR-076・09_公開システム設�
         await expect(as.ensurePublicId('nope')).rejects.toThrow(/見つかりません/);
     });
 });
+
+// イシュー#384 (②実機確認): exporter.js は公開処理の先頭で now=Date.now() を1回だけ取り、
+// 各記事へ update(id, { lastBuiltAt: now, ogHash }) をループで呼ぶ (記事が複数あるほど後の
+// 記事ほどループ処理に時間がかかり now との差が開く)。update() が patch の内容に関わらず
+// 無条件で updatedAt=Date.now() を書き換えていたため、この now 取得から update() 内の
+// Date.now() 呼び出しまでの間に1msでも経過すると updatedAt > lastBuiltAt (stale=true・
+// 「公開中・未反映の変更あり」) に先回りして化けてしまう (負荷が無くても起き得る)。
+describe('lastBuiltAt/ogHash のみの更新は updatedAt を進めない (イシュー#384)', () => {
+    it('lastBuiltAt だけの更新で Date.now が進んでも updatedAt は不変', async () => {
+        const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+        const a = await as.create({ title: 'x' });
+        expect(a.updatedAt).toBe(1000);
+
+        nowSpy.mockReturnValue(1050); // 公開処理に50ms掛かった想定
+        const publishedAt = 1010; // exporter.js が公開処理の先頭で取った now (update() 呼び出し時点のDate.nowより前)
+        await as.update(a.id, { lastBuiltAt: publishedAt, ogHash: 'abc123' });
+
+        const got = as.get(a.id);
+        expect(got.lastBuiltAt).toBe(publishedAt);
+        // 修正前はここが Date.now()=1050 に書き換わり、updatedAt(1050) > lastBuiltAt(1010) で stale 化していた。
+        expect(got.updatedAt).toBe(1000);
+        expect(got.updatedAt).toBeLessThanOrEqual(got.lastBuiltAt);
+        nowSpy.mockRestore();
+    });
+
+    it('記事2本をforループで順にlastBuiltAt更新しても、後の記事ほどstale化しない (exporter.jsのループを模す)', async () => {
+        const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(2000);
+        const a1 = await as.create({ title: '記事1' });
+        const a2 = await as.create({ title: '記事2' });
+
+        // exporter.js: 公開コミット完了後に now を1回だけ取得
+        const now = 2100;
+        nowSpy.mockReturnValue(2100);
+        // forループ1件目 (すぐ呼ばれる想定)
+        await as.update(a1.id, { lastBuiltAt: now, ogHash: 'h1' });
+        // forループ2件目: 1件目のawait(永続化I/O等)で10ms経過した想定
+        nowSpy.mockReturnValue(2110);
+        await as.update(a2.id, { lastBuiltAt: now, ogHash: 'h2' });
+
+        const got1 = as.get(a1.id);
+        const got2 = as.get(a2.id);
+        expect(got1.updatedAt).toBe(2000);
+        expect(got2.updatedAt).toBe(2000); // 修正前はここが2110に書き換わり、2110 > lastBuiltAt(2100) で2本目だけstale化していた
+        expect(got1.updatedAt).toBeLessThanOrEqual(got1.lastBuiltAt);
+        expect(got2.updatedAt).toBeLessThanOrEqual(got2.lastBuiltAt);
+        nowSpy.mockRestore();
+    });
+
+    it('title等のユーザー編集フィールドを含む更新ではupdatedAtは従来どおり進む (回帰確認)', async () => {
+        const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(3000);
+        const a = await as.create({ title: 'x' });
+        nowSpy.mockReturnValue(3050);
+        await as.update(a.id, { title: '編集後タイトル' });
+        expect(as.get(a.id).updatedAt).toBe(3050);
+        nowSpy.mockRestore();
+    });
+
+    it('published だけの更新ではupdatedAtは従来どおり進む (②指示: published切替の扱いは今回変更しない)', async () => {
+        const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(4000);
+        const a = await as.create({ title: 'x' });
+        nowSpy.mockReturnValue(4050);
+        await as.update(a.id, { published: true });
+        expect(as.get(a.id).updatedAt).toBe(4050);
+        nowSpy.mockRestore();
+    });
+});
