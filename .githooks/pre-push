@@ -1,0 +1,44 @@
+#!/bin/sh
+# bookshelf push前ゲート（イシュー#375）。
+#
+# 有効化するには: git config core.hooksPath .githooks
+# （未設定の間はgitから呼ばれない＝このファイルを置くだけでは何も変わらない）
+#
+# origin/main への push だけを検査する。各commitのIssue trailerを
+# scripts/git/push-gate.mjs で判定し、他イシューのcommitが混ざっていれば止める。
+#
+# 逃げ道: git push --no-verify ... でこのhook自体を素通しできる（人間の手動操作用）。
+#
+# 注意: pre-pushフックはリポジトリの作業ツリールートがcwdで実行される
+# （git標準の挙動）ため、scripts/git/push-gate.mjs は相対パスで参照できる。
+
+NODE_BIN="node"
+if ! command -v node >/dev/null 2>&1; then
+  # nodeがPATHに無い環境向けのフォールバック（projects/bookshelf.mdの既知の罠）。
+  NODE_BIN="/home/sei/.nvm/versions/node/v24.18.0/bin/node"
+fi
+
+zero="0000000000000000000000000000000000000000"
+blocked=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_sha" ] && continue
+  [ "$local_sha" = "$zero" ] && continue  # ブランチ削除push（検査対象外）
+
+  case "$remote_ref" in
+    refs/heads/main) ;;
+    *) continue ;;  # main以外へのpushはこのゲートの対象外
+  esac
+
+  if [ "$remote_sha" = "$zero" ]; then
+    range="origin/main..$local_sha"  # 新規ブランチからmainへ初push相当
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  if ! "$NODE_BIN" scripts/git/push-gate.mjs "$range"; then
+    blocked=1
+  fi
+done
+
+exit "$blocked"
