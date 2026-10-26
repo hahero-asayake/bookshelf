@@ -16,7 +16,8 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
     // UA分岐で別バナーが出て縦位置がずれ、同条件での再現が崩れたため、ここで上書きして実測と揃える。
     test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, userAgent: undefined });
 
-    test('本800冊を高速スクロール直後、表紙(.book-cover-container)が全カードで描画される', async ({ page, context }) => {
+    // 本800冊で起動し、見切れ検知用のアダプタ差し替えまで済ませた page を返す共通セットアップ。
+    async function setupPage(page, context) {
         const fixtureUserData = JSON.parse(readFileSync('tests/fixtures/fixture-userdata.json', 'utf-8'));
         const books = Array.from({ length: 800 }, (_, i) => {
             const n = i + 1; const asin = `B${String(n).padStart(9, '0')}`;
@@ -46,9 +47,11 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
             bs._isSyncReady = () => true;
         });
         mkdirSync('tmp/373/e2e-shots', { recursive: true });
+    }
 
-        // WebKit のペイント欠落は毎回必ず出るわけではない(実測で単発なら見逃すことがあった)ため、
-        // 「スクロール→即スクショ」を場所を変えながら8周し、どれか1回でも平坦(見切れ)が出たら落とす。
+    // 「スクロール→即スクショ→上端行の表紙を標準偏差で判定」をROUNDS周やり、1回でも見切れたら
+    // そのラウンドをflaggedへ積む共通ロジック(#379 step4: 新規ケース追加のため関数化・判定方法は不変)。
+    async function flingAndDetect(page, label) {
         const ROUNDS = 8;
         const flagged = [];
         for (let round = 0; round < ROUNDS; round++) {
@@ -64,7 +67,7 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
             // 判定1 (本丸・画素): スクロール直後、他の評価を一切挟まず即座にスクリーンショットを撮る
             // (boundingBox() 等のジオメトリ問い合わせを先に行うと強制レイアウトでペイント欠落が消えて
             // しまうため、画素を見る判定は必ずスクリーンショットを一番先に取る)。
-            const shotPath = `tmp/373/e2e-shots/${test.info().project.name}-r${round}-${Date.now()}.png`;
+            const shotPath = `tmp/373/e2e-shots/${test.info().project.name}-${label}-r${round}-${Date.now()}.png`;
             await page.screenshot({ path: shotPath });
 
             // スクリーンショットは取り終えたので、ここから先のジオメトリ問い合わせは安全。画面上端の行
@@ -97,7 +100,28 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
             }
 
         }
+        return { flagged, ROUNDS };
+    }
+
+    test('本800冊を高速スクロール直後、表紙(.book-cover-container)が全カードで描画される', async ({ page, context }) => {
+        await setupPage(page, context);
+        const { flagged, ROUNDS } = await flingAndDetect(page, 'fresh');
         expect(flagged, `${ROUNDS}周中に見切れ(平坦な表紙帯)が検出された行: ${JSON.stringify(flagged, null, 1)}`).toEqual([]);
+    });
+
+    // #379 step4 (②指示): 子(.book-item)側のcontent-visibilityをホーム表示中にhiddenへ切り替える
+    // 変更を入れたため、「ホーム→本棚に戻った直後」に切り替え直後の描画遅延が出ないかを別途確認する。
+    test('本棚→ホーム→本棚、と戻った直後に高速スクロールしても表紙が全カードで描画される', async ({ page, context }) => {
+        await setupPage(page, context);
+        await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
+        await page.waitForTimeout(200);
+        await page.evaluate(() => { if (window.bookshelf.router) window.bookshelf._navigateFromUi('main'); else window.bookshelf._setBodyView('main'); });
+        await page.waitForTimeout(200);
+        // ホーム→本棚へ戻った直後(他の操作を挟まない)に即フリックする。子の content-visibility が
+        // hidden→auto に戻った直後の描画が追いつくかをここで見る。
+        await page.evaluate(() => { if (window.bookshelf.router) window.bookshelf._navigateFromUi('bookshelf', 'all'); else window.bookshelf.switchBookshelf('all'); });
+        const { flagged, ROUNDS } = await flingAndDetect(page, 'back-from-home');
+        expect(flagged, `${ROUNDS}周中(ホーム→本棚に戻った直後)に見切れ(平坦な表紙帯)が検出された行: ${JSON.stringify(flagged, null, 1)}`).toEqual([]);
     });
 });
 

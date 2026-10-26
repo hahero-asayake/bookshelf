@@ -459,7 +459,12 @@ body.right-collapsed  { --right-col: 0px; }
    .view-bookshelf 自体は JS 側 (_setBodyView) で ホーム表示中 inert を付け、フォーカス/クリック/
    スクリーンリーダーの対象から外す (display:none 相当のアクセシビリティ挙動を維持)。
    WebKitのフリック再現(tests/e2e/bookshelf-clip-373.spec.js)で検証し、本番投入前に実測値を
-   tmp/373/perf.mdに記載する。 */
+   tmp/373/perf.mdに記載する。
+   追記(イシュー#379 step4): 上記の「transformはレイアウトを再計算しない」はこの要素自身の
+   ボックスには当たるが、子の.book-item個々がcontent-visibility:autoを持つため、子のジオメトリ
+   判定自体はホーム表示中も走り続け、#371が消したコストの大半が戻っていた(実測+21.7ms・
+   tmp/379/trace-compare.md)。直し方は「H2-7 本一覧の描画仮想化」コメントの直後
+   (body.app-view-main .view-bookshelf .book-item) を参照。 */
 .view-bookshelf { display: none; } /* bodyにapp-view-*が付く前(起動直後)だけの初期値 */
 body.app-view-main .view-bookshelf {
     display: block !important;
@@ -2672,6 +2677,21 @@ html.bs-likely-has-data #dashboard-welcome {
 .bookshelf.view-images .book-item {
     content-visibility: auto;
     contain-intrinsic-size: auto var(--book-height);
+}
+/* イシュー#379 step4 (案C): ホーム表示中だけ .book-item 個々を content-visibility:hidden にする。
+   経緯 — #371(884f97a) は親(.view-bookshelf)に content-visibility:hidden を付けて裏置き中の
+   800枚のレイアウトを丸ごとスキップしていたが、#373(10876a6/ea6c062・上の「View 切替」コメント参照)
+   がWebKit見切れ対策で親からcontent-visibilityを外しtransform単体にしたところ、各カード自身の
+   content-visibility:auto (直前のH2-7コメント) がホーム表示中もジオメトリ判定のためレイアウトを
+   要求し続け、#371が消したはずのコストが戻っていた(#379 step1/3で実測確認・tmp/379/step3-proposal.md)。
+   ここでは「親を丸ごと止める」のではなく「個々のカードのcontent-visibilityの値をautoからhiddenへ
+   直接上書きする」ことで、#373が直した「親のcontent-visibility切替とWebKitの描画の競合」という
+   経路そのものを通らないようにしている(親は#373のままtransformのみ・一切変更なし)。
+   bookshelf-clip-373.spec.js (webkit) で「ホーム→本棚に戻った直後」のケースを含めて検証済み
+   (#379 step4)。将来、同種の「裏に置いて軽く隠す」要件が増えた場合は、ここの経緯を読んでから
+   content-visibility の親子どちらに手を入れるべきかを再検討すること(再発明を避ける)。 */
+body.app-view-main .view-bookshelf .book-item {
+    content-visibility: hidden !important;
 }
 
 
