@@ -25,6 +25,17 @@ function gitLog(range) {
   try {
     return execFileSync('git', ['log', '--format=' + format, range], { encoding: 'utf8' });
   } catch (err) {
+    const detail = (err.stderr != null ? String(err.stderr) : '') + ' ' + (err.message || '');
+    // pre-pushのremote shaは「サーバー側の実際の現在値」を指すことがあり、ローカルが
+    // まだfetchしていないオブジェクトだと range が解決できず git log 自体が fatal になる
+    // （典型例: 別のpushが割り込んでリモートが先行したまま、fetchせずpushし直した場合）。
+    // これは「混入判定ができない」であって「混入している」ではない＝判定を保留して
+    // 通常のgit push処理（non-fast-forwardでの拒否等）に委ねる。
+    if (/invalid revision range|bad revision|unknown revision/i.test(detail)) {
+      const e = new Error(`range ${range} を解決できない（リモートの最新commitを未fetch）`);
+      e.unresolvable = true;
+      throw e;
+    }
     throw new Error(`git log ${range} に失敗: ${err.message}`);
   }
 }
@@ -111,6 +122,10 @@ function main() {
   try {
     raw = gitLog(range);
   } catch (err) {
+    if (err.unresolvable) {
+      console.log(`[push-gate] ${err.message}。混入判定を保留し、pushの成否はgitの通常処理（non-fast-forward拒否等）に委ねる。`);
+      process.exit(0);
+    }
     console.error(`[push-gate] ${err.message}`);
     process.exit(2);
   }
