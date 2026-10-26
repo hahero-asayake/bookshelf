@@ -169,6 +169,8 @@ describe('write + 楽観ロック', () => {
             'GET /data/private/n.json': ({ init }) => { caches.push(init.cache); return res('{}', 200, { ETag: '"a"' }); },
             'PUT /data/private/n.json': ({ init }) => { caches.push(init.cache); return res(null, 200, { ETag: '"b"' }); },
             'DELETE /data/private/n.json': ({ init }) => { caches.push(init.cache); return res(null, 204); },
+            // delete で ETag キャッシュが消えている (イシュー#376: commitBatch の期待ETag事前確定で HEAD を叩く)
+            'HEAD /data/private/n.json': ({ init }) => { caches.push(init.cache); return res(null, 404); },
             'POST /data/batch': ({ init }) => { caches.push(init.cache); return res(null, 200); }
         });
         await adapter.readJSON('private/n.json');
@@ -177,7 +179,7 @@ describe('write + 楽観ロック', () => {
         adapter.beginBatch();
         adapter.addBatchEntry('private/n.json', '{}');
         await adapter.commitBatch();
-        expect(caches.length).toBe(4);
+        expect(caches.length).toBe(5);
         expect(caches.every((c) => c === 'no-store')).toBe(true);
     });
 
@@ -217,27 +219,73 @@ describe('delete', () => {
     });
 });
 
-describe('batch', () => {
-    it('put/delete をまとめて POST /data/batch、成功で ETag キャッシュをクリア', async () => {
+describe('batch: 期待ETag(ifMatch/ifNoneMatch)の付与 (イシュー#376)', () => {
+    it('_etagCache に値があればそれを ifMatch として送る (追加の通信無し)', async () => {
         let sentBody;
         mockFetch({ 'POST /data/batch': ({ init }) => { sentBody = JSON.parse(init.body); return res(null, 200); } });
         adapter._etagCache.set('private/library.json', '"old"');
         adapter.beginBatch();
         adapter.addBatchEntry('private/library.json', '{"v":1}');
-        adapter.addBatchDelete('private/old.json');
         await adapter.commitBatch();
-        expect(sentBody.entries).toEqual([
-            { op: 'put', path: 'private/library.json', content: '{"v":1}' },
-            { op: 'delete', path: 'private/old.json' }
-        ]);
+        expect(sentBody.entries).toEqual([{ op: 'put', path: 'private/library.json', content: '{"v":1}', ifMatch: '"old"' }]);
         expect(adapter._etagCache.size).toBe(0);
     });
 
-    it('batch 412/409 は HubConflictError', async () => {
-        mockFetch({ 'POST /data/batch': () => res('conflict', 409) });
+    it('キャッシュ無しの entry は単発 _writeOnce と同じく HEAD で事前確定する: 既存ファイルなら ifMatch', async () => {
+        let sentBody;
+        mockFetch({
+            'HEAD /data/private/old.json': () => res(null, 200, { ETag: '"o1"' }),
+            'POST /data/batch': ({ init }) => { sentBody = JSON.parse(init.body); return res(null, 200); }
+        });
         adapter.beginBatch();
-        adapter.addBatchEntry('private/a.json', '1');
-        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(HubConflictError);
+        adapter.addBatchDelete('private/old.json');
+        await adapter.commitBatch();
+        expect(sentBody.entries).toEqual([{ op: 'delete', path: 'private/old.json', ifMatch: '"o1"' }]);
+    });
+
+    it('キャッシュ無しの新規 put (HEAD 404) は ifNoneMatch:"*" を送る', async () => {
+        let sentBody;
+        mockFetch({
+            'HEAD /data/private/new.json': () => res(null, 404),
+            'POST /data/batch': ({ init }) => { sentBody = JSON.parse(init.body); return res(null, 200); }
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/new.json', '{"v":1}');
+        await adapter.commitBatch();
+        expect(sentBody.entries).toEqual([{ op: 'put', path: 'private/new.json', content: '{"v":1}', ifNoneMatch: '*' }]);
+    });
+
+    it('削除対象がキャッシュ無し・HEAD 404 (既に無い) ならそのentryを送らず除外する (単発 deleteFile の404=成功扱いと同じ)', async () => {
+        let posted = false;
+        mockFetch({
+            'HEAD /data/private/gone.json': () => res(null, 404),
+            'POST /data/batch': () => { posted = true; return res(null, 200); }
+        });
+        adapter.beginBatch();
+        adapter.addBatchDelete('private/gone.json');
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(posted).toBe(false); // 全entry除外→ POST 自体しない
+    });
+
+    it('事前HEADは最大6本まで並行実行する (件数の多いバッチの往復レイテンシ対策・イシュー#376 ②指示2026-10-26)', async () => {
+        let inFlight = 0;
+        let maxConcurrent = 0;
+        const routes = { 'POST /data/batch': () => res(null, 200) };
+        for (let i = 1; i <= 7; i++) {
+            routes[`HEAD /data/private/h${i}.json`] = async () => {
+                inFlight += 1;
+                maxConcurrent = Math.max(maxConcurrent, inFlight);
+                await new Promise((r) => setTimeout(r, 5));
+                inFlight -= 1;
+                return res(null, 404);
+            };
+        }
+        mockFetch(routes);
+        adapter.beginBatch();
+        for (let i = 1; i <= 7; i++) adapter.addBatchEntry(`private/h${i}.json`, 'x');
+        await adapter.commitBatch();
+        expect(maxConcurrent).toBeLessThanOrEqual(6); // BATCH_HEAD_CONCURRENCY を超えない
+        expect(maxConcurrent).toBeGreaterThan(1); // 逐次(=1)ではなく並行していること
     });
 
     it('空バッチは何もしない', async () => {
@@ -245,6 +293,106 @@ describe('batch', () => {
         adapter.beginBatch();
         expect(await adapter.commitBatch()).toBeNull();
         expect(fn).not.toHaveBeenCalled();
+    });
+});
+
+describe('batch: 412 (衝突) の回復 — 単発 _recoverFromConflictAndRetry と同じ意味に揃える (イシュー#376)', () => {
+    it('conflicts の本文が自分が送ろうとした内容と一致: 既に反映済みとして成功扱い (再送しない)', async () => {
+        let postCalls = 0;
+        mockFetch({
+            'HEAD /data/private/a.json': () => res(null, 404),
+            'POST /data/batch': ({ init }) => {
+                postCalls += 1;
+                if (postCalls === 1) {
+                    expect(JSON.parse(init.body).entries).toEqual([{ op: 'put', path: 'private/a.json', content: '{"v":1}', ifNoneMatch: '*' }]);
+                    return res(JSON.stringify({ error: 'etag mismatch', conflicts: [{ path: 'private/a.json', etag: '"e1"' }] }), 412);
+                }
+                throw new Error('本文一致で成功扱いのはずなので再送されてはいけない');
+            },
+            'GET /data/private/a.json': () => res('{"v":1}', 200, { ETag: '"e1"' }) // 既に (自分の先行書込等で) 同じ内容がある
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/a.json', '{"v":1}');
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(postCalls).toBe(1);
+    });
+
+    it('conflicts の本文が自分の knownContent と一致: 単なるETagキャッシュのズレとして新ETagで1回だけ再送する', async () => {
+        mockFetch({ 'GET /data/private/b.json': () => res('{"v":0}', 200, { ETag: '"stale"' }) });
+        await adapter.readJSON('private/b.json'); // _lastKnownContent = '{"v":0}'
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/b.json', '{"v":1}');
+        let postCalls = 0;
+        mockFetch({
+            'POST /data/batch': ({ init }) => {
+                postCalls += 1;
+                const body = JSON.parse(init.body);
+                if (postCalls === 1) {
+                    expect(body.entries[0].ifMatch).toBe('"stale"');
+                    return res(JSON.stringify({ conflicts: [{ path: 'private/b.json', etag: '"stale"' }] }), 412);
+                }
+                expect(body.entries[0].ifMatch).toBe('"fresh"');
+                return res(null, 200);
+            },
+            'GET /data/private/b.json': () => res('{"v":0}', 200, { ETag: '"fresh"' }) // リモートは自分が最後に認識した内容のまま
+        });
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(postCalls).toBe(2);
+    });
+
+    it('conflicts の本文が自分の認識と異なる (他タブ/他デバイスが実際に変更): 上書きせず HubRemoteChangedError', async () => {
+        mockFetch({
+            'HEAD /data/private/c.json': () => res(null, 404),
+            'POST /data/batch': () => res(JSON.stringify({ conflicts: [{ path: 'private/c.json', etag: '"other"' }] }), 412),
+            'GET /data/private/c.json': () => res('{"v":999}', 200, { ETag: '"other"' })
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/c.json', '{"v":1}');
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(HubRemoteChangedError);
+    });
+
+    it('再送してもなお412 (本当の競合): HubConflictError', async () => {
+        mockFetch({ 'GET /data/private/d.json': () => res('{"v":0}', 200, { ETag: '"stale"' }) });
+        await adapter.readJSON('private/d.json');
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/d.json', '{"v":1}');
+        mockFetch({
+            'POST /data/batch': () => res(JSON.stringify({ conflicts: [{ path: 'private/d.json', etag: '"stale"' }] }), 412),
+            'GET /data/private/d.json': () => res('{"v":0}', 200, { ETag: '"fresh"' }) // knownContent一致→差し替えて再送するが…
+        });
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(HubConflictError);
+    });
+
+    it('worker が conflicts 詳細を返さない想定外の412は保守的に HubConflictError', async () => {
+        mockFetch({
+            'HEAD /data/private/e.json': () => res(null, 404),
+            'POST /data/batch': () => res('conflict', 412)
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/e.json', '1');
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(HubConflictError);
+    });
+
+    it('409 (worker側の補償ロールバック自体が失敗) は再送せずそのまま Error', async () => {
+        mockFetch({
+            'HEAD /data/private/f.json': () => res(null, 404),
+            'POST /data/batch': () => res(JSON.stringify({ error: 'batch write failed, partial compensation', partial: true }), 409)
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/f.json', '1');
+        await expect(adapter.commitBatch()).rejects.toThrow(/partial compensation/);
+    });
+
+    it('旧worker (ifMatch/ifNoneMatchを無視して常に200を返す) でも後方互換でそのまま成功する', async () => {
+        let sentBody;
+        mockFetch({
+            'HEAD /data/private/g.json': () => res(null, 404),
+            'POST /data/batch': ({ init }) => { sentBody = JSON.parse(init.body); return res(null, 200); }
+        });
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/g.json', '{"v":1}');
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(sentBody.entries[0].ifNoneMatch).toBe('*'); // クライアントは新形式を送り、旧workerはそれを無視するだけ
     });
 });
 

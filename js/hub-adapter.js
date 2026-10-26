@@ -12,11 +12,16 @@
 //                                              412 = 衝突 / 413 = quota 超過 / 401 = 認証失効
 //   DELETE {apiBase}/data/<path>            → 204 / 404 も成功扱い
 //   GET    {apiBase}/data/<dir>?list=1      → 200 { files:[name…], dirs:[name…] }
-//   POST   {apiBase}/data/batch             → { entries:[{op:'put',path,content}|{op:'delete',path}] }
-//                                              200 = 全適用 / 409|412 = 衝突
+//   POST   {apiBase}/data/batch             → { entries:[{op,path,content?,ifMatch?,ifNoneMatch?}] }
+//                                              ifMatch/ifNoneMatch 省略 (旧アプリ互換) は無条件で適用。
+//                                              200 = 全適用 / 412 = 1件でも不一致で全体不書込 (イシュー#376) /
+//                                              409 = worker側補償ロールバック自体が失敗 (partial)
 //
 // ※ private データは「テキスト (JSON / Markdown)」のみ。バイナリは扱わない。
 // ※ インフラ未稼働 (設計のみ)。Worker の JWT 検証・私的 API は本番前に実機検証必須。
+
+// commitBatch の事前HEAD (期待ETag確定) を同時に送る本数の上限 (イシュー#376 ②指示2026-10-26)。
+const BATCH_HEAD_CONCURRENCY = 6;
 
 class HubConflictError extends Error {
     constructor(message, path) {
@@ -147,29 +152,135 @@ class HubStorageAdapter extends StorageAdapter {
 
     hasBatchEntries() { return Array.isArray(this._batch) && this._batch.length > 0; }
 
+    // 2026-10-26 イシュー#376 (#374 step2 のコメントを更新): worker 側 handleBatch が
+    // ifMatch/ifNoneMatch による楽観ロックに対応した (ADR-132 で発見・ADR-xxx で対応)。
+    // 各 entry に期待 ETag (ifMatch) または新規作成条件 (ifNoneMatch:'*') を付けて送り、
+    // 412 (衝突) は単発 _writeOnce/_recoverFromConflictAndRetry と同じ意味に揃える:
+    // 本文が一致すれば成功扱い (lost update にはならない) / 不一致なら上書きせず HubRemoteChangedError。
     async commitBatch() {
         if (!this._batch || this._batch.length === 0) { this._batch = null; return null; }
-        const entries = this._batch.map(e => {
-            if (e.op === 'delete') return { op: 'delete', path: this._normalize(e.path) };
-            return { op: 'put', path: this._normalize(e.path), content: e.content };
-        });
+        const batch = this._batch;
         this._batch = null;
+        const entries = await this._prepareBatchEntries(batch);
+        return this._commitBatchOnce(entries);
+    }
+
+    // 各 entry に ifMatch/ifNoneMatch を付与する。_etagCache に値があればそれを使い (追加の通信無し)、
+    // 無ければ単発 _writeOnce と同じく HEAD で1回だけ読んで確定する (キャッシュ無し=初回書込み等)。
+    // 404 の delete は「既に無い」=目的達成済みとしてバッチから外す (単発 _deleteOnce の404=成功扱いと同じ)。
+    // 2026-10-26 ②指示: plugin seed 等 件数の多いバッチで事前HEADが逐次だとRTT×件数で遅くなる
+    // (実測: 標準プラグイン初回シード15entry・逐次で14HEAD=ローカルモックで約20ms→本番はRTT分が
+    // 直列に積む)。BATCH_HEAD_CONCURRENCY 本ずつ Promise.all で並行化し、1チャンク≒1RTTに圧縮する。
+    async _prepareBatchEntries(batch) {
+        const results = new Array(batch.length);
+        for (let i = 0; i < batch.length; i += BATCH_HEAD_CONCURRENCY) {
+            const chunk = batch.slice(i, i + BATCH_HEAD_CONCURRENCY);
+            const resolved = await Promise.all(chunk.map((e) => this._resolveBatchEntry(e)));
+            for (let j = 0; j < chunk.length; j++) results[i + j] = resolved[j];
+        }
+        return results.filter((r) => r !== null); // null = 削除対象が既に無い (バッチから除外)
+    }
+
+    async _resolveBatchEntry(e) {
+        const path = this._normalize(e.path);
+        let ifMatch = this._etagCache.get(path);
+        if (ifMatch === undefined) {
+            const head = await this._fetch('GET', this._dataUrl(path), { method: 'HEAD' });
+            if (head.ok) {
+                ifMatch = head.headers.get('ETag') || undefined;
+                if (ifMatch) this._etagCache.set(path, ifMatch);
+            } else if (head.status === 404) {
+                if (e.op === 'delete') return null; // 削除対象が既に無い: 削除不要
+                return { op: 'put', path, content: e.content, ifNoneMatch: '*' };
+            } else {
+                throw this._err(head, `HEAD ${path}`);
+            }
+        }
+        const entry = e.op === 'delete' ? { op: 'delete', path } : { op: 'put', path, content: e.content };
+        if (ifMatch) entry.ifMatch = ifMatch;
+        return entry;
+    }
+
+    async _commitBatchOnce(entries) {
+        if (entries.length === 0) { this._etagCache.clear(); return true; } // 全entryが事前判定で既に不要だった
         const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ entries })
         });
-        // 2026-10-26 イシュー#374 step2 実測: cf-worker/asayake-hub.js の handleBatch (POST /data/batch)
-        // は If-Match/ETag 検証を一切行わず常に 200 を返す実装で、この 409/412 分岐には現状到達しない
-        // (将来 worker 側が楽観ロックに対応した場合のための防御的コードとして残す)。本イシューの
-        // 対象 (公開/公開取消/削除の3操作) はいずれも単発 _write 経由であり commitBatch を使わないため、
-        // ここに再試行ロジックは追加しない (worker 側の仕様変更を要する別件・07_残検討事項へ積み残し)。
-        if (res.status === 409 || res.status === 412) {
+        if (res.status === 409) {
+            // worker 側の補償ロールバック自体が失敗した (partial:true・ADR-xxx 参照)。
+            // この回では直せない状態なので、盲目的な再送はせずそのまま呼び出し元へ伝える。
+            throw new Error(`hub batch write failed on server (partial compensation): ${res.body ? String(res.body).slice(0, 200) : ''}`);
+        }
+        if (res.status === 412) return this._recoverBatchConflictAndRetry(entries, res);
+        if (!res.ok) throw this._err(res, 'POST data/batch');
+        this._etagCache.clear();
+        for (const e of entries) this._lastKnownContent.set(e.path, e.op === 'delete' ? undefined : e.content);
+        return true;
+    }
+
+    /**
+     * batch 412 受信後のリカバリ (_recoverFromConflictAndRetry の複数 entry 版・イシュー#376)。
+     * レスポンスの conflicts:[{path,etag}] ごとに最新内容を取り直し、
+     *   本文が自分が送ろうとした内容と一致 → 既に反映済み (自分の先行書込の再送 or 他タブが
+     *     同じ内容を書いた)。lost update ではないので成功扱いとしてそのentryを再送対象から外す。
+     *   本文が自分の知っていた内容 (_lastKnownContent) と一致 → ETag キャッシュのズレだけ。
+     *     新しい ETag に差し替えて再送対象に残す。
+     *   それ以外 → 他タブ/他デバイスが実際に内容を変えている。盲目的に上書きせず HubRemoteChangedError。
+     * 差し替え後に1回だけ再送し、それでも 409/412 なら本当の競合として HubConflictError。
+     */
+    async _recoverBatchConflictAndRetry(entries, res) {
+        const conflicts = (res.json && Array.isArray(res.json.conflicts)) ? res.json.conflicts : null;
+        if (!conflicts) {
+            // worker が conflicts 詳細を返さない (想定外の応答) → 個別判定できないので安全側に倒す
+            throw new HubConflictError('batch conflict on hub (data changed since read, no conflict detail)', null);
+        }
+        const conflictPaths = new Set(conflicts.map(c => c.path));
+        const retry = [];
+        for (const e of entries) {
+            if (!conflictPaths.has(e.path)) { retry.push(e); continue; }
+            console.warn(`[HubStorageAdapter] batch 412 on ${e.path}: etag を破棄して最新状態を取り直します`);
+            this._etagCache.delete(e.path);
+            const latestRes = await this._fetch('GET', this._dataUrl(e.path));
+            if (!latestRes.ok && latestRes.status !== 404) throw this._err(latestRes, `GET ${e.path}`);
+            const latestContent = latestRes.status === 404 ? null : latestRes.body;
+            const latestEtag = latestRes.status === 404 ? undefined : (latestRes.headers.get('ETag') || undefined);
+            const knownContent = this._lastKnownContent.get(e.path);
+            const wantContent = e.op === 'delete' ? null : e.content;
+
+            if (latestContent === wantContent) {
+                // 既に望む状態になっている (delete なら既に無い / put なら同じ内容が既にある)
+                if (latestEtag) this._etagCache.set(e.path, latestEtag);
+                this._lastKnownContent.set(e.path, wantContent === null ? undefined : wantContent);
+                continue; // 再送不要
+            }
+            if (latestContent !== null && knownContent !== undefined && latestContent === knownContent) {
+                // 自分の ETag キャッシュがズレていただけ (リモートは自分が最後に認識した内容のまま)
+                const next = { ...e, ifMatch: latestEtag };
+                delete next.ifNoneMatch;
+                if (!next.ifMatch) delete next.ifMatch;
+                retry.push(next);
+                continue;
+            }
+            if (latestContent === null && e.ifNoneMatch === '*') {
+                // 新規作成を試みた対象が (head 判定後に) 実際には無かった → そのまま続行
+                retry.push(e);
+                continue;
+            }
+            console.error(`[HubStorageAdapter] ${e.path} はリモートで内容が変わっている。上書きせず中断します`);
+            throw new HubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
+        }
+        if (retry.length === 0) { this._etagCache.clear(); return true; }
+        const res2 = await this._fetch('POST', `${this.apiBase}/data/batch`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: retry })
+        });
+        if (res2.status === 409 || res2.status === 412) {
             throw new HubConflictError('batch conflict on hub (data changed since read)', null);
         }
-        if (!res.ok) throw this._err(res, 'POST data/batch');
-        // Tree 相当の一括更新後は ETag キャッシュを破棄 (個別 ETag は古い)
+        if (!res2.ok) throw this._err(res2, 'POST data/batch (retry)');
         this._etagCache.clear();
+        for (const e of retry) this._lastKnownContent.set(e.path, e.op === 'delete' ? undefined : e.content);
         return true;
     }
 

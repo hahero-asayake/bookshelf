@@ -539,12 +539,16 @@ async function handleData(request, env, url) {
     throw httpError(405, 'method not allowed');
 }
 
+// クライアントの If-Match/ifMatch は HTTP 標準どおりクォート付き ("abc")。R2 の etag / onlyIf.etagMatches は
+// クォート無し (abc) を要求するため正規化する (W/ 弱 ETag 接頭辞も除去)。putObject と handleBatch で共有。
+function normalizeEtag(ifMatch) {
+    return ifMatch ? ifMatch.replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null;
+}
+
 async function putObject(env, sess, key, body, ifMatch) {
     const size = new TextEncoder().encode(body).length;
     const head = await env.BUCKET.head(key);
-    // クライアントの If-Match は HTTP 標準どおりクォート付き ("abc")。R2 の etag / onlyIf.etagMatches は
-    // クォート無し (abc) を要求するため正規化する (W/ 弱 ETag 接頭辞も除去)。
-    const wantEtag = ifMatch ? ifMatch.replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null;
+    const wantEtag = normalizeEtag(ifMatch);
     if (wantEtag && (!head || head.etag !== wantEtag)) throw httpError(412, 'etag mismatch');
     const rec = await env.KV.get(`uid:${sess.uid}`, 'json');
     const projected = (rec ? await getUsed(env, sess.uid) : 0) - (head ? head.size : 0) + size;
@@ -567,24 +571,122 @@ async function listDir(env, base, rel) {
 }
 
 // ===== バッチ (複数 put/delete を 1 リクエスト) =====
+// 楽観ロック (イシュー#376・#374 ADR-132 で発見): entries[] の各要素は任意で
+//   ifMatch:     クォート付きETag (putObject の If-Match と同じ意味・正規化)。既存ファイルの期待版。
+//   ifNoneMatch: '*' のみ対応。新規作成 (対象が存在してはならない) の意味。delete には無効 (400)。
+// どちらも無い entry は旧アプリ互換で常に無条件。バッチ全体に ifMatch/ifNoneMatch が1件も
+// 無ければ従来の無条件コードパスを通る (挙動不変)。
+//
+// 原子性 (R2 はトランザクション非対応・KV も原子的 CAS が無いため完全な原子性は不可。
+// Durable Object で uid 単位に直列化すれば可能だが新バインディング・本番構成変更を伴うため
+// 本イシューでは採らない。ADR-xxx 参照):
+//   段階1 検証: 条件付き entry を全件 head し、1件でも不一致なら何も書かずに 412 (conflicts 付き) で返す。
+//   段階2 書込: 各 entry の書く前の本文を退避しつつ (無条件 entry も含む=ロールバック対象にするため)、
+//     条件付き entry には onlyIf.etagMatches を付けて書く。途中で onlyIf 失敗 (段階1〜2 間の TOCTOU) し
+//     たら、それまでに書いた entry を逆順に退避内容へ戻し (新規作成分は delete)、usage 差分も戻して
+//     412 を返す。補償自体が失敗したら 409 + partial:true (この回では直せない=要人手介入)。
+// 残る窓 (ADR に明記):
+//   - ifNoneMatch:'*' は R2 の onlyIf (etagMatches/etagDoesNotMatch は「指定した値と一致/不一致」の意味
+//     で、対象が存在しない場合の挙動が公式ドキュメントに記載無く未確認) に頼らず、段階1/段階2の head
+//     判定のみで「存在しない」を確認する。段階2 の head 判定〜実際の put の間に別タブが新規作成すると
+//     稀に TOCTOU を検出できない窓が残る (次の head/書込で検出される・lost update ではなく上書き競合)。
+//   - 補償 (ロールバック) 自体が失敗した場合 (R2 側の一時障害等) は中途半端な状態が残り得る。
 async function handleBatch(request, env) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const { entries } = await request.json().catch(() => ({}));
     if (!Array.isArray(entries)) throw httpError(400, 'entries required');
     for (const e of entries) {
-        const key = `data/${sess.uid}/${safeRel(e.path)}`;
-        if (e.op === 'delete') {
-            const head = await env.BUCKET.head(key);
-            if (head) { await env.BUCKET.delete(key); await addUsage(env, sess.uid, -head.size); }
-        } else if (e.op === 'put') {
-            const head = await env.BUCKET.head(key);
-            const size = new TextEncoder().encode(e.content || '').length;
-            await env.BUCKET.put(key, e.content || '');
-            await addUsage(env, sess.uid, size - (head ? head.size : 0));
+        if (e.ifMatch && e.ifNoneMatch) throw httpError(400, 'ifMatch and ifNoneMatch are exclusive');
+        if (e.ifNoneMatch !== undefined && e.ifNoneMatch !== '*') throw httpError(400, "ifNoneMatch must be '*'");
+        if (e.op === 'delete' && e.ifNoneMatch) throw httpError(400, 'ifNoneMatch not valid for delete');
+    }
+    const hasConditional = entries.some(e => e.ifMatch || e.ifNoneMatch);
+
+    if (!hasConditional) {
+        // 旧アプリ互換: 期待ETagを送ってこないバッチは従来どおり無条件で適用 (挙動不変)
+        for (const e of entries) {
+            const key = `data/${sess.uid}/${safeRel(e.path)}`;
+            if (e.op === 'delete') {
+                const head = await env.BUCKET.head(key);
+                if (head) { await env.BUCKET.delete(key); await addUsage(env, sess.uid, -head.size); }
+            } else if (e.op === 'put') {
+                const head = await env.BUCKET.head(key);
+                const size = new TextEncoder().encode(e.content || '').length;
+                await env.BUCKET.put(key, e.content || '');
+                await addUsage(env, sess.uid, size - (head ? head.size : 0));
+            }
+        }
+        return new Response(null, { status: 200 });
+    }
+
+    // ===== 条件付きバッチ: 段階1 (事前検証) =====
+    const keyed = entries.map(e => ({ e, key: `data/${sess.uid}/${safeRel(e.path)}` }));
+    const conflicts = [];
+    for (const { e, key } of keyed) {
+        const wantEtag = normalizeEtag(e.ifMatch);
+        const wantAbsent = e.ifNoneMatch === '*';
+        if (!wantEtag && !wantAbsent) continue;
+        const head = await env.BUCKET.head(key);
+        if (wantAbsent) {
+            if (head) conflicts.push({ path: e.path, etag: head.etag });
+        } else if (!head || head.etag !== wantEtag) {
+            conflicts.push({ path: e.path, etag: head ? head.etag : null });
         }
     }
-    return new Response(null, { status: 200 });
+    if (conflicts.length > 0) return json({ error: 'etag mismatch', conflicts }, 412);
+
+    // ===== 段階2 (書込 + 失敗時補償ロールバック) =====
+    const applied = []; // { key, prevBody(退避した元本文|null), sizeBefore, sizeAfter, op }
+    let conflictPath = null;
+    try {
+        for (const { e, key } of keyed) {
+            const wantEtag = normalizeEtag(e.ifMatch);
+            const wantAbsent = e.ifNoneMatch === '*';
+            const head = await env.BUCKET.head(key);
+            const prevObj = head ? await env.BUCKET.get(key) : null;
+            const prevBody = prevObj ? await prevObj.text() : null;
+            if (e.op === 'delete') {
+                if (wantEtag && (!head || head.etag !== wantEtag)) { conflictPath = e.path; break; }
+                if (!head) { applied.push({ key, prevBody, sizeBefore: 0, sizeAfter: 0, op: 'noop' }); continue; }
+                await env.BUCKET.delete(key);
+                await addUsage(env, sess.uid, -head.size);
+                applied.push({ key, prevBody, sizeBefore: head.size, sizeAfter: 0, op: 'delete' });
+            } else if (e.op === 'put') {
+                if (wantAbsent && head) { conflictPath = e.path; break; } // 段階1〜2間の窓 (上のコメント参照)
+                const content = e.content || '';
+                const size = new TextEncoder().encode(content).length;
+                const putOpts = {};
+                if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
+                const res = await env.BUCKET.put(key, content, putOpts);
+                if (!res) { conflictPath = e.path; break; } // onlyIf 失敗 (TOCTOU)
+                await addUsage(env, sess.uid, size - (head ? head.size : 0));
+                applied.push({ key, prevBody, sizeBefore: head ? head.size : 0, sizeAfter: size, op: 'put' });
+            }
+        }
+    } catch (err) {
+        console.error('[handleBatch] write failed mid-batch:', err);
+        conflictPath = conflictPath || '(unknown)';
+    }
+
+    if (!conflictPath) return new Response(null, { status: 200 });
+
+    // 補償ロールバック: 書いた entry (無条件 entry 含む) を逆順に退避内容へ戻す
+    let compensateFailed = false;
+    for (let i = applied.length - 1; i >= 0; i--) {
+        const a = applied[i];
+        if (a.op === 'noop') continue;
+        try {
+            if (a.prevBody != null) await env.BUCKET.put(a.key, a.prevBody);
+            else await env.BUCKET.delete(a.key);
+            await addUsage(env, sess.uid, a.sizeBefore - a.sizeAfter);
+        } catch (compErr) {
+            compensateFailed = true;
+            console.error(`[handleBatch] compensate failed for ${a.key}:`, compErr);
+        }
+    }
+    if (compensateFailed) return json({ error: 'batch write failed, partial compensation', partial: true }, 409);
+    return json({ error: 'etag mismatch', conflicts: [{ path: conflictPath }] }, 412);
 }
 
 // ===== 公開 (投稿): sites/<siteId>/ を今回集合で置換 =====
