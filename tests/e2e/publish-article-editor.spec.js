@@ -1,5 +1,6 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
+import { canvas, addBlock } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -31,22 +32,6 @@ async function publishViaPanel(page) {
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet。
 // shelf/book/text いずれも全画面編集(form)に入る (イシュー#276 step3: 文章も#247のEasyMDEを流用する全画面に統一・
 // その場入力は廃止)。shelf/bookは旧フォームの該当ブロックと本の引き出し、textはEasyMDE(長文メモと同じ)が出る。
-function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
-async function addBlock(page, type, pos = 'last') {
-    const done = page.locator('#art-fs-done');
-    if (await done.isVisible()) await done.click();
-    const edit = page.locator('#art-mode-edit');
-    if (await edit.isVisible()) await edit.click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
-    const btns = canvas(page).locator('.art-cv-ins-btn');
-    await expect(btns).toHaveCount(before + 1);
-    await (pos === 'first' ? btns.first() : btns.last()).click();
-    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-    // text は EasyMDE が #247 の遅延読込 (非同期) で生えるため、インスタンス生成を待つ
-    if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-}
 
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {

@@ -7,6 +7,7 @@
 //  - 公開/公開取消/削除の記事単位 in-flight ガード (_artRunExclusive) と、一覧の公開ボタンの
 //    disabled 制御 (いずれも js/bookshelf.js・イシュー#374案D) を連打で固定する。
 import { test, expect } from './helpers/test-base.js';
+import { canvas, addBlock } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -17,21 +18,6 @@ const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json
 const HUB = 'https://mockhub.test';
 
 // イシュー#268: 見たまま編集UI (username-publish-gate.spec.js の addBlock/fillTextBlock/leaveForm と同型)
-function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
-async function addBlock(page, type, pos = 'last') {
-    const done = page.locator('#art-fs-done');
-    if (await done.isVisible()) await done.click();
-    const edit = page.locator('#art-mode-edit');
-    if (await edit.isVisible()) await edit.click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
-    const btns = canvas(page).locator('.art-cv-ins-btn');
-    await expect(btns).toHaveCount(before + 1);
-    await (pos === 'first' ? btns.first() : btns.last()).click();
-    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-    if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-}
 async function fillTextBlock(page, markdown) {
     await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
     await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);

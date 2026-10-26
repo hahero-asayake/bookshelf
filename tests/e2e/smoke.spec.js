@@ -2,26 +2,12 @@
 // フィクスチャを localStorage に注入して起動する (同期フォルダ不要の localStorage フォールバック経路)。
 // ⚠️ 大量冊数の描画テストは書かない (ヘッドレス + content-visibility の制約、COMMON 参照)
 import { test, expect } from './helpers/test-base.js';
+import { canvas, addBlock } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
-function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
-async function addBlock(page, type, pos = 'last') {
-    const done = page.locator('#art-fs-done');
-    if (await done.isVisible()) await done.click();
-    const edit = page.locator('#art-mode-edit');
-    if (await edit.isVisible()) await edit.click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
-    const btns = canvas(page).locator('.art-cv-ins-btn');
-    await expect(btns).toHaveCount(before + 1);
-    await (pos === 'first' ? btns.first() : btns.last()).click();
-    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
-    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-}
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {
     const done = page.locator('#art-fs-done');

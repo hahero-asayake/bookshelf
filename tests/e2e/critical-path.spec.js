@@ -3,23 +3,9 @@
 //  ハブ API (usage / billing / account) は route モック。意地悪ステップ (二度押し・リロード) を混ぜる。
 //  ローンチ判定: この1本が緑 = 主要導線が通しで壊れていない。
 import { test, expect } from './helpers/test-base.js';
+import { canvas, addBlock } from './helpers/art-editor.js';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
-function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
-async function addBlock(page, type, pos = 'last') {
-    const done = page.locator('#art-fs-done');
-    if (await done.isVisible()) await done.click();
-    const edit = page.locator('#art-mode-edit');
-    if (await edit.isVisible()) await edit.click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
-    const btns = canvas(page).locator('.art-cv-ins-btn');
-    await expect(btns).toHaveCount(before + 1);
-    await (pos === 'first' ? btns.first() : btns.last()).click();
-    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    if (type === 'text') await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
-    else await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-}
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {
     const done = page.locator('#art-fs-done');

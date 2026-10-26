@@ -4,27 +4,12 @@
 //  - username 表示・設定フォーム自体の単体的な検証は tests/e2e/account-username.spec.js が持つ。
 //    ここでは「公開ボタン→ブロック→設定→再公開が通る」までの一連の導線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
+import { canvas, addBlock } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
-function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
-async function addBlock(page, type, pos = 'last') {
-    const done = page.locator('#art-fs-done');
-    if (await done.isVisible()) await done.click();
-    const edit = page.locator('#art-mode-edit');
-    if (await edit.isVisible()) await edit.click();
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
-    const btns = canvas(page).locator('.art-cv-ins-btn');
-    await expect(btns).toHaveCount(before + 1);
-    await (pos === 'first' ? btns.first() : btns.last()).click();
-    await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
-    // イシュー#276 step3: text も shelf/book と同じ全画面(form)に入る (旧キャンバスその場入力は廃止)
-    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-    if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-}
 // 文章ブロックの全画面(EasyMDE)へmarkdownを書き込み、完了で編集状態へ戻す (イシュー#276 step3)
 async function fillTextBlock(page, markdown) {
     await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
