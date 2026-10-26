@@ -449,26 +449,16 @@ body.right-collapsed  { --right-col: 0px; }
 }
 
 /* ===== View 切替 (router 経由で body.app-view-* を切り替える) =====
-   イシュー#371: ホーム表示中も本棚一覧の DOM を display:block のまま裏に置く (content-visibility:hidden)。
-   800枚の book-item (content-visibility:auto) が「表示 ⇄ 非表示」を display:none で往復するたびに
-   可視性判定をやり直していたのが切替コストの大半だったため、display:none をやめてレイアウトを保持したまま隠す。
-   view-bookshelf の要素自体は JS 側 (_setBodyView) で ホーム表示中 inert を付け、フォーカス/クリック/
-   スクリーンリーダーの対象から外す (display:none 相当のアクセシビリティ挙動を維持)。 */
-body.app-view-main .view-bookshelf {
-    display: block !important;
-    content-visibility: hidden !important;
-    position: absolute !important;
-    inset: 0 !important;
-    z-index: -1 !important;
-}
+   イシュー#373 案B: #371 (イシュー#371・本棚一覧を display:block のまま content-visibility:hidden で
+   裏に置く案) を撤回し、display:none に戻した。WebKit で、本棚一覧を高速スクロール直後に表紙
+   (.book-cover-container) が描画されない見切れ(白 or 単色黒)を実測した。案A (content-visibility:hidden
+   を visibility:hidden に差し替え) を試したが、8周の高速スクロールテストで約半分の実行で見切れが
+   再現し続けたため不採用。display:none に戻すと、ホーム→本棚の切替コストは #371 導入前の水準
+   (chromium 390px CPU×4: 約130ms) に戻る (#371の目的=約37msへの短縮は失われる・tmp/373/bisect.md)。 */
+body.app-view-main .view-bookshelf { display: none !important; }
 body.app-view-bookshelf .view-main { display: none !important; }
 .view-bookshelf { display: none; }
-body.app-view-bookshelf .view-bookshelf {
-    display: block !important;
-    content-visibility: visible !important;
-    position: static !important;
-    z-index: auto !important;
-}
+body.app-view-bookshelf .view-bookshelf { display: block !important; }
 
 /* ===== Sidebar / Detail 共通 (mockup: 内部スクロールで固定) ===== */
 .app-sidebar,
