@@ -11365,11 +11365,13 @@ class VirtualBookshelf {
                     const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
                 }
             }
-            // ui-standards §2-11: リトライ中/回復/最終失敗を区別する。GitHubRemoteChangedError は
-            // 409 リトライがリモート側の実変更を検知して上書きを中止したケース (他タブ/他デバイスの
-            // 編集と衝突) で、通信エラーとは原因が違うため専用文言にする (イシュー#142)。
+            // ui-standards §2-11: リトライ中/回復/最終失敗を区別する。GitHubRemoteChangedError /
+            // HubRemoteChangedError は 409/412 リトライがリモート側の実変更を検知して上書きを
+            // 中止したケース (他タブ/他デバイスの編集と衝突) で、通信エラーとは原因が違うため
+            // 専用文言にする (イシュー#142。下のConflictError分岐=L5427と同じくGitHub/ハブ両対応・
+            // イシュー#381で判定漏れを修正=以前はHub経由だとこの分岐に入らず汎用の接続エラー文言になっていた)。
             const isAuthErr = e && e.name === 'HubAuthError';
-            const isRemoteChanged = e && e.name === 'GitHubRemoteChangedError';
+            const isRemoteChanged = e && (e.name === 'GitHubRemoteChangedError' || e.name === 'HubRemoteChangedError');
             const message = isRemoteChanged
                 ? 'この記事は他の場所で更新されています。内容を確認してから、もう一度保存してください。'
                 : isAuthErr
