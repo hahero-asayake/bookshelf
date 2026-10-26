@@ -435,12 +435,10 @@ class GitHubAdapter extends StorageAdapter {
     }
 
     // ===== 書き込みキュー (同一パスへの write/delete を直列化。同一タブ内の並行呼び出し対策) =====
+    // 実体は StorageAdapter._enqueue (イシュー#374・案D で HubStorageAdapter と共通化)。
 
     _enqueue(path, task) {
-        const prev = this._writeQueues.get(path) || Promise.resolve();
-        const result = prev.then(task, task);
-        this._writeQueues.set(path, result.catch(() => {}));
-        return result;
+        return StorageAdapter._enqueue(this._writeQueues, path, task);
     }
 
     async _write(path, text) {
@@ -474,29 +472,35 @@ class GitHubAdapter extends StorageAdapter {
      * ズレ) そのまま同じ内容で 1 回だけ再 PUT する。異なっていれば他タブ/他デバイスが実際に
      * 内容を変えているので、盲目的に上書きせず GitHubRemoteChangedError を投げて呼び出し元に
      * 知らせる。再 PUT してもなお 409 なら本当の競合として GitHubConflictError を投げる。
+     * アルゴリズムの核は StorageAdapter.recoverFromConflict (イシュー#374・案D で
+     * HubStorageAdapter と共通化・挙動はここでは一切変えていない)。
      */
     async _recoverFromConflictAndRetry(path, text) {
         console.warn(`[GitHubAdapter] 409 on ${path}: sha を破棄して最新状態を取り直します`);
         this._notifyWriteStatus(path, 'retrying');
         this._shaCache.delete(path);
-        const latest = await this._getContent(path);
-        const latestSha = latest && latest.type === 'file' ? latest.sha : null;
-        const latestContent = latest && latest.type === 'file' ? this._decodeBase64(latest.content) : null;
         const knownContent = this._lastKnownContent.get(path);
-
-        if (latestContent !== null && (knownContent === undefined || latestContent !== knownContent)) {
-            console.error(`[GitHubAdapter] ${path} はリモートで内容が変わっている。上書きせず中断します`);
-            this._notifyWriteStatus(path, 'remote-changed');
-            throw new GitHubRemoteChangedError(`${path} は他の場所で更新されています。内容を確認して保存し直してください。`, path);
-        }
-
-        if (latestSha) {
-            this._shaCache.set(path, latestSha);
-            this._lastKnownContent.set(path, latestContent);
-        }
-
         try {
-            const retrySha = await this._putContent(path, text, { sha: latestSha });
+            const retrySha = await StorageAdapter.recoverFromConflict({
+                getLatest: async () => {
+                    const latest = await this._getContent(path);
+                    if (!latest || latest.type !== 'file') return null;
+                    return { content: this._decodeBase64(latest.content), token: latest.sha };
+                },
+                knownContent,
+                retryPut: async (latest) => {
+                    if (latest && latest.token) {
+                        this._shaCache.set(path, latest.token);
+                        this._lastKnownContent.set(path, latest.content);
+                    }
+                    return this._putContent(path, text, { sha: latest ? latest.token : null });
+                },
+                makeRemoteChangedError: () => {
+                    console.error(`[GitHubAdapter] ${path} はリモートで内容が変わっている。上書きせず中断します`);
+                    this._notifyWriteStatus(path, 'remote-changed');
+                    return new GitHubRemoteChangedError(`${path} は他の場所で更新されています。内容を確認して保存し直してください。`, path);
+                }
+            });
             if (retrySha) this._shaCache.set(path, retrySha);
             this._lastKnownContent.set(path, text);
             console.warn(`[GitHubAdapter] 409 on ${path}: リトライで回復しました`);

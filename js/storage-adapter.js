@@ -172,6 +172,50 @@ class StorageAdapter {
             clearTimeout(timer);
         }
     }
+
+    /**
+     * 同一パスへの書き込み/削除を直列化する汎用キュー (同一タブ内の並行呼び出し対策)。
+     * GitHubAdapter の `_writeQueues` (イシュー#11〜) を一般化し、HubStorageAdapter もこれを使う
+     * (イシュー#374・案D)。queue は呼び出し側 (adapter インスタンス) が path→Promise の Map として持つ。
+     * @param {Map<string, Promise>} queueMap
+     * @param {string} path
+     * @param {function():Promise} task
+     * @returns {Promise}
+     */
+    static _enqueue(queueMap, path, task) {
+        const prev = queueMap.get(path) || Promise.resolve();
+        const result = prev.then(task, task);
+        queueMap.set(path, result.catch(() => {}));
+        return result;
+    }
+
+    /**
+     * 衝突 (409/412) 受信後のリカバリ共通アルゴリズム。GitHubAdapter の
+     * `_recoverFromConflictAndRetry` (ADR-080/081・イシュー#142/#150) を一般化し、
+     * HubStorageAdapter もこれを使う (イシュー#374・案D)。
+     *
+     * 最新の内容を取り直し、「直前に自分が認識していたリモート内容 (knownContent)」と比較する。
+     *   一致 (= 誰も割り込んでいない。sha/etag キャッシュのズレだけ) → retryPut を1回だけ呼び、
+     *     その戻り値を返す (単なる自分の先行書き込みの再送として成功扱い)。
+     *   不一致 (= 他タブ/他デバイスが実際に内容を変えている) → 盲目的に上書きせず、
+     *     makeRemoteChangedError が作るエラーを投げて中断する (lost update 防止)。
+     * retryPut が再び衝突エラーを投げた場合はそのまま呼び出し元へ伝播する (本当の競合)。
+     *
+     * @param {object} ctx
+     * @param {function():Promise<{content:string, token:*}|null>} ctx.getLatest 現在の内容とトークン(sha/etag)。ファイル無しなら null
+     * @param {string|null|undefined} ctx.knownContent 直前に自分が認識していたリモート内容
+     * @param {function(latest:{content:string,token:*}|null):Promise<*>} ctx.retryPut 1回だけ再送する
+     * @param {function(latestContent:string|null):Error} ctx.makeRemoteChangedError 不一致時に投げるエラーを作る
+     * @returns {Promise<*>} retryPut の戻り値
+     */
+    static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError }) {
+        const latest = await getLatest();
+        const latestContent = latest ? latest.content : null;
+        if (latestContent !== null && (knownContent === undefined || latestContent !== knownContent)) {
+            throw makeRemoteChangedError(latestContent);
+        }
+        return retryPut(latest);
+    }
 }
 
 window.StorageAdapter = StorageAdapter;

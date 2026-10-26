@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/storage-adapter.js');
 await import('../../js/hub-adapter.js');
-const { HubStorageAdapter, HubConflictError, HubAuthError, HubQuotaError } = globalThis;
+const { HubStorageAdapter, HubConflictError, HubRemoteChangedError, HubAuthError, HubQuotaError } = globalThis;
 
 const API = 'https://api.asayake.test';
 
@@ -90,13 +90,95 @@ describe('write + 楽観ロック', () => {
         expect(calls).toEqual(['head', 'put']);
     });
 
-    it('412 は HubConflictError', async () => {
+    // イシュー#374 (案D): 412 は「リトライしても回復しない場合のみ」HubConflictError。
+    // github-adapter.js の 409 リカバリ (ADR-080/081) と同じ意味を StorageAdapter.recoverFromConflict
+    // 経由で共通化した。本文比較で「不一致」(=他所が変更) と「一致」(=単なる ETag キャッシュのズレ) を
+    // 区別し、後者だけ1回だけ再送して回復する。
+    it('412 はリトライ(本文比較+1回再送)しても回復しない場合のみ HubConflictError (本当の競合)', async () => {
+        let getCalls = 0, putCalls = 0;
         mockFetch({
-            'GET /data/private/c.json': () => res('{}', 200, { ETag: '"a"' }),
-            'PUT /data/private/c.json': () => res('conflict', 412)
+            'GET /data/private/c.json': () => { getCalls++; return res('{}', 200, { ETag: '"a"' }); },
+            'PUT /data/private/c.json': () => { putCalls++; return res('conflict', 412); }
         });
-        await adapter.readJSON('private/c.json');
+        await adapter.readJSON('private/c.json'); // _lastKnownContent = '{}'
         await expect(adapter.writeJSON('private/c.json', { y: 2 })).rejects.toBeInstanceOf(HubConflictError);
+        // readJSON の GET(1) + リカバリの本文確認 GET(1) = 2。初回 PUT(1) + 本文一致での再送 PUT(1) = 2。
+        expect(getCalls).toBe(2);
+        expect(putCalls).toBe(2);
+    });
+
+    it('412 後、最新本文が自分の最終認識と一致すれば1回だけ再送して成功する (単なる ETag キャッシュのズレ・自分の先行書き込みの再送)', async () => {
+        let putCalls = 0;
+        mockFetch({
+            'GET /data/private/r.json': () => res('{"a":1}', 200, { ETag: '"old"' }),
+            'PUT /data/private/r.json': () => {
+                putCalls += 1;
+                if (putCalls === 1) return res('conflict', 412);
+                return res(null, 200, { ETag: '"new"' });
+            }
+        });
+        await adapter.readJSON('private/r.json'); // _lastKnownContent = '{"a":1}' (リモートは変わっていない)
+        await expect(adapter.writeJSON('private/r.json', { a: 2 })).resolves.toBeUndefined();
+        expect(putCalls).toBe(2);
+        expect(adapter._etagCache.get('private/r.json')).toBe('"new"');
+    });
+
+    it('412 後、最新本文が自分の最終認識と異なれば上書きせず HubRemoteChangedError (lost update 防止・②指示2026-10-26)', async () => {
+        mockFetch({
+            'GET /data/private/x.json': () => res('{"a":1}', 200, { ETag: '"old"' })
+        });
+        await adapter.readJSON('private/x.json'); // _lastKnownContent = '{"a":1}'
+        let putCalls = 0;
+        // 412 発生後のリカバリ GET は「他タブ/他デバイスが実際に書き換えた」内容を返すよう切替
+        mockFetch({
+            'GET /data/private/x.json': () => res('{"a":999}', 200, { ETag: '"other"' }),
+            'PUT /data/private/x.json': () => { putCalls += 1; return res('conflict', 412); }
+        });
+        await expect(adapter.writeJSON('private/x.json', { a: 2 })).rejects.toBeInstanceOf(HubRemoteChangedError);
+        expect(putCalls).toBe(1); // 不一致と分かった時点で再送しない (盲目的に上書きしない)
+    });
+
+    it('同一パスへの write/delete は直列化される (連打しても同時に2つ走らない・イシュー#374案D)', async () => {
+        let inFlight = 0;
+        let maxConcurrent = 0;
+        const order = [];
+        mockFetch({
+            'HEAD /data/private/s.json': () => res(null, 404),
+            'PUT /data/private/s.json': async ({ init }) => {
+                inFlight += 1;
+                maxConcurrent = Math.max(maxConcurrent, inFlight);
+                const n = JSON.parse(init.body).n;
+                order.push(`start:${n}`);
+                await new Promise((r) => setTimeout(r, 5));
+                order.push(`end:${n}`);
+                inFlight -= 1;
+                return res(null, 200, { ETag: `"v${n}"` });
+            }
+        });
+        await Promise.all([
+            adapter.writeJSON('private/s.json', { n: 1 }),
+            adapter.writeJSON('private/s.json', { n: 2 })
+        ]);
+        expect(maxConcurrent).toBe(1); // 直列化されていれば同時実行は常に1
+        expect(order).toEqual(['start:1', 'end:1', 'start:2', 'end:2']); // 発火順 = 呼び出し順
+    });
+
+    it('GET/HEAD/PUT/DELETE/batch の全リクエストに cache:no-store が付く (GitHubAdapter と同じ理由・イシュー#150/#374)', async () => {
+        const caches = [];
+        mockFetch({
+            'GET /data/private/n.json': ({ init }) => { caches.push(init.cache); return res('{}', 200, { ETag: '"a"' }); },
+            'PUT /data/private/n.json': ({ init }) => { caches.push(init.cache); return res(null, 200, { ETag: '"b"' }); },
+            'DELETE /data/private/n.json': ({ init }) => { caches.push(init.cache); return res(null, 204); },
+            'POST /data/batch': ({ init }) => { caches.push(init.cache); return res(null, 200); }
+        });
+        await adapter.readJSON('private/n.json');
+        await adapter.writeJSON('private/n.json', { x: 1 }); // ETag キャッシュ済みなので HEAD は呼ばれない
+        await adapter.deleteFile('private/n.json');
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/n.json', '{}');
+        await adapter.commitBatch();
+        expect(caches.length).toBe(4);
+        expect(caches.every((c) => c === 'no-store')).toBe(true);
     });
 
     it('413 は HubQuotaError', async () => {
