@@ -668,7 +668,7 @@ class VirtualBookshelf {
                 // 重なり管理役 (イシュー#367): 管理役に載っている面があれば DOM 順ではなくスタックの最前面 (top) を閉じる
                 // (設定が公開モーダルの上に積まれている時に、DOM が後ろの公開側を閉じない)。確認ダイアログは自前の capture ESC
                 const topFace = this._overlays().top();
-                if (topFace && topFace.kind !== 'dialog' && !topFace.legacy) {
+                if (topFace && topFace.kind !== 'dialog') {
                     const btn = topFace.el.querySelector('.modal-close');
                     if (btn) btn.click();
                     else {

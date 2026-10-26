@@ -59,9 +59,6 @@
             const id = s.id || el.id || ('ov-' + (++this._seq));
             const existing = this.stack.find((f) => f.id === id);
             if (existing) { this._applyLayers(); return existing.handle; }
-            // 橋渡し (MutationObserver) はマイクロタスクで遅れて届くので、直前に .show された未移行の面を先に同期で載せる
-            // (本棚フォーム → アイコンピッカーのように、未移行の面の直後に管理役の面を開いても「後から開いた方が上」を保つ)
-            if (!s.legacy) this._syncLegacy();
 
             const kind = KINDS.includes(s.kind) ? s.kind : 'modal';
             // size:'none' = 段階を付けない (アンカー付きの popover/menu・自前の寸法を持つ面)。重なり順だけ管理役が決める
@@ -85,8 +82,7 @@
             const target = typeof s.sizeTarget === 'string' ? el.querySelector(s.sizeTarget)
                 : (s.sizeTarget || el.querySelector('.modal-content, .cfm-box') || el);
             face.content = target;
-            face.legacy = !!s.legacy;   // 移行期の橋渡しで載った未移行の面 (大きさの段階は付けない・履歴も触らない)
-            if (!face.legacy && !noSize) {
+            if (!noSize) {
                 SIZES.forEach((x) => target.classList.remove('ov-' + x));
                 target.classList.add('ov-' + size);
                 el.dataset.ovSize = size;
@@ -183,37 +179,8 @@
         // 移行期の橋渡し (イシュー#367 step3〜5): まだ管理役経由に書き換えていない .modal が .show を付け外ししたら、
         // スタックに載せ外しする = 「開いた順 = 重なり順」を全モーダルで即時に成立させる (同じ z-index の DOM 順に依存しない)。
         // 管理役経由で開いた面は has(id) で弾くので二重には載らない。全面が移行したら撤去する
-        _syncLegacy() {
-            if (!this._bridge || typeof document === 'undefined') return;
-            document.querySelectorAll('.modal.show').forEach((el) => {
-                if (el.id && !this.get(el.id)) this.open(el, { id: el.id, kind: 'modal', hist: false, showClass: null, legacy: true });
-            });
-        }
-
-        installLegacyBridge(root) {
-            if (this._bridge || typeof MutationObserver === 'undefined') return;
-            const host = root || (typeof document !== 'undefined' ? document.body : null);
-            if (!host) return;
-            this._bridge = new MutationObserver((muts) => {
-                for (const m of muts) {
-                    const el = m.target;
-                    if (!el || !el.classList || !el.classList.contains('modal') || !el.id) continue;
-                    const shown = el.classList.contains('show');
-                    const face = this.get(el.id);
-                    if (shown && !face) this.open(el, { id: el.id, kind: 'modal', hist: false, showClass: null, legacy: true });
-                    else if (!shown && face && face.legacy) this.close(el.id, { reason: 'legacy' });
-                }
-            });
-            this._bridge.observe(host, { attributes: true, attributeFilter: ['class'], subtree: true });
-        }
     }
 
     window.OverlayManager = OverlayManager;
-    if (!window.overlays) {
-        window.overlays = new OverlayManager();
-        if (typeof document !== 'undefined') {
-            if (document.body) window.overlays.installLegacyBridge();
-            else document.addEventListener('DOMContentLoaded', () => window.overlays.installLegacyBridge(), { once: true });
-        }
-    }
+    if (!window.overlays) window.overlays = new OverlayManager();
 })();
