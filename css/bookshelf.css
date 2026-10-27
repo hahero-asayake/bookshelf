@@ -3328,8 +3328,8 @@ html.bs-likely-has-data #dashboard-welcome {
 .book-item.bk-settled {
     animation: none;
 }
-/* 並び替えの横の「この端末に記録しました」(イシュー#387) */
-.sort-saved-note {
+/* 見た目の好みを変えた行の直下の「この端末に記録しました」(表示形式・並び順・表紙の大きさ共通・イシュー#387) */
+.device-saved-note {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -3337,7 +3337,7 @@ html.bs-likely-has-data #dashboard-welcome {
     font-size: 12px;
     color: var(--muted);
 }
-.sort-saved-note[hidden] { display: none; }
+.device-saved-note[hidden] { display: none; }
 
 @keyframes fadeInUp {
     from {

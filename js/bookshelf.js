@@ -543,6 +543,7 @@ class VirtualBookshelf {
                 const cell = e.target.closest('.rseg');
                 if (!cell || !cell.dataset.view) return;
                 this.setView(cell.dataset.view);
+                this._showSavedNote('view', viewSeg);
             });
         }
 
@@ -621,6 +622,7 @@ class VirtualBookshelf {
         // Cover size
         document.getElementById('cover-size').addEventListener('change', (e) => {
             this.setCoverSize(e.target.value);
+            this._showSavedNote('cover', e.target);
         });
 
         // Export button
@@ -1069,8 +1071,13 @@ class VirtualBookshelf {
     setView(view) {
         if (!['covers', 'images', 'list'].includes(view)) view = 'covers';
         this.currentView = view;
+        // 端末ごとの見た目の好みとして覚える (次回の起動もこの表示形式・イシュー#387)
+        if (this.userData) {
+            if (!this.userData.settings) this.userData.settings = {};
+            this.userData.settings.defaultView = view;
+        }
         this.updateDisplay();
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
     }
 
     // 表示 popover の表示形式セグメントを現在ビューに同期
@@ -1715,27 +1722,29 @@ class VirtualBookshelf {
         this.userData.settings.sortOrder = this.sortOrder;
         this.userData.settings.sortDirection = this.sortDirection;
         this.saveUserData({ deviceOnly: true });
-        this._showSortSavedNote();
+        const sortRow = document.querySelector('#display-popover .fp-sort-row');
+        this._showSavedNote('sort', sortRow);
     }
 
-    // 並び替えの横に「この端末に記録しました」を短く出す (いつ記録されたか分からない、への答え・イシュー#387)
-    _showSortSavedNote() {
-        const btn = document.getElementById('sort-direction');
-        const row = btn && btn.closest('.fp-sort-row');
-        if (!row || !row.parentNode) return;
-        let note = document.getElementById('sort-saved-note');
+    // 見た目の好みを変えた行の直下に「この端末に記録しました」を短く出す (いつ記録されたか分からない、への答え・イシュー#387)。
+    // 表示 popover の 表示形式 / 並び順 / 表紙の大きさ の3か所で同じ見た目・同じ挙動にする。key ごとに1つの印を使い回す
+    _showSavedNote(key, anchor) {
+        if (!anchor || !anchor.parentNode) return;
+        const id = `${key}-saved-note`;
+        let note = document.getElementById(id);
         if (!note) {
             note = document.createElement('span');
-            note.id = 'sort-saved-note';
-            note.className = 'sort-saved-note';
+            note.id = id;
+            note.className = 'device-saved-note';
             note.setAttribute('role', 'status');
-            row.parentNode.insertBefore(note, row.nextSibling); // 並び替えの行の直下 (狭い幅で行をはみ出さない)
         }
+        if (note.previousSibling !== anchor) anchor.parentNode.insertBefore(note, anchor.nextSibling); // 行の直下 (狭い幅で行をはみ出さない)
         const ic = typeof window.renderIcon === 'function' ? window.renderIcon('check', { size: 12 }) : '';
         note.innerHTML = `${ic}この端末に記録しました`;
         note.hidden = false;
-        clearTimeout(this._sortSavedNoteTimer);
-        this._sortSavedNoteTimer = setTimeout(() => { note.hidden = true; }, 2000);
+        this._savedNoteTimers = this._savedNoteTimers || {};
+        clearTimeout(this._savedNoteTimers[key]);
+        this._savedNoteTimers[key] = setTimeout(() => { note.hidden = true; }, 2000);
     }
 
     setBooksPerPage(value) {

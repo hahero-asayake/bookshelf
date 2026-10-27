@@ -156,6 +156,20 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
         expect(await pc.evaluate(() => window.bookshelf.userData.bookOrder.all.slice())).toEqual(phoneOrder);
     });
 
+    test('表示形式・表紙の大きさも同じ印を出し、端末に記録される', async ({ page }) => {
+        await seed(page); await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await pushAll(page);
+        await page.evaluate(() => document.querySelector('#view-seg .rseg[data-view="list"]').click());
+        await expect(page.locator('#view-saved-note')).toHaveText(/この端末に記録しました/);
+        await page.evaluate(() => { const s = document.getElementById('cover-size'); s.value = 'large'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+        await expect(page.locator('#cover-saved-note')).toHaveText(/この端末に記録しました/);
+        await page.evaluate(() => window.bookshelf.flushSync());
+        const remote = await remoteFile(page, 'private/settings.json');
+        expect(remote.defaultView).toBeUndefined();
+        await restart(page, method);
+        expect(await page.evaluate(() => [window.bookshelf.currentView, window.bookshelf.userData.settings.coverSize])).toEqual(['list', 'large']);
+    });
+
     test('移行: 共通設定にあった見た目の好みは、初回だけ端末に写して消さない', async ({ page }) => {
         await page.addInitScript(([u, l]) => {
             if (localStorage.getItem('__seeded') === '1') return;
