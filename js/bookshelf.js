@@ -11,6 +11,10 @@ const KINDLE_IMPORT_MEDIA = { ios: '', android: '', pc: '' };
 // 記事エディタ: メモリ反映は即時のまま、リモートPUTだけこの間隔でデバウンスする (イシュー#142)。
 // 編集のたび GitHub へ直接コミットしていた (2秒間隔・履歴が汚れる) のを解消する。
 const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
+// イシュー#387 (ADR-137): 見た目の好み (表示系設定) は端末ごとに覚える＝localStorage のみに置き、同期先 (private/settings.json) へは書かない。
+// それ以外の settings と bookOrder は全端末共通で、キー (本棚) ごとの更新時刻 settings._updatedAt で新しい方を採る。
+const DEVICE_SETTING_KEYS = ['sortOrder', 'sortDirection', 'defaultView', 'coverSize', 'booksPerPage', 'paneState', 'memoVisibility', 'starOverlay', 'starVisibility', 'detailSectionOrder', 'hiddenPluginButtons', 'bookMemoOpenWith', 'kindleOpenWith'];
+const DEVICE_SETTINGS_STORAGE_KEY = 'virtualBookshelf_deviceSettings';
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 
 // 本の引き出し (900px超) をユーザーが畳んだかどうかの記憶キー (イシュー#168)。
@@ -497,6 +501,9 @@ class VirtualBookshelf {
         // config は「未設定項目の既定値」。ユーザーが保存した設定を上書きしてはいけない
         // (旧: config が後勝ちで、表示形式などが再読み込みのたび既定に戻っていた)
         this.userData.settings = { ...config, ...this.userData.settings };
+        // 端末ごとの見た目の好みを重ねる。初回 (端末側にまだ無い) は共通設定にあった値を写して好みを消さない (イシュー#387)
+        this.userData.settings = { ...this.userData.settings, ...this._loadDeviceSettings(this.userData.settings) };
+        this._snapshotSyncedState();
         
         this.currentView = this.userData.settings.defaultView || 'covers';
 
@@ -974,7 +981,7 @@ class VirtualBookshelf {
             defaultViewSel.addEventListener('change', () => {
                 if (!this.userData.settings) this.userData.settings = {};
                 this.userData.settings.defaultView = defaultViewSel.value;
-                this.saveUserData();
+                this.saveUserData({ deviceOnly: true });
                 this.setView(defaultViewSel.value);
             });
         }
@@ -1707,7 +1714,28 @@ class VirtualBookshelf {
         if (!this.userData.settings) this.userData.settings = {};
         this.userData.settings.sortOrder = this.sortOrder;
         this.userData.settings.sortDirection = this.sortDirection;
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
+        this._showSortSavedNote();
+    }
+
+    // 並び替えの横に「この端末に記録しました」を短く出す (いつ記録されたか分からない、への答え・イシュー#387)
+    _showSortSavedNote() {
+        const btn = document.getElementById('sort-direction');
+        const row = btn && btn.closest('.fp-sort-row');
+        if (!row || !row.parentNode) return;
+        let note = document.getElementById('sort-saved-note');
+        if (!note) {
+            note = document.createElement('span');
+            note.id = 'sort-saved-note';
+            note.className = 'sort-saved-note';
+            note.setAttribute('role', 'status');
+            row.parentNode.insertBefore(note, row.nextSibling); // 並び替えの行の直下 (狭い幅で行をはみ出さない)
+        }
+        const ic = typeof window.renderIcon === 'function' ? window.renderIcon('check', { size: 12 }) : '';
+        note.innerHTML = `${ic}この端末に記録しました`;
+        note.hidden = false;
+        clearTimeout(this._sortSavedNoteTimer);
+        this._sortSavedNoteTimer = setTimeout(() => { note.hidden = true; }, 2000);
     }
 
     setBooksPerPage(value) {
@@ -1733,7 +1761,7 @@ class VirtualBookshelf {
         this.userData.settings.booksPerPage = value;
         
         this.updateDisplay();
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
     }
 
     setCoverSize(size) {
@@ -1748,7 +1776,7 @@ class VirtualBookshelf {
         bookshelf.classList.remove('size-small', 'size-medium', 'size-large');
         bookshelf.classList.add(`size-${size}`);
         
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
     }
     
     // 評価でしぼり込みセグメントの表示更新: 選択中セルを on、reset 表示、
@@ -1889,6 +1917,7 @@ class VirtualBookshelf {
             const key = this._bookCardKey(book, this.currentView);
             let el = old.get(book.asin);
             if (el && el.dataset.rkey === key) {
+                el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
                 el.classList.remove('selected', 'show-pop');
                 el.style.borderLeft = '';
             } else {
@@ -3085,7 +3114,64 @@ class VirtualBookshelf {
      * 呼び出し側で「sync 完了を待ちたい」（例: copyToPublic 直前）場合は
      * 明示的に await this.flushSync() を呼ぶ。
      */
-    async saveUserData() {
+    // --- 端末ごとの設定と、共通設定・並び順の更新時刻 (イシュー#387・ADR-137) ---
+
+    /** 端末ごとの設定を localStorage から読む。無ければ fallback (共通設定) の該当キーを写して保存する (初回移行) */
+    _loadDeviceSettings(fallback) {
+        let dev = null;
+        try { dev = JSON.parse(localStorage.getItem(DEVICE_SETTINGS_STORAGE_KEY) || 'null'); } catch (e) { dev = null; }
+        if (!dev || typeof dev !== 'object') {
+            dev = {};
+            DEVICE_SETTING_KEYS.forEach(k => { if (fallback && fallback[k] !== undefined) dev[k] = fallback[k]; });
+            try { localStorage.setItem(DEVICE_SETTINGS_STORAGE_KEY, JSON.stringify(dev)); } catch (e) {}
+        }
+        return dev;
+    }
+
+    /** settings から端末ごとのキーを除いたもの (同期先へ書く共通設定) */
+    _commonSettings(settings) {
+        const out = { ...(settings || {}) };
+        DEVICE_SETTING_KEYS.forEach(k => { delete out[k]; });
+        return out;
+    }
+
+    /** 更新時刻の比較元を控える (読込・同期読込の直後に呼ぶ) */
+    _snapshotSyncedState() {
+        const st = this.userData && this.userData.settings ? this._commonSettings(this.userData.settings) : {};
+        delete st._updatedAt;
+        const snap = {};
+        Object.keys(st).forEach(k => { snap[k] = JSON.stringify(st[k]); });
+        const bo = (this.userData && this.userData.bookOrder) || {};
+        Object.keys(bo).forEach(id => { snap['bookOrder:' + id] = JSON.stringify(bo[id]); });
+        this._syncedSnap = snap;
+    }
+
+    /** 前回の控えから変わった共通設定・本棚の並び順に更新時刻を付ける */
+    _stampChangedKeys() {
+        if (!this.userData) return;
+        if (!this.userData.settings) this.userData.settings = {};
+        const prev = this._syncedSnap || {};
+        const ts = { ...(this.userData.settings._updatedAt || {}) };
+        const now = Date.now();
+        const st = this._commonSettings(this.userData.settings);
+        delete st._updatedAt;
+        Object.keys(st).forEach(k => { if (prev[k] !== JSON.stringify(st[k])) ts[k] = now; });
+        const bo = this.userData.bookOrder || {};
+        Object.keys(bo).forEach(id => { if (prev['bookOrder:' + id] !== JSON.stringify(bo[id])) ts['bookOrder:' + id] = now; });
+        this.userData.settings._updatedAt = ts;
+        this._snapshotSyncedState();
+    }
+
+    // opts.deviceOnly: 端末ごとの見た目の好みだけを変えた時。localStorage には残すが同期は走らせない
+    // (同期先へ書く内容が変わらないのに全ファイルを送り直さない・開いたままの別端末の古い内容で上書きしない。イシュー#387)
+    async saveUserData(opts = {}) {
+        this._stampChangedKeys();
+        // 端末ごとの設定は localStorage の専用キーへ (同期しない)
+        try {
+            const dev = {};
+            DEVICE_SETTING_KEYS.forEach(k => { if (this.userData.settings && this.userData.settings[k] !== undefined) dev[k] = this.userData.settings[k]; });
+            localStorage.setItem(DEVICE_SETTINGS_STORAGE_KEY, JSON.stringify(dev));
+        } catch (e) {}
         const persisted = { ...this.userData };
         if (persisted._storage) {
             const { libraryBooks, ...rest } = persisted._storage;
@@ -3096,6 +3182,7 @@ class VirtualBookshelf {
         } catch (e) {
             console.error('localStorage 保存失敗:', e);
         }
+        if (opts.deviceOnly) return;
         if (this._isSyncReady()) {
             this._scheduleSync();
         }
@@ -5139,6 +5226,9 @@ class VirtualBookshelf {
             bookshelves.forEach(shelf => {
                 const local = _priorLocal.bookshelves.find(b => b.id === shelf.id);
                 if (!local) return;
+                // 他の端末がこの本棚をあとから並べ替えていたら、そちらを採る (イシュー#387)
+                const _ok = 'bookOrder:' + shelf.id;
+                if ((((state.privateSettings || {})._updatedAt || {})[_ok] || 0) > (((_priorLocal.settings || {})._updatedAt || {})[_ok] || 0)) return;
                 const localOrder = (_priorLocal.bookOrder && Array.isArray(_priorLocal.bookOrder[shelf.id]))
                     ? _priorLocal.bookOrder[shelf.id]
                     : (Array.isArray(local.books) ? local.books : null);
@@ -5160,8 +5250,38 @@ class VirtualBookshelf {
             Object.entries(_priorLocal.notes || {}).forEach(([asin, n]) => { if (n) notes[asin] = n; });
         }
 
+        // 設定のマージ (イシュー#387・ADR-137):
+        //   端末ごとの見た目の好み → 常に手元 (同期先の値は使わない)
+        //   共通設定 → キーごとの更新時刻 (_updatedAt) で新しい方。時刻が同じ/無い時は同期先 (従来どおり)
+        let _localWon = false;
         const currentSettings = this.userData?.settings || {};
-        const mergedSettings = { ...currentSettings, ...state.privateSettings };
+        const remoteSettings = this._commonSettings(state.privateSettings || {});
+        const localTs = currentSettings._updatedAt || {};
+        const remoteTs = remoteSettings._updatedAt || {};
+        const mergedSettings = { ...currentSettings, ...remoteSettings };
+        Object.keys(localTs).forEach(k => {
+            if (k.startsWith('bookOrder:')) return;
+            if ((localTs[k] || 0) > (remoteTs[k] || 0) && k in currentSettings) mergedSettings[k] = currentSettings[k];
+        });
+        const mergedTs = { ...remoteTs };
+        Object.keys(localTs).forEach(k => { if ((localTs[k] || 0) > (mergedTs[k] || 0)) mergedTs[k] = localTs[k]; });
+        mergedSettings._updatedAt = mergedTs;
+        DEVICE_SETTING_KEYS.forEach(k => { if (k in currentSettings) mergedSettings[k] = currentSettings[k]; else delete mergedSettings[k]; });
+        // 本棚の並び順: 手元の方が新しく並べ替えた本棚は手元の順を採る (未同期フラグの有無によらない)
+        if (_priorLocal && _priorLocal.bookOrder) {
+            bookshelves.forEach(shelf => {
+                const k = 'bookOrder:' + shelf.id;
+                const lo = _priorLocal.bookOrder[shelf.id];
+                if (!Array.isArray(lo) || !((localTs[k] || 0) > (remoteTs[k] || 0))) return;
+                // 所属は同期先、順序だけ手元 (所属の変更は並べ替えの更新時刻の対象外)
+                const memberSet = new Set(shelf.books);
+                const loSet = new Set(lo);
+                shelf.books = [...lo.filter(a => memberSet.has(a)), ...shelf.books.filter(a => !loSet.has(a))];
+                bookOrder[shelf.id] = shelf.books;
+                _localWon = true;
+            });
+        }
+        Object.keys(localTs).forEach(k => { if (!k.startsWith('bookOrder:') && (localTs[k] || 0) > (remoteTs[k] || 0)) _localWon = true; });
         this.userData = {
             bookshelves,
             notes,
@@ -5186,8 +5306,10 @@ class VirtualBookshelf {
             }
         }
 
-        // 未同期ローカル編集を採用した場合は、読込後に同期先へ再 push して確定させる
-        if (_hasPendingLocal && this._isSyncReady()) {
+        this._snapshotSyncedState();
+        // 未同期ローカル編集・手元の方が新しい項目を採用した場合は、読込後に同期先へ再 push して確定させる
+        // (GitHub は閉じる時に送り切れないため、次に開いた時のこの再送で保証する)
+        if ((_hasPendingLocal || _localWon) && this._isSyncReady()) {
             this._scheduleSync();
         }
 
@@ -5400,9 +5522,10 @@ class VirtualBookshelf {
             }
 
             // private/settings.json
+            // 端末ごとの見た目の好みは書かない (イシュー#387)。_updatedAt (キーごとの更新時刻) は共通側に載せる
             entries.push({ op: 'put', path: 'private/settings.json', data: {
                 version: '2.0',
-                ...(this.userData.settings || {})
+                ...this._commonSettings(this.userData.settings)
             }});
 
             // private/main.json
@@ -5917,7 +6040,7 @@ class VirtualBookshelf {
             left:  document.body.classList.contains('left-collapsed'),
             right: document.body.classList.contains('right-collapsed')
         };
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
     }
 
     // ===== PC v2: 本棚ツリー (UI-1 + UI-2) =====
@@ -14589,7 +14712,7 @@ class VirtualBookshelf {
         if (!this.userData.settings) this.userData.settings = {};
         this.userData.settings[key] = value;
         delete this.userData.settings.starDisplay; // 旧キーは破棄
-        this.saveUserData();
+        this.saveUserData({ deviceOnly: true });
     }
 
     /**
