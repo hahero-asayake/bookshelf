@@ -14870,34 +14870,59 @@ class VirtualBookshelf {
 }
 
 // Lazy Loading for Images
+// イシュー#389: 本棚スクロール中に「空の枠」が見える時間を減らすための先読み。
+// 計測(scripts/verify/389-scroll-perf.mjs・389-results.md)で、旧rootMargin:'200px'は
+// 1200px/sのスクロールに対して先読みの時間的余裕(≒167ms)が足りず、空き枠が見える秒数が
+// 10秒中4〜7秒に達していた。rootMarginを進行方向(下)に厚く広げ、decoding/fetchpriorityの
+// ヒントも付ける。呼び出し側(各テンプレートのimgタグ)は変えず、ここ1か所にまとめる。
 class LazyLoader {
     constructor() {
-        // 既に observe 済みの img を覚えておき、再スキャン時の二重 observe を避ける。
+        // 既に observe 済みの要素を覚えておき、再スキャン時の二重 observe を避ける。
         // content-visibility:auto の画面外カードは交差しないので .lazy のまま残り、
         // observe() が呼ばれるたびに querySelectorAll に再ヒットするため必須。
+        // 重要(実測で判明・2点): 本棚一覧は #view-bookshelf (overflow:auto) が実際にスクロールする
+        // コンテナで、ページ本体(html/body)は動かない。IntersectionObserverの既定root(=トップレベル
+        // のビューポート)のままrootMarginを広げても、中間のスクロールコンテナ自身の矩形でクリップ
+        // されてしまい効果が出なかった→rootにこのコンテナを明示して解決する。
+        // もう1点: WebKitは、root指定後も観測対象が img 自体だとcontent-visibility:auto を持つ
+        // 祖先(.book-item)のクリッピングでrootMarginの拡張域に届かず「交差」が検知されなかった
+        // (chromiumは img 直接観測でも効いたがWebKitは効かなかった・実測で確認)。
+        // content-visibility:auto を持つ .book-item 自身を観測対象にすると両ブラウザで効く。
         this._observed = new WeakSet();
+        const scrollRoot = document.getElementById('view-bookshelf') || null;
         this.observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        const img = entry.target;
-                        img.src = img.dataset.src;
-                        img.classList.remove('lazy');
-                        this.observer.unobserve(img);
-                        this._observed.delete(img);
+                        const item = entry.target;
+                        const img = item.querySelector('img.lazy');
+                        if (img) {
+                            // rootMarginの拡張域(先読み分)で交差したのか、実ビューポート内に既にあるのかを
+                            // 区別し、本当に見えている分を優先してデコード/取得させる(fetchpriority)。
+                            const r = entry.boundingClientRect;
+                            const reallyVisible = r.bottom > 0 && r.top < window.innerHeight;
+                            img.setAttribute('fetchpriority', reallyVisible ? 'high' : 'low');
+                            img.setAttribute('decoding', 'async'); // メインスレッドのデコード待ちでスクロールを止めない
+                            img.src = img.dataset.src;
+                            img.classList.remove('lazy');
+                        }
+                        this.observer.unobserve(item);
+                        this._observed.delete(item);
                     }
                 });
             },
-            { rootMargin: '200px' }   // 画面手前で先読みしてスクロール時の表紙ポップインを抑える
+            // 画面1〜2画面ぶん先読みする。下方向(スクロールで進む側)を厚く・上方向(戻り)も少し持つ。
+            { root: scrollRoot, rootMargin: '300px 0px 1200px 0px' }
         );
     }
 
     observe() {
         const imgs = document.querySelectorAll('img.lazy');
         for (const img of imgs) {
-            if (this._observed.has(img)) continue;   // 二重 observe を防ぐ
-            this._observed.add(img);
-            this.observer.observe(img);
+            const item = img.closest('.book-item') || img; // content-visibility:autoを持つ祖先を観測
+            if (this._observed.has(item)) continue;   // 二重 observe を防ぐ
+            this._observed.add(item);
+            this.observer.observe(item);
         }
     }
 }
