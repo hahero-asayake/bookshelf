@@ -90,3 +90,27 @@ origin/main = 441cd65（#401 段階描画）
 | cover-cache-sw.spec.js:71（SW 許可下で、2回目のロードで表紙の要求が0件） | 失敗：要求が 8件（0件のはず） | 単独でも失敗。**修正前の eb387aa の版（127.0.0.1:8406）でも、#401 より前の f01c257 の版（:8407）でも、同じく8件で失敗**。テストは作業ツリーのものを使った | いいえ（#401 より前から失敗。原因は未特定。テスト側の共通部分か環境の可能性） |
 
 - 単体（npm test）: 723 passed（step4・b23ef00 の時点）。
+
+## push・本番確認（step6・07:57〜08:04）
+
+- push 前の確認:
+  - `git log origin/main..HEAD` は8件で変わっていない。
+  - check:version（`--range=origin/main..HEAD`）OK。index.html は `bookshelf.js?v=2026102906`（#398 が #402 の 04 の後に上げた値＝両方の変更を含む）。
+  - npm test: 723 passed。
+  - 関連 E2E 5本（custom-order-switch・home-highlight-sort・touch-reorder・sort-persist・list-staged-render）: 32 passed。
+- push: `BOOKSHELF_ISSUE=402 BOOKSHELF_PUSH_ALLOW=398,405 git push origin HEAD:main` → `441cd65..018b336`。#398・#405 を同梱（②承認）。
+- Pages: 本番は `https://asayake.org/bookshelf/`（github.io からリダイレクトされる）。`?v=2026102906` で、修正（`rank.has(a.asin)`・`is-custom-order` の除外）が載っていることを確認した。
+- CI（018b336）:
+  - deploy/build/report-build-status は success。
+  - **test は failure**: 529 passed / **1 failed = cover-cache-sw.spec.js:71**（#391 由来の前からある失敗・②が #399 と合わせて別扱い）。1回目は 14件失敗、リトライで通ったものを含む。
+  - push 前の 441cd65 も test は failure だった。
+- 本番での計測（397-sort-perf.mjs・本番 URL・SW on・913冊・5 rep）:
+
+| 条件 | 並び順の変更 tFrame・固まる（中央値/最大） | 昇順/降順 | ドラッグ |
+|---|---|---|---|
+| chromium x6 | 100/117・107/176（各回: 115・107・57・**176（custom へ）**・68（custom から）） | 84/103・52/108 | 55/59・25/29 |
+| WebKit | 78/112・41/59（各回: 41・39・26・41・59） | 70/73・25/26 | 39/80・0/0 |
+
+  - 本番でも 1.1〜1.2秒の跳ねは出ない（カスタム順の切替回で 176ms・68ms）。
+  - WebKit は、並び順の変更・昇順/降順とも、固まる時間が ≤50ms の目標内（中央値）。x6 は未達のまま（52〜107ms）。
+  - 参考: #397 本番 x6 は、並び順の変更 190・固まる 232、昇順/降順 166/166。
