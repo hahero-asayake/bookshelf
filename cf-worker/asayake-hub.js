@@ -561,12 +561,26 @@ async function putObject(env, sess, key, body, ifMatch) {
     return new Response(null, { status: 200, headers: { 'ETag': res.httpEtag } });
 }
 
+// イシュー#392: files/dirs (既存互換・フィールド追加のみ) に加えて entries[] を返す。
+// クライアント (hub-adapter) は files 一括 GET の代わりに entries[].etag を見て、変わった
+// ファイルだけを並列取得できる (#391 と同じ R+PAR の作り)。
+// include 未指定でも R2 の ListObject は etag/httpEtag/size/uploaded を持つ (httpMetadata/
+// customMetadata だけが include 指定を要る) ので、追加コスト無しで使える。
 async function listDir(env, base, rel) {
     const prefix = base + (rel ? rel.replace(/\/?$/, '/') : '');
-    const out = { files: [], dirs: [] };
+    const out = { files: [], dirs: [], entries: [], truncated: false };
     const res = await env.BUCKET.list({ prefix, delimiter: '/' });
-    for (const o of res.objects) out.files.push(o.key.slice(prefix.length));
+    for (const o of res.objects) {
+        const name = o.key.slice(prefix.length);
+        out.files.push(name);
+        out.entries.push({ name, etag: o.httpEtag, size: o.size, uploaded: o.uploaded });
+    }
     for (const p of (res.delimitedPrefixes || [])) out.dirs.push(p.slice(prefix.length).replace(/\/$/, ''));
+    // 1000件超 (R2 list の既定上限) の truncated/cursor は未対応 (今回のスコープ外)。
+    // files/dirs は従来どおり先頭ページのみ返す (既存挙動を変えない)。entries も同じ先頭ページの
+    // 分だけ返すが、それだけでは全体の差分判定ができないため truncated:true を立てて、
+    // クライアント側に「entries を信用せず全件取得へフォールバックする」契約にする (②指示2026-10-29)。
+    if (res.truncated) out.truncated = true;
     return json(out);
 }
 
