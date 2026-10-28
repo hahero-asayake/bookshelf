@@ -88,29 +88,16 @@ class GitHubAdapter extends StorageAdapter {
         // しても _ensureRemoteShaMap() が例外を飲み込み _remoteShaMap={} にフォールバックするため、
         // 個別取得(contents API)の経路へ安全に落ちる(tests/unit/github-adapter.test.js のmockFetchは
         // tree系URLを既定で404にし、この経路を固定で確認する)。
+        // 版キャッシュ本体(ローカル保存・差分判定)は VersionCache(js/storage-adapter.js) に抽出済み
+        // (イシュー#391 R の共通化・#392 step4・②承認)。一覧+版情報の取得手段(tree API)だけは
+        // GitHub固有なのでここに残す。ns は同期先・リポジトリ単位で分ける(owner/repo/branch/basePath
+        // が変われば別キャッシュ、旧 _localCacheKey() と同じ命名)。
         this._shaCacheEnabled = true;
         this._remoteShaMap = null; // path(フルパス) -> sha。null=tree未取得。Map取得後は空でも{}を置く
         this._treeFetchPromise = null; // 同時に複数readJSONが呼ばれても tree 取得は1回にまとめる
-        this._localCache = null; // 遅延読み込み: {[fullPath]: {sha, text}}
-    }
-
-    // 同期先・リポジトリ単位でキーを分ける (owner/repo/branch/basePath が変われば別キャッシュ)。
-    _localCacheKey() {
-        return `virtualBookshelf_ghShaCache_${this.owner}/${this.repo}/${this.branch}${this.basePath ? '/' + this.basePath : ''}`;
-    }
-
-    _loadLocalCache() {
-        if (this._localCache) return this._localCache;
-        try {
-            const raw = localStorage.getItem(this._localCacheKey());
-            this._localCache = raw ? JSON.parse(raw) : {};
-        } catch (_) { this._localCache = {}; }
-        return this._localCache;
-    }
-
-    _saveLocalCache() {
-        try { localStorage.setItem(this._localCacheKey(), JSON.stringify(this._localCache || {})); }
-        catch (_) { /* QuotaExceeded等は諦める(キャッシュが使えないだけで機能は壊れない) */ }
+        this._versionCache = new VersionCache(
+            `virtualBookshelf_ghShaCache_${this.owner}/${this.repo}/${this.branch}${this.basePath ? '/' + this.basePath : ''}`
+        );
     }
 
     // tree 一括取得 (ref→commit→tree recursive=1、実測: 本物のリポジトリで各0.3〜0.7秒・3本直列)。
@@ -190,26 +177,18 @@ class GitHubAdapter extends StorageAdapter {
         const shaMap = await this._ensureRemoteShaMap();
         const fullPath = this._fullPath(path);
         const remoteSha = shaMap[fullPath];
-        if (remoteSha === undefined) {
-            // tree未取得(ネットワーク不調等)なら shaMap が {} になっており、
-            // この分岐には「本当に存在しない」場合も入り得るため、不存在と断定せずフォールバックする。
-            return undefined;
-        }
-        const local = this._loadLocalCache();
-        const entry = local[fullPath];
-        if (entry && entry.sha === remoteSha) {
+        // remoteSha===undefined (tree未取得=ネットワーク不調等、または「本当に存在しない」) なら
+        // VersionCache.read が undefined を返す=通常取得にフォールバックする(振る舞い不変)。
+        const cached = this._versionCache.read(fullPath, remoteSha);
+        if (cached !== undefined) {
             this._shaCache.set(path, remoteSha);
-            this._lastKnownContent.set(path, entry.text);
-            return entry.text;
+            this._lastKnownContent.set(path, cached);
         }
-        return undefined; // sha不一致 or ローカル未保存 = 通常取得が必要
+        return cached;
     }
 
     _rememberShaCache(path, sha, text) {
-        const local = this._loadLocalCache();
-        const fullPath = this._fullPath(path);
-        local[fullPath] = { sha, text };
-        this._saveLocalCache();
+        this._versionCache.remember(this._fullPath(path), sha, text);
     }
 
     async readJSON(path) {
@@ -466,13 +445,12 @@ class GitHubAdapter extends StorageAdapter {
         // no-store で必ずネットワークから最新を取る。
         // TO (イシュー#391 R+PAR+TO): タイムアウトを5秒に短縮し、失敗(タイムアウト/ネットワークエラー)
         // したら2秒待って1回だけ再試行する。5xx/429の再試行判定は今回未実装 (次回の課題・notesに記載)。
-        let result;
-        try {
-            result = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, 5000, hooks);
-        } catch (_firstErr) {
-            await new Promise((r) => setTimeout(r, 2000));
-            result = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, 5000, hooks);
-        }
+        // リトライの枠組み自体は StorageAdapter.withRetry に抽出済み(イシュー#392 step4・②承認、
+        // 振る舞いは変えない)。
+        const result = await StorageAdapter.withRetry(
+            () => StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, 5000, hooks),
+            { retries: 1, delayMs: 2000 }
+        );
         const { status, ok, statusText, headers, json } = result;
         if (status === 404) return null;
         if (status === 401) throw new GitHubAuthError('GitHub authentication failed');

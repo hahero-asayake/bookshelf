@@ -224,6 +224,82 @@ class StorageAdapter {
         }
         return retryPut(latest);
     }
+
+    /**
+     * 失敗したら delayMs 待って retries 回まで再試行する汎用ヘルパー (イシュー#391 TO+D の抽出・
+     * #392 step4 で②承認。GitHubAdapter._getContent にベタ書きされていた「5秒タイムアウトで失敗
+     * したら2秒待って1回だけ再試行」をここに移す・振る舞いは変えない)。fn は1回分の試行を行う
+     * 関数(Promiseを返す)。5xx/429 の判定等、再試行すべきかどうかの分岐は今回未実装(GitHubAdapter
+     * のコメントのとおり次回の課題)。
+     * @param {function():Promise} fn
+     * @param {{retries?:number, delayMs?:number}} [opts]
+     */
+    static async withRetry(fn, { retries = 1, delayMs = 2000 } = {}) {
+        let lastErr;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                return await fn();
+            } catch (e) {
+                lastErr = e;
+                if (attempt < retries) await new Promise((r) => setTimeout(r, delayMs));
+            }
+        }
+        throw lastErr;
+    }
+}
+
+/**
+ * 「一覧+版情報 (sha/ETag等)」と前回読んだ版をローカル (localStorage) に対応付けて覚えておき、
+ * リモートの版が前回と同じならネットワーク取得をスキップするための共通キャッシュ
+ * (イシュー#391 R の抽出・#392 step4 で②承認)。
+ *
+ * GitHubAdapter(_loadLocalCache/_saveLocalCache/_tryReadFromShaCache/_rememberShaCache)に
+ * ベタ書きされていたロジックをここに移した(振る舞いは変えない)。「一覧+版情報の取得手段」
+ * (GitHub=tree API 一括 / Hub=listDir の entries) はバックエンドごとに異なるため adapter 側に残し、
+ * 「版が一致するかどうかの判定・ローカル保存・読み出し」だけをここに持つ。
+ *
+ * ns (namespace): adapter が自分の識別子(owner/repo/branch や apiBase 等)から作る localStorage キー。
+ * fullPath: adapter 内部のフルパス表現(basePath 等を含めた実パス)。
+ */
+class VersionCache {
+    constructor(ns) {
+        this.ns = ns;
+        this._data = null; // 遅延読み込み: {[fullPath]: {version, text}}
+    }
+
+    _load() {
+        if (this._data) return this._data;
+        try {
+            const raw = localStorage.getItem(this.ns);
+            this._data = raw ? JSON.parse(raw) : {};
+        } catch (_) { this._data = {}; }
+        return this._data;
+    }
+
+    _save() {
+        try { localStorage.setItem(this.ns, JSON.stringify(this._data || {})); }
+        catch (_) { /* QuotaExceeded等は諦める(キャッシュが使えないだけで機能は壊れない) */ }
+    }
+
+    /**
+     * remoteVersion (リモートの一覧取得で分かった版) がローカル保存分と一致すれば本文を返す。
+     * @param {string} fullPath
+     * @param {string|undefined} remoteVersion 一覧に無い(取得失敗・旧応答・truncated等)なら undefined
+     * @returns {string|undefined} ヒットすれば本文、ミスなら undefined (呼び出し側は通常取得にフォールバック)
+     */
+    read(fullPath, remoteVersion) {
+        if (remoteVersion === undefined) return undefined;
+        const entry = this._load()[fullPath];
+        if (entry && entry.version === remoteVersion) return entry.text;
+        return undefined;
+    }
+
+    remember(fullPath, version, text) {
+        const local = this._load();
+        local[fullPath] = { version, text };
+        this._save();
+    }
 }
 
 window.StorageAdapter = StorageAdapter;
+window.VersionCache = VersionCache;

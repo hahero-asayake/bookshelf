@@ -365,13 +365,13 @@ describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・
         expect(data).toEqual({ a: 1 });
         const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
         const saved = JSON.parse(localStorage.getItem(key));
-        expect(saved['p.json'].sha).toBe('sha-remote-1');
+        expect(saved['p.json'].version).toBe('sha-remote-1');
         expect(saved['p.json'].text).toBe('{"a":1}');
     });
 
     it('前回保存したshaと最新shaが一致すれば、本文取得(contents API)を呼ばずローカル保存分を返す', async () => {
         const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
-        localStorage.setItem(key, JSON.stringify({ 'p.json': { sha: 'sha-same', text: '{"cached":true}' } }));
+        localStorage.setItem(key, JSON.stringify({ 'p.json': { version: 'sha-same', text: '{"cached":true}' } }));
         // handlerQueue には contents API 用のハンドラを積まない = 呼ばれたら「no more mock handlers」で落ちる
         mockFetch([...treeOkHandlers('sha-same')], { treeFails: false });
         const data = await adapter.readJSON('p.json');
@@ -383,12 +383,12 @@ describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・
 
     it('shaが変わっていれば通常どおり本文を取り直し、ローカルキャッシュを更新する', async () => {
         const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
-        localStorage.setItem(key, JSON.stringify({ 'p.json': { sha: 'sha-old', text: '{"old":true}' } }));
+        localStorage.setItem(key, JSON.stringify({ 'p.json': { version: 'sha-old', text: '{"old":true}' } }));
         mockFetch([...treeOkHandlers('sha-new'), () => contentRes('{"new":true}', 'sha-new')], { treeFails: false });
         const data = await adapter.readJSON('p.json');
         expect(data).toEqual({ new: true });
         const saved = JSON.parse(localStorage.getItem(key));
-        expect(saved['p.json'].sha).toBe('sha-new');
+        expect(saved['p.json'].version).toBe('sha-new');
     });
 
     it('fallback: tree取得が失敗(404)しても通常のcontents API取得にフォールバックして動作する', async () => {
@@ -400,7 +400,7 @@ describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・
 
     it('同期先・リポジトリが変われば localStorage のキーも分かれる', async () => {
         const other = new GitHubAdapter({ owner: 'o2', repo: 'r2', branch: 'dev', token: TOKEN });
-        expect(adapter._localCacheKey()).toBe(`virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`);
-        expect(other._localCacheKey()).toBe('virtualBookshelf_ghShaCache_o2/r2/dev');
+        expect(adapter._versionCache.ns).toBe(`virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`);
+        expect(other._versionCache.ns).toBe('virtualBookshelf_ghShaCache_o2/r2/dev');
     });
 });
