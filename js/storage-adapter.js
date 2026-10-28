@@ -283,6 +283,11 @@ class VersionCache {
 
     /**
      * remoteVersion (リモートの一覧取得で分かった版) がローカル保存分と一致すれば本文を返す。
+     * 比較前に弱い ETag 接頭辞 (W/) を正規化する(#392 step6 本番実測で発見: listDir の entries[].etag
+     * は R2 の httpEtag をそのまま返す強い ETag だが、GET レスポンスの ETag ヘッダは本番の
+     * Cloudflare 経由で `W/"..."` に変わることがあり、文字列比較だけだと値が同じでも常にミスする
+     * =「変更なしでも毎回GET」という本末転倒になっていた。GitHub の sha にはこの接頭辞が付かない
+     * ため正規化しても無害)。
      * @param {string} fullPath
      * @param {string|undefined} remoteVersion 一覧に無い(取得失敗・旧応答・truncated等)なら undefined
      * @returns {string|undefined} ヒットすれば本文、ミスなら undefined (呼び出し側は通常取得にフォールバック)
@@ -290,8 +295,12 @@ class VersionCache {
     read(fullPath, remoteVersion) {
         if (remoteVersion === undefined) return undefined;
         const entry = this._load()[fullPath];
-        if (entry && entry.version === remoteVersion) return entry.text;
+        if (entry && VersionCache._stripWeak(entry.version) === VersionCache._stripWeak(remoteVersion)) return entry.text;
         return undefined;
+    }
+
+    static _stripWeak(v) {
+        return typeof v === 'string' ? v.replace(/^W\//, '') : v;
     }
 
     remember(fullPath, version, text) {
