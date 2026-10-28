@@ -1947,6 +1947,7 @@ class VirtualBookshelf {
         if (canDiff) {
             this._renderListDiff(bookshelf);
         } else {
+            this._cancelListTail(); // 段階描画の残りは捨てる (全件描画がやり直す・通知も全件描画側の1回だけ) (#401)
             bookshelf.textContent = '';
             bookshelf.className = cls;
             this.renderStandardView(bookshelf);
@@ -2000,6 +2001,7 @@ class VirtualBookshelf {
     // イシュー#359 段階④ (R1): 既存のカードを asin で引き、追加・削除・並び替え・内容変更だけ DOM を触る。
     // 旧 updateDisplay が全件作り直しで落としていた状態 (選択・ホバーポップ・D&D の罫線) は使い回す要素でも落とす (見える挙動は同じ)。
     _renderListDiff(container) {
+        this._flushListTail(); // 段階描画の途中なら、先に残りを置き切ってから差分を取る (#401)
         const books = this._orderedBooksToRender();
         if (books.length === 0) {
             container.textContent = '';
@@ -2045,6 +2047,15 @@ class VirtualBookshelf {
             }
             removed += old.size; // 新しい一覧に無い本
             moved = movedEstimate;
+            // イシュー#401 案C (ADR-139): 並べ替えの時だけ段階描画。いま見えている所までを先に置き、
+            // 残りは小分けにして後から足す (1回で913件を置くとレイアウトで固まるため)。置き終えた時の DOM は
+            // 従来と同じ全件・並び順どおりで、ui:books-rendered は置き終えてから1回だけ出す。
+            const head = this._listHeadCount(container, finalEls.length);
+            if (head < finalEls.length) {
+                container.replaceChildren(...finalEls.slice(0, head));
+                this._startListTail(container, finalEls, head, created + removed + moved);
+                return;
+            }
             container.replaceChildren(...finalEls);
         } else {
             let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
@@ -2072,7 +2083,62 @@ class VirtualBookshelf {
         if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: created + removed + moved });
     }
 
+    // イシュー#401 案C (ADR-139): 段階描画で先に置く件数。並べ替え前の一覧で、画面の下端より上にある
+    // カードの数 + 余裕分 (並べ替え前のレイアウトは確定済みなので読んでも追加の計算は起きない)。
+    _listHeadCount(container, total) {
+        const EXTRA = 24, MIN = 48;
+        const items = container.children;
+        const scroller = document.getElementById('view-bookshelf');
+        const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+        // 画面下端より上にある最後のカードを二分探索で探す
+        let lo = 0, hi = items.length - 1, last = -1;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (items[mid].getBoundingClientRect().top < bottom) { last = mid; lo = mid + 1; } else hi = mid - 1;
+        }
+        return Math.min(total, Math.max(MIN, last + 1 + EXTRA));
+    }
+
+    _startListTail(container, finalEls, from, changed) {
+        const CHUNK = 120;
+        const tail = { container, finalEls, next: from, changed, timer: null };
+        this._listTail = tail;
+        const step = () => {
+            if (this._listTail !== tail) return;
+            const end = Math.min(finalEls.length, tail.next + CHUNK);
+            container.append(...finalEls.slice(tail.next, end));
+            tail.next = end;
+            if (end >= finalEls.length) this._finishListTail(tail);
+            else tail.timer = setTimeout(step, 0);
+        };
+        tail.timer = setTimeout(step, 0);
+    }
+
+    // 段階描画の残りを今すぐ全部置く (再描画・ドラッグ開始・1冊移動の前に呼ぶ)。途中で無ければ何もしない。
+    _flushListTail() {
+        const tail = this._listTail;
+        if (!tail) return;
+        clearTimeout(tail.timer);
+        if (tail.next < tail.finalEls.length) tail.container.append(...tail.finalEls.slice(tail.next));
+        tail.next = tail.finalEls.length;
+        this._finishListTail(tail);
+    }
+
+    _finishListTail(tail) {
+        if (this._listTail !== tail) return;
+        this._listTail = null;
+        if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: tail.changed });
+    }
+
+    _cancelListTail() {
+        const tail = this._listTail;
+        if (!tail) return;
+        clearTimeout(tail.timer);
+        this._listTail = null;
+    }
+
     renderStandardView(container) {
+        this._cancelListTail();
         const booksToRender = this._orderedBooksToRender();
 
         // Phase H2-5: ページネーション廃止。全件を 1 リストで描画 (D&D がページを跨げる)。
@@ -2297,6 +2363,7 @@ class VirtualBookshelf {
 
     _onBookPointerDown(e, bookElement) {
         if (this.sortOrder !== 'custom') return;
+        this._flushListTail(); // 段階描画の途中なら残りを置き切ってからドラッグを始める (#401)
         e.preventDefault();
         e.stopPropagation();
 
@@ -8175,6 +8242,7 @@ class VirtualBookshelf {
     _moveBookElement(draggedASIN, targetASIN) {
         const container = document.getElementById('bookshelf');
         if (!container) return false;
+        this._flushListTail(); // 段階描画の途中でも、残りを置き切ってから1冊を動かす (#401)
         const sel = (asin) => container.querySelector(`.book-item[data-asin="${CSS.escape(asin)}"]`);
         const dragged = sel(draggedASIN);
         const target = sel(targetASIN);
