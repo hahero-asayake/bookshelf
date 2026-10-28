@@ -20,6 +20,23 @@
 //       (アプリが書き出す)
 //     plugins/<id>/            # プラグイン (private/public 両方が参照)
 
+// PAR (イシュー#391 R+PAR+TO): 同時実行数を上限(既定4)に制限して tasks (関数の配列、各関数は
+// Promise を返す) を並列実行する。loadAll() の直列12本フェッチ(起動時タイムアウトの本線、
+// step1実測)を解消するために使う。tasks の順序どおりに結果配列を返す(呼び出し順を保つ)。
+async function runLimited(tasks, limit = 4) {
+    const results = new Array(tasks.length);
+    let idx = 0;
+    async function worker() {
+        while (idx < tasks.length) {
+            const i = idx++;
+            results[i] = await tasks[i]();
+        }
+    }
+    const workerCount = Math.max(1, Math.min(limit, tasks.length));
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+}
+
 class BookshelfStorage {
     constructor(adapter) {
         this.adapter = adapter || new LocalFSAdapter();
@@ -276,18 +293,32 @@ class BookshelfStorage {
 
     // ===== 一括読み込み (新構造: 全部 private/ 配下) =====
     async loadAll() {
-        const library = await this.adapter.readJSON('private/library.json');
-        const exclusions = (await this.adapter.readJSON('private/exclusions.json')) || { excludedASINs: [] };
-        const notesFile = (await this.adapter.readJSON('private/notes.json')) || { notes: {} };
-        const bookshelvesMeta = (await this.adapter.readJSON('private/bookshelves.json')) || { bookshelves: [] };
-        const allBookshelf = await this.adapter.readJSON('private/bookshelves/all.json');
-        const privateSettings = (await this.adapter.readJSON('private/settings.json')) || {};
-        const privateMain = (await this.adapter.readJSON('private/main.json')) || {};
+        // PAR (イシュー#391): 固定7本は同時数4で並列取得 (直列だと起動時タイムアウトの本線になる・
+        // step1実測)。bookshelvesMeta が確定してから本棚ごとのファイル(本数は蔵書構成に依存)を
+        // 同じく同時数4で並列取得する2段構成 (本棚一覧はbookshelvesMetaの中身が無いと分からないため)。
+        const [library, exclusionsRaw, notesFileRaw, bookshelvesMetaRaw, allBookshelf, privateSettingsRaw, privateMainRaw] =
+            await runLimited([
+                () => this.adapter.readJSON('private/library.json'),
+                () => this.adapter.readJSON('private/exclusions.json'),
+                () => this.adapter.readJSON('private/notes.json'),
+                () => this.adapter.readJSON('private/bookshelves.json'),
+                () => this.adapter.readJSON('private/bookshelves/all.json'),
+                () => this.adapter.readJSON('private/settings.json'),
+                () => this.adapter.readJSON('private/main.json')
+            ], 4);
+        const exclusions = exclusionsRaw || { excludedASINs: [] };
+        const notesFile = notesFileRaw || { notes: {} };
+        const bookshelvesMeta = bookshelvesMetaRaw || { bookshelves: [] };
+        const privateSettings = privateSettingsRaw || {};
+        const privateMain = privateMainRaw || {};
 
+        const targets = bookshelvesMeta.bookshelves.filter((meta) => !meta.isSpecial);
+        const bookshelfResults = await runLimited(
+            targets.map((meta) => async () => ({ meta, data: await this.adapter.readJSON(`private/bookshelves/${meta.slug}.json`) })),
+            4
+        );
         const bookshelfFiles = {};
-        for (const meta of bookshelvesMeta.bookshelves) {
-            if (meta.isSpecial) continue;
-            const data = await this.adapter.readJSON(`private/bookshelves/${meta.slug}.json`);
+        for (const { meta, data } of bookshelfResults) {
             if (data) bookshelfFiles[meta.internalId] = data;
         }
 
