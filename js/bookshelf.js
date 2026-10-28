@@ -3523,7 +3523,15 @@ class VirtualBookshelf {
             if (e instanceof GitHubAuthError) {
                 toast('GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。');
             } else {
-                toast(`GitHub からの読み込みに失敗しました:\n${e.message}`);
+                // 失敗しても画面は直前の手元データのまま(起動2段化・C-277、loadData()が先に描画済み)。
+                // エラー文言だけだと「表示が壊れているのでは」という不安を招くため、「今表示しているのは
+                // 手元のデータであること」と「再試行できること」を併せて出す
+                // (ui-standards §2-11「失敗を無言にしない・何が起きたか+次にどうすればよいかの2要素」・イシュー#391 E案)。
+                toast('手元のデータで表示中です。GitHub からの読み込みに失敗しました。', {
+                    type: 'error',
+                    action: { label: '再試行', onClick: () => this.initGitHubSync() },
+                    duration: 10000
+                });
             }
         }
     }
