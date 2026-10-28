@@ -789,7 +789,11 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
             { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'book' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'book' },
             { stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex: 0, blockType: 'book' },
-            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'book', resumedBy: 'messageChannel' },
+            // イシュー#405: resumedByはtimeout/messageChannelのPromise.raceの結果であり、どちらが先に
+            // 解決するかは環境依存で当てにならない(js/publish-article-generator.js #163のコメント参照。
+            // Node.js/vitestでは常にmessageChannelが優勢だが実ブラウザでは逆転することを実測済み)。
+            // 他のyield-done検証(922行目付近)と同じく、値そのものではなく記録されることだけを見る。
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'book', resumedBy: expect.stringMatching(/^(timeout|messageChannel)$/) },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
@@ -807,7 +811,8 @@ describe('opts.onProgress (長文メモ読込の進捗通知, イシュー#143�
             { stage: 'rendering', done: 0, total: 0, phase: 'block-start', blockIndex: 0, blockType: 'text' },
             { stage: 'rendering', done: 0, total: 0, phase: 'block-done', blockIndex: 0, blockType: 'text' },
             { stage: 'rendering', done: 0, total: 0, phase: 'yield-start', blockIndex: 0, blockType: 'text' },
-            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'text', resumedBy: 'messageChannel' },
+            // イシュー#405: 上の注記と同じ理由でresumedByの値は環境依存(timeout/messageChannelいずれでもよい)。
+            { stage: 'rendering', done: 0, total: 0, phase: 'yield-done', blockIndex: 0, blockType: 'text', resumedBy: expect.stringMatching(/^(timeout|messageChannel)$/) },
             { stage: 'assembling', done: 0, total: 0 }
         ]);
     });
