@@ -1,0 +1,496 @@
+{
+  "apibase": "http://localhost:8787",
+  "rounds": 5,
+  "measuredAt": "2026-10-28T20:57:03.753Z",
+  "results": {
+    "same": [
+      {
+        "totalMs": 381,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 6
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 10,
+            "endMs": 15
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 16,
+            "endMs": 20
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 20,
+            "endMs": 24
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 24,
+            "endMs": 26
+          }
+        ],
+        "bodyGetCount": 2,
+        "listCallCount": 2,
+        "serial": true
+      },
+      {
+        "totalMs": 379,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 5
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 4,
+            "endMs": 7
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 11,
+            "endMs": 14
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 15,
+            "endMs": 18
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 20,
+            "endMs": 22
+          }
+        ],
+        "bodyGetCount": 2,
+        "listCallCount": 2,
+        "serial": false
+      },
+      {
+        "totalMs": 379,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 6
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 6,
+            "endMs": 10
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 11,
+            "endMs": 14
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 15,
+            "endMs": 19
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 21,
+            "endMs": 23
+          }
+        ],
+        "bodyGetCount": 2,
+        "listCallCount": 2,
+        "serial": true
+      },
+      {
+        "totalMs": 382,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 5
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 4,
+            "endMs": 7
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 7,
+            "endMs": 11
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 14,
+            "endMs": 18
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 18,
+            "endMs": 20
+          }
+        ],
+        "bodyGetCount": 2,
+        "listCallCount": 2,
+        "serial": false
+      },
+      {
+        "totalMs": 379,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 6
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 5,
+            "endMs": 8
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 11,
+            "endMs": 15
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 15,
+            "endMs": 20
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 20,
+            "endMs": 22
+          }
+        ],
+        "bodyGetCount": 2,
+        "listCallCount": 2,
+        "serial": false
+      }
+    ],
+    "changed": [
+      {
+        "totalMs": 382,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 7
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 5,
+            "endMs": 8
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 13,
+            "endMs": 18
+          },
+          {
+            "path": "/data/private/library.json",
+            "method": "GET",
+            "status": 200,
+            "startMs": 18,
+            "endMs": 21
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 23,
+            "endMs": 27
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 28,
+            "endMs": 31
+          }
+        ],
+        "bodyGetCount": 3,
+        "listCallCount": 2,
+        "serial": false
+      },
+      {
+        "totalMs": 398,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 6
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 4,
+            "endMs": 7
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 11,
+            "endMs": 15
+          },
+          {
+            "path": "/data/private/library.json",
+            "method": "GET",
+            "status": 200,
+            "startMs": 17,
+            "endMs": 22
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 26,
+            "endMs": 32
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 32,
+            "endMs": 35
+          }
+        ],
+        "bodyGetCount": 3,
+        "listCallCount": 2,
+        "serial": false
+      },
+      {
+        "totalMs": 381,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 5
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 6,
+            "endMs": 10
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 12,
+            "endMs": 16
+          },
+          {
+            "path": "/data/private/library.json",
+            "method": "GET",
+            "status": 200,
+            "startMs": 17,
+            "endMs": 19
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 22,
+            "endMs": 25
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 27,
+            "endMs": 29
+          }
+        ],
+        "bodyGetCount": 3,
+        "listCallCount": 2,
+        "serial": true
+      },
+      {
+        "totalMs": 383,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 5
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 4,
+            "endMs": 8
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 9,
+            "endMs": 12
+          },
+          {
+            "path": "/data/private/library.json",
+            "method": "GET",
+            "status": 200,
+            "startMs": 13,
+            "endMs": 16
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 19,
+            "endMs": 24
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 24,
+            "endMs": 26
+          }
+        ],
+        "bodyGetCount": 3,
+        "listCallCount": 2,
+        "serial": false
+      },
+      {
+        "totalMs": 382,
+        "timedOut": false,
+        "errors": [],
+        "requests": [
+          {
+            "path": "/data/private/bookshelves/all.json",
+            "method": "HEAD",
+            "status": 200,
+            "startMs": 0,
+            "endMs": 5
+          },
+          {
+            "path": "/data/private?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 4,
+            "endMs": 6
+          },
+          {
+            "path": "/data/private/bookshelves?list=1",
+            "method": "GET",
+            "status": 200,
+            "startMs": 7,
+            "endMs": 10
+          },
+          {
+            "path": "/data/private/library.json",
+            "method": "GET",
+            "status": 200,
+            "startMs": 12,
+            "endMs": 16
+          },
+          {
+            "path": "/data/private/publish/articles.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 18,
+            "endMs": 22
+          },
+          {
+            "path": "/data/private/publish/pages.json",
+            "method": "GET",
+            "status": 404,
+            "startMs": 22,
+            "endMs": 24
+          }
+        ],
+        "bodyGetCount": 3,
+        "listCallCount": 2,
+        "serial": false
+      }
+    ]
+  }
+}
