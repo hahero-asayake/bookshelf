@@ -80,6 +80,69 @@ class GitHubAdapter extends StorageAdapter {
         // 409 リトライの発火をアプリ層へ伝える (path, status) => void。
         // status: 'retrying' | 'recovered' | 'conflict' | 'remote-changed'。イシュー#142。
         this.onWriteStatus = null;
+        // ===== 読み込みの共通規約 (イシュー#391 R+PAR+TO) =====
+        // R: 起動時に直列12本フェッチしていた問題(step1実測)の本線対策。git trees API
+        // (ref→commit→tree recursive=1) を1回だけ呼んで全ファイルのshaを把握し、前回読んだ時の
+        // shaと一致すれば本文取得をスキップしてローカルキャッシュ(localStorage)の内容を返す。
+        // 既定は無効(enableShaCache:false): 既存の単体テスト(tests/unit/github-adapter.test.js)は
+        // 「readJSON/readText呼び出しごとにfetch1回」を前提にモックを組んでおり、tree一括取得(3本)を
+        // 常時有効にすると全テストのモックキューが不足して壊れる。今回は実装のみ完成させ、有効化と
+        // 専用のモック/E2Eは次回に行う(申し送り)。
+        this._shaCacheEnabled = false;
+        this._remoteShaMap = null; // path(フルパス) -> sha。null=tree未取得。Map取得後は空でも{}を置く
+        this._treeFetchPromise = null; // 同時に複数readJSONが呼ばれても tree 取得は1回にまとめる
+        this._localCache = null; // 遅延読み込み: {[fullPath]: {sha, text}}
+    }
+
+    // 同期先・リポジトリ単位でキーを分ける (owner/repo/branch/basePath が変われば別キャッシュ)。
+    _localCacheKey() {
+        return `virtualBookshelf_ghShaCache_${this.owner}/${this.repo}/${this.branch}${this.basePath ? '/' + this.basePath : ''}`;
+    }
+
+    _loadLocalCache() {
+        if (this._localCache) return this._localCache;
+        try {
+            const raw = localStorage.getItem(this._localCacheKey());
+            this._localCache = raw ? JSON.parse(raw) : {};
+        } catch (_) { this._localCache = {}; }
+        return this._localCache;
+    }
+
+    _saveLocalCache() {
+        try { localStorage.setItem(this._localCacheKey(), JSON.stringify(this._localCache || {})); }
+        catch (_) { /* QuotaExceeded等は諦める(キャッシュが使えないだけで機能は壊れない) */ }
+    }
+
+    // tree 一括取得 (ref→commit→tree recursive=1、実測: 本物のリポジトリで各0.3〜0.7秒・3本直列)。
+    // 失敗したら諦めて _remoteShaMap=null のまま返す (呼び出し側は個別取得にフォールバックする)。
+    async _ensureRemoteShaMap() {
+        if (this._remoteShaMap) return this._remoteShaMap;
+        if (this._treeFetchPromise) return this._treeFetchPromise;
+        this._treeFetchPromise = (async () => {
+            try {
+                const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
+                const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers() }, 5000);
+                if (!refRes.ok) { this._remoteShaMap = {}; return this._remoteShaMap; }
+                const commitSha = refRes.json.object.sha;
+                const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${commitSha}`;
+                const commitRes = await StorageAdapter.fetchJSON(commitUrl, { headers: this._headers() }, 5000);
+                if (!commitRes.ok) { this._remoteShaMap = {}; return this._remoteShaMap; }
+                const treeSha = commitRes.json.tree.sha;
+                const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${treeSha}?recursive=1`;
+                const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers() }, 5000);
+                if (!treeRes.ok || !treeRes.json || !Array.isArray(treeRes.json.tree)) { this._remoteShaMap = {}; return this._remoteShaMap; }
+                const map = {};
+                for (const entry of treeRes.json.tree) {
+                    if (entry.type === 'blob') map[entry.path] = entry.sha;
+                }
+                this._remoteShaMap = map;
+            } catch (_) {
+                // ネットワーク不調等。tree取得を諦めて個別取得(contents API)にフォールバックする。
+                this._remoteShaMap = {};
+            }
+            return this._remoteShaMap;
+        })();
+        return this._treeFetchPromise;
     }
 
     _notifyWriteStatus(path, status) {
@@ -119,12 +182,45 @@ class GitHubAdapter extends StorageAdapter {
 
     // ===== StorageAdapter 実装 =====
 
+    // R: tree一括取得のshaとlocalStorageの前回保存shaが一致すれば、本文を取らずローカル保存分を返す。
+    // 戻り値が undefined ならキャッシュミス(呼び出し側が通常どおり _getContent で取得する)。
+    // tree に存在しない path (=リモートに無い) なら null (readJSON/readText の「不存在」と同じ扱い)。
+    async _tryReadFromShaCache(path) {
+        if (!this._shaCacheEnabled) return undefined;
+        const shaMap = await this._ensureRemoteShaMap();
+        const fullPath = this._fullPath(path);
+        const remoteSha = shaMap[fullPath];
+        if (remoteSha === undefined) {
+            // tree未取得(ネットワーク不調等)なら shaMap が {} になっており、
+            // この分岐には「本当に存在しない」場合も入り得るため、不存在と断定せずフォールバックする。
+            return undefined;
+        }
+        const local = this._loadLocalCache();
+        const entry = local[fullPath];
+        if (entry && entry.sha === remoteSha) {
+            this._shaCache.set(path, remoteSha);
+            this._lastKnownContent.set(path, entry.text);
+            return entry.text;
+        }
+        return undefined; // sha不一致 or ローカル未保存 = 通常取得が必要
+    }
+
+    _rememberShaCache(path, sha, text) {
+        const local = this._loadLocalCache();
+        const fullPath = this._fullPath(path);
+        local[fullPath] = { sha, text };
+        this._saveLocalCache();
+    }
+
     async readJSON(path) {
+        const cached = await this._tryReadFromShaCache(path);
+        if (cached !== undefined) return cached.trim() ? JSON.parse(cached) : null;
         const content = await this._getContent(path);
         if (!content || content.type !== 'file') return null;
         const text = this._decodeBase64(content.content);
         this._shaCache.set(path, content.sha);
         this._lastKnownContent.set(path, text);
+        this._rememberShaCache(path, content.sha, text);
         return text.trim() ? JSON.parse(text) : null;
     }
 
@@ -134,11 +230,14 @@ class GitHubAdapter extends StorageAdapter {
     }
 
     async readText(path, hooks) {
+        const cached = await this._tryReadFromShaCache(path);
+        if (cached !== undefined) return cached;
         const content = await this._getContent(path, hooks);
         if (!content || content.type !== 'file') return null;
         const text = this._decodeBase64(content.content);
         this._shaCache.set(path, content.sha);
         this._lastKnownContent.set(path, text);
+        this._rememberShaCache(path, content.sha, text);
         return text;
     }
 
@@ -365,7 +464,16 @@ class GitHubAdapter extends StorageAdapter {
         // (_recoverFromConflictAndRetry) がこの古い sha を「最新」として再取得してしまうと、実際には
         // 競合していないのに何度リトライしても 409 になる (イシュー#150で実機再現・特定)。
         // no-store で必ずネットワークから最新を取る。
-        const { status, ok, statusText, headers, json } = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, undefined, hooks);
+        // TO (イシュー#391 R+PAR+TO): タイムアウトを5秒に短縮し、失敗(タイムアウト/ネットワークエラー)
+        // したら2秒待って1回だけ再試行する。5xx/429の再試行判定は今回未実装 (次回の課題・notesに記載)。
+        let result;
+        try {
+            result = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, 5000, hooks);
+        } catch (_firstErr) {
+            await new Promise((r) => setTimeout(r, 2000));
+            result = await StorageAdapter.fetchJSON(url, { headers: this._headers(), cache: 'no-store' }, 5000, hooks);
+        }
+        const { status, ok, statusText, headers, json } = result;
         if (status === 404) return null;
         if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
         if (status === 403) {
