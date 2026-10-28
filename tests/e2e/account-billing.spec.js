@@ -36,7 +36,7 @@ async function bootApp(page, hubOverrides = {}, settingsOverrides = {}) {
         plan: 'free', quotaBytes: 100000000, usedBytes: 0, username: null, bookshelfBase: null,
         ...hubOverrides
     }, settingsOverrides]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => {
         window.bookshelf.saveUserData = async () => {};

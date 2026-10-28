@@ -94,7 +94,7 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     test.setTimeout(30000);
 
     test('並び方は端末に記録され、同期先へは書かない', async ({ page }) => {
-        await seed(page); await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await seed(page); await page.goto('index.html'); await boot(page, { remote: '{}', method });
         await pushAll(page);
         await selectSort(page, 'title');
         await expect(page.locator('#sort-saved-note')).toHaveText(/この端末に記録しました/);
@@ -109,7 +109,7 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     });
 
     test('変更直後に閉じた (同期前): 再起動しても保持される', async ({ page }) => {
-        await seed(page); await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await seed(page); await page.goto('index.html'); await boot(page, { remote: '{}', method });
         await pushAll(page);
         await selectSort(page, 'title');
         const r = await restart(page, method);   // 800ms のまとめ待ちの間に閉じる
@@ -120,7 +120,7 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     });
 
     test('ドラッグで並べた直後に閉じた: 並び順と「カスタム順」が保持される', async ({ page }) => {
-        await seed(page); await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await seed(page); await page.goto('index.html'); await boot(page, { remote: '{}', method });
         await selectSort(page, 'custom');
         await pushAll(page);
         const order = await page.evaluate(() => { const bs = window.bookshelf; const ids = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]')).map((e) => e.dataset.asin); bs.reorderBooks(ids[5], ids[0]); return bs.userData.bookOrder.all.slice(0, 2); });
@@ -133,11 +133,11 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     test('PC と交互に変更: 並び方は端末ごと・ドラッグの並び順は新しい方が残る', async ({ browser }) => {
         const phone = await (await browser.newContext()).newPage();
         const pc = await (await browser.newContext()).newPage();
-        await seed(phone); await phone.goto('/index.html'); await boot(phone, { remote: '{}', method });
+        await seed(phone); await phone.goto('index.html'); await boot(phone, { remote: '{}', method });
         await selectSort(phone, 'custom');
         await pushAll(phone);
         const shared = await phone.evaluate(() => localStorage.getItem('__fakeRemote'));
-        await seed(pc); await pc.goto('/index.html'); await boot(pc, { remote: shared, method }); await loadRemote(pc);
+        await seed(pc); await pc.goto('index.html'); await boot(pc, { remote: shared, method }); await loadRemote(pc);
         // スマホ: タイトル順に変える＋ドラッグで並べ替えて同期完了
         const phoneOrder = await phone.evaluate(async () => { const bs = window.bookshelf; const ids = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]')).map((e) => e.dataset.asin); bs.reorderBooks(ids[4], ids[0]); await bs.flushSync(); return bs.userData.bookOrder.all.slice(); });
         await selectSort(phone, 'title'); await phone.evaluate(() => window.bookshelf.flushSync());
@@ -157,7 +157,7 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     });
 
     test('表示形式・表紙の大きさも同じ印を出し、端末に記録される', async ({ page }) => {
-        await seed(page); await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await seed(page); await page.goto('index.html'); await boot(page, { remote: '{}', method });
         await pushAll(page);
         await page.evaluate(() => document.querySelector('#view-seg .rseg[data-view="list"]').click());
         await expect(page.locator('#view-saved-note')).toHaveText(/この端末に記録しました/);
@@ -179,7 +179,7 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
             localStorage.setItem('virtualBookshelf_library', l);
             localStorage.removeItem('virtualBookshelf_deviceSettings');
         }, [JSON.stringify(userData), JSON.stringify(library)]);
-        await page.goto('/index.html'); await boot(page, { remote: '{}', method });
+        await page.goto('index.html'); await boot(page, { remote: '{}', method });
         const dev = await page.evaluate(() => JSON.parse(localStorage.getItem('virtualBookshelf_deviceSettings')));
         expect(dev).toMatchObject({ sortOrder: 'authors', sortDirection: 'asc', coverSize: 'large' });
         await pushAll(page);

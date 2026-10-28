@@ -91,7 +91,7 @@ async function bootApp(page, initialArticlesJSON) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
@@ -124,7 +124,7 @@ async function bootAppNoShelves(page, initialArticlesJSON) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [JSON.stringify(userData), fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
@@ -173,7 +173,7 @@ async function bootAppWithManyBooks(page, count = 800) {
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [userData, library]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
@@ -746,7 +746,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
                 publish: { target: 'hub' }
             }));
         }, [fixtureUserData, fixtureLibrary, HUB]);
-        await page.goto('/index.html');
+        await page.goto('index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
         await page.evaluate(([library, notes]) => {

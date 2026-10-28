@@ -25,7 +25,7 @@ async function bootApp(page, { stubSave = true } = {}) {
             localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
         }
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     if (stubSave) await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     return errors;
@@ -39,7 +39,7 @@ async function bootEmpty(page, syncConfig = null) {
     await page.addInitScript((cfg) => {
         if (cfg) localStorage.setItem('bookshelf_sync', JSON.stringify(cfg));
     }, syncConfig);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     return errors;
 }
@@ -58,7 +58,7 @@ test('welcome: ×で閉じてもセッション限り (localStorage に恒久フ
     expect(flags.local).toBeNull();
     // 新しいタブ (= 次のセッション相当) では蔵書0なのでまた出る
     const page2 = await context.newPage();
-    await page2.goto('/index.html');
+    await page2.goto('index.html');
     await page2.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await expect(page2.locator('#dashboard-welcome')).toBeVisible();
     await page2.close();

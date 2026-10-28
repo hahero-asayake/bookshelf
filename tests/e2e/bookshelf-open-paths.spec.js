@@ -54,7 +54,7 @@ async function bootApp(page, { viewport } = {}) {
         // 展開済みのため、fixture でも明示的に展開状態を再現する。
         localStorage.setItem('bookshelf_treeExpanded_v1', JSON.stringify(['op-all-01', 'op-parent-01']));
     }, [JSON.stringify(userData), fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     return errors;

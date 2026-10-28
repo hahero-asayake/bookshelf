@@ -36,6 +36,8 @@ jobs:
           CHECK_VERSION_RANGE="${BASE}..${HEAD}" npm run check:version
       - name: CSS lint (stylelint)
         run: npm run lint:css
+      - name: E2E goto() 先頭スラッシュ禁止 (イシュー#396/#399)
+        run: npm run lint:e2e-goto
       - name: Unit tests (Vitest)
         run: npm test
       - name: Install Playwright browser

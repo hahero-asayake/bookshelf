@@ -94,7 +94,7 @@ async function bootWithHub(page) {
             hub: { apiBase: hub, key: 'hk_test', uid: 'u1', email: 'seed@example.com' }
         }));
     }, HUB);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     return { ...mock, dialogs };
 }
 

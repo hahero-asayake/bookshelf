@@ -34,7 +34,7 @@ async function bootApp(page) {
             window.__navDiag.hashchange.push({ t: performance.now(), hash: location.hash });
         }, true);
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => {
         window.bookshelf.saveUserData = async () => {};
@@ -698,7 +698,7 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         test(`${cid} URL直で開いて戻る＝アプリ外 (D08)`, async ({ page }, ti) => caseRun(page, ti, cid, async (r) => {
             const sh = await shelfInfo(page);
             await page.goto('about:blank');
-            await page.goto('/index.html' + hashOf(sh));
+            await page.goto('index.html' + hashOf(sh));
             await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
             await settle(page, 500);
             const s0 = await snap(page); r.rec.opened = s0;
@@ -727,7 +727,7 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         // 通報はハブのログインが前提。起動時に ?report= を処理するので、保存済みの同期設定にハブの鍵を入れておく
         await page.addInitScript(() => { try { const c = JSON.parse(localStorage.getItem('bookshelf_sync') || '{}'); c.hub = { key: 'test-key', apiBase: 'https://hub.example.invalid' }; localStorage.setItem('bookshelf_sync', JSON.stringify(c)); } catch (_) {} });
         await page.goto('about:blank');
-        await page.goto('/index.html?report=' + encodeURIComponent('https://example.org/a/b/'));
+        await page.goto('index.html?report=' + encodeURIComponent('https://example.org/a/b/'));
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         await settle(page, 600);
         // 未ログインでは通報ダイアログの前に確認ダイアログ (ログインの案内) が出る＝どちらか一方が最前面
@@ -1438,7 +1438,7 @@ test.describe('本詳細シート: 開き方・閉じ方の残り (イシュー#
     test('R08f 本詳細: URL直で開く→戻る＝アプリ外 (D08と同型)', async ({ page }, ti) => caseRun(page, ti, 'R08f', async (r) => {
         const asin = await firstBook(page);
         await page.goto('about:blank');
-        await page.goto('/index.html#book/' + encodeURIComponent(asin));
+        await page.goto('index.html#book/' + encodeURIComponent(asin));
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         await settle(page, 600);
         const s0 = await snap(page); r.rec.opened = s0;

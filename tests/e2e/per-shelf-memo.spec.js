@@ -28,7 +28,7 @@ async function boot(page) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     // writePluginFile/readPluginFile が動くよう同期先をインメモリにスタブ

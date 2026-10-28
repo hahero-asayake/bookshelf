@@ -22,7 +22,7 @@ async function bootApp(page) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
 }
@@ -99,7 +99,7 @@ test('hub relay 経由: 中間表示(n<total)→完了パネル、relay に POST
 
     const code = await getBookmarkletCode(page);
     const mockPage = await context.newPage();
-    await mockPage.goto('/tests/fixtures/amazon-mock.html?bs_relay=test-relay-id&bs_hub=https://mock-hub.example');
+    await mockPage.goto('tests/fixtures/amazon-mock.html?bs_relay=test-relay-id&bs_hub=https://mock-hub.example');
     await mockPage.evaluate((src) => { eval(src); }, code);
 
     await waitForMidProgress(mockPage);
@@ -175,7 +175,7 @@ test('clipboard経由: 完了パネルが自動で消えず、閉じるボタン
 
     const code = await getBookmarkletCode(page);
     const mockPage = await context.newPage();
-    await mockPage.goto('/tests/fixtures/amazon-mock.html');
+    await mockPage.goto('tests/fixtures/amazon-mock.html');
     await mockPage.evaluate((src) => { eval(src); }, code);
 
     await waitForMidProgress(mockPage);

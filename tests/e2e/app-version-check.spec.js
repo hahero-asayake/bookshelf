@@ -6,7 +6,7 @@
 import { test, expect } from './helpers/test-base.js';
 
 test('index.html の ?v= が変わっていれば、既存の更新バーに「更新」が表示される', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
     // 起動直後は新バージョン行は出ていない (E2E環境は同期未設定のため #app-status-bar 自体は
@@ -38,7 +38,7 @@ test('index.html の ?v= が変わっていれば、既存の更新バーに「�
 });
 
 test('visibilitychange (タブ復帰) でも新バージョン検知が走る (load時1回で終わらない)', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
     await page.evaluate(() => {
@@ -55,7 +55,7 @@ test('visibilitychange (タブ復帰) でも新バージョン検知が走る (l
 });
 
 test('新バージョン検知後の「更新」クリックで location.reload() が呼ばれる (reg無し=SW非経由のフォールバック)', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
     await page.evaluate(() => {

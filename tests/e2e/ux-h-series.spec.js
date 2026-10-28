@@ -20,7 +20,7 @@ async function bootApp(page, { initScript, sync, userData } = {}) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', syncJson);
     }, [userData || fixtureUserData, fixtureLibrary, JSON.stringify(sync || { method: 'local' })]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     return errors;

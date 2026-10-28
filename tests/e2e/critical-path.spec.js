@@ -68,7 +68,7 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
             localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
         }
     });
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
     await test.step('初回訪問: 蔵書0で welcome オンボーディングが表示される (ADR-053 回帰ガード)', async () => {

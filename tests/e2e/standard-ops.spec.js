@@ -19,7 +19,7 @@ async function bootApp(page) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     // イシュー#35: 未接続のまま記事を編集させないガードを追加した。この E2E は dirHandle を持たない

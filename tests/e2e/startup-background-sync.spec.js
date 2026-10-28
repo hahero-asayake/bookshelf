@@ -35,7 +35,7 @@ test('ローカルデータあり: ハブ同期が終わる前に loading が消
         };
         window.__resolveHubFetches = () => { window.__hubPending.splice(0).forEach((fn) => fn()); };
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
     // 同期リクエストは保留中のまま…
@@ -53,7 +53,7 @@ test('ローカルデータあり: ハブ同期が終わる前に loading が消
 });
 
 test('ローカルデータなし (初回起動・同期未設定): 従来どおり loading 後に welcome が出る', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await expect(page.locator('#loading')).toBeHidden();
     // 蔵書ゼロ → welcome オンボーディング (ADR-053)

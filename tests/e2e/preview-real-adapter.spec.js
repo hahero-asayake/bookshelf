@@ -93,7 +93,7 @@ async function bootAppGitHub(page, { onContentsGet } = {}) {
         }));
     }, [fixtureUserData, fixtureLibrary, OWNER, REPO, BRANCH]);
 
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     // 自動同期の書込みはこのテストの関心外 (プレビュー生成のみを見る)。GET (readText) は
     // 実アダプタのまま通す一方、書込経路だけ無害化する (既存 bootApp パターンに倣う)。

@@ -36,7 +36,7 @@ async function bootAppEmpty(page) {
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [userData, library]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     return errors;

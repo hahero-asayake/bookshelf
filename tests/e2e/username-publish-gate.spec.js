@@ -98,7 +98,7 @@ async function bootAppForPublish(page, { username = null } = {}) {
             publish: { target: 'hub' }
         }));
     }, [fixtureUserData, fixtureLibrary, HUB, username]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     await page.evaluate((library) => {
@@ -250,7 +250,7 @@ test('公開先が GitHub (自前 repo) のときは username ゲートを適用
             publish: { target: 'github', owner: 'hahero-asayake', repo: 'bookshelf-public', branch: 'main' }
         }));
     }, [fixtureUserData, fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     await page.evaluate((library) => {

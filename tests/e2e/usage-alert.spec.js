@@ -19,7 +19,7 @@ async function bootWithHub(page, hub) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', hub: JSON.parse(hubJson) }));
     }, [fixtureUserData, fixtureLibrary, JSON.stringify(hub)]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     return errors;
 }

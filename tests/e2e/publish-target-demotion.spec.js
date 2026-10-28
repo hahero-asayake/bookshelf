@@ -27,7 +27,7 @@ async function boot(page, { target = null } = {}) {
             ...(target ? { publish: { target } } : {})
         }));
     }, [fixtureUserData, fixtureLibrary, HUB, target]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => {
         window.HubAuth.renderSignInButton = () => {};

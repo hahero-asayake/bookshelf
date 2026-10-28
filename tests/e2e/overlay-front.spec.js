@@ -34,7 +34,7 @@ async function boot(page, { syncReady = true } = {}) {
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', s);
     }, [JSON.stringify(userData), fixtureLibrary, JSON.stringify(sync)]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate((ready) => {
         window.bookshelf.saveUserData = async () => {};

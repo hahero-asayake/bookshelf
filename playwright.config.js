@@ -22,7 +22,10 @@ export default defineConfig({
         reuseExistingServer: true
     },
     use: {
-        baseURL: 'http://localhost:8000',
+        // サブパス付きで流す場合はここを末尾'/'付きにすること(例: 'https://example.com/sub/')。
+        // page.goto()側は先頭'/'なしの相対パス('index.html'等)に統一している(イシュー#396/#399)。
+        // PLAYWRIGHT_BASE_URL で上書き可(未指定時は既定のlocalhost:8000のまま・イシュー#399)。
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8000',
         // Service Worker をブロック。index.html は controllerchange で location.reload() するため、
         // SW 初回制御の発火タイミング次第でテストが「navigation で context 破棄」になる (フレーク源)。
         // E2E はアプリのロジック検証が目的で SW キャッシュは不要なので一律ブロックして決定化する。

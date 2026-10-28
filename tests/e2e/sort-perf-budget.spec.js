@@ -61,7 +61,7 @@ async function setup(page) {
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [JSON.stringify(userData), JSON.stringify(library)]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0, null, { timeout: 60000 });
     await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
     await page.waitForTimeout(800);

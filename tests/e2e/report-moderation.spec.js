@@ -58,7 +58,7 @@ async function prepare(page, { loggedIn = true, isAdmin = false, reportStatus = 
 
 async function boot(page, { query = '', ...opts } = {}) {
     const { errors, captured, state } = await prepare(page, opts);
-    await page.goto('/index.html' + query);
+    await page.goto('index.html' + query);
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => {
         window.HubAuth.renderSignInButton = () => {};
@@ -243,7 +243,7 @@ test.describe('通報ダイアログ × リロード (イシュー#221)', () => 
             const { errors } = await prepare(page);
             let loads = 0;
             page.on('load', () => { loads++; });   // replaceState では発火しない = 文書の読み込み回数
-            await page.goto('/index.html' + reportQuery);
+            await page.goto('index.html' + reportQuery);
             // SW 初回登録 (それまで controller が無かった) では controllerchange が発火しても
             // location.reload() しない設計に変更 (ADR-111・イシュー#265)。1回のロードのまま
             // ダイアログが開くことを確認する。
@@ -266,7 +266,7 @@ test.describe('通報ダイアログ × リロード (イシュー#221)', () => 
 
         test('本物の SW 更新 (2回目以降の controllerchange) では従来どおり reload される', async ({ page }) => {
             await prepare(page);
-            await page.goto('/index.html');
+            await page.goto('index.html');
             await page.waitForFunction(() => !!navigator.serviceWorker.controller, { timeout: 10_000 });
             let loads = 0;
             page.on('load', () => { loads++; });

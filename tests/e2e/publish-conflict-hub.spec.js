@@ -137,7 +137,7 @@ async function bootApp(page, { conflictOnce, onPut, onPublish } = {}) {
             publish: { target: 'hub' }
         }));
     }, [fixtureUserData, fixtureLibrary, HUB]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     // 無料プランのアフィリエイト同意ダイアログ (_ensureFreeAffiliateConsent) は本テストの関心外

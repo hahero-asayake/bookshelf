@@ -46,7 +46,7 @@ async function bootApp(page) {
         // ダミーで生やして早期returnさせる(実際には呼ばれない、_isSyncReady差し替え済み)。
         if (!('showDirectoryPicker' in window)) window.showDirectoryPicker = () => {};
     }, [JSON.stringify(userData), JSON.stringify(library)]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => {
         const app = window.bookshelf;

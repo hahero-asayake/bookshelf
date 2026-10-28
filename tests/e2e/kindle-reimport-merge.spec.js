@@ -45,7 +45,7 @@ async function bootApp(page, { exclusions = [] } = {}) {
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [JSON.stringify(userData), fixtureLibrary]);
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
     return errors;

@@ -136,7 +136,7 @@ const REPRESENTATIVE_COLORS = ['aqua-white', 'gold-dark']; // 代表: 白地1・
 for (const layout of LAYOUTS) {
     for (const color of REPRESENTATIVE_COLORS) {
         test(`テーマ ${layout}×${color}: 生成HTMLがレンダリング破綻しない`, async ({ page, context }) => {
-            await page.goto('/index.html');
+            await page.goto('index.html');
             await page.waitForFunction(() => window.PublishArticleGenerator);
 
             const html = await renderArticleHtml(page, buildState(), buildArticle({ layout, color }));
@@ -170,7 +170,7 @@ for (const layout of LAYOUTS) {
 // 存在を確認する (実レンダリングは上の6通りに任せ、ここは CSS 文字列の構造だけを検証する軽量版)。
 test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas/subgrid の存在チェック)', () => {
     test('棚C/棚Dの CSS は .bk-cover-link/.bk-title/.bk-author/.bk-memo に grid-area を割り当て、棚A(book-a-shelf-a)は subgrid で行内整列する', async ({ page }) => {
-        await page.goto('/index.html');
+        await page.goto('index.html');
         await page.waitForFunction(() => window.PublishArticleGenerator);
         const layoutCssMap = await page.evaluate(() => {
             const layouts = ['book-a-shelf-a', 'book-c-shelf-c', 'book-c-shelf-d'];
@@ -193,7 +193,7 @@ test.describe('テーマ追加の回帰確認 (クラス名/grid-template-areas/
     });
 
     test('配色12案すべてが --bg/--elev を含む完全なトークンセットを返す (新配色追加時もこの形を維持する)', async ({ page }) => {
-        await page.goto('/index.html');
+        await page.goto('index.html');
         await page.waitForFunction(() => window.PublishArticleGenerator);
         const colors = [
             'gold-dark', 'gold-white', 'gold-comp',
@@ -225,7 +225,7 @@ const WIDE_COVER_DATA_URI = 'data:image/svg+xml;utf8,' +
     encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><rect width="500" height="700" fill="#2b4a7d"/></svg>');
 
 async function openBookBlockPreview(page, context, { layout, width }) {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.waitForFunction(() => window.PublishArticleGenerator);
     const state = buildState();
     state.library.books[0].title = 'フィクスチャの本 1'; // 修正前は 122px 幅で「フィクスチャの本 / 1」の2行に割れていたタイトル
@@ -318,7 +318,7 @@ test.describe('目玉本ブロック (.blk-book) の書影配置 (本A=縦積み
 test.describe('公開出力のフッター法務・通報導線 (イシュー#195)', () => {
     for (const width of [1280, 390]) {
         test(`${width}px: 記事ページと一覧 index.html のフッターに 利用規約 / プライバシーポリシー / このページを通報 が表示される`, async ({ page, context }) => {
-            await page.goto('/index.html');
+            await page.goto('index.html');
             await page.waitForFunction(() => window.PublishArticleGenerator);
             const article = buildArticle({ layout: 'book-a-shelf-a', color: 'aqua-white' });
             const files = await page.evaluate(async ({ state, article }) => {
