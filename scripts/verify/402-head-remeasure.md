@@ -49,3 +49,29 @@
   - スクロールは 50ms超が 78〜87件（chromium）と 13件（WebKit）。
   - → 冊数が増えると、段階描画だけでは足りない。step1 の窓試作（3000冊で 50ms超 4件）が判断の材料になる。
 - **要調査**: x6・並び順の変更で固まる時間が 1.1〜1.2秒に跳ねる。段階描画の後追い（#401）、#398 の applySorting 変更（eb387aa）、GC のどれが原因かは未特定。
+
+## 跳ねの原因と修正（差し戻し(B)・07:28〜07:37）
+
+- **原因（計装の内訳で特定）**: 跳ねた2回（rep4・rep5）は、ハーネスの並び順が「custom へ」と「custom から（title へ）」に切り替わる回だった。
+  - この2回だけ `_renderListDiff` を通っていない。全件作り直しの経路（`renderStandardView`）に落ちて、updateDisplay 330〜370ms・長いタスク 8〜9本になっていた。
+  - 理由: `updateDisplay` の差分可否が「container の class が完全一致」で、カスタム順では `is-custom-order` が付く。class が変わる＝全件 DOM の作り直しになっていた。
+  - カスタム順の並べ替えは、比較のたびに `customOrder.indexOf` を呼んでいた（冊数の2乗×log）。
+  - 段階描画（#401）・#398 の applySorting・GC・先読み・SW は、跳ねの主因ではない（跳ねない回と同じ内訳だった）。CDP の trace（devtools.timeline）は時間の都合で取っていない。関数単位の内訳は、ハーネスの計装（applySorting/updateDisplay/_renderListDiff/LazyLoader.observe 等の実時間）で見た。
+- **修正**（commit b23ef00・?v=2026102904）:
+  - class の差が `is-custom-order` だけなら、付け替えて差分描画に回す。
+  - カスタム順を Map の位置引きにする。
+  - E2E `custom-order-switch.spec.js` を追加した。
+- **修正後**（chromium x6・913冊・単独・5 rep）:
+
+| 操作 | 修正前 tFrame・固まる（中央値/最大） | 修正後 |
+|---|---|---|
+| 並び順の変更 | 136/595・167/**1199** | 104/116・85/**134**（custom への切替 84ms・custom から 72ms で差分描画を通る） |
+| 昇順/降順 | 92/139・60/139 | 93/107・77/176 |
+| ドラッグ | 65/72・36/40 | 55/58・25/29 |
+
+- **判定**: 1.1〜1.2秒の跳ねは消えた。ただし x6 では、固まる時間の目標 ≤50ms に届かない（並び順の変更 85ms・昇順/降順 77ms の中央値）。並べ替えの tFrame も ≤100ms をわずかに超える。→ ②の指示どおり、(A) の 4a〜4d に進む条件に当たる。
+- **検証**:
+  - npm test: 723 passed。
+  - E2E: custom-order-switch・list-staged-render・sort-perf-budget・touch-reorder・sort-persist の 27件が緑。
+  - check:version: OK。
+  - home-highlight-sort（#398）は、1回目は時間切れ、単独再実行は外部から止められ、判定できていない。
