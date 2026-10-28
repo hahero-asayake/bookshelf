@@ -1,0 +1,603 @@
+{
+  "label": "step1-before(local-wrangler-dev)",
+  "apibase": "http://localhost:8787",
+  "rounds": 5,
+  "measuredAt": "2026-10-28T19:58:28.907Z",
+  "results": [
+    {
+      "round": 1,
+      "label": "step1-before(local-wrangler-dev)",
+      "timedOut": false,
+      "totalMs": 439,
+      "getCount": 15,
+      "serial": false,
+      "requests": [
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "HEAD",
+          "status": 200,
+          "startMs": 0,
+          "endMs": 8
+        },
+        {
+          "path": "/data/private/library.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 6,
+          "endMs": 9
+        },
+        {
+          "path": "/data/private/exclusions.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 10,
+          "endMs": 12
+        },
+        {
+          "path": "/data/private/notes.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 13,
+          "endMs": 15
+        },
+        {
+          "path": "/data/private/bookshelves.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 16,
+          "endMs": 18
+        },
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 18,
+          "endMs": 21
+        },
+        {
+          "path": "/data/private/settings.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 21,
+          "endMs": 25
+        },
+        {
+          "path": "/data/private/main.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 26,
+          "endMs": 28
+        },
+        {
+          "path": "/data/private/bookshelves/shelf1.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 28,
+          "endMs": 31
+        },
+        {
+          "path": "/data/private/bookshelves/shelf2.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 31,
+          "endMs": 34
+        },
+        {
+          "path": "/data/private/bookshelves/shelf3.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 34,
+          "endMs": 37
+        },
+        {
+          "path": "/data/private/bookshelves/shelf4.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 37,
+          "endMs": 40
+        },
+        {
+          "path": "/data/private/bookshelves/shelf5.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 40,
+          "endMs": 43
+        },
+        {
+          "path": "/data/private/publish/articles.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 48,
+          "endMs": 52
+        },
+        {
+          "path": "/data/private/publish/pages.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 76,
+          "endMs": 80
+        }
+      ],
+      "errors": [
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ]
+    },
+    {
+      "round": 2,
+      "label": "step1-before(local-wrangler-dev)",
+      "timedOut": false,
+      "totalMs": 440,
+      "getCount": 15,
+      "serial": true,
+      "requests": [
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "HEAD",
+          "status": 200,
+          "startMs": 0,
+          "endMs": 8
+        },
+        {
+          "path": "/data/private/library.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 14,
+          "endMs": 18
+        },
+        {
+          "path": "/data/private/exclusions.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 18,
+          "endMs": 21
+        },
+        {
+          "path": "/data/private/notes.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 22,
+          "endMs": 24
+        },
+        {
+          "path": "/data/private/bookshelves.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 26,
+          "endMs": 29
+        },
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 29,
+          "endMs": 32
+        },
+        {
+          "path": "/data/private/settings.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 33,
+          "endMs": 36
+        },
+        {
+          "path": "/data/private/main.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 37,
+          "endMs": 40
+        },
+        {
+          "path": "/data/private/bookshelves/shelf1.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 41,
+          "endMs": 45
+        },
+        {
+          "path": "/data/private/bookshelves/shelf2.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 46,
+          "endMs": 50
+        },
+        {
+          "path": "/data/private/bookshelves/shelf3.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 51,
+          "endMs": 54
+        },
+        {
+          "path": "/data/private/bookshelves/shelf4.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 54,
+          "endMs": 57
+        },
+        {
+          "path": "/data/private/bookshelves/shelf5.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 57,
+          "endMs": 60
+        },
+        {
+          "path": "/data/private/publish/articles.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 65,
+          "endMs": 69
+        },
+        {
+          "path": "/data/private/publish/pages.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 69,
+          "endMs": 71
+        }
+      ],
+      "errors": [
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ]
+    },
+    {
+      "round": 3,
+      "label": "step1-before(local-wrangler-dev)",
+      "timedOut": false,
+      "totalMs": 419,
+      "getCount": 15,
+      "serial": true,
+      "requests": [
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "HEAD",
+          "status": 200,
+          "startMs": 0,
+          "endMs": 6
+        },
+        {
+          "path": "/data/private/library.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 12,
+          "endMs": 17
+        },
+        {
+          "path": "/data/private/exclusions.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 18,
+          "endMs": 21
+        },
+        {
+          "path": "/data/private/notes.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 21,
+          "endMs": 25
+        },
+        {
+          "path": "/data/private/bookshelves.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 25,
+          "endMs": 27
+        },
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 28,
+          "endMs": 31
+        },
+        {
+          "path": "/data/private/settings.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 32,
+          "endMs": 35
+        },
+        {
+          "path": "/data/private/main.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 35,
+          "endMs": 38
+        },
+        {
+          "path": "/data/private/bookshelves/shelf1.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 38,
+          "endMs": 41
+        },
+        {
+          "path": "/data/private/bookshelves/shelf2.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 41,
+          "endMs": 44
+        },
+        {
+          "path": "/data/private/bookshelves/shelf3.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 44,
+          "endMs": 47
+        },
+        {
+          "path": "/data/private/bookshelves/shelf4.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 48,
+          "endMs": 51
+        },
+        {
+          "path": "/data/private/bookshelves/shelf5.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 51,
+          "endMs": 54
+        },
+        {
+          "path": "/data/private/publish/articles.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 58,
+          "endMs": 62
+        },
+        {
+          "path": "/data/private/publish/pages.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 62,
+          "endMs": 65
+        }
+      ],
+      "errors": [
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ]
+    },
+    {
+      "round": 4,
+      "label": "step1-before(local-wrangler-dev)",
+      "timedOut": false,
+      "totalMs": 419,
+      "getCount": 15,
+      "serial": true,
+      "requests": [
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "HEAD",
+          "status": 200,
+          "startMs": 0,
+          "endMs": 6
+        },
+        {
+          "path": "/data/private/library.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 11,
+          "endMs": 15
+        },
+        {
+          "path": "/data/private/exclusions.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 15,
+          "endMs": 19
+        },
+        {
+          "path": "/data/private/notes.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 19,
+          "endMs": 22
+        },
+        {
+          "path": "/data/private/bookshelves.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 23,
+          "endMs": 25
+        },
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 26,
+          "endMs": 28
+        },
+        {
+          "path": "/data/private/settings.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 29,
+          "endMs": 32
+        },
+        {
+          "path": "/data/private/main.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 33,
+          "endMs": 35
+        },
+        {
+          "path": "/data/private/bookshelves/shelf1.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 36,
+          "endMs": 38
+        },
+        {
+          "path": "/data/private/bookshelves/shelf2.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 38,
+          "endMs": 40
+        },
+        {
+          "path": "/data/private/bookshelves/shelf3.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 41,
+          "endMs": 43
+        },
+        {
+          "path": "/data/private/bookshelves/shelf4.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 43,
+          "endMs": 46
+        },
+        {
+          "path": "/data/private/bookshelves/shelf5.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 46,
+          "endMs": 48
+        },
+        {
+          "path": "/data/private/publish/articles.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 53,
+          "endMs": 58
+        },
+        {
+          "path": "/data/private/publish/pages.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 58,
+          "endMs": 60
+        }
+      ],
+      "errors": [
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ]
+    },
+    {
+      "round": 5,
+      "label": "step1-before(local-wrangler-dev)",
+      "timedOut": false,
+      "totalMs": 419,
+      "getCount": 15,
+      "serial": true,
+      "requests": [
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "HEAD",
+          "status": 200,
+          "startMs": 0,
+          "endMs": 6
+        },
+        {
+          "path": "/data/private/library.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 13,
+          "endMs": 17
+        },
+        {
+          "path": "/data/private/exclusions.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 18,
+          "endMs": 22
+        },
+        {
+          "path": "/data/private/notes.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 23,
+          "endMs": 26
+        },
+        {
+          "path": "/data/private/bookshelves.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 26,
+          "endMs": 30
+        },
+        {
+          "path": "/data/private/bookshelves/all.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 31,
+          "endMs": 35
+        },
+        {
+          "path": "/data/private/settings.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 35,
+          "endMs": 39
+        },
+        {
+          "path": "/data/private/main.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 39,
+          "endMs": 43
+        },
+        {
+          "path": "/data/private/bookshelves/shelf1.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 44,
+          "endMs": 47
+        },
+        {
+          "path": "/data/private/bookshelves/shelf2.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 48,
+          "endMs": 51
+        },
+        {
+          "path": "/data/private/bookshelves/shelf3.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 51,
+          "endMs": 54
+        },
+        {
+          "path": "/data/private/bookshelves/shelf4.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 55,
+          "endMs": 58
+        },
+        {
+          "path": "/data/private/bookshelves/shelf5.json",
+          "method": "GET",
+          "status": 200,
+          "startMs": 59,
+          "endMs": 61
+        },
+        {
+          "path": "/data/private/publish/articles.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 66,
+          "endMs": 71
+        },
+        {
+          "path": "/data/private/publish/pages.json",
+          "method": "GET",
+          "status": 404,
+          "startMs": 72,
+          "endMs": 74
+        }
+      ],
+      "errors": [
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ]
+    }
+  ]
+}
