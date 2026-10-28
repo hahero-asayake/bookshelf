@@ -13,6 +13,20 @@ class BookManager {
                 importedFromKindle: 0
             }
         };
+        // イシュー#398: 蔵書の追加・削除・更新のたびに進める版数。getAllBooks() は library.books の
+        // 参照をそのまま返す (push/splice は参照を保ったまま内容だけ変える・updateBook はフィールドの
+        // in-place書換) ため、呼び出し側が「参照が同じなら蔵書は変わっていない」という判定をできない
+        // (#397 A1 で __bibV を導入したのと同じ理由)。全蔵書の並び順キャッシュ(ホーム本棚ハイライト用)の
+        // 無効化判定に使う。
+        this._rev = 0;
+    }
+
+    _bumpRev() {
+        this._rev++;
+    }
+
+    getRev() {
+        return this._rev;
     }
 
     /**
@@ -126,6 +140,7 @@ class BookManager {
             importedFromKindle: this.library.books.filter(b => b.source === 'kindle_import').length,
             lastImportDate: Date.now()
         };
+        if (importedBooks.length || updatedBooks.length) this._bumpRev();
 
         // ライブラリを保存
         await this.saveLibrary();
@@ -385,6 +400,7 @@ class BookManager {
         this.library.books.push(newBook);
         this.library.metadata.totalBooks = this.library.books.length;
         this.library.metadata.manuallyAdded = this.library.books.filter(book => book.source === 'manual_add').length;
+        this._bumpRev();
 
         await this.saveLibrary();
         return newBook;
@@ -418,10 +434,11 @@ class BookManager {
             // 完全削除
             this.library.books.splice(bookIndex, 1);
             this.library.metadata.totalBooks = this.library.books.length;
-            
+
             // ソース別カウント更新
             this.library.metadata.manuallyAdded = this.library.books.filter(book => book.source === 'manual_add').length;
             this.library.metadata.importedFromKindle = this.library.books.filter(book => book.source === 'kindle_import').length;
+            this._bumpRev();
         }
 
         await this.saveLibrary();
@@ -439,7 +456,8 @@ class BookManager {
             importedFromKindle: 0,
             lastImportDate: null
         };
-        
+        this._bumpRev();
+
         await this.saveLibrary();
         return true;
     }
@@ -468,6 +486,7 @@ class BookManager {
         this.library.metadata.totalBooks = this.library.books.length;
         this.library.metadata.manuallyAdded = this.library.books.filter(b => b.source === 'manual_add').length;
         this.library.metadata.importedFromKindle = this.library.books.filter(b => b.source === 'kindle_import').length;
+        this._bumpRev();
 
         await this.saveLibrary();
         return book;

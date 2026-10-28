@@ -1684,33 +1684,46 @@ class VirtualBookshelf {
         this.applySorting();
     }
 
+    // イシュー#398: 本棚一覧 (applySorting) とホームの本棚ハイライト (_getLibrarySortedAsins) が
+    // 1か所で共有する比較ロジック。'custom' はどちらの呼び出し元も別経路 (bookOrder) で処理するため
+    // ここでは扱わない。
+    _bookSortKey(book, sortOrder) {
+        if (sortOrder === 'acquiredTime') return parseInt(book.acquiredTime) || 0;
+        return String(book[sortOrder] ?? '');
+    }
+
+    _bookCompareFn(sortOrder, sortDirection) {
+        if (sortOrder === 'acquiredTime') {
+            return (aKey, bKey) => {
+                let c = 0;
+                if (aKey > bKey) c = 1;
+                if (aKey < bKey) c = -1;
+                return sortDirection === 'asc' ? c : -c;
+            };
+        }
+        // イシュー#397 A6: Intl.Collator を1つだけ作って使い回す (インスタンス生成は並び替えごとに
+        // 作ると実データで無視できない負荷になるため)。
+        this._sortCollator = this._sortCollator || new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+        const collator = this._sortCollator;
+        return (aKey, bKey) => {
+            const c = collator.compare(aKey, bKey);
+            return sortDirection === 'asc' ? c : -c;
+        };
+    }
+
     applySorting() {
-        if (this.sortOrder === 'acquiredTime') {
-            this.filteredBooks.sort((a, b) => {
-                const aValue = parseInt(a.acquiredTime);
-                const bValue = parseInt(b.acquiredTime);
-                let comparison = 0;
-                if (aValue > bValue) comparison = 1;
-                if (aValue < bValue) comparison = -1;
-                return this.sortDirection === 'asc' ? comparison : -comparison;
-            });
-        } else {
-            // イシュー#397 A6: Intl.Collator を1つだけ作って使い回す (インスタンス生成は並び替えごとに
-            // 作ると実データで無視できない負荷になるため)。比較キーは本ごとに先に計算してから並べる
-            // (シュワルツ変換＝比較のたびに文字列を作り直さない)。'custom' は本来 _orderedBooksToRender
-            // 側で順序を決めるため、ここでは key が全件空文字になり元の順序を変えない (従来どおり)。
-            this._sortCollator = this._sortCollator || new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
-            const collator = this._sortCollator;
+        if (this.sortOrder !== 'custom') {
+            // 比較キーは本ごとに先に計算してから並べる (シュワルツ変換＝比較のたびに
+            // 文字列を作り直さない・イシュー#397 A6)。
             const order = this.sortOrder;
-            const decorated = this.filteredBooks.map((book) => ({ book, key: order === 'custom' ? '' : String(book[order] ?? '') }));
-            decorated.sort((a, b) => {
-                const c = collator.compare(a.key, b.key);
-                return this.sortDirection === 'asc' ? c : -c;
-            });
+            const cmp = this._bookCompareFn(order, this.sortDirection);
+            const decorated = this.filteredBooks.map((book) => ({ book, key: this._bookSortKey(book, order) }));
+            decorated.sort((a, b) => cmp(a.key, b.key));
             // 配列の参照は変えず内容だけ書き換える (従来の .sort() と同じin-place挙動を保つ＝
             // toggleSortDirection の反転キャッシュが参照の同一性で有効判定できる)
             for (let i = 0; i < decorated.length; i++) this.filteredBooks[i] = decorated[i].book;
         }
+        // 'custom' は本来 _orderedBooksToRender 側で順序を決めるため、ここでは並べ替えない (従来どおり)。
 
         // イシュー#397 A4: 昇順/降順の切り替え (toggleSortDirection) が同じ配列を反転するだけで
         // 済むようにするためのキャッシュ。配列の参照が変わらない限り (=本棚切替・蔵書変更・絞り込み
@@ -1721,6 +1734,31 @@ class VirtualBookshelf {
         this.currentPage = 1;
         this.updateDisplay();
         this.updateStats();
+    }
+
+    // イシュー#398: ホームの本棚ハイライト用。全蔵書をこの端末の並び順設定で1回だけ並べてキャッシュする
+    // (本棚ごとに913冊を並べ直さない＝本棚一覧表示とは別に、本棚ハイライトが呼ばれるたびに全件ソートしない)。
+    // 'custom' はここでは使わない (呼び出し元が本棚ごとの bookOrder で別処理する)。
+    // キャッシュ無効化は {sortOrder, sortDirection, 蔵書の版数} をキーにする。蔵書の参照一致では
+    // 変更を検知できない (BookManager.getAllBooks() は参照をそのまま返し、updateBook はフィールドの
+    // in-place書換のため) ので、BookManager._rev (getRev()) を使う。
+    _getLibrarySortedAsins() {
+        const sortOrder = this.sortOrder;
+        const sortDirection = this.sortDirection;
+        const rev = (this.bookManager && typeof this.bookManager.getRev === 'function') ? this.bookManager.getRev() : 0;
+        const key = `${sortOrder}|${sortDirection}|${rev}`;
+        if (this._librarySortCache && this._librarySortCache.key === key) return this._librarySortCache;
+
+        const books = this.books || [];
+        const cmp = this._bookCompareFn(sortOrder, sortDirection);
+        const decorated = books.map((book) => ({ asin: book.asin, key: this._bookSortKey(book, sortOrder) }));
+        decorated.sort((a, b) => cmp(a.key, b.key));
+
+        const asins = decorated.map((d) => d.asin);
+        const rank = new Map();
+        asins.forEach((asin, i) => rank.set(asin, i));
+        this._librarySortCache = { key, asins, rank };
+        return this._librarySortCache;
     }
 
     toggleSortDirection() {
@@ -1749,6 +1787,11 @@ class VirtualBookshelf {
         this.saveUserData({ deviceOnly: true });
         const sortRow = document.querySelector('#display-popover .fp-sort-row');
         this._showSavedNote('sort', sortRow);
+        // イシュー#398: ホームを表示中に並び順を変えた場合も本棚ハイライトへすぐ反映する
+        // (updateBookshelfSelector が本棚切替/蔵書変更の時に使っているのと同じガード)。
+        if (this.dashboard && document.body.classList.contains('app-view-main')) {
+            this.dashboard.render();
+        }
     }
 
     // 見た目の好みを変えた行の直下に「この端末に記録しました」を短く出す (いつ記録されたか分からない、への答え・イシュー#387)。
@@ -8145,6 +8188,11 @@ class VirtualBookshelf {
                 this._setBodyView('main');
                 this._closeBookModalDom();
                 if (typeof this.renderBookshelfOverview === 'function') this.renderBookshelfOverview();
+                // イシュー#398: renderBookshelfOverview() は旧 #bookshelves-grid 向けの互換no-op
+                // (ホーム=ダッシュボードに置換済み・該当DOMが無く何もしない)。他の画面からホームへ
+                // 戻った時に本棚ハイライトが並び順の変更を反映していない状態で止まっていたのは
+                // ここでダッシュボードを再描画していなかったため。
+                if (this.dashboard) this.dashboard.render();
             } else if (route.view === 'bookshelf') {
                 this._closeBookModalDom();
                 let targetId = null;
@@ -14861,17 +14909,30 @@ class VirtualBookshelf {
         }
         const bookCount = previewAsins.length;
 
-        // カスタム順を適用
-        if (this.userData.bookOrder && this.userData.bookOrder[bookshelf.id]) {
-            const customOrder = this.userData.bookOrder[bookshelf.id];
-            previewAsins.sort((a, b) => {
-                const ai = customOrder.indexOf(a);
-                const bi = customOrder.indexOf(b);
-                if (ai === -1 && bi === -1) return 0;
-                if (ai === -1) return 1;
-                if (bi === -1) return -1;
-                return ai - bi;
-            });
+        // イシュー#398: この端末の並び順の設定 (#387 sortOrder/sortDirection) に合わせる。
+        // 「自由な並び」の時だけ bookOrder (ドラッグで決めた順) を使い、それ以外は本棚一覧
+        // (applySorting) と共有する _bookSortKey/_bookCompareFn で並べる。以前は sortOrder を見ず
+        // bookOrder があれば無条件に使っていたため、タイトル順/取得日順に変えてもハイライトだけ
+        // 古い (ドラッグ済みの) 順のままになっていた。
+        if (this.sortOrder === 'custom') {
+            if (this.userData.bookOrder && this.userData.bookOrder[bookshelf.id]) {
+                const customOrder = this.userData.bookOrder[bookshelf.id];
+                previewAsins.sort((a, b) => {
+                    const ai = customOrder.indexOf(a);
+                    const bi = customOrder.indexOf(b);
+                    if (ai === -1 && bi === -1) return 0;
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+            }
+        } else if (isSpecial) {
+            // 「すべての本」は全蔵書を並べた結果そのものの先頭が答え (本棚ごとに並べ直さない)
+            previewAsins = this._getLibrarySortedAsins().asins;
+        } else {
+            // 通常本棚はこの本棚の冊数 (913件より十分小さい) だけを順位表で並べ替える
+            const { rank } = this._getLibrarySortedAsins();
+            previewAsins.sort((a, b) => (rank.has(a) ? rank.get(a) : Infinity) - (rank.has(b) ? rank.get(b) : Infinity));
         }
 
         const previewBooks = previewAsins.slice(0, 8);
