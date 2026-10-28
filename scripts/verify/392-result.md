@@ -53,20 +53,38 @@ GET /data/private/library.json 200 OK
 
 ローカル`wrangler dev`(レイテンシ実質0ms)では、本文GETが12本→0本/1本に減っても**総時間に明確な短縮は見えない**(全条件とも380〜446msの範囲に収まる)。これは、このローカル環境ではネットワーク往復時間がほぼ無視できるほど小さく、リクエスト本数の削減効果が時間に反映されないため。本番相当のRTT(数十〜数百ms)がある環境でこそ、本数削減とPARの効果が時間短縮として現れると考えられる。**本番での時間計測は、下記の理由により今回は実施できていない**。
 
-## 本番動作確認(未完了・②へ報告)
+## 本番動作確認(②承認を得てpush・実施完了)
 
-**クライアント側の変更(commit `b42f9e7`・`9ed0978`)が push できておらず、本番に反映されていないため、本番でのハブ経由起動の動作確認(「変更なしで本文GETが出ないこと」等)は実施できなかった。**
+### push
 
-経緯:
-- step5の時点で、push-gate が「Issue trailer 混在」で push を拒否した。自分の2commitより前に、同じ共有作業ツリーに別イシュー#396 のcommit(`77a3302`・テストのみの修正)が積まれているため。
-- 規約により commit を抜かず②の判断(`BOOKSHELF_PUSH_ALLOW=396` での同梱許可、または別の対処)を待つ状態で step5 を終えた。
-- step6 開始時点(本ステップ)で再確認したが、`origin/main` はまだ `dcd17a0`(自分のcommitより前)のままで、②からの新しい指示(台帳にも記録なし)も付いていない。再度 push を試したが同じ理由で拒否された。
-- worker(cf-worker)側は step3 で本番 deploy 済み・動作確認済み(`entries`/`truncated:false`が本番の `?list=1` に付くことを確認済み)。**worker 側は完了しているが、クライアント側(ブラウザが実際に使うコード)が未反映のため、「本番でのハブ起動が速くなる」という完了条件はまだ満たせていない。**
+②が #396(`77a3302`)との同梱を承認(「#396 の step3 で `#392 が push するときに 77a3302 も一緒に送る` と決めている」)。
+```
+BOOKSHELF_ISSUE=392 BOOKSHELF_PUSH_ALLOW=396 git push origin 8a216df:main
+```
+push-gate OK(5件中5件がIssue #392/#396のtrailerを持つ)。`origin/main` が `8a216df` になったことを確認。CIの `test` ジョブが `completed/success` になることを確認(待ち約7分)。本番 `index.html` の `?v=` (`storage-adapter.js?v=2026102902`) が反映されたことを確認(即時)。
 
-**②への確認事項**(step5報告から変わらず):
-1. #396 との同梱 push を承認するなら `BOOKSHELF_ISSUE=392 BOOKSHELF_PUSH_ALLOW=396 git push origin 9ed0978:main` で進められる。
-2. 同梱不可なら `77a3302` の扱い(抜く判断は③では行わない)を指示してください。
-3. push 完了後、Pages 反映(`?v=`確認)→ 本番でのハブ起動確認(差分GET・並列取得のネットワークログ)を改めて実施する必要がある。
+### 本番実機確認(1回目)で発見した問題: 弱いETag(`W/"..."`)不一致
+
+kurokotest アカウントで本番ハブ接続を起動し直すと、**「変更なしで本文GETが出ない」が成立しなかった**(2〜4回目起動とも4〜5本が毎回GETされ続けた)。原因を直接確認(ブラウザ上で `fetch` と `localStorage` を読んで比較):
+
+- listDirの `entries[].etag` = `"09d5217b2695159a4f22cabc17fe2051"`(強いETag、worker が R2 の `httpEtag` をそのまま返す)
+- GETレスポンスの `ETag` ヘッダ(= VersionCacheに保存される値) = `W/"09d5217b2695159a4f22cabc17fe2051"`(弱いETag、本番の Cloudflare 経由で `W/` が付加される)
+
+ハッシュ値自体は同じだが、`VersionCache.read` が文字列完全一致で比較していたため、**毎回「不一致」と判定されてキャッシュミスし続けていた**。ローカル `wrangler dev` は Cloudflare の CDN 層を経由しないため、この差が再現しなかった(step1〜5のローカル実測は全て `W/` 無しの一致だった)。
+
+### 修正・再pushと再確認
+
+`VersionCache.read` で比較前に `W/` 接頭辞を正規化するよう修正(`js/storage-adapter.js`、commit `d05470c`。GitHubAdapterのsha値はこの接頭辞を持たないため無害・既存テスト全緑)。`index.html` の `?v=`(`storage-adapter.js?v=2026102903`)を再バンプし、`BOOKSHELF_ISSUE=392` で通常push(混在イシューなし・push-gate OKで通過)。CIは `build`/`deploy`/`report-build-status` が `success`、`test` は締切の都合で待ち切れず `in_progress` のまま(到達分で判定・下記「未完了事項」参照)。本番 `?v=2026102903` の反映を確認後、本番で再度ハブ起動を2回行い、**本文GETが0本(HEAD+listDir2回のみ)になったことを確認**。修正が効いていることを本番実機で確認できた。
+
+### 1本だけ変更した時の確認について
+
+時間の制約(締切直前)のため、本番での「1本だけ変更」確認は実施できなかった。ローカル(wrangler dev)では実施済み(上記「結果」の表、1本だけGETされることを確認済み)。本番でも同じコードパスのため同様に動くと見込むが、未実施である旨をここに明記する。
+
+### 未完了事項(②への報告)
+
+1. 2回目のpush(`d05470c`、ETag正規化の修正)に対するCIの `test` ジョブ結果を確認し切れていない(待ち7分で `in_progress` のまま時間切れ)。`build`/`deploy`/`report-build-status` は `success`。②側で `test` の最終結果を確認してください。
+2. 本番での「1本だけ変更」確認は時間切れのため未実施(上記理由)。
+3. `.wrangler/state` のローカルシード・KVキーはそのまま残した(②指示どおり)。`/tmp/392-hk.txt`・`/tmp/392-uid.txt` は `_trash/` へ退避済み。
 
 ## 07_残検討事項・project note
 
