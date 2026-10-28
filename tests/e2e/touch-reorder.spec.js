@@ -104,6 +104,13 @@ async function mouseDrag(page, fromBox, toPoint) {
     await page.mouse.move(x0, y0 + 5, { steps: 3 });
     await page.mouse.move(toPoint.x, toPoint.y, { steps: 5 });
     await page.waitForTimeout(100);
+    // イシュー#398 ダッシュボード(12列grid)検証時に実測: 複数stepで連続発火するmousemoveの
+    // 最後の1件は、ごく稀にdocument.elementFromPointが古い(ghost差し替え直後の)ヒット結果を
+    // 返し、_bindPointerReorderのonMoveが対象を見失ってlastIndexをnullに戻すことがあった
+    // (同じ座標への静的なelementFromPointは常に正しい値を返す＝ジオメトリの問題ではない)。
+    // 同じ座標へ単発のmousemoveをもう1回送って settle させることで安定して解消する。
+    await page.mouse.move(toPoint.x, toPoint.y);
+    await page.waitForTimeout(80);
     await page.mouse.up();
     await page.waitForTimeout(200);
 }
@@ -244,6 +251,91 @@ test.describe('touch-reorder (イシュー#337)', () => {
 
         const after = await page.evaluate(() => [...document.querySelectorAll('#sidebar-bookshelf-tree .tree-node')].map(n => n.dataset.internalId));
         expect(after).toEqual(['all', 'novel', 'essay', 'sf']);
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#398: ホームのウィジェット並べ替え (dashboard.js) も HTML5 Drag API から
+    // _bindPointerReorder に置き換えた。編集モードに入ってからの経路は他の一覧と同じ。
+    async function enterDashboardEditMode(page) {
+        await page.waitForSelector('#dashboard-edit-toggle');
+        await page.click('#dashboard-edit-toggle');
+        await page.waitForSelector('.dashboard-grid.is-edit-mode .dashboard-widget');
+    }
+    const widgetOrder = (page) => page.evaluate(() => [...document.querySelectorAll('#dashboard-grid .dashboard-widget')].map(c => c.dataset.widgetId));
+
+    test('ホームのウィジェット: 長押しで並べ替え、順序が保存される', async ({ page, browserName }) => {
+        const errors = await bootApp(page);
+        const before = await widgetOrder(page);
+        expect(before.length).toBeGreaterThanOrEqual(3); // DEFAULT_LAYOUT (counter-total/shelves/this-month/unrated/...)
+        await enterDashboardEditMode(page);
+
+        const cards = page.locator('#dashboard-grid .dashboard-widget');
+        const c0Box = await cards.nth(0).boundingBox();
+        const c2Box = await cards.nth(2).boundingBox();
+        await touchLongPressDrag(page, browserName, c0Box, { x: c2Box.x + c2Box.width / 2, y: c2Box.y + c2Box.height - 3 });
+
+        const after = await widgetOrder(page);
+        const beforeIds = before.map(uid => uid.split('#')[0]);
+        const afterIds = after.map(uid => uid.split('#')[0]);
+        // uid は id#現在位置 のため並べ替えで文字列自体が変わる(安定IDではない)。中身のidで比べる。
+        expect(afterIds).not.toEqual(beforeIds);
+        expect(new Set(afterIds)).toEqual(new Set(beforeIds)); // 入れ替わっただけで増減無し
+        // counter-total(先頭)を counter-this-month(3番目)の位置へドラッグ → this-monthの直前に挿入される
+        expect(afterIds.slice(0, 3)).toEqual(['counter-shelves', 'counter-total', 'counter-this-month']);
+        // 保存値 (userData._storage.main.home.widgets) にも反映されている
+        const savedIds = await page.evaluate(() => (window.bookshelf.userData._storage?.main?.home?.widgets || []).map(w => w.id));
+        expect(savedIds).toEqual(afterIds);
+        expect(errors).toEqual([]);
+    });
+
+    test('ホームのウィジェット: マウスドラッグで並べ替え (PCの挙動を固定、chromium)', async ({ page, browserName }) => {
+        test.skip(browserName !== 'chromium', 'マウスドラッグの代表例はchromiumのみで固定する');
+        const errors = await bootApp(page);
+        const before = await widgetOrder(page);
+        await enterDashboardEditMode(page);
+
+        const cards = page.locator('#dashboard-grid .dashboard-widget');
+        const c0Box = await cards.nth(0).boundingBox();
+        const c2Box = await cards.nth(2).boundingBox();
+        await mouseDrag(page, c0Box, { x: c2Box.x + c2Box.width / 2, y: c2Box.y + c2Box.height - 3 });
+
+        const after = await widgetOrder(page);
+        const beforeIds = before.map(uid => uid.split('#')[0]);
+        const afterIds = after.map(uid => uid.split('#')[0]);
+        expect(afterIds).not.toEqual(beforeIds);
+        expect(new Set(afterIds)).toEqual(new Set(beforeIds));
+        expect(afterIds.slice(0, 3)).toEqual(['counter-shelves', 'counter-total', 'counter-this-month']);
+        expect(errors).toEqual([]);
+    });
+
+    test('ホームのウィジェット: 長押し成立前の素早い移動はスクロール優先になり、並べ替えは始まらない', async ({ page }) => {
+        const errors = await bootApp(page);
+        const before = await widgetOrder(page);
+        await enterDashboardEditMode(page);
+
+        const card0 = page.locator('#dashboard-grid .dashboard-widget').nth(0);
+        const box = await card0.boundingBox();
+        const x0 = box.x + box.width / 2, y0 = box.y + box.height / 2;
+        // 450ms待たず、6px超の移動を即座に送る(タッチのスクロールジェスチャ相当)。
+        // _bindPointerReorder は touch/pen の場合、長押し成立前の移動で pending をキャンセルし
+        // ドラッグを開始しない(スクロール優先、イシュー#337の判定をそのまま使う)。
+        await page.evaluate(([x, y]) => {
+            const el = document.elementFromPoint(x, y);
+            el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 88, clientX: x, clientY: y }));
+        }, [x0, y0]);
+        await page.evaluate(([x, y]) => {
+            document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 88, clientX: x, clientY: y }));
+        }, [x0, y0 + 40]); // 6pxしきい値を大きく超える
+        await page.waitForTimeout(50);
+        await page.evaluate(([x, y]) => {
+            document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 88, clientX: x, clientY: y }));
+        }, [x0, y0 + 40]);
+        await page.waitForTimeout(100);
+
+        const after = await widgetOrder(page);
+        expect(after).toEqual(before); // 並べ替えは起きていない
+        const dragGhostCount = await page.evaluate(() => document.querySelectorAll('.drag-ghost').length);
+        expect(dragGhostCount).toBe(0); // ドラッグ(ゴースト生成)自体が始まっていない = ブラウザの素のスクロールに委ねられる
         expect(errors).toEqual([]);
     });
 });

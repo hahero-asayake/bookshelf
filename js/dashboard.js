@@ -265,7 +265,6 @@ class BookshelfDashboard {
             card.className = `dashboard-widget span-${w.span} m-${mSize}${markerClass}`;
             card.dataset.widgetId = w.uid;          // インスタンス一意キー (同一ウィジェット複数配置に対応)
             card.dataset.widgetIndex = String(i);
-            card.draggable = this.editMode;
             card.innerHTML = `
                 <div class="widget-header">
                     ${this.editMode ? `<span class="widget-grip" title="ドラッグで並び替え">${window.renderIcon('grip-vertical', { size: 14 })}</span>` : ''}
@@ -432,47 +431,60 @@ class BookshelfDashboard {
             }
         }, { signal });
 
-        // ドラッグ並び替え
-        if (this.editMode) this._bindDnd(grid, signal);
+        // イシュー#398: ドラッグ並び替え。HTML5 Drag API (dragstart/dragover/drop) はタッチで
+        // 発火しない (実測: dragstartCount=0のまま並び順が変わらない)。_bindPointerReorder
+        // (#337・本棚ツリー/本棚管理モーダル/プラグイン一覧と同じ部品) に揃える＝「同じ操作は
+        // 同じ見た目・同じ挙動」。PCマウスも同じ経路 (handleSelector無し=6px移動で即開始、
+        // タッチは450ms長押し=スクロール優先に分岐、他の一覧と同じ判定)。
+        // container (grid) は再描画をまたいで使い回すため、bindは初回のみ (_bindPointerReorder
+        // 自身の container._pointerReorderBound ガードで2回目以降は no-op)。実際にドラッグを
+        // 許可するかは canDrag で都度の this.editMode を見て判定する。
+        this.app._bindPointerReorder(grid, {
+            itemSelector: '.dashboard-widget',
+            excludeSelector: '.widget-actions, button, select',
+            dragClass: 'is-dragging',
+            zoneMode: 'index',
+            indicatorClass: 'widget-drop-indicator',
+            computeInsertIndex: (container, clientX, clientY) => this._computeWidgetInsertIndex(container, clientX, clientY),
+            getKey: (el) => el.dataset.widgetId,
+            onDrop: (uid, idx) => this._reorderWidgetByIndex(uid, idx),
+            canDrag: () => this.editMode,
+            // Home (#dashboard) はページ自体がスクロールする (本棚一覧の.view-bookshelfのような
+            // 専用スクロール容器が無い) ため、window をスクロール対象とする薄いアダプタを渡す。
+            scrollContainer: () => ({
+                getBoundingClientRect: () => ({ top: 0, bottom: window.innerHeight }),
+                get scrollTop() { return window.scrollY || document.documentElement.scrollTop; },
+                set scrollTop(v) { window.scrollTo(0, v); },
+            }),
+        });
     }
 
-    _bindDnd(grid, signal) {
-        const state = { sourceId: null };
-        grid.addEventListener('dragstart', (e) => {
-            const card = e.target.closest('.dashboard-widget');
-            if (!card) return;
-            state.sourceId = card.dataset.widgetId;
-            card.classList.add('is-dragging');
-            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-        }, { signal });
-        grid.addEventListener('dragend', () => {
-            grid.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
-            grid.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-            state.sourceId = null;
-        }, { signal });
-        grid.addEventListener('dragover', (e) => {
-            if (!state.sourceId) return;
-            const card = e.target.closest('.dashboard-widget');
-            if (!card || card.dataset.widgetId === state.sourceId) return;
-            e.preventDefault();
-            grid.querySelectorAll('.drop-target').forEach(el => {
-                if (el !== card) el.classList.remove('drop-target');
-            });
-            card.classList.add('drop-target');
-        }, { signal });
-        grid.addEventListener('drop', (e) => {
-            if (!state.sourceId) return;
-            const targetCard = e.target.closest('.dashboard-widget');
-            if (!targetCard) return;
-            e.preventDefault();
-            const layout = this.getLayout();
-            const fromIdx = layout.findIndex(w => w.uid === state.sourceId);
-            const toIdx = layout.findIndex(w => w.uid === targetCard.dataset.widgetId);
-            if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
-            const [moved] = layout.splice(fromIdx, 1);
-            layout.splice(toIdx, 0, moved);
-            this.saveLayout(layout).then(() => this.render());
-        }, { signal });
+    // grid (12列CSS grid) 上のドラッグ位置から挿入先インデックスを決める。単純な縦1列ではなく
+    // span違いのカードが横に並ぶため、カード矩形内ならそのindex、無ければ中心点が最も近いカードの
+    // indexを返す (旧実装の「ドロップ先カードの位置に挿入」を踏襲)。
+    _computeWidgetInsertIndex(container, clientX, clientY) {
+        const items = Array.from(container.querySelectorAll('.dashboard-widget')).filter(el => !el.classList.contains('is-dragging'));
+        let best = items.length, bestDist = Infinity;
+        for (let i = 0; i < items.length; i++) {
+            const r = items[i].getBoundingClientRect();
+            if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return i;
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            const d = (clientX - cx) ** 2 + (clientY - cy) ** 2;
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        return best;
+    }
+
+    async _reorderWidgetByIndex(uid, idx) {
+        if (!uid) return;
+        const layout = this.getLayout();
+        const fromIdx = layout.findIndex(w => w.uid === uid);
+        if (fromIdx < 0) return;
+        const [moved] = layout.splice(fromIdx, 1);
+        const insertIdx = Math.max(0, Math.min(idx, layout.length));
+        layout.splice(insertIdx, 0, moved);
+        await this.saveLayout(layout);
+        this.render();
     }
 
     async _removeWidget(uid) {

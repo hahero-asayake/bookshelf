@@ -1970,9 +1970,15 @@ html.bs-likely-has-data #dashboard-welcome {
     opacity: 0.5;
 }
 
-.dashboard-widget.drop-target {
-    outline: 2px dashed var(--accent);
-    outline-offset: -2px;
+/* イシュー#398: _bindPointerReorder (#337) の挿入位置インジケータ。12列gridに挟まるため
+   全幅(1/-1)にして横線として見せる (.plugin-drop-indicator と同じ見た目の考え方)。 */
+.widget-drop-indicator {
+    grid-column: 1 / -1;
+    height: 3px;
+    background: var(--accent, #3d52ff);
+    border-radius: 2px;
+    margin: 0;
+    box-shadow: 0 0 0 2px rgba(61, 82, 255, 0.2);
 }
 
 .widget-header {
