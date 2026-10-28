@@ -1,16 +1,27 @@
 #!/bin/sh
-# bookshelf push前ゲート（イシュー#375）。
+# bookshelf push前ゲート（イシュー#375・#390でcheck:version検査を追加）。
 #
 # 有効化するには: git config core.hooksPath .githooks
 # （未設定の間はgitから呼ばれない＝このファイルを置くだけでは何も変わらない）
 #
-# origin/main への push だけを検査する。各commitのIssue trailerを
-# scripts/git/push-gate.mjs で判定し、他イシューのcommitが混ざっていれば止める。
+# origin/main への push だけを検査する。各pushごとに2段で検査する:
+#   1. scripts/git/push-gate.mjs : 各commitのIssue trailerを判定し、他イシューの
+#      commitが混ざっていれば止める。
+#   2. scripts/check-version-bump.mjs --range=<remote_sha>..<local_sha> : push対象の
+#      範囲でjs/cssの?v=バンプ漏れが無いか判定し、漏れがあれば止める（イシュー#390）。
+#      起点は push-gate に渡されるのと同じ remote_sha をそのまま使う（merge-baseでは
+#      代用しない＝push直後/fetch直後にmerge-baseを使うと起点がHEADと一致してdiffが
+#      消え見逃す弱点が実際に#389で起きたため）。
+#
+# remote_sha が zero（当該refがリモートにまだ存在しない新規ブランチpush）の場合は、
+# 比較対象の「push前の状態」が無く版バンプ漏れという概念自体が成立しないため、
+# check:version はスキップする（push-gate側のIssue trailer判定は従来どおり実行する）。
 #
 # 逃げ道: git push --no-verify ... でこのhook自体を素通しできる（人間の手動操作用）。
 #
 # 注意: pre-pushフックはリポジトリの作業ツリールートがcwdで実行される
-# （git標準の挙動）ため、scripts/git/push-gate.mjs は相対パスで参照できる。
+# （git標準の挙動）ため、scripts/git/push-gate.mjs・scripts/check-version-bump.mjs は
+# 相対パスで参照できる。
 
 NODE_BIN="node"
 if ! command -v node >/dev/null 2>&1; then
@@ -32,6 +43,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   if ! "$NODE_BIN" scripts/git/push-gate.mjs "$local_sha" "$remote_sha"; then
     blocked=1
+  fi
+
+  if [ "$remote_sha" = "$zero" ]; then
+    echo "[pre-push] check:version: remote_sha が無い(新規ブランチpush)ため版バンプ検査をスキップする。"
+  else
+    if ! "$NODE_BIN" scripts/check-version-bump.mjs "--range=${remote_sha}..${local_sha}"; then
+      blocked=1
+    fi
   fi
 done
 
