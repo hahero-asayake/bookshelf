@@ -1982,12 +1982,19 @@ class VirtualBookshelf {
         const coverSize = this.userData.settings?.coverSize || 'medium';
         // is-custom-order: カスタム順のときだけ本をドラッグ並べ替えできる (grab カーソルで示す)
         const customCls = (this.sortOrder === 'custom') ? ' is-custom-order' : '';
-        const cls = `bookshelf view-${this.currentView} size-${coverSize}${customCls}`;
+        const baseCls = `bookshelf view-${this.currentView} size-${coverSize}`;
+        const cls = baseCls + customCls;
         // イシュー#359 段階④ (R1): 一覧の全件作り直しをやめ、asin ごとの要素を差分 (追加・削除・並び替え・内容変更) で更新する。
-        // ビュー/表紙サイズ/並べ替えモード (container の class) が変わった時と、まだカードが無い時は従来どおり全件描画。
+        // ビュー/表紙サイズ (container の class) が変わった時と、まだカードが無い時は従来どおり全件描画。
+        // イシュー#402: is-custom-order はカードの中身に影響しない (つまみの表示・カーソルは CSS、ドラッグ開始は sortOrder で判定)。
+        // これだけが変わった時 (カスタム順への切替/カスタム順からの切替) は class を付け替えて差分描画に回す
+        // (全件作り直しに落ちて x6・913冊で 1.1〜1.2秒固まっていた)。
         // window.BOOKSHELF_LIST_DIFF_LEGACY === true で従来の全件作り直しに戻せる (段階⑤で撤去)。
-        const canDiff = window.BOOKSHELF_LIST_DIFF_LEGACY !== true && bookshelf.className === cls && !!bookshelf.querySelector(':scope > .book-item[data-asin]');
+        const canDiff = window.BOOKSHELF_LIST_DIFF_LEGACY !== true
+            && bookshelf.className.replace(/\s*\bis-custom-order\b/, '') === baseCls
+            && !!bookshelf.querySelector(':scope > .book-item[data-asin]');
         if (canDiff) {
+            if (bookshelf.className !== cls) bookshelf.className = cls;
             this._renderListDiff(bookshelf);
         } else {
             this._cancelListTail(); // 段階描画の残りは捨てる (全件描画がやり直す・通知も全件描画側の1回だけ) (#401)
@@ -2006,10 +2013,14 @@ class VirtualBookshelf {
         const booksToRender = [...this.filteredBooks];
         if (this.sortOrder === 'custom' && this.userData.bookOrder && this.userData.bookOrder[currentBookshelfId]) {
             const customOrder = this.userData.bookOrder[currentBookshelfId];
+            // イシュー#402: 比較のたびの indexOf (冊数の2乗×log) をやめ、位置を1回だけ Map に引く。
+            // 重複 asin は indexOf と同じく最初の位置を採る
+            const rank = new Map();
+            customOrder.forEach((asin, i) => { if (!rank.has(asin)) rank.set(asin, i); });
             // Sort books according to custom order, with unordered books at the end
             booksToRender.sort((a, b) => {
-                const aIndex = customOrder.indexOf(a.asin);
-                const bIndex = customOrder.indexOf(b.asin);
+                const aIndex = rank.has(a.asin) ? rank.get(a.asin) : -1;
+                const bIndex = rank.has(b.asin) ? rank.get(b.asin) : -1;
                 if (aIndex === -1 && bIndex === -1) return 0; // Both not in custom order
                 if (aIndex === -1) return 1; // a not in custom order, put at end
                 if (bIndex === -1) return -1; // b not in custom order, put at end
