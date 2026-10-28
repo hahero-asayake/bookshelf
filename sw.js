@@ -71,17 +71,29 @@ async function _handleCoverFetch(req) {
         })();
         return hit;
     }
-    // CORS 許可済みホストのみ対象 (COVER_HOSTS)。mode:'cors' で取得し非 opaque のまま扱う。
-    const fresh = await fetch(req, { mode: 'cors' });
-    if (fresh && fresh.status === 200) {
-        const size = Number(fresh.headers.get('content-length')) || 0;
-        await cache.put(req, fresh.clone());
-        const meta = await _getCoverMeta(cache);
-        meta[req.url] = { size, lastAccess: Date.now() };
-        await _setCoverMeta(cache, meta);
-        await _evictCoverCacheIfNeeded(cache);
+    try {
+        // CORS 許可済みホストのみ対象 (COVER_HOSTS)。mode:'cors' で取得し非 opaque のまま扱う。
+        // 注意 (イシュー#391 step4 実機バグ発見): event.request (=req) をそのまま
+        // fetch(req, {mode:'cors'}) に渡すと TypeError: Failed to fetch で毎回失敗する。
+        // <img src="https://他オリジン…"> から発生するリクエストは既定で mode:'no-cors' になっており、
+        // 既存 Request の mode を 'cors' へ変更しようとする呼び方が仕様上許可されないため
+        // (127.0.0.1 の実サーバーへ実際に fetch させて実測・特定)。req.url (文字列) から
+        // 新しい Request を作れば mode の制約に引っかからず成功する。
+        const fresh = await fetch(req.url, { mode: 'cors' });
+        if (fresh && fresh.status === 200) {
+            const size = Number(fresh.headers.get('content-length')) || 0;
+            await cache.put(req, fresh.clone());
+            const meta = await _getCoverMeta(cache);
+            meta[req.url] = { size, lastAccess: Date.now() };
+            await _setCoverMeta(cache, meta);
+            await _evictCoverCacheIfNeeded(cache);
+        }
+        return fresh;
+    } catch (err) {
+        // mode:'cors' の取得に失敗 (CORS不備・ネットワーク不調等) した場合は、キャッシュを諦めて
+        // 素のリクエストへ素通しする (イシュー#391 step4 ②指摘: どちらにしても必要な保険)。
+        return fetch(req);
     }
-    return fresh;
 }
 
 self.addEventListener('install', () => {
