@@ -81,6 +81,13 @@ class BookManager {
                         }
                     }
                     if (changed) {
+                        // イシュー#397 A1: existing はオブジェクト参照を変えずにフィールドだけ書き換える
+                        // (同一参照のまま)。呼び出し側(bookshelf.js _bookCardKey)が参照の同一性だけで
+                        // JSON.stringify(book)をキャッシュしていると、この書き換えが見えず古いバッジの
+                        // ままになる(実測で確認・kindle-reimport-merge.spec.jsで検出)。参照は同じでも
+                        // 中身が変わったと分かるよう、軽量なバージョン番号を進める。非列挙にして
+                        // JSON.stringify(book)自体やlibrary.jsonの書き出しに混ざらないようにする。
+                        Object.defineProperty(existing, '__bibV', { value: (existing.__bibV || 0) + 1, enumerable: false, configurable: true, writable: true });
                         updatedBooks.push(existing);
                     } else {
                         duplicateBooks.push({

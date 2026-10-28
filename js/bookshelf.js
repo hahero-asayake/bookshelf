@@ -1685,36 +1685,57 @@ class VirtualBookshelf {
     }
 
     applySorting() {
-        this.filteredBooks.sort((a, b) => {
-            let aValue = a[this.sortOrder];
-            let bValue = b[this.sortOrder];
-            
-            if (this.sortOrder === 'acquiredTime') {
-                aValue = parseInt(aValue);
-                bValue = parseInt(bValue);
-            }
-            
-            if (typeof aValue === 'string') {
-                aValue = aValue.toLowerCase();
-                bValue = bValue.toLowerCase();
-            }
-            
-            let comparison = 0;
-            if (aValue > bValue) comparison = 1;
-            if (aValue < bValue) comparison = -1;
-            
-            return this.sortDirection === 'asc' ? comparison : -comparison;
-        });
-        
+        if (this.sortOrder === 'acquiredTime') {
+            this.filteredBooks.sort((a, b) => {
+                const aValue = parseInt(a.acquiredTime);
+                const bValue = parseInt(b.acquiredTime);
+                let comparison = 0;
+                if (aValue > bValue) comparison = 1;
+                if (aValue < bValue) comparison = -1;
+                return this.sortDirection === 'asc' ? comparison : -comparison;
+            });
+        } else {
+            // イシュー#397 A6: Intl.Collator を1つだけ作って使い回す (インスタンス生成は並び替えごとに
+            // 作ると実データで無視できない負荷になるため)。比較キーは本ごとに先に計算してから並べる
+            // (シュワルツ変換＝比較のたびに文字列を作り直さない)。'custom' は本来 _orderedBooksToRender
+            // 側で順序を決めるため、ここでは key が全件空文字になり元の順序を変えない (従来どおり)。
+            this._sortCollator = this._sortCollator || new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+            const collator = this._sortCollator;
+            const order = this.sortOrder;
+            const decorated = this.filteredBooks.map((book) => ({ book, key: order === 'custom' ? '' : String(book[order] ?? '') }));
+            decorated.sort((a, b) => {
+                const c = collator.compare(a.key, b.key);
+                return this.sortDirection === 'asc' ? c : -c;
+            });
+            // 配列の参照は変えず内容だけ書き換える (従来の .sort() と同じin-place挙動を保つ＝
+            // toggleSortDirection の反転キャッシュが参照の同一性で有効判定できる)
+            for (let i = 0; i < decorated.length; i++) this.filteredBooks[i] = decorated[i].book;
+        }
+
+        // イシュー#397 A4: 昇順/降順の切り替え (toggleSortDirection) が同じ配列を反転するだけで
+        // 済むようにするためのキャッシュ。配列の参照が変わらない限り (=本棚切替・蔵書変更・絞り込み
+        // 変更で applyFilters() が filteredBooks を新しい配列に差し替えない限り) 有効。
+        this._sortedCacheKey = this.sortOrder;
+        this._sortedCacheRef = this.filteredBooks;
+
         this.currentPage = 1;
         this.updateDisplay();
         this.updateStats();
     }
-    
+
     toggleSortDirection() {
         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
         this.updateSortDirectionButton();
-        this.applySorting();
+        // イシュー#397 A4: 直前にこの並び順で実際にソートした配列がまだ有効 (参照が同じ) なら、
+        // 比較をやり直さずその場で反転するだけにする (applySorting の比較コストを丸ごと避ける)。
+        if (this.sortOrder !== 'custom' && this._sortedCacheKey === this.sortOrder && this._sortedCacheRef === this.filteredBooks) {
+            this.filteredBooks.reverse(); // 参照はそのまま＝キャッシュは次の反転にも有効
+            this.currentPage = 1;
+            this.updateDisplay();
+            this.updateStats();
+        } else {
+            this.applySorting();
+        }
         this._saveSortPrefs();
     }
 
@@ -1957,9 +1978,21 @@ class VirtualBookshelf {
     // イシュー#359 段階④ (R1): カードの内容を決める入力の指紋。同じなら要素をそのまま使い回す (createBookElement を呼ばない)
     _bookCardKey(book, displayType) {
         const n = (this.userData.notes && this.userData.notes[book.asin]) || {};
-        // 書誌は book 全体 (バッジ=利用終了/KU/Prime 等のフラグも含む・再取込で変わる) を JSON で持つ。800冊で 1ms 程度
+        // 書誌は book 全体 (バッジ=利用終了/KU/Prime 等のフラグも含む・再取込で変わる) を JSON で持つ。
+        // イシュー#397 A1: JSON.stringify(book) は実データ(913冊)で1件あたり数μs〜10μs程度かかり、
+        // 並び替えのたびに全件作り直すと無視できない負荷になる(実測: 913冊で約6ms)。
+        // 再取込時のステータス更新 (book-manager.js) は book オブジェクトの参照を変えずフィールドだけ
+        // 書き換えるため、参照の同一性だけでは変化を検知できない(実測で判明・kindle-reimport-merge.spec.js
+        // で検出)。book-manager.js 側が書き換えのたびに進める book.__bibV と組み合わせて判定する。
+        this._bibCache = this._bibCache || new Map();
         let bib;
-        try { bib = JSON.stringify(book); } catch (_) { bib = `${book.title}\u0002${Date.now()}`; }
+        const cached = this._bibCache.get(book.asin);
+        if (cached && cached.ref === book && cached.v === (book.__bibV || 0)) {
+            bib = cached.bib;
+        } else {
+            try { bib = JSON.stringify(book); } catch (_) { bib = `${book.title}\u0002${Date.now()}`; }
+            this._bibCache.set(book.asin, { ref: book, bib, v: book.__bibV || 0 });
+        }
         return [displayType, this._getStarVisibility(), this._getStarOverlay() ? 1 : 0, this._getMemoVisibility(),
             bib, n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
     }
@@ -1975,31 +2008,66 @@ class VirtualBookshelf {
             return;
         }
         const old = new Map();
-        for (const el of Array.from(container.children)) {
-            if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) old.set(el.dataset.asin, el);
+        const oldIndex = new Map();
+        { let i = 0; for (const el of Array.from(container.children)) {
+            if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) { old.set(el.dataset.asin, el); oldIndex.set(el.dataset.asin, i++); }
             else el.remove(); // 空状態・ゴースト等
+        } }
+        // イシュー#397 A5: 昇順/降順の反転など「ほぼ全件の順序が変わる」場合、1件ずつ insertBefore
+        // すると(913冊で900回前後)ブラウザ内部のレイアウト/ペイントが都度走り重い。移動する件数が
+        // 全体の半分を超える見込みなら、既存カードを再利用したまま1回の replaceChildren で
+        // まとめて差し替える(要素は作り直さない=画像の再取得もしない)。半分以下(通常のドラッグ並べ替え
+        // 等)なら従来どおり変わった分だけ insertBefore する。
+        let movedEstimate = 0;
+        for (let idx = 0; idx < books.length; idx++) {
+            const prevIdx = oldIndex.get(books[idx].asin);
+            if (prevIdx === undefined || prevIdx !== idx) movedEstimate++;
         }
         let created = 0, moved = 0, removed = 0;
-        let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
-        for (const book of books) {
-            const key = this._bookCardKey(book, this.currentView);
-            let el = old.get(book.asin);
-            if (el && el.dataset.rkey === key) {
-                el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
-                el.classList.remove('selected', 'show-pop');
-                el.style.borderLeft = '';
-            } else {
-                if (el) { if (el === cursor) cursor = cursor.nextElementSibling; el.remove(); removed++; }
-                el = this.createBookElement(book, this.currentView);
-                el.dataset.rkey = key;
-                created++;
+        if (movedEstimate > books.length * 0.5) {
+            const finalEls = new Array(books.length);
+            for (let idx = 0; idx < books.length; idx++) {
+                const book = books[idx];
+                const key = this._bookCardKey(book, this.currentView);
+                let el = old.get(book.asin);
+                if (el && el.dataset.rkey === key) {
+                    el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
+                    el.classList.remove('selected', 'show-pop');
+                    el.style.borderLeft = '';
+                } else {
+                    if (el) removed++; // 既存要素はあったが内容が変わったので作り直す
+                    el = this.createBookElement(book, this.currentView);
+                    el.dataset.rkey = key;
+                    created++;
+                }
+                old.delete(book.asin);
+                finalEls[idx] = el;
             }
-            old.delete(book.asin);
-            if (el !== cursor) { container.insertBefore(el, cursor); moved++; }
-            else cursor = cursor.nextElementSibling;
+            removed += old.size; // 新しい一覧に無い本
+            moved = movedEstimate;
+            container.replaceChildren(...finalEls);
+        } else {
+            let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
+            for (const book of books) {
+                const key = this._bookCardKey(book, this.currentView);
+                let el = old.get(book.asin);
+                if (el && el.dataset.rkey === key) {
+                    el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
+                    el.classList.remove('selected', 'show-pop');
+                    el.style.borderLeft = '';
+                } else {
+                    if (el) { if (el === cursor) cursor = cursor.nextElementSibling; el.remove(); removed++; }
+                    el = this.createBookElement(book, this.currentView);
+                    el.dataset.rkey = key;
+                    created++;
+                }
+                old.delete(book.asin);
+                if (el !== cursor) { container.insertBefore(el, cursor); moved++; }
+                else cursor = cursor.nextElementSibling;
+            }
+            // 残り (新しい一覧に無い本) を外す
+            while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); removed++; cursor = next; }
         }
-        // 残り (新しい一覧に無い本) を外す
-        while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); removed++; cursor = next; }
         // view 系プラグイン用: 一覧更新を従来どおり通知 (changed は加算情報・ADR-041)
         if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: created + removed + moved });
     }
