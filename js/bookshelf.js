@@ -14949,10 +14949,12 @@ class VirtualBookshelf {
         const previewBooks = previewAsins.slice(0, 8);
         const previewHtml = previewBooks.map(asin => {
             const book = (this.books || []).find(b => b.asin === asin);
+            // data-asin: 表紙が読み込み失敗/1x1(_setupCoverFallback)で<img>がプレースホルダdivに
+            // 差し替わっても、並び順をasinで検証できるように外側のラッパーに持たせる(イシュー#398)。
             if (book && this.bookManager.hasCoverImage(book)) {
-                return `<div class="bookshelf-preview-book"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}" data-cover-fallback=""></div>`;
+                return `<div class="bookshelf-preview-book" data-asin="${asin}"><img src="${this.bookManager.getProductImageUrl(book)}" alt="${book.title}" data-cover-fallback=""></div>`;
             }
-            return `<div class="bookshelf-preview-book bookshelf-preview-placeholder">${window.renderIcon('book-open', { size: 20 })}</div>`;
+            return `<div class="bookshelf-preview-book bookshelf-preview-placeholder" data-asin="${asin}">${window.renderIcon('book-open', { size: 20 })}</div>`;
         }).join('');
 
         return `

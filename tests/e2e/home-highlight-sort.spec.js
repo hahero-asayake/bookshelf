@@ -6,6 +6,18 @@
 // シード/起動は tests/e2e/sort-persist.spec.js の seed()/boot() と同じ型 (同期先 adapter を
 // 偽物に差し替えて実ネットワークに出ない・switchBookshelf('all') まで進める)。本テストは
 // 永続化ではなく「並び順設定→ハイライトの見た目」の経路を見るため push/reload は行わない。
+//
+// 2026-10-29 ②指摘で2点修正:
+//  (1) firstAlt() が <img alt> を読んでいたが、test-base.js の共通fixtureが
+//      images-na.ssl-images-amazon.com への表紙リクエストを1x1の透明PNGで応答するため、
+//      _setupCoverFallback (naturalWidth<=1 を「読み込み失敗」とみなす既存の仕様どおりの挙動)
+//      が load イベントで即座に <img> をプレースホルダdivへ差し替えてしまい、alt を読むタイミング
+//      次第で失敗/タイムアウトしていた(実行環境依存の見かけ上のflakeに見えたが、原因はテスト側が
+//      表紙読み込みレースに弱い作りだったこと)。<img>かプレースホルダdivかに関わらず残る外側の
+//      .bookshelf-preview-book に data-asin を持たせる形にアプリ側を直し(js/bookshelf.js
+//      _renderBookshelfCard)、asin で順序を確認するようにした。
+//  (2) 1回読みの getAttribute を素の expect().toBe() で比べず、expect.poll で安定を待つ
+//      (プロジェクト既定の型・publish系e2eのcommitBatch待ちと同じ考え方)。
 import { test, expect } from './helpers/test-base.js';
 
 // タイトルは登録順 (idx 昇順) と逆アルファベットにする (idx0='L' … idx11='A')。
@@ -32,12 +44,12 @@ function makeUserData() {
     };
 }
 
-async function seed(page, userData) {
+async function seed(page, userData, lib = library) {
     await page.addInitScript(([u, l]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-    }, [JSON.stringify(userData), JSON.stringify(library)]);
+    }, [JSON.stringify(userData), JSON.stringify(lib)]);
 }
 
 // sort-persist.spec.js の boot() と同じ要点だけ (同期アダプタを無害化し switchBookshelf('all') まで進める)。
@@ -62,7 +74,11 @@ const setSortOrder = (page, v) => page.evaluate((v) => {
 const toggleSortDirection = (page) => page.evaluate(() => document.getElementById('sort-direction').click());
 const goHome = (page) => page.click('.sidebar-brand');
 
-const firstAlt = (page, shelfId) => page.locator(`.bookshelf-preview[data-bookshelf-id="${shelfId}"] .bookshelf-preview-books img`).first().getAttribute('alt');
+// 表紙<img>は読み込み結果次第でプレースホルダdivに差し替わるため alt は見ない。
+// 外側の .bookshelf-preview-book (data-asin) で先頭の本を判定する。
+const firstAsin = (page, shelfId) => page.locator(`.bookshelf-preview[data-bookshelf-id="${shelfId}"] .bookshelf-preview-books .bookshelf-preview-book`).first().getAttribute('data-asin');
+// 1回読みで比べない(dashboard.render()の再描画完了前の値を掴むことがある)。expect.pollで安定を待つ。
+const expectFirstAsin = (page, shelfId, want) => expect.poll(() => firstAsin(page, shelfId), { timeout: 10000 }).toBe(want);
 
 test.describe('#398 ホームの本棚ハイライトが並び順の設定に合う', () => {
     test('タイトル昇順(既定)：all本棚は先頭8冊の最小タイトルが先頭、棚Aもその本棚の中で先頭になる', async ({ page }) => {
@@ -70,10 +86,10 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
         await page.goto('index.html');
         await boot(page);
         await goHome(page);
-        // all: idx11..4 が昇順タイトル上位8件 → 先頭は 'A' (idx11)
-        expect(await firstAlt(page, 'all')).toBe('A');
-        // shelfA: idx0..9 の中でタイトル最小は idx9='C'
-        expect(await firstAlt(page, 'shelfA')).toBe('C');
+        // all: idx11..4 が昇順タイトル上位8件 → 先頭は idx11 ('A')
+        await expectFirstAsin(page, 'all', asin(11));
+        // shelfA: idx0..9 の中でタイトル最小は idx9 ('C')
+        await expectFirstAsin(page, 'shelfA', asin(9));
     });
 
     test('タイトル降順に変えてホームへ戻ると反映される', async ({ page }) => {
@@ -82,20 +98,20 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
         await boot(page);
         await toggleSortDirection(page); // asc→desc
         await goHome(page);
-        // all: 降順の先頭は 'L' (idx0)
-        expect(await firstAlt(page, 'all')).toBe('L');
+        // all: 降順の先頭は idx0 ('L')
+        await expectFirstAsin(page, 'all', asin(0));
     });
 
     test('取得日(acquiredTime)に変えてホームへ戻ると反映される', async ({ page }) => {
         await seed(page, makeUserData());
         await page.goto('index.html');
         await boot(page);
-        await setSortOrder(page, 'acquiredTime'); // 既定asc → idxが大きいほど新しい(値大)なので昇順先頭はidx0='L'
+        await setSortOrder(page, 'acquiredTime'); // 既定asc → idxが大きいほど新しい(値大)なので昇順先頭はidx0
         await goHome(page);
-        expect(await firstAlt(page, 'all')).toBe('L');
-        await toggleSortDirection(page); // desc → 先頭はidx11='A'(最新)
+        await expectFirstAsin(page, 'all', asin(0));
+        await toggleSortDirection(page); // desc → 先頭はidx11(最新)
         await goHome(page);
-        expect(await firstAlt(page, 'all')).toBe('A');
+        await expectFirstAsin(page, 'all', asin(11));
     });
 
     test('自由な並び(custom・bookOrder)の時はbookOrderを使う(sortOrderの値は見ない)', async ({ page }) => {
@@ -106,7 +122,7 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
         await page.goto('index.html');
         await boot(page);
         await goHome(page);
-        expect(await firstAlt(page, 'all')).toBe(titleOf(5));
+        await expectFirstAsin(page, 'all', asin(5));
     });
 
     test('ホームを表示中に並び順を変えた場合も、その場で表示が更新される', async ({ page }) => {
@@ -114,7 +130,7 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
         await page.goto('index.html');
         await boot(page);
         await goHome(page);
-        expect(await firstAlt(page, 'all')).toBe('A'); // タイトル昇順(既定)の先頭
+        await expectFirstAsin(page, 'all', asin(11)); // タイトル昇順(既定)の先頭
         // ホームに居るまま並び順を変える(この画面構成では並び順の操作UIはホームから開けないため、
         // UIハンドラが呼ぶ _saveSortPrefs を直接呼ぶ。ナビゲーションは一切行わない=「表示中に変えた」を保つ)。
         await page.evaluate(() => {
@@ -122,20 +138,21 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
             bs.sortOrder = 'acquiredTime'; bs.sortDirection = 'desc';
             bs._saveSortPrefs();
         });
-        expect(await firstAlt(page, 'all')).toBe('A' /* idx11 = 最新 = acquiredTime降順の先頭。たまたまtitle側の'A'と同一idx */);
+        await expectFirstAsin(page, 'all', asin(11)); // idx11 = 最新 = acquiredTime降順の先頭。たまたまtitle側と同一idx
         // 区別のため、titleでは先頭にならないはずのacquiredTime昇順にも変えて確認する
         await page.evaluate(() => {
             const bs = window.bookshelf;
             bs.sortOrder = 'acquiredTime'; bs.sortDirection = 'asc';
             bs._saveSortPrefs();
         });
-        expect(await firstAlt(page, 'all')).toBe('L'); // idx0 = 最古 = acquiredTime昇順の先頭 (titleOrder降順の'L'とは別の理由で一致するが、直前との差分で検証済み)
+        await expectFirstAsin(page, 'all', asin(0)); // idx0 = 最古 = acquiredTime昇順の先頭 (直前との差分で検証済み)
     });
 
     test('913冊規模でも、並び替え変更1回あたり全蔵書の並べ替えは本棚数に比例しない(キャッシュが効く)', async ({ page }) => {
         const BIG_N = 913;
+        const bigAsin = (i) => `B0BIG${String(i).padStart(5, '0')}`;
         const bigBooks = Array.from({ length: BIG_N }, (_, i) => ({
-            asin: `B0BIG${String(i).padStart(5, '0')}`, title: `書名${i}`, authors: `著者${i}`,
+            asin: bigAsin(i), title: `書名${i}`, authors: `著者${i}`,
             acquiredTime: 1700000000000 + i * 1000, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000,
         }));
         const bigAsins = bigBooks.map((b) => b.asin);
@@ -146,11 +163,7 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
             shelves.push({ id: `s${s}`, name: `棚${s}`, isSpecial: false, books: bigAsins.filter((_, i) => i % SHELF_COUNT === s), internalId: `s${s}` });
         }
         const bigUserData = { bookshelves: shelves, notes: {}, settings: { sortOrder: 'title', sortDirection: 'asc' }, bookOrder: {}, stats: {}, version: 2 };
-        await page.addInitScript(([u, l]) => {
-            localStorage.setItem('virtualBookshelf_userData', u);
-            localStorage.setItem('virtualBookshelf_library', l);
-            localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-        }, [JSON.stringify(bigUserData), JSON.stringify({ books: bigBooks, metadata: { lastImportDate: 1700000000000, totalBooks: BIG_N } })]);
+        await seed(page, bigUserData, { books: bigBooks, metadata: { lastImportDate: 1700000000000, totalBooks: BIG_N } });
         await page.goto('index.html');
         await boot(page);
         await goHome(page);
@@ -176,6 +189,6 @@ test.describe('#398 ホームの本棚ハイライトが並び順の設定に合
         expect(elapsedMs).toBeLessThan(3000); // 緩い上限(CI変動を許容)。本棚ごとに913件再ソートするほど重くはならない
 
         // 正しさも確認: all本棚の先頭は最新(idx912)
-        expect(await firstAlt(page, 'all')).toBe('書名912');
+        await expectFirstAsin(page, 'all', bigAsin(912));
     });
 });
