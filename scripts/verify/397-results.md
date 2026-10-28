@@ -106,4 +106,32 @@ WebKit(素の速さ・SW on)も同一条件で前後比較:
 
 npm testも都度再実行し、43ファイル723件全パス(変化なし)。
 
+## step5: push と本番確認
+
+commit `1b61b06`(Issue: #397。先行する`9f6ef31`・他イシュー#392の`7b74b17`を含む3commit)を
+`BOOKSHELF_ISSUE=397 BOOKSHELF_PUSH_ALLOW=392 git push origin 1b61b06:main` でpush(②承認・7b74b17は
+#392のdocsのみの記録commitで本番挙動に影響しないとの判断)。push-gateが`js/book-manager.js`の
+`?v=`バンプ漏れ(A1のバグ修正時に追加した`__bibV`がbook-manager.js側の変更だったが、?v=バンプを
+js/bookshelf.jsにしか反映していなかった)を検出・index.htmlで`book-manager.js?v=2026102902`に
+修正して再push、通過。
+
+- **GitHub Pages反映**: push後約30秒で反映を確認(https://asayake.org/bookshelf/index.html で
+  `bookshelf.js?v=2026102902`・`book-manager.js?v=2026102902`を確認)。
+- **本番3操作(1回ずつ・chromium CPUx6・SW on・913冊実データ種)**:
+
+| 操作 | tFrame | 固まる時間 | longtask件数/合計 |
+|---|---:|---:|---:|
+| order | 189.8ms | 231.8ms | 3/240ms |
+| direction | 165.6ms | 166.0ms | 2/161ms |
+| drag | 75.0ms | 45.6ms | 1/59ms |
+
+  ローカルの前後比較(step4)の「修正後」の値(order 165.5ms/direction 154.3ms)とおおむね近い帯に収まっている
+  (本番はCDN経由の実ネットワーク・実サーバー応答を挟む分、ローカルhttp.serverよりやや重め)。エラー無し
+  (meta.errors=[])。
+- **CI**: push(21:38:54 UTC)から約5分40秒(06:44:35 JST)時点で `run 40773670063` は **Status: In progress**
+  のまま、完了していない。GitHub REST APIが本machineの共有IPでrate limit中(他の並行issueセッションと
+  共用のため)で`check-runs`は取得できず、WebFetch経由でActionsページを読んで確認した。5分の待ち上限に
+  達したため、ここで打ち切り、未完了のまま報告する(run URL: https://github.com/hahero-asayake/bookshelf/actions/runs/40773670063)。
+
+
 
