@@ -1792,15 +1792,17 @@ class VirtualBookshelf {
         this.saveUserData({ deviceOnly: true });
     }
 
-    // イシュー#389: スマホ(本棚グリッドの実際の切替幅=768px以下・.app-sidebar等の単一ペイン化と
-    // 同じ @media、css:7581)では #385 で枠が列幅追従になり小/中/大の見た目差がほぼ消えたため、
+    // イシュー#389: スマホでは #385 で枠が列幅追従になり小/中/大の見た目差がほぼ消えたため、
     // 「大きさ」選択肢に列数を添える(専門用語なし・案A)。リスト表示とPC幅では列数の概念が無いので
-    // 添えない(アプリの他所で「モバイル」判定に使われる900pxとは異なる値=この本棚グリッドの実際の
-    // 境界に合わせる。900pxで判定すると769〜900pxの幅で「列数表示はするが実際はPC同じグリッド」の
-    // ズレが出るため)。
-    // 列数の数字は css/bookshelf.css の @media(max-width:768px) 内 .bookshelf.size-* の
-    // --mobile-cols-covers/--mobile-cols-images(1か所の表)をそのまま読む=JS側に数字を
-    // 複製しない(ハヘロの確認で数字が変わってもCSSを直すだけで済む)。
+    // 添えない。
+    // 列数の数字・「添えるべき幅かどうか」は css/bookshelf.css の @media 内 .bookshelf.size-* の
+    // --mobile-cols-covers/--mobile-cols-images(1か所の表・現在の境界は max-width:768px・css:7581
+    // 本棚一覧グリッドの実際の切替幅)をそのまま読む(getComputedStyle)。幅の判定にmatchMediaの
+    // 固定値をJS側に複製しない: この変数はCSSの@media内でしか定義されないため、境界の外側(数字も
+    // 含め)ではgetPropertyValueが空文字→NaN→nullになり、「列数を添えない」が自動的に正しくなる。
+    // CSS側の境界を変えてもJS側は何も直さなくてよい(②指摘2026-10-28: JS側に768pxをハードコードして
+    // いた旧実装は、アプリの他所で「モバイル」判定に使われる900pxと混同されやすく、境界がズレて
+    // いるという誤認の指摘が実際に発生した。数字を複製しない設計に変更して再発を防ぐ)。
     _readMobileColsTable() {
         if (!this._colsProbeEl) {
             const el = document.createElement('div');
@@ -1826,15 +1828,17 @@ class VirtualBookshelf {
     }
 
     // 「表紙の大きさ」select の選択肢テキストを更新する (イシュー#389)。
-    // view-seg (表示形式) の変更・サイズ用 popover を開く・768px境界(本棚グリッドの実際の切替幅)を
-    // 越えた時に呼ぶ。
+    // view-seg (表示形式) の変更・リサイズ(768px境界を越えた時)に呼ぶ。
+    // 幅の判定にmatchMediaの固定値を使わない(②指摘2026-10-28: 768pxとCSSの実際の境界900pxが
+    // 食い違っていた再発防止)。_readMobileColsTable() がCSSの --mobile-cols-* を直接読むので、
+    // 900px超など列数CSSが効いていない幅では値が自然にnullになり「列数を添えない」が自動的に
+    // 正しくなる=JS側に境界の数字を複製しない。
     _updateCoverSizeOptionLabels() {
         const select = document.getElementById('cover-size');
         if (!select) return;
         const baseLabels = { small: '小', medium: '中', large: '大' };
-        const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const view = this.currentView;
-        const showCols = isMobile && (view === 'covers' || view === 'images');
+        const showCols = (view === 'covers' || view === 'images');
         const table = showCols ? this._readMobileColsTable() : null;
         for (const opt of select.options) {
             const base = baseLabels[opt.value] || opt.value;
@@ -6034,11 +6038,16 @@ class VirtualBookshelf {
             });
         }
 
-        // 768px境界(本棚グリッドの実際の切替幅)を越えたら「大きさ」選択肢の列数表示を更新する (イシュー#389)
-        if (!this._coverSizeMqBound) {
-            this._coverSizeMqBound = true;
-            window.matchMedia('(max-width: 768px)').addEventListener('change', () => {
-                this._updateCoverSizeOptionLabels();
+        // リサイズで境界を越えたら「大きさ」選択肢の列数表示を更新する (イシュー#389)。
+        // 特定の境界値へのmatchMediaではなく汎用resize(debounce)にする: 境界の数字はCSS側にしか
+        // 持たず(_readMobileColsTable参照)、JS側はいつ再チェックしてもよいだけなので、
+        // 上のマーキー再評価と同じ型を使う(②指摘2026-10-28: 固定値の重複を無くす)。
+        if (!this._coverSizeResizeBound) {
+            this._coverSizeResizeBound = true;
+            let rt2 = null;
+            window.addEventListener('resize', () => {
+                clearTimeout(rt2);
+                rt2 = setTimeout(() => this._updateCoverSizeOptionLabels(), 200);
             });
         }
 

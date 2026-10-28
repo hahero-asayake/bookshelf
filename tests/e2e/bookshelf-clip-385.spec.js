@@ -255,3 +255,43 @@ test.describe('#389 モバイル列数(大きさ=列数)・はみ出し・縦横
         });
     }
 });
+
+// イシュー#389 ②指摘(2026-10-28): 「大きさ」選択肢に列数を添える境界(JS)と、実際に列数が
+// 切り替わるCSSの境界が食い違っていないかを固定する。調査の結果、本棚一覧の列数グリッドを
+// 囲む@mediaは css/bookshelf.css:7581 の `max-width: 768px` であり(900pxではない。4594/4901/
+// 5022行の@media(max-width:900px)は記事エディタ用の別ルールで本棚グリッドとは無関係)、
+// js/bookshelf.js の _updateCoverSizeOptionLabels はこの境界の数字をJS側に複製せず、CSSの
+// --mobile-cols-covers/--mobile-cols-images を直接読んで判定するよう実装した(境界の値が変わっても
+// JS側の修正が要らない設計)。768px(境界内側)では列数を添え、850px(769〜900pxの範囲・実測)では
+// 添えない=実際の本棚グリッドの挙動と一致する、の両方を固定する。
+test.describe('#389 「大きさ」選択肢の列数表示とCSSの実際の境界が一致する', () => {
+    async function setupAndCheck(page, context) {
+        await setupFixture(page, context, 10);
+        await page.evaluate(() => { window.bookshelf.setView('covers'); window.bookshelf.switchBookshelf('all'); });
+        await page.waitForTimeout(100);
+        return page.evaluate(() => {
+            window.bookshelf._updateCoverSizeOptionLabels();
+            return Array.from(document.getElementById('cover-size').options).map((o) => o.textContent);
+        });
+    }
+
+    test('768px(本棚グリッドの実際の境界内)では列数を添える', async ({ page, context }) => {
+        await page.setViewportSize({ width: 768, height: 844 });
+        const labels = await setupAndCheck(page, context);
+        expect(labels, '768pxでは列数ヒントが出るはず').toEqual(['小（3列）', '中（2列）', '大（1列）']);
+    });
+
+    test('850px(769〜900pxの範囲・CSSの列数切替は効かない)では列数を添えない', async ({ page, context }) => {
+        // ②からは「900pxに揃える」指示だったが、本棚一覧の列数グリッドのCSS境界は実測768pxで
+        // あり(上のdescribeコメント参照)、850pxでは実際の表紙グリッドが列数固定ではなくPCと同じ
+        // auto-fillに戻る(列数はコンテンツ幅依存で3/2/1に固定されない)。「文言が出ること」ではなく
+        // 「文言と実際の列数が食い違わないこと」を固定するため、850pxでは列数ヒントを出さない
+        // (=CSSの実際の挙動と一致させる)ことをここで検証する。
+        await page.setViewportSize({ width: 850, height: 844 });
+        const labels = await setupAndCheck(page, context);
+        expect(labels, '850pxでは本棚グリッドの列数切替CSSが効いていないため列数ヒントを出さないはず').toEqual(['小', '中', '大']);
+        // 実際のグリッドも列数固定(3)になっていないこと(auto-fillのまま)を確認し、文言と整合させる
+        const cols = await page.evaluate(() => getComputedStyle(document.querySelector('.bookshelf')).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length);
+        expect(cols, '850pxでは表紙ビューの列数が3固定(モバイル小の値)になっていないはず(auto-fillなので本数は内容依存)').not.toBe(3);
+    });
+});
