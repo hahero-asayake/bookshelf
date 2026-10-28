@@ -5,7 +5,7 @@
 // ばらつきを確認)ため、本物の別オリジンHTTPサーバーを立てて検証する(sw.jsのCOVER_HOSTSには
 // 本番ホストに加えテスト専用で127.0.0.1を一時注入する)。
 import { test, expect } from '@playwright/test';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import http from 'node:http';
@@ -64,6 +64,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
     await new Promise((r) => imgServer.close(r));
     await new Promise((r) => staticServer.close(r));
+    // git archive で作った一時ディレクトリ(アプリ一式のコピー)を片付ける(②指摘2026-10-29)。
+    rmSync(swTestDir, { recursive: true, force: true });
 });
 
 test('SW許可下で、2回目のロードでは表紙画像(別オリジン)のネットワーク要求が0件になる', async ({ browser }) => {
