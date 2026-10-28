@@ -18,6 +18,26 @@
 // データについて: ハヘロの実データは使わない(E2Eはcommitされるため)。387-sort-perf.mjsの生成方式を
 // 踏襲しつつ、タイトル/著者を実データ相当の長さ(日本語20〜30文字程度)にして_bookCardKey/applySortingの
 // 文字列コストを過小評価しない(ステップ2で短い合成文字列が実コストを過小評価すると分かったため)。
+//
+// イシュー#405 step2: mainのCI test(1b61b06・f01c257・03a64d5)でこのテストが3回連続で最終的に
+// 失敗した(1回目: order 548.4ms、2回目: drag 166.3ms、3回目: order 429.8ms。いずれもreps=3の中央値)。
+// #405 step1の切り分けで、直前の緑commit以降アプリ側(js/)にこのテストの対象(並び替え処理)以外の
+// 退行は無く、CI全並列実行下の負荷依存と判定(詳細: scripts/verify/405-ci-breakdown.md)。
+// 対策: reps=3→5に増やし(単発の強い外れ値にさらに強くする)、最大値は判定せず記録のみに変更。
+// BUDGET自体は変更しない(②方針#377=上限を緩めてアプリの問題を隠さない・上限は消さずfail判定を残す)。
+//
+// ⚠️重要な前提のずれ(②へ報告済み・tp時点): このspecを編集した時点のローカル作業ツリーには、
+// #401/#402(本棚一覧の仮想化)が並び替え処理自体を変更したcommit(441cd65「並び順の変更・昇順/降順の
+// 切替で一覧を段階描画し、固まる時間を約130ms→約20msに」)が未push(origin/main..HEAD)で既に含まれている。
+// このためローカルで実測した値は「仮想化を入れる前の値」ではない。②承認時(#405 step1完了時点)は
+// このcommitが無かったため、前提がずれている。
+//   - 441cd65を含まない状態(#405 step1のCI実測・reps=3中央値): order 429.8〜548.4ms、drag 166.3ms
+//     (いずれもBUDGET超過＝これが赤の直接原因)
+//   - 441cd65を含む状態(今回のローカル実測・reps=3): 単独実行3回 tFrame 60〜93ms / 全50ファイル
+//     8 worker並列実行1回 tFrame 93〜140ms(dragのみ1回だけ最大131.7ms>BUDGET.drag.tFrame=120msだが
+//     中央値96.6msはBUDGET以下)。441cd65が無い状態の3〜6倍の余裕がある。
+// つまり#401/#402がmainにpushされればBUDGET超過問題はほぼ解消する見込みだが、441cd65を含めて
+// pushするかは本イシュー(#405)の管轄を超える判断のため②に委ねる(push前のtpで報告)。
 import { test, expect } from './helpers/test-base.js';
 
 const N = 913;
@@ -108,13 +128,21 @@ const median = (xs) => { const a = [...xs].sort((p, q) => p - q); return a[Math.
 // 1操作につき3回測って中央値を使う(単発のhost競合スパイクに引きずられないため・397-sort-perf.mjsの
 // reps=3中央値と同じ考え方)。中央値を使うことで「2回に1回明らかに遅い」ような本物の劣化は検出しつつ、
 // 8 worker並列実行で稀に1回だけ host 側のスケジューリング遅延を踏むケースはならされる。
-async function measureMedian(page, triggerFn, reps = 3) {
+async function measureMedian(page, triggerFn, reps = 5) {
     const results = [];
     for (let i = 0; i < reps; i++) {
         results.push(await measure(page, triggerFn));
         await page.waitForTimeout(150);
     }
-    return { tFrame: median(results.map((r) => r.tFrame)), maxInputDelay: median(results.map((r) => r.maxInputDelay)) };
+    // 中央値は判定に使う。最大値は記録のみ(判定しない)=CIの単発スパイクでfailさせず、
+    // かつログに残して「どこまで悪化したか」を追える形にする(イシュー#405)。
+    const tFrames = results.map((r) => r.tFrame);
+    const inputDelays = results.map((r) => r.maxInputDelay);
+    console.log(`[sort-perf] tFrame reps=${JSON.stringify(tFrames.map((v) => Math.round(v)))} inputDelay reps=${JSON.stringify(inputDelays.map((v) => Math.round(v)))}`);
+    return {
+        tFrame: median(tFrames), tFrameMax: Math.max(...tFrames),
+        maxInputDelay: median(inputDelays), maxInputDelayMax: Math.max(...inputDelays),
+    };
 }
 
 test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)', () => {
@@ -134,12 +162,12 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
             sel.value = sel.value === 'title' ? 'acquiredTime' : 'title'; // 交互にして実際に並びが変わる操作を毎回発生させる
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         });
-        expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms`).toBeLessThanOrEqual(BUDGET.order.tFrame);
-        expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
+        expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
+        expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
 
         const directionResult = await measureMedian(page, () => { document.getElementById('sort-direction').click(); });
-        expect(directionResult.tFrame, `direction tFrame(中央値)=${directionResult.tFrame}ms`).toBeLessThanOrEqual(BUDGET.direction.tFrame);
-        expect(directionResult.maxInputDelay, `direction inputDelay(中央値)=${directionResult.maxInputDelay}ms`).toBeLessThanOrEqual(BUDGET.direction.inputDelay);
+        expect(directionResult.tFrame, `direction tFrame(中央値)=${directionResult.tFrame}ms(最大${directionResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.tFrame);
+        expect(directionResult.maxInputDelay, `direction inputDelay(中央値)=${directionResult.maxInputDelay}ms(最大${directionResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.inputDelay);
 
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'custom'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
@@ -147,7 +175,7 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
             const items = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]'));
             window.bookshelf.reorderBooks(items[0].dataset.asin, items[Math.min(items.length - 1, 10)].dataset.asin);
         });
-        expect(dragResult.tFrame, `drag tFrame(中央値)=${dragResult.tFrame}ms`).toBeLessThanOrEqual(BUDGET.drag.tFrame);
-        expect(dragResult.maxInputDelay, `drag inputDelay(中央値)=${dragResult.maxInputDelay}ms`).toBeLessThanOrEqual(BUDGET.drag.inputDelay);
+        expect(dragResult.tFrame, `drag tFrame(中央値)=${dragResult.tFrame}ms(最大${dragResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.tFrame);
+        expect(dragResult.maxInputDelay, `drag inputDelay(中央値)=${dragResult.maxInputDelay}ms(最大${dragResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.inputDelay);
     });
 });

@@ -652,8 +652,15 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         }, { timeout: 5000 }).toContain('長文メモ 0/1 読込中');
 
         await page.evaluate(() => window.bookshelf.__releaseRead());
+        // イシュー#405 step3: CI(03a64d5)でここが5000msでタイムアウトした。#405 step1の切り分けと
+        // #384の再現条件(CPU0専有burner4本+CDP CPUスロットリング10倍)での反復(単独10回・ファイル全体
+        // 95テスト1パス、いずれも0件失敗)で、アプリ側(生成処理・pp-preview-progressの開閉ロジック)に
+        // 退行は見つからなかった(js/の該当差分も無し)。#372(article-pc-pane.spec.js)と同じCI全体並列
+        // 実行下のホスト側コンテンション依存と判断し、同じ対処(timeoutを15000msへ延長)を適用する。
+        // #384で「timeout延長方針(案C)は不採用」と決めたのは当時唯一の不具合がアプリのバグ(U1)だった
+        // ため(timeout延長ではなくアプリ修正が正しかった)。今回はアプリ側に不具合の証拠が無い点が異なる。
         await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
-            { timeout: 5000 }).toBe(true);
+            { timeout: 15000 }).toBe(true);
         expect(errors).toEqual([]);
     });
 
