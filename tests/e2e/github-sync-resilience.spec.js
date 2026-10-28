@@ -1,6 +1,14 @@
 // イシュー#391 E2E#1: GitHub読み込みが遅延/失敗しても、手元データ(起動2段化・C-277)が
 // 表示され続けること、再試行で回復することを固定する。
 // 偽GitHub(api.github.com宛のroute)で「遅い」「大容量」の2条件を確認する。
+//
+// イシュー#396 step2: page.goto() は 'index.html' (先頭 '/' 無し) にする。先頭 '/' の絶対パスは
+// new URL() 解決で baseURL のサブパスを無視してオリジン直下に飛ぶため、baseURL が
+// サブパスを持つ環境 (本番 https://asayake.org/bookshelf/ 等) では asayake.org のトップページ
+// (bookshelfアプリではない個人サイト) に遷移し、window.bookshelf が現れず waitForFunction が
+// 60秒で時間切れになる。ローカル (baseURL='http://localhost:8000'、サブパス無し) では表面化しない。
+// 'index.html' 相対形式なら new URL('index.html', baseURL) が baseURL のパスを保ったまま解決する
+// ため、ローカル・本番どちらでも同じ画面に着地する(実機確認: scripts/verify/396-prod-resilience-probe*.mjs)。
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
@@ -39,7 +47,7 @@ test.describe('GitHub読み込みの耐性 (遅延・失敗時も手元データ
             await new Promise((r) => setTimeout(r, 15000));
             await route.fulfill({ status: 500, body: '{}' });
         });
-        await page.goto('/index.html');
+        await page.goto('index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0);
         // 起動直後、裏のGitHub同期が完了する前の時点で、手元の5冊が既に見えていること
         const itemCountEarly = await page.locator('.book-item').count();
@@ -58,7 +66,7 @@ test.describe('GitHub読み込みの耐性 (遅延・失敗時も手元データ
                 await route.fulfill({ status: 200, body: JSON.stringify({ type: 'file', sha: 's1', content: Buffer.from('{}').toString('base64') }) });
             }
         });
-        await page.goto('/index.html');
+        await page.goto('index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0);
 
         // initGitHubSync を直接起動してcatch経路を通す (adapterはindex.html起動時にsyncMethod='github'
