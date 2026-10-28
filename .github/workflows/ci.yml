@@ -10,11 +10,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check:version がbase/headのindex.htmlをgit showで読むため全履歴が要る
+          # (イシュー#390・既定のshallow checkoutだとbase側が無くて解決できない)。
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Version bump check (?v=・イシュー#390)
+        run: |
+          ZERO="0000000000000000000000000000000000000000"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "$ZERO" ]; then
+            echo "[ci] check:version: 比較起点が無い(新規ブランチ/初回push)ため版バンプ検査をスキップする。"
+            exit 0
+          fi
+          CHECK_VERSION_RANGE="${BASE}..${HEAD}" npm run check:version
       - name: CSS lint (stylelint)
         run: npm run lint:css
       - name: Unit tests (Vitest)
