@@ -84,11 +84,11 @@ class GitHubAdapter extends StorageAdapter {
         // R: 起動時に直列12本フェッチしていた問題(step1実測)の本線対策。git trees API
         // (ref→commit→tree recursive=1) を1回だけ呼んで全ファイルのshaを把握し、前回読んだ時の
         // shaと一致すれば本文取得をスキップしてローカルキャッシュ(localStorage)の内容を返す。
-        // 既定は無効(enableShaCache:false): 既存の単体テスト(tests/unit/github-adapter.test.js)は
-        // 「readJSON/readText呼び出しごとにfetch1回」を前提にモックを組んでおり、tree一括取得(3本)を
-        // 常時有効にすると全テストのモックキューが不足して壊れる。今回は実装のみ完成させ、有効化と
-        // 専用のモック/E2Eは次回に行う(申し送り)。
-        this._shaCacheEnabled = false;
+        // 既定で有効(②指示2026-10-29)。tree取得が失敗(ネットワーク不調・テスト環境でモック未対応等)
+        // しても _ensureRemoteShaMap() が例外を飲み込み _remoteShaMap={} にフォールバックするため、
+        // 個別取得(contents API)の経路へ安全に落ちる(tests/unit/github-adapter.test.js のmockFetchは
+        // tree系URLを既定で404にし、この経路を固定で確認する)。
+        this._shaCacheEnabled = true;
         this._remoteShaMap = null; // path(フルパス) -> sha。null=tree未取得。Map取得後は空でも{}を置く
         this._treeFetchPromise = null; // 同時に複数readJSONが呼ばれても tree 取得は1回にまとめる
         this._localCache = null; // 遅延読み込み: {[fullPath]: {sha, text}}

@@ -11,11 +11,19 @@ const OWNER = 'o';
 const REPO = 'r';
 const TOKEN = 't';
 
-function mockFetch(handlerQueue) {
+// opts.treeFails=true(既定): R(イシュー#391)のtree一括取得(ref/commit/tree の3本)を
+// 既存の handlerQueue を消費せず即座に404で失敗させる(=既存テストは全てtree取得失敗→個別取得
+// フォールバックの経路を通る)。R機能自体(成功時のキャッシュヒット/sha不一致)は後述の
+// 専用describeで opts.treeFails:false + 個別モックを組んで確認する。
+function mockFetch(handlerQueue, opts = {}) {
+    const { treeFails = true } = opts;
     const calls = [];
     const fn = vi.fn(async (url, init = {}) => {
         const method = (init.method || 'GET').toUpperCase();
         calls.push({ url, method, body: init.body ? JSON.parse(init.body) : null });
+        if (treeFails && (url.includes('/git/refs/heads/') || url.includes('/git/commits/') || url.includes('/git/trees/'))) {
+            return new Response('{}', { status: 404 });
+        }
         const handler = handlerQueue.shift();
         if (!handler) throw new Error(`no more mock handlers (calls so far: ${calls.length}, last url: ${url})`);
         return handler({ url, method, calls });
@@ -48,6 +56,8 @@ let adapter;
 let warnSpy, errorSpy;
 beforeEach(() => {
     adapter = new GitHubAdapter({ owner: OWNER, repo: REPO, token: TOKEN });
+    adapter._shaCacheEnabled = true; // R(イシュー#391)を既定で有効化(②指示2026-10-29)
+    try { localStorage.clear(); } catch (_) { /* jsdom以外の環境では無視 */ }
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -186,6 +196,8 @@ describe('GET のキャッシュ抑止 (イシュー#150: ブラウザHTTPキャ
     // がこの古いレスポンスを「取り直した最新」として信じてしまうと、実際には競合していないのに
     // 何度リトライしても 409 になる。cache:'no-store' で必ずネットワークから最新を取ることで解消する。
     it('_getContent の GET は cache: no-store を指定する', async () => {
+        // このテストは「1回目のfetch呼び出し引数」を直接見るため、R(tree一括取得)を迂回する。
+        adapter._shaCacheEnabled = false;
         const { calls } = mockFetch([() => contentRes('A', 's1')]);
         await adapter.readText('p.json');
         const getCall = calls.find(c => c.method === 'GET');
@@ -198,6 +210,8 @@ describe('GET のキャッシュ抑止 (イシュー#150: ブラウザHTTPキャ
     });
 
     it('commitBatch の ref 取得 GET も cache: no-store を指定する', async () => {
+        // commitBatch 自身が /git/refs,commits,trees/ を使うため、R(イシュー#391)のtree自動404化とは
+        // 別物として扱う(readJSON/readTextを呼ばないテストなのでR自体は発動しない)。
         mockFetch([
             () => new Response(JSON.stringify({ object: { sha: 'refsha1' } }), { status: 200 }),
             () => new Response(JSON.stringify({ tree: { sha: 'treesha1' } }), { status: 200 }),
@@ -205,7 +219,7 @@ describe('GET のキャッシュ抑止 (イシュー#150: ブラウザHTTPキャ
             () => new Response(JSON.stringify({ sha: 'newtreesha1' }), { status: 200 }),
             () => new Response(JSON.stringify({ sha: 'newcommitsha1' }), { status: 200 }),
             () => new Response(JSON.stringify({ object: { sha: 'newcommitsha1' } }), { status: 200 }),
-        ]);
+        ], { treeFails: false });
         adapter.beginBatch();
         adapter.addBatchEntry('p.json', 'B');
         await adapter.commitBatch();
@@ -333,5 +347,60 @@ describe('readText の hooks 透過 (イシュー#156: 段階トレースがfetc
     it('hooks を渡さなくても従来どおり動作する (計装は完全にoptional)', async () => {
         mockFetch([() => contentRes('本文', 's1')]);
         expect(await adapter.readText('p.json')).toBe('本文');
+    });
+});
+
+describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・②指示2026-10-29で既定有効化)', () => {
+    function treeOkHandlers(shaForPath) {
+        return [
+            () => new Response(JSON.stringify({ object: { sha: 'commitsha1' } }), { status: 200 }),
+            () => new Response(JSON.stringify({ tree: { sha: 'treesha1' } }), { status: 200 }),
+            () => new Response(JSON.stringify({ tree: [{ path: 'p.json', type: 'blob', sha: shaForPath }] }), { status: 200 }),
+        ];
+    }
+
+    it('初回読み込みはローカルキャッシュが無いため通常どおり本文を取得し、localStorageへ保存する', async () => {
+        mockFetch([...treeOkHandlers('sha-remote-1'), () => contentRes('{"a":1}', 'sha-remote-1')], { treeFails: false });
+        const data = await adapter.readJSON('p.json');
+        expect(data).toEqual({ a: 1 });
+        const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
+        const saved = JSON.parse(localStorage.getItem(key));
+        expect(saved['p.json'].sha).toBe('sha-remote-1');
+        expect(saved['p.json'].text).toBe('{"a":1}');
+    });
+
+    it('前回保存したshaと最新shaが一致すれば、本文取得(contents API)を呼ばずローカル保存分を返す', async () => {
+        const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
+        localStorage.setItem(key, JSON.stringify({ 'p.json': { sha: 'sha-same', text: '{"cached":true}' } }));
+        // handlerQueue には contents API 用のハンドラを積まない = 呼ばれたら「no more mock handlers」で落ちる
+        mockFetch([...treeOkHandlers('sha-same')], { treeFails: false });
+        const data = await adapter.readJSON('p.json');
+        expect(data).toEqual({ cached: true });
+        const fn = globalThis.fetch;
+        const contentsCalls = fn.mock.calls.filter(([url]) => url.includes('/contents/'));
+        expect(contentsCalls.length).toBe(0); // 本文取得が発生していないこと
+    });
+
+    it('shaが変わっていれば通常どおり本文を取り直し、ローカルキャッシュを更新する', async () => {
+        const key = `virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`;
+        localStorage.setItem(key, JSON.stringify({ 'p.json': { sha: 'sha-old', text: '{"old":true}' } }));
+        mockFetch([...treeOkHandlers('sha-new'), () => contentRes('{"new":true}', 'sha-new')], { treeFails: false });
+        const data = await adapter.readJSON('p.json');
+        expect(data).toEqual({ new: true });
+        const saved = JSON.parse(localStorage.getItem(key));
+        expect(saved['p.json'].sha).toBe('sha-new');
+    });
+
+    it('fallback: tree取得が失敗(404)しても通常のcontents API取得にフォールバックして動作する', async () => {
+        // mockFetch既定(treeFails:true)でref/commit/treeが自動404になる状況そのもの
+        mockFetch([() => contentRes('{"x":1}', 'sha-x')]);
+        const data = await adapter.readJSON('p.json');
+        expect(data).toEqual({ x: 1 });
+    });
+
+    it('同期先・リポジトリが変われば localStorage のキーも分かれる', async () => {
+        const other = new GitHubAdapter({ owner: 'o2', repo: 'r2', branch: 'dev', token: TOKEN });
+        expect(adapter._localCacheKey()).toBe(`virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`);
+        expect(other._localCacheKey()).toBe('virtualBookshelf_ghShaCache_o2/r2/dev');
     });
 });
