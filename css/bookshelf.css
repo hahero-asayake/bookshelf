@@ -7684,13 +7684,33 @@ body.select-mode .drag-handle { display: none; }
     /* 本棚ビューヘッダーの左右余白を詰める */
     .bookshelf-view-header { padding-left: 0.6rem; padding-right: 0.6rem; }
 
-    /* 表紙グリッド: モバイルは 2 列固定。
+    /* イシュー#389: モバイルの列数を1か所にまとめた表 (②決裁・画像ビューの列数はハヘロへ確認中)。
+       #385 で枠が列幅追従になり小/中/大の見た目差が消えたため、スマホでは「大きさ」を列数に
+       置き換える (案A)。数字を変える時はこの6行(3サイズ×2ビュー)だけ直せばよい。
+       grid-template-columns・gap・下の content-visibility 推定高さ・列数表示UI (js/bookshelf.js
+       _updateCoverSizeOptionLabels) は全てここの --mobile-cols-covers 等4変数を読みに来る。
+       表紙ビュー(文字あり)=小3/中2/大1列。画像のみビュー(文字なし)=小4/中3/大2列。
+       リスト表示 (.view-list) には適用しない。gap は列数が多いほど詰める。 */
+    .bookshelf.size-small {
+        --mobile-cols-covers: 3; --mobile-gap-covers: 0.75rem;
+        --mobile-cols-images: 4; --mobile-gap-images: 0.5rem;
+    }
+    .bookshelf.size-medium {
+        --mobile-cols-covers: 2; --mobile-gap-covers: 0.9rem;
+        --mobile-cols-images: 3; --mobile-gap-images: 0.6rem;
+    }
+    .bookshelf.size-large {
+        --mobile-cols-covers: 1; --mobile-gap-covers: 1rem;
+        --mobile-cols-images: 2; --mobile-gap-images: 0.75rem;
+    }
+
+    /* 表紙グリッド: 列数は上の表に従う (旧実装は2列固定)。
        content-visibility(H2-7) の intrinsic 幅で 1fr トラックが膨張し、
-       repeat(3,1fr) が横溢れ(=実質1列に見える)していたのを防ぐ。
+       repeat(N,1fr) が横溢れ(=実質列が減って見える)していたのを防ぐ。
        minmax(0,1fr) はトラックを 0 まで縮められるので溢れない。 */
     .bookshelf.view-covers {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        gap: 0.9rem;
+        grid-template-columns: repeat(var(--mobile-cols-covers, 2), minmax(0, 1fr)) !important;
+        gap: var(--mobile-gap-covers, 0.9rem);
     }
     .bookshelf.view-covers .book-item { width: 100%; min-width: 0; }
     /* イシュー#385: .book-cover-container が width:var(--book-width) 固定pxのまま(css:2704-2708)で、
@@ -7702,11 +7722,23 @@ body.select-mode .drag-handle { display: none; }
         height: auto;
         aspect-ratio: var(--book-width-num) / var(--book-height-num);
     }
+    /* イシュー#389: content-visibility:auto (css:2674) の初期サイズ推定 (auto 330px 固定) は
+       列数が1でも3でも同じ値だったため、実際のカード高さと大きくずれて初回表示のたびに
+       スクロールバーが跳ねていた。トラック幅(= 画面幅から左右の内側余白1.8rem分=.view-bookshelfの
+       padding左右0.9rem×2・列間gap・列数を引いた値)×2:3(全サイズ共通の縦横比)+書名2行/著者1行の
+       おおよその高さ(60px)で近似する。auto 指定なので実際に表示された時点でブラウザが実寸へ
+       差し替える=このズレは初回限定 (②レビュー2026-10-28)。 */
+    .bookshelf.view-covers .book-item {
+        contain-intrinsic-size: auto calc(
+            (100vw - 1.8rem - var(--mobile-gap-covers, 0.9rem) * (var(--mobile-cols-covers, 2) - 1))
+            / var(--mobile-cols-covers, 2) * 1.5 + 60px
+        );
+    }
 
-    /* 画像のみビュー: モバイルは 3 列 (テキストが無いぶん詰められる) */
+    /* 画像のみビュー: 列数は上の表に従う (旧実装は3列固定) */
     .bookshelf.view-images {
-        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-        gap: 0.6rem;
+        grid-template-columns: repeat(var(--mobile-cols-images, 3), minmax(0, 1fr)) !important;
+        gap: var(--mobile-gap-images, 0.6rem);
     }
     .bookshelf.view-images .book-item { width: 100%; min-width: 0; }
     /* イシュー#385: 旧実装は width:100% のみで height が var(--book-height) 固定のまま残り、
@@ -7715,6 +7747,13 @@ body.select-mode .drag-handle { display: none; }
         width: 100%;
         height: auto;
         aspect-ratio: var(--book-width-num) / var(--book-height-num);
+    }
+    /* イシュー#389: view-covers と同じ理由。画像のみビューはテキストが無いので +60px は加えない */
+    .bookshelf.view-images .book-item {
+        contain-intrinsic-size: auto calc(
+            (100vw - 1.8rem - var(--mobile-gap-images, 0.6rem) * (var(--mobile-cols-images, 3) - 1))
+            / var(--mobile-cols-images, 3) * 1.5
+        );
     }
 
     /* --- ダッシュボード: スマホは 2 列グリッド。幅は PC の span-N ではなく

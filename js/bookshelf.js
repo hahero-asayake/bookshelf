@@ -526,7 +526,9 @@ class VirtualBookshelf {
         if (!['covers', 'images', 'list'].includes(this.currentView)) {
             this.currentView = 'covers';
         }
-        
+        // 初回描画時点の「大きさ」選択肢の列数表示 (イシュー#389)
+        this._updateCoverSizeOptionLabels();
+
         // Phase H2-5: ページネーション廃止につき booksPerPage 設定は読み込まない (全件表示)
         // 常に表示 (変更 UI のない遺産設定。古い保存値 false が残っていても無視する — 2026-07-28)
         this.showImagesInOverview = true;
@@ -1078,6 +1080,8 @@ class VirtualBookshelf {
         }
         this.updateDisplay();
         this.saveUserData({ deviceOnly: true });
+        // ビューで列数(画像のみ/表紙)が変わるため、「大きさ」選択肢の列数表示も追従させる (イシュー#389)
+        this._updateCoverSizeOptionLabels();
     }
 
     // 表示 popover の表示形式セグメントを現在ビューに同期
@@ -1779,15 +1783,66 @@ class VirtualBookshelf {
             this.userData.settings = {};
         }
         this.userData.settings.coverSize = size;
-        
+
         // Apply CSS class to bookshelf container
         const bookshelf = document.getElementById('bookshelf');
         bookshelf.classList.remove('size-small', 'size-medium', 'size-large');
         bookshelf.classList.add(`size-${size}`);
-        
+
         this.saveUserData({ deviceOnly: true });
     }
-    
+
+    // イシュー#389: スマホ(本棚グリッドの実際の切替幅=768px以下・.app-sidebar等の単一ペイン化と
+    // 同じ @media、css:7581)では #385 で枠が列幅追従になり小/中/大の見た目差がほぼ消えたため、
+    // 「大きさ」選択肢に列数を添える(専門用語なし・案A)。リスト表示とPC幅では列数の概念が無いので
+    // 添えない(アプリの他所で「モバイル」判定に使われる900pxとは異なる値=この本棚グリッドの実際の
+    // 境界に合わせる。900pxで判定すると769〜900pxの幅で「列数表示はするが実際はPC同じグリッド」の
+    // ズレが出るため)。
+    // 列数の数字は css/bookshelf.css の @media(max-width:768px) 内 .bookshelf.size-* の
+    // --mobile-cols-covers/--mobile-cols-images(1か所の表)をそのまま読む=JS側に数字を
+    // 複製しない(ハヘロの確認で数字が変わってもCSSを直すだけで済む)。
+    _readMobileColsTable() {
+        if (!this._colsProbeEl) {
+            const el = document.createElement('div');
+            // レイアウトに影響しない非表示プローブ。display:none にはしない
+            // (getComputedStyle の値自体は display:none でも取れるが、念のため実在要素として扱う)。
+            el.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(el);
+            this._colsProbeEl = el;
+        }
+        const el = this._colsProbeEl;
+        const table = {};
+        for (const size of ['small', 'medium', 'large']) {
+            el.className = `bookshelf size-${size}`;
+            const cs = getComputedStyle(el);
+            const covers = parseInt(cs.getPropertyValue('--mobile-cols-covers'), 10);
+            const images = parseInt(cs.getPropertyValue('--mobile-cols-images'), 10);
+            table[size] = {
+                covers: Number.isFinite(covers) ? covers : null,
+                images: Number.isFinite(images) ? images : null,
+            };
+        }
+        return table;
+    }
+
+    // 「表紙の大きさ」select の選択肢テキストを更新する (イシュー#389)。
+    // view-seg (表示形式) の変更・サイズ用 popover を開く・768px境界(本棚グリッドの実際の切替幅)を
+    // 越えた時に呼ぶ。
+    _updateCoverSizeOptionLabels() {
+        const select = document.getElementById('cover-size');
+        if (!select) return;
+        const baseLabels = { small: '小', medium: '中', large: '大' };
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        const view = this.currentView;
+        const showCols = isMobile && (view === 'covers' || view === 'images');
+        const table = showCols ? this._readMobileColsTable() : null;
+        for (const opt of select.options) {
+            const base = baseLabels[opt.value] || opt.value;
+            const n = table && table[opt.value] ? table[opt.value][view] : null;
+            opt.textContent = n ? `${base}（${n}列）` : base;
+        }
+    }
+
     // 評価でしぼり込みセグメントの表示更新: 選択中セルを on、reset 表示、
     // ツールバーのフィルターボタンに適用中インジケータ(has-active-filter)を付ける。
     _updateRatingFilterUI() {
@@ -5976,6 +6031,14 @@ class VirtualBookshelf {
             window.addEventListener('resize', () => {
                 clearTimeout(rt);
                 rt = setTimeout(() => this._refreshMarquees(), 200);
+            });
+        }
+
+        // 768px境界(本棚グリッドの実際の切替幅)を越えたら「大きさ」選択肢の列数表示を更新する (イシュー#389)
+        if (!this._coverSizeMqBound) {
+            this._coverSizeMqBound = true;
+            window.matchMedia('(max-width: 768px)').addEventListener('change', () => {
+                this._updateCoverSizeOptionLabels();
             });
         }
 
