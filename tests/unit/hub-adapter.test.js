@@ -28,6 +28,7 @@ function res(body, status = 200, headers = {}) {
 
 let adapter;
 beforeEach(() => {
+    try { localStorage.clear(); } catch (_) { /* jsdom以外の環境では無視 */ }
     adapter = new HubStorageAdapter({ apiBase: API, getKey: () => 'hk_deadbeef' });
 });
 
@@ -218,6 +219,67 @@ describe('list', () => {
     it('404 の dir は空配列', async () => {
         mockFetch({ 'GET /data/private/none': () => res(null, 404) });
         expect(await adapter.listFiles('private/none')).toEqual([]);
+    });
+});
+
+// R: listDir の entries による差分のみ取得 (イシュー#391 の共通部品=VersionCacheを使う・
+// #392 step4/5 ②承認)。「再起動」は localStorage を共有した新しい HubStorageAdapter インスタンス
+// (VersionCache の保存先は localStorage なのでページを跨いで引き継がれる)で再現する。
+describe('R: listDir の entries による差分のみ取得 (イシュー#391の共通部品を使う・#392 step5 ②承認)', () => {
+    const LIB = 'private/library.json';
+    const LIB_PATH = '/data/private/library.json';
+
+    // listDir応答: entries指定ありなら新形式(#392)、無しなら旧ハブ応答(フィールド無し)を模す
+    function listRoutes({ libEtag, entries = true, truncated = false } = {}) {
+        const body = (name, etag) => entries
+            ? { files: name ? [name] : [], dirs: [], entries: name ? [{ name, etag, size: 10, uploaded: '2026-10-29T00:00:00Z' }] : [], truncated }
+            : { files: name ? [name] : [], dirs: [] }; // 旧応答: entriesフィールド自体が無い
+        return {
+            'GET /data/private': () => res(JSON.stringify(body('library.json', libEtag)), 200),
+            'GET /data/private/bookshelves': () => res(JSON.stringify(entries ? { files: [], dirs: [], entries: [], truncated: false } : { files: [], dirs: [] }), 200),
+        };
+    }
+    const getCallCount = (fn) => fn.mock.calls.filter(([u]) => new URL(u).pathname === LIB_PATH).length;
+
+    it('(a) 初回起動: ローカル保存が無いので本文を並列取得し、結果をVersionCacheへ保存する', async () => {
+        const fn = mockFetch({ ...listRoutes({ libEtag: '"e1"' }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        expect(await adapter.readJSON(LIB)).toEqual({ books: [] });
+        expect(getCallCount(fn)).toBe(1); // 初回=キャッシュ無し→本文取得1回
+    });
+
+    it('(b) 変更なし再起動: 同じETagならVersionCacheがヒットし本文GETが0本', async () => {
+        mockFetch({ ...listRoutes({ libEtag: '"e1"' }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        await adapter.readJSON(LIB); // 初回(localStorageへ保存)
+        const adapter2 = new HubStorageAdapter({ apiBase: API, getKey: () => 'hk_deadbeef' }); // 再起動
+        const fn2 = mockFetch(listRoutes({ libEtag: '"e1"' })); // 本文GETのハンドラを積まない=呼ばれたら即落ちる
+        expect(await adapter2.readJSON(LIB)).toEqual({ books: [] });
+        expect(getCallCount(fn2)).toBe(0); // 本文取得が発生していない
+    });
+
+    it('(c) 1本だけ変更: ETagが変わったファイルだけ本文GETされる', async () => {
+        mockFetch({ ...listRoutes({ libEtag: '"e1"' }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        await adapter.readJSON(LIB);
+        const adapter2 = new HubStorageAdapter({ apiBase: API, getKey: () => 'hk_deadbeef' });
+        const fn2 = mockFetch({ ...listRoutes({ libEtag: '"e2"' }), [`GET ${LIB_PATH}`]: () => res('{"books":[1]}', 200, { ETag: '"e2"' }) });
+        expect(await adapter2.readJSON(LIB)).toEqual({ books: [1] });
+        expect(getCallCount(fn2)).toBe(1); // 変わった1本だけ取得
+    });
+
+    it('(d) truncated:true か entries が無い旧応答は、従来どおり全件取得にフォールバックする', async () => {
+        mockFetch({ ...listRoutes({ libEtag: '"e1"' }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        await adapter.readJSON(LIB); // キャッシュ作成(e1)
+
+        // d-1: 同じETagだが truncated:true (一覧を信用しない契約)
+        const adapter2 = new HubStorageAdapter({ apiBase: API, getKey: () => 'hk_deadbeef' });
+        const fn2 = mockFetch({ ...listRoutes({ libEtag: '"e1"', truncated: true }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        await adapter2.readJSON(LIB);
+        expect(getCallCount(fn2)).toBe(1); // truncated時はentriesを信用せず全件取得側へ
+
+        // d-2: entries フィールド自体が無い旧ハブ応答
+        const adapter3 = new HubStorageAdapter({ apiBase: API, getKey: () => 'hk_deadbeef' });
+        const fn3 = mockFetch({ ...listRoutes({ libEtag: '"e1"', entries: false }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
+        await adapter3.readJSON(LIB);
+        expect(getCallCount(fn3)).toBe(1);
     });
 });
 

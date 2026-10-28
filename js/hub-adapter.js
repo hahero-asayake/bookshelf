@@ -23,6 +23,15 @@
 // commitBatch の事前HEAD (期待ETag確定) を同時に送る本数の上限 (イシュー#376 ②指示2026-10-26)。
 const BATCH_HEAD_CONCURRENCY = 6;
 
+// loadAll() は private/ 直下7本 + private/bookshelves/ 配下 N 本を読む (js/storage.js:291)。
+// listDir は1階層しか見えないため、この2つの dir を一覧すれば読み出す全パスのETagが揃う。
+const ETAG_DIRS = ['private', 'private/bookshelves'];
+// 同一 loadAll() 呼び出し(固定7本の並列+本棚N本の並列、2段の runLimited)の間だけ一覧を
+// 共有してまとめる猶予。#391 の GitHubAdapter(_remoteShaMap を取得後ずっと保持し続ける)とは
+// 違い、ハブ側はここを短く切ることで「loadAll を呼ぶたびに一覧を取り直す」を実現する
+// (②指示2026-10-29: 使い回すと他端末の書き込みが見えなくなる)。
+const ETAG_MAP_TTL_MS = 3000;
+
 class HubConflictError extends Error {
     constructor(message, path) {
         super(message);
@@ -76,6 +85,48 @@ class HubStorageAdapter extends StorageAdapter {
         this._lastKnownContent = new Map();
         this._writeQueues = new Map();
         this._batch = null;
+        // ===== R (イシュー#391 の共通部品を使う・#392 step4/5 ②承認) =====
+        // 一覧+版情報の取得手段 (listDir の entries) だけが GitHubAdapter(tree API) と異なり、
+        // 差分判定・ローカル保存は共通の VersionCache(js/storage-adapter.js) をそのまま使う
+        // (ハブ専用の二重実装をしない)。
+        this._versionCache = new VersionCache(`virtualBookshelf_hubEtagCache_${this.apiBase}`);
+        this._etagMapPromise = null; // {fullPath: etag} の取得中/取得済み Promise
+        this._etagMapFetchedAt = 0;
+    }
+
+    // 一覧+ETag ({fullPath: etag}) を取得する。取得失敗/旧応答(entries無し)/truncated:true の
+    // dir は map に含めない (そのディレクトリ配下の全ファイルは自然に個別フォールバックになる)。
+    async _ensureRemoteEtagMap() {
+        const now = Date.now();
+        if (this._etagMapPromise && (now - this._etagMapFetchedAt) < ETAG_MAP_TTL_MS) {
+            return this._etagMapPromise;
+        }
+        this._etagMapFetchedAt = now;
+        this._etagMapPromise = this._fetchRemoteEtagMap();
+        return this._etagMapPromise;
+    }
+
+    async _fetchRemoteEtagMap() {
+        const map = {};
+        for (const dir of ETAG_DIRS) {
+            let data;
+            try { data = await this._list(dir); } catch (_) { continue; }
+            if (!data || !Array.isArray(data.entries) || data.truncated) continue; // フォールバック(旧応答/truncated)
+            for (const e of data.entries) map[`${dir}/${e.name}`] = e.etag;
+        }
+        return map;
+    }
+
+    // readJSON/readText の先頭で使う。ヒットすれば本文、ミスなら undefined (通常の GET にフォールバック)。
+    async _tryReadFromEtagCache(path) {
+        const etagMap = await this._ensureRemoteEtagMap();
+        const remoteEtag = etagMap[path]; // 一覧に無い(フォールバック対象/本当に存在しない) なら undefined
+        const cached = this._versionCache.read(path, remoteEtag);
+        if (cached !== undefined) {
+            if (remoteEtag) this._etagCache.set(path, remoteEtag);
+            this._lastKnownContent.set(path, cached);
+        }
+        return cached;
     }
 
     isConnected() {
@@ -91,7 +142,14 @@ class HubStorageAdapter extends StorageAdapter {
     }
 
     async writeJSON(path, data) {
-        await this._write(path, JSON.stringify(data, null, 2));
+        const text = JSON.stringify(data, null, 2);
+        await this._write(path, text);
+        // ②指示2026-10-29(3): 自分が書いたPUTが返すETagをVersionCacheに入れ、次の起動で
+        // 同じファイルを取り直さないようにする。GitHub側に同じ処理は無い(今回は合わせない・
+        // GitHub側の振る舞いは変えない)。_write完了後は _writeOnce/_putOnce (衝突リカバリ経由でも
+        // 最終的に _putOnce) が _etagCache を最新化しているので、ここから読むだけでよい。
+        const etag = this._etagCache.get(path);
+        if (etag) this._versionCache.remember(path, etag, text);
     }
 
     async readText(path, hooks) {
@@ -318,11 +376,16 @@ class HubStorageAdapter extends StorageAdapter {
     // ===== 内部 =====
 
     async _read(path, hooks) {
+        const cached = await this._tryReadFromEtagCache(path);
+        if (cached !== undefined) return cached;
         const res = await this._fetch('GET', this._dataUrl(path), {}, hooks);
         if (res.status === 404) return null;
         if (!res.ok) throw this._err(res, `GET ${path}`);
         const etag = res.headers.get('ETag');
-        if (etag) this._etagCache.set(path, etag);
+        if (etag) {
+            this._etagCache.set(path, etag);
+            this._versionCache.remember(path, etag, res.body);
+        }
         this._lastKnownContent.set(path, res.body);
         return res.body;
     }
