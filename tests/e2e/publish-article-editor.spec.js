@@ -1208,6 +1208,10 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect(row.locator('.pp-row-url a')).toHaveCount(1);
         const hubLink = row.locator('.pp-row-hub a');
         await expect(hubLink).toHaveAttribute('href', 'https://bookshelf.asayake.org/hahero/');
+        // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
+        // URL は href と title (ホバーで確認可) にだけ持たせる。
+        await expect(hubLink).toHaveText('ハブで見る');
+        await expect(hubLink).toHaveAttribute('title', 'https://bookshelf.asayake.org/hahero/');
         // ボタン列 (更新・編集) には入らない＝アクション数は従来どおり2のまま
         await expect(row.locator('.pp-row-actions button')).toHaveCount(2);
         expect(errors).toEqual([]);

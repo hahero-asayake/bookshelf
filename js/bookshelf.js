@@ -9383,8 +9383,10 @@ class VirtualBookshelf {
                     : (pub && !a.publicId ? '<span class="pp-row-url pp-row-url-pending">公開URLを準備中です。「更新」を押すと発行されます。</span>' : '');
                 // pp-row-url とは別クラス (pp-row-hub) にする＝記事個別URLの表示/取得テストが
                 // `.pp-row-url` 単体セレクタで既存件数を前提にしている (イシュー#154 関連テスト) ため混在させない。
+                // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
+                // URL は href と title (ホバーで確認可) にだけ持たせる。PC/モバイルとも同じ表示。
                 const hubRow = (pub && hubTopUrl)
-                    ? `<span class="pp-row-hub"><a href="${esc(hubTopUrl)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(ART_PP_HUB_LINK_TEXT)}：${esc(hubTopUrl)}</a></span>`
+                    ? `<span class="pp-row-hub"><a href="${esc(hubTopUrl)}" target="_blank" rel="noopener" title="${esc(hubTopUrl)}"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(ART_PP_HUB_LINK_TEXT)}</a></span>`
                     : '';
                 return `<li class="pp-row" data-id="${esc(a.id)}">
                   <div class="pp-row-main">

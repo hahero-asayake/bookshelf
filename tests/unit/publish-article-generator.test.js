@@ -651,7 +651,7 @@ describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)', ()
         const footer = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
         expect(footer).toContain('class="pub-cta"');
         expect(footer).toContain('<a class="pub-cta-primary" href="https://bookshelf.asayake.org/hahero/" target="_blank" rel="noopener">hahero さんの本棚をもっと見る</a>');
-        expect(footer).toContain('<a class="pub-cta-secondary" href="https://asayake.org/bookshelf/" target="_blank" rel="noopener">AsayakeBookshelf で自分の本棚を作る（仮）</a>');
+        expect(footer).toContain('<a class="pub-cta-secondary" href="https://asayake.org/bookshelf/" target="_blank" rel="noopener">AsayakeBookshelf で自分の本棚を作る</a>');
         expect(footer).toContain('Powered by');
         expect(footer.indexOf('pub-cta')).toBeLessThan(footer.indexOf('pub-powered'));
     });
@@ -667,7 +667,7 @@ describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)', ()
         const footer = footerOf(r.files.find(f => f.path === 'index.html').content);
         expect(footer).not.toContain('さんの本棚をもっと見る');
         expect(footer).toContain('<a class="pub-cta-primary" href="https://bookshelf.asayake.org/top" target="_blank" rel="noopener">ハブで他のユーザーの記事も見る</a>');
-        expect(footer).toContain('AsayakeBookshelf で自分の本棚を作る（仮）');
+        expect(footer).toContain('AsayakeBookshelf で自分の本棚を作る');
     });
 
     it('自前公開(GitHub)の本棚トップは /top が存在しないためCTAを出さない。記事ページ側はsiteBaseUrlがあれば出る', async () => {

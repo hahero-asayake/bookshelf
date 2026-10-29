@@ -857,10 +857,11 @@ ${ctaHtml}
     static get APP_URL() { return 'https://asayake.org/bookshelf/'; }
 
     // 公開記事ページ・本棚トップのフッターに出す「読者→本棚/ハブ/アプリ」導線の文言 (イシュー#345 A案)。
-    // 宣伝文言は並行中のコンセプト整理イシュー(#344)が未決のため全て仮置き。確定後はここ1箇所を差し替える。
+    // 【仮の文言】並行中のコンセプト整理イシュー(#344)が未決のため全て仮置き。確定後はここ1箇所を差し替える。
+    // 画面には「仮」であることを示す印を出さない(②指摘 2026-10-29: 「（仮）」が本番の利用者に見えてしまう)。
     static get CTA_TO_SITE_TEXT() { return (publisher) => `${publisher} さんの本棚をもっと見る`; }
     static get CTA_TO_HUB_TOP_TEXT() { return 'ハブで他のユーザーの記事も見る'; }
-    static get CTA_TO_APP_TEXT() { return 'AsayakeBookshelf で自分の本棚を作る（仮）'; }
+    static get CTA_TO_APP_TEXT() { return 'AsayakeBookshelf で自分の本棚を作る'; }
     static get OG_IMAGE_WIDTH() { return 1200; }
     static get OG_IMAGE_HEIGHT() { return 630; }
     // 本棚トップ(_indexHtml)・/top 共通のブランドOGP画像の絶対URL (T11・イシュー#335決裁B案)。
