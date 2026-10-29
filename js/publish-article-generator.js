@@ -178,6 +178,13 @@ footer.pub-footer a{color:var(--sub);position:relative}
    pub-poweredは上下とも隣接行がありgap4.8pxしか無いため対称22.8px止まり(44px未達=理由込みでstep3報告)。 */
 footer.pub-footer .pub-powered a::after{content:"";position:absolute;left:0;top:-2.4px;width:100%;height:22.8px}
 footer.pub-footer .pub-legal a::after{content:"";position:absolute;left:0;top:-2.4px;width:100%;height:44px}
+/* 読者→アプリ/ハブの導線 (イシュー#345・A案)。pub-cta a は ::after によるタップ領域拡張を使わず
+   padding 自体で44px近いタップ領域を確保する独立ボタンなので、footer.pub-footer a の ::after を打ち消す。 */
+footer.pub-footer .pub-cta{margin:.8rem 0 1rem;display:flex;flex-wrap:wrap;gap:10px}
+footer.pub-footer .pub-cta a{position:static;display:inline-flex;align-items:center;padding:11px 16px;border-radius:8px;font-size:12px;text-decoration:none;box-sizing:border-box}
+footer.pub-footer .pub-cta a::after{content:none}
+footer.pub-footer .pub-cta-primary{background:var(--acc);color:var(--acc-t)}
+footer.pub-footer .pub-cta-secondary{background:transparent;border:1px solid var(--line);color:var(--sub)}
 `;
 
 // ===== レイアウト CSS (3テンプレのみ・色を知らない・var() だけ参照。.bk は grid-template-areas/subgrid で
@@ -694,6 +701,18 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
         // サイト単位の加算スロット。全記事 + index (この _wrapDoc 経由) に一括で出る。
         const pluginFooter = opts.pluginFooter || '';
 
+        // 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)。記事ページは ctaSiteUrl (自分の本棚トップ) を、
+        // 本棚トップ自身は ctaHubTopUrl (ハブ /top・自己参照を避けるため siteUrl は渡さない) を受け取る。
+        // どちらも無ければ (未確定 URL・自前公開で /top が無い場合等) CTA 無し＝Powered by のみの従来どおり。
+        const ctaSiteUrl = String(opts.ctaSiteUrl || '');
+        const ctaHubTopUrl = String(opts.ctaHubTopUrl || '');
+        const ctaPrimary = ctaSiteUrl
+            ? `<a class="pub-cta-primary" href="${esc(ctaSiteUrl)}" target="_blank" rel="noopener">${esc(PublishArticleGenerator.CTA_TO_SITE_TEXT(publisher))}</a>`
+            : (ctaHubTopUrl ? `<a class="pub-cta-primary" href="${esc(ctaHubTopUrl)}" target="_blank" rel="noopener">${esc(PublishArticleGenerator.CTA_TO_HUB_TOP_TEXT)}</a>` : '');
+        const ctaHtml = ctaPrimary
+            ? `<p class="pub-cta">${ctaPrimary}<a class="pub-cta-secondary" href="${PublishArticleGenerator.APP_URL}" target="_blank" rel="noopener">${esc(PublishArticleGenerator.CTA_TO_APP_TEXT)}</a></p>`
+            : '';
+
         const tagsHtml = (article.tags || []).length
             ? `<ul class="tags">${article.tags.map(t => `<li class="tag">${esc(t)}</li>`).join('')}</ul>` : '';
 
@@ -753,6 +772,7 @@ ${affiliateStanding}
 ${pluginFooter}
 <p class="pub-rights">© ${year} ${esc(publisher)}　｜　書影・書誌情報は Amazon / Google 提供。掲載の感想・評価は発行者個人のものです。</p>
 ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
+${ctaHtml}
 <p class="pub-powered">Powered by <a href="${PublishArticleGenerator.APP_URL}" target="_blank" rel="noopener">AsayakeBookshelf</a></p>
 <p class="pub-legal"><a href="${PublishArticleGenerator.APP_URL}legal/terms.html" target="_blank" rel="noopener">利用規約</a>　<a href="${PublishArticleGenerator.APP_URL}legal/privacy.html" target="_blank" rel="noopener">プライバシーポリシー</a>　${reportLinks}</p>
 </footer>
@@ -783,6 +803,9 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             updatedAt,
             reportRef: opts.reportRef || '',
             pluginFooter: opts.pluginFooter || '',
+            // ctaSiteUrl は渡さない(自分自身への「もっと見る」は自己参照になるため・イシュー#345 step2 指摘1)。
+            // 本棚トップは ctaHubTopUrl (ハブ /top) のみ出す。
+            ctaHubTopUrl: opts.ctaHubTopUrl || '',
             ogType: 'website',
             ogDescription: indexOgDescription,
             ogImage: PublishArticleGenerator.SHARED_OG_IMAGE,
@@ -832,6 +855,12 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
 
     // アプリ本体の URL。公開記事フッタの「通報」リンクの遷移先 (?report=<記事URL>・ADR-099)。
     static get APP_URL() { return 'https://asayake.org/bookshelf/'; }
+
+    // 公開記事ページ・本棚トップのフッターに出す「読者→本棚/ハブ/アプリ」導線の文言 (イシュー#345 A案)。
+    // 宣伝文言は並行中のコンセプト整理イシュー(#344)が未決のため全て仮置き。確定後はここ1箇所を差し替える。
+    static get CTA_TO_SITE_TEXT() { return (publisher) => `${publisher} さんの本棚をもっと見る`; }
+    static get CTA_TO_HUB_TOP_TEXT() { return 'ハブで他のユーザーの記事も見る'; }
+    static get CTA_TO_APP_TEXT() { return 'AsayakeBookshelf で自分の本棚を作る（仮）'; }
     static get OG_IMAGE_WIDTH() { return 1200; }
     static get OG_IMAGE_HEIGHT() { return 630; }
     // 本棚トップ(_indexHtml)・/top 共通のブランドOGP画像の絶対URL (T11・イシュー#335決裁B案)。
@@ -1001,6 +1030,7 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
                 noindex: !article.published,
                 updatedAt: articleUpdatedAt,
                 reportRef, pluginFooter,
+                ctaSiteUrl: siteBaseUrl ? `${siteBaseUrl}/` : '',
                 reportAppUrl: target === 'hub' && siteBaseUrl ? `${PublishArticleGenerator.APP_URL}?report=${encodeURIComponent(`${siteBaseUrl}/${article.publicId}/`)}` : '',
                 // 構造化データ (T11・イシュー#335)。siteBaseUrl が無い(canonical未定)場合はurl/image等を省き、必須の最小限のみ出す。
                 jsonLd: {
@@ -1022,7 +1052,12 @@ ${updated ? `<p class="pub-updated">最終更新 ${esc(updated)}</p>` : ''}
             built.push({ id: article.id, slug: article.slug, publicId: article.publicId, ogHash: ogRender ? ogRender.hash : null, title: article.title, url: `${article.publicId}/`, books: bookCount, updatedAt: article.updatedAt || 0, tags: (article.tags || []).map(t => String(t).trim()).filter(Boolean), description: ogDescription || '', coverUrl: ogImage, publishedAt: article.lastBuiltAt || 0, memoReadFailed, markdownDegraded: this._markdownDegradedInBuild });
         }
 
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter }) });
+        // 本棚トップ→ハブ/top (イシュー#345 A案)。自前公開(github)はハブ索引に載らないため /top へ誘導しない。
+        let ctaHubTopUrl = '';
+        if (target === 'hub' && siteBaseUrl) {
+            try { ctaHubTopUrl = `${new URL(siteBaseUrl).origin}/top`; } catch (_) { ctaHubTopUrl = ''; }
+        }
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter, ctaHubTopUrl }) });
 
         const leak = this._detectLeak(files, state);
         return { files, articles: built, leak, errors, ownTag, ogSkipped };

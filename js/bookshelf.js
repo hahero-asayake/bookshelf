@@ -21,6 +21,11 @@ const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 // 900px以下は毎回閉じたボトムシートから始まる設計のため対象外 (_artIsDrawerNarrow 参照)。
 const ART_DRAWER_COLLAPSE_KEY = 'bookshelf_art_drawer_collapsed';
 
+// 公開パネルの記事行から自分のハブ本棚トップへの導線 (イシュー#345 C案)。宣伝文言は並行中の
+// コンセプト整理イシュー(#344)が未決のため仮置き。確定後はここ1箇所を差し替える
+// (js/publish-article-generator.js の CTA_TO_* と対になる定数・ビルド無しのため手動同期)。
+const ART_PP_HUB_LINK_TEXT = 'ハブで見る';
+
 // イシュー#268: 見たまま編集の編集状態でキャンバス (iframe) 内へ注入する部品のCSS。
 // 生成器の .blk の box-model (margin/padding) は一切変えない＝outline と absolute/行の追加だけ。
 // 色は記事の配色トークン (--acc/--line/--sub) を使い、どの配色12案の上でも馴染ませる。
@@ -9350,6 +9355,12 @@ class VirtualBookshelf {
         const articles = this.publishArticleStore.articles();
         const foot = document.getElementById('art-list-foot');
         if (foot) foot.hidden = !articles.some(a => a.published);
+        // 自分のハブ本棚トップ (イシュー#345 C案)。共有ハブ公開中のときだけ存在する＝記事ごとではなく
+        // サイト単位で1つ (_artPublicBase() は target=hub なら publicId を含まないユーザートップ URL)。
+        // 自前公開 (github) はハブに存在しないため出さない。ボタン列には入れず、URL表示の下に新しい行
+        // として足す (差し戻し指摘7: ボタン列に入れると.pp-row-actions圧迫でタイトルが狭幅で潰れるため)。
+        const isHubTarget = (SyncConfigManager.load().publish || {}).target === 'hub';
+        const hubTopUrl = isHubTarget ? this._artPublicBase() : '';
         if (!articles.length) {
             ul.innerHTML = '<li class="pp-empty">まだ公開記事がありません。「新規作成」から作ってください。</li>';
         } else {
@@ -9370,11 +9381,17 @@ class VirtualBookshelf {
                 const urlRow = url
                     ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a></span>`
                     : (pub && !a.publicId ? '<span class="pp-row-url pp-row-url-pending">公開URLを準備中です。「更新」を押すと発行されます。</span>' : '');
+                // pp-row-url とは別クラス (pp-row-hub) にする＝記事個別URLの表示/取得テストが
+                // `.pp-row-url` 単体セレクタで既存件数を前提にしている (イシュー#154 関連テスト) ため混在させない。
+                const hubRow = (pub && hubTopUrl)
+                    ? `<span class="pp-row-hub"><a href="${esc(hubTopUrl)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(ART_PP_HUB_LINK_TEXT)}：${esc(hubTopUrl)}</a></span>`
+                    : '';
                 return `<li class="pp-row" data-id="${esc(a.id)}">
                   <div class="pp-row-main">
                     <span class="pp-row-title">${esc(a.title)} ${badge}</span>
                     <span class="pp-row-meta">本 ${bookCount} 冊${tagsMeta}</span>
                     ${urlRow}
+                    ${hubRow}
                   </div>
                   <div class="pp-row-actions">
                     ${publishActions}

@@ -1183,6 +1183,67 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
     });
 
+    // イシュー#345 C案: 公開パネルの記事行に「自分のハブ本棚トップ」への行を、記事URL行(.pp-row-url)とは
+    // 別の行(.pp-row-hub)として足す。ボタン列(.pp-row-actions)には入れない(狭幅でタイトルが潰れる不具合の対策)。
+    test('公開先がハブの記事行には「ハブで見る」行が記事URLとは別行で出て、本棚トップ(publicId無し)を指す (イシュー#345)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'ハブ導線確認');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+
+        await publishViaPanel(page);
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        await closePublishPanelIfOpen(page);
+        await goBack(page);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        const row = page.locator('.pp-row', { hasText: 'ハブ導線確認' });
+        // 記事URL行とハブ行は別要素 (.pp-row-url は記事個別URLのテスト専用セレクタのため1件のまま保つ)
+        await expect(row.locator('.pp-row-url a')).toHaveCount(1);
+        const hubLink = row.locator('.pp-row-hub a');
+        await expect(hubLink).toHaveAttribute('href', 'https://bookshelf.asayake.org/hahero/');
+        // ボタン列 (更新・編集) には入らない＝アクション数は従来どおり2のまま
+        await expect(row.locator('.pp-row-actions button')).toHaveCount(2);
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#345 C案: 自前公開(GitHub)はハブの索引に載らず本棚トップも存在しないため「ハブで見る」は出さない。
+    test('公開先がGitHubの記事行には「ハブで見る」行が出ない (イシュー#345)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => {
+            const cfg = SyncConfigManager.load();
+            cfg.publish = { target: 'github', owner: 'hahero', repo: 'hahero.github.io' };
+            cfg.github = { token: 'gho_test' };
+            SyncConfigManager.save(cfg);
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await page.fill('#art-title', 'GitHub公開確認');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        // GitHub 公開は adapter 差し替え無しでは実ネットワークに出てしまうため、ストアへ直接
+        // published:true + publicId を与えて一覧再描画だけで検証する (他の GitHub 公開テストと同じ型)。
+        await page.evaluate(async () => {
+            const id = window.bookshelf._artEditingId;
+            await window.bookshelf.publishArticleStore.update(id, { published: true, publicId: 'ghpub1' });
+        });
+        await page.evaluate(() => window.bookshelf._artRenderList());
+        await closePublishPanelIfOpen(page);
+        await goBack(page);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        const row = page.locator('.pp-row', { hasText: 'GitHub公開確認' });
+        await expect(row.locator('.pp-row-hub')).toHaveCount(0);
+        expect(errors.filter(e => !/Failed to load resource/.test(e))).toEqual([]);
+    });
+
     // イシュー#154: bookshelfBase (username 設定済み) が無い場合の安全網。ゲート (username-publish-gate)
     // により通常は username 未設定でハブ公開はブロックされるため、この状態は「一度 username を設定して
     // 公開した後に何らかの理由で bookshelfBase が失われた」ケースを模して直接 cfg を書き換えて再現する。

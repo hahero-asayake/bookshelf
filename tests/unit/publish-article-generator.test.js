@@ -642,6 +642,51 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     });
 });
 
+// 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)。宣伝文言は #344 未決のため仮置き (CTA_TO_* 定数1箇所に集約)。
+describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)', () => {
+    const footerOf = (html) => html.match(/<footer class="pub-footer">([\s\S]*?)<\/footer>/)[1];
+
+    it('記事ページ: siteBaseUrl指定時、本棚トップへのリンクとアプリへのリンクがPowered byの前に出る。Powered byは残る', async () => {
+        const r = await gen.build([makeArticle()], { target: 'hub', siteId: 'site1', siteBaseUrl: 'https://bookshelf.asayake.org/hahero' });
+        const footer = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
+        expect(footer).toContain('class="pub-cta"');
+        expect(footer).toContain('<a class="pub-cta-primary" href="https://bookshelf.asayake.org/hahero/" target="_blank" rel="noopener">hahero さんの本棚をもっと見る</a>');
+        expect(footer).toContain('<a class="pub-cta-secondary" href="https://asayake.org/bookshelf/" target="_blank" rel="noopener">AsayakeBookshelf で自分の本棚を作る（仮）</a>');
+        expect(footer).toContain('Powered by');
+        expect(footer.indexOf('pub-cta')).toBeLessThan(footer.indexOf('pub-powered'));
+    });
+
+    it('絵文字を使わない (ui-standards: アプリ内の絵文字は全廃)', async () => {
+        const r = await gen.build([makeArticle()], { target: 'hub', siteId: 'site1', siteBaseUrl: 'https://bookshelf.asayake.org/hahero' });
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+    });
+
+    it('本棚トップ(index.html)自身へは「もっと見る」を出さない(自己参照回避)。ハブ公開時のみ /top へのリンクを出す', async () => {
+        const r = await gen.build([makeArticle()], { target: 'hub', siteId: 'site1', siteBaseUrl: 'https://bookshelf.asayake.org/hahero' });
+        const footer = footerOf(r.files.find(f => f.path === 'index.html').content);
+        expect(footer).not.toContain('さんの本棚をもっと見る');
+        expect(footer).toContain('<a class="pub-cta-primary" href="https://bookshelf.asayake.org/top" target="_blank" rel="noopener">ハブで他のユーザーの記事も見る</a>');
+        expect(footer).toContain('AsayakeBookshelf で自分の本棚を作る（仮）');
+    });
+
+    it('自前公開(GitHub)の本棚トップは /top が存在しないためCTAを出さない。記事ページ側はsiteBaseUrlがあれば出る', async () => {
+        const r = await gen.build([makeArticle()], { target: 'github', siteBaseUrl: 'https://example.github.io/my-books' });
+        const indexFooter = footerOf(r.files.find(f => f.path === 'index.html').content);
+        expect(indexFooter).not.toContain('class="pub-cta"');
+
+        const articleFooter = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
+        expect(articleFooter).toContain('<a class="pub-cta-primary" href="https://example.github.io/my-books/" target="_blank" rel="noopener">hahero さんの本棚をもっと見る</a>');
+    });
+
+    it('siteBaseUrl未指定(プレビュー等)ではCTAを出さずPowered byのみ', async () => {
+        const r = await gen.build([makeArticle()], {});
+        const footer = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
+        expect(footer).not.toContain('class="pub-cta"');
+        expect(footer).toContain('Powered by');
+    });
+});
+
 describe('プラグインの公開スナップショット (opts.publishData, サイト単位の加算スロット・ADR-042)', () => {
     it('footerNote が全記事 + index の所定スロットへ esc 済みで出力される', async () => {
         const article = makeArticle();

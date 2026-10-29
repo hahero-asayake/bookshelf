@@ -4525,6 +4525,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-row-url { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
 .pp-row-url a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-row-url a:hover { text-decoration: underline; }
+/* 自分のハブ本棚トップへの行 (イシュー#345 C案)。pp-row-url とクラスは分けるが見た目は同じにする
+   (記事URL取得テストが .pp-row-url 単体セレクタの件数を前提にしているため混在させない)。 */
+.pp-row-hub { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
+.pp-row-hub a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-row-hub a:hover { text-decoration: underline; }
 .pp-url-copy { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; flex-shrink: 0; }
 .pp-url-copy:hover { color: var(--accent); }
 .pp-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
