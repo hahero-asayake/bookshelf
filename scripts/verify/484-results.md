@@ -64,3 +64,47 @@ tmp/401配下にnotes.json・exclusions.json等は無く（library.jsonのみ）
 - プラグインが独自のストレージ領域（`plugins/<id>/data/`）にasinをキーにしたデータを持つケースは、サンプルプラグイン群までは確認していない（時間都合で見送り）。コアAPI経由（`updateNote`）以外の経路は未確認。
 - 同期マージ（GitHub/ハブ/LocalFSの読込時）でnotes/exclusions/bookOrderのキーが重複asinに対してどう振る舞うかは未確認（#480 step1でも同種の「同期マージでの重複排除有無は未確認」と記録されている）。
 - `migrateUserData`のexclusions/bookOrder移行漏れは、対処範囲に含めるかをstep2で判断する（含めないなら07_残検討事項への別記録を検討）。
+
+## 5. step2での決定（②承認）
+
+②承認（2026-11-02 05:44）: 推奨(A)「重複asinを検出し利用者にasinの付け直しを案内する（データ構造は変えない）」を採用。(B)保存uid導入・(C)操作時インライン警告は見送り。`migrateUserData`のexclusions/bookOrder移行漏れ修正も実装範囲に含める。詳細は `scripts/verify/484-step2-decision.md`。
+
+## 6. step3・4：実装とテスト結果（commit 682563f, Issue: #484）
+
+### 実装内容
+
+- `js/book-manager.js`: `findDuplicateAsinGroups()` を追加。`library.books` をasinで集計し、2件以上のグループを `sameTitle`（同一タイトルなら二重登録=B0F2TC5B79型・実害小、違えば別の本=B00I8AT186型・対処対象）付きで返す。データは変更しない（検出のみ）。
+- `js/bookshelf.js`:
+  - `_dupAsinInfo()`: 上記の結果を `bookManager.getRev()` でキャッシュしてMap化。
+  - `_duplicateAsinBadgeItem()`/`_allBadgesHtml()`: 一覧カードに既存の `book-badge` 枠でバッジを追加（「ASIN共有」＝別の本型／「重複登録」＝二重登録型。二重登録型の文言は「統合・削除の必要はありません」で削除・統合を促さない＝②指示どおり）。
+  - `showBookDetail()` の `basicInfoBody` に案内文（`.bd-dup-asin-notice`）を追加。別の本型は「編集」の「変更後ASIN」ではなく**「オリジナルASIN」**欄での付け直しを案内する（実装中に判明した重要な事実：「変更後ASIN」欄＝`book.updatedAsin`は表示・リンク用の上書きで`migrateUserData`を呼ばない。`migrateUserData`が呼ばれるのは「オリジナルASIN」欄＝`book.asin`自体を変更した時だけ）。
+  - `migrateUserData(oldAsin, newAsin)`: exclusions・bookOrderの移行を追加（既存のnotes/hiddenBooks/bookshelves.books移行と同じ型。配列内に重複asinが複数あっても`indexOf`で最初の1件だけを書き換える＝今回動かした本の分だけが新ASINへ移り、もう一方の本のエントリはそのまま残る）。
+  - `_bookCardKey()`: 重複検出フラグ（dupFlag）をrkeyに追加。実機テストで「ASIN付け替え後、重複が解消された側のカードのバッジが更新されず古いまま残る」不整合を検出し、この追加で解消した（book自体のtitle/authors等が変わらない限りrkeyが変わらず、差分描画がカードを再利用してしまうため）。
+- `css/bookshelf.css`: `.book-badge-warn`・`.bd-dup-asin-notice`（既存の`--warning`色トークンを使用）。
+- `index.html`: `?v=2026110207` に3ファイルぶんバンプ（`check:version` OK）。
+
+### テスト（経路を通す形・直呼びで済ませていない）
+
+- `tests/e2e/duplicate-asin-notice.spec.js`（新規・2本）:
+  1. 「重複ASIN検出バッジが一覧に出る」: B00I8AT186型（上巻・下巻）に「ASIN共有」、B0F2TC5B79型（同じ本の二重登録）に「重複登録」が出ることを確認。二重登録型の`title`属性が「削除してください」等を**含まない**ことも確認。
+  2. 「本の詳細に付け直し案内が出て、ASIN付け替え後はメモ・除外・並び順の新しい変更がもう一方の本に伝播しない」: 本詳細を開いて案内文を確認→編集モードで「オリジナルASIN」を新ASINに変更して保存→`notes`が新ASIN側に移り旧ASIN側（下巻）には残らないこと（既存`migrateUserData`のmove+delete方式どおり）→`bookOrder.all`は重複していた2件のうち1件だけが新ASINに変わり、もう1件（下巻用）は旧ASINのまま残ること→新ASIN側に新しいメモを書いても旧ASIN側（下巻）には伝播しないこと→新ASIN側を除外しても旧ASIN側（下巻）は除外されず一覧に残ること（`_excludeAsinCore`がasinでfilterするため、分離前にこの操作をすると両方消えるが、分離後は新ASIN側だけが消える＝これが「別の本に同じasin」の実害そのものであり、付け直しで解消されることの直接の証拠）。
+  両テストともブラウザ実機（playwright chromium、`http://localhost:8184`）で実行し、DOM操作（カードクリック・編集モード切替・入力・保存ボタン・除外ボタン）を経由して確認した。
+- `tests/unit/book-manager.test.js`（4ケース追加）: `findDuplicateAsinGroups()` が重複なし/別の本型/二重登録型/3冊以上の重複を正しく検出することを確認。
+
+### 実行結果
+
+| 対象 | 結果 |
+|---|---|
+| `npm test`（vitest run、44ファイル） | ✅ 750 passed / 2 todo（全通過） |
+| `tests/e2e/duplicate-asin-notice.spec.js`（新規2本） | ✅ 2 passed |
+| `tests/e2e/reimport-diff.spec.js`（#406/#480、8本） | ✅ 8 passed（_bookCardKeyへのdupFlag追加・バッジ結合による影響なし） |
+| `tests/e2e/book-detail-entries.spec.js`（本詳細、7本） | ✅ 7 passed |
+| `tests/e2e/per-shelf-memo.spec.js`（プラグインdetailSection、2本） | ✅ 2 passed |
+| `check:version` | ✅ OK（変更したjs/cssは全てバンプ済み） |
+
+→ **完了条件を満たした**: 「別の本に同じasin」が付いたデータ（B00I8AT186型）で、検出して案内が出ること（バッジ・本詳細案内）、付け直し後は新しい変更（メモ・除外）が他方へ漏れないことをE2Eで確認済み。既存の`npm test`も通る。
+
+### 実装中に判明した副次的な事実（②への申し送り）
+
+- 既存の「オリジナルASIN」編集UIには、新ASINが既存の別の本と重複していれば保存をブロックする仕組みが既にある（`bookshelf.js`内、本イシュー着手前から存在）。これにより、付け直し操作自体が新たな重複を生むことはない。
+- `migrateUserData`のnotes移行は「move+delete」方式（既存実装、今回変更していない）。付け直し後、旧ASIN側（もう一方の本）のメモは消える。これは②指示の「新しいASINへ移り、もう一方の本には残らない」と一致する挙動であり、brief制約「既存データは削除・統合しない」は本のレコード（library.books）の話であって、notesの移行ロジックには当たらないと判断した。
