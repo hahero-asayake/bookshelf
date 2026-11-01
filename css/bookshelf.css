@@ -978,11 +978,19 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 0;
 }
 
-/* topbar (edit toggle 右寄せ) */
+/* topbar (edit toggle 右寄せ)。イシュー#453・②決裁2026-11-02: position:sticky で
+   .detail-body (overflow-y:auto) の先頭に貼り付け、スクロール位置やスマホのソフトキーボード
+   表示に関わらず編集終了(=保存)ボタンが常に見える状態にする。.detail-body の padding
+   (0.75rem 1rem 1.25rem) を negative margin で打ち消し、幅いっぱいの帯として浮かせる。 */
 .bd-topbar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 0.5rem;
+    position: sticky;
+    top: -0.75rem;
+    z-index: 2;
+    margin: -0.75rem -1rem 0.5rem;
+    padding: 0.75rem 1rem 0.5rem;
+    background: var(--bg);
 }
 /* ::after でタップ領域だけ44pxに拡張 (見た目は変えない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
 .bd-edit-toggle {
@@ -1323,35 +1331,25 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .bd-actions .btn-danger { color: var(--danger); }
 .bd-actions .btn-danger:hover { background: var(--btn-danger-hover-bg); border-color: var(--danger); }
 
-/* メタ詳細編集 (折りたたみ) */
-.bd-meta-edit {
+/* メタ詳細編集 (常時展開インライン・イシュー#453 案A・②決裁2026-11-02)
+   旧 <details class="bd-meta-edit"> の折りたたみ入れ子 (ui-standards §7 原則6違反。
+   専用の保存/キャンセルボタンも併せて撤去・保存は topbar の .bd-edit-toggle に統合)。 */
+.bd-meta-edit-inline {
     margin: 0.6rem 0;
+    padding: 0.6rem 0.7rem;
     border: 1px solid var(--line);
     border-radius: 8px;
-    overflow: hidden;
+    background: var(--panel);
 }
-.bd-meta-edit > summary {
-    padding: 0.5rem 0.7rem;
-    font-size: 0.78rem;
-    color: var(--fg2);
-    cursor: pointer;
-    background: var(--bg);
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-.bd-meta-edit > summary::-webkit-details-marker { display: none; }
-.bd-meta-edit[open] > summary { border-bottom: 1px solid var(--line); background: var(--panel); }
-.bd-meta-edit-body { padding: 0.6rem 0.7rem; background: var(--panel); }
-.bd-meta-edit-body .edit-field { margin-bottom: 0.5rem; }
-.bd-meta-edit-body .edit-field label {
+.bd-meta-edit-inline .edit-field { margin-bottom: 0.5rem; }
+.bd-meta-edit-inline .edit-field:last-child { margin-bottom: 0; }
+.bd-meta-edit-inline .edit-field label {
     display: block;
     font-size: 0.75rem;
     color: var(--muted);
     margin-bottom: 0.2rem;
 }
-.bd-meta-edit-body .edit-field input {
+.bd-meta-edit-inline .edit-field input {
     width: 100%;
     padding: 0.4rem 0.55rem;
     border: 1px solid var(--line);
@@ -1361,15 +1359,10 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     color: var(--fg);
     box-sizing: border-box;
 }
-.bd-meta-edit-body .edit-field input:focus {
+.bd-meta-edit-inline .edit-field input:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-bg);
-}
-.bd-meta-edit-actions {
-    display: flex;
-    gap: 0.3rem;
-    margin-top: 0.4rem;
 }
 
 /* 本棚追加 inline popover */
@@ -6320,7 +6313,10 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .bml-chip-note { font-size: 0.75rem; font-weight: 400; color: var(--muted, #888); }
 .import-option-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .import-option-actions > * { white-space: nowrap; }
-.import-fallback-note { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.3rem 0 0; }
+/* イシュー#453・②決裁2026-11-02: ui-standards §7 原則7(1行1内容)。説明文とボタンを同じ行に
+   並べていた旧実装を縦積みに変更(直し方は tmp/453/453-step1-notes.md §(c)) */
+.import-fallback-note { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; margin: 0.3rem 0 0; }
+.import-fallback-note p { margin: 0; }
 /* 「取込データを直接渡す」節: 「貼り付けて取り込む」/「ファイルから取り込む」の2系統を
    視覚的に分割するブロック (イシュー#89)。細い区切り線だけでは2系統が伝わらなかった。 */
 .import-method-block { padding: 0.85rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 0.6rem; }
@@ -7869,7 +7865,7 @@ body.select-mode .drag-handle { display: none; }
 
     /* iOS は font-size<16px の入力に focus すると自動ズームする (viewport の maximum-scale は
        a11y のため設定しない方針)。全フォームコントロールを 16px に統一してズームを止める。
-       コンポーネント個別指定 (例 .bd-meta-edit-body .edit-field input) より強くするため !important。
+       コンポーネント個別指定 (例 .bd-meta-edit-inline .edit-field input) より強くするため !important。
        checkbox/radio/range/color はテキスト入力でなくズーム対象外なので除外。 */
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
     select,

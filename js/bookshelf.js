@@ -1075,7 +1075,12 @@ class VirtualBookshelf {
             if (cancelBtn) {
                 const asin = cancelBtn.dataset.asin;
                 const book = this.books.find(b => b.asin === asin);
-                if (book) this.showBookDetail(book, false);
+                // 案A (イシュー#453・②決裁2026-11-02): このボタンは topbar の編集終了ボタンのみが持つ
+                // (旧 .bd-meta-edit 折りたたみ内の専用キャンセルボタンは撤去済み)。「編集を終える」＝
+                // 「保存する」に統合したため、旧実装のように無条件で閲覧モードへ戻さず saveBookChanges を
+                // 呼ぶ (バリデーション失敗時は saveBookChanges が toast を出して編集モードに留まる＝
+                // 未保存入力が無言で消える欠陥を解消。成功時は saveBookChanges 自身が表示モードへ戻す)。
+                if (book) this.saveBookChanges(asin);
                 return;
             }
         });
@@ -3032,32 +3037,29 @@ class VirtualBookshelf {
             ` : ''}
         `;
 
-        // 基本情報セクション body (meta-row + メタ編集折りたたみ)
+        // 基本情報セクション body (meta-row + メタ編集フィールド)。
+        // 案A (イシュー#453・②決裁2026-11-02): 旧 <details class="bd-meta-edit"> の折りたたみ入れ子
+        // (ui-standards §7 原則6違反) を撤去し、常時展開のインライン欄にする。専用の「保存」「キャンセル」
+        // ボタンも撤去し、保存は topbar の編集終了ボタン (.bd-edit-toggle.cancel-edit-btn) 1つに統合する
+        // (下記グローバルクリックハンドラの cancelBtn 分岐が saveBookChanges を呼ぶ)。
         const basicInfoBody = `
             <div class="bd-meta">
                 <div class="bd-meta-row"><span class="k">購入</span><span>${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</span></div>
                 <div class="bd-meta-row"><span class="k">ASIN</span><span>${esc(book.asin)}${book.updatedAsin ? ` → ${esc(book.updatedAsin)}` : ''}</span></div>
             </div>
             ${isEditMode ? `
-                <details class="bd-meta-edit">
-                    <summary>${ico('settings-2', 14)}メタ情報を編集</summary>
-                    <div class="bd-meta-edit-body">
-                        <div class="edit-field"><label>タイトル</label>
-                            <input type="text" class="edit-title" data-asin="${esc(book.asin)}" value="${esc(book.title)}"></div>
-                        <div class="edit-field"><label>著者</label>
-                            <input type="text" class="edit-authors" data-asin="${esc(book.asin)}" value="${esc(book.authors)}"></div>
-                        <div class="edit-field"><label>購入日</label>
-                            <input type="date" class="edit-acquired-time" data-asin="${esc(book.asin)}" value="${new Date(book.acquiredTime).toISOString().split('T')[0]}"></div>
-                        <div class="edit-field"><label>オリジナル ASIN</label>
-                            <input type="text" class="edit-original-asin" data-asin="${esc(book.asin)}" value="${esc(book.asin)}" maxlength="10" pattern="[A-Z0-9]{10}"></div>
-                        <div class="edit-field"><label>変更後 ASIN (オプション)</label>
-                            <input type="text" class="edit-updated-asin" data-asin="${esc(book.asin)}" value="${esc(book.updatedAsin || '')}" placeholder="新しい ASIN" maxlength="10" pattern="[A-Z0-9]{10}"></div>
-                        <div class="bd-meta-edit-actions">
-                            <button class="btn btn-primary btn-small save-book-changes" data-asin="${esc(book.asin)}" type="button">${ico('save')}保存</button>
-                            <button class="btn btn-secondary btn-small cancel-edit-btn" data-asin="${esc(book.asin)}" type="button">キャンセル</button>
-                        </div>
-                    </div>
-                </details>
+                <div class="bd-meta-edit-inline">
+                    <div class="edit-field"><label>タイトル</label>
+                        <input type="text" class="edit-title" data-asin="${esc(book.asin)}" value="${esc(book.title)}"></div>
+                    <div class="edit-field"><label>著者</label>
+                        <input type="text" class="edit-authors" data-asin="${esc(book.asin)}" value="${esc(book.authors)}"></div>
+                    <div class="edit-field"><label>購入日</label>
+                        <input type="date" class="edit-acquired-time" data-asin="${esc(book.asin)}" value="${new Date(book.acquiredTime).toISOString().split('T')[0]}"></div>
+                    <div class="edit-field"><label>オリジナル ASIN</label>
+                        <input type="text" class="edit-original-asin" data-asin="${esc(book.asin)}" value="${esc(book.asin)}" maxlength="10" pattern="[A-Z0-9]{10}"></div>
+                    <div class="edit-field"><label>変更後 ASIN (オプション)</label>
+                        <input type="text" class="edit-updated-asin" data-asin="${esc(book.asin)}" value="${esc(book.updatedAsin || '')}" placeholder="新しい ASIN" maxlength="10" pattern="[A-Z0-9]{10}"></div>
+                </div>
             ` : ''}
         `;
 
@@ -3186,15 +3188,6 @@ class VirtualBookshelf {
                 this.openOrCreateBookMemo(e.currentTarget.dataset.asin);
             });
         }
-        
-        // Add book edit functionality
-        const saveChangesBtn = modalBody.querySelector('.save-book-changes');
-        if (saveChangesBtn) {
-            saveChangesBtn.addEventListener('click', (e) => {
-                this.saveBookChanges(e.target.dataset.asin);
-            });
-        }
-        
         
         // 星評価 (クリックで編集 / hover プレビュー)。SVG 子要素クリックにも closest で対応。
         const starRating = modalBody.querySelector('.star-rating');
@@ -7476,13 +7469,16 @@ class VirtualBookshelf {
                 ? `<span class="plugin-standard-badge" title="標準機能: トグルで無効化できます">${window.renderIcon('lock', { size: 12 })}</span>`
                 : '';
             // 縦型カード: 1行目=アイコン+名前+メタ+トグル / 分類バッジ / 説明(2行省略) / 設定・削除
+            // イシュー#453・②決裁2026-11-02: ui-standards §7 原則7(1行1内容)。名前行にバッジが
+            // 同居していた旧実装から、バッジをバージョン/状態と同じメタ行へ移した(直し方は
+            // tmp/453/453-step1-notes.md §(c))。
             return `
                 <div class="plugin-card-v2 ${enabled ? '' : 'is-disabled'}" data-plugin-id="${id}" data-search-text="${searchAttr}">
                     <div class="pcard-head">
                         ${iconChip}
                         <div class="pcard-headtext">
-                            <div class="pcard-name"><strong>${m.name || id}</strong>${publishableBadge}${standardBadge}</div>
-                            <div class="pcard-meta"><span class="pcard-version">v${m.version || '?'}</span>${stateLabel}</div>
+                            <div class="pcard-name"><strong>${m.name || id}</strong></div>
+                            <div class="pcard-meta"><span class="pcard-version">v${m.version || '?'}</span>${stateLabel}${publishableBadge}${standardBadge}</div>
                         </div>
                         <div class="pcard-toggle">${toggle}</div>
                     </div>

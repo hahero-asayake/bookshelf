@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026110203">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026110204">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -1165,7 +1165,10 @@
                                 <div class="import-step-head"><span class="import-step-num">3</span><span class="import-step-title">開いた Amazon のページで、登録した「Kindle取込」を押す</span></div>
                                 <div class="import-step-body">
                                     <p class="pp-hint">本の一覧が自動でこの画面に届き、取り込む本を選べます。</p>
-                                    <p class="import-fallback-note">反応がないとき: ポップアップの許可を確認、または → <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを貼り付ける</button></p>
+                                    <div class="import-fallback-note">
+                                        <p>反応がないとき: ポップアップの許可を確認してください。</p>
+                                        <button type="button" class="btn btn-secondary btn-small" data-import-action="open-paste"><span class="h-icon" data-icon="clipboard" data-icon-size="14"></span>取込データを貼り付ける</button>
+                                    </div>
                                 </div>
                             </li>
                         </ol>
@@ -1467,7 +1470,7 @@
     <script defer src="js/nav-state.js?v=2026110201"></script>
     <script defer src="js/dashboard.js?v=2026102905"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026110203"></script>
+    <script defer src="js/bookshelf.js?v=2026110204"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
