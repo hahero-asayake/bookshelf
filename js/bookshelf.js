@@ -3142,12 +3142,17 @@ class VirtualBookshelf {
         // ボタンも撤去し、保存は topbar の編集終了ボタン (.bd-edit-toggle.cancel-edit-btn) 1つに統合する
         // (下記グローバルクリックハンドラの cancelBtn 分岐が saveBookChanges を呼ぶ)。
         // イシュー#484: 重複ASIN案内。別の本に同じASINが付いた場合(sameTitle=false)は
-        // 「編集」→「変更後ASIN」欄での付け直しを案内する。同じ本の二重登録(sameTitle=true・
-        // 実害小)は文言を分け、削除・統合は促さない(②指示・既存データは削除・統合しない方針)。
+        // 「編集」→「オリジナルASIN」欄(book.asin自体を書き換える方。「変更後ASIN」欄は表示・
+        // リンク用の上書きで移行処理は走らない)での付け直しを案内する。付け直すと、もう一方の本の
+        // メモ・並び順・除外・非表示・本棚所属はそのまま残り、新ASIN側へは同じ内容がコピーされる
+        // (②差し戻し2026-11-02: 旧実装は「移す」=もう一方の本から消えてしまっていた。既存データは
+        // 削除・統合しない方針のため、付け直し後しばらくは両方に同じ内容が残る=不要な方は利用者が
+        // 消す、という前提をここで案内する)。同じ本の二重登録(sameTitle=true・実害小)は文言を分け、
+        // 削除・統合は促さない(②指示)。
         const dupGroup = this._dupAsinInfo().get(book.asin);
         const dupNoticeHtml = dupGroup ? (dupGroup.sameTitle
             ? `<div class="bd-dup-asin-notice">${ico('info')}<span>同じ本が複数登録されています(ASIN: ${esc(dupGroup.asin)})。統合・削除は必要ありません。</span></div>`
-            : `<div class="bd-dup-asin-notice">${ico('alert-triangle')}<span>このASINは他の本と共有されています。メモ・並び順・除外設定が共有される可能性があります。「編集」の「変更後 ASIN」欄で正しいASINに付け直すことをお勧めします。</span></div>`
+            : `<div class="bd-dup-asin-notice">${ico('alert-triangle')}<span>このASINは他の本と共有されています。メモ・並び順・除外設定が共有される可能性があります。「編集」の「オリジナル ASIN」欄で正しいASINに付け直すことをお勧めします。付け直した直後はメモなどが両方の本に残ります。不要な方は削除してください。</span></div>`
         ) : '';
         const basicInfoBody = `
             <div class="bd-meta">
@@ -13811,40 +13816,60 @@ class VirtualBookshelf {
      * オリジナルASIN変更時のユーザーデータ移行
      */
     migrateUserData(oldAsin, newAsin) {
-        // 星評価とメモを移行
+        // イシュー#484(②差し戻し・2026-11-02): oldAsinを使う本がlibrary.booksにまだ残っている場合
+        // (=別の本に同じASINが付いていたケース、本関数はupdateBook完了後に呼ばれるため、この時点で
+        // oldAsinの本が残っているなら「もう一方の本」が実在する)、notes/hiddenBooks/exclusions/
+        // bookshelves[].books は移す(move)のではなくコピーする。旧ASIN側はそのまま残す(既存データは
+        // 削除・統合しない方針。旧実装はmoveのため「もう一方の本」からメモ・除外・非表示・本棚所属が
+        // 消えてしまっていた＝②指摘で訂正)。oldAsinの本が無ければ(通常の、重複していない本の付け直し)
+        // 従来どおり移して元を消す。
+        const oldAsinStillUsed = this.bookManager.library.books.some(b => b.asin === oldAsin);
+
+        // 星評価とメモ
         if (this.userData.notes[oldAsin]) {
-            this.userData.notes[newAsin] = this.userData.notes[oldAsin];
-            delete this.userData.notes[oldAsin];
+            this.userData.notes[newAsin] = { ...this.userData.notes[oldAsin] };
+            if (!oldAsinStillUsed) delete this.userData.notes[oldAsin];
         }
 
-        // 非表示設定を移行
+        // 非表示設定
         if (this.userData.hiddenBooks && this.userData.hiddenBooks.includes(oldAsin)) {
-            const index = this.userData.hiddenBooks.indexOf(oldAsin);
-            this.userData.hiddenBooks[index] = newAsin;
+            if (oldAsinStillUsed) {
+                if (!this.userData.hiddenBooks.includes(newAsin)) this.userData.hiddenBooks.push(newAsin);
+            } else {
+                const index = this.userData.hiddenBooks.indexOf(oldAsin);
+                this.userData.hiddenBooks[index] = newAsin;
+            }
         }
 
-        // 本棚情報を移行
+        // 本棚情報
         if (this.userData.bookshelves) {
             Object.values(this.userData.bookshelves).forEach(bookshelf => {
                 if (bookshelf.books && bookshelf.books.includes(oldAsin)) {
-                    const index = bookshelf.books.indexOf(oldAsin);
-                    bookshelf.books[index] = newAsin;
+                    if (oldAsinStillUsed) {
+                        if (!bookshelf.books.includes(newAsin)) bookshelf.books.push(newAsin);
+                    } else {
+                        const index = bookshelf.books.indexOf(oldAsin);
+                        bookshelf.books[index] = newAsin;
+                    }
                 }
             });
         }
 
-        // イシュー#484: 除外設定(exclusions)を移行 (既存の移行漏れ修正)。exclusions は asin の
-        // 配列(userData._storage.exclusions)。別の本に同じasinが付いていた場合、配列内に
-        // oldAsin が複数回出現することがあるが、indexOf は最初の1件だけを書き換える =
-        // 今回付け直した本の分だけが新ASINへ移り、もう一方の本(まだ旧ASINのまま)のエントリは
-        // そのまま残る(意図した挙動)。
+        // イシュー#484: 除外設定(exclusions)を移行 (既存の移行漏れ修正)。exclusions は asin の配列
+        // (userData._storage.exclusions)。
         if (Array.isArray(this.userData._storage?.exclusions) && this.userData._storage.exclusions.includes(oldAsin)) {
-            const index = this.userData._storage.exclusions.indexOf(oldAsin);
-            this.userData._storage.exclusions[index] = newAsin;
+            if (oldAsinStillUsed) {
+                if (!this.userData._storage.exclusions.includes(newAsin)) this.userData._storage.exclusions.push(newAsin);
+            } else {
+                const index = this.userData._storage.exclusions.indexOf(oldAsin);
+                this.userData._storage.exclusions[index] = newAsin;
+            }
         }
 
         // イシュー#484: 並び順(bookOrder)を移行 (既存の移行漏れ修正)。bookOrder は
-        // 本棚id → asin配列。exclusions と同じ理由で最初の1件だけを書き換える。
+        // 本棚id → asin配列。重複していた2件のうちindexOfで最初の1件だけを書き換える方式のままで
+        // よい(②指示)。元から本1冊ごとに別のインデックスに分かれているため、コピーではなく
+        // この方式のままで「もう一方の本」のエントリはそのまま残る。
         if (this.userData.bookOrder) {
             Object.values(this.userData.bookOrder).forEach(order => {
                 if (Array.isArray(order) && order.includes(oldAsin)) {

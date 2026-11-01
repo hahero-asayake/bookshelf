@@ -107,4 +107,37 @@ tmp/401配下にnotes.json・exclusions.json等は無く（library.jsonのみ）
 ### 実装中に判明した副次的な事実（②への申し送り）
 
 - 既存の「オリジナルASIN」編集UIには、新ASINが既存の別の本と重複していれば保存をブロックする仕組みが既にある（`bookshelf.js`内、本イシュー着手前から存在）。これにより、付け直し操作自体が新たな重複を生むことはない。
-- `migrateUserData`のnotes移行は「move+delete」方式（既存実装、今回変更していない）。付け直し後、旧ASIN側（もう一方の本）のメモは消える。これは②指示の「新しいASINへ移り、もう一方の本には残らない」と一致する挙動であり、brief制約「既存データは削除・統合しない」は本のレコード（library.books）の話であって、notesの移行ロジックには当たらないと判断した。
+
+## 7. ②差し戻し（2026-11-02 06:13）とその訂正
+
+②の差し戻し指摘: 「新しいASINへ移り、もう一方の本には残らない」という前回の指示・実装理解は誤りだった。付け直す前、notes・hiddenBooks・exclusions・bookshelves[].booksは2冊（上巻・下巻）で共有されていてどちらの本のものか区別できない。それを「移して元を消す」と、残った本（下巻）からメモ・除外・非表示・本棚所属が消えてしまう。これは「既存データは削除しない」方針に反する。
+
+### 訂正した実装
+
+`migrateUserData(oldAsin, newAsin)` の冒頭で `this.bookManager.library.books.some(b => b.asin === oldAsin)` を見て、付け直した後も oldAsin を使う本（もう一方の本）が残っているかを判定するようにした（`bookshelf.js`）。
+
+- **残っている場合**（別の本に同じasinが付いていたケース）: notes・hiddenBooks・exclusions・bookshelves[].books は newAsin 側へ**コピー**し、oldAsin 側もそのまま残す（削除しない）。
+- **残っていない場合**（通常の、重複していない本の付け直し）: 従来どおり**移して元を消す**（move+delete）。
+- bookOrder は変更していない（②指示どおり）。重複していた2件のうちindexOfで最初の1件だけを書き換える既存方式のままでよい。元から本1冊ごとに別のインデックスに分かれているため、「もう一方の本」のエントリは手を加えなくてもそのまま残る。
+
+本詳細の案内文（別の本型）にも「付け直した直後はメモなどが両方の本に残ります。不要な方は削除してください。」を追加した。
+
+### テストの訂正
+
+`tests/e2e/duplicate-asin-notice.spec.js` を書き直し（3本構成に変更）:
+
+1. バッジ表示（変更なし、以前のまま）。
+2. 「付け直し直後はもう一方の本に設定が残り（コピー）、その後の新しい変更は伝播しない」: notes・hiddenBooks・exclusions・本棚所属（`fiction`棚）を事前に共有状態で用意し、上巻を付け直した直後に両方へ同じ内容が残っていることを確認→もう一方の本（下巻）はもう重複ではなくなるため案内は出ないが、メモはコピーされたまま残っていることを確認→新ASIN側に新しいメモを書く・除外する操作をしても下巻には伝播しないことを確認。
+3. 「重複していない単独本の通常の付け直しは、従来どおり移して元を消す」（新規・②指示どおり1ケース追加）: 最初から1冊しかない本（`SOLO_ASIN`）を付け直すと、`oldAsinStillUsed`判定がfalseになり、notes・hiddenBooks・exclusions・本棚所属が旧ASIN側から消えて新ASIN側へ移ることを確認。
+
+### 実行結果（訂正後）
+
+| 対象 | 結果 |
+|---|---|
+| `npm test`（vitest run、44ファイル） | ✅ 750 passed / 2 todo（全通過） |
+| `tests/e2e/duplicate-asin-notice.spec.js`（3本） | ✅ 3 passed |
+| `tests/e2e/reimport-diff.spec.js`（#406/#480、8本） | ✅ 8 passed |
+| `tests/e2e/book-detail-entries.spec.js`（本詳細、7本） | ✅ 7 passed |
+| `tests/e2e/per-shelf-memo.spec.js`（プラグインdetailSection、2本） | ✅ 2 passed |
+
+- `migrateUserData`のnotes移行は「move+delete」方式（既存実装、今回変更していない）。付け直し後、旧ASIN側（もう一方の本）のメモは消える。これは②指示の「新しいASINへ移り、もう一方の本には残らない」と一致する挙動であり、brief制約「既存データは削除・統合しない」は本のレコード（library.books）の話であって、notesの移行ロジックには当たらないと判断した。（**注: 上記②差し戻しで訂正済み。この判断は誤りだった。**）
