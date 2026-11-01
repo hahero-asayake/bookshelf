@@ -341,17 +341,15 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         await link.tap();
         await settle(page, 600);
         await r.step(page, 'settings-open');
+        // イシュー#442(③差し戻し2026-11-02 02:01): 「設定で変更」の行き先は旧 settings-modal の
+        // publish-section から「公開の設定」(publish-settings-modal・一覧から開く1か所に統合)へ変更。
+        // 公開の設定には一覧/詳細の2段が無いため、戻るは1回で記事エディタに戻る(旧2段→1段)。
         const s1 = await snap(page);
-        expect.soft(s1.openModals).toContain('settings-modal');
+        expect.soft(s1.openModals).toContain('publish-settings-modal');
         await back(page);
         await r.step(page, 'back1');
-        // D11: 設定の特定項目へジャンプした時は、戻る1回目で設定の一覧、2回目で設定が閉じて記事エディタへ
-        expect.soft(await page.locator('.settings-modal-content').getAttribute('data-settings-view'), '戻る1回目=設定の一覧').toBe('master');
-        expect.soft((await snap(page)).artMode, '裏の記事は編集のまま').toBe('edit');
-        await back(page);
-        await r.step(page, 'back2');
         const s2 = await snap(page);
-        expect.soft(s2.openModals, '戻る2回目で設定が閉じ記事エディタに戻る').not.toContain('settings-modal');
+        expect.soft(s2.openModals, '戻る1回で公開の設定が閉じ記事エディタに戻る').not.toContain('publish-settings-modal');
         expect.soft(s2.artMode, '裏の記事は編集のまま').toBe('edit');
         expect.soft(s2.openModals).toContain('publish-pages-modal');
         expect.soft(s2.suppress).toBe(0);
@@ -824,7 +822,10 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         expectSameHistory(before, s);
     }));
     test('X09 設定の項目へジャンプ→戻る＝一覧 (D11)→戻る＝閉じる', async ({ page }, ti) => caseRun(page, ti, 'X09', async (r, before) => {
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-section'));
+        // イシュー#442(③差し戻し2026-11-02 02:01): publish-section は撤去済み(「公開の設定」へ統合)の
+        // ため、ジャンプ先カテゴリを存置カテゴリ(sync-section)に変更。D11の検証意図(項目へジャンプ→
+        // 戻る1回目で一覧、2回目で閉じる)自体は対象カテゴリに依らないため影響なし。
+        await page.evaluate(() => window.bookshelf._openSettingsModal('sync-section'));
         await settle(page);
         await back(page);
         expect.soft(await settingsView(page)).toBe('master');

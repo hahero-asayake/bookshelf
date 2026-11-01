@@ -202,7 +202,10 @@ test('公開: 記事を新規作成→本棚ブロックに本を配置→プレ
 test('設定→公開: 公開先の既定はハブ・GitHub に切替えるとリポジトリブロックが出る (ADR-033/056)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
+    // イシュー#442(③差し戻し2026-11-02 03:29): 公開先切替は「公開の設定」モーダルへ移設済み。
+    // ID・保存ロジックは変更していないため、開き方だけ変える(折りたたみは明示的に開く)。
+    await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+    await page.locator('#publish-target-details > summary').click();
     // 既定 = ハブ (ADR-056)。ハブブロック表示、GitHub ブロックは隠れている
     await expect(page.locator('#publish-config-hub')).toBeVisible();
     await expect(page.locator('#publish-config-github')).toBeHidden();

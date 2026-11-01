@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026110201">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026110203">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -588,56 +588,7 @@
                     </div>
                 </details>
 
-                <details class="settings-section" id="publish-section">
-                    <summary class="settings-section-title"><span class="h-icon" data-icon="globe" data-icon-size="16"></span>公開</summary>
-                    <div class="settings-section-body">
-                    <div class="publish-config">
-                        <small class="publish-config-hint">公開ページの作成・公開は、PC 画面左の「公開」ボタンから行います。ここではその公開の設定をします。</small>
-                        <label class="form-label" for="setting-public-name"><span class="h-icon" data-icon="user" data-icon-size="14"></span>公開名義（発行者名）</label>
-                        <input id="setting-public-name" type="text" placeholder="例: あなたの名前 / ハンドル" autocomplete="off">
-                        <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
-                        <div id="publish-config-hub" class="publish-target-config" hidden>
-                            <small class="publish-config-hint">Asayake ハブ（hahero 運営）へ直接公開します。GitHub は不要で、Google ログインだけで公開 URL が手に入ります（中身は誰でも読めます）。</small>
-                            <span id="publish-hub-status" class="path-status"></span>
-                        </div>
-
-                        <!-- 公開先は「一度決めたら触らない設定項目」(ADR-099): 既定はハブ。切替 (自前の GitHub 公開) は折りたたみの中に置き、主導線から外す -->
-                        <details class="pp-advanced publish-target-details" id="publish-target-details">
-                            <summary><span class="h-icon" data-icon="settings" data-icon-size="13"></span>公開先の変更（通常は触りません）<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                            <div class="pp-advanced-body">
-                                <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
-                                <select id="publish-target-select">
-                                    <option value="hub">Asayake ハブ（Google ログインだけ・おすすめ）</option>
-                                    <option value="github">自分の GitHub リポジトリ（上級者向け）</option>
-                                </select>
-                                <p id="publish-index-note" class="publish-config-hint publish-index-note" hidden>この公開先の記事は、ハブの索引（タグ検索・/top・マイページ）には載りません。</p>
-                                <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
-
-                            <div id="publish-config-github" class="publish-target-config">
-                                <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ</label>
-                                <select id="publish-repo-select">
-                                    <option value="">（GitHub 接続後に選べます）</option>
-                                </select>
-                                <small class="publish-config-hint">公開ページ（HTML）の書き出し先です。中身は誰でも見られるので、公開専用の空 public リポジトリを選んでください。</small>
-                                <details class="pp-advanced">
-                                    <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>リポジトリの作り方と公開URL<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
-                                    <div class="pp-advanced-body">
-                                        <small class="publish-config-hint">空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加すると、ここで選べるようになります。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で見られます。</small>
-                                    </div>
-                                </details>
-                                <span id="publish-repo-status" class="path-status"></span>
-                            </div>
-                            </div>
-                        </details>
-
-                        <div id="publish-affiliate" class="publish-target-config" hidden>
-                            <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
-                            <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
-                            <small class="publish-config-hint" id="affiliate-hint">Amazon アソシエイトに参加している方向けの設定です。</small><!-- 状態別の続き文は _reflectAffiliateField が出す -->
-                        </div>
-                    </div>
-                    </div>
-                </details>
+                <!-- イシュー#442: 公開の設定(公開名義・公開先・アフィリエイトID)は「公開の設定」モーダル(一覧から開く1か所)へ移設。ここには入口を残さない(二重入口防止) -->
 
                 <details class="settings-section" id="library-section">
                     <summary class="settings-section-title"><span class="h-icon" data-icon="library" data-icon-size="16"></span>蔵書</summary>
@@ -882,20 +833,13 @@
             <!-- 一覧ビュー -->
             <div id="art-list-view">
                 <div class="pp-list-head">
-                    <p class="pp-hint">本棚を素材にした記事を作り、公開します。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
-                    <button id="art-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
+                    <p class="pp-hint">本棚を素材にした記事を作り、公開します。公開名義・公開先・本棚トップの見た目は <strong>公開の設定</strong> で選べます。</p>
+                    <div class="pp-list-head-actions">
+                        <button id="art-settings-open" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="settings" data-icon-size="14"></span>公開の設定</button>
+                        <button id="art-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
+                    </div>
                 </div>
-                <!-- 本棚トップ(/<username>/)の配色 (ADR-144・イシュー#408 案A)。記事の「見た目」ブロック
-                     (_artRenderLookBlock) と同じ色一覧(_artThemeItems('color'))・同じ.art-look-rowを流用。
-                     サイト単位で1つだけなので記事一覧(#art-list)の外・パネル上部に置く。 -->
-                <!-- イシュー#430 (②承認): 一覧で記事が主役になるよう、既定は選択中の1行だけを出し、
-                     押すと選択肢を開く(art-site-theme-toggle)。記事ごとの操作ではない(サイト単位)ため
-                     一覧の圧迫を最小化する。 -->
-                <div class="pp-site-theme" id="art-site-theme" hidden>
-                    <button type="button" class="pp-site-theme-hd" id="art-site-theme-toggle" aria-expanded="false" aria-controls="art-site-theme-list"><span class="h-icon" data-icon="palette" data-icon-size="14"></span><b>本棚トップの見た目</b><span class="pp-site-theme-current" id="art-site-theme-current"></span><span class="h-icon pp-site-theme-caret" data-icon="chevron-down" data-icon-size="14"></span></button>
-                    <div class="art-look-list pp-site-theme-list" id="art-site-theme-list" role="radiogroup" aria-label="本棚トップの配色" hidden></div>
-                    <p class="pp-site-theme-hint" id="art-site-theme-hint" role="status" hidden>保存しました。次に公開すると本棚トップに反映されます。</p>
-                </div>
+                <!-- イシュー#442: 「本棚トップの見た目」は一覧から撤去し「公開の設定」モーダルへ統合(ハヘロ指摘①) -->
                 <p id="art-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開記事は、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
                 <p id="art-store-notice" class="pp-free-notice pp-store-notice" hidden><span class="h-icon" data-icon="alert-triangle" data-icon-size="13"></span><span id="art-store-notice-text" class="pp-free-notice-text"></span><button id="art-store-notice-btn" class="btn btn-secondary btn-small" type="button" hidden></button></p>
                 <ul id="art-list" class="pp-list"></ul>
@@ -1026,6 +970,68 @@
                     <button type="button" id="art-kb-bar-done" class="btn btn-primary btn-small">確定</button>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- 公開の設定モーダル (イシュー#442・ADR-145: #publish-section を撤去し統合。IDと保存処理は変更しない) -->
+    <div id="publish-settings-modal" class="modal">
+        <div class="modal-content art-modal-content">
+            <button class="modal-close" id="publish-settings-close">×</button>
+            <div class="modal-header">
+                <h2><span class="h-icon" data-icon="settings" data-icon-size="20"></span>公開の設定</h2>
+            </div>
+            <div class="publish-config">
+                <label class="form-label" for="setting-public-name"><span class="h-icon" data-icon="user" data-icon-size="14"></span>公開名義（発行者名）</label>
+                <input id="setting-public-name" type="text" placeholder="例: あなたの名前 / ハンドル" autocomplete="off">
+                <small class="publish-config-hint">公開ページに「○○ の本棚」「© ○○」として表示されます。未入力ならアカウント名から仮の名前を使います。</small>
+                <div id="publish-config-hub" class="publish-target-config" hidden>
+                    <small class="publish-config-hint">Asayake ハブ（hahero 運営）へ直接公開します。GitHub は不要で、Google ログインだけで公開 URL が手に入ります（中身は誰でも読めます）。</small>
+                    <span id="publish-hub-status" class="path-status"></span>
+                </div>
+
+                <!-- イシュー#442・ハヘロ指摘①: 本棚トップの見た目をここに統合(ADR-144・旧 #art-site-theme を一覧から移設、ID・ロジックは変更しない)。
+                     トグル式UI(#430 3a21e56)の構造を維持: 既定は選択中の1行だけ表示、押すと選択肢を開く(art-site-theme-toggle)。 -->
+                <div class="pp-site-theme" id="art-site-theme" hidden>
+                    <button type="button" class="pp-site-theme-hd" id="art-site-theme-toggle" aria-expanded="false" aria-controls="art-site-theme-list"><span class="h-icon" data-icon="palette" data-icon-size="14"></span><b>本棚トップの見た目</b><span class="pp-site-theme-current" id="art-site-theme-current"></span><span class="h-icon pp-site-theme-caret" data-icon="chevron-down" data-icon-size="14"></span></button>
+                    <div class="art-look-list pp-site-theme-list" id="art-site-theme-list" role="radiogroup" aria-label="本棚トップの配色" hidden></div>
+                    <p class="pp-site-theme-hint" id="art-site-theme-hint" role="status" hidden>保存しました。次に公開すると本棚トップに反映されます。</p>
+                </div>
+
+                <!-- 公開先は「一度決めたら触らない設定項目」(ADR-099): 既定はハブ。切替 (自前の GitHub 公開) は折りたたみの中に置き、主導線から外す -->
+                <details class="pp-advanced publish-target-details" id="publish-target-details">
+                    <summary><span class="h-icon" data-icon="settings" data-icon-size="13"></span>公開先の変更（通常は触りません）<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                    <div class="pp-advanced-body">
+                        <label class="form-label" for="publish-target-select"><span class="h-icon" data-icon="globe" data-icon-size="14"></span>公開先</label>
+                        <select id="publish-target-select">
+                            <option value="hub">Asayake ハブ（Google ログインだけ・おすすめ）</option>
+                            <option value="github">自分の GitHub リポジトリ（上級者向け）</option>
+                        </select>
+                        <p id="publish-index-note" class="publish-config-hint publish-index-note" hidden>この公開先の記事は、ハブの索引（タグ検索・/top・マイページ）には載りません。</p>
+                        <p id="publish-switch-warn" class="publish-switch-warn" hidden></p>
+
+                    <div id="publish-config-github" class="publish-target-config">
+                        <label class="form-label" for="publish-repo-select"><span class="h-icon" data-icon="github" data-icon-size="14"></span>公開先リポジトリ</label>
+                        <select id="publish-repo-select">
+                            <option value="">（GitHub 接続後に選べます）</option>
+                        </select>
+                        <small class="publish-config-hint">公開ページ（HTML）の書き出し先です。中身は誰でも見られるので、公開専用の空 public リポジトリを選んでください。</small>
+                        <details class="pp-advanced">
+                            <summary><span class="h-icon" data-icon="help-circle" data-icon-size="13"></span>リポジトリの作り方と公開URL<span class="h-icon pp-advanced-caret" data-icon="chevron-down" data-icon-size="14"></span></summary>
+                            <div class="pp-advanced-body">
+                                <small class="publish-config-hint">空の public リポジトリ（例 <code>bookshelf-public</code>）を作り、bookshelf-sync アプリのアクセス対象に追加すると、ここで選べるようになります。GitHub Pages（Settings → Pages → Source = main）を有効にすると <code>https://&lt;owner&gt;.github.io/&lt;repo&gt;/</code> で見られます。</small>
+                            </div>
+                        </details>
+                        <span id="publish-repo-status" class="path-status"></span>
+                    </div>
+                    </div>
+                </details>
+
+                <div id="publish-affiliate" class="publish-target-config" hidden>
+                    <label class="form-label" for="setting-affiliate-id"><span class="h-icon" data-icon="tag" data-icon-size="14"></span>Amazon アソシエイト タグ</label>
+                    <input id="setting-affiliate-id" type="text" placeholder="例: yourtag-22" autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
+                    <small class="publish-config-hint" id="affiliate-hint">Amazon アソシエイトに参加している方向けの設定です。</small><!-- 状態別の続き文は _reflectAffiliateField が出す -->
+                </div>
             </div>
         </div>
     </div>
@@ -1457,11 +1463,11 @@
     <!-- イシュー#359 段階③: 画面遷移・履歴の正本は NavState (js/nav-state.js)。何かあれば次の1行を true にすると
          旧方式 (深さ数え合わせ・hashchange 購読) に戻る (kill-switch・1リリースの間だけ残す) -->
     <script>window.BOOKSHELF_NAV_LEGACY = false;</script>
-    <script defer src="js/router.js?v=2026102605"></script>
-    <script defer src="js/nav-state.js?v=2026102605"></script>
+    <script defer src="js/router.js?v=2026110201"></script>
+    <script defer src="js/nav-state.js?v=2026110201"></script>
     <script defer src="js/dashboard.js?v=2026102905"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026110201"></script>
+    <script defer src="js/bookshelf.js?v=2026110203"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

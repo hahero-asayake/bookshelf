@@ -1183,9 +1183,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
     });
 
-    // イシュー#345 C案: 公開パネルの記事行に「自分のハブ本棚トップ」への行を、記事URL行(.pp-row-url)とは
-    // 別の行(.pp-row-hub)として足す。ボタン列(.pp-row-actions)には入れない(狭幅でタイトルが潰れる不具合の対策)。
-    test('公開先がハブの記事行には「ハブで見る」行が記事URLとは別行で出て、本棚トップ(publicId無し)を指す (イシュー#345)', async ({ page }) => {
+    // イシュー#442 (旧#345 C案から変更): 記事カードのリンクは記事URL(.pp-row-url)の1本のみにし、
+    // 「自分のハブ本棚トップ」へは記事カードではなく公開パネル(art-pub-target内)から辿る形に統合する(07項目3)。
+    test('公開先がハブの記事は、記事カードのリンクは記事URL1本のみ・公開パネルに「ハブで見る」行が出て本棚トップ(publicId無し)を指す (イシュー#442)', async ({ page }) => {
         const { errors, hubCaptured } = await bootAppForPublish(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
@@ -1200,25 +1200,28 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
 
+        // 公開パネルを開き直す(公開直後の描画と同じ状態) → art-pub-target内に「ハブで見る」行
+        await page.evaluate(() => window.bookshelf._artOpenPublishPanel());
+        const hubLink = page.locator('#art-pub-target .art-pub-hub-link');
+        await expect(hubLink).toHaveAttribute('href', 'https://bookshelf.asayake.org/hahero/');
+        // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
+        await expect(hubLink).toHaveText('ハブで見る');
+        await expect(hubLink).toHaveAttribute('title', 'https://bookshelf.asayake.org/hahero/');
+
         await closePublishPanelIfOpen(page);
         await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
         const row = page.locator('.pp-row', { hasText: 'ハブ導線確認' });
-        // 記事URL行とハブ行は別要素 (.pp-row-url は記事個別URLのテスト専用セレクタのため1件のまま保つ)
+        // イシュー#442: 記事カードのリンクは記事URL1本のみ(.pp-row-hubは撤去済み)
         await expect(row.locator('.pp-row-url a')).toHaveCount(1);
-        const hubLink = row.locator('.pp-row-hub a');
-        await expect(hubLink).toHaveAttribute('href', 'https://bookshelf.asayake.org/hahero/');
-        // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
-        // URL は href と title (ホバーで確認可) にだけ持たせる。
-        await expect(hubLink).toHaveText('ハブで見る');
-        await expect(hubLink).toHaveAttribute('title', 'https://bookshelf.asayake.org/hahero/');
-        // ボタン列 (更新・編集) には入らない＝アクション数は従来どおり2のまま
+        await expect(row.locator('.pp-row-hub')).toHaveCount(0);
+        // ボタン列 (更新・編集) は従来どおり2のまま
         await expect(row.locator('.pp-row-actions button')).toHaveCount(2);
         expect(errors).toEqual([]);
     });
 
-    // イシュー#345 C案: 自前公開(GitHub)はハブの索引に載らず本棚トップも存在しないため「ハブで見る」は出さない。
-    test('公開先がGitHubの記事行には「ハブで見る」行が出ない (イシュー#345)', async ({ page }) => {
+    // イシュー#442 (旧#345 C案): 自前公開(GitHub)はハブの索引に載らず本棚トップも存在しないため「ハブで見る」は出さない。
+    test('公開先がGitHubの記事は、記事カード・公開パネルのどちらにも「ハブで見る」行が出ない (イシュー#442)', async ({ page }) => {
         const { errors, hubCaptured } = await bootAppForPublish(page);
         await page.evaluate(() => {
             const cfg = SyncConfigManager.load();
@@ -1239,6 +1242,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             const id = window.bookshelf._artEditingId;
             await window.bookshelf.publishArticleStore.update(id, { published: true, publicId: 'ghpub1' });
         });
+        await page.evaluate(() => window.bookshelf._artRenderPublishPanel());
+        await expect(page.locator('#art-pub-target .art-pub-hub-link')).toHaveCount(0);
         await page.evaluate(() => window.bookshelf._artRenderList());
         await closePublishPanelIfOpen(page);
         await goBack(page);
@@ -1284,8 +1289,12 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
     // hub.publicBase 固定だった。bookshelfBase (新形式) を優先することを検証する。
     test('設定画面の「公開 URL:」表示は新形式(bookshelfBase)を優先する (イシュー#154)', async ({ page }) => {
         await bootAppForPublish(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
-        await expect(page.locator('#publish-section')).toHaveClass(/pane-active/);
+        // イシュー#442: publish-target-select は #/publish/settings (旧 #publish-section) へ移設済み(ADR-145)
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+        await expect(page.locator('#publish-settings-modal')).toHaveClass(/show/);
+        // イシュー#442: publish-target-select は「公開先の変更(通常は触りません)」の折りたたみの中にあり
+        // 既定で閉じている(ADR-099)。旧経路の_scrollSettingsToが開いていたのを、ここで明示的に開く。
+        await page.evaluate(() => { document.getElementById('publish-target-details').open = true; });
         // bootAppForPublish の初期設定は既に target=hub のため、一旦 github へ切替えて戻すことで
         // change イベントを確実に発火させ、_reflectPublishHubStatus を再実行させる。
         await page.selectOption('#publish-target-select', 'github');
@@ -1377,7 +1386,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
     // (saveSiteTheme)だが、本棚トップ(index.html)への反映は次の公開操作のタイミング(案A)。
     test('本棚トップの配色: 共有ハブ公開時だけ「本棚トップの見た目」が出る。選ぶと保存され、次の公開で本棚トップのdata-colorに反映される (ADR-144・イシュー#408)', async ({ page }) => {
         const { errors, hubCaptured } = await bootAppForPublish(page);
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        // イシュー#442: 「本棚トップの見た目」は一覧から #/publish/settings へ移設済み(ハヘロ指摘①・ADR-145)
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
 
         const block = page.locator('#art-site-theme');
         await expect(block).toBeVisible();
@@ -1397,6 +1407,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.loadSiteTheme())).toBe('rose-dark');
 
         // 記事を1本作って公開 → hubCaptured.files の index.html (本棚トップ) に反映されている
+        // イシュー#442: 見た目選択は設定モーダル側のため、一覧へ戻ってから新規作成する
+        await page.evaluate(() => window.bookshelf.closePublishSettingsModal());
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '配色反映テスト');
         await addBlock(page, 'text', 'first');
@@ -1457,12 +1470,14 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
     // イシュー#430 (②承認完了条件): 1920x1080でエディタの本文欄+プレビューの合計幅が1600px以上。
     // 回帰検出: 901px以上のメディアクエリに旧 width:min(1240px,...) が残っており、全画面化
     // (基本ルールのwidth:100vw)が上書きされていた実機バグを本テストで再発防止したい。
-    // ③step3時点: addBlock(page,'text','first')後の待ちがCI/ローカルで安定せずタイムアウトする
-    // (原因未特定)ため test.skip にして提出する。手動実測では .art-modal-content のcomputedWidthが
-    // 1920pxになることを確認済み(本物の回帰修正自体は62f5481で適用・反映済み)。次回原因究明してunskipする。
-    test.skip('1920x1080で文章ブロック編集時、本文欄+プレビューの合計幅が1600px以上 (イシュー#430・原因未特定のためskip)', async ({ page }) => {
+    // イシュー#448引き継ぎ(②差し戻し(3)): skipの原因は #art-new クリック前に openPublishPagesModal
+    // (モーダルを開く処理)を呼んでいなかったこと。今回のページ化でモーダルを開く呼び方そのものは
+    // 変わらない(_artDoOpenPublishList→_artShowList→overlays.open)ため、ここを足してunskipを試す。
+    test('1920x1080で文章ブロック編集時、本文欄+プレビューの合計幅が1600px以上 (イシュー#430/#448)', async ({ page }) => {
         const { errors } = await bootAppForPublish(page);
         await page.setViewportSize({ width: 1920, height: 1080 });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
         const modalWidth = await page.evaluate(() => document.querySelector('.art-modal-content').getBoundingClientRect().width);
@@ -1474,24 +1489,75 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
     });
 
-    // イシュー#430: 記事カードのリンクが1本であることを一覧側で確かめる (現状はタイトル行の公開URL(.pp-row-url)と
-    // 共有ハブトップ(.pp-row-hub)の2本が別行で並ぶため、このテストは「実装後の目標」を明示する目的で先に書き、
-    // 現時点ではまだ1本化を実装していないため skip にしておく(③step3時点)。実装後にunskipする。
-    test.skip('記事カード1件あたりのリンクが1本である (イシュー#430・未実装のためskip)', async ({ page }) => {
+    // イシュー#442: 記事カードのリンクが1本であることを一覧側で確かめる(リンク1本化を実装済み・unskip)。
+    test('記事カード1件あたりのリンクが1本である (イシュー#442)', async ({ page }) => {
         const { errors } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', 'リンク1本化確認用');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
         await goBack(page);
-        await publishViaPanel(page);
+        // イシュー#442: 一覧の記事行から直接「公開」ボタンを押す(publishViaPanelは記事編集画面前提のため不適)
+        const row = page.locator('.pp-row', { hasText: 'リンク1本化確認用' });
+        await row.locator('[data-act="publish"]').click();
+        await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
-        const row = page.locator('.pp-row').first();
         await expect(row.locator('a')).toHaveCount(1);
         expect(errors).toEqual([]);
     });
+
+    // イシュー#442(③差し戻し2026-11-02 02:01): #/publish 等のURLルートはこのイシューでは入れない
+    // (戻るの段がずれるため・後続イシューで入れる)。公開一覧・公開設定は他モーダルと同じ
+    // _modalHistPush/Pop 方式のまま。このテストはPC幅(このファイルの既定viewport)なので
+    // _modalHistPushはhistoryに積まない(PC幅は旧仕様どおり履歴を使わない)→×クリックのDOM開閉だけ確認。
+    // history.back() 経由の戻る検証はスマホ幅前提のback-nav-matrix.spec.js側(A29/A32/A34/A35/A36等)が担う。
+    test('公開一覧モーダル・公開の設定モーダル: ×で閉じる (PC幅, イシュー#442)', async ({ page }) => {
+        const { errors } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await page.click('#publish-pages-close');
+        await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
+
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+        await expect(page.locator('#publish-settings-modal')).toHaveClass(/show/);
+        await page.click('#publish-settings-close');
+        await expect(page.locator('#publish-settings-modal')).not.toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#442・ハヘロ指摘②: 60字タイトルでもタイトル行と状態行が重ならず、カード幅からはみ出さないことを座標で測る
+    for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+        test(`60字タイトルでタイトル行と状態行が重ならずカード幅に収まる (${vp.width}x${vp.height}, イシュー#442)`, async ({ page }) => {
+            const { errors } = await bootAppForPublish(page);
+            const longTitle = 'ソフトウェア設計とアーキテクチャの基礎から学ぶ長いタイトルの本をまとめて紹介する記事のサンプル用タイトルです六十字';
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.click('#art-new');
+            await page.fill('#art-title', longTitle);
+            await addBlock(page, 'text', 'first');
+            await fillTextBlock(page, '本文');
+            await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+            await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+            await closePublishPanelIfOpen(page);
+            await goBack(page);
+            await page.setViewportSize(vp);
+            const row = page.locator('.pp-row', { hasText: longTitle.slice(0, 10) });
+            await expect(row).toBeVisible();
+            const titleBox = await row.locator('.pp-row-title').boundingBox();
+            const statusBox = await row.locator('.pp-row-status-line').boundingBox();
+            const rowBox = await row.boundingBox();
+            // タイトル行の下端が状態行の上端以下 (y範囲が交わらない)
+            expect(titleBox.y + titleBox.height).toBeLessThanOrEqual(statusBox.y + 0.5);
+            // タイトル行・状態行ともカード幅からはみ出さない
+            expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 0.5);
+            expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 0.5);
+            expect(errors).toEqual([]);
+        });
+    }
 });
 
 test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有効)', () => {
@@ -2941,8 +3007,8 @@ test.describe('公開の設定: 保存が経路を通して動く (イシュー#
         }, [fixtureUserData, fixtureLibrary]);
         await page.goto('index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
-        // publish-section は <details> なので、対象フィールドIDを渡して開かせる(_scrollSettingsTo経由)。
-        await page.evaluate(() => window.bookshelf._openSettingsModal('setting-affiliate-id'));
+        // イシュー#442: 公開名義・アフィリエイトIDは #/publish/settings (旧 #publish-section) へ移設済み(ADR-145)
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
         await expect(page.locator('#publish-affiliate')).toBeVisible();
 
         await page.fill('#setting-public-name', 'E2Eテスト名義');

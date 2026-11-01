@@ -257,9 +257,12 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         expect(errors).toEqual([]);
     });
 
-    test('CHK7 記事編集→公開パネル→設定リンク→戻る2回 (D05・#259型)', async ({ page }, ti) => {
+    // イシュー#442(③差し戻し2026-11-02 03:29): 公開パネルの「設定で変更」リンクの行き先は、旧
+    // settings-modal(一覧/詳細の2段)から「公開の設定」モーダル(単一画面・一覧から開く1か所)へ
+    // 移設済み。段が無くなった分、戻るは2回ではなく1回で記事エディタに戻る。
+    test('CHK7 記事編集→公開パネル→設定リンク→戻る (D05・#259型)', async ({ page }, ti) => {
         const errors = await bootApp(page);
-        const v = await runCase(page, ti, 'CHK7', { ms: 3000, expectFinal: { openModals: (m) => !m.includes('settings-modal') && m.includes('publish-pages-modal') } }, async (p) => {
+        const v = await runCase(page, ti, 'CHK7', { ms: 3000, expectFinal: { openModals: (m) => !m.includes('publish-settings-modal') && m.includes('publish-pages-modal') } }, async (p) => {
             await openNewArticleEdit(p);
             const pub = p.locator('#art-publish-header:visible, #art-bar-publish:visible').first();
             await pub.tap();
@@ -267,12 +270,10 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
             const link = p.locator('#art-publish-modal .art-pub-link[data-settings]').first();
             await link.tap();
             await settle(p, 600);
-            expect.soft((await snapState(p)).openModals).toContain('settings-modal');
-            await back(p);
-            expect.soft(await p.locator('.settings-modal-content').getAttribute('data-settings-view'), '戻る1回目=設定の一覧').toBe('master');
-            await back(p); // 戻る2回目=設定が閉じ記事エディタに戻る (この観測窓が主眼)
+            expect.soft((await snapState(p)).openModals).toContain('publish-settings-modal');
+            await back(p); // 戻る1回=公開の設定が閉じ記事エディタに戻る (この観測窓が主眼)
         });
-        expect.soft(v.ok, `CHK7 戻る2回目: ${v.reasons.join(' / ')}`).toBe(true);
+        expect.soft(v.ok, `CHK7 戻る: ${v.reasons.join(' / ')}`).toBe(true);
         expect(errors).toEqual([]);
     });
 

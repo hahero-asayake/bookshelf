@@ -4523,7 +4523,9 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2。
    通知本体は表示のままボタンだけ隠す状態がある = 親の .pp-free-notice[hidden] では救えない) */
 #art-store-notice-btn[hidden] { display: none; }
-.pp-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
+.pp-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+/* イシュー#442: 「公開の設定」「新規作成」の2ボタンをまとめて右側に配置 */
+.pp-list-head-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .pp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 52vh; overflow: auto; }
 .pp-empty { color: var(--muted); padding: 1.6rem; text-align: center; border: 1px dashed var(--line); border-radius: 10px; font-size: 0.9rem; }
 .pp-empty.pp-error { color: var(--danger); border-color: var(--danger); display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -4534,16 +4536,15 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-empty-btn:hover { border-color: var(--accent); color: var(--accent); }
 .pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
-.pp-row-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.pp-row-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.1rem; }
+/* イシュー#442・ハヘロ指摘②: タイトルは状態と同居させず単独行(1内容1行)。長いタイトルは省略せず
+   2行まで折返し、それを超えたら…にする(①で状態と判定できる省略ではなく中身を読める形にする・②承認)。 */
+.pp-row-title { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+/* 状態バッジ+冊数をタイトルの下の別行に(ハヘロ指摘②)。タイトルの折返し行数に関わらず常に1行。 */
+.pp-row-status-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.pp-row-meta { font-size: 0.78rem; color: var(--muted); }
 .pp-row-url { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
 .pp-row-url a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-row-url a:hover { text-decoration: underline; }
-/* 自分のハブ本棚トップへの行 (イシュー#345 C案)。pp-row-url とクラスは分けるが見た目は同じにする
-   (記事URL取得テストが .pp-row-url 単体セレクタの件数を前提にしているため混在させない)。 */
-.pp-row-hub { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
-.pp-row-hub a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pp-row-hub a:hover { text-decoration: underline; }
 .pp-url-copy { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; flex-shrink: 0; }
 .pp-url-copy:hover { color: var(--accent); }
 .pp-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }

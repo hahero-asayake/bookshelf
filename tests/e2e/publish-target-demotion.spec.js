@@ -44,10 +44,14 @@ async function shot(page, name) {
 }
 
 test.describe('公開先の格下げ (設定→公開)', () => {
+    // イシュー#442(③差し戻し2026-11-02 03:29): 公開先・公開名義・アフィリエイトIDの入口は
+    // 旧 設定一覧の#publish-section(master-detail) から「公開の設定」モーダル(一覧から開く1か所・
+    // openPublishSettingsModal)へ移設済み。ID・保存ロジックは変更していないため、開き方だけを
+    // #publish-section前提(_openSettingsModal)から新しい入口に変える。
     test('既定 (ハブ): 公開先の切替は折りたたまれ、ハブの状態表示が主導線。「公開先の変更」を開くと切替が出る', async ({ page }) => {
         const errors = await boot(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-section'));
-        await expect(page.locator('#publish-section')).toHaveClass(/pane-active/);
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+        await expect(page.locator('#publish-settings-modal')).toHaveClass(/show/);
         await expect(page.locator('#publish-config-hub')).toBeVisible();          // 主導線
         await expect(page.locator('#publish-target-details > summary')).toBeVisible();
         expect(await page.locator('#publish-target-details').evaluate(d => d.open)).toBe(false);
@@ -60,16 +64,22 @@ test.describe('公開先の格下げ (設定→公開)', () => {
         expect(errors).toEqual([]);
     });
 
-    test('設定への案内 (_openSettingsModal(publish-target-select)) は折りたたみを開いて切替を見せる', async ({ page }) => {
+    // イシュー#442: 旧実装は _openSettingsModal(targetId) で「公開先」項目へ自動ジャンプ(折りたたみを
+    // 自動展開)していたが、「公開の設定」モーダルは単一画面(ジャンプ機能が無い)なので、案内を踏んだ
+    // 直後に自動展開される体験はもう無い(折りたたみは既定で閉じる=hub既定時の仕様どおり)。「設定への
+    // 案内から同じ項目に手が届く」こと自体は保たれるため、折りたたみを開く操作を足して同じ目的を確認する。
+    test('設定への案内 (openPublishSettingsModal) から「公開先の変更」を開けば切替が見える', async ({ page }) => {
         const errors = await boot(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+        await page.locator('#publish-target-details > summary').click();
         await expect(page.locator('#publish-target-select')).toBeVisible();
         expect(errors).toEqual([]);
     });
 
     test('自前公開 (GitHub) を選ぶと「ハブの索引に載りません」を明示し、リポジトリ設定が出る。ハブに戻すと注記は消える', async ({ page }) => {
         const errors = await boot(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-target-select'));
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+        await page.locator('#publish-target-details > summary').click();
         await page.selectOption('#publish-target-select', 'github');
         await expect(page.locator('#publish-index-note')).toBeVisible();
         await expect(page.locator('#publish-index-note')).toContainText('ハブの索引（タグ検索・/top・マイページ）には載りません');
@@ -83,7 +93,7 @@ test.describe('公開先の格下げ (設定→公開)', () => {
 
     test('自前公開を選んで保存済みの人には、設定を開いた時点で折りたたみが開いていて注記も見える', async ({ page }) => {
         const errors = await boot(page, { target: 'github' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('publish-section'));
+        await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
         expect(await page.locator('#publish-target-details').evaluate(d => d.open)).toBe(true);
         await expect(page.locator('#publish-index-note')).toBeVisible();
         await expect(page.locator('#publish-config-github')).toBeVisible();
@@ -94,14 +104,14 @@ test.describe('公開先の格下げ (設定→公開)', () => {
         test(`配置 (${w}x${h}): 主要要素の左端が揃い、重ならず、画面内に収まる (畳んだ状態と GitHub 選択の展開状態)`, async ({ page }) => {
             await page.setViewportSize({ width: w, height: h });
             const errors = await boot(page);
-            await page.evaluate(() => window.bookshelf._openSettingsModal('publish-section'));
-            await expect(page.locator('#publish-section')).toHaveClass(/pane-active/);
+            await page.evaluate(() => window.bookshelf.openPublishSettingsModal());
+            await expect(page.locator('#publish-settings-modal')).toHaveClass(/show/);
             const box = async (sel) => { const b = await page.locator(sel).boundingBox(); expect(b, sel).not.toBeNull(); return b; };
             const near = (a, b, tol, msg) => expect(Math.abs(a - b), `${msg}: ${a} vs ${b}`).toBeLessThanOrEqual(tol);
-            const scroller = async () => page.locator('#publish-section .settings-section-body').evaluate(el => ({ sw: el.scrollWidth, cw: el.clientWidth }));
+            const scroller = async () => page.locator('#publish-settings-modal .publish-config').evaluate(el => ({ sw: el.scrollWidth, cw: el.clientWidth }));
 
             // --- 畳んだ状態 ---
-            await page.locator('#publish-section').scrollIntoViewIfNeeded();
+            await page.locator('#publish-settings-modal .publish-config').scrollIntoViewIfNeeded();
             await shot(page, `publish-target-collapsed-${name}`);
             const name1 = await box('#setting-public-name'), hub = await box('#publish-config-hub'), sum = await box('#publish-target-details > summary'), det = await box('#publish-target-details');
             near(name1.x, hub.x, 1, '公開名義の入力と hub ブロックの左端');

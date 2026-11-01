@@ -44,6 +44,12 @@ body.art-cv-pc .art-cv-ops{top:-32px}
 .art-cv-more::after{content:'';position:absolute;inset:-8px}
 .art-cv-ins{min-height:44px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
 .art-cv-ins-btn{min-height:44px;min-width:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--acc);background:var(--bg);color:var(--acc);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700}
+/* イシュー#442 07項目(②承認済み採用): 「ここに追加」はホバー/フォーカス時だけ表示(常時点線を解消)。
+   既存の.book-item:hover .drag-handleと同型。ホバー不可(タッチ)端末は従来どおり常時表示のまま(安全側)。 */
+@media (hover:hover) and (pointer:fine){
+.art-cv-ins-btn{opacity:0;transition:opacity .12s}
+.art-cv-ins:hover .art-cv-ins-btn,.art-cv-ins:focus-within .art-cv-ins-btn{opacity:1}
+}
 .art-cv-empty{min-height:64px;padding-top:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-sizing:border-box}
 .art-cv-empty-guide{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:38px;border:none;background:transparent;color:var(--sub);font:inherit;font-size:13px;cursor:pointer;padding:8px;text-align:center}
 .art-cv-empty-guide:hover{color:var(--acc)}
@@ -6926,12 +6932,11 @@ class VirtualBookshelf {
     }
 
     // 設定 master-detail のカテゴリ定義 (順序 = 一覧/レールの並び)。ADR-047 P2。
-    // ※公開・プラグインは P3 で専用ページへ移すまで設定内に残す (P1 の「プラグイン」ボタン遷移先)。
+    // イシュー#442: 公開は「公開の設定」モーダル(一覧から開く1か所)へ移設済み。この一覧には置かない(二重入口防止)
     static SETTINGS_CATEGORIES = [
         { id: 'account-section',  icon: 'user-circle',      label: 'アカウント',        desc: 'ログイン・プラン・使用量' },
         { id: 'sync-section',     icon: 'folder-cog',       label: '同期',              desc: '保存先: この端末 / GitHub / ハブ' },
         { id: 'library-section',  icon: 'library',          label: '蔵書',              desc: '取り込み・手動追加・除外一覧' },
-        { id: 'publish-section',  icon: 'globe',            label: '公開',              desc: '公開先・発行者名・アフィリエイト' },
         { id: 'plugins-section',  icon: 'puzzle',           label: 'プラグイン',         desc: '開発者向け・導入と管理' },
         { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: 'エディタの選択' },
         { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
@@ -6981,7 +6986,10 @@ class VirtualBookshelf {
         // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (settings-cat の段と一覧へ戻す) は onClose
         this._overlays().open(modal, {
             kind: 'modal', size: 'lg', hist: true,
-            onClose: () => { this._modalHistPop('settings-cat'); this._showSettingsMaster(); },
+            onClose: () => {
+                this._modalHistPop('settings-cat');
+                this._showSettingsMaster();
+            },
         });
         // 開くたびに最新化 (プラン変化・別端末更新に追従)。軽い再描画のみ。重い market/プラグイン一覧は
         // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
@@ -7010,9 +7018,6 @@ class VirtualBookshelf {
         } else if (id === 'account-section') {
             this._setupAccountUI();
             this._renderAccountSection();
-        } else if (id === 'publish-section') {
-            this._reflectAffiliateField();
-            this._reflectPublicNameField();
         } else if (id === 'sync-section') {
             // ハブパネルが表示中ならここで GIS ボタンを実体化する (ブート時は先読みしないため、
             // セレクト変更なしで同期節を開いた場合の受け皿がここになる)
@@ -9139,11 +9144,39 @@ class VirtualBookshelf {
         this._modalHistPop('publish-pages-modal', { fromHistory });
     }
 
+    // イシュー#442: 公開の設定(旧 #publish-section を撤去し統合・ADR-145)。既存ID・保存処理は変更しない。
+    // (②差し戻し2026-11-02 02:01: #/publish/settings のURLルートは入れず、他モーダルと同じ
+    // _modalHistPush/Pop 方式のまま。一覧モーダルから開く1か所の入口)
+    openPublishSettingsModal() {
+        const modal = document.getElementById('publish-settings-modal');
+        if (!modal) return;
+        this._artSetupUI();
+        this._reflectAffiliateField();
+        this._reflectPublicNameField();
+        // ハヘロ指摘①: 本棚トップの見た目をここに統合(共有ハブ公開時のみ・ADR-144 と同じ条件)
+        const isHubTarget = (SyncConfigManager.load().publish || {}).target === 'hub';
+        const siteThemeBlock = document.getElementById('art-site-theme');
+        if (siteThemeBlock) {
+            siteThemeBlock.hidden = !isHubTarget;
+            if (isHubTarget) this._artRenderSiteThemeBlock();
+        }
+        this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false });
+        if (typeof window.applyIcons === 'function') window.applyIcons(modal);
+        this._modalHistPush('publish-settings-modal', (o) => this.closePublishSettingsModal(o));
+    }
+
+    closePublishSettingsModal({ fromHistory = false } = {}) {
+        this._overlays().close('publish-settings-modal', { reason: fromHistory ? 'history' : 'button' });
+        this._modalHistPop('publish-settings-modal', { fromHistory });
+    }
+
     _artSetupUI() {
         if (this._artBound) return;
         this._artBound = true;
         const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
         on('publish-pages-close', 'click', () => this.closePublishPagesModal());
+        on('art-settings-open', 'click', () => this.openPublishSettingsModal()); // イシュー#442
+        on('publish-settings-close', 'click', () => this.closePublishSettingsModal()); // イシュー#442
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => { this._artFlushRemoteNow(); this._artShowList(); });
         this._artSetupDrawerShelfPicker();
@@ -9415,22 +9448,21 @@ class VirtualBookshelf {
                 // 公開済みなのに publicId 未発番 (旧 pages.json からの移行データ等、イシュー#154) だと
                 // url が空文字になり urlRow が消え「公開したはずなのにリンクが出ない」と映る。
                 // 「更新」ボタン (republish→_artPublishArticle) を押せば自動発番されるため、その旨を出す。
+                // イシュー#442・ハヘロ指摘②: リンクは記事URLの1本のみ(.pp-row-url)。サイトトップURL(旧.pp-row-hub)は
+                // 撤去し、記事ページ(公開パネル)から辿る形に統合(_artRenderPublishPanel・07項目3)。
                 const urlRow = url
                     ? `<span class="pp-row-url"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(url)}</a></span>`
                     : (pub && !a.publicId ? '<span class="pp-row-url pp-row-url-pending">公開URLを準備中です。「更新」を押すと発行されます。</span>' : '');
-                // pp-row-url とは別クラス (pp-row-hub) にする＝記事個別URLの表示/取得テストが
-                // `.pp-row-url` 単体セレクタで既存件数を前提にしている (イシュー#154 関連テスト) ため混在させない。
-                // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
-                // URL は href と title (ホバーで確認可) にだけ持たせる。PC/モバイルとも同じ表示。
-                const hubRow = (pub && hubTopUrl)
-                    ? `<span class="pp-row-hub"><a href="${esc(hubTopUrl)}" target="_blank" rel="noopener" title="${esc(hubTopUrl)}"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(ART_PP_HUB_LINK_TEXT)}</a></span>`
-                    : '';
+                // ハヘロ指摘②: タイトルが長い時に状態表示と同居すると読めなくなるため、タイトル行と状態行を分離する。
+                // タイトルは2行までの折返し(-webkit-line-clamp:2・css/bookshelf.cssの.pp-row-title)で、それを超えたら…。
                 return `<li class="pp-row" data-id="${esc(a.id)}">
                   <div class="pp-row-main">
-                    <span class="pp-row-title">${esc(a.title)} ${badge}</span>
-                    <span class="pp-row-meta">本 ${bookCount} 冊${tagsMeta}</span>
+                    <span class="pp-row-title">${esc(a.title)}</span>
+                    <div class="pp-row-status-line">
+                      ${badge}
+                      <span class="pp-row-meta">本 ${bookCount} 冊${tagsMeta}</span>
+                    </div>
                     ${urlRow}
-                    ${hubRow}
                   </div>
                   <div class="pp-row-actions">
                     ${publishActions}
@@ -12131,7 +12163,10 @@ class VirtualBookshelf {
         const tgt = document.getElementById('art-pub-target');
         if (tgt) {
             const label = ctx.target === 'github' ? '自分の GitHub' : 'Asayake ハブ';
+            // イシュー#442: サイトトップ(ハブ)URLは記事カード(.pp-row-hub)から撤去し、記事ページ(公開パネル)から辿る形に統合(07項目3)
+            const hubTopUrl = (ctx.target === 'hub' && this._artDraft && this._artDraft.published) ? this._artPublicBase() : '';
             tgt.innerHTML = `<p class="art-pub-line"><span>公開先：<b>${label}</b>（いつもの）</span><a href="#" class="art-pub-link" data-settings="publish-section">設定で変更</a></p>
+                ${hubTopUrl ? `<p class="art-pub-note"><a href="${esc(hubTopUrl)}" target="_blank" rel="noopener" title="${esc(hubTopUrl)}" class="art-pub-link art-pub-hub-link"><span class="h-icon" data-icon="external-link" data-icon-size="12"></span>${esc(ART_PP_HUB_LINK_TEXT)}</a></p>` : ''}
                 ${ctx.target === 'github' ? '<p class="art-pub-note">この公開先の記事は、ハブの索引（タグ検索・/top・マイページ）には載りません。</p>' : ''}
                 ${(!ctx.githubLinked && ctx.target === 'hub') ? '<p class="art-pub-note"><a href="#" class="art-pub-link" data-settings="sync-section">GitHub に公開するには設定で連携</a></p>' : ''}
                 <p class="art-pub-note">${ctx.name ? `${esc(ctx.name)} として公開します（名義は設定で変更）。` : '名義が未設定です（設定の「公開」で決められます）。'}</p>`;
@@ -12165,6 +12200,8 @@ class VirtualBookshelf {
         document.querySelectorAll('#art-publish-modal .art-pub-link[data-settings]').forEach(a => a.addEventListener('click', (e) => {
             e.preventDefault();
             const id = a.dataset.settings;
+            // イシュー#442: 公開先・発行者名・アフィリエイトは「公開の設定」モーダルへ移設済み
+            if (id === 'publish-section') { this.openPublishSettingsModal(); return; }
             // パネルを閉じる処理は _openSettingsModal 側で段の引き継ぎと一緒に行う (D05)
             this._openSettingsModal(id);
         }));
@@ -13089,6 +13126,7 @@ class VirtualBookshelf {
             'settings-cat': () => this._openSettingsModal(st.cat),
             'drawer': () => { this._histNoAnimOnce(document.getElementById('app-sidebar')); this._histNoAnimOnce(document.querySelector('.mobile-scrim')); this._openDrawer(); },
             'publish-pages-modal': () => this.openPublishPagesModal(),
+            'publish-settings-modal': () => this.openPublishSettingsModal(),
             'book-memo-modal': () => this._reopenBookMemo(st.asin),
             'art-fs': () => this._reopenArtFs(st),
             'command-palette': () => this._openPalette(),
@@ -13256,6 +13294,7 @@ class VirtualBookshelf {
                 'settings-cat': () => this._openSettingsModal(ev.state && ev.state.cat),
                 'drawer': () => { this._histNoAnimOnce(document.getElementById('app-sidebar')); this._histNoAnimOnce(document.querySelector('.mobile-scrim')); this._openDrawer(); },
                 'publish-pages-modal': () => this.openPublishPagesModal(),
+                'publish-settings-modal': () => this.openPublishSettingsModal(),
                 'book-memo-modal': () => this._reopenBookMemo(ev.state && ev.state.asin),
                 'art-fs': () => this._reopenArtFs(ev.state),
                 // イシュー#291: 以下は単純に開くだけで元の意味を取り戻せる面(入力欄のリセットは

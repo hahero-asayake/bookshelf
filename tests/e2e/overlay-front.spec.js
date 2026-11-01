@@ -115,8 +115,10 @@ for (const vp of [{ name: 'PC1280', width: 1280, height: 800 }, { name: 'SP390',
         test(`公開パネルの設定リンク → 設定モーダルが最前面に出る (${vp.name})`, async ({ page }) => {
             await boot(page);
             await openNewArticleAndPanel(page);
-            // ハブ×Free の広告節に出る「Plus を見る」(data-settings="account-section") を押す (js/bookshelf.js _artRenderPublishPanel)
-            const link = page.locator('#art-publish-modal .art-pub-link[data-settings]').first();
+            // ハブ×Free の広告節に出る「Plus を見る」(data-settings="account-section") を押す (js/bookshelf.js _artRenderPublishPanel)。
+            // イシュー#442(③差し戻し2026-11-02 03:29): 公開先の変更(旧data-settings="publish-section")は
+            // 「公開の設定」モーダルへ移設済みで、.first()だと今はそちらに先取りされる→account-section明示に変更
+            const link = page.locator('#art-publish-modal .art-pub-link[data-settings="account-section"]').first();
             await expect(link).toBeVisible();
             await link.click();
             await expect(page.locator('#settings-modal')).toHaveClass(/show/);
