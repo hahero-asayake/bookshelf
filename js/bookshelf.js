@@ -2101,13 +2101,14 @@ class VirtualBookshelf {
         }
         const old = new Map();
         const oldIndex = new Map();
+        const dupAsins = new Set(); // #406 (②差し戻し): 重複asinは常に新規扱いにするため記録しておく
         { let i = 0; for (const el of Array.from(container.children)) {
             if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) {
                 // イシュー#406: asin が重複する既存カード(データ側の重複・406-results.md参照)が
-                // 2枚目以降 old/oldIndex に登録されず、誰からも参照されない「孤立요素」になると、
+                // 2枚目以降 old/oldIndex に登録されず、誰からも参照されない「孤立要素」になると、
                 // cursor がその孤立要素に固着して以降 el!==cursor が連鎖する(真因)。
                 // Map に上書きさせず、ここで即座に外す(以後は新しい一覧の該当件として作り直される)。
-                if (old.has(el.dataset.asin)) { el.remove(); continue; }
+                if (old.has(el.dataset.asin)) { dupAsins.add(el.dataset.asin); el.remove(); continue; }
                 old.set(el.dataset.asin, el); oldIndex.set(el.dataset.asin, i++);
             }
             else el.remove(); // 空状態・ゴースト等
@@ -2122,7 +2123,19 @@ class VirtualBookshelf {
         // 一致しない(再取込で見込み2なのに実際は898件連鎖・406-results.md step1)。見込みと実際の移動数を
         // 同じ数え方(LIS=最長増加部分列で「動かさなくてよい本の集合」)にそろえる(movedEstimate=動かす
         // 本の数の見込み=books.length-keepSet.size)。
-        const lisSeq = books.map((b) => { const p = oldIndex.get(b.asin); return p === undefined ? -1 : p; });
+        // イシュー#406 (②差し戻し): 旧位置があっても内容が変わる(rkey不一致=作り直し)本は、
+        // 位置が変わらなくても必ずinsertBefore対象になる(新しい要素を挿す必要があるため)。
+        // asin重複(406-results.md step1)のように同じasinの旧要素を複数の本が奪い合うケースは、
+        // dupAsinsで常に-1(新規扱い)にする: どちらが実際に要素を得るかは処理順序(末尾から)に
+        // 依存し、ここでの静的な一致判定(rkey比較)と食い違う(②差し戻しで見つかった退行の真因・
+        // 406-results.mdのcustom切替moved=787はこれが引き金)。
+        const lisSeq = books.map((b) => {
+            if (dupAsins.has(b.asin)) return -1;
+            const p = oldIndex.get(b.asin);
+            if (p === undefined) return -1;
+            const el = old.get(b.asin);
+            return (el && el.dataset.rkey === this._bookCardKey(b, this.currentView)) ? p : -1;
+        });
         const keepSet = this._computeLisKeepSet(lisSeq); // Set<number>: books配列の添字。動かさなくてよい本
         const movedEstimate = books.length - keepSet.size;
         let created = 0, moved = 0, removed = 0;
@@ -2158,33 +2171,37 @@ class VirtualBookshelf {
             }
             container.replaceChildren(...finalEls);
         } else {
-            // イシュー#406: keepSet(LIS)に入っている本は、cursor と一致する限り動かさない。
-            // 旧実装は「el!==cursorなら即insertBefore」だけだったため、1件でも前方にズレると
-            // それ以降の全要素が el!==cursor になり連鎖した(406-results.md step1)。keepSet を
-            // 使うことで、非keep本(見込み通り動くはずの本)の処理が割り込んでも、keep本はその
-            // 非keep本の処理が終わった時点のcursorと再び一致し、連鎖せずに収まる。
-            let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
-            let idx = 0;
-            for (const book of books) {
+            // イシュー#406 (②差し戻し): keepSet(LIS)に入っている本は、相対順序がもともと正しいので
+            // 一切動かさない。前からcursorを比較する旧方式は、1件のズレ以降「次に来るべき要素」の
+            // 判定を1個ずつの一致比較に頼っていたため、孤立要素や多数の局所的ズレがあると、
+            // keep本であっても cursor と一致しなくなり連鎖した(406-results.md step3「custom順切替で
+            // moved=787」の真因)。代わりに新しい並びを後ろから辿り、「直後に来る本の要素」を anchor
+            // として持つ: keep本は anchor を自分に更新するだけ(動かさない)。非keep本(作り直し含む)は
+            // insertBefore(el, anchor) で anchor の直前へ差す(=正しい位置に確定)。keep本の cursor 比較
+            // が要らないので、挿入回数は必ず books.length-keepSet.size(=movedEstimate)に一致する。
+            let anchor = null; // 末尾の次(末尾要素は insertBefore(el, null) = appendChild相当)
+            for (let idx = books.length - 1; idx >= 0; idx--) {
+                const book = books[idx];
                 const key = this._bookCardKey(book, this.currentView);
                 let el = old.get(book.asin);
                 if (el && el.dataset.rkey === key) {
                     el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
                     el.classList.remove('selected', 'show-pop');
                     el.style.borderLeft = '';
+                    old.delete(book.asin);
+                    if (keepSet.has(idx)) { anchor = el; continue; } // 動かさない
                 } else {
-                    if (el) { if (el === cursor) cursor = cursor.nextElementSibling; el.remove(); removed++; }
+                    if (el) { old.delete(book.asin); el.remove(); removed++; }
                     el = this.createBookElement(book, this.currentView);
                     el.dataset.rkey = key;
                     created++;
                 }
-                old.delete(book.asin);
-                if (el === cursor) cursor = cursor.nextElementSibling; // 既に正しい位置
-                else { container.insertBefore(el, cursor); moved++; } // keepでも実際にズレていれば保険で動かす(連鎖はしない)
-                idx++;
+                container.insertBefore(el, anchor);
+                moved++;
+                anchor = el;
             }
-            // 残り (新しい一覧に無い本) を外す
-            while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); removed++; cursor = next; }
+            // 残り (新しい一覧に無い本・重複asinで孤立した方) を外す
+            for (const el of old.values()) { el.remove(); removed++; }
         }
         // view 系プラグイン用: 一覧更新を従来どおり通知 (changed は加算情報・ADR-041)
         if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: created + removed + moved });
