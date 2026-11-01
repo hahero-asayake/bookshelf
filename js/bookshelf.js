@@ -13825,9 +13825,11 @@ class VirtualBookshelf {
         // 従来どおり移して元を消す。
         const oldAsinStillUsed = this.bookManager.library.books.some(b => b.asin === oldAsin);
 
-        // 星評価とメモ
+        // 星評価とメモ。②指摘(2026-11-02): { ...obj } は浅いコピーのため、メモの中に入れ子の
+        // オブジェクト/配列があると2冊で同じ参照を共有したままになる(片方の変更がもう片方にも
+        // 反映されうる)。structuredCloneで値を完全に分離する。
         if (this.userData.notes[oldAsin]) {
-            this.userData.notes[newAsin] = { ...this.userData.notes[oldAsin] };
+            this.userData.notes[newAsin] = structuredClone(this.userData.notes[oldAsin]);
             if (!oldAsinStillUsed) delete this.userData.notes[oldAsin];
         }
 
