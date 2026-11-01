@@ -72,13 +72,13 @@ jobs:
         # Install Playwright browserが(失敗/未実行で)skippedなら、並列実行自体が走っていない＝
         # 退避対象が無いので一緒にskipする(誤った空mv実行を避ける・従来のalways()は不要)。
         run: mkdir -p e2e-results && mv test-results/e2e.json e2e-results/e2e-parallel.json || true
-      - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・repeat-each=3・イシュー#476/#487)
+      - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・イシュー#476/#487)
         if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
-        # イシュー#487: --repeat-each=3で1回のrunからdrag/order/directionの3回分の中央値・最大値を集める
-        # (rerunがgh未認証で401・workflow_dispatchもトークンが要るため、起こせる手段はpushだけ)。
-        # 標準出力をteeしつつ[sort-perf]系ログ行を::notice::としてcheck-run annotationに出す
-        # (annotationは失敗テストのエラーメッセージしか出ないため、passしたrunの数値はログに出ないと
-        # 未認証では読めない=476-ci-breakdown.md step6で実際に数値が取れなかった不具合への対応)。
+        # イシュー#487: 判定方式を「機械の速さに応じてCPUスロットリング倍率を動的に決める」方式に
+        # 変更した(②承認2026-11-02 06:30)ため、--repeat-each=3(データ収集用)は外しreps=5中央値の
+        # 単発実行に戻す。標準出力をteeしつつ[sort-perf]系ログ行を::notice::としてcheck-run
+        # annotationに出す(annotationは失敗テストのエラーメッセージしか出ないため、passしたrunの
+        # 数値はログに出ないと未認証では読めない=476-ci-breakdown.md step6の不具合への対応)。
         # GitHub Actionsのrunは既定`bash -eo pipefail`(-e付き)で動くため、素朴に
         # 「npx ... | tee ...; STATUS=$?」と書くとテストが落ちた時点でそのパイプの行自体が
         # 非0で終わり-eでスクリプトが即終了し、STATUS=$?も::notice::出力も走らない
@@ -90,7 +90,7 @@ jobs:
           set -o pipefail
           mkdir -p e2e-results
           STATUS=0
-          npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1 --repeat-each=3 2>&1 | tee e2e-results/sort-perf-output.log || STATUS=$?
+          npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1 2>&1 | tee e2e-results/sort-perf-output.log || STATUS=$?
           grep -E '^\[sort-perf' e2e-results/sort-perf-output.log | while IFS= read -r line; do
             echo "::notice::${line}"
           done || true

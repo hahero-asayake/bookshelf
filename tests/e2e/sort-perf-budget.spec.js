@@ -125,6 +125,38 @@ async function measure(page, triggerFn) {
 
 const median = (xs) => { const a = [...xs].sort((p, q) => p - q); return a[Math.floor(a.length / 2)]; };
 
+// イシュー#487: CPUx6スロットリングは「ページの処理速度を落とす倍率」指定のため、CIランナー自体の
+// 素の速さが揃っていないと、固定倍率(6)のままでは「見かけの負荷」がrunごとに揺れる(#476実測86ms→
+// #487の構造修正後run 41350063972ではdragは通りdirectionが329/343msで超過・超える操作がrunごとに
+// 変わった＝機械の速さ側の要因と判定済み・②承認2026-11-02 06:30)。
+// 当初試した「dragと基準操作の比」方式(step1〜3で実装)は、CI実測でbaselineDom/baselineComputeの
+// inputDelayがローカルと大小関係が逆転し0msも出るなど比の分母として不安定だったため不採用(②判断)。
+// 代わりに、スロットリングを掛ける前に固定計算のtFrame(CPU生の速さだけを見る・DOM非依存)を測り、
+// ローカル基準値(T_REF)との比でCPUx6相当の「見かけの負荷」を揃うようスロットリング倍率を動的に決める。
+// tFrameはCI実測でも安定していた(reps=[18,16,18,15,13]・[18,15,17,14,16]、run 41350063972)。
+async function measureBaselineTFrame(page, reps = 5) {
+    const results = [];
+    for (let i = 0; i < reps; i++) {
+        const t = await page.evaluate(async () => {
+            const t0 = performance.now();
+            let x = 0;
+            for (let i = 0; i < 2_000_000; i++) { x += Math.sqrt(i) % 7; }
+            await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+            return performance.now() - t0;
+        });
+        results.push(t);
+    }
+    return median(results);
+}
+
+// T_REF: ローカル実機(kuroko、2026-11-02、commit 73fff08時点のworktree)でmeasureBaselineTFrameを
+// スロットリング無しで実行した中央値(reps=5)。rate = clamp(6 * T_REF / T_measured, 1, 6)で、
+// CIランナーがローカルより遅ければ(T_measured大)rateを下げ、速ければrate=6のまま(上限でクランプ)。
+// 値を変える時はここに測った日・commit・実測値を追記する。
+// 2026-11-02、73fff08時点のworktree、ローカル実機(kuroko)、スロットリング無し・reps=5中央値を3回
+// 実測: 30ms/32ms/32ms。中央値32msを採用。
+const T_REF = 32;
+
 // 1操作につき3回測って中央値を使う(単発のhost競合スパイクに引きずられないため・397-sort-perf.mjsの
 // reps=3中央値と同じ考え方)。中央値を使うことで「2回に1回明らかに遅い」ような本物の劣化は検出しつつ、
 // 8 worker並列実行で稀に1回だけ host 側のスケジューリング遅延を踏むケースはならされる。
@@ -151,26 +183,19 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
     test('並び順メニューの切り替え・昇順降順・ドラッグが、いずれも許容幅を超えない', async ({ page, context }) => {
         await setup(page);
         const cdp = await context.newCDPSession(page);
-        await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+
+        // イシュー#487: スロットリングを掛ける前に機械の速さを測り、倍率を動的に決める(詳細はT_REFの
+        // コメント)。rateが下限1になっても後続のBUDGETを超えるなら、それは機械の遅さでは説明できない
+        // 本物の赤として扱う(緩めない・#377方針)。
+        const tMeasured = await measureBaselineTFrame(page);
+        const rate = Math.min(6, Math.max(1, 6 * (T_REF / tMeasured)));
+        console.log(`[sort-perf-rate] T_measured=${Math.round(tMeasured)}ms T_ref=${T_REF}ms rate=${rate.toFixed(2)}`);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate });
 
         // イシュー#487: 3操作を測り終えてから最後にまとめてexpectを評価する(判定の中身・BUDGETは変えない)。
         // 理由: 以前はexpectを各操作の直後に挟んでいたため、先の操作(order/direction)でBUDGETを超えると
         // そこでテストが止まり、後続(drag)の測定が行われず数値が全く取れなかった。dragだけが赤いこの
         // イシューでは影響していないが、将来どの操作が先に超えても残り2操作の数値を必ず記録する。
-
-        // 基準操作(CIランナーの速さそのものを見る・判定はしない・記録のみ):
-        // (a) DOMに依存しない固定量の計算 → CPUx6スロットリングの影響だけを見る
-        // (b) 軽いDOM操作(textContent書き換え×50) → スロットリング+実ブラウザのレンダリングコストを見る
-        // dragの値をこれらとの比で見ることで、「機械が遅いだけ」か「drag処理自体が重い」かを切り分ける。
-        const baselineComputeResult = await measureMedian(page, () => {
-            let x = 0;
-            for (let i = 0; i < 2_000_000; i++) { x += Math.sqrt(i) % 7; }
-            return x;
-        });
-        const baselineDomResult = await measureMedian(page, () => {
-            const el = document.getElementById('__inputProbe');
-            for (let i = 0; i < 50; i++) { el.textContent = String(i); }
-        });
 
         // 準備: custom以外から始める
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'acquiredTime'; s.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -190,10 +215,6 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
             const items = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]'));
             window.bookshelf.reorderBooks(items[0].dataset.asin, items[Math.min(items.length - 1, 10)].dataset.asin);
         });
-
-        // 機械の速さに左右されない切り分け: dragのtFrame/inputDelayを基準操作との比でログに残す(記録のみ)。
-        console.log(`[sort-perf-ratio] drag.tFrame/baselineCompute.tFrame=${(dragResult.tFrame / baselineComputeResult.tFrame).toFixed(2)} drag.tFrame/baselineDom.tFrame=${(dragResult.tFrame / baselineDomResult.tFrame).toFixed(2)}`);
-        console.log(`[sort-perf-ratio] drag.inputDelay/baselineCompute.inputDelay=${(dragResult.maxInputDelay / Math.max(1, baselineComputeResult.maxInputDelay)).toFixed(2)} drag.inputDelay/baselineDom.inputDelay=${(dragResult.maxInputDelay / Math.max(1, baselineDomResult.maxInputDelay)).toFixed(2)}`);
 
         expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
         expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
