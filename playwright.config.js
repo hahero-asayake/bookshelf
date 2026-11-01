@@ -6,6 +6,13 @@ const extraProjects = process.env.BACKNAV_WEBKIT === '1'
     ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js|checklist-timing\.spec\.js|forward-reopen-idempotent\.spec\.js|touch-reorder\.spec\.js|overlay-front\.spec\.js|bookshelf-clip-373\.spec\.js|bookshelf-clip-385\.spec\.js/, use: { ...devices['iPhone 13'] } }]
     : [];
 
+// worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
+// portを使い、どちらも無ければ既定の8000(従来どおり)。webServer.command/portとuse.baseURLの両方に使う
+// ＝PLAYWRIGHT_BASE_URLだけ指定してもwebServerが別portで素通り/起動してしまう不整合を防ぐ。
+const PORT = process.env.PORT
+    || (process.env.PLAYWRIGHT_BASE_URL ? new URL(process.env.PLAYWRIGHT_BASE_URL).port : '')
+    || '8000';
+
 export default defineConfig({
     testDir: 'tests/e2e',
     timeout: 60_000,
@@ -17,15 +24,15 @@ export default defineConfig({
         : 'list',
     // 開発サーバー。ローカルで既に :8000 が立っていればそれを使う
     webServer: {
-        command: 'python3 -m http.server 8000',
-        port: 8000,
+        command: `python3 -m http.server ${PORT}`,
+        port: Number(PORT),
         reuseExistingServer: true
     },
     use: {
         // サブパス付きで流す場合はここを末尾'/'付きにすること(例: 'https://example.com/sub/')。
         // page.goto()側は先頭'/'なしの相対パス('index.html'等)に統一している(イシュー#396/#399)。
-        // PLAYWRIGHT_BASE_URL で上書き可(未指定時は既定のlocalhost:8000のまま・イシュー#399)。
-        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8000',
+        // PLAYWRIGHT_BASE_URL で上書き可(未指定時はPORT/既定の8000から組み立て・イシュー#399/#413)。
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`,
         // Service Worker をブロック。index.html は controllerchange で location.reload() するため、
         // SW 初回制御の発火タイミング次第でテストが「navigation で context 破棄」になる (フレーク源)。
         // E2E はアプリのロジック検証が目的で SW キャッシュは不要なので一律ブロックして決定化する。
