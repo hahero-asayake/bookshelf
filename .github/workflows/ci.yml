@@ -18,7 +18,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        id: npm_ci
+        run: npm ci
       - name: Version bump check (?v=・イシュー#390)
         run: |
           ZERO="0000000000000000000000000000000000000000"
@@ -40,7 +42,17 @@ jobs:
         run: npm run lint:e2e-goto
       - name: Unit tests (Vitest)
         run: npm test
+      # イシュー#487: 以降のPlaywright系(Install Playwright browser〜annotate補完)は、
+      # 直前の「Unit tests」がfailureでも実行する(デフォルトのif無しだとジョブ内の
+      # success()判定＝ここまでの全stepがsuccessであることを要求するため、Unit testsが
+      # 落ちた時点で以降のif無しstepが全部skippedになり、E2E側の観測が一切できなくなっていた
+      # ＝実際に41349317159で発生: #153の既存タイミング回帰テストが偶発的にフレークし、
+      # Playwrightブラウザ未インストールのままsort-perf-budgetが3回とも
+      # 「browserType.launch: Executable doesn't exist」で空振りした)。
+      # ジョブの最終結果はUnit testsが赤ならそのまま赤のまま(判定は緩めない・#377方針)。
       - name: Install Playwright browser
+        id: install_playwright
+        if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         run: npx playwright install --with-deps chromium
       # イシュー#476: sort-perf-budget.spec.jsは「並び替え1操作あたりの時間」をCPUx6スロットリング+
       # 中央値判定(reps=5)で見ているが、全ファイルを他のchromiumインスタンスと並列実行する8 worker下では
@@ -50,15 +62,18 @@ jobs:
       # (#377方針)は変えず、計測環境だけ分ける: 他の全ファイルは今までどおり並列実行、
       # sort-perf-budget.spec.jsだけ別stepで--workers=1の単独実行にしてホスト競合を避ける。
       - name: Smoke tests (Playwright, sort-perf-budget以外・並列)
+        if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         run: npx playwright test --grep-invert "sort-perf-budget"
       - name: E2Eテスト結果を退避 (並列分・イシュー#476/#487)
-        if: always()
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
         # イシュー#487: 旧退避先(test-results/e2e-parallel.json)はPlaywrightがテスト実行開始時に
         # outputDir(既定test-results/)を丸ごとクリアするため、2本目のstep開始時に消えてENOENTになっていた
         # (ローカルで2回連続実行して実測確認済み)。outputDirの外(e2e-results/)へ退避先を変える。
+        # Install Playwright browserが(失敗/未実行で)skippedなら、並列実行自体が走っていない＝
+        # 退避対象が無いので一緒にskipする(誤った空mv実行を避ける・従来のalways()は不要)。
         run: mkdir -p e2e-results && mv test-results/e2e.json e2e-results/e2e-parallel.json || true
       - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・repeat-each=3・イシュー#476/#487)
-        if: always()
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
         # イシュー#487: --repeat-each=3で1回のrunからdrag/order/directionの3回分の中央値・最大値を集める
         # (rerunがgh未認証で401・workflow_dispatchもトークンが要るため、起こせる手段はpushだけ)。
         # 標準出力をteeしつつ[sort-perf]系ログ行を::notice::としてcheck-run annotationに出す
@@ -81,7 +96,7 @@ jobs:
           done || true
           exit $STATUS
       - name: E2E 失敗テスト一覧 (annotation 補完・イシュー#349)
-        if: always()
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
         run: |
           node scripts/ci-annotate-failures.mjs e2e-results/e2e-parallel.json
           node scripts/ci-annotate-failures.mjs test-results/e2e.json
