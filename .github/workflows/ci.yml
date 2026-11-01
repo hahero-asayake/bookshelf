@@ -42,8 +42,23 @@ jobs:
         run: npm test
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
-      - name: Smoke tests (Playwright)
-        run: npm run test:e2e
+      # イシュー#476: sort-perf-budget.spec.jsは「並び替え1操作あたりの時間」をCPUx6スロットリング+
+      # 中央値判定(reps=5)で見ているが、全ファイルを他のchromiumインスタンスと並列実行する8 worker下では
+      # ホストCPU自体の奪い合い(このスロットリングとは別種の負荷)が乗り、CI実測(a1814cc 374.9ms・
+      # 18bebfc 509.5ms、いずれもBUDGET.direction.inputDelay=320ms超過)のとおり不安定になる
+      # (アプリの退行ではないことはscripts/verify/476-ci-breakdown.mdで確認済み)。上限値・判定方式
+      # (#377方針)は変えず、計測環境だけ分ける: 他の全ファイルは今までどおり並列実行、
+      # sort-perf-budget.spec.jsだけ別stepで--workers=1の単独実行にしてホスト競合を避ける。
+      - name: Smoke tests (Playwright, sort-perf-budget以外・並列)
+        run: npx playwright test --grep-invert "sort-perf-budget"
+      - name: E2Eテスト結果を退避 (並列分・イシュー#476)
+        if: always()
+        run: mv test-results/e2e.json test-results/e2e-parallel.json || true
+      - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・イシュー#476 host CPU競合回避)
+        if: always()
+        run: npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1
       - name: E2E 失敗テスト一覧 (annotation 補完・イシュー#349)
         if: always()
-        run: npm run ci:annotate-e2e
+        run: |
+          node scripts/ci-annotate-failures.mjs test-results/e2e-parallel.json
+          node scripts/ci-annotate-failures.mjs test-results/e2e.json

@@ -118,3 +118,50 @@ sort-perf-budgetの再発は**アプリの退行ではなく、CI環境のホス
 - `npm run test:e2e`（playwright、retries=1）：**553 passed / 14 skipped / 0 failed**（3.0分）。retry・flakyの記録なし＝全テストが1回目で通過。cover-cache-sw・sort-perf-budget（本ステップ時点では無負荷のため中央値が余裕内）・critical-path・import-bookmarklet-progressいずれも含めて赤なし。
 
 他に新規の赤は無いことを確認した。
+
+## step5差し戻し対応（2026-11-02 04:50〜05:05実測）：sort-perf-budgetの判定方式見直し（計測環境の分離）
+
+②差し戻し「push後CIがまた赤になる」という指摘への対応。上限値・中央値判定は変えず（#377方針）、計測環境を分けた。
+
+### 変更内容：`.github/workflows/ci.yml`
+
+`Smoke tests (Playwright)`ステップを2つに分割：
+1. `npx playwright test --grep-invert "sort-perf-budget"` — 他の全ファイル（既存どおり並列・ホストCPU競合の原因であるchromiumインスタンス多重実行はそのまま）
+2. `npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1` — sort-perf-budgetだけ単独直列実行（他のPlaywright workerと同時に走らない）
+
+json reporterの出力(`test-results/e2e.json`)が2回目の実行で上書きされるため、1回目の結果を`e2e-parallel.json`へ退避し、`ci-annotate-failures.mjs`を両方のファイルに対して実行する形に変更（`scripts/ci-annotate-failures.mjs`自体は無変更、既存の`process.argv[2]`引数対応をそのまま使う）。`tests/e2e/sort-perf-budget.spec.js`・`playwright.config.js`は無変更（ローカルの`npm run test:e2e`の挙動も変えていない）。
+
+### ローカル検証（PORT=8176、BUDGET: order{tFrame:380,inputDelay:420} direction{340,320} drag{120,80}）
+
+**パターンB（分離後の姿・単独`--workers=1`・無負荷）** — 中央値(ms)
+
+| run | order tFrame/inputDelay | direction tFrame/inputDelay | drag tFrame/inputDelay | 判定 |
+|---|---|---|---|---|
+| 1 | 80/48 | 75/44 | 58/31 | pass(余裕大) |
+| 2 | 80/49 | 75/44 | 60/31 | pass(余裕大) |
+| 3 | 80/49 | 79/47 | 63/32 | pass(余裕大) |
+
+3回ともBUDGETに対し6〜9倍の余裕。単独実行にすれば、他のchromiumワーカーとの競合という主要因が構造的に無くなることを確認。
+
+**パターンA（今と同じ構成・全ファイルを`--workers=8`で並列・sort-perf-budget含む）** — 中央値(ms)
+
+| run | order tFrame/inputDelay | direction tFrame/inputDelay | drag tFrame/inputDelay | 判定 |
+|---|---|---|---|---|
+| 1 | 130/179 | 115/195 | 94/62 | pass(フルスイート553 passed) |
+| 2 | 108/206 | 118/214 | 102/71 | pass(フルスイート553 passed) |
+| 3 | 111/220 | 104/179 | 89/64 | pass(フルスイート553 passed) |
+
+3回ともBUDGET内だが、単独実行(44-49ms)より3〜5倍重い。**ただしCI実測(a1814cc 374.9ms・18bebfc 509.5ms、いずれもdirection.inputDelay)には届かず、ローカルでは再現できなかった**（このマシンは16コアで実コア数に余裕があり、GitHub Actions `ubuntu-latest`ランナーの実コア数が少ない分の競合の強さを再現できない限界がある）。
+
+**追加検証：単独実行(`--workers=1`)でも、ホストに人為的な極限負荷(14個の無限ループプロセスでload average 8〜10)をかけた場合** — 1回のみ実行
+
+- order inputDelay中央値=282ms(BUDGET420以内) / direction inputDelay中央値=**342ms(BUDGET320超過・fail)** / drag inputDelay中央値=76ms(BUDGET80以内)
+
+これは「単独実行に分離しても、ホスト自体が極端に重ければ理論上なお超過しうる」という限界を示す。ただし、CIの実際のworkflow構成では、sort-perf-budget単独実行stepの時点で他のPlaywright worker(chromiumプロセス)はすでに完了しており、このような極端な同時負荷は通常発生しない想定。
+
+### 結論・②への申し送り
+
+- 分離は「他のchromiumワーカーとの構造的な競合」を確実に除去する（無負荷時の余裕が6〜9倍に拡大、ローカル再現のパターンAでも単独実行よりは軽くなる傾向を確認）。
+- ただしローカル環境のコア数の違いにより、CI実測ほどの強い負荷を再現できておらず、「分離後に必ず収まる」ことをローカルの数値だけで完全には証明できない。極限負荷(14burner)下では単独実行でも1回だけ超過を確認した。
+- 上限値・判定方式（reps=5中央値・最大値記録のみ）は変更していない（#377方針）。
+- 以上を数値付きでtpに付けて返す。pushして実際のCIで確認することを提案する（分離によって改善する可能性は高いが、ローカルでの完全な事前証明はコア数の違いにより限界がある）。
