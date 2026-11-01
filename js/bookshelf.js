@@ -9175,6 +9175,16 @@ class VirtualBookshelf {
             this._artRenderDrawer();
         });
         on('art-drawer-add-all', 'click', () => this._artOnDrawerAddAllClick());
+        // イシュー#430 (②承認): 本棚トップの見た目は既定で選択中の1行だけ・押すと選択肢を開閉する。
+        on('art-site-theme-toggle', 'click', () => {
+            const list = document.getElementById('art-site-theme-list');
+            const toggle = document.getElementById('art-site-theme-toggle');
+            if (!list || !toggle) return;
+            const open = list.hidden;
+            list.hidden = !open;
+            toggle.setAttribute('aria-expanded', String(open));
+            toggle.classList.toggle('is-open', open);
+        });
         // 900px以下のボトムシート (イシュー#165・案C): スクリム/×/Esc で閉じる。
         // イシュー#166: 開く入口だった FAB は廃止・ブロック内の追加ボタン(art-book-pick/art-shelf-add)に一本化。
         on('art-sheet-scrim', 'click', () => this._artCloseSheet());
