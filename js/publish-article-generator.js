@@ -692,17 +692,20 @@ ${placement.show.shortMemo ? h.shortMemo(bookData) : ''}
         const updated = PublishArticleGenerator._fmtDate(opts.updatedAt);
         const year = PublishArticleGenerator._year(opts.updatedAt);
         const reportSubject = encodeURIComponent(`[通報] AsayakeBookshelf 公開記事 ${opts.reportRef || ''}`.trim());
-        // ハブ公開の記事 (索引に載る・ADR-099): 「通報」= アプリの通報ダイアログ (Google ログイン要) と「連絡先」= メール (異議申立て用)。
-        // それ以外 (自前公開・サイトのトップ) は従来どおり mailto の「このページを通報」のみ (ハブは自前公開を審査しない)。
-        const reportLinks = opts.reportAppUrl
-            ? `<a href="${PublishArticleGenerator.esc(opts.reportAppUrl)}" target="_blank" rel="noopener">通報</a>　<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">連絡先</a>`
+        // ハブ公開の記事・本棚トップ (索引に載る・ADR-099): 「通報」= ハブのオリジンにある通報専用ページ
+        // (/report?target=…・Google ログインはそのページ上で行い、アプリ(bookshelf側)には遷移しない。イシュー#408)
+        // と「連絡先」= メール (異議申立て用)。それ以外 (自前公開) は従来どおり mailto の「このページを通報」のみ
+        // (ハブは自前公開を審査しないため、通報専用ページに対象記事が無い)。
+        const reportLinks = opts.reportHubUrl
+            ? `<a href="${PublishArticleGenerator.esc(opts.reportHubUrl)}" target="_blank" rel="noopener">通報</a>　<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">連絡先</a>`
             : `<a href="mailto:asayake.hahero@gmail.com?subject=${reportSubject}">このページを通報</a>`;
         // プラグインの公開スナップショット (純データ) をコアが esc 済み HTML 片にしたもの (ADR-042)。
         // サイト単位の加算スロット。全記事 + index (この _wrapDoc 経由) に一括で出る。
         const pluginFooter = opts.pluginFooter || '';
 
-        // 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)。記事ページは ctaSiteUrl (自分の本棚トップ) を、
-        // 本棚トップ自身は ctaHubTopUrl (ハブ /top・自己参照を避けるため siteUrl は渡さない) を受け取る。
+        // 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案→#408 で記事のみ撤去)。記事ページはリンク不要の
+        // 決裁 (#408・ハヘロ指示2026-11-01) により ctaSiteUrl を渡さなくなった (常に空)。本棚トップ自身は
+        // 1ユーザー1枚で記事とは役割が違うため ctaHubTopUrl (ハブ /top) の導線を引き続き残す。
         // どちらも無ければ (未確定 URL・自前公開で /top が無い場合等) CTA 無し＝Powered by のみの従来どおり。
         const ctaSiteUrl = String(opts.ctaSiteUrl || '');
         const ctaHubTopUrl = String(opts.ctaHubTopUrl || '');
@@ -806,6 +809,8 @@ ${ctaHtml}
             // ctaSiteUrl は渡さない(自分自身への「もっと見る」は自己参照になるため・イシュー#345 step2 指摘1)。
             // 本棚トップは ctaHubTopUrl (ハブ /top) のみ出す。
             ctaHubTopUrl: opts.ctaHubTopUrl || '',
+            // 本棚トップ自身の通報 (イシュー#408): ハブの通報専用ページへのリンク。
+            reportHubUrl: opts.reportHubUrl || '',
             ogType: 'website',
             ogDescription: indexOgDescription,
             ogImage: PublishArticleGenerator.SHARED_OG_IMAGE,
@@ -951,6 +956,16 @@ ${ctaHtml}
         const siteHasAffiliate = monetized;
         const reportRef = siteId ? `siteId=${siteId}` : siteBaseUrl;
 
+        // 通報は、ハブのオリジンにある通報専用ページで受け付ける (アプリ(asayake.org/bookshelf/)には遷移しない・
+        // イシュー#408・ハヘロ決裁2026-11-01「B」)。/public のユーザー公開ページ自体の CSP は ADR-032 のまま
+        // 変えず、GIS ログイン・Turnstile 相当の script はこの専用ページ (cf-worker 配信) だけに閉じ込める。
+        // 自前公開(github)はハブに索引が無く通報専用ページで扱えないため、従来どおり mailto のみに倒す。
+        let hubOrigin = '';
+        if (target === 'hub' && siteBaseUrl) {
+            try { hubOrigin = new URL(siteBaseUrl).origin; } catch (_) { hubOrigin = ''; }
+        }
+        const reportHubUrlFor = (targetUrl) => (hubOrigin && targetUrl) ? `${hubOrigin}/report?target=${encodeURIComponent(targetUrl)}` : '';
+
         // プラグインの公開スナップショット (純データ) を所定スロット用の HTML 片へ。コアが esc して組む
         // (ADR-042: コード非実行・純データのみ・サイト単位の加算スロット)。footerNote だけを受け付け、
         // 文字列値は必ず esc するので、Amazon リンク等の能動的 HTML は構造的に注入できない。
@@ -1031,8 +1046,9 @@ ${ctaHtml}
                 noindex: !article.published,
                 updatedAt: articleUpdatedAt,
                 reportRef, pluginFooter,
-                ctaSiteUrl: siteBaseUrl ? `${siteBaseUrl}/` : '',
-                reportAppUrl: target === 'hub' && siteBaseUrl ? `${PublishArticleGenerator.APP_URL}?report=${encodeURIComponent(`${siteBaseUrl}/${article.publicId}/`)}` : '',
+                // 記事フッターのCTA(本棚/ハブ/アプリへの導線)は撤去 (イシュー#408「記事全部にリンク不要」)。
+                // ctaSiteUrl を渡さないことで、_wrapDoc 側は自動的に CTA 無し(Powered byのみ)になる。
+                reportHubUrl: reportHubUrlFor(articleCanonical),
                 // 構造化データ (T11・イシュー#335)。siteBaseUrl が無い(canonical未定)場合はurl/image等を省き、必須の最小限のみ出す。
                 jsonLd: {
                     '@context': 'https://schema.org',
@@ -1058,7 +1074,9 @@ ${ctaHtml}
         if (target === 'hub' && siteBaseUrl) {
             try { ctaHubTopUrl = `${new URL(siteBaseUrl).origin}/top`; } catch (_) { ctaHubTopUrl = ''; }
         }
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter, ctaHubTopUrl }) });
+        // 本棚トップ自身の通報 (イシュー#408): 対象URLは siteBaseUrl 自身(末尾スラッシュ付き)。
+        const indexReportHubUrl = reportHubUrlFor(siteBaseUrl ? `${siteBaseUrl}/` : '');
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter, ctaHubTopUrl, reportHubUrl: indexReportHubUrl }) });
 
         const leak = this._detectLeak(files, state);
         return { files, articles: built, leak, errors, ownTag, ogSkipped };

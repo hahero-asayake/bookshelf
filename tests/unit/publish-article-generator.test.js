@@ -615,19 +615,22 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
         }
     });
 
-    it('ハブ公開の記事ページ (索引に載る・ADR-099) は「通報」=アプリの通報ダイアログ (?report=<記事URL>) と「連絡先」(mailto) に分かれる。自前公開・一覧 index.html は従来の mailto のみ', async () => {
+    it('ハブ公開の記事ページ・本棚トップ (索引に載る・ADR-099) は「通報」=ハブの通報専用ページ (/report?target=<対象URL>・アプリ(bookshelf側)には遷移しない・イシュー#408) と「連絡先」(mailto) に分かれる。自前公開は従来の mailto のみ', async () => {
         const base = 'https://bookshelf.asayake.org/taro';
         const [[, article], [, index]] = await legalHtmls({ target: 'hub', siteId: 'site1', siteBaseUrl: base });
         const legal = article.match(/<p class="pub-legal">([\s\S]*?)<\/p>/)[1];
-        const expected = `https://asayake.org/bookshelf/?report=${encodeURIComponent(`${base}/pub-test01/`)}`;
-        expect(legal).toContain(`<a href="${expected}" target="_blank" rel="noopener">通報</a>`);
+        const expectedArticle = `https://bookshelf.asayake.org/report?target=${encodeURIComponent(`${base}/pub-test01/`)}`;
+        expect(legal).toContain(`<a href="${expectedArticle}" target="_blank" rel="noopener">通報</a>`);
         expect(legal).toMatch(/<a href="mailto:asayake\.hahero@gmail\.com\?subject=[^"]+">連絡先<\/a>/);
         expect(legal).not.toContain('このページを通報');
-        // サイトのトップ (索引される記事ではない) は従来どおり
-        expect(index.match(/<p class="pub-legal">([\s\S]*?)<\/p>/)[1]).toMatch(/">このページを通報<\/a>/);
-        // 自前公開 (GitHub) の記事ページはハブの審査対象外 = アプリの通報リンクを出さない
+        // 本棚トップも同じ通報専用ページへ (対象URLは本棚トップ自身) (#408)
+        const indexLegal = index.match(/<p class="pub-legal">([\s\S]*?)<\/p>/)[1];
+        const expectedIndex = `https://bookshelf.asayake.org/report?target=${encodeURIComponent(`${base}/`)}`;
+        expect(indexLegal).toContain(`<a href="${expectedIndex}" target="_blank" rel="noopener">通報</a>`);
+        expect(indexLegal).not.toContain('このページを通報');
+        // 自前公開 (GitHub) はハブの審査対象外・通報専用ページが存在しない = 従来どおり mailto のみ
         const [[, ghArticle]] = await legalHtmls({ target: 'github', siteBaseUrl: 'https://example.github.io/my-books/' });
-        expect(ghArticle).not.toContain('?report=');
+        expect(ghArticle).not.toContain('/report?target=');
         expect(ghArticle).toMatch(/">このページを通報<\/a>/);
     });
 
@@ -642,18 +645,18 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
     });
 });
 
-// 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)。宣伝文言は #344 未決のため仮置き (CTA_TO_* 定数1箇所に集約)。
-describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)', () => {
+// 読者→本棚/ハブ/アプリの導線 (イシュー#345 A案→#408「記事全部にリンク不要」で記事側を撤去)。
+// 宣伝文言は #344 未決のため仮置き (CTA_TO_* 定数1箇所に集約)。本棚トップは1ユーザー1枚で記事とは役割が
+// 違うため、ハブ/topへの導線のみ引き続き残す(②推奨・ハヘロ決裁2026-11-01)。
+describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案→#408で記事側は撤去)', () => {
     const footerOf = (html) => html.match(/<footer class="pub-footer">([\s\S]*?)<\/footer>/)[1];
 
-    it('記事ページ: siteBaseUrl指定時、本棚トップへのリンクとアプリへのリンクがPowered byの前に出る。Powered byは残る', async () => {
+    it('記事ページ: siteBaseUrl指定時でもCTA(本棚/アプリへの導線)は出ない(#408)。Powered byは残る', async () => {
         const r = await gen.build([makeArticle()], { target: 'hub', siteId: 'site1', siteBaseUrl: 'https://bookshelf.asayake.org/hahero' });
         const footer = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
-        expect(footer).toContain('class="pub-cta"');
-        expect(footer).toContain('<a class="pub-cta-primary" href="https://bookshelf.asayake.org/hahero/" target="_blank" rel="noopener">hahero さんの本棚をもっと見る</a>');
-        expect(footer).toContain('<a class="pub-cta-secondary" href="https://asayake.org/bookshelf/" target="_blank" rel="noopener">AsayakeBookshelf で自分の本棚を作る</a>');
+        expect(footer).not.toContain('class="pub-cta"');
+        expect(footer).not.toContain('さんの本棚をもっと見る');
         expect(footer).toContain('Powered by');
-        expect(footer.indexOf('pub-cta')).toBeLessThan(footer.indexOf('pub-powered'));
     });
 
     it('絵文字を使わない (ui-standards: アプリ内の絵文字は全廃)', async () => {
@@ -670,13 +673,13 @@ describe('読者→本棚/ハブ/アプリの導線 (イシュー#345 A案)', ()
         expect(footer).toContain('AsayakeBookshelf で自分の本棚を作る');
     });
 
-    it('自前公開(GitHub)の本棚トップは /top が存在しないためCTAを出さない。記事ページ側はsiteBaseUrlがあれば出る', async () => {
+    it('自前公開(GitHub)は本棚トップ・記事ページともにCTAを出さない(/topが存在しない・#408で記事側は元々出さない)', async () => {
         const r = await gen.build([makeArticle()], { target: 'github', siteBaseUrl: 'https://example.github.io/my-books' });
         const indexFooter = footerOf(r.files.find(f => f.path === 'index.html').content);
         expect(indexFooter).not.toContain('class="pub-cta"');
 
         const articleFooter = footerOf(r.files.find(f => f.path === 'pub-test01/index.html').content);
-        expect(articleFooter).toContain('<a class="pub-cta-primary" href="https://example.github.io/my-books/" target="_blank" rel="noopener">hahero さんの本棚をもっと見る</a>');
+        expect(articleFooter).not.toContain('class="pub-cta"');
     });
 
     it('siteBaseUrl未指定(プレビュー等)ではCTAを出さずPowered byのみ', async () => {
