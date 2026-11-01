@@ -36,7 +36,7 @@ export function reportPageCsp(hubApiOrigin) {
         "script-src 'self' https://accounts.google.com/gsi/client",
         "frame-src https://accounts.google.com",
         `connect-src 'self' https://accounts.google.com ${hubApiOrigin}`,
-        "style-src 'unsafe-inline'",
+        "style-src 'unsafe-inline' https://accounts.google.com",
         "img-src https: data:",
         "base-uri 'none'",
         "form-action 'none'"

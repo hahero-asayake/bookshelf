@@ -34,6 +34,11 @@ describe('reportPageCsp', () => {
         expect(csp).toContain("connect-src 'self' https://accounts.google.com https://hub.asayake.org");
         expect(csp).toContain("form-action 'none'");   // 送信は fetch のみ・<form> 素送信はしない
     });
+
+    it('style-src は accounts.google.com を含む(回帰: GISボタンがgsi/styleを読もうとしてブロックされていた・本番実機確認で検出)', () => {
+        const csp = reportPageCsp('https://hub.asayake.org');
+        expect(csp).toContain("style-src 'unsafe-inline' https://accounts.google.com");
+    });
 });
 
 describe('renderReportPage', () => {
