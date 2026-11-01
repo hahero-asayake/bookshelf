@@ -136,3 +136,27 @@ commit 2a8807b（HEAD）のまま、`npx playwright test tests/e2e/sort-perf-bud
 1.3倍をそのまま維持する**。
 
 CI側の1回分は、push後の1回目のrunの`[sort-perf-ratio]`annotationで採取する（step5で実施）。
+
+## step5: mainへのpush後、CI実測(1回目run)
+
+push(8d2a01c)後のCI testジョブ(check-run id 125007579699)は`failure`。ただし**sort-perf-budget.spec.js
+自体は「1 passed (2.2m)」**(annotation確認済み)。failureの原因は無関係な既存テスト
+`checklist-timing.spec.js` CHK6(記事編集→×で閉じる→戻る1回で効く)で、`#/publish/<id>`への
+URLハッシュ不整合によるもの(`tests/e2e/checklist-timing.spec.js`はイシュー#295由来の既存テスト、
+`e1faf97`時点から存在・自分のcommitはjs/css/index.htmlを一切変更していないため無関係)。
+判定方式(比の上限1.3倍・絶対値はCI記録のみ)は変更しない(②指示)。
+
+CI実測(1回目run・機械の生の速さはT_measured=32ms=ローカルT_REFと一致・rate=5.96):
+
+| 項目 | order | direction | drag |
+|---|---|---|---|
+| tFrame中央値(絶対値・記録のみ) | 125.9ms(最大178.7ms) | 133.3ms(最大137.6ms) | 84ms(最大88ms、*absoluteログ欠落のためreps手計算) |
+| inputDelay中央値(絶対値・記録のみ) | 230.9ms(最大261.6ms) | 219.9ms(最大277.7ms) | 55ms(同上) |
+| BUDGET(tFrame/inputDelay) | 380/420 | 340/320 | 120/80 |
+| 近似AA比(記録専用) | 1.007 | 1.016 | 0.881 |
+
+`[sort-perf-ratio]`(基準commitとの比較判定・CI判定の本体)のannotationは出力されなかった(前回
+step1と同様、annotation件数上限に当たった可能性が高い。今回run全体で18件中、既存テスト15件分の
+failure annotationが多くを占めたため)。sort-perf-budget自体が1 passedだったことから、judgeRatio
+のexpectは内部的にはpass(比が1.3倍を超えていない)していたと判断できるが、annotationで実際の
+比の数値を直接確認することはできなかった(次の罠として記録・project noteにも追記)。
