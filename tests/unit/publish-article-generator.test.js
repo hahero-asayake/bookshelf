@@ -112,20 +112,36 @@ describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回�
     });
 
     it('サイズ2倍ごとの所要時間が概ね2倍前後に収まる (O(n)線形・O(n^2)なら4倍以上になるはず)', () => {
+        // イシュー#490: 各サイズ1回だけの単発測定だとCIランナーの負荷の揺れ(GC・他プロセスとのCPU競合)
+        // で測定値が偶発的に伸び、本来O(n)な実装でも比がわずかに3を超えて落ちることがあった
+        // (実例: GitHub Actions run 41349317159で3.052<3に失敗・ローカルでは再現せず)。
+        // 負荷の揺れは実行時間を「足す」方向にしか働かないため、各サイズをK回測って最小値を取れば
+        // 揺れの影響を最も安定して吸収できる(実測・イシュー#490 step1/2: 旧方式(単発測定)は通常時
+        // max2.294・1コア競合時max2.819だったが、新方式(ウォームアップ+K=5回最小値)は通常時20回
+        // 中max2.204・1コア競合時20回要求13回完了でmax2.211=より3から離れて安定。劣化実装(安全弁
+        // 無効化)では新方式でもvitest実行3回全てで確実に失敗(例: ratio=3.960)を確認済み)。
+        // 1回目はJITウォームアップを兼ねるため最小サイズで空打ちしてから測定に入る。
         const sizes = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB
-        const timings = sizes.map((size) => {
+        const K = 5; // 反復回数(step2実測でCI所要と安定性のバランスから決定)
+        PublishArticleGenerator.markdownToHtml(repeatToSize(UNCLOSED_MARKS_UNIT, sizes[0])); // ウォームアップ
+
+        const minTimings = sizes.map((size) => {
             const input = repeatToSize(UNCLOSED_MARKS_UNIT, size);
-            const t0 = performance.now();
-            PublishArticleGenerator.markdownToHtml(input);
-            return performance.now() - t0;
+            let min = Infinity;
+            for (let k = 0; k < K; k++) {
+                const t0 = performance.now();
+                PublishArticleGenerator.markdownToHtml(input);
+                min = Math.min(min, performance.now() - t0);
+            }
+            return min;
         });
-        for (let i = 1; i < timings.length; i++) {
-            const ratio = timings[i] / Math.max(timings[i - 1], 0.01);
+        for (let i = 1; i < minTimings.length; i++) {
+            const ratio = minTimings[i] / Math.max(minTimings[i - 1], 0.01);
             // O(n^2)なら比率は4倍前後(2倍刻みなので2^2)になるはず。線形化できていれば3倍未満に収まる。
-            // CI環境のCPU差・GC等の揺れを見込んだ緩めの上限 (実測ローカルでは概ね2倍前後)。
+            // 上限3は#377の方針により緩めない(甘くするのはK回反復・最小値化・ウォームアップの方)。
             expect(ratio).toBeLessThan(3);
         }
-    });
+    }, 60000); // K=5×4サイズの反復で所要が伸びるため明示タイムアウト(既定5s→60s)
 
     it('通常の文章 (強調記号を含まない/低密度) は誤ってフォールバックされず装飾が残る', () => {
         const normalText = '普通の読書メモです。'.repeat(2000); // 20000文字・記号密度0%
