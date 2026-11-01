@@ -1793,3 +1793,77 @@ test.describe('ブロックのチップ (イシュー#288)', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
     });
 });
+
+// ===== イシュー#495回帰: 公開(closePublish3)/設定(closeSettings3)のように複数faceを1回のapplyで
+// 除去するclose経路は、route変更を伴うとhistoryOp()がgo(複数エントリを物理的に戻す)でなく
+// 単発replaceを選び、下の実エントリが残る穴があった(CHK6で発覚)。CHK6(checklist-timing.spec.js)は
+// 「戻る1回」のhash一致しか見ないため、同型のcloseSettings3側はX08(段直後のexpectSameHistory、
+// 戻るを挟まない)では発覚しなかった。本ブロックは「閉じた直後に開く前と段の位置が一致」
+// 「さらに戻る1回で開く前の1つ前(期待するhash)へ」の2点を両方について明示的にassertする。
+test.describe('戻る: イシュー#495回帰(公開/設定の複数face close)', () => {
+    test('#495-pub 公開記事を×で閉じる→段の位置が開く前と一致、さらに戻る1回で1つ前へ', async ({ page }) => {
+        const errors = await bootApp(page);
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        const shelfSnap = await snap(page); // 公開を開く前(=×で閉じた直後が戻るべき位置)
+        await openNewArticleEdit(page); // list→新規記事→編集モード(3face push: publish-pages-modal/art-viewing/art-edit-mode)
+        const openedSnap = await snap(page);
+        expect.soft(openedSnap.navFaces, '3face積まれる').toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        await page.evaluate(() => document.getElementById('publish-pages-close').click());
+        await settle(page, 800);
+        const closedSnap = await snap(page);
+        // ①閉じた直後、段の位置(navFaces/hash/_modalHistStack)が「公開を開く前」と一致していること
+        expect.soft(closedSnap.navFaces, '×で閉じた直後、faceが残っていない').toEqual([]);
+        expect.soft(closedSnap.hash, '×で閉じた直後、公開を開く前のhashに一致(段が余らない)').toEqual(shelfSnap.hash);
+        expect.soft(closedSnap.stack, '×で閉じた直後、_modalHistStackが開く前と一致').toEqual(shelfSnap.stack);
+        // ②さらに戻る1回で、公開を開く前の1つ前(ホーム)へ
+        await back(page);
+        const backSnap = await snap(page);
+        expect.soft(backSnap.hash, '戻る1回でホームへ(開く前の1つ前)').toEqual('');
+        expect(errors).toEqual([]);
+    });
+
+    test('#495-set 設定(カテゴリ+一覧)をEscで閉じる→段の位置が開く前と一致、さらに戻る1回で1つ前へ', async ({ page }) => {
+        const errors = await bootApp(page);
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        const shelfSnap = await snap(page); // 設定を開く前(=Escで閉じた直後が戻るべき位置)
+        await tap(page, '#mobile-bottom-nav [data-mobile-nav="settings"]');
+        await settle(page);
+        await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
+        await settle(page);
+        const openedSnap = await snap(page);
+        expect.soft(openedSnap.navFaces, '2face積まれる(settings-modal/settings-cat)').toEqual(['settings-modal', 'settings-cat']);
+        await page.keyboard.press('Escape');
+        await settle(page, 600);
+        const closedSnap = await snap(page);
+        expect.soft(closedSnap.navFaces, 'Escで閉じた直後、faceが残っていない').toEqual([]);
+        expect.soft(closedSnap.hash, 'Escで閉じた直後、設定を開く前のhashに一致(段が余らない)').toEqual(shelfSnap.hash);
+        expect.soft(closedSnap.stack, 'Escで閉じた直後、_modalHistStackが開く前と一致').toEqual(shelfSnap.stack);
+        await back(page);
+        const backSnap = await snap(page);
+        expect.soft(backSnap.hash, '戻る1回でホームへ(開く前の1つ前)').toEqual('');
+        expect(errors).toEqual([]);
+    });
+
+    // ②指示(2): go(n)はqueueMicrotaskで非同期実行される。×で閉じた直後(goがまだ着地していない
+    // うち)に続けて別の記事を開いても、着地(最終的なface構成)がずれないことを確認する。
+    test('#495-race ×で閉じた直後に続けて別記事を開いても着地がずれない', async ({ page }) => {
+        const errors = await bootApp(page);
+        const { id } = await shelfInfo(page);
+        await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
+        await settle(page, 600);
+        await openNewArticleEdit(page); // 記事A
+        // settle を挟まず、×で閉じた直後(go(-3)のqueueMicrotaskが着地する前)に即座に記事Bを開き直す
+        await page.evaluate(() => document.getElementById('publish-pages-close').click());
+        await openNewArticleEdit(page); // 記事B
+        await settle(page, 800);
+        const s = await snap(page);
+        expect.soft(s.navFaces, '記事Bがlist/viewing/edit-modeの3face構成で開いている').toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
+        expect.soft(s.navPendingGo, '保留中のgoが残っていない').toBe(0);
+        expect.soft(await page.locator('#art-edit-view').isVisible(), '記事Bの編集画面が見えている').toBe(true);
+        expect(errors).toEqual([]);
+    });
+});

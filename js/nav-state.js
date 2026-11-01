@@ -322,8 +322,15 @@
         }
     }
 
-    // 履歴に何をするか (書き手は apply 1 つ)。meta: {source, replace, extraChanged}
+    // 履歴に何をするか (書き手は apply 1 つ)。meta: {source, replace, extraChanged, unwind}
     //   面を開いた→push／×・ESC・silent で閉じた (route 不変)→go(-k)／route が変わった→push (閉じた面があるか replace 指定なら replace)
+    //   イシュー#495: closePublish3/closeSettings3のように「複数faceを1回のapplyで除去し、かつ
+    //   routeも戻す」close(meta.unwind:true)は、各faceが開いた時点でそれぞれ実エントリをpushして
+    //   いた(dFaces>0は常にpush・本関数の最初の分岐)と分かっているため、route変更の有無に関わらず
+    //   go(dFaces)で物理的に正しい段数だけ戻る。戻った先のエントリは、開く前にcloseFn呼び出し元が
+    //   捉えたreturn routeを元から保持している(push時点でまだ書き換えていない)ため、追加のreplace
+    //   書き込みは不要(旧実装の個別pop→_pendingGo集約→1回のgoと同じ結論)。単発close(closeFace3・
+    //   closeBook3等、dFaces=-1かつm.unwind未指定)はreplaceのまま変えない(=無改修)。
     function historyOp(prev, next, meta) {
         const m = meta || {};
         if (m.source === 'history') return { op: 'none' };            // 着地は書かない
@@ -334,7 +341,7 @@
         // 本詳細 (book-detail) が外れる遷移 (ホームへ) は旧と同じく新エントリ (戻るで本詳細に戻れる)
         const closedOverlay = prev.faces.some((f) => OVERLAY_FACES.includes(f.id) && !nextIds.has(f.id));
         if (dFaces > 0) return { op: 'push' };
-        if (dFaces < 0 && !routeChanged) return { op: 'go', n: dFaces };
+        if (dFaces < 0 && (m.unwind || !routeChanged)) return { op: 'go', n: dFaces };
         if (routeChanged) return { op: (closedOverlay || m.replace) ? 'replace' : 'push' };
         if (m.extraChanged || m.renamed) return { op: 'replace' };
         return { op: 'none' };
@@ -420,10 +427,13 @@
             openRoute(id, extra, close, route, meta) { return this.apply({ type: 'openRoute3', id, extra: extra || null, close, route }, meta || {}); },
             // 単一 face の除去 + route 復元を1 apply で (設定・公開の設定の × 閉じ)
             closeFace(id, route, meta) { return this.apply({ type: 'closeFace3', id, route }, Object.assign({ replace: true }, meta || {})); },
-            // 公開記事モーダルの × 閉じ専用 (記事サブ状態を一括除去)
-            closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true }, meta || {})); },
-            // 設定モーダルの × / Esc / 戻る閉じ専用 (settings-cat が残っていれば一括除去・イシュー#494)
-            closeSettings(route, meta) { return this.apply({ type: 'closeSettings3', route }, Object.assign({ replace: true }, meta || {})); },
+            // 公開記事モーダルの × 閉じ専用 (記事サブ状態を一括除去)。unwind:true (イシュー#495) =
+            // 除去される各faceは開いた時点でそれぞれ実エントリをpushしていた保証があるため、
+            // historyOp()にrouteChangedの有無に関わらずgo(dFaces)で物理的に正しい段数戻らせる
+            closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },
+            // 設定モーダルの × / Esc / 戻る閉じ専用 (settings-cat が残っていれば一括除去・イシュー#494)。
+            // unwind:true は closePublish と同じ理由 (イシュー#495)
+            closeSettings(route, meta) { return this.apply({ type: 'closeSettings3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },
             setExtra(id, extra) {
                 const faces = this.state.faces.map((f) => (f.id === id ? { ...f, extra: Object.assign({}, f.extra || {}, extra || {}) } : f));
                 this.state = { ...this.state, faces };
