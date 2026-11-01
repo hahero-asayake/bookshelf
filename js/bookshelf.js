@@ -9390,13 +9390,23 @@ class VirtualBookshelf {
         } else {
             ul.innerHTML = articles.map(a => {
                 const pub = !!a.published;
+                // イシュー#430 (②承認): 状態を3つにする(公開済み／未公開の変更あり／未公開)。判定は
+                // 既存の stale 判定(_artRefreshPublishBadge・エディタヘッダーで使用中)と同じ式
+                // updatedAt > lastBuiltAt を一覧側にも適用する(新しい判定基準は作らない)。
+                const stale = pub && (a.updatedAt || 0) > (a.lastBuiltAt || 0);
                 const badge = pub
-                    ? '<span class="pp-status pp-status-on">● 公開中</span>'
+                    ? (stale
+                        ? '<span class="pp-status pp-status-stale">● 未公開の変更あり</span>'
+                        : '<span class="pp-status pp-status-on">● 公開済み</span>')
                     : '<span class="pp-status pp-status-off">○ 未公開</span>';
                 const bookCount = this._artCountBooks(a.blocks);
                 const tagsMeta = (a.tags || []).length ? ' ・ ' + a.tags.map(esc).join(', ') : '';
+                // data-act="republish" のセレクタ・クリックハンドラは変更なし(既存E2E互換)。
+                // stale の時だけ強調(btn-primary)+文言「変更を公開」にする(②指摘⑤「更新/完了が曖昧」への対応)。
                 const publishActions = pub
-                    ? `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>更新</button>`
+                    ? (stale
+                        ? `<button class="btn btn-primary btn-small" data-act="republish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>変更を公開</button>`
+                        : `<button class="btn btn-secondary btn-small" data-act="republish"><span class="h-icon" data-icon="refresh-cw" data-icon-size="13"></span>再公開</button>`)
                     : `<button class="btn btn-primary btn-small" data-act="publish"><span class="h-icon" data-icon="upload-cloud" data-icon-size="13"></span>公開</button>`;
                 const url = pub ? this._artPageUrl(a) : '';
                 // 公開済みなのに publicId 未発番 (旧 pages.json からの移行データ等、イシュー#154) だと

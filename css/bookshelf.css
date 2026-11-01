@@ -4550,6 +4550,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-status { font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; white-space: nowrap; }
 .pp-status-on { color: #1f7a4d; background: #e3f5ec; }
 .pp-status-off { color: var(--muted); background: var(--line2); }
+/* イシュー#430: 未公開の変更あり(stale)。warning色規約(ui-standards・CLAUDE.md)に合わせる。 */
+.pp-status-stale { color: var(--warning, #a06800); background: #fdf3e0; }
 .pp-list-foot { display: flex; align-items: center; gap: 0.6rem 0.9rem; margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .pp-list-foot[hidden] { display: none; }
 .pp-foot-hint { font-size: 0.78rem; color: var(--muted); flex: 1; min-width: 12rem; }
