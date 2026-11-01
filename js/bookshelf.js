@@ -2078,8 +2078,13 @@ class VirtualBookshelf {
             try { bib = JSON.stringify(book); } catch (_) { bib = `${book.title}\u0002${Date.now()}`; }
             this._bibCache.set(book.asin, { ref: book, bib, v: book.__bibV || 0 });
         }
+        // イシュー#484: 重複ASIN検出バッジの有無もrkeyに含める。含めないと、ASIN付け替えで重複が
+        // 解消された「もう一方の本」(book自体のtitle/authors等は変わらない)のカードが rkey 一致で
+        // 再利用され、古いバッジが残ったままになる(実機で検出: duplicate-asin-notice.spec.js)。
+        const dup = this._dupAsinInfo().get(book.asin);
+        const dupFlag = dup ? (dup.sameTitle ? 's' : 'd') : '0';
         return [displayType, this._getStarVisibility(), this._getStarOverlay() ? 1 : 0, this._getMemoVisibility(),
-            bib, n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
+            bib, n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0, dupFlag].join('\u0001');
     }
 
     // イシュー#406: LIS(最長増加部分列)で「動かさなくてよい本の集合」を求める。seq[i] は
@@ -2368,6 +2373,43 @@ class VirtualBookshelf {
         return badges.length ? `<div class="book-badges">${badges.join('')}</div>` : '';
     }
 
+    // イシュー#484: 同じ asin を持つ本のグループ (bookManager.findDuplicateAsinGroups()) を
+    // asin → group の Map にしてキャッシュする。蔵書が変わらない限り再計算しない (#398 と同じ
+    // _rev 方式)。データ構造は変えない(検出のみ)ため notes/bookOrder/exclusions 側には影響しない。
+    _dupAsinInfo() {
+        const rev = this.bookManager.getRev();
+        if (this._dupAsinCache && this._dupAsinCache.rev === rev) return this._dupAsinCache.map;
+        const map = new Map();
+        for (const g of this.bookManager.findDuplicateAsinGroups()) map.set(g.asin, g);
+        this._dupAsinCache = { rev, map };
+        return map;
+    }
+
+    // イシュー#484: 重複ASIN検出バッジ(1項目)。別の本に同じASINが付いた場合(sameTitle=false)は
+    // 付け直しを促す文言、同じ本の二重登録(sameTitle=true・実害小)は文言を分け、削除/統合は促さない
+    // (②指示: 既存データは削除・統合しない方針のため)。無ければ null。
+    _duplicateAsinBadgeItem(book) {
+        const g = this._dupAsinInfo().get(book.asin);
+        if (!g) return null;
+        const label = g.sameTitle ? '重複登録' : 'ASIN共有';
+        const title = g.sameTitle
+            ? '同じ本が複数登録されています(統合・削除の必要はありません)'
+            : 'このASINは他の本と共有されています。本の詳細から付け直しをご検討ください';
+        return `<span class="book-badge book-badge-warn" title="${this.escapeHtml(title)}">${label}</span>`;
+    }
+
+    // イシュー#484: 一覧カードは Kindle バッジと重複ASINバッジを1つの .book-badges にまとめて出す
+    // (既存の _kindleBadgesHtml 単独の呼び出し元(3箇所)には影響させず、createBookElement だけで使う)。
+    _allBadgesHtml(book) {
+        const items = [];
+        if (book.statusFromPlatformSearch === 'Revoked') items.push('<span class="book-badge">利用終了</span>');
+        if (book.originType === 'Ku') items.push('<span class="book-badge book-badge-accent">KU</span>');
+        else if (book.originType === 'Prime') items.push('<span class="book-badge book-badge-accent">Prime</span>');
+        const dup = this._duplicateAsinBadgeItem(book);
+        if (dup) items.push(dup);
+        return items.length ? `<div class="book-badges">${items.join('')}</div>` : '';
+    }
+
     createBookElement(book, displayType) {
         const bookElement = document.createElement('div');
         bookElement.className = 'book-item';
@@ -2427,7 +2469,8 @@ class VirtualBookshelf {
             bookElement.classList.add('selected');
         }
         // 画像のみビューは book-info (タイトル・著者・星・メモ) を出力しない
-        const kindleBadges = this._kindleBadgesHtml(book);
+        // イシュー#484: Kindleバッジに加え、重複ASIN検出バッジも同じ枠で出す
+        const kindleBadges = this._allBadgesHtml(book);
         const infoHtml = isImagesView ? '' : `
                 <div class="book-info">
                     <div class="book-title">${this.escapeHtml(book.title)}</div>
@@ -3098,11 +3141,20 @@ class VirtualBookshelf {
         // (ui-standards §7 原則6違反) を撤去し、常時展開のインライン欄にする。専用の「保存」「キャンセル」
         // ボタンも撤去し、保存は topbar の編集終了ボタン (.bd-edit-toggle.cancel-edit-btn) 1つに統合する
         // (下記グローバルクリックハンドラの cancelBtn 分岐が saveBookChanges を呼ぶ)。
+        // イシュー#484: 重複ASIN案内。別の本に同じASINが付いた場合(sameTitle=false)は
+        // 「編集」→「変更後ASIN」欄での付け直しを案内する。同じ本の二重登録(sameTitle=true・
+        // 実害小)は文言を分け、削除・統合は促さない(②指示・既存データは削除・統合しない方針)。
+        const dupGroup = this._dupAsinInfo().get(book.asin);
+        const dupNoticeHtml = dupGroup ? (dupGroup.sameTitle
+            ? `<div class="bd-dup-asin-notice">${ico('info')}<span>同じ本が複数登録されています(ASIN: ${esc(dupGroup.asin)})。統合・削除は必要ありません。</span></div>`
+            : `<div class="bd-dup-asin-notice">${ico('alert-triangle')}<span>このASINは他の本と共有されています。メモ・並び順・除外設定が共有される可能性があります。「編集」の「変更後 ASIN」欄で正しいASINに付け直すことをお勧めします。</span></div>`
+        ) : '';
         const basicInfoBody = `
             <div class="bd-meta">
                 <div class="bd-meta-row"><span class="k">購入</span><span>${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</span></div>
                 <div class="bd-meta-row"><span class="k">ASIN</span><span>${esc(book.asin)}${book.updatedAsin ? ` → ${esc(book.updatedAsin)}` : ''}</span></div>
             </div>
+            ${dupNoticeHtml}
             ${isEditMode ? `
                 <div class="bd-meta-edit-inline">
                     <div class="edit-field"><label>タイトル</label>
@@ -13777,6 +13829,27 @@ class VirtualBookshelf {
                 if (bookshelf.books && bookshelf.books.includes(oldAsin)) {
                     const index = bookshelf.books.indexOf(oldAsin);
                     bookshelf.books[index] = newAsin;
+                }
+            });
+        }
+
+        // イシュー#484: 除外設定(exclusions)を移行 (既存の移行漏れ修正)。exclusions は asin の
+        // 配列(userData._storage.exclusions)。別の本に同じasinが付いていた場合、配列内に
+        // oldAsin が複数回出現することがあるが、indexOf は最初の1件だけを書き換える =
+        // 今回付け直した本の分だけが新ASINへ移り、もう一方の本(まだ旧ASINのまま)のエントリは
+        // そのまま残る(意図した挙動)。
+        if (Array.isArray(this.userData._storage?.exclusions) && this.userData._storage.exclusions.includes(oldAsin)) {
+            const index = this.userData._storage.exclusions.indexOf(oldAsin);
+            this.userData._storage.exclusions[index] = newAsin;
+        }
+
+        // イシュー#484: 並び順(bookOrder)を移行 (既存の移行漏れ修正)。bookOrder は
+        // 本棚id → asin配列。exclusions と同じ理由で最初の1件だけを書き換える。
+        if (this.userData.bookOrder) {
+            Object.values(this.userData.bookOrder).forEach(order => {
+                if (Array.isArray(order) && order.includes(oldAsin)) {
+                    const index = order.indexOf(oldAsin);
+                    order[index] = newAsin;
                 }
             });
         }

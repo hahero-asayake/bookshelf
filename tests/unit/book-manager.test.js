@@ -56,3 +56,52 @@ describe('hasCoverImage (表紙 <img> を出すかの唯一の正)', () => {
         expect(bm.hasCoverImage({ asin: '', productImage: '' })).toBe(false);
     });
 });
+
+// イシュー#484: notes/bookOrder/exclusions が asin をキーにしているため、別の本に同じ asin が
+// 付いていると設定を共有してしまう問題の検出。
+describe('findDuplicateAsinGroups (イシュー#484: 重複asin検出)', () => {
+    it('重複が無ければ空配列', () => {
+        const local = new BookManager();
+        local.library.books = [
+            { asin: 'B000000001', title: 'A' },
+            { asin: 'B000000002', title: 'B' }
+        ];
+        expect(local.findDuplicateAsinGroups()).toEqual([]);
+    });
+
+    it('別の本に同じasin(B00I8AT186型)は sameTitle:false で検出する', () => {
+        const local = new BookManager();
+        local.library.books = [
+            { asin: 'B00I8AT186', title: '上巻' },
+            { asin: 'B00I8AT186', title: '下巻' }
+        ];
+        const groups = local.findDuplicateAsinGroups();
+        expect(groups.length).toBe(1);
+        expect(groups[0].asin).toBe('B00I8AT186');
+        expect(groups[0].sameTitle).toBe(false);
+        expect(groups[0].books.map(b => b.title)).toEqual(['上巻', '下巻']);
+    });
+
+    it('同じ本の二重登録(B0F2TC5B79型)は sameTitle:true で検出する(削除・統合は促さない方針なので判定だけ分ける)', () => {
+        const local = new BookManager();
+        local.library.books = [
+            { asin: 'B0F2TC5B79', title: '同じ本' },
+            { asin: 'B0F2TC5B79', title: '同じ本' }
+        ];
+        const groups = local.findDuplicateAsinGroups();
+        expect(groups.length).toBe(1);
+        expect(groups[0].sameTitle).toBe(true);
+    });
+
+    it('3冊以上の重複も1グループにまとめる', () => {
+        const local = new BookManager();
+        local.library.books = [
+            { asin: 'B000000009', title: 'X' },
+            { asin: 'B000000009', title: 'Y' },
+            { asin: 'B000000009', title: 'Z' }
+        ];
+        const groups = local.findDuplicateAsinGroups();
+        expect(groups.length).toBe(1);
+        expect(groups[0].books.length).toBe(3);
+    });
+});

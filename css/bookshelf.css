@@ -2800,6 +2800,30 @@ html.bs-likely-has-data #dashboard-welcome {
     color: var(--accent);
 }
 
+/* イシュー#484: 重複ASIN検出バッジ (warning色。既存の book-badge 型を踏襲) */
+.book-badge-warn {
+    background: var(--btn-warning-hover-bg);
+    color: var(--warning);
+}
+
+/* イシュー#484: 本詳細の重複ASIN案内。既存の .btn-warning と同系統の warning 色 */
+.bd-dup-asin-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--warning);
+    border-radius: 6px;
+    background: var(--btn-warning-hover-bg);
+    color: var(--warning);
+    font-size: 0.85rem;
+}
+
+.bd-dup-asin-notice .h-icon {
+    flex-shrink: 0;
+}
+
 .cover-badges-layer {
     position: absolute;
     top: 0.3rem;

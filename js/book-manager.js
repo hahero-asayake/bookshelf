@@ -541,6 +541,29 @@ class BookManager {
     }
 
     /**
+     * 同じ ASIN を持つ本をグループ化して返す (イシュー#484)。
+     * notes/bookOrder/exclusions 等が asin をキーにしているため、別の本に同じ ASIN が
+     * 付いていると設定を共有してしまう問題の検出に使う。データは変更しない(検出のみ)。
+     * 戻り値: [{ asin, books, sameTitle }]。sameTitle=true は同じ本の二重登録
+     * (B0F2TC5B79型・実害小)、false は別の本に同じASINが付いた状態 (B00I8AT186型・対処対象)。
+     * 重複が無ければ空配列。
+     */
+    findDuplicateAsinGroups() {
+        const byAsin = new Map();
+        for (const book of this.library.books) {
+            if (!byAsin.has(book.asin)) byAsin.set(book.asin, []);
+            byAsin.get(book.asin).push(book);
+        }
+        const groups = [];
+        for (const [asin, books] of byAsin) {
+            if (books.length < 2) continue;
+            const sameTitle = books.every(b => b.title === books[0].title);
+            groups.push({ asin, books, sameTitle });
+        }
+        return groups;
+    }
+
+    /**
      * タイトルまたは著者で書籍を検索
      */
     searchBooks(query) {
