@@ -46,6 +46,14 @@ describe('renderReportPage', () => {
         REPORT_CATEGORIES.forEach(([v]) => expect(html).toContain(`value="${v}"`));
     });
 
+    it('インラインscriptを一切出さない(回帰: 本番実機確認で、専用CSPのscript-srcにunsafe-inline/nonceが無いためインラインscriptはブロックされると判明。値はdata-target/data-google-client-id属性で渡す)', () => {
+        const html = renderReportPage({ target: 'https://bookshelf.asayake.org/taro/pub-test01/', googleClientId: 'cid' });
+        expect(html).not.toMatch(/<script>(?!<\/script>)/);   // <script src=…> はOK、中身入りの<script>…</script>はNG
+        expect(html).toContain('id="report-root"');
+        expect(html).toContain('data-target="https://bookshelf.asayake.org/taro/pub-test01/"');
+        expect(html).toContain('data-google-client-id="cid"');
+    });
+
     it('target が無い/不正なら案内文のみでフォームを出さない(誤送信防止)', () => {
         const html1 = renderReportPage({ target: '', googleClientId: 'cid' });
         expect(html1).not.toContain('id="report-form"');

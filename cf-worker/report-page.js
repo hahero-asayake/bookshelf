@@ -87,7 +87,7 @@ export function renderReportPage({ target, googleClientId }) {
 </style>
 </head>
 <body>
-<main>
+<main id="report-root" data-target="${esc(target)}" data-google-client-id="${esc(googleClientId)}">
   <h1>この記事・本棚を通報</h1>
   ${validTarget
     ? `<p class="target">対象: ${esc(target)}</p>`
@@ -119,7 +119,6 @@ export function renderReportPage({ target, googleClientId }) {
   </form>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="/report.js?v=1"></script>
-  <script>window.__REPORT_CONFIG__ = ${JSON.stringify({ target, googleClientId }).replace(/</g, '\\u003c')};</script>
   ` : ''}
 </main>
 </body>
@@ -127,12 +126,14 @@ export function renderReportPage({ target, googleClientId }) {
 }
 
 // /report.js: ページのロジック (GIS 初期化→/session→sessionStorage 保存→フォーム送信→/community/report)。
-// インライン script を使わず別ファイルで配信する(script-src 'self' を素直に満たすため・nonce運用を避ける)。
-// window.__REPORT_CONFIG__ (HTML側インラインJSONで渡す。script実行はしない値の受け渡しのみ) を読む。
+// インライン script は一切使わない。values は #report-root の data-* 属性 (renderReportPage が esc 済みで
+// 埋め込む) から読む。インラインscriptでJSONを渡す実装は、このページ専用CSP(script-src 'self' ...)に
+// 'unsafe-inline'/nonceが無いためブラウザにブロックされる(本番実機確認で検出・イシュー#408)。
 export function renderReportScript(hubApiOrigin) {
     return `(function(){
   'use strict';
-  var cfg = window.__REPORT_CONFIG__ || {};
+  var root = document.getElementById('report-root');
+  var cfg = root ? { target: root.dataset.target || '', googleClientId: root.dataset.googleClientId || '' } : {};
   var KEY = 'bookshelf.report.hubKey';
   function $(id){ return document.getElementById(id); }
   function setError(msg){ var el=$('report-error'); if(el) el.textContent = msg || ''; }
