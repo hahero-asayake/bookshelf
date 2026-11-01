@@ -8031,8 +8031,8 @@ body.select-mode .drag-handle { display: none; }
    モーダルを広げる (1080→最大1240)。文章ブロックの編集は全画面でなく右ペイン＝引き出しの列を置き換え、
    左には記事 (キャンバス) を出したまま入力に追従させる。900px以下 (ボトムシート・構成A) は従来どおり。 */
 @media (min-width: 901px) {
-    .art-modal-content.art-editing { width: min(1240px, calc(100vw - 40px)); max-width: none; }
-    /* 1280幅 (モーダル実幅1216) の編集状態でもキャンバスに860が入るよう、引き出しとの隙間を1rem→0.75remに詰める */
+    /* イシュー#430: 旧 width:min(1240px,...) は撤廃(既定で100vwの全画面にする・4656行)。
+       このブレークポイント固有に残すのはレイアウトのギャップ調整のみ。 */
     .art-modal-content.art-editing .art-wrap { gap: 0.75rem; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-wrap { position: relative; grid-template-columns: 1fr 26rem; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-side { display: none; }
