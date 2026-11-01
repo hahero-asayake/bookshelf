@@ -183,7 +183,8 @@ test('(2)(3) 設定画面から username 設定 (fetch スタブ) →成功表�
     expect(savedUsername).toBe('taro-books'); // 保存されている
 
     // 設定モーダルを閉じ、記事一覧から再度公開する (エディタは開き直しで一覧に戻る)
-    await page.click('#settings-modal-close');
+    // イシュー#435: 全画面ページ化でPC/詳細の×は廃止。ESCで閉じる(戻る/左ナビ相当)
+    await page.keyboard.press('Escape');
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.locator('#art-list [data-act="publish"]').first().click();
     // 同意は 1 回目の試行時 (ブロックされる前) に既に済んでいるため、2 回目はダイアログ無しで公開が通る

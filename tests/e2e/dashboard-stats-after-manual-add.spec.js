@@ -59,7 +59,8 @@ test('実UI操作: 手動で本を追加した直後にホームの蔵書数ウ�
     await expect(page.locator('#add-book-results')).toContainText('書籍を追加しました');
     await page.locator('#add-book-modal-close').click();
     await expect(page.locator('#add-book-modal')).not.toHaveClass(/show/);
-    await page.locator('#settings-modal-close').click();
+    // イシュー#435: 全画面ページ化でPC/詳細の×は廃止。ESCで閉じる(戻る/左ナビ相当)
+    await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
 
     // ホームへ戻った時点で「蔵書数」ウィジェットが再読込なしで 1 に更新されていること

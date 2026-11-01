@@ -8272,4 +8272,9 @@ body.select-mode .drag-handle { display: none; }
     #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
         padding: 1rem 1rem 3rem; box-sizing: border-box; /* スマホはカード左右余白を16px前後に (②指摘) */
     }
+    /* 一覧(master)画面はスマホでは左ナビ(ドロワー)が常設でなく、戻る(settings-back)も詳細画面専用のため
+       出て行く手段が無くなっていた(②指摘)。一覧の時だけ×を復活させ、アプリへ閉じて戻れるようにする */
+    #settings-modal.settings-fullpage .settings-modal-content[data-settings-view="master"] #settings-modal-close {
+        display: flex;
+    }
 }

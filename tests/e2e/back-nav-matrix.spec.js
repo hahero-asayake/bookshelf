@@ -438,14 +438,16 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         expect(errors).toEqual([]);
     });
 
-    test('X06 設定: 詳細で×→段が2つとも畳まれる', async ({ page }, ti) => {
+    test('X06 設定: 詳細→戻るで一覧→一覧の×→段が2つとも畳まれる (イシュー#435で詳細の×は廃止・一覧だけ×を持つ)', async ({ page }, ti) => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'X06');
         const before = await snap(page);
         await page.evaluate(() => window.bookshelf._openSettingsModal());
         await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
         await r.step(page, 'detail');
-        await tap(page, '#settings-modal .modal-close');
+        await tap(page, '#settings-back'); // 詳細に×は無いため戻るで一覧へ
+        await r.step(page, 'master');
+        await tap(page, '#settings-modal .modal-close'); // 一覧は×で閉じられる(イシュー#435)
         await settle(page, 600);
         await r.step(page, 'after-close');
         const s = await snap(page);

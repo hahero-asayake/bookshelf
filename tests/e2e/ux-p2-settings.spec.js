@@ -159,3 +159,30 @@ test('P2 (イシュー#435): 390でカードの左右余白が過大でない(�
     expect(sidePadding).toBeLessThanOrEqual(24); // 50px前後だった旧実測より十分小さいこと
     expect(errors).toEqual([]);
 });
+
+test('P2 (イシュー#435・②差し戻し): 390の一覧(master)はスマホのサイドバーが常設でなく戻るも無いため、×で閉じられること', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const content = page.locator('.settings-modal-content');
+    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await expect(content).toHaveAttribute('data-settings-view', 'master');
+    // 一覧では戻る(←)は出ない代わりに×が出る(詳細では逆に×は隠れ戻るが出る)
+    await expect(page.locator('#settings-back')).toBeHidden();
+    await expect(page.locator('#settings-modal-close')).toBeVisible();
+    await page.locator('#settings-modal-close').click();
+    await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
+    expect(errors).toEqual([]);
+});
+
+test('P2 (イシュー#435・②差し戻し): 390の節(detail)は戻る(←)で一覧に戻れ、×は出ない', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const content = page.locator('.settings-modal-content');
+    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await expect(content).toHaveAttribute('data-settings-view', 'detail');
+    await expect(page.locator('#settings-back')).toBeVisible();
+    await expect(page.locator('#settings-modal-close')).toBeHidden();
+    await page.locator('#settings-back').click();
+    await expect(content).toHaveAttribute('data-settings-view', 'master');
+    expect(errors).toEqual([]);
+});
