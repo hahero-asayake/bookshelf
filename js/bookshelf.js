@@ -2046,6 +2046,19 @@ class VirtualBookshelf {
         return booksToRender;
     }
 
+    // イシュー#480: 同じ asin の本が複数冊あっても _renderListDiff の Map キーが衝突しないようにする
+    // 描画専用のキー。保存はしない(②差し戻し・データ構造は変えない)。_orderedBooksToRender() が返す
+    // 順で、同じ asin が何度目の出現かを数えるだけ。重複が無い本は asin そのまま(出現番号0)。
+    // 戻り値は books と同じ長さの配列(books[idx] に対応するキーが dedupKeys[idx])。
+    _dedupKeysFor(books) {
+        const occ = new Map(); // asin -> 次に振る出現番号
+        return books.map((b) => {
+            const n = occ.get(b.asin) || 0;
+            occ.set(b.asin, n + 1);
+            return n === 0 ? b.asin : `${b.asin}#${n}`;
+        });
+    }
+
     // イシュー#359 段階④ (R1): カードの内容を決める入力の指紋。同じなら要素をそのまま使い回す (createBookElement を呼ばない)
     _bookCardKey(book, displayType) {
         const n = (this.userData.notes && this.userData.notes[book.asin]) || {};
@@ -2099,17 +2112,21 @@ class VirtualBookshelf {
             if (this.pluginAPI) this.pluginAPI._emit('ui:books-rendered', { view: this.currentView, changed: 0 });
             return;
         }
+        // イシュー#480: asin が重複する本(別内容の本に同じ asin が付いた既存データを含む)でも
+        // old/oldIndex の Map キーが衝突しないよう、asin ではなく dedupKey (= asin。重複時は
+        // `${asin}#${出現番号}`) を使う。#406(c5a466d)が入れた「DOM走査で2枚目以降を即removeする」
+        // 対症療法(dupAsins)は、この方式では不要になる(dedupKeyが別なら同じMapキーを奪い合わない
+        // ため孤立要素そのものが発生しない)ので撤去する。
+        const dedupKeys = this._dedupKeysFor(books); // books[idx] に対応するキーが dedupKeys[idx]
         const old = new Map();
         const oldIndex = new Map();
-        const dupAsins = new Set(); // #406 (②差し戻し): 重複asinは常に新規扱いにするため記録しておく
         { let i = 0; for (const el of Array.from(container.children)) {
             if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) {
-                // イシュー#406: asin が重複する既存カード(データ側の重複・406-results.md参照)が
-                // 2枚目以降 old/oldIndex に登録されず、誰からも参照されない「孤立要素」になると、
-                // cursor がその孤立要素に固着して以降 el!==cursor が連鎖する(真因)。
-                // Map に上書きさせず、ここで即座に外す(以後は新しい一覧の該当件として作り直される)。
-                if (old.has(el.dataset.asin)) { dupAsins.add(el.dataset.asin); el.remove(); continue; }
-                old.set(el.dataset.asin, el); oldIndex.set(el.dataset.asin, i++);
+                // dedupKey は前回の描画で付与したもの。無い要素(他経路で生成された直後等)は asin に
+                // フォールバックする。
+                const dk = el.dataset.dedupKey || el.dataset.asin;
+                if (old.has(dk)) { el.remove(); continue; } // 理論上は発生しないはずの保険
+                old.set(dk, el); oldIndex.set(dk, i++);
             }
             else el.remove(); // 空状態・ゴースト等
         } }
@@ -2125,15 +2142,11 @@ class VirtualBookshelf {
         // 本の数の見込み=books.length-keepSet.size)。
         // イシュー#406 (②差し戻し): 旧位置があっても内容が変わる(rkey不一致=作り直し)本は、
         // 位置が変わらなくても必ずinsertBefore対象になる(新しい要素を挿す必要があるため)。
-        // asin重複(406-results.md step1)のように同じasinの旧要素を複数の本が奪い合うケースは、
-        // dupAsinsで常に-1(新規扱い)にする: どちらが実際に要素を得るかは処理順序(末尾から)に
-        // 依存し、ここでの静的な一致判定(rkey比較)と食い違う(②差し戻しで見つかった退行の真因・
-        // 406-results.mdのcustom切替moved=787はこれが引き金)。
-        const lisSeq = books.map((b) => {
-            if (dupAsins.has(b.asin)) return -1;
-            const p = oldIndex.get(b.asin);
+        const lisSeq = books.map((b, idx) => {
+            const dk = dedupKeys[idx];
+            const p = oldIndex.get(dk);
             if (p === undefined) return -1;
-            const el = old.get(b.asin);
+            const el = old.get(dk);
             return (el && el.dataset.rkey === this._bookCardKey(b, this.currentView)) ? p : -1;
         });
         const keepSet = this._computeLisKeepSet(lisSeq); // Set<number>: books配列の添字。動かさなくてよい本
@@ -2143,8 +2156,9 @@ class VirtualBookshelf {
             const finalEls = new Array(books.length);
             for (let idx = 0; idx < books.length; idx++) {
                 const book = books[idx];
+                const dk = dedupKeys[idx];
                 const key = this._bookCardKey(book, this.currentView);
-                let el = old.get(book.asin);
+                let el = old.get(dk);
                 if (el && el.dataset.rkey === key) {
                     el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
                     el.classList.remove('selected', 'show-pop');
@@ -2153,9 +2167,10 @@ class VirtualBookshelf {
                     if (el) removed++; // 既存要素はあったが内容が変わったので作り直す
                     el = this.createBookElement(book, this.currentView);
                     el.dataset.rkey = key;
+                    el.dataset.dedupKey = dk; // イシュー#480
                     created++;
                 }
-                old.delete(book.asin);
+                old.delete(dk);
                 finalEls[idx] = el;
             }
             removed += old.size; // 新しい一覧に無い本
@@ -2182,25 +2197,27 @@ class VirtualBookshelf {
             let anchor = null; // 末尾の次(末尾要素は insertBefore(el, null) = appendChild相当)
             for (let idx = books.length - 1; idx >= 0; idx--) {
                 const book = books[idx];
+                const dk = dedupKeys[idx];
                 const key = this._bookCardKey(book, this.currentView);
-                let el = old.get(book.asin);
+                let el = old.get(dk);
                 if (el && el.dataset.rkey === key) {
                     el.classList.add('bk-settled'); // 挿し直しで登場アニメを再生しない (イシュー#387)
                     el.classList.remove('selected', 'show-pop');
                     el.style.borderLeft = '';
-                    old.delete(book.asin);
+                    old.delete(dk);
                     if (keepSet.has(idx)) { anchor = el; continue; } // 動かさない
                 } else {
-                    if (el) { old.delete(book.asin); el.remove(); removed++; }
+                    if (el) { old.delete(dk); el.remove(); removed++; }
                     el = this.createBookElement(book, this.currentView);
                     el.dataset.rkey = key;
+                    el.dataset.dedupKey = dk; // イシュー#480
                     created++;
                 }
                 container.insertBefore(el, anchor);
                 moved++;
                 anchor = el;
             }
-            // 残り (新しい一覧に無い本・重複asinで孤立した方) を外す
+            // 残り (新しい一覧に無い本) を外す
             for (const el of old.values()) { el.remove(); removed++; }
         }
         // view 系プラグイン用: 一覧更新を従来どおり通知 (changed は加算情報・ADR-041)
@@ -2279,9 +2296,12 @@ class VirtualBookshelf {
             return;
         }
         const frag = document.createDocumentFragment();
-        for (const book of booksToRender) {
+        const dedupKeys = this._dedupKeysFor(booksToRender); // イシュー#480: _renderListDiff が次回読む
+        for (let idx = 0; idx < booksToRender.length; idx++) {
+            const book = booksToRender[idx];
             const el = this.createBookElement(book, this.currentView);
             el.dataset.rkey = this._bookCardKey(book, this.currentView); // 段階④: 次回の差分更新で使い回す判定に使う
+            el.dataset.dedupKey = dedupKeys[idx]; // イシュー#480
             frag.appendChild(el);
         }
         container.appendChild(frag);
@@ -13787,6 +13807,18 @@ class VirtualBookshelf {
         // (ユーザーが明示的に除外した本の属性まで書き換えない)。
         const existingStatusUpdates = (this.pendingImportBooks || [])
             .filter(b => b && existingASINs.has(b.asin) && !excludedASINs.has(b.asin));
+
+        // イシュー#480: 取込バッチ(selectedBooks)内に同じ asin が複数含まれると、
+        // book-manager.js の既存チェックがループ開始前の1回限りのスナップショットのため、
+        // 両方とも「既存なし」と判定されて重複登録される(480-step1-investigation.md参照)。
+        // ここでは検出して警告するだけにとどめ、既存チェック自体(再取込時のステータス更新)の
+        // ロジックは変えない(②承認・480-step2-decision.md=本を失うリスクがある排除は採らない)。
+        const selectedAsinCounts = new Map();
+        for (const b of selectedBooks) selectedAsinCounts.set(b.asin, (selectedAsinCounts.get(b.asin) || 0) + 1);
+        const dupAsinCount = [...selectedAsinCounts.values()].filter((c) => c > 1).length;
+        if (dupAsinCount > 0) {
+            toast(`取込データに同じASINの本が複数含まれています(${dupAsinCount}件)。重複したまま取り込まれます。`, { type: 'warn' });
+        }
 
         if (selectedBooks.length === 0 && existingStatusUpdates.length === 0) {
             toast('取り込む本を選んでください');
