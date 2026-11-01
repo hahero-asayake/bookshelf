@@ -2068,6 +2068,26 @@ class VirtualBookshelf {
             bib, n.rating || 0, this.bookshelfManager.resolveMemo(book.asin) || '', n.hideMemo ? 1 : 0].join('\u0001');
     }
 
+    // イシュー#406: LIS(最長増加部分列)で「動かさなくてよい本の集合」を求める。seq[i] は
+    // books配列のi番目の本の旧DOM位置(無ければ-1=新規、常にLIS対象外)。patience sorting で O(n log n)。
+    // 戻り値は books配列の添字(idx)の Set。
+    _computeLisKeepSet(seq) {
+        const tailsIdx = []; // tailsIdx[k] = 長さk+1のLISの末尾となるseq中の添字
+        const prevArr = new Array(seq.length).fill(-1);
+        for (let i = 0; i < seq.length; i++) {
+            const v = seq[i];
+            if (v < 0) continue; // 新規(旧DOMに無い)はLIS対象外=常に挿入
+            let lo = 0, hi = tailsIdx.length;
+            while (lo < hi) { const mid = (lo + hi) >> 1; if (seq[tailsIdx[mid]] < v) lo = mid + 1; else hi = mid; }
+            if (lo > 0) prevArr[i] = tailsIdx[lo - 1];
+            if (lo === tailsIdx.length) tailsIdx.push(i); else tailsIdx[lo] = i;
+        }
+        const keep = new Set();
+        let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
+        while (k !== undefined && k !== -1) { keep.add(k); k = prevArr[k]; }
+        return keep;
+    }
+
     // イシュー#359 段階④ (R1): 既存のカードを asin で引き、追加・削除・並び替え・内容変更だけ DOM を触る。
     // 旧 updateDisplay が全件作り直しで落としていた状態 (選択・ホバーポップ・D&D の罫線) は使い回す要素でも落とす (見える挙動は同じ)。
     _renderListDiff(container) {
@@ -2082,7 +2102,14 @@ class VirtualBookshelf {
         const old = new Map();
         const oldIndex = new Map();
         { let i = 0; for (const el of Array.from(container.children)) {
-            if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) { old.set(el.dataset.asin, el); oldIndex.set(el.dataset.asin, i++); }
+            if (el.classList.contains('book-item') && el.dataset.asin && !el.classList.contains('drag-ghost')) {
+                // イシュー#406: asin が重複する既存カード(データ側の重複・406-results.md参照)が
+                // 2枚目以降 old/oldIndex に登録されず、誰からも参照されない「孤立요素」になると、
+                // cursor がその孤立要素に固着して以降 el!==cursor が連鎖する(真因)。
+                // Map に上書きさせず、ここで即座に外す(以後は新しい一覧の該当件として作り直される)。
+                if (old.has(el.dataset.asin)) { el.remove(); continue; }
+                old.set(el.dataset.asin, el); oldIndex.set(el.dataset.asin, i++);
+            }
             else el.remove(); // 空状態・ゴースト等
         } }
         // イシュー#397 A5: 昇順/降順の反転など「ほぼ全件の順序が変わる」場合、1件ずつ insertBefore
@@ -2090,11 +2117,14 @@ class VirtualBookshelf {
         // 全体の半分を超える見込みなら、既存カードを再利用したまま1回の replaceChildren で
         // まとめて差し替える(要素は作り直さない=画像の再取得もしない)。半分以下(通常のドラッグ並べ替え
         // 等)なら従来どおり変わった分だけ insertBefore する。
-        let movedEstimate = 0;
-        for (let idx = 0; idx < books.length; idx++) {
-            const prevIdx = oldIndex.get(books[idx].asin);
-            if (prevIdx === undefined || prevIdx !== idx) movedEstimate++;
-        }
+        // イシュー#406: 旧実装は「新旧で位置が違う本の絶対数」を見込みにしていたが、insertBefore経路の
+        // 実際のコストは cursor 比較の連鎖(1件のズレで以降全件が el!==cursor になる)で決まり、両者は
+        // 一致しない(再取込で見込み2なのに実際は898件連鎖・406-results.md step1)。見込みと実際の移動数を
+        // 同じ数え方(LIS=最長増加部分列で「動かさなくてよい本の集合」)にそろえる(movedEstimate=動かす
+        // 本の数の見込み=books.length-keepSet.size)。
+        const lisSeq = books.map((b) => { const p = oldIndex.get(b.asin); return p === undefined ? -1 : p; });
+        const keepSet = this._computeLisKeepSet(lisSeq); // Set<number>: books配列の添字。動かさなくてよい本
+        const movedEstimate = books.length - keepSet.size;
         let created = 0, moved = 0, removed = 0;
         if (movedEstimate > books.length * 0.5) {
             const finalEls = new Array(books.length);
@@ -2128,7 +2158,13 @@ class VirtualBookshelf {
             }
             container.replaceChildren(...finalEls);
         } else {
+            // イシュー#406: keepSet(LIS)に入っている本は、cursor と一致する限り動かさない。
+            // 旧実装は「el!==cursorなら即insertBefore」だけだったため、1件でも前方にズレると
+            // それ以降の全要素が el!==cursor になり連鎖した(406-results.md step1)。keepSet を
+            // 使うことで、非keep本(見込み通り動くはずの本)の処理が割り込んでも、keep本はその
+            // 非keep本の処理が終わった時点のcursorと再び一致し、連鎖せずに収まる。
             let cursor = container.firstElementChild; // いま埋めようとしている位置にある要素
+            let idx = 0;
             for (const book of books) {
                 const key = this._bookCardKey(book, this.currentView);
                 let el = old.get(book.asin);
@@ -2143,8 +2179,9 @@ class VirtualBookshelf {
                     created++;
                 }
                 old.delete(book.asin);
-                if (el !== cursor) { container.insertBefore(el, cursor); moved++; }
-                else cursor = cursor.nextElementSibling;
+                if (el === cursor) cursor = cursor.nextElementSibling; // 既に正しい位置
+                else { container.insertBefore(el, cursor); moved++; } // keepでも実際にズレていれば保険で動かす(連鎖はしない)
+                idx++;
             }
             // 残り (新しい一覧に無い本) を外す
             while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); removed++; cursor = next; }
