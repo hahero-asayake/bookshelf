@@ -153,6 +153,25 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
         const cdp = await context.newCDPSession(page);
         await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
 
+        // イシュー#487: 3操作を測り終えてから最後にまとめてexpectを評価する(判定の中身・BUDGETは変えない)。
+        // 理由: 以前はexpectを各操作の直後に挟んでいたため、先の操作(order/direction)でBUDGETを超えると
+        // そこでテストが止まり、後続(drag)の測定が行われず数値が全く取れなかった。dragだけが赤いこの
+        // イシューでは影響していないが、将来どの操作が先に超えても残り2操作の数値を必ず記録する。
+
+        // 基準操作(CIランナーの速さそのものを見る・判定はしない・記録のみ):
+        // (a) DOMに依存しない固定量の計算 → CPUx6スロットリングの影響だけを見る
+        // (b) 軽いDOM操作(textContent書き換え×50) → スロットリング+実ブラウザのレンダリングコストを見る
+        // dragの値をこれらとの比で見ることで、「機械が遅いだけ」か「drag処理自体が重い」かを切り分ける。
+        const baselineComputeResult = await measureMedian(page, () => {
+            let x = 0;
+            for (let i = 0; i < 2_000_000; i++) { x += Math.sqrt(i) % 7; }
+            return x;
+        });
+        const baselineDomResult = await measureMedian(page, () => {
+            const el = document.getElementById('__inputProbe');
+            for (let i = 0; i < 50; i++) { el.textContent = String(i); }
+        });
+
         // 準備: custom以外から始める
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'acquiredTime'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
@@ -162,12 +181,8 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
             sel.value = sel.value === 'title' ? 'acquiredTime' : 'title'; // 交互にして実際に並びが変わる操作を毎回発生させる
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         });
-        expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
-        expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
 
         const directionResult = await measureMedian(page, () => { document.getElementById('sort-direction').click(); });
-        expect(directionResult.tFrame, `direction tFrame(中央値)=${directionResult.tFrame}ms(最大${directionResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.tFrame);
-        expect(directionResult.maxInputDelay, `direction inputDelay(中央値)=${directionResult.maxInputDelay}ms(最大${directionResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.inputDelay);
 
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'custom'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
@@ -175,6 +190,15 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
             const items = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]'));
             window.bookshelf.reorderBooks(items[0].dataset.asin, items[Math.min(items.length - 1, 10)].dataset.asin);
         });
+
+        // 機械の速さに左右されない切り分け: dragのtFrame/inputDelayを基準操作との比でログに残す(記録のみ)。
+        console.log(`[sort-perf-ratio] drag.tFrame/baselineCompute.tFrame=${(dragResult.tFrame / baselineComputeResult.tFrame).toFixed(2)} drag.tFrame/baselineDom.tFrame=${(dragResult.tFrame / baselineDomResult.tFrame).toFixed(2)}`);
+        console.log(`[sort-perf-ratio] drag.inputDelay/baselineCompute.inputDelay=${(dragResult.maxInputDelay / Math.max(1, baselineComputeResult.maxInputDelay)).toFixed(2)} drag.inputDelay/baselineDom.inputDelay=${(dragResult.maxInputDelay / Math.max(1, baselineDomResult.maxInputDelay)).toFixed(2)}`);
+
+        expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
+        expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
+        expect(directionResult.tFrame, `direction tFrame(中央値)=${directionResult.tFrame}ms(最大${directionResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.tFrame);
+        expect(directionResult.maxInputDelay, `direction inputDelay(中央値)=${directionResult.maxInputDelay}ms(最大${directionResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.inputDelay);
         expect(dragResult.tFrame, `drag tFrame(中央値)=${dragResult.tFrame}ms(最大${dragResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.tFrame);
         expect(dragResult.maxInputDelay, `drag inputDelay(中央値)=${dragResult.maxInputDelay}ms(最大${dragResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.inputDelay);
     });

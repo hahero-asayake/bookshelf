@@ -51,14 +51,37 @@ jobs:
       # sort-perf-budget.spec.jsだけ別stepで--workers=1の単独実行にしてホスト競合を避ける。
       - name: Smoke tests (Playwright, sort-perf-budget以外・並列)
         run: npx playwright test --grep-invert "sort-perf-budget"
-      - name: E2Eテスト結果を退避 (並列分・イシュー#476)
+      - name: E2Eテスト結果を退避 (並列分・イシュー#476/#487)
         if: always()
-        run: mv test-results/e2e.json test-results/e2e-parallel.json || true
-      - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・イシュー#476 host CPU競合回避)
+        # イシュー#487: 旧退避先(test-results/e2e-parallel.json)はPlaywrightがテスト実行開始時に
+        # outputDir(既定test-results/)を丸ごとクリアするため、2本目のstep開始時に消えてENOENTになっていた
+        # (ローカルで2回連続実行して実測確認済み)。outputDirの外(e2e-results/)へ退避先を変える。
+        run: mkdir -p e2e-results && mv test-results/e2e.json e2e-results/e2e-parallel.json || true
+      - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・repeat-each=3・イシュー#476/#487)
         if: always()
-        run: npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1
+        # イシュー#487: --repeat-each=3で1回のrunからdrag/order/directionの3回分の中央値・最大値を集める
+        # (rerunがgh未認証で401・workflow_dispatchもトークンが要るため、起こせる手段はpushだけ)。
+        # 標準出力をteeしつつ[sort-perf]系ログ行を::notice::としてcheck-run annotationに出す
+        # (annotationは失敗テストのエラーメッセージしか出ないため、passしたrunの数値はログに出ないと
+        # 未認証では読めない=476-ci-breakdown.md step6で実際に数値が取れなかった不具合への対応)。
+        # GitHub Actionsのrunは既定`bash -eo pipefail`(-e付き)で動くため、素朴に
+        # 「npx ... | tee ...; STATUS=$?」と書くとテストが落ちた時点でそのパイプの行自体が
+        # 非0で終わり-eでスクリプトが即終了し、STATUS=$?も::notice::出力も走らない
+        # (一番数値が欲しい赤のrunで数値が出ない)。`|| STATUS=$?`で非0終了をその場で拾って
+        # コマンド全体の終了状態を0にすることで-eの即終了を避ける。同様にgrepが1件も
+        # マッチしない([sort-perf]行が無い異常系)とgrep自体が終了コード1を返し、pipefailで
+        # パイプ全体が失敗し-eでここでも落ちるため`|| true`で握る(最終判定はexit $STATUSで行う)。
+        run: |
+          set -o pipefail
+          mkdir -p e2e-results
+          STATUS=0
+          npx playwright test tests/e2e/sort-perf-budget.spec.js --workers=1 --repeat-each=3 2>&1 | tee e2e-results/sort-perf-output.log || STATUS=$?
+          grep -E '^\[sort-perf' e2e-results/sort-perf-output.log | while IFS= read -r line; do
+            echo "::notice::${line}"
+          done || true
+          exit $STATUS
       - name: E2E 失敗テスト一覧 (annotation 補完・イシュー#349)
         if: always()
         run: |
-          node scripts/ci-annotate-failures.mjs test-results/e2e-parallel.json
+          node scripts/ci-annotate-failures.mjs e2e-results/e2e-parallel.json
           node scripts/ci-annotate-failures.mjs test-results/e2e.json
