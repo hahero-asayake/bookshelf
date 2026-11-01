@@ -4583,7 +4583,7 @@ class VirtualBookshelf {
         if (upY) upY.addEventListener('click', () => this._startCheckout('yearly'));
         const manage = document.getElementById('account-manage-billing');
         if (manage) manage.addEventListener('click', () => this._openBillingPortal());
-        // 管理者: プラン手動切替 (ADR-038)。表示は isAdmin のときだけ (_renderAccountUsageBar)
+        // 管理者: プラン手動切替 (ADR-038)。表示は isAdmin のときだけ (設定→管理者カテゴリ・_reflectAdminSection・#409)
         const admPlus = document.getElementById('account-admin-plus');
         if (admPlus) admPlus.addEventListener('click', () => this._adminSetPlan('plus'));
         const admFree = document.getElementById('account-admin-free');
@@ -4663,6 +4663,7 @@ class VirtualBookshelf {
                 this._ensureAccountSignInButton();
             }
         }
+        this._reflectAdminSection(connected ? hub : null);
         this._reflectAccountChip(hub, connected);
     }
 
@@ -4712,13 +4713,18 @@ class VirtualBookshelf {
         const pastDueNotice = document.getElementById('account-past-due-notice');
         if (pastDueNotice) pastDueNotice.hidden = !(plus && hub.billingManaged && hub.subStatus === 'past_due');
         this._renderPlanDetail(hub, plus);
-        const admin = document.getElementById('account-admin');   // 管理者のみ表示 (ADR-038)
-        if (admin) admin.hidden = !hub.isAdmin;
-        const adminReports = document.getElementById('account-admin-reports');   // 通報の審査 (管理者のみ・ADR-099)
-        if (adminReports) {
-            adminReports.hidden = !hub.isAdmin;
-            if (hub.isAdmin && !this._reportReviewLoadedAt) this._loadReportReview();
-        }
+    }
+
+    // 設定の「管理者」カテゴリ (admin-section) の出し分け (ADR-038/#409)。左の項目一覧 (settings-master) の
+    // ボタンと details 自体の hidden をここ1か所で同期する。_renderAccountSection から常に (connected でなくても)
+    // 呼ばれるので、ログアウト・非管理者に戻った再描画で確実に hidden へ戻る。
+    _reflectAdminSection(hub) {
+        const isAdmin = !!(hub && hub.isAdmin);
+        const adminSection = document.getElementById('admin-section');
+        if (adminSection) adminSection.hidden = !isAdmin;
+        const navBtn = document.querySelector('#settings-master .settings-cat[data-cat="admin-section"]');
+        if (navBtn) navBtn.hidden = !isAdmin;
+        if (isAdmin && !this._reportReviewLoadedAt) this._loadReportReview();
     }
 
     // 公開URLのユーザー名 (S6・ADR-076): 現在値表示。未設定は目立たせる (公開ボタンでブロックされるため)。
@@ -5120,7 +5126,7 @@ class VirtualBookshelf {
         }
     }
 
-    // 管理者: 通報の審査パネル (設定→アカウント)。一覧・一覧から外す・一覧に戻す・却下。
+    // 管理者: 通報の審査パネル (設定→管理者・#409)。一覧・一覧から外す・一覧に戻す・却下。
     async _loadReportReview() {
         const hub = (SyncConfigManager.load().hub) || {};
         const list = document.getElementById('report-review-list');
@@ -6930,6 +6936,7 @@ class VirtualBookshelf {
         { id: 'longmemo-section', icon: 'notebook-pen',     label: '長文メモ',           desc: 'エディタの選択' },
         { id: 'display-section',  icon: 'layout-dashboard', label: '表示',              desc: '星・メモ・Kindle の開き方' },
         { id: 'about-section',    icon: 'info',             label: 'このアプリについて',  desc: 'バージョン・各種ポリシー' },
+        { id: 'admin-section',    icon: 'shield',           label: '管理者',            desc: 'プラン手動切替・通報の審査' },
     ];
 
     _isSettingsMobile() {
@@ -9079,7 +9086,7 @@ class VirtualBookshelf {
         if (this.userData && this.userData.settings && this.userData.settings.ackFreeAffiliate) return true;
         const ok = await confirmDialog({
             title: '無料プランの公開について',
-            message: '無料プランでは、公開ページの Amazon 商品リンクに運営（Asayake）のアフィリエイト ID が付き、その収益は運営に入ります。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。\n\n公開ページには「広告（アフィリエイト）を含む」旨が控えめに表示されます。',
+            message: '無料プランでは、公開ページの Amazon 商品リンクに運営（Asayake）のアフィリエイト ID が付き、その収益は運営に入ります。\n\n自分の収益にしたい、または広告を付けたくない場合は Plus プランをご利用ください。',
             okLabel: '同意して公開', cancelLabel: 'やめる'
         });
         if (!ok) return false;

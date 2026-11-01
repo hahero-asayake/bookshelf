@@ -424,25 +424,6 @@
                                 </div>
                                 <button id="account-manage-billing" class="btn btn-secondary btn-small" type="button" hidden><span class="h-icon" data-icon="credit-card" data-icon-size="14"></span>プラン変更・支払い・解約</button>
                             </div>
-                            <div id="account-admin" class="account-admin" hidden>
-                                <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>管理者: プラン手動切替</p>
-                                <p class="account-admin-hint">対象アカウントのメールを指定して、Stripe を経由せず無料↔Plus を切替えます（優待・検証用）。対象が一度ログイン済みである必要があります。</p>
-                                <div class="account-admin-row">
-                                    <input id="account-admin-email" type="email" placeholder="対象のメール" autocomplete="off" spellcheck="false">
-                                    <button id="account-admin-plus" class="btn btn-primary btn-small" type="button">Plus にする</button>
-                                    <button id="account-admin-free" class="btn btn-secondary btn-small" type="button">無料にする</button>
-                                    <button id="account-admin-reset" class="btn btn-warning btn-small" type="button" title="Stripe の課金リンク（customer/subscription）を外して無料に戻す。test→live で詰まった時の復旧用">課金リンクをリセット</button>
-                                </div>
-                                <p id="account-admin-result" class="account-admin-result" hidden></p>
-                            </div>
-                            <div id="account-admin-reports" class="account-admin" hidden>
-                                <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>管理者: 通報の審査</p>
-                                <p class="account-admin-hint">通報された記事を確認し、公開の一覧から外すか却下します。記事の実体は変わりません。</p>
-                                <div class="account-admin-row">
-                                    <button id="report-review-refresh" class="btn btn-secondary btn-small" type="button">一覧を更新</button>
-                                </div>
-                                <div id="report-review-list" class="report-review-list"></div>
-                            </div>
                             <div class="account-actions">
                                 <button id="account-logout-btn" class="btn btn-secondary btn-small"><span class="h-icon" data-icon="log-out" data-icon-size="14"></span>ログアウト</button>
                                 <button id="account-delete-btn" class="btn btn-danger btn-small"><span class="h-icon" data-icon="trash-2" data-icon-size="14"></span>アカウントを削除</button>
@@ -789,7 +770,7 @@
                     <div class="settings-section-body">
                     <p class="about-credit"><span class="h-icon" data-icon="library" data-icon-size="14"></span><strong>AsayakeBookshelf</strong> — by <a href="https://github.com/hahero-asayake" target="_blank" rel="noopener">hahero</a></p>
                     <p class="about-affiliate">
-                        <span class="h-icon" data-icon="info" data-icon-size="14"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイトとして適格販売により収入を得ています。無料プランで公開したページの商品リンクには運営のアフィリエイト ID が付きます（公開ページにもその旨が控えめに表示されます）。
+                        <span class="h-icon" data-icon="info" data-icon-size="14"></span><strong>アフィリエイト開示:</strong> AsayakeBookshelf（運営: hahero）は Amazon.co.jp アソシエイトとして適格販売により収入を得ています。無料プランで公開したページの商品リンクには運営のアフィリエイト ID が付きます。
                     </p>
                     <p class="about-links">
                         <a href="legal/terms.html" target="_blank" rel="noopener">利用規約</a>
@@ -803,6 +784,31 @@
                     <p class="about-links">
                         <span class="h-icon" data-icon="mail" data-icon-size="14"></span><a href="mailto:asayake.hahero@gmail.com?subject=AsayakeBookshelf%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B">お問い合わせ（メール）</a>
                     </p>
+                    </div>
+                </details>
+
+                <details class="settings-section" id="admin-section" hidden>
+                    <summary class="settings-section-title"><span class="h-icon" data-icon="shield" data-icon-size="16"></span>管理者</summary>
+                    <div class="settings-section-body">
+                    <div id="account-admin" class="account-admin">
+                        <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>プラン手動切替</p>
+                        <p class="account-admin-hint">対象アカウントのメールを指定して、Stripe を経由せず無料↔Plus を切替えます（優待・検証用）。対象が一度ログイン済みである必要があります。</p>
+                        <div class="account-admin-row">
+                            <input id="account-admin-email" type="email" placeholder="対象のメール" autocomplete="off" spellcheck="false">
+                            <button id="account-admin-plus" class="btn btn-primary btn-small" type="button">Plus にする</button>
+                            <button id="account-admin-free" class="btn btn-secondary btn-small" type="button">無料にする</button>
+                            <button id="account-admin-reset" class="btn btn-warning btn-small" type="button" title="Stripe の課金リンク（customer/subscription）を外して無料に戻す。test→live で詰まった時の復旧用">課金リンクをリセット</button>
+                        </div>
+                        <p id="account-admin-result" class="account-admin-result" hidden></p>
+                    </div>
+                    <div id="account-admin-reports" class="account-admin">
+                        <p class="account-admin-title"><span class="h-icon" data-icon="shield" data-icon-size="13"></span>通報の審査</p>
+                        <p class="account-admin-hint">通報された記事を確認し、公開の一覧から外すか却下します。記事の実体は変わりません。</p>
+                        <div class="account-admin-row">
+                            <button id="report-review-refresh" class="btn btn-secondary btn-small" type="button">一覧を更新</button>
+                        </div>
+                        <div id="report-review-list" class="report-review-list"></div>
+                    </div>
                     </div>
                 </details>
 
@@ -1444,7 +1450,7 @@
     <script defer src="js/nav-state.js?v=2026102605"></script>
     <script defer src="js/dashboard.js?v=2026102905"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026102908"></script>
+    <script defer src="js/bookshelf.js?v=2026110101"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
