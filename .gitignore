@@ -71,4 +71,6 @@ mockups/_preview/
 mockups/icon-redesign.html
 mockups/icon-finalize.html
 icons/ChatGPT*.png
+# イシュー#492: sort-perf-budget.spec.jsが基準commit(タグperf-base)を展開する一時worktree
+.sort-perf-base-worktree/
 

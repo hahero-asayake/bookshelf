@@ -39,6 +39,44 @@
 // つまり#401/#402がmainにpushされればBUDGET超過問題はほぼ解消する見込みだが、441cd65を含めて
 // pushするかは本イシュー(#405)の管轄を超える判断のため②に委ねる(push前のtpで報告)。
 import { test, expect } from './helpers/test-base.js';
+import { execSync, spawn } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// イシュー#492 step4(案A・ADR-149): 基準commit(固定タグ)と今のcommitを同じjob内で交互に測り、
+// 比が上限を超えたら赤にする。#377(上限を消さない・警告止めにしない・skipしない)を守るため、
+// 判定の分担はCI/ローカルで分ける: CIは比較判定(機械の速さに左右されない)、ローカル(push前)は
+// 既存の絶対値BUDGET判定(CIの揺れを考慮しない、素早く確実に劣化を検出)。
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '../..');
+const IS_CI = !!process.env.CI;
+// 基準タグ(ADR-149): origin/mainの1つ前ではなく固定タグ(既定perf-base)にする。1つ前にすると
+// 1.29倍以下の退行が毎回「基準より1.3倍未満」としてすり抜け、連続commitで積み重なってしまうため。
+const BASE_TAG = process.env.SORT_PERF_BASE_TAG || 'perf-base';
+const RATIO_LIMIT = Number(process.env.SORT_PERF_RATIO_LIMIT || 1.3);
+const NOW_PORT = Number(process.env.PORT || 8192);
+const BASE_PORT = Number(process.env.SORT_PERF_BASE_PORT || NOW_PORT + 1);
+const BASE_WORKTREE_DIR = process.env.SORT_PERF_BASE_WORKTREE_DIR || path.join(REPO_ROOT, '.sort-perf-base-worktree');
+let baseServerProc = null;
+
+function ensureBaseWorktree() {
+    try { execSync(`git worktree remove --force "${BASE_WORKTREE_DIR}"`, { cwd: REPO_ROOT, stdio: 'ignore' }); } catch (_) { /* 無ければ無視 */ }
+    try { execSync(`git fetch origin tag ${BASE_TAG} --force`, { cwd: REPO_ROOT, stdio: 'ignore' }); } catch (_) { /* ローカルに既にタグがあれば不要 */ }
+    execSync(`git worktree add --force --detach "${BASE_WORKTREE_DIR}" ${BASE_TAG}`, { cwd: REPO_ROOT, stdio: 'pipe' });
+}
+
+function startBaseServer() {
+    return spawn('python3', ['-m', 'http.server', String(BASE_PORT)], { cwd: BASE_WORKTREE_DIR, stdio: 'ignore' });
+}
+
+async function waitForServer(url, timeoutMs = 20000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        try { await fetch(url); return; } catch (_) { /* 起動待ち */ }
+        await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error(`base server did not come up: ${url}`);
+}
 
 const N = 913;
 const TITLE_PARTS = ['ことばの', 'それから', '夜明けの', '静かな', '遠い街の', '記憶の中の', '小さな', '最後の'];
@@ -85,6 +123,60 @@ async function setup(page) {
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0, null, { timeout: 60000 });
     await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
     await page.waitForTimeout(800);
+}
+
+// イシュー#492 step4: 基準/今どちらのoriginでも使うナビゲーションヘルパー(setup()のgoto以降と同じ手順)。
+// localStorageのuserData/libraryはsetup()のaddInitScriptでpage全体に仕込んでいるため、別originへの
+// navigationでも毎回再適用される(Playwrightのpage.addInitScriptは全navigationに効く)。
+async function gotoApp(page, urlOrPath) {
+    await page.goto(urlOrPath);
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0, null, { timeout: 60000 });
+    await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
+    await page.waitForTimeout(800);
+}
+
+// イシュー#492 step4(案A): 基準commit(タグ)と今のcommitを「基準→今→基準→今…」交互にgotoして
+// 測り、中央値の比(今/基準)を返す。CPUスロットリングはクロスオリジンnavigationでリセットされうる
+// ため毎回再設定する。prepareFnは各gotoの直後に呼ぶ(navigationでJS側の状態がリセットされるため)。
+async function measureCompare(page, cdp, rate, prepareFn, triggerFn, reps = 3) {
+    const nowVals = []; const baseVals = [];
+    for (let i = 0; i < reps; i++) {
+        await gotoApp(page, `http://localhost:${BASE_PORT}/index.html`);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+        if (prepareFn) await prepareFn(page);
+        baseVals.push((await measure(page, triggerFn)).tFrame);
+
+        await gotoApp(page, 'index.html');
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+        if (prepareFn) await prepareFn(page);
+        nowVals.push((await measure(page, triggerFn)).tFrame);
+    }
+    return {
+        nowVals: nowVals.map((v) => Math.round(v)), baseVals: baseVals.map((v) => Math.round(v)),
+        ratio: Number((median(nowVals) / median(baseVals)).toFixed(3)),
+    };
+}
+
+// 絶対値判定(#377=上限は消さない): ローカル・push前はここでfailさせる(機械の揺れの影響を受けるが、
+// CIを待たずすぐ確実に劣化を検出できる)。CIでは機械差の影響が大きいため記録のみにし、判定は
+// measureCompareの比(judgeRatio)に委ねる(ADR-149)。
+function judgeAbsolute(result, budget, label) {
+    const tFrameMsg = `${label} tFrame(中央値)=${result.tFrame}ms(最大${result.tFrameMax}ms)・BUDGET=${budget.tFrame}ms`;
+    const delayMsg = `${label} inputDelay(中央値)=${result.maxInputDelay}ms(最大${result.maxInputDelayMax}ms)・BUDGET=${budget.inputDelay}ms`;
+    if (IS_CI) {
+        console.log(`[sort-perf-absolute] ${tFrameMsg}(CI記録のみ) / ${delayMsg}(CI記録のみ)`);
+    } else {
+        expect(result.tFrame, `${tFrameMsg}・ローカル判定`).toBeLessThanOrEqual(budget.tFrame);
+        expect(result.maxInputDelay, `${delayMsg}・ローカル判定`).toBeLessThanOrEqual(budget.inputDelay);
+    }
+}
+
+// 比較判定(#377=skip・警告止めにしない): CIでのみfailさせる(機械の速さに左右されない・ADR-149)。
+// ローカルではjudgeAbsoluteが判定を担当するため記録のみ。
+function judgeRatio(ratio, label) {
+    if (IS_CI) {
+        expect(ratio, `${label} ratio(今/基準)=${ratio} > 上限${RATIO_LIMIT}倍(基準タグ=${BASE_TAG}・ADR-149)`).toBeLessThanOrEqual(RATIO_LIMIT);
+    }
 }
 
 // 操作直後からpointerdownを16ms間隔でスケジュールし、ハンドラ発火までの実遅延の最大値=「固まる時間」
@@ -258,10 +350,32 @@ async function measureMedian(page, triggerFn, reps = 5) {
     };
 }
 
+const prepareNonCustom = async (page) => {
+    await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'acquiredTime'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.waitForTimeout(1500);
+};
+const prepareCustom = async (page) => {
+    await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'custom'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page.waitForTimeout(1500);
+};
+
 test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)', () => {
     test.skip(({ browserName }) => browserName !== 'chromium', 'CPU制限はchromiumのCDPのみ(他ブラウザはskip)');
 
+    // イシュー#492 step4(ADR-149): 基準commit(固定タグ)をworktreeで展開し別portで配信する。
+    test.beforeAll(async () => {
+        ensureBaseWorktree();
+        baseServerProc = startBaseServer();
+        await waitForServer(`http://localhost:${BASE_PORT}/index.html`);
+    });
+    test.afterAll(() => {
+        if (baseServerProc) baseServerProc.kill();
+    });
+
     test('並び順メニューの切り替え・昇順降順・ドラッグが、いずれも許容幅を超えない', async ({ page, context }) => {
+        // イシュー#492 step4: 基準commitとの交互比較(3操作×3rep×2=18回のgoto)が増えた分、
+        // 既定60秒のtestタイムアウトでは不足する(実測で60秒超・timeout発生)。十分な余裕を取る。
+        test.setTimeout(240000);
         await setup(page);
         const cdp = await context.newCDPSession(page);
 
@@ -296,13 +410,11 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
         const directionResult = await measureMedian(page, directionTrigger);
 
         // イシュー#492 step1: directionのtrace内訳・order/directionのA/A(custom切替前=sort-order/
-        // sort-directionの状態が崩れないうち)。記録専用・判定には使わない。
+        // sort-directionの状態が崩れないうち)。記録専用・判定には使わない(annotation件数対策で
+        // 1操作1行にまとめず、最後に全操作まとめて1〜2行で出す・②承認note(4))。
         const directionTraceRows = await measureTraceReps(page, cdp, directionTrigger, 2);
-        console.log(`[sort-perf-breakdown] op=direction rows=${JSON.stringify(directionTraceRows.map((r) => ({ tFrame: Math.round(r.tFrame), js: Math.round(r.js), layout: Math.round(r.layout), paint: Math.round(r.paint), eventCount: r.eventCount })))}`);
         const orderAA = await measureAA(page, orderTrigger, 3);
-        console.log(`[sort-perf-aa] op=order x=${JSON.stringify(orderAA.x)} y=${JSON.stringify(orderAA.y)} ratio=${orderAA.ratio}`);
         const directionAA = await measureAA(page, directionTrigger, 3);
-        console.log(`[sort-perf-aa] op=direction x=${JSON.stringify(directionAA.x)} y=${JSON.stringify(directionAA.y)} ratio=${directionAA.ratio}`);
 
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'custom'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
@@ -314,15 +426,26 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
 
         // イシュー#492 step1: dragのtrace内訳・A/A(custom状態のまま)。記録専用・判定には使わない。
         const dragTraceRows = await measureTraceReps(page, cdp, dragTrigger, 2);
-        console.log(`[sort-perf-breakdown] op=drag rows=${JSON.stringify(dragTraceRows.map((r) => ({ tFrame: Math.round(r.tFrame), js: Math.round(r.js), layout: Math.round(r.layout), paint: Math.round(r.paint), eventCount: r.eventCount })))}`);
         const dragAA = await measureAA(page, dragTrigger, 3);
-        console.log(`[sort-perf-aa] op=drag x=${JSON.stringify(dragAA.x)} y=${JSON.stringify(dragAA.y)} ratio=${dragAA.ratio}`);
 
-        expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
-        expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
-        expect(directionResult.tFrame, `direction tFrame(中央値)=${directionResult.tFrame}ms(最大${directionResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.tFrame);
-        expect(directionResult.maxInputDelay, `direction inputDelay(中央値)=${directionResult.maxInputDelay}ms(最大${directionResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.direction.inputDelay);
-        expect(dragResult.tFrame, `drag tFrame(中央値)=${dragResult.tFrame}ms(最大${dragResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.tFrame);
-        expect(dragResult.maxInputDelay, `drag inputDelay(中央値)=${dragResult.maxInputDelay}ms(最大${dragResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.drag.inputDelay);
+        const summarizeTrace = (rows) => rows.map((r) => ({ tFrame: Math.round(r.tFrame), js: Math.round(r.js), layout: Math.round(r.layout), paint: Math.round(r.paint) }));
+        console.log(`[sort-perf-breakdown] direction=${JSON.stringify(summarizeTrace(directionTraceRows))} drag=${JSON.stringify(summarizeTrace(dragTraceRows))}`);
+        console.log(`[sort-perf-aa] order=${JSON.stringify(orderAA)} direction=${JSON.stringify(directionAA)} drag=${JSON.stringify(dragAA)}`);
+
+        // 絶対値判定(ローカル・push前でfail、CIでは記録のみ・#377の上限は消さない。judgeAbsolute参照)
+        judgeAbsolute(orderResult, BUDGET.order, 'order');
+        judgeAbsolute(directionResult, BUDGET.direction, 'direction');
+        judgeAbsolute(dragResult, BUDGET.drag, 'drag');
+
+        // イシュー#492 step4(案A・ADR-149): 基準commit(タグ`perf-base`)と今を交互に測り、比が
+        // RATIO_LIMIT(既定1.3倍)を超えたらCIでfail。machineの速さに左右されない(#377適合)。
+        const orderCompare = await measureCompare(page, cdp, rate, prepareNonCustom, orderTrigger, 3);
+        const directionCompare = await measureCompare(page, cdp, rate, prepareNonCustom, directionTrigger, 3);
+        const dragCompare = await measureCompare(page, cdp, rate, prepareCustom, dragTrigger, 3);
+        console.log(`[sort-perf-ratio] baseTag=${BASE_TAG} limit=${RATIO_LIMIT} order=${JSON.stringify(orderCompare)} direction=${JSON.stringify(directionCompare)} drag=${JSON.stringify(dragCompare)}`);
+
+        judgeRatio(orderCompare.ratio, 'order');
+        judgeRatio(directionCompare.ratio, 'direction');
+        judgeRatio(dragCompare.ratio, 'drag');
     });
 });
