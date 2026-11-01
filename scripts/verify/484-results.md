@@ -141,3 +141,29 @@ tmp/401配下にnotes.json・exclusions.json等は無く（library.jsonのみ）
 | `tests/e2e/per-shelf-memo.spec.js`（プラグインdetailSection、2本） | ✅ 2 passed |
 
 - `migrateUserData`のnotes移行は「move+delete」方式（既存実装、今回変更していない）。付け直し後、旧ASIN側（もう一方の本）のメモは消える。これは②指示の「新しいASINへ移り、もう一方の本には残らない」と一致する挙動であり、brief制約「既存データは削除・統合しない」は本のレコード（library.books）の話であって、notesの移行ロジックには当たらないと判断した。（**注: 上記②差し戻しで訂正済み。この判断は誤りだった。**）
+
+## 8. push前の最終レビュー指摘（②・2026-11-02 06:22）と対応
+
+②がpush承認時に1点指摘: `migrateUserData`のnotesコピーが`{ ...obj }`（浅いコピー）になっており、メモの中に入れ子のオブジェクト/配列があると2冊で同じ参照を共有したままになる（片方の変更がもう片方にも反映されうる）。`structuredClone(this.userData.notes[oldAsin])`に変更して値を完全に分離した（`js/bookshelf.js`）。
+
+修正後、`duplicate-asin-notice.spec.js`（3本）・`npm test`（44ファイル750件）を再実行し全通過。commit `5c60f78`（Issue: #484）として追加し、そのshaをpush。
+
+### push結果
+
+- `BOOKSHELF_ISSUE=484 git push origin 5c60f78:main` 実行。push-gate: 「6件のcommit中、6件がIssue #484のtrailerを持つ」でOK。check-version-bumpもOK。
+- `27f90ec..5c60f78` でfast-forward push成功（他イシューのcommitは混在しなかった）。
+
+### push後CIの結果
+
+check-runs（`https://github.com/hahero-asayake/bookshelf/actions/runs/41351731136`）:
+
+| job | 結果 |
+|---|---|
+| build | ✅ success |
+| deploy | ✅ success |
+| report-build-status | ✅ success |
+| test | ❌ failure |
+
+`test`ジョブの失敗原因は`tests/e2e/sort-perf-budget.spec.js`（1回目実行で3件失敗、リトライでも失敗）のみ。CPUx6エミュレーション下での`direction`/`drag`のinputDelay中央値が許容幅（320ms/80ms）をわずかに超えた（321.8ms/326.9ms/84.3ms）という、CI環境の負荷に依存する既知の不安定性。②事前申し送りどおり「#487で対応中の既知のもの」であり、本イシュー(#484)の変更に起因する退行ではない（#484は`sort-perf-budget.spec.js`が対象にする並べ替え性能計測の経路には触れていない）。
+
+1回目の実行では`bookshelf-clip-373.spec.js`・`bookshelf-clip-385.spec.js`・`ux-p2-settings.spec.js`も計14件失敗していたが、最終結果（`568 passed, 14 skipped`・リトライ後）ではこれらは含まれず、`sort-perf-budget.spec.js`の3件だけが最終的な失敗として残った。CI実行環境の負荷由来のフレーク（project note「E2Eフレーク調査」の既知の型）であり、#484の変更（`_bookCardKey`へのdupFlag追加・`createBookElement`のバッジ結合・`migrateUserData`の分岐追加）とは無関係と判断した（ローカルで`reimport-diff.spec.js`・`book-detail-entries.spec.js`・`per-shelf-memo.spec.js`を含めて全通過済み・484-results.md §6/§7参照）。
