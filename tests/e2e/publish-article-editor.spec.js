@@ -1381,6 +1381,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
 
         const block = page.locator('#art-site-theme');
         await expect(block).toBeVisible();
+        // イシュー#430: 選択肢は既定で閉じている(選択中の1行だけ表示)。開閉トグルを押してから選ぶ。
+        await page.click('#art-site-theme-toggle');
         // 既定(aqua-white)で始まり、選択済み行が1つだけ aria-checked=true
         await expect(block.locator('[aria-checked="true"]')).toHaveCount(1);
         await expect(block.locator('[data-site-theme-color="aqua-white"]')).toHaveAttribute('aria-checked', 'true');
@@ -1428,6 +1430,46 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await expect(page.locator('#art-site-theme')).toBeHidden();
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#430 (②承認): 本棚トップの見た目を1行表示+開閉トグルにしたことで、公開記事モーダルの
+    // 初期表示で記事一覧の1件目が画面内(1080p)に見えるようにする、という完了条件を実測で確かめる。
+    test('1080pで公開記事モーダルの初期表示時、記事一覧の1件目がviewport内に見えている (イシュー#430)', async ({ page }) => {
+        const { errors } = await bootAppForPublish(page);
+        await page.setViewportSize({ width: 1920, height: 1080 });
+        // openPublishPagesModal() は内部で publishArticleStore.load() を呼び、メモリ上の
+        // articles を読み直す(ストレージ優先)。先にモーダルを開いてから作成+再描画する。
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.evaluate(async () => {
+            const store = window.bookshelf.publishArticleStore;
+            await store.create({ title: '記事A', published: true, blocks: [] }, { persist: false });
+            await store.create({ title: '記事B', published: true, blocks: [] }, { persist: false });
+            await store.create({ title: '記事C', published: false, blocks: [] }, { persist: false });
+            window.bookshelf._artRenderList();
+        });
+        const row = await rectOf(page, '#art-list .pp-row');
+        expect(row.top).toBeGreaterThanOrEqual(0);
+        expect(row.bottom).toBeLessThanOrEqual(1080);
+        expect(errors).toEqual([]);
+    });
+
+    // イシュー#430: 記事カードのリンクが1本であることを一覧側で確かめる (現状はタイトル行の公開URL(.pp-row-url)と
+    // 共有ハブトップ(.pp-row-hub)の2本が別行で並ぶため、このテストは「実装後の目標」を明示する目的で先に書き、
+    // 現時点ではまだ1本化を実装していないため skip にしておく(③step3時点)。実装後にunskipする。
+    test.skip('記事カード1件あたりのリンクが1本である (イシュー#430・未実装のためskip)', async ({ page }) => {
+        const { errors } = await bootAppForPublish(page);
+        await page.click('#art-new');
+        await page.fill('#art-title', 'リンク1本化確認用');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await closePublishPanelIfOpen(page);
+        await goBack(page);
+        await publishViaPanel(page);
+        await page.click('.cfm-ok');
+        const row = page.locator('.pp-row').first();
+        await expect(row.locator('a')).toHaveCount(1);
         expect(errors).toEqual([]);
     });
 });
@@ -2859,6 +2901,37 @@ test.describe('記事エディタ: 本の追加ピッカーで追加済みに印
         await addedRow.click();
         const afterCount = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.length);
         expect(afterCount).toBe(beforeCount + 1);
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#430 (③step3): 記事によらない公開の設定(公開名義・アフィリエイト)の保存が経路を通して
+// 動くことを確かめる。本棚トップの配色の保存経路は同ファイル内「本棚トップの配色」テストで既に検証済み。
+// アフィリエイト欄は GitHub 公開先ならプラン不問で表示される(_reflectAffiliateField)ため、
+// その設定で開く(Plus契約のモック構築を避ける)。
+test.describe('公開の設定: 保存が経路を通して動く (イシュー#430)', () => {
+    test('公開名義・アフィリエイトIDを入力すると userData.settings に保存される', async ({ page }) => {
+        const errors = [];
+        page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+        page.on('pageerror', (err) => errors.push(String(err)));
+        await page.addInitScript(([u, l]) => {
+            localStorage.setItem('virtualBookshelf_userData', u);
+            localStorage.setItem('virtualBookshelf_library', l);
+            localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', publish: { target: 'github', owner: 'tester', repo: 'bookshelf-public' } }));
+        }, [fixtureUserData, fixtureLibrary]);
+        await page.goto('index.html');
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        // publish-section は <details> なので、対象フィールドIDを渡して開かせる(_scrollSettingsTo経由)。
+        await page.evaluate(() => window.bookshelf._openSettingsModal('setting-affiliate-id'));
+        await expect(page.locator('#publish-affiliate')).toBeVisible();
+
+        await page.fill('#setting-public-name', 'E2Eテスト名義');
+        await page.locator('#setting-public-name').blur();
+        await page.fill('#setting-affiliate-id', 'mytag-22');
+        await page.locator('#setting-affiliate-id').blur();
+
+        await expect.poll(() => page.evaluate(() => (window.bookshelf.userData.settings || {}).publicDisplayName)).toBe('E2Eテスト名義');
+        await expect.poll(() => page.evaluate(() => (window.bookshelf.userData.settings || {}).affiliateId)).toBe('mytag-22');
         expect(errors).toEqual([]);
     });
 });
