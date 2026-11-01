@@ -3021,3 +3021,37 @@ test.describe('公開の設定: 保存が経路を通して動く (イシュー#
         expect(errors).toEqual([]);
     });
 });
+
+// イシュー#468 (②指示a): ストアに無いidで #/publish/<id> を開いた時 (直リンク・保存前の再読込・既に
+// 削除済み等) に白画面や例外にせず #/publish へ replace して一覧を出すことを確認する。
+test.describe('#/publish/<id> にストアに無いidで着地した時の挙動 (イシュー#468)', () => {
+    // URLの段はスマホ幅限定(_modalHistPush内のmobile判定、既存仕様・イシュー#284 L12297と同じ条件)。
+    // PC幅では段を履歴に積まないため route も変わらない(brief/②承認の対象はスマホの戻る網羅マトリクス)
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test('直リンクでストアに無いidを開く → #/publish へ replace され一覧が表示される。例外は出ない', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.goto('index.html#/publish/does-not-exist-xyz');
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/publish');
+        expect(errors).toEqual([]);
+    });
+
+    test('新規記事(仮id)を保存せずにいる間は #/publish/<仮id> のまま、exists判定でストアに無いことが分かる', async ({ page }) => {
+        // (保存前の再読込・閉じた後の進むボタンの前提条件を確認: 仮idはURLに乗るがストアには登録されない)
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.evaluate(() => window.bookshelf._artOpenEditor(null));
+        const pendingHash = await page.evaluate(() => location.hash);
+        expect(pendingHash).toMatch(/^#\/publish\//);
+        expect(pendingHash).not.toBe('#/publish');
+        const existsInStore = await page.evaluate(() => {
+            const id = location.hash.split('/').pop();
+            return !!window.bookshelf.publishArticleStore.get(id);
+        });
+        expect(existsInStore, '仮idは保存前はストアに無い(②承認案2)').toBe(false);
+        expect(errors).toEqual([]);
+    });
+});

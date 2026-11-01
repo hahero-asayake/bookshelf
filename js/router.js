@@ -7,6 +7,9 @@
 //   #/bookshelf/<slug>              → { view: 'bookshelf', slug }
 //   #book/<asin>                    → { view: 'book', asin }
 //   #book/<asin>?from=<internalId>  → { view: 'book', asin, from }
+//   #/publish                       → { view: 'publish' }
+//   #/publish/settings              → { view: 'publish-settings' }
+//   #/publish/<id>                  → { view: 'publish', id }
 //
 // 旧形式互換（既存リンクが壊れない範囲）:
 //   #book-<asin>                    → { view: 'book', asin } として扱う
@@ -18,12 +21,15 @@
 //   router.navigateMain();
 //   router.navigateBookshelf(slug);
 //   router.navigateBook(asin, fromInternalId);
+//   router.navigatePublish(id);
+//   router.navigatePublishSettings();
 //
 // route オブジェクトのプロパティ:
-//   view: 'main' | 'bookshelf' | 'book'
+//   view: 'main' | 'bookshelf' | 'book' | 'publish' | 'publish-settings'
 //   slug?: string         (bookshelf)
 //   asin?: string         (book)
 //   from?: string         (book — どの本棚から開いたか)
+//   id?: string           (publish — 記事id。新規記事は仮id。無ければ一覧)
 
 class BookshelfRouter {
     constructor() {
@@ -62,6 +68,15 @@ class BookshelfRouter {
         this._setHash(`#book/${encodeURIComponent(asin)}${qs}`, replace);
     }
 
+    // イシュー#468: 公開/設定の画面にURLを持たせる
+    navigatePublish(id, { replace = false } = {}) {
+        this._setHash(id ? `#/publish/${encodeURIComponent(id)}` : '#/publish', replace);
+    }
+
+    navigatePublishSettings({ replace = false } = {}) {
+        this._setHash('#/publish/settings', replace);
+    }
+
     // ===== パース =====
     parse(hash) {
         if (!hash || hash === '#' || hash === '#/') {
@@ -73,6 +88,20 @@ class BookshelfRouter {
         const bsMatch = stripped.match(/^\/bookshelf\/([^/?#]+)/);
         if (bsMatch) {
             return { view: 'bookshelf', slug: decodeURIComponent(bsMatch[1]) };
+        }
+
+        // #/publish/settings (イシュー#468・<id> より先に判定し "settings" という id と誤判定しない)
+        if (/^\/publish\/settings\/?$/.test(stripped)) {
+            return { view: 'publish-settings' };
+        }
+        // #/publish/<id>
+        const pubIdMatch = stripped.match(/^\/publish\/([^/?#]+)/);
+        if (pubIdMatch) {
+            return { view: 'publish', id: decodeURIComponent(pubIdMatch[1]) };
+        }
+        // #/publish
+        if (/^\/publish\/?$/.test(stripped)) {
+            return { view: 'publish' };
         }
 
         // #book/<asin>?from=<id>

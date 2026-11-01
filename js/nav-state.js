@@ -27,6 +27,7 @@
         const o = { view: r.view };
         if (r.view === 'bookshelf' && r.slug) o.slug = r.slug;
         if (r.view === 'book') { if (r.asin) o.asin = r.asin; if (r.from) o.from = r.from; }
+        if (r.view === 'publish' && r.id) o.id = r.id; // イシュー#468: #/publish/<id> (新規記事は仮id)
         return o;
     }
 
@@ -74,6 +75,9 @@
         const c = canonRoute(r);
         if (c.view === 'bookshelf' && c.slug) return `#/bookshelf/${encodeURIComponent(c.slug)}`;
         if (c.view === 'book' && c.asin) return `#book/${encodeURIComponent(c.asin)}${c.from ? `?from=${encodeURIComponent(c.from)}` : ''}`;
+        // イシュー#468: 公開にURLを持たせる(#/settingsは見送り・別イシューで対応)
+        if (c.view === 'publish') return c.id ? `#/publish/${encodeURIComponent(c.id)}` : '#/publish';
+        if (c.view === 'publish-settings') return '#/publish/settings';
         return '';
     }
 
@@ -279,6 +283,29 @@
                 const route = input.route ? canonRoute(input.route) : { view: 'main' };
                 return { ...s, faces, book: null, route, source: 'ui' };
             }
+            // ===== イシュー#468: 公開/設定にURLを持たせる =====
+            // face を1つ push しつつ route も変える (一覧を開く・記事個別を開く等)。1 apply で行うことで
+            // URL の push と face の push が別々の履歴操作に分離しない (brief の核心要求)
+            case 'openRoute3': {
+                if (s.faces.some((f) => f.id === input.id)) return s; // 二重オープンで積み増さない (既存 'open' と同じ)
+                const faces = [...s.faces, { id: input.id, extra: input.extra || null, close: input.close || null }];
+                const route = canonRoute(input.route);
+                return { ...s, faces, route, source: 'ui' };
+            }
+            // 単一 face を除去しつつ route を戻す (設定・公開の設定の × 閉じ。汎用)
+            case 'closeFace3': {
+                const faces = s.faces.filter((f) => f.id !== input.id);
+                const route = input.route ? canonRoute(input.route) : { view: 'main' };
+                return { ...s, faces, route, source: 'ui' };
+            }
+            // 公開記事モーダルの × 閉じ。記事サブ状態 (閲覧/編集/一覧/公開の設定) をまとめて除去し route を戻す。
+            // 旧実装は _modalHistPop を複数回individually呼んでいた (= 別々の apply) のを1回に統合 (#442 step3の崩れの原因)
+            case 'closePublish3': {
+                const removeIds = ['art-edit-mode', 'art-viewing', 'publish-settings-modal', 'publish-pages-modal'];
+                const faces = s.faces.filter((f) => !removeIds.includes(f.id));
+                const route = input.route ? canonRoute(input.route) : { view: 'main' };
+                return { ...s, faces, route, source: 'ui' };
+            }
             default:
                 return reduce(s, input);
         }
@@ -378,6 +405,12 @@
             },
             closeBook(route, meta) { return this.apply({ type: 'closeBook3', route }, Object.assign({ replace: true }, meta || {})); },
             rename(from, to, close, meta) { return this.apply({ type: 'rename', from, to, close }, Object.assign({ renamed: true }, meta || {})); },
+            // イシュー#468: face の push と route 変化を1 apply で行う (公開一覧・記事個別を開く用)
+            openRoute(id, extra, close, route, meta) { return this.apply({ type: 'openRoute3', id, extra: extra || null, close, route }, meta || {}); },
+            // 単一 face の除去 + route 復元を1 apply で (設定・公開の設定の × 閉じ)
+            closeFace(id, route, meta) { return this.apply({ type: 'closeFace3', id, route }, Object.assign({ replace: true }, meta || {})); },
+            // 公開記事モーダルの × 閉じ専用 (記事サブ状態を一括除去)
+            closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true }, meta || {})); },
             setExtra(id, extra) {
                 const faces = this.state.faces.map((f) => (f.id === id ? { ...f, extra: Object.assign({}, f.extra || {}, extra || {}) } : f));
                 this.state = { ...this.state, faces };

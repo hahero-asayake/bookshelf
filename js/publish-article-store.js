@@ -308,12 +308,14 @@ class PublishArticleStore {
 
     // persist:false はメモリ更新のみ (リモートへの反映を呼び出し元がデバウンスする、イシュー#142)。
     // 省略時は従来どおり即座に persist する。
-    async create(partial = {}, { persist = true } = {}) {
+    // id: 指定時はそのidで作成する(イシュー#468・新規記事の仮id=URLの#/publish/<id>と実idを一致させる)。
+    // 省略時は従来どおりストア側で新規発行する(既存呼び出しの挙動は変えない)。
+    async create(partial = {}, { persist = true, id } = {}) {
         await this._ensure();
         const now = Date.now();
         const title = partial.title || '無題の記事';
         const article = {
-            id: PublishArticleStore._newId('art'),
+            id: id || PublishArticleStore._newId('art'),
             slug: this._uniqueSlug(partial.slug || title),
             publicId: null,
             title,

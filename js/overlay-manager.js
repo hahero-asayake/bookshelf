@@ -46,6 +46,8 @@
          *   onOpen     … 'stack'|'closeOthers' (既定: popover/menu は 'closeOthers'、それ以外 'stack')
          *   esc        … ESC で閉じる面か (既定 true)。backdrop … 'close'|'ignore' (既定: modal/sheet は 'ignore'、他は 'close')
          *   hist       … 履歴に段を積む面か (既定: dialog/popover/menu は false、それ以外 true)。true なら hooks.onOpen を呼ぶ
+         *   route      … 開いた時に URL (NavState route) を変える面か (イシュー#468・省略時は従来どおり route 不変)
+         *   returnRoute… 閉じた時に戻す route (route 指定時のみ意味を持つ。省略時は main)
          *   onRequestClose(reason) → boolean|Promise<boolean> … 閉じる前の確認 (変更ありフォームの破棄確認の置き場)
          *   onClose(reason)       … 閉じた後片付け
          *   owner      … 'core'|'plugin:<id>'
@@ -71,6 +73,8 @@
             const face = {
                 id, el, kind, size,
                 hist: typeof s.hist === 'boolean' ? s.hist : !transientOrDialog,
+                route: s.route || null, // イシュー#468: 開いた時に変える NavState route (省略時は従来どおり不変)
+                returnRoute: s.returnRoute || null, // 閉じた時に戻す route
                 esc: s.esc !== false,
                 backdrop: s.backdrop || ((kind === 'modal' || kind === 'sheet') ? 'ignore' : 'close'),
                 onRequestClose: typeof s.onRequestClose === 'function' ? s.onRequestClose : null,
@@ -103,6 +107,7 @@
                 try {
                     this.hooks.onOpen(id, {
                         hist: true, el,
+                        route: face.route, // イシュー#468
                         // 履歴側が「戻る」で閉じる時に呼ぶ。契約: {fromHistory} を受け取り、閉じなかった時だけ false
                         closeFn: (o) => this.close(id, { reason: 'history', fromHistory: !!(o && o.fromHistory) }),
                     });
@@ -125,7 +130,7 @@
             this._applyLayers();
             if (face.onClose) { try { face.onClose(reason); } catch (e) { console.error('[overlays] onClose', e); } }
             if (face.hist && typeof this.hooks.onClose === 'function') {
-                try { this.hooks.onClose(id, { reason, fromHistory: !!o.fromHistory || reason === 'history' }); }
+                try { this.hooks.onClose(id, { reason, fromHistory: !!o.fromHistory || reason === 'history', route: face.route ? (face.returnRoute || { view: 'main' }) : null }); }
                 catch (e) { console.error('[overlays] hooks.onClose', e); }
             }
             return true;

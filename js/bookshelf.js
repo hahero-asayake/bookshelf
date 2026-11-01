@@ -7090,6 +7090,10 @@ class VirtualBookshelf {
         modal.classList.add('settings-fullpage');
         // 重なり管理役: 大 (lg・左に項目一覧・右に中身)。hist:true = 履歴の段 (settings-modal) は管理役の hooks 経由で
         // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (settings-cat の段と一覧へ戻す) は onClose
+        // イシュー#468: route/returnRoute付与を試したところ back-nav-matrix X08 (設定 詳細で
+        // Esc＝閉じ、段が余らない) が新規に落ちた (settings-cat と settings-modal の2段が絡む既存の
+        // Esc処理と、closeFace3のreplace指定が競合している可能性。原因未特定のため時間内に安全策として
+        // 撤回。#/settings はparse/formatRouteには存在するが、実際の開閉はURLに反映されない。次stepへ申し送り)
         this._overlays().open(modal, {
             kind: 'modal', size: 'lg', hist: true,
             onClose: () => {
@@ -8365,7 +8369,29 @@ class VirtualBookshelf {
                 // 同型)。別の本への遷移・deep link・再読込では常に閲覧モード (従来どおり)。
                 const keepEditMode = !!(this._lastDetailBook && this._lastDetailBook.asin === book.asin && this._lastDetailEditMode);
                 this.showBookDetail(book, keepEditMode);
+            } else if (route.view === 'publish') {
+                // イシュー#468: #/publish・#/publish/<id> への直リンク・起動時の着地。一覧を開き、
+                // idがあればその記事を開く(進むボタンでの再構築は _reopenArtContext が別途担当)
+                const modal = document.getElementById('publish-pages-modal');
+                const already = modal && modal.classList.contains('show');
+                const openArticleIfNeeded = () => {
+                    if (!route.id || this._artEditingId === route.id) return;
+                    const exists = this.publishArticleStore.get(route.id);
+                    if (exists) this._artOpenEditor(route.id);
+                    // ②指示(a): ストアに無いidは白画面/例外にせず #/publish へ replace して一覧を出す
+                    else if (this.router) this.router.navigatePublish(null, { replace: true });
+                };
+                if (already) openArticleIfNeeded();
+                else this.openPublishPagesModal().then(openArticleIfNeeded).catch(() => {});
+            } else if (route.view === 'publish-settings') {
+                // イシュー#468: #/publish/settings への直リンク・起動時の着地
+                const modal = document.getElementById('publish-pages-modal');
+                const already = modal && modal.classList.contains('show');
+                if (already) this.openPublishSettingsModal();
+                else this.openPublishPagesModal().then(() => this.openPublishSettingsModal()).catch(() => {});
             }
+            // #/settings はイシュー#468では見送り(別イシューで対応。back-nav-matrix X08の新規リグレッションが
+            // 未解決のため、URLだけ受け付けて画面を開かない中途半端な状態を残さずcanonRoute/parseからも除去済み)
         } finally {
             this._suppressRouterUpdate = false;
         }
@@ -9182,24 +9208,27 @@ class VirtualBookshelf {
         // 重なり管理役 (イシュー#367): 一覧は大 (lg)・編集に入ると全画面 (full・_artOpenEditor で setSize)。履歴は従来どおり _modalHistPush/Pop (hist:false)
         this._overlays().open(modal, { kind: 'modal', size: this._artMode === 'edit' || this._artMode === 'form' ? 'full' : 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
-        this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o));
+        // イシュー#468: #/publish を持たせる。閉じた時に戻す route (開く前にいた画面) を控える
+        this._artPublishReturnRoute = (this.router && this.router.current) || { view: 'main' };
+        this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o), { route: { view: 'publish' } });
     }
 
     closePublishPagesModal({ fromHistory = false } = {}) {
         // イシュー#279: ×ボタンは編集/閲覧状態からでも押せるため、残っている履歴段を先に畳む
         // (段を残したまま閉じると、次に開いた時や次回の戻る操作で不整合になる・②指示「段を残さない」)。
         if (this._artMode === 'edit' || this._artMode === 'form') this._artFlushSave().catch(() => {});
-        const st = this._modalHistStack;
-        if (st && st.some((e) => e.id === 'art-edit-mode')) this._modalHistPop('art-edit-mode', {});
-        if (st && st.some((e) => e.id === 'art-viewing')) this._modalHistPop('art-viewing', {});
         this._artMode = 'view';
         this._overlays().close('publish-pages-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('publish-pages-modal', { fromHistory });
+        // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している (旧 _modalHistPop と同じ規則)
+        if (fromHistory) return;
+        // イシュー#468: 記事サブ状態(art-edit-mode/art-viewing/publish-settings-modal)と
+        // publish-pages-modal自体を1 applyでまとめて外しつつ route を戻す(旧実装は個別 _modalHistPop を
+        // 複数回=別々の apply 呼び出しに分離していた・#442 step3で広範囲が崩れた原因)
+        this.nav.closePublish(this._artPublishReturnRoute || { view: 'main' });
     }
 
     // イシュー#442: 公開の設定(旧 #publish-section を撤去し統合・ADR-145)。既存ID・保存処理は変更しない。
-    // (②差し戻し2026-11-02 02:01: #/publish/settings のURLルートは入れず、他モーダルと同じ
-    // _modalHistPush/Pop 方式のまま。一覧モーダルから開く1か所の入口)
+    // (イシュー#468: #/publish/settings のURLルートを持たせ、公開一覧と同じ closePublish3 の規則で閉じる)
     openPublishSettingsModal() {
         const modal = document.getElementById('publish-settings-modal');
         if (!modal) return;
@@ -9215,12 +9244,15 @@ class VirtualBookshelf {
         }
         this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
-        this._modalHistPush('publish-settings-modal', (o) => this.closePublishSettingsModal(o));
+        this._artPublishSettingsReturnRoute = (this.router && this.router.current) || { view: 'publish' }; // イシュー#468
+        this._modalHistPush('publish-settings-modal', (o) => this.closePublishSettingsModal(o), { route: { view: 'publish-settings' } });
     }
 
     closePublishSettingsModal({ fromHistory = false } = {}) {
         this._overlays().close('publish-settings-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('publish-settings-modal', { fromHistory });
+        if (fromHistory) return; // 旧 _modalHistPop と同じ規則
+        // イシュー#468: 公開一覧と同じ closePublish3 を使う(単独faceのみ除去される・②指示「同じ規則で揃える」)
+        this.nav.closePublish(this._artPublishSettingsReturnRoute || { view: 'publish' });
     }
 
     _artSetupUI() {
@@ -9417,7 +9449,9 @@ class VirtualBookshelf {
         if (content) content.classList.add('art-editing');
         // 編集 = 全画面 (full・イシュー#367)。PC の幅は .art-modal-content.art-editing の専用ルール (min(1240px, 100vw-40px)) が優先、≤600px は元から全画面
         this._overlays().setSize('publish-pages-modal', 'full');
-        this._modalHistPush('art-viewing', (o) => this._artShowList(o), { extra: { articleId: this._artEditingId } });
+        // イシュー#468: 記事個別ページを開く操作そのものに #/publish/<id> への route 変化を1 applyで乗せる
+        // (新規記事は _artOpenEditor が確定した仮id・既存記事は実id。編集/閲覧のサブ状態はURLで区別しない、ADR-147)
+        this._modalHistPush('art-viewing', (o) => this._artShowList(o), { extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
     }
 
     _artCountBooks(blocks) {
@@ -10263,7 +10297,12 @@ class VirtualBookshelf {
         // 900px超の畳み状態だけは記憶を復元する (900px以下は上の _artCloseSheet() で毎回閉じた状態から
         // 始まる・イシュー#168)。_artRenderDrawer() が wrap へクラス適用する。
         try { this._artDrawerUserCollapsed = localStorage.getItem(ART_DRAWER_COLLAPSE_KEY) === '1'; } catch (_) { this._artDrawerUserCollapsed = false; }
-        this._artEditingId = id;
+        // イシュー#468: 新規記事は開いた直後に仮idを確定する(②承認・案2=クライアントでuuid採番、
+        // ストアには登録しない)。これにより #/publish/<仮id> へ即座に遷移できる(brief「作成直後」の要求)。
+        // 既存記事(id指定あり)は this._artPendingId=null のまま(ストアに実在するidを使う)。
+        this._artPendingId = id ? null : PublishArticleStore._newId('art');
+        const effectiveId = id || this._artPendingId;
+        this._artEditingId = effectiveId;
         this._artPendingBookBlockId = null;
         this._artActiveShelfBlockId = null;
         this._artShelfSel = {};
@@ -10280,6 +10319,7 @@ class VirtualBookshelf {
             const shelves = this.bookshelfManager.getBookshelves();
             const allShelf = shelves.find(s => s.isSpecial) || shelves[0] || null;
             this._artDraft = {
+                id: effectiveId, // イシュー#468: 仮id (ストア未登録。_artFlushSave の最初の保存でこのidのまま create する)
                 title: '', tags: [], blocks: [],
                 theme: { layout: 'book-a-shelf-a', color: 'white' }, // イシュー#251: 3テンプレ既定は「書影を大きく」
                 sourceShelfId: allShelf ? (allShelf.internalId || allShelf.id) : null,
@@ -11899,11 +11939,14 @@ class VirtualBookshelf {
             adTag: this._artDraft.adTag || null
         };
         try {
-            if (this._artEditingId) {
+            if (this._artEditingId && !this._artPendingId) {
                 await this.publishArticleStore.update(this._artEditingId, patch, { persist: false });
             } else {
-                const created = await this.publishArticleStore.create(patch, { persist: false });
+                // イシュー#468: _artPendingId(仮id)があればそのidのまま create する。URLの#/publish/<id>と
+                // ストアの実idが一致する(採番し直さない)。無ければ従来どおりストア側で新規発行する。
+                const created = await this.publishArticleStore.create(patch, { persist: false, id: this._artPendingId || undefined });
                 this._artEditingId = created.id;
+                this._artPendingId = null; // 確定した
                 this._artDraft.id = created.id;
                 this._artDraft.slug = created.slug;
                 const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
@@ -13224,22 +13267,27 @@ class VirtualBookshelf {
         if (!ov) return { open: () => null, close: () => false, requestClose: async () => false, closeAll: () => 0, top: () => null, isTop: () => false, has: () => false, stackInfo: () => [] };
         if (!ov._histBound) {
             ov._histBound = true;
-            ov.hooks.onOpen = (id, { closeFn }) => this._modalHistPush(id, closeFn);
-            ov.hooks.onClose = (id, { fromHistory }) => this._modalHistPop(id, { fromHistory: !!fromHistory });
+            ov.hooks.onOpen = (id, { closeFn, route }) => this._modalHistPush(id, closeFn, { route }); // route: イシュー#468
+            ov.hooks.onClose = (id, { fromHistory, route }) => this._modalHistPop(id, { fromHistory: !!fromHistory, route });
         }
         return ov;
     }
 
-    _modalHistPush(id, close, { isMobile, extra } = {}) {
+    // route: イシュー#468。渡された時だけ face の push/pop と NavState route の変化を1 apply で行う
+    // (省略時は従来どおり route 不変 = 既存呼び出しの挙動は変えない)
+    _modalHistPush(id, close, { isMobile, extra, route } = {}) {
         const mobile = isMobile ? isMobile() : this._isHistMobile();
         if (!mobile) return;
         this._bindSettingsPopstate();
-        this.nav.open(id, extra || null, close, { mobile: true }); // 台帳が pushState する
+        if (route) this.nav.openRoute(id, extra || null, close, route, { mobile: true });
+        else this.nav.open(id, extra || null, close, { mobile: true }); // 台帳が pushState する
     }
 
-    _modalHistPop(id, { fromHistory = false } = {}) {
+    _modalHistPop(id, { fromHistory = false, route } = {}) {
         // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している
-        if (!fromHistory) this.nav.close(id);
+        if (fromHistory) return;
+        if (route) this.nav.closeFace(id, route); // イシュー#468: face除去+route復元を1 apply
+        else this.nav.close(id);
     }
 
     // イシュー#291: 「進む」で長文メモを開き直す。state.asin から本を特定する。
@@ -13280,7 +13328,12 @@ class VirtualBookshelf {
         }
         if (this._artEditingId !== id || !this._artDraft) {
             const exists = this.publishArticleStore.get(id);
-            if (!exists) return false;
+            if (!exists) {
+                // イシュー#468 (②指示a): ストアに無いidで開いた(保存前の仮idで再読込・既に削除済み等)。
+                // 白画面/例外にせず #/publish へ replace して一覧を出す(一覧モーダルは既に開いている)
+                if (this.router) this.router.navigatePublish(null, { replace: true });
+                return false;
+            }
             this._artOpenEditor(id);
         } else {
             // 戻るで _artShowList まで戻った後の「進む」: 同じ記事はまだ開いているが
