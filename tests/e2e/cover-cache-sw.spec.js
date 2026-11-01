@@ -1,9 +1,26 @@
-// イシュー#391 E2E#2: SW許可下で、表紙画像(Amazon)が2回目のロードでCache Storageから
-// 返され、ネットワーク要求が0件になることを固定する。
+// イシュー#391 E2E#2: SW許可下で、表紙画像(Amazon)がCache Storageから返され、
+// ネットワーク要求が0件になることを固定する。
 //
 // page.route はSWのfetchイベントを安定して横取りできない(②指摘・2026-10-29実測で再現性に
 // ばらつきを確認)ため、本物の別オリジンHTTPサーバーを立てて検証する(sw.jsのCOVER_HOSTSには
 // 本番ホストに加えテスト専用で127.0.0.1を一時注入する)。
+//
+// イシュー#476 step2: 元は「2回のロードで0件になる」想定だったが、mainのCI(a1814cc/18bebfc)で
+// reqCount expected 0, received 8 が再発(#405のCI=5c003f5で初出)。CPUx6スロットリング下で
+// 20回反復・診断ログ(navigator.serviceWorker.controller有無・caches内の表紙件数)を仕込んで
+// 再現したところ、8/20回で「1回目のロードの初期描画(switchBookshelf呼び出しによる画像リクエスト)
+// の時点でまだSWがcontrollerになっていない」パターンが発生し、その場合は1回目のロード中は
+// 表紙がSW経由を一度も通らずキャッシュが空のまま、2回目のロードの初期描画が「SWが初めてcontroller
+// になった状態での初回リクエスト」になってキャッシュミス(8件ネットワークへ)=即失敗していた。
+// アプリ側(sw.js)のcache-firstロジック自体は壊れていない(診断ログで、キャッシュミス後は
+// 正しくcaches内に8件保存されることを確認済み)。原因は、index.htmlのSW register呼び出しが
+// window.loadイベント(静的リソースのロード完了)起点、アプリの初期描画(画像リクエスト)が
+// 非同期データロード完了起点という2つの独立した非同期処理の競合であり、2回のロードという
+// テストの前提がこの競合を考慮していなかった(テスト側の前提の誤り)。
+// 対策: 3回ロードに変更。1回目=SW未制御のbaseline、2回目=SWは既にcontrollerだが表紙キャッシュが
+// まだ空かもしれないロード(ここでキャッシュを確実に構築する)、3回目=2回目までに必ずキャッシュが
+// 構築されているので0件になることを検証する。CPUx6下で20回反復し0件失敗を確認済み(アプリ=sw.jsは
+// 無変更のため?v=バンプ不要)。
 import { test, expect } from '@playwright/test';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -68,7 +85,7 @@ test.afterAll(async () => {
     rmSync(swTestDir, { recursive: true, force: true });
 });
 
-test('SW許可下で、2回目のロードでは表紙画像(別オリジン)のネットワーク要求が0件になる', async ({ browser }) => {
+test('SW許可下で、3回目のロードでは表紙画像(別オリジン)のネットワーク要求が0件になる', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'allow' });
     let reqCount = 0;
     await ctx.route(`http://127.0.0.1:${imgPort}/**`, async (route) => {
@@ -113,9 +130,15 @@ test('SW許可下で、2回目のロードでは表紙画像(別オリジン)の
     const firstLoadCount = reqCount;
     expect(firstLoadCount).toBeGreaterThan(0); // 初回はSW未制御でネットワークへ行く
 
+    // 2回目: SWは既にcontroller化しているが、表紙キャッシュはまだ空の可能性がある
+    // (1回目の初期描画がSW制御化より先に終わっていた場合)。このロードでキャッシュを構築する。
     reqCount = 0;
     await openAndSettle();
-    expect(reqCount).toBe(0); // 2回目はSWのCache Storageから返り、ネットワーク要求が0件
+
+    // 3回目: 2回目までに必ずキャッシュが構築されているので、ネットワーク要求は0件になる。
+    reqCount = 0;
+    await openAndSettle();
+    expect(reqCount).toBe(0); // 3回目はSWのCache Storageから返り、ネットワーク要求が0件
 
     await ctx.close();
 });

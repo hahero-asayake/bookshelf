@@ -53,7 +53,11 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         }
         if (url.includes('/billing/checkout')) {
             hubState.plan = 'plus';   // 決済完了扱い (Webhook 相当)
-            return route.fulfill({ json: { url: 'http://localhost:8000/index.html?billing=success' } });
+            // イシュー#476: Originをhttp://localhost:8000に固定していたため、worktree分離(#413)で
+            // ポートが変わる環境(例: PORT=8176)だとlocation.hrefが実際には存在しないサーバーへ
+            // 遷移してしまい、billing=success後のプラン反映が一度も起きなかった。page.url()から
+            // 動的に取ることでどのポートでも動く形にする。
+            return route.fulfill({ json: { url: `${new URL(page.url()).origin}/index.html?billing=success` } });
         }
         if (url.includes('/account') && method === 'DELETE') {
             return route.fulfill({ json: { ok: true, deleted: true } });

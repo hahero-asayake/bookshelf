@@ -55,7 +55,11 @@ async function installAmazonAjaxMock(context) {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            headers: { 'Access-Control-Allow-Origin': 'http://localhost:8000', 'Access-Control-Allow-Credentials': 'true' },
+            // イシュー#476: Originをhttp://localhost:8000に固定していたため、worktree分離(#413)で
+            // ポートが変わる環境(例: PORT=8176)だとCORSで拒否され進捗が一度も更新されなかった
+            // (credentials:"include"のためAccess-Control-Allow-Origin:'*'は使えない・リクエストの
+            // Originヘッダをそのまま返すことでどのポートでも動く形にする)。
+            headers: { 'Access-Control-Allow-Origin': route.request().headers()['origin'] || '*', 'Access-Control-Allow-Credentials': 'true' },
             body: JSON.stringify({ success: true, GetContentOwnershipData: { numberOfItems: TOTAL_ITEMS, items: makeItems(startIndex, count) } })
         });
     });
@@ -68,7 +72,8 @@ async function installHubRelayMock(context, onRelay) {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            headers: { 'Access-Control-Allow-Origin': 'http://localhost:8000', 'Access-Control-Allow-Credentials': 'true' },
+            // イシュー#476: 上のinstallAmazonAjaxMockと同じ理由でOriginを動的にする。
+            headers: { 'Access-Control-Allow-Origin': route.request().headers()['origin'] || '*', 'Access-Control-Allow-Credentials': 'true' },
             body: JSON.stringify({ ok: true })
         });
     });
