@@ -7089,15 +7089,16 @@ class VirtualBookshelf {
         // そのまま、見た目だけ全画面+サイドバー残存+×なしにする(css/bookshelf.css「設定を全画面ページとして開く」節)。
         modal.classList.add('settings-fullpage');
         // 重なり管理役: 大 (lg・左に項目一覧・右に中身)。hist:true = 履歴の段 (settings-modal) は管理役の hooks 経由で
-        // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (settings-cat の段と一覧へ戻す) は onClose
-        // イシュー#468: route/returnRoute付与を試したところ back-nav-matrix X08 (設定 詳細で
-        // Esc＝閉じ、段が余らない) が新規に落ちた (settings-cat と settings-modal の2段が絡む既存の
-        // Esc処理と、closeFace3のreplace指定が競合している可能性。原因未特定のため時間内に安全策として
-        // 撤回。#/settings はparse/formatRouteには存在するが、実際の開閉はURLに反映されない。次stepへ申し送り)
+        // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (一覧へ戻す) は onClose。
+        // イシュー#468では route/returnRoute付与で back-nav-matrix X08 が新規に落ち撤回したが、イシュー#494 step2で
+        // 原因を実測特定(settings-cat段のclose(go・遅延)とsettings-modal段のclose+route復元(closeFace3・replace・
+        // 即時)が同じEsc操作内で2回 individually apply され実行タイミングが噛み合わない→段が余る)。
+        // _modalHistPop側(id==='settings-modal'の分岐)でsettings-cat残存時は1回のnav.closeSettingsにまとめて
+        // 解消済み(#442のclosePublish3と同じ形)。onCloseは「settings-catのpop」を呼ばない(DOM後片付けのみ)。
         this._overlays().open(modal, {
             kind: 'modal', size: 'lg', hist: true,
+            route: { view: 'settings' }, returnRoute: { view: 'main' }, // イシュー#494
             onClose: () => {
-                this._modalHistPop('settings-cat');
                 this._showSettingsMaster();
             },
         });
@@ -8057,7 +8058,8 @@ class VirtualBookshelf {
     _closeSettingsModal(opts = {}) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
-        // 重なり管理役経由 (イシュー#367): .show を外し → onClose (settings-cat の段と一覧へ戻す) → hooks.onClose (settings-modal の段)
+        // 重なり管理役経由 (イシュー#367): .show を外し → onClose (一覧表示へ戻すDOM後片付け) → hooks.onClose
+        // (settings-modal の段。settings-cat が残っていれば nav.closeSettings で一括除去・イシュー#494)
         const fromHistory = !!opts.fromHistory;
         if (this._overlays().close('settings-modal', { reason: fromHistory ? 'history' : 'button', fromHistory })) return;
         // 管理役に載っていない (読み込み前等) 時の従来の閉じ方
@@ -8389,9 +8391,12 @@ class VirtualBookshelf {
                 const already = modal && modal.classList.contains('show');
                 if (already) this.openPublishSettingsModal();
                 else this.openPublishPagesModal().then(() => this.openPublishSettingsModal()).catch(() => {});
+            } else if (route.view === 'settings') {
+                // イシュー#494: #/settings への直リンク・起動時の着地・リロード (#468では見送り、ここで対応)
+                const modal = document.getElementById('settings-modal');
+                const already = modal && modal.classList.contains('show');
+                if (!already) this._openSettingsModal();
             }
-            // #/settings はイシュー#468では見送り(別イシューで対応。back-nav-matrix X08の新規リグレッションが
-            // 未解決のため、URLだけ受け付けて画面を開かない中途半端な状態を残さずcanonRoute/parseからも除去済み)
         } finally {
             this._suppressRouterUpdate = false;
         }
@@ -13286,6 +13291,11 @@ class VirtualBookshelf {
     _modalHistPop(id, { fromHistory = false, route } = {}) {
         // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している
         if (fromHistory) return;
+        // イシュー#494: settings-modal を × / Esc で閉じる時、詳細段 (settings-cat) が残っていれば
+        // 1回の apply でまとめて畳む (#442 の closePublish3 と同じ理由。個別に2回 apply すると
+        // go(遅延)とreplace(即時)の実行タイミングが噛み合わず段が余る・#494 step2で実測)。
+        // settings-cat 単独の「‹戻る」(_bindSettingsPopstate) はここを通らない(変更なし)
+        if (id === 'settings-modal' && this.nav.hasFace('settings-cat')) { this.nav.closeSettings(route); return; }
         if (route) this.nav.closeFace(id, route); // イシュー#468: face除去+route復元を1 apply
         else this.nav.close(id);
     }

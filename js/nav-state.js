@@ -75,9 +75,10 @@
         const c = canonRoute(r);
         if (c.view === 'bookshelf' && c.slug) return `#/bookshelf/${encodeURIComponent(c.slug)}`;
         if (c.view === 'book' && c.asin) return `#book/${encodeURIComponent(c.asin)}${c.from ? `?from=${encodeURIComponent(c.from)}` : ''}`;
-        // イシュー#468: 公開にURLを持たせる(#/settingsは見送り・別イシューで対応)
+        // イシュー#468: 公開にURLを持たせる(#/settingsは見送り→イシュー#494で対応)
         if (c.view === 'publish') return c.id ? `#/publish/${encodeURIComponent(c.id)}` : '#/publish';
         if (c.view === 'publish-settings') return '#/publish/settings';
+        if (c.view === 'settings') return '#/settings'; // イシュー#494: 本体設定モーダル
         return '';
     }
 
@@ -306,6 +307,16 @@
                 const route = input.route ? canonRoute(input.route) : { view: 'main' };
                 return { ...s, faces, route, source: 'ui' };
             }
+            // 設定モーダルの × / Esc / 戻る閉じ (イシュー#494)。詳細段 (settings-cat) が残っていれば
+            // 一緒に畳む。settings-cat だけを閉じる「‹戻る」(一覧へ戻す1段) は既存の 'close' を使う・変えない。
+            // closePublish3 と同じ理由 (#442 と同形): settings-cat の close (routeChanged なし→go・遅延) と
+            // settings-modal の close+route復元 (closeFace3・routeChanged あり→replace・即時) を同じ操作内で
+            // 2回 individually apply すると実行タイミングが噛み合わず段が余る (#494 step2 で実測)。1回に統合する
+            case 'closeSettings3': {
+                const faces = s.faces.filter((f) => f.id !== 'settings-cat' && f.id !== 'settings-modal');
+                const route = input.route ? canonRoute(input.route) : { view: 'main' };
+                return { ...s, faces, route, source: 'ui' };
+            }
             default:
                 return reduce(s, input);
         }
@@ -411,6 +422,8 @@
             closeFace(id, route, meta) { return this.apply({ type: 'closeFace3', id, route }, Object.assign({ replace: true }, meta || {})); },
             // 公開記事モーダルの × 閉じ専用 (記事サブ状態を一括除去)
             closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true }, meta || {})); },
+            // 設定モーダルの × / Esc / 戻る閉じ専用 (settings-cat が残っていれば一括除去・イシュー#494)
+            closeSettings(route, meta) { return this.apply({ type: 'closeSettings3', route }, Object.assign({ replace: true }, meta || {})); },
             setExtra(id, extra) {
                 const faces = this.state.faces.map((f) => (f.id === id ? { ...f, extra: Object.assign({}, f.extra || {}, extra || {}) } : f));
                 this.state = { ...this.state, faces };

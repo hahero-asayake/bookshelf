@@ -10,6 +10,7 @@
 //   #/publish                       → { view: 'publish' }
 //   #/publish/settings              → { view: 'publish-settings' }
 //   #/publish/<id>                  → { view: 'publish', id }
+//   #/settings                      → { view: 'settings' }        (本体設定・イシュー#494)
 //
 // 旧形式互換（既存リンクが壊れない範囲）:
 //   #book-<asin>                    → { view: 'book', asin } として扱う
@@ -23,9 +24,10 @@
 //   router.navigateBook(asin, fromInternalId);
 //   router.navigatePublish(id);
 //   router.navigatePublishSettings();
+//   router.navigateSettings();        // イシュー#494
 //
 // route オブジェクトのプロパティ:
-//   view: 'main' | 'bookshelf' | 'book' | 'publish' | 'publish-settings'
+//   view: 'main' | 'bookshelf' | 'book' | 'publish' | 'publish-settings' | 'settings'
 //   slug?: string         (bookshelf)
 //   asin?: string         (book)
 //   from?: string         (book — どの本棚から開いたか)
@@ -77,6 +79,11 @@ class BookshelfRouter {
         this._setHash('#/publish/settings', replace);
     }
 
+    // イシュー#494: 本体設定モーダルの開閉をURLと連動させる
+    navigateSettings({ replace = false } = {}) {
+        this._setHash('#/settings', replace);
+    }
+
     // ===== パース =====
     parse(hash) {
         if (!hash || hash === '#' || hash === '#/') {
@@ -102,6 +109,11 @@ class BookshelfRouter {
         // #/publish
         if (/^\/publish\/?$/.test(stripped)) {
             return { view: 'publish' };
+        }
+
+        // #/settings (イシュー#494: 本体設定モーダル)
+        if (/^\/settings\/?$/.test(stripped)) {
+            return { view: 'settings' };
         }
 
         // #book/<asin>?from=<id>
