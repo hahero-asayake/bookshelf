@@ -23,6 +23,7 @@ import { isReservedTopLevel } from './reserved-usernames.js';
 import { suspendedResponse } from './suspended-page.js';
 import { buildRobotsTxt, buildSitemapXml } from './seo.js';
 import { renderTopPage } from './top-page.js';
+import { renderReportPage, renderReportScript, reportPageCsp } from './report-page.js';
 
 export default {
     async fetch(request, env, ctx) {
@@ -58,6 +59,36 @@ export default {
         // /top (全ユーザー横断の公開記事一覧) は S7 で実装済み。予約語チェックより前で捌く (他の予約語は
         // まだ専用ページを持たない・/about 等は引き続き 404)。クエリ (?tag=/?cursor=) 付きも同じ扱い。
         if (username === 'top') return renderTopPage(env, url);
+
+        // /report (通報専用ページ・イシュー#408): ハブのオリジン上でログイン〜送信まで完結させる。
+        // /public (ユーザー公開ページ) の CSP (ADR-032) には手を入れず、この1ページだけ専用 CSP を被せる。
+        // HUB_API_ORIGIN・GOOGLE_CLIENT_ID は wrangler.bookshelf.toml の vars (未設定時は空文字で安全側: 対象
+        // URL が読めてもログインボタンが描画されず、フォームへ進めない=誤って緩い CSP だけが出ることはない)。
+        if (username === 'report' && !sub) {
+            const target = url.searchParams.get('target') || '';
+            const html = renderReportPage({ target, googleClientId: env.GOOGLE_CLIENT_ID || '' });
+            // serveHeaders()/noindexHeaders() は ADR-032 の script 無し CSP を既定で持つため、ここでは使わず
+            // 個別に組む (script-src 無しの既定で上書きされ、専用 CSP が効かなくなる事故を避けるため)。
+            return new Response(html, {
+                headers: {
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'X-Content-Type-Options': 'nosniff',
+                    'Referrer-Policy': 'no-referrer',
+                    'Content-Security-Policy': reportPageCsp(env.HUB_API_ORIGIN || 'https://hub.asayake.org'),
+                    'Cache-Control': 'no-store',
+                    'X-Robots-Tag': 'noindex'
+                }
+            });
+        }
+        if (username === 'report.js') {
+            return new Response(renderReportScript(env.HUB_API_ORIGIN || 'https://hub.asayake.org'), {
+                headers: {
+                    'Content-Type': 'application/javascript; charset=utf-8',
+                    'X-Content-Type-Options': 'nosniff',
+                    'Cache-Control': 'public, max-age=3600'
+                }
+            });
+        }
 
         if (!username) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
         if (isReservedTopLevel(username)) {

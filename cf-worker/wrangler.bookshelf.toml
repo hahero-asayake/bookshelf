@@ -28,6 +28,13 @@ binding = "DB"
 database_name = "asayake-community"
 database_id = "4512f08b-abeb-4a4e-93a0-65fadcee697a"
 
+# --- 変数 (通報専用ページ /report 用・イシュー#408) ---
+# GOOGLE_CLIENT_ID は wrangler.hub.toml と同一値 (OAuth の public な識別子。秘密ではない)。
+# HUB_API_ORIGIN は通報専用ページのフロントJSが fetch する先 (/session・/community/report は hub.asayake.org 側)。
+[vars]
+GOOGLE_CLIENT_ID = "368547907822-r79adn6052laipf20ram49br1skhv7ru.apps.googleusercontent.com"
+HUB_API_ORIGIN = "https://hub.asayake.org"
+
 # --- 運用監視 ---
 [observability]
 enabled = true

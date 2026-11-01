@@ -15,6 +15,8 @@ export const RESERVED_USERNAMES = [
     'top', 'about', 'legal', 'help', 'api', 'username',
     'public', 'data', 'session', 'publish', 'billing', 'admin', 'usage',
     'kindle', 'community',
+    // 通報専用ページ (/report・/report.js、イシュー#408)。他人が username として取得すると衝突するため予約
+    'report',
     // 3文字以上で制約上は取得可能なため①に含める (2026-09-05 ②承認3点目の指摘を実装時に精査し訂正。
     // static/assets も同様に3文字以上のため①側)
     'www', 'css', 'img', 'static', 'assets'
@@ -23,7 +25,8 @@ export const RESERVED_USERNAMES = [
 // 'go' 'me' 'js' は2文字 = username 制約 {3,30} を満たさずそもそも取得不可のため②側
 export const EXCLUDED_PATHS = [
     'go', 'me', 'js',
-    'favicon.ico', 'robots.txt', 'sitemap.xml', 'ads.txt', '.well-known'
+    'favicon.ico', 'robots.txt', 'sitemap.xml', 'ads.txt', '.well-known',
+    'report.js'   // 通報専用ページ(/report)のロジック (イシュー#408)
 ];
 
 // 配信 Worker のルーティング判定用: ①②をまとめた「第1階層で予約済みのセグメント」全体
