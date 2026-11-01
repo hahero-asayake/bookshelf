@@ -23,6 +23,35 @@ echo
 
 # --- ヘルパー ---------------------------------------------------------
 
+# .githooks/* が参照する scripts/*.mjs の一覧（イシュー#423で一元化）。
+# 新しいスクリプトを .githooks から参照する時はここに追記する。追記漏れは
+# 下の自己検査（セットアップ漏れ検出）がFAILで検出する。
+COPY_TARGETS=(
+  "scripts/git/push-gate.mjs"
+  "scripts/git/trailer-gate.mjs"
+  "scripts/git/secret-path-gate.mjs"
+  "scripts/git/amend-warn.mjs"
+  "scripts/check-version-bump.mjs"
+)
+
+# $1 = コピー先のworkdir（git clone済みのディレクトリ）
+# .githooksとCOPY_TARGETSの全ファイルをそこへコピーし、hookを有効化する
+# （3ケースで重複していたセットアップをイシュー#423で1関数に集約）。
+setup_hooks_clone() {
+  local dir="$1"
+  (
+    cd "$dir"
+    cp -r "$REPO_ROOT/.githooks" .
+    local target
+    for target in "${COPY_TARGETS[@]}"; do
+      mkdir -p "$(dirname "$target")"
+      cp "$REPO_ROOT/$target" "$target"
+    done
+    chmod +x .githooks/* scripts/git/*.mjs scripts/*.mjs
+    git config core.hooksPath .githooks
+  )
+}
+
 # $1 = ケース用サブディレクトリ名
 # bare origin + work を1組作り、hookをコピーして有効化し、baseline commitを
 # --no-verify で流し込む（セットアップ自体はテスト対象外）。
@@ -37,14 +66,12 @@ new_case_repo() {
     git symbolic-ref HEAD refs/heads/main  # initial branch名が環境依存(master等)なため明示する
     git config user.email "push-gate-test@example.com"
     git config user.name "push-gate-test"
-    cp -r "$REPO_ROOT/.githooks" .
-    mkdir -p scripts/git
-    cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-    cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
-    chmod +x .githooks/* scripts/git/*.mjs
-    git config core.hooksPath .githooks
+  )
+  setup_hooks_clone "$dir/work"
+  (
+    cd "$dir/work"
     echo base > README.md
-    git add README.md .githooks scripts/git/push-gate.mjs
+    git add README.md .githooks "${COPY_TARGETS[@]}"
     git commit -q -m "chore: baseline"
     git push -q --no-verify origin main
   )
@@ -103,6 +130,29 @@ check_output() {
     FAIL=$((FAIL+1))
   fi
 }
+
+# =======================================================================
+echo "### (self-check) .githooksが参照するscripts/*.mjsがCOPY_TARGETSに全部載っているか ###"
+referenced=$(grep -ohE "scripts/[A-Za-z0-9_./-]+\.mjs" "$REPO_ROOT"/.githooks/* | sort -u)
+missing=""
+while IFS= read -r ref; do
+  [ -z "$ref" ] && continue
+  found=0
+  for t in "${COPY_TARGETS[@]}"; do
+    [ "$t" = "$ref" ] && found=1 && break
+  done
+  if [ "$found" -eq 0 ]; then
+    missing="$missing $ref"
+  fi
+done <<< "$referenced"
+if [ -z "$missing" ]; then
+  echo "PASS  (self-check) .githooksの参照とCOPY_TARGETSが一致"
+  PASS=$((PASS+1))
+else
+  echo "FAIL  (self-check) .githooksが参照するがCOPY_TARGETSに無いファイル:$missing"
+  FAIL=$((FAIL+1))
+fi
+echo
 
 # =======================================================================
 echo "### (a) Issue:#373と#374のcommitが混在 → BOOKSHELF_ISSUE=373 で止まる ###"
@@ -167,14 +217,12 @@ git clone -q "$fdir/origin.git" "$fdir/work1"
   cd "$fdir/work1"
   git symbolic-ref HEAD refs/heads/main  # initial branch名が環境依存(master等)なため明示する
   git config user.email "a@example.com"; git config user.name "a"
-  cp -r "$REPO_ROOT/.githooks" .
-  mkdir -p scripts/git
-  cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-  cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
-  chmod +x .githooks/* scripts/git/*.mjs
-  git config core.hooksPath .githooks
+)
+setup_hooks_clone "$fdir/work1"
+(
+  cd "$fdir/work1"
   echo base > README.md
-  git add README.md .githooks scripts/git/push-gate.mjs
+  git add README.md .githooks "${COPY_TARGETS[@]}"
   git commit -q -m "chore: baseline"
   git push -q --no-verify origin main
 )
@@ -216,14 +264,12 @@ git clone -q "$gdir/origin.git" "$gdir/work1"
   cd "$gdir/work1"
   git symbolic-ref HEAD refs/heads/main  # initial branch名が環境依存(master等)なため明示する
   git config user.email "a@example.com"; git config user.name "a"
-  cp -r "$REPO_ROOT/.githooks" .
-  mkdir -p scripts/git
-  cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-  cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
-  chmod +x .githooks/* scripts/git/*.mjs
-  git config core.hooksPath .githooks
+)
+setup_hooks_clone "$gdir/work1"
+(
+  cd "$gdir/work1"
   echo base > README.md
-  git add README.md .githooks scripts/git/push-gate.mjs
+  git add README.md .githooks "${COPY_TARGETS[@]}"
   git commit -q -m "chore: baseline"
   git push -q --no-verify origin main
 )
