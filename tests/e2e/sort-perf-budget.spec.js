@@ -125,6 +125,87 @@ async function measure(page, triggerFn) {
 
 const median = (xs) => { const a = [...xs].sort((p, q) => p - q); return a[Math.floor(a.length / 2)]; };
 
+// イシュー#492 step1: 判定には使わない記録専用の計測(見立て確認用)。BUDGET/expectは一切変えない(#377)。
+
+// (a) chromiumのGPU・描画状態(chrome://gpuに相当)。headless shellかどうか・SwiftShaderかどうかを見る。
+// SystemInfo.getInfoはpage用CDPセッションでは呼べず(Protocol error: "only supported on the browser
+// target"、ローカル実測で確認済み)、browser用セッション(browser.newBrowserCDPSession())が必要。
+async function logGpuInfo(page) {
+    const browser = page.context().browser();
+    const ua = await page.evaluate(() => navigator.userAgent);
+    const hardwareConcurrency = await page.evaluate(() => navigator.hardwareConcurrency);
+    const webgl = await page.evaluate(() => {
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return { supported: false };
+            const ext = gl.getExtension('WEBGL_debug_renderer_info');
+            return {
+                supported: true,
+                renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+            };
+        } catch (e) { return { supported: false, error: String(e) }; }
+    });
+    let systemInfo = null;
+    try {
+        const bcdp = await browser.newBrowserCDPSession();
+        const info = await bcdp.send('SystemInfo.getInfo');
+        const device = (info.gpu && info.gpu.devices && info.gpu.devices[0]) || {};
+        systemInfo = {
+            gpu_compositing: info.gpu && info.gpu.featureStatus && info.gpu.featureStatus.gpu_compositing,
+            rasterization: info.gpu && info.gpu.featureStatus && info.gpu.featureStatus.rasterization,
+            webgl: info.gpu && info.gpu.featureStatus && info.gpu.featureStatus.webgl,
+            deviceString: device.deviceString,
+            displayType: info.gpu && info.gpu.auxAttributes && info.gpu.auxAttributes.displayType,
+        };
+        await bcdp.detach();
+    } catch (e) { systemInfo = { error: String(e) }; }
+    console.log(`[sort-perf-gpu] headlessShell=${/HeadlessChrome/.test(ua)} browserVersion=${browser.version()} hardwareConcurrency=${hardwareConcurrency} webgl=${JSON.stringify(webgl)} systemInfo=${JSON.stringify(systemInfo)}`);
+}
+
+// (b) tFrameのうちJS/レイアウト・スタイル/描画・ラスタの内訳。CDP Tracingで取る。
+// trace取得自体が値を歪めるため、判定用のmeasureMedian(5rep)とは別枠の追加repでのみ使う。
+const TRACE_JS_EVENTS = ['FunctionCall', 'EvaluateScript', 'V8.Execute', 'RunMicrotasks', 'EventDispatch', 'TimerFire'];
+const TRACE_LAYOUT_EVENTS = ['Layout', 'UpdateLayoutTree', 'RecalculateStyles', 'PrePaint', 'ScheduleStyleRecalculation', 'InvalidateLayout'];
+const TRACE_PAINT_EVENTS = ['Paint', 'PaintImage', 'Rasterize', 'RasterTask', 'CompositeLayers', 'Layerize', 'ActivateLayerTree', 'DrawFrame', 'GPUTask'];
+
+async function measureWithTrace(page, cdp, triggerFn) {
+    const events = [];
+    const onData = (p) => { if (p.value) events.push(...p.value); };
+    cdp.on('Tracing.dataCollected', onData);
+    await cdp.send('Tracing.start', { categories: 'devtools.timeline,disabled-by-default-devtools.timeline.frame', transferMode: 'ReportEvents' });
+    const result = await measure(page, triggerFn);
+    const done = new Promise((res) => cdp.once('Tracing.tracingComplete', res));
+    await cdp.send('Tracing.end');
+    await done;
+    cdp.off('Tracing.dataCollected', onData);
+    const sumMs = (names) => events.filter((e) => names.includes(e.name) && typeof e.dur === 'number').reduce((s, e) => s + e.dur, 0) / 1000;
+    return { tFrame: result.tFrame, js: sumMs(TRACE_JS_EVENTS), layout: sumMs(TRACE_LAYOUT_EVENTS), paint: sumMs(TRACE_PAINT_EVENTS), eventCount: events.length };
+}
+
+async function measureTraceReps(page, cdp, triggerFn, reps = 2) {
+    const rows = [];
+    for (let i = 0; i < reps; i++) {
+        rows.push(await measureWithTrace(page, cdp, triggerFn));
+        await page.waitForTimeout(150);
+    }
+    return rows;
+}
+
+// (c) A/Aの揺れ(判定方式案Aの比の上限候補を決めるための記録専用データ)。同じcommitのまま、
+// 「組X→組Y→組X→組Y…」と交互に計6回(3組)測り、組Y/組Xの中央値の比を見る。
+async function measureAA(page, triggerFn, rounds = 3) {
+    const xs = []; const ys = [];
+    for (let i = 0; i < rounds; i++) {
+        xs.push((await measure(page, triggerFn)).tFrame);
+        await page.waitForTimeout(150);
+        ys.push((await measure(page, triggerFn)).tFrame);
+        await page.waitForTimeout(150);
+    }
+    const mx = median(xs); const my = median(ys);
+    return { x: xs.map((v) => Math.round(v)), y: ys.map((v) => Math.round(v)), ratio: Number((my / mx).toFixed(3)) };
+}
+
 // イシュー#487: CPUx6スロットリングは「ページの処理速度を落とす倍率」指定のため、CIランナー自体の
 // 素の速さが揃っていないと、固定倍率(6)のままでは「見かけの負荷」がrunごとに揺れる(#476実測86ms→
 // #487の構造修正後run 41350063972ではdragは通りdirectionが329/343msで超過・超える操作がrunごとに
@@ -184,6 +265,9 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
         await setup(page);
         const cdp = await context.newCDPSession(page);
 
+        // イシュー#492 step1: GPU・描画状態は操作前(スロットリング前)に1回だけ記録(環境固有・操作に依らない)。
+        await logGpuInfo(page);
+
         // イシュー#487: スロットリングを掛ける前に機械の速さを測り、倍率を動的に決める(詳細はT_REFの
         // コメント)。rateが下限1になっても後続のBUDGETを超えるなら、それは機械の遅さでは説明できない
         // 本物の赤として扱う(緩めない・#377方針)。
@@ -201,20 +285,38 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'acquiredTime'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
 
-        const orderResult = await measureMedian(page, () => {
+        const orderTrigger = () => {
             const sel = document.getElementById('sort-order');
             sel.value = sel.value === 'title' ? 'acquiredTime' : 'title'; // 交互にして実際に並びが変わる操作を毎回発生させる
             sel.dispatchEvent(new Event('change', { bubbles: true }));
-        });
+        };
+        const directionTrigger = () => { document.getElementById('sort-direction').click(); };
 
-        const directionResult = await measureMedian(page, () => { document.getElementById('sort-direction').click(); });
+        const orderResult = await measureMedian(page, orderTrigger);
+        const directionResult = await measureMedian(page, directionTrigger);
+
+        // イシュー#492 step1: directionのtrace内訳・order/directionのA/A(custom切替前=sort-order/
+        // sort-directionの状態が崩れないうち)。記録専用・判定には使わない。
+        const directionTraceRows = await measureTraceReps(page, cdp, directionTrigger, 2);
+        console.log(`[sort-perf-breakdown] op=direction rows=${JSON.stringify(directionTraceRows.map((r) => ({ tFrame: Math.round(r.tFrame), js: Math.round(r.js), layout: Math.round(r.layout), paint: Math.round(r.paint), eventCount: r.eventCount })))}`);
+        const orderAA = await measureAA(page, orderTrigger, 3);
+        console.log(`[sort-perf-aa] op=order x=${JSON.stringify(orderAA.x)} y=${JSON.stringify(orderAA.y)} ratio=${orderAA.ratio}`);
+        const directionAA = await measureAA(page, directionTrigger, 3);
+        console.log(`[sort-perf-aa] op=direction x=${JSON.stringify(directionAA.x)} y=${JSON.stringify(directionAA.y)} ratio=${directionAA.ratio}`);
 
         await page.evaluate(() => { const s = document.getElementById('sort-order'); s.value = 'custom'; s.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(1500);
-        const dragResult = await measureMedian(page, () => {
+        const dragTrigger = () => {
             const items = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]'));
             window.bookshelf.reorderBooks(items[0].dataset.asin, items[Math.min(items.length - 1, 10)].dataset.asin);
-        });
+        };
+        const dragResult = await measureMedian(page, dragTrigger);
+
+        // イシュー#492 step1: dragのtrace内訳・A/A(custom状態のまま)。記録専用・判定には使わない。
+        const dragTraceRows = await measureTraceReps(page, cdp, dragTrigger, 2);
+        console.log(`[sort-perf-breakdown] op=drag rows=${JSON.stringify(dragTraceRows.map((r) => ({ tFrame: Math.round(r.tFrame), js: Math.round(r.js), layout: Math.round(r.layout), paint: Math.round(r.paint), eventCount: r.eventCount })))}`);
+        const dragAA = await measureAA(page, dragTrigger, 3);
+        console.log(`[sort-perf-aa] op=drag x=${JSON.stringify(dragAA.x)} y=${JSON.stringify(dragAA.y)} ratio=${dragAA.ratio}`);
 
         expect(orderResult.tFrame, `order tFrame(中央値)=${orderResult.tFrame}ms(最大${orderResult.tFrameMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.tFrame);
         expect(orderResult.maxInputDelay, `order inputDelay(中央値)=${orderResult.maxInputDelay}ms(最大${orderResult.maxInputDelayMax}ms・記録のみ)`).toBeLessThanOrEqual(BUDGET.order.inputDelay);
