@@ -191,8 +191,6 @@
             const o = args[1] || {};
             dispatch({ type: 'close', id: args[0], source: o.fromHistory ? 'history' : undefined });
         });
-        wrap(app, '_bookDetailHistAdopt', function () { dispatch({ type: 'adopt' }); wrapEntryClose(findEntry('book-detail')); });
-        wrap(app, '_bookDetailHistRelease', function () { dispatch({ type: 'close', id: 'book-detail' }); });
         wrap(app, '_closeDrawer', function () { dispatch({ type: 'close', id: 'drawer' }); });            // silent は直接 splice (旧 L5615)
         wrap(app, '_closePalette', function () { dispatch({ type: 'close', id: 'command-palette' }); });  // 同上 (旧 L1152)
         wrap(app, '_artHistHandOver', function (args, r) {
@@ -234,7 +232,8 @@
             view: state.view,
         };
     }
-    // history.state に書く形 = 新 (nav) + 旧キー (bsModal / d / extra)。kill-switch で旧経路へ戻しても _histStateDepth が読める
+    // history.state に書く形 = 新 (nav) + 旧キー (bsModal / d / extra)。旧キーは #359 以前のエントリ (このブラウザに
+    // 残っている場合) を boot() が解釈するための後方互換で、kill-switch 用途ではない (イシュー#407で kill-switch は物理撤去)
     function historyState(snap) {
         const top = snap.faces[snap.faces.length - 1] || null;
         return Object.assign({}, top && top.extra ? top.extra : {}, { bsModal: top ? top.id : null, d: snap.faces.length, nav: snap });

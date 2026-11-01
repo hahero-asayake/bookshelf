@@ -60,7 +60,7 @@ async function snap(page) {
             state: history.state,
             hash: location.hash,
             stack: (bs._modalHistStack || []).map((e) => e.id),
-            suppress: bs._histGoPending ? 1 : 0, // 新方式 (イシュー#284 K5): 自分の go の着地待ちが残っていないこと
+            suppress: (bs.nav && bs.nav._pendingGo) ? 1 : 0, // 自分の go の着地待ちが残っていないこと (イシュー#407で旧 _histGoPending を物理撤去・navPendingGo と同じ値)
             settingsHist: bs._settingsHist || 0,
             importHist: !!bs._importHist,
             openModals: Array.from(document.querySelectorAll('.modal.show')).map((m) => m.id),

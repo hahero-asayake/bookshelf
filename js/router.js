@@ -14,7 +14,7 @@
 // 使い方:
 //   const router = new BookshelfRouter();
 //   router.onChange((route) => { ... });
-//   router.start();           // 初回 dispatch + hashchange 購読
+//   router.start();           // 初回 dispatch (履歴の聞き手は NavState の popstate のみ・イシュー#407)
 //   router.navigateMain();
 //   router.navigateBookshelf(slug);
 //   router.navigateBook(asin, fromInternalId);
@@ -29,19 +29,12 @@ class BookshelfRouter {
     constructor() {
         this._listeners = new Set();
         this._current = null;
-        this._suppressNext = false;
-        this._onHashChange = this._onHashChange.bind(this);
     }
 
     start() {
-        // イシュー#359 段階③: NavState 接続時 (this._nav) は hashchange を購読しない。戻る/進む・アドレスバー編集は
-        // popstate だけで受ける (nav.onPopstate → onLanded → _applyRoute)。旧経路 (BOOKSHELF_NAV_LEGACY) は従来どおり
-        if (!this._nav) window.addEventListener('hashchange', this._onHashChange);
+        // イシュー#359: 履歴の唯一の聞き手は NavState (this._nav.start() が popstate を購読)。hashchange は
+        // 購読しない (nav.onPopstate → onLanded → _applyRoute)。(イシュー#407で旧経路・kill-switchを物理撤去)
         this._dispatch(this.parse(window.location.hash));
-    }
-
-    stop() {
-        window.removeEventListener('hashchange', this._onHashChange);
     }
 
     onChange(handler) {
@@ -111,40 +104,15 @@ class BookshelfRouter {
     // navigateBook は呼び出し元 (goHome 等) が画面更新をせず _applyRoute に委ねる設計のため
     // 対象外 (selfHandled を渡さない = 常に _applyRoute を実行させる)。
     _setHash(hash, replace, selfHandled = false) {
-        // イシュー#359 段階③: 履歴の書き手は NavState (this._nav) だけ。URL は pushState/replaceState で書く
-        // (location.hash 代入をしない = hashchange を起こさない)。画面は旧 replace 経路と同じく同期 dispatch で合わせる
+        // イシュー#359: 履歴の書き手は NavState (this._nav) だけ。URL は pushState/replaceState で書く
+        // (location.hash 代入をしない = hashchange を起こさない)。画面は同期 dispatch で合わせる
         // (selfHandled = 呼び出し元が画面を済ませている navigateBookshelf は dispatch しない・イシュー#104 と同じ意味)。
-        if (this._nav) {
-            const route = this.parse(hash);
-            if (route.view === 'book') this._nav.openBook(route.asin, false, route.from, { mobile: this._nav.isMobile ? this._nav.isMobile() : undefined });
-            else this._nav.navigate(route, { replace: !!replace, shelfInternalId: this._shelfIdResolver ? this._shelfIdResolver(route.slug) : undefined });
-            if (!selfHandled) this._dispatch(route);
-            return;
-        }
-        const target = hash || ' '; // 空文字だと history が機能しないので半角空白
-        if (replace) {
-            const url = `${window.location.pathname}${window.location.search}${hash}`;
-            window.history.replaceState(null, '', url);
-            this._dispatch(this.parse(hash));
-        } else if ((window.location.hash || '') === hash) {
-            // すでに同じ hash の場合 hashchange が発火しないので明示 dispatch
-            this._dispatch(this.parse(hash));
-        } else {
-            // selfHandled でも、hash が実際に変わらないケース (同一 slug への再ナビゲーション等)
-            // では window.location.hash 代入で hashchange 自体が発火しない。この場合フラグを
-            // 立てると消費されずに残留し、次に来る本物の hashchange (戻る/進む等) を誤って
-            // 握り潰す (②レビュー実測・イシュー#104)。hash が実際に変わる時だけ立てる。
-            if (selfHandled && (window.location.hash || '') !== hash) this._suppressNext = true;
-            window.location.hash = hash;
-        }
-    }
-
-    _onHashChange() {
-        if (this._suppressNext) {
-            this._suppressNext = false;
-            return;
-        }
-        this._dispatch(this.parse(window.location.hash));
+        // (イシュー#407で旧経路・kill-switchを物理撤去。NavState が読めない時は旧経路へフォールバックせずエラーを出す)
+        if (!this._nav) { console.error('[router] NavState が読み込めず遷移できません。'); return; }
+        const route = this.parse(hash);
+        if (route.view === 'book') this._nav.openBook(route.asin, false, route.from, { mobile: this._nav.isMobile ? this._nav.isMobile() : undefined });
+        else this._nav.navigate(route, { replace: !!replace, shelfInternalId: this._shelfIdResolver ? this._shelfIdResolver(route.slug) : undefined });
+        if (!selfHandled) this._dispatch(route);
     }
 
     _dispatch(route) {

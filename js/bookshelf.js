@@ -236,22 +236,25 @@ class VirtualBookshelf {
             this.router = new BookshelfRouter();
             this._suppressRouterUpdate = false;
         }
-        // イシュー#359 段階③: 「今どこか」の台帳 NavState (js/nav-state.js) が履歴 (pushState/replaceState/go) の唯一の
+        // イシュー#359: 「今どこか」の台帳 NavState (js/nav-state.js) が履歴 (pushState/replaceState/go) の唯一の
         // 書き手・popstate の唯一の聞き手になる。各書き手 (_modalHistPush/Pop・showBookDetail・closeModal・router._setHash 等)
-        // は先頭で this.nav に委譲する。window.BOOKSHELF_NAV_LEGACY === true (index.html の1行) で旧方式に戻せる (kill-switch)。
-        if (window.NavState && typeof window.NavState.createNav === 'function' && window.BOOKSHELF_NAV_LEGACY !== true) {
+        // は先頭で this.nav に委譲する (イシュー#407で旧方式・kill-switchを物理撤去。NavState が読めない時は旧経路へ
+        // フォールバックせずエラーを出す)。
+        if (window.NavState && typeof window.NavState.createNav === 'function') {
             this.nav = window.NavState.createNav(this, {
                 isMobile: () => this._isHistMobile(),
                 reopeners: (id, extra, snap) => this._navReopen(id, extra, snap),
                 onLanded: (snap, m) => this._navOnLanded(snap, m),
             });
             this.nav.isMobile = () => this._isHistMobile();
-            // 本詳細の段の閉じ方 (旧 _bookDetailHistAdopt の close と同じ・戻る由来はアニメ無し=ADR-125)
+            // 本詳細の段の閉じ方 (戻る由来はアニメ無し=ADR-125)
             this.nav.closers['book-detail'] = (o) => { if (o && o.fromHistory) this._histNoAnimOnce(document.getElementById('app-detail')); this._closeBookModalDom(); return true; };
             if (this.router) {
                 this.router._nav = this.nav;
                 this.router._shelfIdResolver = (slug) => { const bs = this.bookshelfManager?.getBySlug?.(slug); return bs ? (bs.internalId || bs.id) : undefined; };
             }
+        } else {
+            console.error('[bookshelf] NavState (js/nav-state.js) が読み込めません。画面遷移・履歴が機能しません。');
         }
         // イシュー#359 段階②: NavState を影モードで並走。既存の書き手をラップして入力を流し、遷移ごとに実状態と突き合わせて
         // ずれを window.__navShadow.diffs に積むだけ (画面・履歴は変えない)。段階③では nav 自身の自己検査になる。
@@ -2005,9 +2008,7 @@ class VirtualBookshelf {
         // イシュー#402: is-custom-order はカードの中身に影響しない (つまみの表示・カーソルは CSS、ドラッグ開始は sortOrder で判定)。
         // これだけが変わった時 (カスタム順への切替/カスタム順からの切替) は class を付け替えて差分描画に回す
         // (全件作り直しに落ちて x6・913冊で 1.1〜1.2秒固まっていた)。
-        // window.BOOKSHELF_LIST_DIFF_LEGACY === true で従来の全件作り直しに戻せる (段階⑤で撤去)。
-        const canDiff = window.BOOKSHELF_LIST_DIFF_LEGACY !== true
-            && bookshelf.className.replace(/\s*\bis-custom-order\b/, '') === baseCls
+        const canDiff = bookshelf.className.replace(/\s*\bis-custom-order\b/, '') === baseCls
             && !!bookshelf.querySelector(':scope > .book-item[data-asin]');
         if (canDiff) {
             if (bookshelf.className !== cls) bookshelf.className = cls;
@@ -2973,14 +2974,6 @@ class VirtualBookshelf {
         if (book && this._lastDetailBook && this._lastDetailBook.asin === book.asin
             && !!this._lastDetailEditMode === !!isEditMode
             && document.body.classList.contains('book-detail-pinned')) return;
-        // イシュー#330: 「戻る/進む」(popstate経由のhashchange)で開き直す時だけ、開くtransitionを
-        // 無効化して即座に表示する(iOS実機はスワイプ中に既に開いた状態のスナップショットを見せているため、
-        // ここで律儀にスライドインを再生すると二重表示に見える・②決裁2026-10-23)。_histRestoreNoAnim は
-        // _onModalHistPopstate の早期return直前(L12148相当)でだけ立てる一回限りのフラグ。
-        if (this._histRestoreNoAnim) {
-            this._histRestoreNoAnim = false;
-            this._histNoAnimOnce(document.getElementById('app-detail'));
-        }
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.nav) {
             // イシュー#359 段階③: 台帳へ「本を開く」を入力 (URL #book/ と、スマホ幅なら本詳細の段を 1 回の pushState で)。
@@ -2994,17 +2987,6 @@ class VirtualBookshelf {
             const fromInternalId = this._currentBookshelfInternalId();
             this._navigateFromUi('book', book.asin, fromInternalId);
         }
-        // イシュー#288: 本詳細の履歴も、他モーダルと同じ深さ数え合わせ方式 (_modalHistStack) の管理下に置く。
-        // #book/ の hash 遷移は router が location.hash 代入で済ませる (state=null の新エントリ) ため、
-        // その直後に replaceState で深さ情報だけ上書きして「積んだ」ことにする (pushState の二重呼びはしない＝
-        // 1回の遷移で段が2つ増える事故を避ける)。これで「進む」で着地した時、_onModalHistPopstate の D06
-        // ルール (行き先の無い段には history.back() で自己修復) がそのまま効き、開き直さなくなる。
-        // 起動直後の最初の route dispatch (URL直/再読込で #book/ から始まった場合) だけ採用を見送る。
-        // この回は同一セッション内の「戻る/進む」履歴がまだ無く、ここで replaceState すると実ナビゲーション
-        // 中の再入で止まる (イシュー#288、R11 URL直/戻るで実測: timeout 60s)。back/forward 由来の
-        // 以降の dispatch (_suppressRouterUpdate=true だが _routeDispatchIsBoot=false) では引き続き採用する
-        // (この回収を外すと「進む」で本詳細が開き直るバグが再発する、R09f で実測)。
-        if (!this.nav && this._isHistMobile() && !this._routeDispatchIsBoot) this._bookDetailHistAdopt(); // 段階③: 段は台帳 (openBook) が持つ
         // PC v2: 本詳細は右ペインに表示する。modal は使わず、右ペインの #book-detail-pane に inject。
         // ホームビューでは右ペインを表示するため book-detail-pinned を付ける。
         const modal = document.getElementById('book-modal');
@@ -7143,15 +7125,12 @@ class VirtualBookshelf {
         if (backBtn) backBtn.hidden = true;
     }
 
-    // 戻るボタン (スマホ) と popstate を 1 度だけ配線。ルーターは hashchange のみ購読のため
-    // 同一 URL の pushState/popstate はルーターに影響しない。
+    // 戻るボタン (スマホ) を 1 度だけ配線。popstate は NavState (nav.start()) が唯一の聞き手 (イシュー#407)。
     _bindSettingsPopstate() {
         if (this._settingsPopstateBound) return;
         this._settingsPopstateBound = true;
         const backBtn = document.getElementById('settings-back');
         if (backBtn) backBtn.addEventListener('click', () => { this._modalHistPop('settings-cat'); this._showSettingsMaster(); });
-        if (this.nav) return; // 段階③: popstate は nav.start() が購読済み (唯一の聞き手)
-        window.addEventListener('popstate', (ev) => this._onModalHistPopstate(ev));
     }
 
     // 設定モーダル内の特定要素/節へジャンプ (該当カテゴリを開いて要素へフォーカス)。
@@ -8278,11 +8257,6 @@ class VirtualBookshelf {
      */
     _applyRoute(route) {
         if (!route) return;
-        // イシュー#288: 初回(起動直後)のdispatchだけ区別する。URL直/再読込で #book/ から始まった場合は
-        // まだ「戻る/進む」のセッション内履歴が無く、ここでreplaceStateすると戻る実ナビゲーション中の
-        // 再入(timeout, R11で実測)を招くため、本詳細の履歴採用(_bookDetailHistAdopt)をこの回だけ見送る。
-        this._routeDispatchIsBoot = !this._routeBooted;
-        this._routeBooted = true;
         this._suppressRouterUpdate = true;
         try {
             if (route.view === 'main') {
@@ -8337,33 +8311,17 @@ class VirtualBookshelf {
             }
         } finally {
             this._suppressRouterUpdate = false;
-            this._routeDispatchIsBoot = false;
         }
     }
 
-    // イシュー#359 段階①: UI 由来の hash 遷移 (ホーム/本棚/本) の唯一の入口。
-    // 履歴に段を積んだ面 (ドロワー/⌘Kパレット) を開いたまま hash を新エントリとして積むと、閉じた面の段が
-    // 履歴に残り「次の戻るが1回空振りする」(step1 H1・probe-h1 で再現)。イシュー#259 は switchBookshelf の中だけで
-    // 「面を静かに閉じ、その段を遷移先へ replace で書き換える」判断をしていたが、下部ナビ「ホーム」・パレットの
-    // 「ホーム」/プラグインコマンド・サイドバーの「ホーム」・ブランドロゴ・パレットから本を開く、の同型経路が残っていた。
-    // ここに一般化する (段階③で NavState の dispatch に置き換わる)。_applyRoute 由来 (_suppressRouterUpdate) では呼ばない。
+    // イシュー#359: UI 由来の hash 遷移 (ホーム/本棚/本) の唯一の入口。_applyRoute 由来 (_suppressRouterUpdate) では呼ばない。
     _navigateFromUi(kind, ...args) {
         if (!this.router) return false;
         this._closeOverlayFacesSilently();
-        if (this.nav) {
-            // 段階③: replace/push の判断は台帳 (historyOp: overlay を閉じた遷移は replace・他は push)。router._setHash が nav へ委譲する
-            if (kind === 'main') this.router.navigateMain();
-            else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0]);
-            else if (kind === 'book') this.router.navigateBook(args[0], args[1]);
-            return true;
-        }
-        // 閉じた面の段がまだ履歴に残っている (= history.state の深さ > スタック長) なら、その段を遷移先で置き換える
-        // (履歴の深さを変えない = 戻る1回で元の画面へ)。残っていなければ従来どおり新エントリ。
-        const st = this._modalHistStack || [];
-        const replace = this._histStateDepth(history.state) > st.length;
-        if (kind === 'main') this.router.navigateMain({ replace });
-        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0], { replace });
-        else if (kind === 'book') this.router.navigateBook(args[0], args[1], { replace });
+        // replace/push の判断は台帳 (historyOp: overlay を閉じた遷移は replace・他は push)。router._setHash が nav へ委譲する
+        if (kind === 'main') this.router.navigateMain();
+        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0]);
+        else if (kind === 'book') this.router.navigateBook(args[0], args[1]);
         return true;
     }
 
@@ -8429,38 +8387,6 @@ class VirtualBookshelf {
         // 旧 modal-body も互換のためクリア
         const oldBody = document.getElementById('modal-body');
         if (oldBody) oldBody.innerHTML = '';
-        // イシュー#288: _modalHistStack の記帳を外す (history 自体は呼び出し元の遷移で既に動いている=ここでは触らない)
-        this._bookDetailHistRelease();
-    }
-
-    // イシュー#288: 本詳細を _modalHistStack の深さ管理下に「積む」。navigateBook の hash 遷移(state=null の
-    // 新エントリ)に、replaceState で深さ情報だけ上書きする。別の本へ連続遷移した場合も新しいエントリ1つに
-    // 付け替える(段数は変えない=1冊分のまま)。
-    _bookDetailHistAdopt() {
-        if (this.nav) return; // 段階③: 本詳細の段は台帳 (openBook) が持つ
-        const st = this._modalHistStack = this._modalHistStack || [];
-        this._bindSettingsPopstate();
-        const i = st.findIndex((e) => e.id === 'book-detail');
-        if (i !== -1) st.splice(i, 1);
-        st.push({
-            id: 'book-detail',
-            close: (o) => {
-                // イシュー#330: 「戻る」で閉じる時だけ閉じるtransitionを無効化する(②決裁2026-10-23)。
-                if (o && o.fromHistory) this._histNoAnimOnce(document.getElementById('app-detail'));
-                this._closeBookModalDom();
-                return true;
-            },
-        });
-        // url引数を省略すると稀に現在のhashが引き継がれない実機差が出たため(イシュー#288 R08g実測)、明示的にlocation.hrefを渡す
-        history.replaceState({ bsModal: 'book-detail', d: st.length }, '', location.href);
-    }
-
-    _bookDetailHistRelease() {
-        if (this.nav) return; // 段階③: 段の出し入れは台帳 (closeBook / 着地の写し) が行う
-        const st = this._modalHistStack;
-        if (!st) return;
-        const i = st.findIndex((e) => e.id === 'book-detail');
-        if (i !== -1) st.splice(i, 1);
     }
 
     showBookshelfManager() {
@@ -13183,14 +13109,13 @@ class VirtualBookshelf {
         return true;
     }
 
-    // イシュー#359 段階③: 旧 _modalHistStack は台帳の読み取りビュー ([{id, close}])。旧経路 (kill-switch) では従来の配列
-    get _modalHistStack() { return this.nav ? this.nav.facesCompat : this.__modalHistStack; }
-    set _modalHistStack(v) { if (!this.nav) this.__modalHistStack = v; }
+    // イシュー#359: 台帳の読み取りビュー ([{id, close}])
+    get _modalHistStack() { return this.nav ? this.nav.facesCompat : undefined; }
 
-    // 段階③: 戻る/進むで着地した写しの面を開き直す (旧 _onModalHistPopstate の reopen 表と同じ)。thunk|null を返す
+    // 戻る/進むで着地した写しの面を開き直す。thunk|null を返す
     _navReopen(id, extra) {
         const st = extra || {};
-        if (st.blockId) return () => this._reopenArtFs(st); // art-fs の引き継ぎ (旧名のまま残る) は blockId で判定 (旧と同じ)
+        if (st.blockId) return () => this._reopenArtFs(st); // art-fs の引き継ぎ (旧名のまま残る) は blockId で判定
         const t = {
             'settings-modal': () => this._openSettingsModal(),
             'settings-cat': () => this._openSettingsModal(st.cat),
@@ -13223,7 +13148,7 @@ class VirtualBookshelf {
         return t[id] || null;
     }
 
-    // 段階③: 着地した写しの route/book に画面を合わせる (旧 hashchange → _applyRoute と同じ・戻る/進む由来はアニメ無し=ADR-125 をここ1箇所で)
+    // 着地した写しの route/book に画面を合わせる (戻る/進む由来はアニメ無し=ADR-125 をここ1箇所で)
     _navOnLanded(snap, m) {
         if (m && m.bookChanged) this._histNoAnimOnce(document.getElementById('app-detail'));
         const route = snap.route || { view: 'main' };
@@ -13232,12 +13157,6 @@ class VirtualBookshelf {
             const book = (this.books || []).find((b) => b.asin === route.asin);
             if (book) { this._suppressRouterUpdate = true; try { this.showBookDetail(book, true); } finally { this._suppressRouterUpdate = false; } }
         }
-    }
-
-    _histStateDepth(st) {
-        if (!st) return 0;
-        if (typeof st.d === 'number') return st.d;
-        return (st.bsModal || st.bsSettings || st.bsImport) ? 1 : 0; // 旧形式の段 (更新前のセッション)
     }
 
     // 重なり管理役 (js/overlay-manager.js・イシュー#367)。読み込み前・単体テスト等で無い時は何もしない代替を返す。
@@ -13258,144 +13177,12 @@ class VirtualBookshelf {
         const mobile = isMobile ? isMobile() : this._isHistMobile();
         if (!mobile) return;
         this._bindSettingsPopstate();
-        if (this.nav) { this.nav.open(id, extra || null, close, { mobile: true }); return; } // 段階③: 台帳が pushState する
-        const st = this._modalHistStack = this._modalHistStack || [];
-        if (st.some((e) => e.id === id)) return; // 二重オープンで積み増さない
-        // 同じ操作の中で直前に閉じた段 (まだ履歴に残っている段) があれば、back→push にせず
-        // その段を新しい面へ引き継ぐ (イシュー#259/#284 K2: 非同期の back が新しい段を消す罠を作らない)
-        const excess = this._histStateDepth(history.state) - st.length;
-        st.push({ id, close });
-        // イシュー#291 (②決裁2026-10-19): extra は「進む」で開き直すのに必要な文脈(asin・blockId等)。
-        // state に入れておけば、進むで着地した時にそのまま読める。
-        const state = Object.assign({ bsModal: id, d: st.length }, extra || {});
-        if (excess >= 1 && !this._histGoPending) history.replaceState(state, '');
-        else history.pushState(state, '');
+        this.nav.open(id, extra || null, close, { mobile: true }); // 台帳が pushState する
     }
 
     _modalHistPop(id, { fromHistory = false } = {}) {
-        if (this.nav) { // 段階③: × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している
-            if (!fromHistory) this.nav.close(id);
-            return;
-        }
-        const st = this._modalHistStack;
-        if (!st) return;
-        const i = st.findIndex((e) => e.id === id);
-        if (i === -1) return;
-        st.splice(i, 1);
-        // × や ESC で閉じたときは自前で積んだ段を巻き戻す。popstate 経由なら消費済み。
-        // 同じ操作の中の複数の pop はマイクロタスクでまとめ、history.go(-n) 1回にする。
-        if (!fromHistory) this._modalHistScheduleSync();
-    }
-
-    _modalHistScheduleSync() {
-        if (this._histSyncQueued) return;
-        this._histSyncQueued = true;
-        queueMicrotask(() => { this._histSyncQueued = false; this._modalHistSync(); });
-    }
-
-    _modalHistSync() {
-        if (this._histGoPending) return; // 先の go の着地 (popstate) で改めて数え合わせる
-        const st = this._modalHistStack || [];
-        const n = this._histStateDepth(history.state) - st.length;
-        if (n <= 0) return;
-        this._histGoPending = true;
-        this._histExpect = st.length;
-        clearTimeout(this._histGoTimer);
-        // 着地の popstate が来ない環境 (古い WebKit 等) でも詰まらないよう、一定時間で待ちを解く
-        this._histGoTimer = setTimeout(() => { this._histGoPending = false; this._histExpect = null; }, 1500);
-        try { history.go(-n); } catch (_) { this._histGoPending = false; this._histExpect = null; }
-    }
-
-    async _onModalHistPopstate(ev) {
-        const d = this._histStateDepth(ev.state);
-        const st = this._modalHistStack = this._modalHistStack || [];
-        if (this._histGoPending) {
-            const exp = this._histExpect;
-            this._histGoPending = false; this._histExpect = null; clearTimeout(this._histGoTimer);
-            if (d === exp) { this._modalHistSync(); return; } // 自分の go の着地 (その間に閉じた分があれば続けて畳む)
-        }
-        // 確認ダイアログ (confirmDialog・同期衝突。どちらも .cfm-overlay) は履歴に積まない (イシュー#284 D04)。
-        // 出ている間の戻るは「確認のキャンセル」(Esc と同じ経路) とし、消費された段は積み直して下の面を残す
-        if (document.querySelector('.cfm-overlay')) {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-            if (st.length > d) {
-                const top = st[st.length - 1];
-                history.pushState({ bsModal: top.id, d: st.length }, '');
-            }
-            return;
-        }
-        if (st.length > d) {
-            // 戻る = 着地した段より上の面を、上から1つずつ閉じる (通常は1つ)
-            while (st.length > d) {
-                const top = st.pop();
-                const res = await top.close({ fromHistory: true });
-                // close が false = 閉じなかった (長文メモの保存失敗等)。段を積み直して「まだ開いている」と揃える
-                if (res === false) {
-                    st.push(top);
-                    history.pushState({ bsModal: top.id, d: st.length }, '');
-                    return;
-                }
-            }
-            return;
-        }
-        // 行き先の無い段 (再読込後に残った段・引き継ぎで余った段・イシュー#291 の「進む」で着地した段) に
-        // 着地した場合の扱い。
-        if (d > 0 && d >= st.length) {
-            // イシュー#291 (②決裁2026-10-19): 「進む」で一瞬映って消える違和感を無くすため、開き直せる面は
-            // 本当に開き直す(空振りを生む「進む候補を消す」方式は②指示により不採用)。本詳細(#book/)は
-            // ルーターが hashchange を別途購読しており、ここで history.back() を呼ばず何もしなければ、
-            // 後続の hashchange(popstate と同一ナビゲーションで発火する)が自動的に
-            // _applyRoute → showBookDetail → _bookDetailHistAdopt を実行して開き直る。
-            if (ev.state && ev.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) {
-                // イシュー#330: 後続の hashchange → showBookDetail が開き直す時、開くtransitionを
-                // 無効化するための一回限りのフラグ(②決裁2026-10-23)。
-                this._histRestoreNoAnim = true;
-                return;
-            }
-            // hash を使わない面は、state.bsModal から対応する「開く」関数を直接呼んで開き直す。
-            // extra(asin・blockId等)を state に入れておいた面はそれを使って文脈ごと復元する
-            // (面ごとの方針は 17_戻る挙動テスト表 / ADR 参照)。
-            const bsm = ev.state && ev.state.bsModal;
-            // art-fs は _artHistHandOver で段を引き継ぐ経路があり、その場合 bsModal は旧名
-            // (art-add-sheet/art-blk-menu) のまま残る。blockId の有無で判定する(bsModal より優先)。
-            if (ev.state && ev.state.blockId) { this._reopenArtFs(ev.state); return; }
-            const reopen = {
-                'settings-modal': () => this._openSettingsModal(),
-                'settings-cat': () => this._openSettingsModal(ev.state && ev.state.cat),
-                'drawer': () => { this._histNoAnimOnce(document.getElementById('app-sidebar')); this._histNoAnimOnce(document.querySelector('.mobile-scrim')); this._openDrawer(); },
-                'publish-pages-modal': () => this.openPublishPagesModal(),
-                'publish-settings-modal': () => this.openPublishSettingsModal(),
-                'book-memo-modal': () => this._reopenBookMemo(ev.state && ev.state.asin),
-                'art-fs': () => this._reopenArtFs(ev.state),
-                // イシュー#291: 以下は単純に開くだけで元の意味を取り戻せる面(入力欄のリセットは
-                // 新規に開いた扱いとして許容する・②指示)。
-                'command-palette': () => this._openPalette(),
-                'bookshelf-modal': () => this.showBookshelfManager(),
-                'exclusions-modal': () => this.showExclusionsModal(),
-                'import-modal': () => this.showImportModal(),
-                'add-book-modal': () => this.showAddBookModal(),
-                'report-modal': () => this.openReportModal(ev.state && ev.state.url),
-                'plugin-settings-modal': () => this._openPluginSettings(ev.state && ev.state.pluginId),
-                'bookshelf-form-modal': () => this._reopenBookshelfForm(ev.state),
-                'icon-picker-modal': () => this.openIconPicker({ title: ev.state && ev.state.pickerTitle, current: ev.state && ev.state.pickerCurrent }),
-                'descendants-pick-modal': () => this._reopenDescendantsPick(ev.state),
-                'art-viewing': () => this._reopenArtViewing(ev.state),
-                'art-edit-mode': () => this._reopenArtEdit(ev.state),
-                'art-add-sheet': () => this._reopenArtAddSheet(ev.state),
-                'art-look-sheet': () => this._reopenArtLookSheet(ev.state),
-                'art-sheet': () => this._reopenArtSheet(ev.state),
-                'art-publish-modal': () => this._reopenArtPublishPanel(ev.state),
-                'pp-preview-modal': () => this._reopenArtPreview(ev.state),
-                // イシュー#291: ⋯メニュー系はiframe内DOM位置が要るため、メニュー自体は開かず
-                // 親の記事編集状態まで開き直す(history.back()は呼ばない・②指示)。
-                'art-blk-menu': () => this._reopenArtContextOnly(ev.state),
-                'art-more-menu': () => this._reopenArtContextOnly(ev.state),
-                'mde-heading-menu': () => this._reopenArtContextOnly(ev.state),
-            }[bsm];
-            if (reopen) { reopen(); return; }
-            // 空振りさせずにさらに戻る (D06・開き直せない面はここに来る)
-            try { history.back(); } catch (_) {}
-        }
+        // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している
+        if (!fromHistory) this.nav.close(id);
     }
 
     // イシュー#291: 「進む」で長文メモを開き直す。state.asin から本を特定する。
@@ -13505,20 +13292,7 @@ class VirtualBookshelf {
 
     // 起動時: 再読込前に積んだ段が残っていれば、開いている面は無いので段を畳んで元の位置へ戻す (イシュー#284 K4・D06)
     _modalHistNormalizeOnBoot() {
-        if (this.nav) { this.nav.boot(); return; } // 段階③: 起動時の写し・再読込の段の畳み方 (D06) は台帳が行う
-        const d = this._histStateDepth(history.state);
-        if (d <= 0) return;
-        this._bindSettingsPopstate();
-        this._modalHistStack = this._modalHistStack || [];
-        // イシュー#288: 本詳細(#book/)はURLで直接開き直せる面(R10/R11と同じ性質)。再読込時にまだ同じ
-        // 本のhashが残っていれば、他モーダルと違って「古い残骸」ではなく「意図した表示」として扱い、
-        // history.go(-n)で巻き戻さず採用し直す(採用し直さないと本詳細が閉じてしまい、再読込後に消える
-        // 不具合になる・R08g実測)。
-        if (history.state && history.state.bsModal === 'book-detail' && location.hash.startsWith('#book/')) {
-            this._bookDetailHistAdopt();
-            return;
-        }
-        this._modalHistSync();
+        this.nav.boot(); // 起動時の写し・再読込の段の畳み方 (D06) は台帳が行う
     }
 
     showExclusionsModal() {
