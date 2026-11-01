@@ -165,3 +165,37 @@ json reporterの出力(`test-results/e2e.json`)が2回目の実行で上書き�
 - ただしローカル環境のコア数の違いにより、CI実測ほどの強い負荷を再現できておらず、「分離後に必ず収まる」ことをローカルの数値だけで完全には証明できない。極限負荷(14burner)下では単独実行でも1回だけ超過を確認した。
 - 上限値・判定方式（reps=5中央値・最大値記録のみ）は変更していない（#377方針）。
 - 以上を数値付きでtpに付けて返す。pushして実際のCIで確認することを提案する（分離によって改善する可能性は高いが、ローカルでの完全な事前証明はコア数の違いにより限界がある）。
+
+## step6：push後の1回目CI run結果（2026-11-02 05:16〜05:24実測）
+
+push済み：`4cd6644`（origin/main、rebase後に#453=efac02d・#406=6ecd410/1bb072aを取り込み済み。重複ファイルなし・衝突なし）。
+
+### testジョブの結果：failure（build/deploy/report-build-statusは全てsuccess）
+
+- **1本目のstep（`--grep-invert "sort-perf-budget"`・並列）**：**562 passed / 14 skipped / 0 failed**（5.5分）。cover-cache-sw・critical-path・import-bookmarklet-progress（4件）はいずれも失敗一覧に出現せず＝全て緑を確認。
+- **2本目のstep（`tests/e2e/sort-perf-budget.spec.js --workers=1`単独）**：**1 failed**。
+
+```
+Error: drag inputDelay(中央値)=86ms(最大87ms・記録のみ)
+Expected: <= 80
+Received:    86
+```
+
+BUDGET.drag.inputDelay=80msに対し86ms（+7.5%）でわずかに超過。order・directionのexpectは両方pass済み（dragで停止したためconsoleの[sort-perf]生ログはannotationsに出ず、数値は未取得・Actions job logsは未認証で403のまま取得不可）。
+
+### ローカル検証との差
+
+ローカルの単独`--workers=1`(無負荷)×3回ではdrag inputDelay中央値29〜34ms（BUDGET80msに対し2.3〜2.7倍の余裕）だったが、CI実測は86ms。ローカル（16コア）とCIランナー（コア数が少ないと推測）の素の処理速度差により、単独実行でもローカルの再現より重くなる方向に差が出た。これは②が事前に指摘していた「ローカルでは必ず収まることを完全には証明できない」という懸念が、まさにこの形で実測された。
+
+### 付随的な不具合（本質的な判定には影響しないが記録）
+
+`E2E annotation 補完スキップ: test-results/e2e-parallel.json を読めなかった: ENOENT`。ci.yml側の「結果退避」ステップ（`mv test-results/e2e.json test-results/e2e-parallel.json || true`）が効かなかった（原因未調査・1本目が0 failedだったため実害なしだが、1本目で失敗が出た場合にannotation側で見えなくなる恐れがある）。2本目の失敗は`test-results/e2e.json`側（annotate-e2eの2回目呼び出し）から正しく出ているため、今回の判定自体には影響していない。
+
+### ②への申し送り（tp）
+
+②の指示（push後、単独でも上限を超えた場合は上限を変えずretryも足さず数値を付けてtpで返す）に従う。
+
+- 1回目のCI run（4cd6644）: testジョブfailure。並列側は0 failedで解消確認済み。sort-perf-budget単独側はdragのinputDelayがBUDGET(80ms)をわずかに超過(86ms)。
+- 2回目の確認：未認証のためworkflow rerun不可（`POST .../actions/runs/{id}/rerun`は401）。次のpush時のrunで確認する必要がある。
+- 対応の判断を②に求める：(a) このまま次のpush機会を待ち再実測する、(b) BUDGET.drag.inputDelayの値を調整する（#377方針により③の判断では変更しない）、(c) 他の対応、のいずれかを指示してほしい。
+- 付随的な不具合（annotation退避のENOENT）は別途修正が必要（本質に影響なし）。
