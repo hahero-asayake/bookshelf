@@ -77,6 +77,13 @@ describe('renderReportScript', () => {
         expect(js).toContain('sessionStorage.setItem');
         expect(js).not.toContain('document.cookie');
     });
+
+    it('GISの準備判定(ポーリング側とinitGsi側)は同じ関数(gsiReady)を使う(回帰: 本番実機確認で、google.accountsは先に生えるがgoogle.accounts.idがやや遅れて生える瞬間があり、判定がずれているとボタンが永久に描画されないバグを検出)', () => {
+        const js = renderReportScript('https://hub.asayake.org');
+        expect(js).toContain('function gsiReady()');
+        expect((js.match(/gsiReady\(\)/g) || []).length).toBeGreaterThanOrEqual(3);   // 定義1 + if(gsiReady())初回 + ポーリング内2箇所
+        expect(js).not.toMatch(/window\.google\s*&&\s*window\.google\.accounts\)/);   // .id を見ない旧判定が残っていないこと
+    });
 });
 
 describe('bookshelf-cdn Worker: /report ルーティング (イシュー#408)', () => {

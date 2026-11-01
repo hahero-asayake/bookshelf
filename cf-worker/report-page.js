@@ -162,20 +162,25 @@ export function renderReportScript(hubApiOrigin) {
     });
   }
 
+  // google.accounts までは先に生えるが google.accounts.id はやや遅れて生える瞬間がある(本番実機確認で検出・
+  // イシュー#408)。ポーリング側の判定が .accounts までしか見ていないと、その隙間でclearIntervalしてしまい
+  // initGsi が1回だけ早期returnして二度と呼ばれなくなる(ボタンが永久に描画されない)。両箇所で同じ条件を使う。
+  function gsiReady(){ return !!(window.google && google.accounts && google.accounts.id); }
+
   function initGsi(){
-    if (!cfg.googleClientId || !window.google || !google.accounts || !google.accounts.id) return;
+    if (!cfg.googleClientId || !gsiReady()) return;
     google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: onCredential });
     var wrap = $('gsi-btn-wrap');
     if (wrap) google.accounts.id.renderButton(wrap, { theme: 'outline', size: 'large', text: 'signin_with' });
   }
 
   // GIS の外部scriptは async のため、読込完了を待ってから初期化する
-  if (window.google && window.google.accounts) initGsi();
+  if (gsiReady()) initGsi();
   else {
     var tries = 0;
     var t = setInterval(function(){
       tries++;
-      if (window.google && window.google.accounts) { clearInterval(t); initGsi(); }
+      if (gsiReady()) { clearInterval(t); initGsi(); }
       else if (tries > 100) { clearInterval(t); setError('Google ログインの読み込みに失敗しました。時間をおいて再読み込みしてください。'); }
     }, 100);
   }
