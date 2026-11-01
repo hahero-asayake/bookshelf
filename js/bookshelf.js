@@ -9368,6 +9368,13 @@ class VirtualBookshelf {
         // として足す (差し戻し指摘7: ボタン列に入れると.pp-row-actions圧迫でタイトルが狭幅で潰れるため)。
         const isHubTarget = (SyncConfigManager.load().publish || {}).target === 'hub';
         const hubTopUrl = isHubTarget ? this._artPublicBase() : '';
+        // 本棚トップの配色 (ADR-144・イシュー#408 案A)。共有ハブ公開時だけ (/top は無対象のためgithubでは出さない、
+        // hubTopUrlと同じ条件)。読込は非同期なので描画自体は fire-and-forget で呼ぶ (一覧描画をブロックしない)。
+        const siteThemeBlock = document.getElementById('art-site-theme');
+        if (siteThemeBlock) {
+            siteThemeBlock.hidden = !isHubTarget;
+            if (isHubTarget) this._artRenderSiteThemeBlock();
+        }
         if (!articles.length) {
             ul.innerHTML = '<li class="pp-empty">まだ公開記事がありません。「新規作成」から作ってください。</li>';
         } else {
@@ -10289,6 +10296,56 @@ class VirtualBookshelf {
         const l = this._artThemeItems('layout').find(x => x.id === theme.layout);
         const c = this._artThemeItems('color').find(x => x.id === theme.color);
         return `${l ? l.label : theme.layout}／${c ? c.label : theme.color}`;
+    }
+
+    // 本棚トップ(/<username>/)の配色 (ADR-144・イシュー#408 案A)。記事の「見た目」ブロック
+    // (_artRenderLookBlock) と同じ部品(_artThemeItems('color')・.art-look-row)・同じ操作で選べるように
+    // する(「同じ操作は同じ見た目」方針)。サイト単位で1つなので役割違いの別セクション・別保存先
+    // (PublishArticleStore.saveSiteTheme→private/publish/site.json)。即時反映ではなく次の公開で反映。
+    async _artRenderSiteThemeBlock() {
+        const esc = PublishArticleGenerator.esc;
+        const list = document.getElementById('art-site-theme-list');
+        const cur = document.getElementById('art-site-theme-current');
+        if (!list) return;
+        let color;
+        try { color = await this.publishArticleStore.loadSiteTheme(); }
+        catch (e) { list.innerHTML = '<p class="muted-hint" style="padding:.6rem">配色の読み込みに失敗しました。</p>'; return; }
+        const items = this._artThemeItems('color');
+        const row = (it) => {
+            const checked = color === it.id;
+            const t = (typeof ARTICLE_COLOR_TOKENS !== 'undefined' && ARTICLE_COLOR_TOKENS[it.id]) || null;
+            const bg = t ? t.bg : (it.swatch || 'transparent');
+            const acc = t ? t.acc : (it.swatch || 'transparent');
+            const txt = t ? t.txt : 'inherit';
+            const th = `<span class="art-look-th is-color" style="background:${esc(bg)};color:${esc(txt)}"><i>Aa</i><span class="art-look-th-bar" style="background:${esc(acc)}"></span></span>`;
+            return `<button type="button" class="art-look-row" role="radio" aria-checked="${checked}" data-site-theme-color="${esc(it.id)}"${it.selectable ? '' : ' disabled'}>
+                ${th}
+                <span class="art-look-nm"><b>${esc(it.label)}</b></span>
+                <span class="art-look-pv${it.plugin ? ' is-plugin' : ''}">${esc(it.provider)}</span>
+                <span class="art-look-mk" aria-hidden="true"></span>
+            </button>`;
+        };
+        const label = (items.find(it => it.id === color) || {}).label || color;
+        if (cur) cur.textContent = label;
+        list.innerHTML = items.map(row).join('');
+        if (typeof window.applyIcons === 'function') window.applyIcons(list);
+        list.querySelectorAll('[data-site-theme-color]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const picked = btn.getAttribute('data-site-theme-color');
+                if (picked === color) return;
+                btn.disabled = true;
+                try {
+                    await this.publishArticleStore.saveSiteTheme(picked);
+                    await this._artRenderSiteThemeBlock();
+                    const hint = document.getElementById('art-site-theme-hint');
+                    if (hint) { hint.hidden = false; }
+                } catch (e) {
+                    toast('配色の保存に失敗しました。もう一度お試しください。', { type: 'error' });
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
     }
 
     _artRenderLookBlock() {

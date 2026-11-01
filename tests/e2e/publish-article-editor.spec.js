@@ -1371,6 +1371,65 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect(page.locator('#art-pub-go-label')).toHaveText('更新する');
         expect(errors).toEqual([]);
     });
+
+    // 本棚トップの配色 (ADR-144・イシュー#408 案A): 公開パネルの一覧ビューに新設した「本棚トップの見た目」。
+    // 記事の「見た目」ブロックと同じ部品(_artThemeItems('color'))・同じ操作で選べる。選択→保存は即時
+    // (saveSiteTheme)だが、本棚トップ(index.html)への反映は次の公開操作のタイミング(案A)。
+    test('本棚トップの配色: 共有ハブ公開時だけ「本棚トップの見た目」が出る。選ぶと保存され、次の公開で本棚トップのdata-colorに反映される (ADR-144・イシュー#408)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        const block = page.locator('#art-site-theme');
+        await expect(block).toBeVisible();
+        // 既定(aqua-white)で始まり、選択済み行が1つだけ aria-checked=true
+        await expect(block.locator('[aria-checked="true"]')).toHaveCount(1);
+        await expect(block.locator('[data-site-theme-color="aqua-white"]')).toHaveAttribute('aria-checked', 'true');
+
+        await block.locator('[data-site-theme-color="rose-dark"]').click();
+        await expect(block.locator('[data-site-theme-color="rose-dark"]')).toHaveAttribute('aria-checked', 'true');
+        await expect(page.locator('#art-site-theme-hint')).toBeVisible();
+        await expect(page.locator('#art-site-theme-hint')).toContainText('次に公開すると');
+        await expect(page.locator('#art-site-theme-current')).toContainText('ローズ');
+
+        // 保存先(private/publish/site.json)に実際に書かれている (store経由の読み戻しで確認)
+        await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.loadSiteTheme())).toBe('rose-dark');
+
+        // 記事を1本作って公開 → hubCaptured.files の index.html (本棚トップ) に反映されている
+        await page.click('#art-new');
+        await page.fill('#art-title', '配色反映テスト');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await publishViaPanel(page);
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        const indexFile = hubCaptured.files.find((f) => f.path === 'index.html');
+        expect(indexFile).toBeTruthy();
+        expect(indexFile.content).toContain('data-color="rose-dark"');
+        // 記事個別ページには影響しない (既定テーマのまま)
+        const articleFile = hubCaptured.files.find((f) => f.path.endsWith('/index.html') && f.path !== 'index.html');
+        expect(articleFile.content).not.toContain('data-color="rose-dark"');
+        expect(errors).toEqual([]);
+    });
+
+    test('本棚トップの配色: 自前公開(GitHub)では「本棚トップの見た目」を出さない(/topが存在しないのと同じ理由・ADR-144)', async ({ page }) => {
+        const errors = [];
+        page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+        page.on('pageerror', (err) => errors.push(String(err)));
+        await page.addInitScript(([u, l]) => {
+            localStorage.setItem('virtualBookshelf_userData', u);
+            localStorage.setItem('virtualBookshelf_library', l);
+            localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', publish: { target: 'github', owner: 'tester', repo: 'bookshelf-public' } }));
+        }, [fixtureUserData, fixtureLibrary]);
+        await page.goto('index.html');
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#art-site-theme')).toBeHidden();
+        expect(errors).toEqual([]);
+    });
 });
 
 test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有効)', () => {

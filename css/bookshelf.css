@@ -4506,6 +4506,15 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-free-notice-text { flex: 1 1 auto; min-width: 0; }
 .pp-store-notice { align-items: center; }
 .pp-store-notice #art-store-notice-btn { flex: 0 0 auto; }
+/* 本棚トップの配色 (ADR-144・イシュー#408 案A)。.art-look-list/.art-look-row(記事の見た目ブロック)を
+   そのまま流用し、配色12色ぶんに収まる高さへ上書きする(記事側はレイアウト3種も含むため高さが違う)。 */
+.pp-site-theme { margin: 0 0 0.9rem; padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pp-site-theme[hidden] { display: none; }
+.pp-site-theme-hd { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; font-size: 0.85rem; }
+.pp-site-theme-current { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+.pp-site-theme-list.art-look-list { height: calc(52px * 3.5); }
+.pp-site-theme-hint { margin: 0.5rem 0 0; color: var(--ok, #1f8a4c); font-size: 0.8rem; }
+.pp-site-theme-hint[hidden] { display: none; }
 /* hidden 属性を尊重 (.btn-small の重複定義の display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2。
    通知本体は表示のままボタンだけ隠す状態がある = 親の .pp-free-notice[hidden] では救えない) */
 #art-store-notice-btn[hidden] { display: none; }

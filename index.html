@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026102906">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026110102">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -885,6 +885,14 @@
                     <p class="pp-hint">本棚を素材にした記事を作り、公開します。公開先（自分の GitHub / 共有ハブ）は <strong>設定 → 公開</strong> で選べます。</p>
                     <button id="art-new" class="btn btn-primary btn-small"><span class="h-icon" data-icon="plus" data-icon-size="14"></span>新規作成</button>
                 </div>
+                <!-- 本棚トップ(/<username>/)の配色 (ADR-144・イシュー#408 案A)。記事の「見た目」ブロック
+                     (_artRenderLookBlock) と同じ色一覧(_artThemeItems('color'))・同じ.art-look-rowを流用。
+                     サイト単位で1つだけなので記事一覧(#art-list)の外・パネル上部に置く。 -->
+                <div class="pp-site-theme" id="art-site-theme" hidden>
+                    <div class="pp-site-theme-hd"><span class="h-icon" data-icon="palette" data-icon-size="14"></span><b>本棚トップの見た目</b><span class="pp-site-theme-current" id="art-site-theme-current"></span></div>
+                    <div class="art-look-list pp-site-theme-list" id="art-site-theme-list" role="radiogroup" aria-label="本棚トップの配色"></div>
+                    <p class="pp-site-theme-hint" id="art-site-theme-hint" role="status" hidden>保存しました。次に公開すると本棚トップに反映されます。</p>
+                </div>
                 <p id="art-free-notice" class="pp-free-notice" hidden><span class="h-icon" data-icon="info" data-icon-size="13"></span><span class="pp-free-notice-text">無料プランの公開記事は、商品リンクに運営（Asayake）のアフィリエイト ID が付きます（読者の購入価格は変わりません）。自分のタグ・広告なしにするには <strong>Plus</strong> をご利用ください。</span></p>
                 <p id="art-store-notice" class="pp-free-notice pp-store-notice" hidden><span class="h-icon" data-icon="alert-triangle" data-icon-size="13"></span><span id="art-store-notice-text" class="pp-free-notice-text"></span><button id="art-store-notice-btn" class="btn btn-secondary btn-small" type="button" hidden></button></p>
                 <ul id="art-list" class="pp-list"></ul>
@@ -1436,11 +1444,11 @@
     <script defer src="js/storage.js?v=2026102901"></script>
     <script defer src="js/book-manager.js?v=2026102905"></script>
     <script defer src="js/bookshelf-manager.js?v=2026090501"></script>
-    <script defer src="js/publish-article-store.js?v=2026102601"></script>
+    <script defer src="js/publish-article-store.js?v=2026110102"></script>
     <script defer src="js/vendor/marked.umd.js?v=2026081501"></script>
     <script defer src="js/publish-ogp-image.js?v=2026102401"></script>
     <script defer src="js/publish-article-generator.js?v=2026110101"></script>
-    <script defer src="js/exporter.js?v=2026092601"></script>
+    <script defer src="js/exporter.js?v=2026110102"></script>
     <script defer src="js/plugin-api.js?v=2026102613"></script>
     <script defer src="js/plugin-loader.js?v=2026072701"></script>
     <!-- イシュー#359 段階③: 画面遷移・履歴の正本は NavState (js/nav-state.js)。何かあれば次の1行を true にすると
@@ -1450,7 +1458,7 @@
     <script defer src="js/nav-state.js?v=2026102605"></script>
     <script defer src="js/dashboard.js?v=2026102905"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026110101"></script>
+    <script defer src="js/bookshelf.js?v=2026110102"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
