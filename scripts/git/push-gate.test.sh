@@ -40,7 +40,8 @@ new_case_repo() {
     cp -r "$REPO_ROOT/.githooks" .
     mkdir -p scripts/git
     cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-    chmod +x .githooks/pre-push scripts/git/push-gate.mjs
+    cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
+    chmod +x .githooks/* scripts/git/*.mjs
     git config core.hooksPath .githooks
     echo base > README.md
     git add README.md .githooks scripts/git/push-gate.mjs
@@ -169,7 +170,8 @@ git clone -q "$fdir/origin.git" "$fdir/work1"
   cp -r "$REPO_ROOT/.githooks" .
   mkdir -p scripts/git
   cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-  chmod +x .githooks/pre-push scripts/git/push-gate.mjs
+  cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
+  chmod +x .githooks/* scripts/git/*.mjs
   git config core.hooksPath .githooks
   echo base > README.md
   git add README.md .githooks scripts/git/push-gate.mjs
@@ -217,7 +219,8 @@ git clone -q "$gdir/origin.git" "$gdir/work1"
   cp -r "$REPO_ROOT/.githooks" .
   mkdir -p scripts/git
   cp "$REPO_ROOT/scripts/git/push-gate.mjs" scripts/git/push-gate.mjs
-  chmod +x .githooks/pre-push scripts/git/push-gate.mjs
+  cp "$REPO_ROOT"/scripts/git/{trailer-gate,secret-path-gate,amend-warn}.mjs scripts/git/
+  chmod +x .githooks/* scripts/git/*.mjs
   git config core.hooksPath .githooks
   echo base > README.md
   git add README.md .githooks scripts/git/push-gate.mjs

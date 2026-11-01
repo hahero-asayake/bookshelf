@@ -1,0 +1,15 @@
+#!/bin/sh
+# 秘密ファイルパスの混入検査（イシュー#418）。詳細は scripts/git/secret-path-gate.mjs。
+#
+# 有効化するには: git config core.hooksPath .githooks
+#
+# 逃げ道: git commit --no-verify ...（人間の手動操作用）。
+# 誤検知の個別免除: SECRET_PATH_GATE_ALLOW=<path1>,<path2> git commit ...
+
+NODE_BIN="node"
+if ! command -v node >/dev/null 2>&1; then
+  NODE_BIN="/home/sei/.nvm/versions/node/v24.18.0/bin/node"
+fi
+
+"$NODE_BIN" scripts/git/secret-path-gate.mjs
+exit $?

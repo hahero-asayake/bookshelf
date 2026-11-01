@@ -1,0 +1,14 @@
+#!/bin/sh
+# Issue trailerの空行検査（イシュー#418）。詳細は scripts/git/trailer-gate.mjs。
+#
+# 有効化するには: git config core.hooksPath .githooks
+#
+# 逃げ道: git commit --no-verify ...（人間の手動操作用）。
+
+NODE_BIN="node"
+if ! command -v node >/dev/null 2>&1; then
+  NODE_BIN="/home/sei/.nvm/versions/node/v24.18.0/bin/node"
+fi
+
+"$NODE_BIN" scripts/git/trailer-gate.mjs "$1"
+exit $?

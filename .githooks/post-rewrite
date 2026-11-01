@@ -1,0 +1,13 @@
+#!/bin/sh
+# amend対象が他イシューのcommitでないかの事後警告（イシュー#418）。
+# 詳細は scripts/git/amend-warn.mjs。止めない＝常にexit 0（警告のみ）。
+#
+# 有効化するには: git config core.hooksPath .githooks
+
+NODE_BIN="node"
+if ! command -v node >/dev/null 2>&1; then
+  NODE_BIN="/home/sei/.nvm/versions/node/v24.18.0/bin/node"
+fi
+
+"$NODE_BIN" scripts/git/amend-warn.mjs "$1"
+exit 0
