@@ -4643,7 +4643,12 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* ===== 記事エディタ (公開v2 S3, ADR-058 §11 / mock-editor.html に準拠) ===== */
 /* 編集モードはモーダルの残り高さを .art-wrap に配分する縦積み (900px 超・イシュー#59, ADR-067)。
    外側 (.modal-content) のスクロールを無くし、.art-col と .art-drawer-list の内側だけがスクロールする。 */
-.art-modal-content.art-editing { max-width: 1080px; display: flex; flex-direction: column; }
+/* イシュー#430 (②承認): 「全画面を避け過ぎ」指摘により、編集状態は既定で全画面にする
+   (旧 max-width: 1080px を撤廃)。901px以上の専用ルール (旧 min(1240px,...)) も合わせて撤廃。
+   本文欄+プレビューの可読性は内側 (.art-wrap 以下) の max-width で別途確保する。 */
+.art-modal-content.art-editing { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
+.art-modal-content.art-editing > .modal-header { display: none; } /* 全画面では独自ヘッダー(art-fs-hd/art-hd)が戻る/完了を持つため、モーダル既定ヘッダーは隠す (イシュー#430) */
+.art-modal-content.art-editing > .modal-close { display: none; } /* ×はヘッダーの「完了」等と重複するため隠す (旧600px以下限定ルールをPC/モバイル共通に・イシュー#430) */
 .publish-pages-content > #art-list-view,
 .publish-pages-content > #art-edit-view { padding: 0.25rem 2rem 1.85rem; }
 /* hidden 属性を尊重 (display:flex が UA の [hidden] を上書きしてしまう罠。ui-standards §2-2)。
@@ -4859,6 +4864,16 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-look-block:not(.is-collapsed) .art-block-sum { display: none; }
 .art-block-extra { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .art-block-bar > .art-block-ic { justify-self: center; width: 28px; height: 28px; justify-content: center; padding: 0; }
+/* イシュー#430 (②承認・ハヘロ「本の変更ボタン小さすぎ」): 全画面の対象ブロック編集(form)の操作ボタンは
+   44px以上の押しやすいサイズにする。一覧の折りたたみ表示は密度優先で元のまま(対象外)。
+   文字ラベルの追加はJS側(_artRenderBlockのpickBtnテンプレート)で別途対応が必要(現状はアイコンのみ)。 */
+#art-edit-view[data-art-mode="form"] .art-block.is-fs-target > .art-block-bar > .art-block-ic {
+    width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 8px;
+}
+#art-edit-view[data-art-mode="form"] .art-block.is-fs-target .art-chip-toggle,
+#art-edit-view[data-art-mode="form"] .art-block.is-fs-target .art-shelf-item-toggles .art-chip-toggle {
+    min-height: 44px; padding: 0 0.8rem; font-size: 0.82rem;
+}
 .art-block-cell { width: 28px; }
 .art-block-body { padding: 0.75rem var(--art-pad); }
 
