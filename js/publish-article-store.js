@@ -43,6 +43,9 @@
 
 const PUBLISH_ARTICLES_PATH = 'private/publish/articles.json';
 const PUBLISH_PAGES_LEGACY_PATH = 'private/publish/pages.json';
+// サイト設定 (本棚トップ/<username>/ の配色・ADR-144・イシュー#408 案A): 記事とは別ファイル
+// (記事ごとのtheme=articles.json、サイト単位の設定=site.json、で責務を分ける)。
+const PUBLISH_SITE_PATH = 'private/publish/site.json';
 // イシュー#251: #249で確定した3テンプレ(本A×棚A・本C×棚C・本C×棚D)に総入れ替え。旧 wall/count/card は
 // 廃止するが、未公開アプリのため移行コードは書かない(ADR-006)。旧データに旧値が残っていても
 // normalizeTheme() が読み込み時に見た目の近い新値へ読み替える(下記 _LEGACY_LAYOUT_MAP)。
@@ -212,6 +215,26 @@ class PublishArticleStore {
     }
 
     async _ensure() { if (!this._articles) await this.load(); }
+
+    // ===== サイト設定 (本棚トップの配色・ADR-144・イシュー#408 案A) =====
+    // 記事と同じ _artThemeItems('color')/ARTICLE_COLORS を流用するため、保存形式も記事のtheme.colorと
+    // 同じ値域(ARTICLE_COLORS)にする。layoutは対象外(本棚トップは一覧ページで記事のレイアウト概念を持たない)。
+    // 「公開すると反映」(即時反映ではない・案A)なので、ここでは保存のみ行い、反映は次回のexport()が
+    // generator.build()へ渡すタイミングで起きる。
+    async loadSiteTheme() {
+        let data;
+        try { data = await this.storage.readJSON(PUBLISH_SITE_PATH); }
+        catch (e) { this.lastSiteThemeLoadError = e; throw e; }
+        this.lastSiteThemeLoadError = null;
+        const color = data && data.theme && data.theme.color;
+        return PublishArticleStore.normalizeTheme({ color }).color;
+    }
+
+    async saveSiteTheme(color) {
+        const normalized = PublishArticleStore.normalizeTheme({ color });
+        await this.storage.writeJSON(PUBLISH_SITE_PATH, { theme: { color: normalized.color } });
+        return normalized.color;
+    }
 
     articles() { return this._articles || []; }
     get(id) { return (this._articles || []).find(a => a.id === id) || null; }

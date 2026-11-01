@@ -621,3 +621,30 @@ describe('lastBuiltAt/ogHash のみの更新は updatedAt を進めない (イ�
         nowSpy.mockRestore();
     });
 });
+
+// 本棚トップの配色 (ADR-144・イシュー#408 案A): 記事とは別ファイル(site.json)に保存し、
+// 保存した値域は記事のtheme.colorと同じ(ARTICLE_COLORS)にする。
+describe('サイト設定(本棚トップの配色) loadSiteTheme/saveSiteTheme (ADR-144・イシュー#408)', () => {
+    it('未保存(site.json無し)なら既定配色にフォールバックする', async () => {
+        expect(await as.loadSiteTheme()).toBe('aqua-white');
+    });
+
+    it('保存した配色がそのまま読み戻せる。記事(articles.json)には一切影響しない', async () => {
+        const saved = await as.saveSiteTheme('rose-dark');
+        expect(saved).toBe('rose-dark');
+        expect(await as.loadSiteTheme()).toBe('rose-dark');
+        expect(storage._dump()['private/publish/site.json']).toEqual({ theme: { color: 'rose-dark' } });
+        expect(storage._dump()['private/publish/articles.json']).toBeUndefined();   // 記事側には一切書き込んでいない
+        expect(as.articles()).toEqual([]);
+    });
+
+    it('不正な色値は既定配色に読み替える(normalizeThemeを再利用)', async () => {
+        await storage.writeJSON('private/publish/site.json', { theme: { color: 'not-a-real-color' } });
+        expect(await as.loadSiteTheme()).toBe('aqua-white');
+    });
+
+    it('readJSON失敗(通信/権限エラー)はthrowし、既定へ握り潰さない(他APIと同じ契約)', async () => {
+        storage.readJSON = async () => { throw new Error('network'); };
+        await expect(as.loadSiteTheme()).rejects.toThrow('network');
+    });
+});

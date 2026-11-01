@@ -102,7 +102,11 @@ class BookshelfExporter {
         // ogImage: 公開時だけ OGP 画像 (og.png) を自前生成する (プレビューでは作らない・ADR-098)
         // allowAdTagNone: 記事ごとの「付けない」を効かせてよいか (GitHub 公開 or Plus。Free×ハブは運営タグ固定・イシュー#230)
         const allowAdTagNone = pub.target === 'github' || ((SyncConfigManager.load().hub || {}).plan === 'plus');
-        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true, ogImage: true, allowAdTagNone });
+        // 本棚トップの配色 (ADR-144・イシュー#408 案A): 保存先はサイト設定(site.json)、反映は公開操作の
+        // タイミング(ここ)。読み込み失敗時は既定配色にフォールバックし公開自体は止めない(未設定が通常状態のため)。
+        let siteThemeColor = '';
+        try { siteThemeColor = await store.loadSiteTheme(); } catch (_) { siteThemeColor = ''; }
+        const result = await generator.build(articles, { siteBaseUrl, target: pub.target, siteId, publishData, haltOnReadFailure: true, ogImage: true, allowAdTagNone, siteThemeColor });
         if (articles.length > 0 && result.articles.length === 0) {
             // result.errors には具体的な理由 (公開ID未発番・長文メモ読み込み失敗等) が入っている
             // ため、あれば優先して見せる (イシュー#134: 汎用文言だと原因不明のまま再試行させてしまう)。

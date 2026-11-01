@@ -793,8 +793,10 @@ ${ctaHtml}
 .index-list li{padding:16px 0;border-bottom:1px solid var(--line)}
 .index-list a{font-size:1.05rem;font-weight:600;text-decoration:none}`;
         const updatedAt = articleLinks.reduce((m, a) => Math.max(m, a.updatedAt || 0), 0);
-        // index はテーマを持たない一覧ページなので既定テーマ (_wrapDoc の normalizeTheme フォールバック) で包む
-        const indexArticle = { title: `${publisher} の本棚`, tags: [], theme: {} };
+        // 本棚トップの配色 (ADR-144・イシュー#408 案A): layoutは一覧ページのため対象外(常に既定)、
+        // colorだけ opts.siteThemeColor (PublishArticleStore.saveSiteTheme で保存したサイト設定) を使う。
+        // 未設定なら normalizeTheme のフォールバック(既定配色)になる。
+        const indexArticle = { title: `${publisher} の本棚`, tags: [], theme: { color: opts.siteThemeColor || '' } };
         const indexCanonical = opts.siteBaseUrl ? `${String(opts.siteBaseUrl).replace(/\/+$/, '')}/` : '';
         // 一覧ページなので og:type は article ではなく website (T11・イシュー#335で修正)。
         // ogDescription/ogImage は本棚ごとの個別生成ではなく、全ページ共通のブランド画像・仮の説明文を使う
@@ -1076,7 +1078,7 @@ ${ctaHtml}
         }
         // 本棚トップ自身の通報 (イシュー#408): 対象URLは siteBaseUrl 自身(末尾スラッシュ付き)。
         const indexReportHubUrl = reportHubUrlFor(siteBaseUrl ? `${siteBaseUrl}/` : '');
-        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter, ctaHubTopUrl, reportHubUrl: indexReportHubUrl }) });
+        files.push({ path: 'index.html', content: this._indexHtml(publisher, built, { siteHasAffiliate, siteBaseUrl, reportRef, pluginFooter, ctaHubTopUrl, reportHubUrl: indexReportHubUrl, siteThemeColor: opts.siteThemeColor || '' }) });
 
         const leak = this._detectLeak(files, state);
         return { files, articles: built, leak, errors, ownTag, ogSkipped };

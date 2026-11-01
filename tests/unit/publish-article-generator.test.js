@@ -554,6 +554,20 @@ describe('HTML シェル: テーマ属性 / CSP / タグ / フッター', () => 
         expect(html).toContain('data-color="gold-dark"');
     });
 
+    it('本棚トップ(index.html)はopts.siteThemeColorで配色を選べる(ADR-144・イシュー#408案A)。記事個別のdata-colorには影響しない', async () => {
+        const r = await gen.build([makeArticle({ theme: { color: 'gold-dark' } })], { siteThemeColor: 'rose-comp' });
+        const index = r.files.find(f => f.path === 'index.html').content;
+        const article = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(index).toContain('data-color="rose-comp"');
+        expect(article).toContain('data-color="gold-dark"');
+    });
+
+    it('siteThemeColor未指定(未設定・プレビュー等)の本棚トップは既定配色になる', async () => {
+        const r = await gen.build([makeArticle()], {});
+        const index = r.files.find(f => f.path === 'index.html').content;
+        expect(index).toContain('data-color="aqua-white"');
+    });
+
     it('CSP は script-src を許可しない (default-src \'none\' で包括的にブロック・§10.7/11.10)', async () => {
         const article = makeArticle();
         const r = await gen.build([article]);
