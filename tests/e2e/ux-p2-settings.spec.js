@@ -1,7 +1,8 @@
 // UI再設計 P2 (設定 master-detail, ADR-047) の回帰テスト
 //  - 一覧(master) → カテゴリを押すと全画面 detail。スマホは history で戻る/スワイプ1段
 //  - PC は左レール + 右ペイン。既定はアカウント、レールで切替
-//  - × = 閉じる / フッターの「閉じる」(#settings-modal-done) は廃止 (二重クローズ解消)
+//  - イシュー#435: 「アプリのページ」として開く(#430と同じ統一方針)。×とフッターの「閉じる」(#settings-modal-done)は
+//    廃止。閉じ方は ESC / 戻る(settings-back) / 左サイドバーからの遷移。技術基盤(overlays.open/NavState)は不変。
 //  - ターゲット直開き (_openSettingsModal('sync-method-select')) で該当カテゴリが開く
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
@@ -62,12 +63,15 @@ test('P2: 戻るボタンで一覧へ戻る (スマホ)', async ({ page }) => {
     await expect(content).toHaveAttribute('data-settings-view', 'master');
 });
 
-test('P2: × で閉じる / フッターの「閉じる」は廃止', async ({ page }) => {
+test('P2: ×とフッターの「閉じる」は廃止。全画面ページ化(イシュー#435)でESC/左ナビ遷移から出る', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await expect(page.locator('#settings-modal-done')).toHaveCount(0);
-    await page.locator('#settings-modal-close').click();
+    // イシュー#435: 「アプリのページ」として開く(#430と同じ統一方針)。×ボタンは使わない(非表示)
+    await expect(page.locator('#settings-modal-close')).toBeHidden();
+    // 閉じ方は ESC (モーダルの技術基盤=overlays.open/NavStateは維持しているため従来どおり効く)
+    await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
     expect(errors).toEqual([]);
 });
@@ -124,4 +128,34 @@ test.describe('スマホ 設定スクロール', () => {
         expect(diag.scrolledTo).toBeGreaterThan(0); // はみ出した分をスクロールで送れる
         expect(errors).toEqual([]);
     });
+});
+
+test('P2 (イシュー#435): PC は「アプリのページ」として開く。左サイドバーが見え、backdropに覆われずクリックできる (#430と同じ統一方針)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+    const sidebar = page.locator('#app-sidebar');
+    await expect(sidebar).toBeVisible();
+    const box = await sidebar.boundingBox();
+    const sidebarClickable = await page.evaluate(({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return !!(el && el.closest('#app-sidebar'));
+    }, { x: box.x + box.width / 2, y: box.y + 40 });
+    expect(sidebarClickable).toBe(true);
+    // 読み物欄(本文)はサイドバーより右から始まる(左ナビに重ならない)
+    const contentBox = await page.locator('#account-section').boundingBox();
+    expect(contentBox.x).toBeGreaterThanOrEqual(box.x + box.width);
+    expect(errors).toEqual([]);
+});
+
+test('P2 (イシュー#435): 390でカードの左右余白が過大でない(目安32px=片側16px前後)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+    const sectionBox = await page.locator('#account-section').boundingBox();
+    const sidePadding = sectionBox.x;
+    expect(sidePadding).toBeLessThanOrEqual(24); // 50px前後だった旧実測より十分小さいこと
+    expect(errors).toEqual([]);
 });

@@ -6974,6 +6974,9 @@ class VirtualBookshelf {
         // 設定は「別の仕事」= 公開まわりの面を閉じてから開く (§6-4「移る前に閉じる」・イシュー#367)。入口ごとの
         // 個別の閉じ方 (旧: ここで公開パネルだけ・_confirmOpenSettings で公開モーダルだけ) をこの 1 か所に寄せた
         this._closeOverlaysForTransition();
+        // イシュー#435: 「アプリのページ」として開く(#430の統一方針の横展開)。技術基盤(overlays.open/NavState)は
+        // そのまま、見た目だけ全画面+サイドバー残存+×なしにする(css/bookshelf.css「設定を全画面ページとして開く」節)。
+        modal.classList.add('settings-fullpage');
         // 重なり管理役: 大 (lg・左に項目一覧・右に中身)。hist:true = 履歴の段 (settings-modal) は管理役の hooks 経由で
         // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (settings-cat の段と一覧へ戻す) は onClose
         this._overlays().open(modal, {

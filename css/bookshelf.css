@@ -8240,3 +8240,36 @@ body.select-mode .drag-handle { display: none; }
 @media (max-width: 768px) {
     .ov-sm, .ov-md, .ov-lg { max-width: none; }
 }
+
+/* ===== イシュー#435: 設定を「アプリのページ」として開く (#430 の統一方針の横展開・案A採用) =====
+   技術基盤 (overlays.open/NavState・ADR-131/129) はそのまま使う。見た目だけ「ページ」にする:
+   backdropを消しサイドバー(--left-col)の右側だけを覆う・×を消す・読み物幅は中央寄せ。
+   PC は既存の「左レール(settings-master)+右ペイン(settings-detail、1 pane だけ表示)」構造
+   (§3779〜) をそのまま使い、全画面に広げるだけで案A(#430と同じ骨格)になる。
+   スマホは既存の data-settings-view 出し分け(一覧→詳細、戻るで一覧)をそのまま使う。
+   publish-section はこの節の対象外 (DOM/ID は不変・#430後続イシューが #/publish/settings へ移す)。 */
+#settings-modal.settings-fullpage {
+    left: var(--left-col, 220px);
+    width: calc(100% - var(--left-col, 220px));
+    background: var(--bg);
+    padding: 0;
+}
+#settings-modal.settings-fullpage .settings-modal-content {
+    max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; margin: 0;
+}
+#settings-modal.settings-fullpage #settings-modal-close { display: none; } /* ×は使わない。戻る(settings-back)と左ナビで出入りする */
+#settings-modal.settings-fullpage .modal-header { box-shadow: none; } /* .modal-header既定の「ポップアップが浮いている」影はページ化後は不要な名残(②指摘) */
+@media (min-width: 769px) {
+    #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
+        /* margin-top: ヘッダー直下に白背景のカードが密着すると、ヘッダーのborder-bottomと継ぎ目のように
+           見える「線の切れ端」が出る(②指摘)。余白を空けて切り離す */
+        max-width: 760px; margin: 1.5rem auto 0; padding: 2rem 2rem 6rem; box-sizing: border-box;
+    }
+}
+@media (max-width: 768px) {
+    /* サイドバーはモバイルでは常設表示ではない(ドロワー等)ため、左右とも画面幅いっぱいを使う */
+    #settings-modal.settings-fullpage { left: 0; width: 100%; }
+    #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
+        padding: 1rem 1rem 3rem; box-sizing: border-box; /* スマホはカード左右余白を16px前後に (②指摘) */
+    }
+}
