@@ -196,7 +196,23 @@ test.describe('ハブ経由の保存衝突・連打防止 (イシュー#374案D 
         const id = await createArticleWithBook(page, '連打検証記事');
 
         const btn = page.locator(`#art-list [data-id="${id}"] [data-act="publish"]`);
-        await Promise.all([btn.click(), btn.click(), btn.click()]);
+        // イシュー#504: 素の.click()を3つPromise.allで投げると、1回成立して disabled→公開成功後の
+        // DOM再生成(data-act="publish"→"republish"、js/bookshelf.js _artRenderList)が起きた後、
+        // 残り2回はPlaywrightのactionability待ち(visible/enabled/stable)の再試行に入り、二度と
+        // 条件を満たせないままテスト全体の60秒タイムアウトを食い潰して落ちる(CI相当のCPU競合下で
+        // 20回中3回=15%再現・③調査済み。disabled制御自体は毎回正しく働いていた=アプリ側の退行では
+        // ない)。どの呼び出しが「勝つ」かはPromise.allの性質上固定できないため、3つ全てに短い
+        // 個別timeoutを与えて明示的に見限る。
+        // 以下の.catch(()=>{})は失敗の握り潰しではない: 1回目のクリックでボタンがdisabledになる
+        // ため、2回目以降の.click()はPlaywrightのactionabilityの待ち(有効になるのを待つ)で
+        // 止まる。timeoutで止まったときは「押せなかった=disabled制御のガードが効いた」とみなして
+        // よい(これこそテストが検証したい挙動)。公開が実際に1回だけ走ったことは、この直後の
+        // toast待ちと下のgetPublishCount()===1のexpectで別途確かめている。
+        await Promise.all([
+            btn.click({ timeout: 3000 }).catch(() => {}),
+            btn.click({ timeout: 3000 }).catch(() => {}),
+            btn.click({ timeout: 3000 }).catch(() => {})
+        ]);
         await expect(page.locator('.toast-success')).toContainText('公開しました', { timeout: 5000 });
         expect(getPublishCount()).toBe(1);
         expect(errors).toEqual([]);
