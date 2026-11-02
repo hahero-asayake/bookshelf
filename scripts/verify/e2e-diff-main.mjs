@@ -58,6 +58,11 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    buildVitestRetryArgs, categorize, countRegressions, countUndetermined, findMatchOutcome,
+    groupE2ERetryTargetsByProject, parsePlaywrightJson, parseVitestJson, verdictLabel,
+    classifyVerdict,
+} from './e2e-diff-lib.mjs';
 
 // ---------- 引数 ----------
 const argv = process.argv.slice(2);
@@ -241,10 +246,13 @@ process.on('SIGINT', () => { cleanupWorktrees(); process.exit(130); });
 process.on('SIGTERM', () => { cleanupWorktrees(); process.exit(143); });
 
 // ---------- テスト実行 ----------
-async function runE2E(sideDir, outFile, { extraArgs = [], grep = GREP, grepInvert = EXCLUDE_INVERT_PATTERN } = {}) {
+async function runE2E(sideDir, outFile, {
+    extraArgs = [], grep = GREP, grepInvert = EXCLUDE_INVERT_PATTERN, project,
+} = {}) {
     const free = await waitPortFree(PORT);
     if (!free) throw new Error(`port ${PORT} が使用中。別プロセスのサーバーが残っていないか確認してから再実行すること`);
     const args = ['test', '--reporter=json', ...extraArgs];
+    if (project) args.push('--project', project);
     if (grep) args.push('--grep', grep);
     if (grepInvert) args.push('--grep-invert', grepInvert);
     const env = {
@@ -264,108 +272,49 @@ async function runVitest(sideDir, outFile, { extraArgs = [], grep = GREP } = {})
     return r;
 }
 
-// ---------- JSON reporter の解析 ----------
-function parsePlaywrightJson(path) {
-    if (!existsSync(path)) { log(`警告: ${path} が無い(0テスト一致 or 実行失敗)`); return new Map(); }
-    let data;
-    try { data = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) {
-        log(`警告: ${path} のJSON解析に失敗: ${e.message}`); return new Map();
-    }
-    const tests = new Map();
-    function walk(suite, titlePath, fileCtx) {
-        const file = suite.file || fileCtx;
-        const nextPath = suite.title ? [...titlePath, suite.title] : titlePath;
-        if (suite.specs) {
-            for (const spec of suite.specs) {
-                const title = [...nextPath, spec.title].filter(Boolean).join(' > ');
-                for (const t of spec.tests) {
-                    const key = `e2e::${file}::${title}::${t.projectName}`;
-                    tests.set(key, {
-                        tool: 'e2e', file, title, project: t.projectName, status: t.status, failed: t.status === 'unexpected',
-                    });
-                }
-            }
-        }
-        if (suite.suites) for (const s of suite.suites) walk(s, nextPath, file);
-    }
-    for (const top of data.suites || []) walk(top, [], undefined);
-    return tests;
-}
-function parseVitestJson(sideDir, path) {
-    if (!existsSync(path)) { log(`警告: ${path} が無い(0テスト一致 or 実行失敗)`); return new Map(); }
-    let data;
-    try { data = JSON.parse(readFileSync(path, 'utf-8')); } catch (e) {
-        log(`警告: ${path} のJSON解析に失敗: ${e.message}`); return new Map();
-    }
-    const tests = new Map();
-    for (const tf of data.testResults || []) {
-        const file = relative(sideDir, tf.name);
-        for (const ar of tf.assertionResults || []) {
-            const key = `unit::${file}::${ar.fullName}`;
-            tests.set(key, { tool: 'unit', file, title: ar.fullName, project: undefined, status: ar.status, failed: ar.status === 'failed' });
-        }
-    }
-    return tests;
-}
-
-// ---------- 比較 ----------
-function categorize(baseTests, workTests) {
-    const newlyFailed = [];
-    const newlyPassed = [];
-    const bothFailed = [];
-    const allKeys = new Set([...baseTests.keys(), ...workTests.keys()]);
-    for (const key of allKeys) {
-        const b = baseTests.get(key);
-        const w = workTests.get(key);
-        const bFailed = b ? b.failed : false;
-        const wFailed = w ? w.failed : false;
-        if (wFailed && !bFailed) newlyFailed.push({ key, base: b, work: w });
-        else if (bFailed && !wFailed) newlyPassed.push({ key, base: b, work: w });
-        else if (bFailed && wFailed) bothFailed.push({ key, base: b, work: w });
-    }
-    return { newlyFailed, newlyPassed, bothFailed };
-}
-function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
+// ---------- 流し直し(新しく落ちたものを再実行し flake/regression/判定不能を分ける) ----------
+// イシュー#510: E2Eはテスト名(--grep)ではなく file:line + --project で指定する(理由はlib冒頭コメント)。
+// 対象テストが結果に見つからない回(No tests found・実行件数0 等)は失敗扱いにせずnull(判定不能)にする。
 async function classifyRetries(workDir, results) {
     if (results.e2e?.newlyFailed.length) {
         const items = results.e2e.newlyFailed;
-        const files = [...new Set(items.map((i) => i.key.split('::')[1]))];
-        const pattern = items.map((i) => escapeRegExp(i.work.title)).join('|');
+        const byProject = groupE2ERetryTargetsByProject(items);
         const outcomes = new Map(items.map((i) => [i.key, []]));
         for (let i = 1; i <= RETRIES; i++) {
-            const outFile = join(OUT, `retry-e2e-${i}.json`);
-            await runE2E(workDir, outFile, { extraArgs: files, grep: pattern });
-            const tests = parsePlaywrightJson(outFile);
-            for (const item of items) {
-                const match = [...tests.values()].find((t) => t.title === item.work.title && t.project === item.work.project);
-                outcomes.get(item.key).push(match ? !match.failed : false);
+            for (const [project, lines] of byProject) {
+                const outFile = join(OUT, `retry-e2e-${i}-${project}.json`);
+                // grep: '' で既定のGREPを上書きして外す(file:lineで既に対象を絞っているため不要・
+                // 二重に絞ると却って一致しなくなる)。grepInvert(除外)は既定どおり渡す(#507を壊さない)。
+                await runE2E(workDir, outFile, { extraArgs: [...lines], project, grep: '' });
+                const tests = parsePlaywrightJson(outFile, { log });
+                for (const item of items) {
+                    if (item.work?.project !== project) continue;
+                    outcomes.get(item.key).push(findMatchOutcome(tests, item));
+                }
             }
         }
         for (const item of items) {
             const passes = outcomes.get(item.key);
             item.retryPasses = passes;
-            item.verdict = passes.some((p) => p) ? 'flake' : 'regression';
+            item.verdict = classifyVerdict(passes);
         }
     }
     if (results.unit?.newlyFailed.length) {
         const items = results.unit.newlyFailed;
-        const files = [...new Set(items.map((i) => i.key.split('::')[1]))];
-        const pattern = items.map((i) => escapeRegExp(i.work.title)).join('|');
+        const { files, pattern } = buildVitestRetryArgs(items);
         const outcomes = new Map(items.map((i) => [i.key, []]));
         for (let i = 1; i <= RETRIES; i++) {
             const outFile = join(OUT, `retry-unit-${i}.json`);
             await runVitest(workDir, outFile, { extraArgs: files, grep: pattern });
-            const tests = parseVitestJson(workDir, outFile);
+            const tests = parseVitestJson(workDir, outFile, { log });
             for (const item of items) {
-                const match = [...tests.values()].find((t) => t.title === item.work.title);
-                outcomes.get(item.key).push(match ? !match.failed : false);
+                outcomes.get(item.key).push(findMatchOutcome(tests, item, { matchProject: false }));
             }
         }
         for (const item of items) {
             const passes = outcomes.get(item.key);
             item.retryPasses = passes;
-            item.verdict = passes.some((p) => p) ? 'flake' : 'regression';
+            item.verdict = classifyVerdict(passes);
         }
     }
 }
@@ -381,7 +330,7 @@ function table(headers, rows) {
 }
 function toolSection(name, cat) {
     if (!cat) return `### ${name}\n\n(skip)\n`;
-    const nf = cat.newlyFailed.map((i) => [i.work?.file ?? i.base?.file ?? '', i.work?.title ?? i.base?.title ?? '', i.work?.project ?? '', i.verdict ?? '(未判定・流し直し無し)']);
+    const nf = cat.newlyFailed.map((i) => [i.work?.file ?? i.base?.file ?? '', i.work?.title ?? i.base?.title ?? '', i.work?.project ?? '', verdictLabel(i.verdict)]);
     const np = cat.newlyPassed.map((i) => [i.base?.file ?? '', i.base?.title ?? '', i.base?.project ?? '']);
     const bf = cat.bothFailed.map((i) => [i.work?.file ?? '', i.work?.title ?? '', i.work?.project ?? '']);
     let s = `### ${name}\n\n`;
@@ -399,11 +348,13 @@ function excludeSection(excludes) {
     return s;
 }
 function buildReport({ baseRef, baseSha, workLabel, excludes, results }) {
+    const undeterminedCount = countUndetermined(results);
     const md = [
         '# e2e-diff-main 結果', '',
         `- base: ${baseRef} @ ${baseSha}`,
         `- work: ${workLabel}`,
         `- 生成: ${new Date().toISOString()}`,
+        `- 判定不能（流し直しで実行0件・regressionに含めない・イシュー#510）: ${undeterminedCount}件`,
         '',
         excludeSection(excludes),
         toolSection('E2E (playwright)', results.e2e),
@@ -415,14 +366,6 @@ function buildReport({ baseRef, baseSha, workLabel, excludes, results }) {
     return { md, json: { baseRef, baseSha, workLabel, excludes, results } };
 }
 function visualFailedCount(results) { return results.visual ? results.visual.failed : 0; }
-function countRegressions(results) {
-    let n = 0;
-    for (const cat of [results.e2e, results.unit]) {
-        if (!cat) continue;
-        for (const item of cat.newlyFailed) if (!item.verdict || item.verdict === 'regression') n += 1;
-    }
-    return n;
-}
 
 // ---------- main ----------
 async function main() {
@@ -464,7 +407,7 @@ async function main() {
         const workOut = join(OUT, 'work.e2e.json');
         await runE2E(baseWt, baseOut);
         await runE2E(workDir, workOut);
-        results.e2e = categorize(parsePlaywrightJson(baseOut), parsePlaywrightJson(workOut));
+        results.e2e = categorize(parsePlaywrightJson(baseOut, { log }), parsePlaywrightJson(workOut, { log }));
     } else {
         log('--skip-e2e: E2Eはスキップした');
     }
@@ -474,7 +417,7 @@ async function main() {
         const workOut = join(OUT, 'work.vitest.json');
         await runVitest(baseWt, baseOut);
         await runVitest(workDir, workOut);
-        results.unit = categorize(parseVitestJson(baseWt, baseOut), parseVitestJson(workDir, workOut));
+        results.unit = categorize(parseVitestJson(baseWt, baseOut, { log }), parseVitestJson(workDir, workOut, { log }));
     } else {
         log('--skip-vitest: vitestはスキップした');
     }
@@ -496,7 +439,7 @@ async function main() {
             log(`[visual] cwd=${workDir} (work側の画像比較を実行)`);
             const r = await run(PW_BIN, ['test', '--config=playwright.visual.config.js', '--reporter=json'], { cwd: workDir, env });
             writeFileSync(`${outFile}.log`, `exit=${r.code}\n${r.out}\n${r.err}`);
-            const visualTests = parsePlaywrightJson(outFile);
+            const visualTests = parsePlaywrightJson(outFile, { log });
             const failed = [...visualTests.values()].filter((t) => t.failed);
             results.visual = {
                 total: visualTests.size,
@@ -521,11 +464,13 @@ async function main() {
     log(`結果一式: ${OUT}`);
 
     const regressionCount = countRegressions(results);
+    const undeterminedCount = countUndetermined(results);
+    if (undeterminedCount > 0) log(`判定不能(流し直しで実行0件) ${undeterminedCount}件・regressionには数えていない`);
     if (regressionCount > 0) {
         log(`リグレ ${regressionCount}件 → exit 1`);
         process.exitCode = 1;
     } else {
-        log('新しく落ちたテストは0件(またはフレーク判定のみ)');
+        log('新しく落ちたテストは0件(またはフレーク判定/判定不能のみ)');
     }
 }
 
