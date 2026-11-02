@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { CHAR_DEVICES } from './tests/char-devices.js';
 
 // webkit (iPhone相当) は CI では入れていないため、BACKNAV_WEBKIT=1 のときだけ戻る網羅マトリクス
 // (イシュー#284)・チェックリスト自動化 (イシュー#295)・進む冪等化/transition無効化 (イシュー#330) に限って足す
@@ -12,6 +13,21 @@ const extraProjects = process.env.BACKNAV_WEBKIT === '1'
 const PORT = process.env.PORT
     || (process.env.PLAYWRIGHT_BASE_URL ? new URL(process.env.PLAYWRIGHT_BASE_URL).port : '')
     || '8000';
+
+// キャラクタリゼーションテスト (イシュー#501) 専用の6端末。tests/e2e/char/ 配下の spec だけを対象にする
+// (既存 project の testMatch/testIgnore で住み分け、既存 spec の実行対象・結果を変えない)。
+// 端末の定義(390/768/820/1024はタッチ、1440/1920はマウス)はtests/char-devices.jsに1本化
+// (イシュー#502のplaywright.visual.config.jsと二重管理していたDRY違反を②指摘で解消。2026-11-03)。
+const CHAR_TEST_MATCH = /tests[\\/]e2e[\\/]char[\\/].*\.spec\.js$/;
+const charProjects = CHAR_DEVICES.map(({ name, width, height, touch }) => ({
+    name,
+    testMatch: CHAR_TEST_MATCH,
+    use: {
+        browserName: 'chromium',
+        viewport: { width, height },
+        ...(touch ? { hasTouch: true, isMobile: true } : {})
+    }
+}));
 
 export default defineConfig({
     testDir: 'tests/e2e',
@@ -39,7 +55,8 @@ export default defineConfig({
         serviceWorkers: 'block'
     },
     projects: [
-        { name: 'chromium', use: { browserName: 'chromium' } },
-        ...extraProjects
+        { name: 'chromium', use: { browserName: 'chromium' }, testIgnore: CHAR_TEST_MATCH },
+        ...extraProjects,
+        ...charProjects
     ]
 });
