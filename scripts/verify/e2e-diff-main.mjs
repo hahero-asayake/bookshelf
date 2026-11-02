@@ -17,14 +17,29 @@
 // 使い方:
 //   node scripts/verify/e2e-diff-main.mjs [--base=origin/main] [--self]
 //     [--skip-e2e] [--skip-vitest] [--visual] [--grep=<pattern>]
+//     [--exclude=<pattern>]... [--no-default-exclude]
 //     [--out=<dir>] [--port=<n>] [--retries=<n>] [--keep]
 //
 //   --self        base側と同じrefで、workも別の一時worktreeにする(自分自身との比較=誤検知の確認用)。
 //   --grep        両側・絞り込み試走用。playwrightの--grep/vitestの-tにそのまま渡す。
+//   --exclude     E2E(playwright)から除外するテスト名パターン。複数回指定可(既定の除外に追加)。
+//                 空値(--exclude=)は無視する(--no-default-excludeと組み合わせて
+//                 「既定除外も追加除外も無し=全件」を書きたい時のためのプレースホルダ)。
+//   --no-default-exclude
+//                 既定の除外(下記)を使わない。--exclude併用時はそちらだけ効く。
 //   --out         結果の置き場(既定: 作業ツリーの外・恒久的な場所。runをまたいで残る。tmp配下ではない)。
 //   --port        既定は環境変数PORTまたは8000(playwright.config.jsと同じ規則)。
 //   --retries     新しく落ちたものの流し直し回数(既定3・計画§3-2の4)。
 //   --keep        デバッグ用。一時worktreeを片付けずに残す(通常は使わない)。
+//
+// 除外(イシュー#507): sort-perf-budgetはCPU負荷で結果が揺れる既知のテストで、
+// CIも.github/workflows/ci.ymlの「sort-perf-budget以外・並列」stepで
+// `--grep-invert "sort-perf-budget"`して外し、別stepで単独実行している(#405/#476/#492)。
+// このスクリプトもCIと同じ既定除外にする。一覧の正本をスクリプト側に二重管理せず、
+// 起動時にci.ymlの該当行を読んで既定除外パターンにする(一意に読めなければ黙って
+// 全件流さずエラーで止める=ci.ymlの形が変わったことに気づける)。vitestはCI側に
+// 除外が無いため対象外(そのままreportに書く)。playwright.visual.config.js側の画像比較
+// (--visual)にも適用しない(base対work比較ではなくwork側単独の基準画像比較のため)。
 //
 // 子プロセスの node は process.execPath を使う(呼び出し元と同じnode)。特定ユーザーの
 // nvmパスを固定で埋め込まない(③はkurokoユーザーで動き、seiユーザーのnvmパスとは食い違う)。
@@ -52,6 +67,10 @@ const opt = (name, def) => {
     const found = argv.find((a) => a.startsWith(pre));
     return found ? found.slice(pre.length) : def;
 };
+const optAll = (name) => {
+    const pre = `--${name}=`;
+    return argv.filter((a) => a.startsWith(pre)).map((a) => a.slice(pre.length));
+};
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BASE_REF = opt('base', 'origin/main');
@@ -63,6 +82,63 @@ const GREP = opt('grep', '');
 const PORT = opt('port', process.env.PORT || '8000');
 const RETRIES = parseInt(opt('retries', '3'), 10);
 const KEEP = flag('keep');
+const NO_DEFAULT_EXCLUDE = flag('no-default-exclude');
+const EXTRA_EXCLUDE_PATTERNS = optAll('exclude');
+
+// ---------- 除外(sort-perf-budget等・イシュー#507) ----------
+// 既定の除外一覧はci.ymlの「sort-perf-budget以外・並列」stepの--grep-invertを正本として読む
+// (スクリプト側に別途ハードコードして二重管理しない)。該当行が一意に見つからなければ、
+// 黙って全件流すのではなくエラーで止める(ci.ymlの形が変わったことに気づける)。
+function readDefaultExcludesFromCi() {
+    const ciPath = join(REPO_ROOT, '.github', 'workflows', 'ci.yml');
+    if (!existsSync(ciPath)) {
+        throw new Error(
+            `既定の除外一覧(ci.yml)が見つからない: ${ciPath}\n`
+            + '--exclude で明示するか、--no-default-exclude で既定除外無しを指定すること。',
+        );
+    }
+    const lines = readFileSync(ciPath, 'utf-8').split('\n');
+    const hits = [];
+    lines.forEach((line, i) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#') || !trimmed.includes('playwright test')) return;
+        const m = line.match(/--grep-invert\s+"([^"]*)"/);
+        if (m) hits.push({ lineNo: i + 1, raw: m[1] });
+    });
+    if (hits.length !== 1) {
+        throw new Error(
+            `ci.ymlから既定の除外を一意に読み取れない(${hits.length}件ヒット・${ciPath})。\n`
+            + 'ci.ymlの形が変わった可能性がある。--exclude で明示するか --no-default-exclude で既定除外無しを指定すること。',
+        );
+    }
+    const { lineNo, raw } = hits[0];
+    const patterns = raw.split('|').map((p) => p.trim()).filter(Boolean);
+    if (!patterns.length) {
+        throw new Error(`ci.yml:${lineNo} の --grep-invert の値が空。--exclude で明示するか --no-default-exclude を使うこと。`);
+    }
+    return { patterns, lineNo, ciPath };
+}
+// パターンごとの理由の対応表。無い場合は出どころに応じた汎用理由を出す(黙って消さない)。
+const EXCLUDE_REASONS = {
+    'sort-perf-budget': '負荷で揺れる・CIでは別stepで単独実行(workers=1)(#405/#476/#492)',
+};
+function reasonFor(pattern, sourceKind) {
+    if (EXCLUDE_REASONS[pattern]) return EXCLUDE_REASONS[pattern];
+    return sourceKind === 'ci' ? 'CI設定(ci.yml)由来' : '--exclude 指定';
+}
+const EXCLUDES = [];
+if (!NO_DEFAULT_EXCLUDE) {
+    const { patterns, lineNo, ciPath } = readDefaultExcludesFromCi();
+    for (const p of patterns) {
+        EXCLUDES.push({ pattern: p, source: `${relative(REPO_ROOT, ciPath)}:${lineNo}`, reason: reasonFor(p, 'ci') });
+    }
+}
+for (const p of EXTRA_EXCLUDE_PATTERNS) {
+    if (!p) continue; // --exclude=(空値)は無視。--no-default-excludeと組み合わせて「全件」を表す時に使う。
+    if (EXCLUDES.some((e) => e.pattern === p)) continue;
+    EXCLUDES.push({ pattern: p, source: '--exclude指定', reason: reasonFor(p, 'cli') });
+}
+const EXCLUDE_INVERT_PATTERN = EXCLUDES.map((e) => e.pattern).join('|');
 
 function ts() {
     const d = new Date();
@@ -165,11 +241,12 @@ process.on('SIGINT', () => { cleanupWorktrees(); process.exit(130); });
 process.on('SIGTERM', () => { cleanupWorktrees(); process.exit(143); });
 
 // ---------- テスト実行 ----------
-async function runE2E(sideDir, outFile, { extraArgs = [], grep = GREP } = {}) {
+async function runE2E(sideDir, outFile, { extraArgs = [], grep = GREP, grepInvert = EXCLUDE_INVERT_PATTERN } = {}) {
     const free = await waitPortFree(PORT);
     if (!free) throw new Error(`port ${PORT} が使用中。別プロセスのサーバーが残っていないか確認してから再実行すること`);
     const args = ['test', '--reporter=json', ...extraArgs];
     if (grep) args.push('--grep', grep);
+    if (grepInvert) args.push('--grep-invert', grepInvert);
     const env = {
         ...process.env, PORT, PLAYWRIGHT_BASE_URL: `http://localhost:${PORT}`, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
     };
@@ -313,20 +390,29 @@ function toolSection(name, cat) {
     s += `**両方で落ちた/既存の問題 (${bf.length}件)**\n\n${table(['file', 'title', 'project'], bf)}\n`;
     return s;
 }
-function buildReport({ baseRef, baseSha, workLabel, results }) {
+function excludeSection(excludes) {
+    let s = '### 除外したテスト (E2E・playwright)\n\n';
+    s += excludes.length
+        ? `${table(['パターン', '出どころ', '理由'], excludes.map((e) => [e.pattern, e.source, e.reason]))}\n`
+        : '除外なし（全件実行）\n\n';
+    s += '_(vitestはCI設定(ci.yml)に除外が無いため対象外。上記はE2E(playwright)にのみ適用)_\n';
+    return s;
+}
+function buildReport({ baseRef, baseSha, workLabel, excludes, results }) {
     const md = [
         '# e2e-diff-main 結果', '',
         `- base: ${baseRef} @ ${baseSha}`,
         `- work: ${workLabel}`,
         `- 生成: ${new Date().toISOString()}`,
         '',
+        excludeSection(excludes),
         toolSection('E2E (playwright)', results.e2e),
         toolSection('Unit (vitest)', results.unit),
         results.visual
             ? `### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n- ${visualFailedCount(results)}件 / ${results.visual.total}件 が差分あり\n${results.visual.failedNames.length ? table(['file > title [project]'], results.visual.failedNames.map((n) => [n])) : ''}`
             : '### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n(skip)\n',
     ].join('\n');
-    return { md, json: { baseRef, baseSha, workLabel, results } };
+    return { md, json: { baseRef, baseSha, workLabel, excludes, results } };
 }
 function visualFailedCount(results) { return results.visual ? results.visual.failed : 0; }
 function countRegressions(results) {
@@ -343,6 +429,9 @@ async function main() {
     log(`REPO_ROOT=${REPO_ROOT}`);
     log(`OUT=${OUT}`);
     log(`BASE_REF=${BASE_REF} SELF=${SELF} PORT=${PORT} GREP=${GREP || '(none)'}`);
+    log(EXCLUDES.length
+        ? `除外(E2E): ${EXCLUDES.map((e) => e.pattern).join('|')} (${EXCLUDES.length}件・出どころと理由はreport参照)`
+        : '除外(E2E): なし(全件実行)');
 
     const fetchResult = spawnSyncGit(['fetch', 'origin']);
     if (fetchResult.status !== 0) log(`警告: git fetch origin 失敗(続行する): ${fetchResult.stderr}`);
@@ -424,7 +513,7 @@ async function main() {
         await classifyRetries(workDir, results);
     }
 
-    const report = buildReport({ baseRef: BASE_REF, baseSha, workLabel, results });
+    const report = buildReport({ baseRef: BASE_REF, baseSha, workLabel, excludes: EXCLUDES, results });
     writeFileSync(join(OUT, 'report.md'), report.md);
     writeFileSync(join(OUT, 'report.json'), JSON.stringify(report.json, null, 2));
     console.log('');
