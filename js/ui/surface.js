@@ -113,6 +113,20 @@
         }
     }
 
+    // Esc・枠外の判定 (イシュー#509 U3 step3)。各画面の個別の判定をここへ寄せる = 判定の正本を1か所にする
+    // (どの面で何をするかは各画面のまま・振る舞いは変えない。出口の決まりをそろえるのは X1)
+    Surface.isEsc = (e) => !!e && e.key === 'Escape';
+    // keydown を登録し、Esc の時だけ fn を呼ぶ (addEventListener と同じ target・capture)。登録したハンドラを返す
+    Surface.onEsc = (target, fn, capture) => {
+        const h = (e) => { if (!Surface.isEsc(e)) return; fn(e); };
+        target.addEventListener('keydown', h, capture);
+        return h;
+    };
+    // 枠外クリック: 面の root 自身 (= 背景) を押した
+    Surface.isBackdrop = (e, el) => !!e && !!el && e.target === el;
+    // 枠外クリック: 渡した要素 (面・開いたボタン) のどれにも含まれない所を押した
+    Surface.isOutside = (e, ...els) => !!e && els.every((el) => !el || !el.contains(e.target));
+
     window.Surface = Surface;
     if (!window.surface) window.surface = new Surface();
 })();

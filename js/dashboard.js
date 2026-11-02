@@ -544,7 +544,7 @@ class BookshelfDashboard {
             if (window.overlays) window.overlays.close('widget-picker-overlay', { reason: 'button' });
         };
         if (window.overlays) window.overlays.open(overlay, { kind: 'popover', hist: false, showClass: null, size: 'none', onClose: () => close() });
-        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        const onKey = (e) => { if (window.Surface.isEsc(e)) close(); };
         document.addEventListener('keydown', onKey);
         overlay.querySelector('.widget-picker-backdrop').addEventListener('click', close);
         overlay.querySelector('.widget-picker-close').addEventListener('click', close);

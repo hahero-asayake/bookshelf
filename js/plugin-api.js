@@ -380,7 +380,7 @@ class BookshelfPluginAPI {
             onClose: () => root.remove(),
         });
         closeBtn.addEventListener('click', () => ov.requestClose(id, 'button'));
-        root.addEventListener('click', (e) => { if (e.target === root) ov.requestClose(id, 'backdrop'); });
+        root.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, root)) ov.requestClose(id, 'backdrop'); });
         return { element: body, close: () => ov.requestClose(id, 'program') };
     }
 

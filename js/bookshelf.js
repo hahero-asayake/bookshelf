@@ -676,7 +676,7 @@ class VirtualBookshelf {
         const settingsModal = document.getElementById('settings-modal');
         if (settingsModal) {
             settingsModal.addEventListener('click', (e) => {
-                if (e.target === settingsModal) this._closeSettingsModal();
+                if (window.Surface.isBackdrop(e, settingsModal)) this._closeSettingsModal();
             });
         }
         // フッターの「閉じる」(#settings-modal-done) は ADR-047 P2 で廃止 (× と同機能の二重を解消)。
@@ -685,8 +685,8 @@ class VirtualBookshelf {
         // 全モーダル共通: Esc で最前面の開いているモーダルを閉じる (各モーダルの × と同じ処理を呼ぶ)
         if (!this._globalModalEscBound) {
             this._globalModalEscBound = true;
-            document.addEventListener('keydown', (e) => {
-                if (e.key !== 'Escape' || e.defaultPrevented) return;
+            window.Surface.onEsc(document, (e) => {
+                if (e.defaultPrevented) return;
                 // プラグイン設定 (.modal でない独自モーダル) が設定の上に開いている時は、そちらの Esc に任せる
                 // (先に登録されたこのハンドラが下の設定を閉じていた・イシュー#284 X11)
                 if (document.querySelector('.plugin-settings-modal.show') && !document.querySelector('#icon-picker-modal.show')) return;
@@ -949,8 +949,7 @@ class VirtualBookshelf {
             if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
             this._mdeCloseHeadingMenu();
         });
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             if (!document.querySelector('.mde-heading-menu')) return;
             this._mdeCloseHeadingMenu();
             e.stopImmediatePropagation();
@@ -960,8 +959,7 @@ class VirtualBookshelf {
         // Esc・戻る(履歴)は完了扱い(記事エディタの art-fs-done と同じ規則・②決裁)。全モーダル共通の
         // Escハンドラ(622行, bubblingフェーズ)はモーダルに .modal-close が無いとただ閉じる(保存しない)
         // ため、それより先に処理して消費する(art-item-tooltipと同型・ui-standards §1)。
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             const modal = document.getElementById('book-memo-modal');
             if (!modal || !modal.classList.contains('show')) return;
             // 確認ダイアログ(キャンセルの破棄確認等)や見出しメニューが上に開いていれば、
@@ -1169,8 +1167,7 @@ class VirtualBookshelf {
         });
 
         // Esc で全 popover 閉じる
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             pairs.forEach(({ popId }) => {
                 const pop = document.getElementById(popId);
                 if (pop && !pop.hidden) hide(pop, 'esc');
@@ -1375,7 +1372,7 @@ class VirtualBookshelf {
     }
 
     _onPaletteKeydown(e) {
-        if (e.key === 'Escape') { e.preventDefault(); this._closePalette(); return; }
+        if (window.Surface.isEsc(e)) { e.preventDefault(); this._closePalette(); return; }
         if (!this._paletteItems || !this._paletteItems.length) return;
         if (e.key === 'ArrowDown') { e.preventDefault(); this._setPaletteActive((this._paletteActive ?? 0) + 1); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); this._setPaletteActive((this._paletteActive ?? 0) - 1); }
@@ -1427,7 +1424,7 @@ class VirtualBookshelf {
                 if (willShow) this._renderBulkShelfList();
             });
             document.addEventListener('click', (e) => {
-                if (!addPop.hidden && !addPop.contains(e.target) && !addBtn.contains(e.target)) addPop.hidden = true;
+                if (!addPop.hidden && window.Surface.isOutside(e, addPop, addBtn)) addPop.hidden = true;
             });
         }
     }
@@ -6005,11 +6002,11 @@ class VirtualBookshelf {
             // 重なり管理役 (イシュー#367): ダイアログ帯・小 (sm)。履歴には積まない (D04)
             let ov = null;
             const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
-            const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
+            const onKey = (e) => { if (window.Surface.isEsc(e)) { e.stopPropagation(); done('cancel'); } };
             box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
             box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
             box.querySelector('.cfm-cancel').addEventListener('click', () => done('cancel'));
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) done('cancel'); });
+            overlay.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, overlay)) done('cancel'); });
             document.addEventListener('keydown', onKey, true);
             overlay.appendChild(box);
             document.body.appendChild(overlay);
@@ -6341,7 +6338,7 @@ class VirtualBookshelf {
         if (!this._mobileEscBound) {
             this._mobileEscBound = true;
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && body.classList.contains('drawer-open')) {
+                if (window.Surface.isEsc(e) && body.classList.contains('drawer-open')) {
                     this._closeDrawer();
                 }
             });
@@ -6719,8 +6716,8 @@ class VirtualBookshelf {
         };
         // 重なり管理役 (イシュー#367 step5): メニューは「移る前に閉じる」側 (kind:'menu'・closeOthers・履歴に積まない・旧 z-index 1200 は撤去)
         this._overlays().open(menu, { kind: 'menu', hist: false, showClass: null, size: 'none', onClose: () => cleanup() });
-        const onOutside = (e) => { if (!menu.contains(e.target)) cleanup(); };
-        const onKey = (e) => { if (e.key === 'Escape') cleanup(); };
+        const onOutside = (e) => { if (window.Surface.isOutside(e, menu)) cleanup(); };
+        const onKey = (e) => { if (window.Surface.isEsc(e)) cleanup(); };
         menu.querySelector('[data-act="edit"]')?.addEventListener('click', () => { cleanup(); this.editBookshelf(bs.id); });
         menu.querySelector('[data-act="add-child"]')?.addEventListener('click', () => { cleanup(); this.showBookshelfForm(null, bs.internalId); });
         menu.querySelector('[data-act="delete"]')?.addEventListener('click', () => { cleanup(); this.deleteBookshelf(bs.id); });
@@ -7809,8 +7806,8 @@ class VirtualBookshelf {
             this._pluginSettingsModalClose = close;
             // ESC: .modal でない独自実装のため共通ハンドラの対象外 → 自前で閉じる。
             // 上にアイコンピッカー等の .modal が開いているときはそちら優先 (最前面だけ閉じる)
-            document.addEventListener('keydown', (e) => {
-                if (e.key !== 'Escape' || e.defaultPrevented) return;
+            window.Surface.onEsc(document, (e) => {
+                if (e.defaultPrevented) return;
                 if (!modal.classList.contains('show')) return;
                 // プラグイン設定の上に開き得る .modal はアイコンピッカーだけ (設定モーダルは常に下)。
                 // 「.modal が1つでも開いていれば譲る」だと設定の上では誰も閉じなかった (イシュー#284 X11)
@@ -9276,8 +9273,7 @@ class VirtualBookshelf {
         // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
         // フェーズ) がモーダル自体を閉じてしまう前に、ツールチップだけを閉じて消費する。ツールチップが
         // 非表示のときは何もしないため、通常の Esc→モーダルを閉じる動作は妨げない。
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             const tip = document.getElementById('art-item-tooltip');
             if (!tip || tip.hidden) return;
             this._artHideItemTooltip();
@@ -9285,8 +9281,7 @@ class VirtualBookshelf {
             e.preventDefault();
         }, true);
         // イシュー#268: ＋シート/ブロックの⋯メニューが開いていれば、Esc はそれだけを閉じる (エディタ本体は閉じない)
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             const sheet = document.getElementById('art-add-sheet');
             const menu = document.getElementById('art-blk-menu');
             const lk = document.getElementById('art-look-sheet');
@@ -9325,7 +9320,7 @@ class VirtualBookshelf {
         on('art-pub-go', 'click', () => this._artPublishFromPanel());
         on('art-pub-copy', 'click', () => this._artCopyPublishUrl());
         const pubModal = document.getElementById('art-publish-modal');
-        if (pubModal) pubModal.addEventListener('click', (e) => { if (e.target === pubModal) this._artClosePublishPanel(); });
+        if (pubModal) pubModal.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, pubModal)) this._artClosePublishPanel(); });
         // ⋯ メニュー (複製・公開の取消・削除)。ESC と枠外クリックはメニューだけを閉じる (エディタは閉じない)
         on('art-more-btn', 'click', (e) => { e.stopPropagation(); this._artToggleMoreMenu(); });
         document.addEventListener('click', (e) => {
@@ -9335,16 +9330,14 @@ class VirtualBookshelf {
             if (btn && btn.contains(e.target)) return;
             this._artToggleMoreMenu(false);
         });
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             const menu = document.getElementById('art-more-menu');
             if (!menu || menu.hidden) return;
             this._artToggleMoreMenu(false);
             e.stopImmediatePropagation();
             e.preventDefault();
         }, true);
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape') return;
+        window.Surface.onEsc(document, (e) => {
             const side = document.getElementById('art-drawer');
             if (!side || !side.classList.contains('is-open')) return;
             // capture + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (594行, bubbling
@@ -9396,7 +9389,7 @@ class VirtualBookshelf {
         });
         // モーダル内の要素がクリックの伝播を止めることがあるため、キャプチャ段階で枠外クリックを拾う
         document.addEventListener('click', (e) => {
-            if (blkMenu && !blkMenu.hidden && !blkMenu.contains(e.target)) this._artCloseBlkMenu();
+            if (blkMenu && !blkMenu.hidden && window.Surface.isOutside(e, blkMenu)) this._artCloseBlkMenu();
         }, true);
         on('art-republish-all', 'click', () => this._artRepublishAll());
         on('art-dup', 'click', async () => { if (!this._artEditingId) return; await this._artDuplicate(this._artEditingId); this._artShowList(); });
@@ -9408,15 +9401,15 @@ class VirtualBookshelf {
         on('art-tag-input', 'keydown', (e) => this._artOnTagInputKeydown(e));
         document.addEventListener('click', (e) => {
             const wrap = document.querySelector('.art-tag-input-wrap');
-            if (wrap && !wrap.contains(e.target)) this._artHideTagSuggest();
-            document.querySelectorAll('.art-add-menu').forEach(m => { if (!m.parentElement.contains(e.target)) m.hidden = true; });
+            if (wrap && window.Surface.isOutside(e, wrap)) this._artHideTagSuggest();
+            document.querySelectorAll('.art-add-menu').forEach(m => { if (window.Surface.isOutside(e, m.parentElement)) m.hidden = true; });
         });
         // プレビュー別画面 (開閉のみ。生成本体はプレビュー機能のステップで実装)
         on('pp-preview-close', 'click', () => this._artClosePreviewModal());
         on('pp-preview-device', 'click', () => this._artTogglePreviewDevice());
         on('pp-preview-retry', 'click', () => this._artRetryPreview());
         const pm = document.getElementById('pp-preview-modal');
-        if (pm) pm.addEventListener('click', (e) => { if (e.target === pm) this._artClosePreviewModal(); });
+        if (pm) pm.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, pm)) this._artClosePreviewModal(); });
     }
 
     // イシュー#279 (②承認4段構造の3→4): 一覧へ戻る唯一の経路。←ボタン・複製後・削除後・戻る操作
@@ -9884,7 +9877,7 @@ class VirtualBookshelf {
                 if (!doc.body.dataset.artFsEscBound) {
                     doc.body.dataset.artFsEscBound = '1';
                     doc.addEventListener('keydown', (e) => {
-                        if (e.key === 'Escape' && this._artMode === 'form') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                        if (window.Surface.isEsc(e) && this._artMode === 'form') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                     });
                 }
                 if (this._artFsScrollPending) {
@@ -9990,8 +9983,7 @@ class VirtualBookshelf {
             if (!doc.body.dataset.artCvBound) {
                 doc.body.dataset.artCvBound = '1';
                 // iframe 内にフォーカスがある時の Esc は親文書へ届かない。シート/メニューを閉じる処理へ中継する
-                doc.addEventListener('keydown', (e) => {
-                    if (e.key !== 'Escape') return;
+                window.Surface.onEsc(doc, (e) => {
                     // 開いている面がある時だけ中継する (何も開いていない時に中継すると記事エディタごと閉じてしまう)
                     const open = ['art-add-sheet', 'art-look-sheet', 'art-blk-menu'].some(id => { const el = document.getElementById(id); return el && !el.hidden; });
                     if (open) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -10645,7 +10637,7 @@ class VirtualBookshelf {
             const first = box && !box.hidden && box.querySelector('.art-sugg-item');
             if (first) { this._artAddTag(first.dataset.label); return; }
             if (input.value.trim()) this._artAddTag(input.value.trim());
-        } else if (e.key === 'Escape') {
+        } else if (window.Surface.isEsc(e)) {
             this._artHideTagSuggest();
         }
     }
@@ -11663,7 +11655,7 @@ class VirtualBookshelf {
             if (willShow) this._placeAnchoredMenu(btn, pop);
         });
         document.addEventListener('click', (e) => {
-            if (!pop.hidden && !pop.contains(e.target) && !btn.contains(e.target)) {
+            if (!pop.hidden && window.Surface.isOutside(e, pop, btn)) {
                 pop.hidden = true;
                 btn.setAttribute('aria-expanded', 'false');
             }
@@ -11672,8 +11664,8 @@ class VirtualBookshelf {
         // フェーズ・アプリ起動時に1回だけ登録され必ずこれより先に存在する) がモーダル自体を閉じてしまう
         // 前に、ポップオーバーだけを閉じて消費する (#art-item-tooltip の Esc ハンドラと同じ理由・CI実行で
         // 実際に競合し `btn.focus()` が効かない回帰を検出・修正した)。
-        document.addEventListener('keydown', (e) => {
-            if (e.key !== 'Escape' || pop.hidden) return;
+        window.Surface.onEsc(document, (e) => {
+            if (pop.hidden) return;
             pop.hidden = true;
             btn.setAttribute('aria-expanded', 'false');
             btn.focus();

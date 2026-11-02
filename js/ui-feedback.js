@@ -153,12 +153,12 @@
                 resolve(result);
             };
             const onKey = (e) => {
-                if (e.key === 'Escape') { e.stopPropagation(); done(false); }
+                if (window.Surface.isEsc(e)) { e.stopPropagation(); done(false); }
                 if (e.key === 'Enter') { e.stopPropagation(); done(true); }
             };
             okBtn.addEventListener('click', () => done(true));
             cancelBtn.addEventListener('click', () => done(false));
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+            overlay.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, overlay)) done(false); });
             document.addEventListener('keydown', onKey, true);
 
             document.body.appendChild(overlay);
