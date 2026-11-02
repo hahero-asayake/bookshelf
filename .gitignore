@@ -59,6 +59,7 @@ _local/
 
 # Playwright の実行結果
 test-results/
+test-results-visual/
 playwright-report/
 .playwright-mcp/
 
