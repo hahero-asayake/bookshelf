@@ -9447,7 +9447,13 @@ class VirtualBookshelf {
     // _artFlushSave/_artFlushRemoteが既に出す。ブラウザの戻るはここを通らない=行き先は変えない)
     async _artExitEditToList() {
         if (this._artMode === 'edit' || this._artMode === 'form') {
-            await this._artFlushSave();
+            // イシュー#511 X1 A-d(e2eで検出・修正): 保留中のローカル保存(_artSaveTimer=
+            // _artScheduleSave済みでまだ_artFlushSaveが走っていない状態)がある時だけflushする。
+            // 無変更でも無条件にupdate()を呼ぶとupdatedAtが進み、公開直後の記事が
+            // 「公開中・未反映の変更あり」に化けて一覧の公開済み表示が消える(#384と同種の罠。
+            // A7@タッチ3端末のe2eでregression検出・publish-article-store.js updateの
+            // touchesUserField判定を参照)
+            if (this._artSaveTimer) await this._artFlushSave();
             const r = await this._artFlushRemoteNow();
             if (!r || !r.ok) return false; // 保存できなかった=その場にとどまる
         }
