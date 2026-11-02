@@ -66,6 +66,16 @@ async function shot(page, name) {
     await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true });
 }
 
+// イシュー#512: 見出し帯(出口ボタンを含む行)は全画面に対して小さすぎて
+// maxDiffPixelRatio:0.001 の中に埋もれる(#511で×→←ホームに変わった差が
+// 768幅だけ閾値未満で検出漏れしていた・実測はstep1メモ参照)。全画面比較とは
+// 別に、見出し帯だけを locator で切って比較する(方式C)。ratio ではなく
+// maxDiffPixels(絶対px数)で上書きするのは、帯の面積が20,280〜39,936px程度と
+// 小さく、ratio指定だと1px単位のアンチエイリアシング差でも閾値を超えやすいため。
+async function shotHeader(page, name) {
+    await expect(page.locator('.settings-md-header')).toHaveScreenshot(`${name}.png`, { maxDiffPixels: 30 });
+}
+
 test('ホーム', async ({ page }) => {
     await bootApp(page);
     await expect(page.locator('#dashboard .dashboard-widget').first()).toBeVisible();
@@ -99,6 +109,7 @@ test('設定の一覧', async ({ page }) => {
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(page.locator('#settings-modal')).toBeVisible();
     await shot(page, '05-settings-list');
+    await shotHeader(page, '05-settings-list-header');
 });
 
 test('設定の1節', async ({ page }) => {
@@ -106,6 +117,7 @@ test('設定の1節', async ({ page }) => {
     await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
     await expect(page.locator('#sync-method-select')).toBeVisible();
     await shot(page, '06-settings-section');
+    await shotHeader(page, '06-settings-section-header');
 });
 
 test('記事の一覧', async ({ page }) => {
