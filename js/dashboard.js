@@ -389,12 +389,22 @@ class BookshelfDashboard {
             if (e.target.closest('#dashboard-edit-toggle')) {
                 this.editMode = true;
                 this.render();
+                // イシュー#511 X1 W8: Surfaceのdashboard-edit(exit:'edit')に段を積む(hist:'mobile'のまま=
+                // スマホだけ段あり)。閉じ手(close)はEsc/戻る/完了のどれでも同じ_exitEditModeを呼ぶ
+                this.app._surface().open('dashboard-edit', { close: (o) => this._exitEditMode(o) });
             } else if (e.target.closest('#dashboard-edit-done')) {
-                this.editMode = false;
-                this.render();
+                this._exitEditMode();
             } else if (e.target.closest('#dashboard-add-widget')) {
                 this._openWidgetPicker();
             }
+        }, { signal });
+
+        // イシュー#511 X1 W8: 編集モード中のEscは完了と同じ(他の面が既に処理した時は二重に動かない)
+        document.addEventListener('keydown', (e) => {
+            if (!this.editMode || e.defaultPrevented) return;
+            if (!window.Surface.isEsc(e)) return;
+            this._exitEditMode();
+            e.preventDefault();
         }, { signal });
 
         const grid = document.getElementById('dashboard-grid');
@@ -480,6 +490,16 @@ class BookshelfDashboard {
         const insertIdx = Math.max(0, Math.min(idx, layout.length));
         layout.splice(insertIdx, 0, moved);
         await this.saveLayout(layout);
+        this.render();
+    }
+
+    // 編集モードを終える(完了・Esc・戻るの共通の閉じ手・イシュー#511 X1 W8)。配置は都度保存済みのため
+    // 確認は無い(確認が要る場面はP10/A-dの対象で、ここには無い)。fromHistory(戻る由来)はSurfaceの段を
+    // 既に台帳が外しているので、ここでは段を外す呼び出しをしない(他のexit:'edit'実装と同じ型)
+    _exitEditMode(opts = {}) {
+        if (!this.editMode) return;
+        if (!opts.fromHistory) this.app._surface().close('dashboard-edit', {});
+        this.editMode = false;
         this.render();
     }
 

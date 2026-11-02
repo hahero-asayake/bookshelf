@@ -179,3 +179,23 @@ test.describe('W6: キーボードでは並べ替えられない', () => {
         expect(after).toEqual(before);
     });
 });
+
+test.describe('W8: 編集モードはEsc・戻るで完了と同じ(イシュー#511 X1)', () => {
+    test('編集モード中にEscを押すと完了と同じ(終わる) // CHAR: 直す対象(step2 W8)', async ({ page }) => {
+        await bootApp(page);
+        await enterEditMode(page);
+        await page.keyboard.press('Escape');
+        // 新しい振る舞い: 完了(#dashboard-edit-done)と同じくis-edit-modeが外れる(イシュー#511 X1 _exitEditMode)
+        await expect(page.locator('#dashboard-grid.is-edit-mode')).toHaveCount(0);
+        await expect(page.locator('#dashboard-edit-toggle')).toBeVisible();
+    });
+
+    test('390幅: 編集モード中に戻る(history.back)を押すと完了と同じ(終わる) // CHAR: 直す対象(step2 W8)', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await bootApp(page);
+        await enterEditMode(page);
+        await page.evaluate(() => history.back());
+        await expect(page.locator('#dashboard-grid.is-edit-mode')).toHaveCount(0);
+        await expect(page.locator('#dashboard-edit-toggle')).toBeVisible();
+    });
+});
