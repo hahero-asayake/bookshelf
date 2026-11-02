@@ -3746,8 +3746,11 @@ html.bs-likely-has-data #dashboard-welcome {
 .settings-md-header h2 { flex: 1 1 auto; margin: 0; min-width: 0; }
 /* ←戻り先の名前 (イシュー#511 X1・docs/ui-standards.md §7c§3): #settings-back(← 設定)・#settings-modal-close
    (← ホーム) の両方がこのクラス。アイコン+文字・タップ領域44px以上。PC(901px超)はどちらも出さない (下の
-   @media min-width:901px で非表示)。旧 × (.modal-close) はここでは使わない */
+   @media min-width:901px で非表示)。旧 × (.modal-close) はここでは使わない。
+   ②差し戻し(2026-11-03 step4): #settings-modal-close はDOM順ではh2の後ろ(帯の右端)にあったため、
+   order:-1で見出しの帯の左端に出す(記事の編集の「← 記事の一覧」と同じ位置に揃える・#497 B1) */
 .settings-md-back {
+    order: -1;
     flex: 0 0 auto;
     min-height: 44px; padding: 0 0.7rem; gap: 0.3rem;
     display: inline-flex; align-items: center; justify-content: center;
