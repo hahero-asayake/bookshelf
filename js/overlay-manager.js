@@ -178,10 +178,12 @@
 
         // スタック内の位置 n を data-layer と --layer (CSS 変数) に書く。z-index は CSS 側が calc(帯 + n) で決める
         _applyLayers() {
-            this.stack.forEach((f, n) => {
+            let n = 0; // layer:false の面は数えない = 他の面の data-layer を載せ替え前と同じ値に保つ (イシュー#509)
+            this.stack.forEach((f) => {
                 if (f.layer === false) return;
                 f.el.dataset.layer = String(n);
                 f.el.style.setProperty('--layer', String(n));
+                n++;
             });
         }
 

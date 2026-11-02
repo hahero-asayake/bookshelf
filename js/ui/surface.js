@@ -60,7 +60,10 @@
                     });
                 }
             }
-            if (o.hist !== false && def.close) this.push(id, def.close, { isMobile: def.hist && def.hist.isMobile, never: def.hist === 'never', extra: o.extra, route: o.route || def.route });
+            // close: 戻るで閉じる関数 (呼び手が渡せば定義より優先)。isMobile も同じ (art-sheet)
+            const close = o.close || def.close;
+            const isMobile = o.isMobile || (def.hist && def.hist.isMobile);
+            if (o.hist !== false && close) this.push(id, close, { isMobile, never: def.hist === 'never', extra: o.extra, route: o.route || def.route });
             return handle;
         }
 

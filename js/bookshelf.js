@@ -10087,7 +10087,7 @@ class VirtualBookshelf {
         sheet.hidden = false;
         const first = sheet.querySelector('.art-add-sheet-item:not([disabled])');
         if (first) first.focus();
-        this._modalHistPush('art-add-sheet', (o) => this._artCloseAddSheet(o), { extra: { articleId: this._artEditingId, menuIndex: index } });
+        this._surface().open('art-add-sheet', { close: (o) => this._artCloseAddSheet(o), extra: { articleId: this._artEditingId, menuIndex: index } });
     }
 
     // keepHistory: 続けて全画面を開く時は、積んだ履歴1段をそのまま全画面へ引き継ぐ (_artHistHandOver)。
@@ -10096,7 +10096,7 @@ class VirtualBookshelf {
         const sheet = document.getElementById('art-add-sheet');
         if (!sheet || sheet.hidden) return;
         sheet.hidden = true;
-        if (!keepHistory) this._modalHistPop('art-add-sheet', { fromHistory });
+        this._surface().close('art-add-sheet', { fromHistory, hist: !keepHistory });
     }
 
     // スマホの「戻る」履歴: from の段を消さずに to の閉じ処理へ付け替える (積み直さない＝history を動かさない)
@@ -10132,14 +10132,14 @@ class VirtualBookshelf {
         // ⋯は iframe 内のボタン＝押した直後のフォーカスは iframe の中。Esc/キーボード操作が親へ届くよう項目へ移す
         const first = menu.querySelector('.art-more-item:not([disabled])');
         if (first) first.focus();
-        this._modalHistPush('art-blk-menu', (o) => this._artCloseBlkMenu(o), { extra: { articleId: this._artEditingId } });
+        this._surface().open('art-blk-menu', { close: (o) => this._artCloseBlkMenu(o), extra: { articleId: this._artEditingId } });
     }
 
     _artCloseBlkMenu({ fromHistory = false, keepHistory = false } = {}) {
         const menu = document.getElementById('art-blk-menu');
         if (!menu || menu.hidden) return;
         menu.hidden = true;
-        if (!keepHistory) this._modalHistPop('art-blk-menu', { fromHistory });
+        this._surface().close('art-blk-menu', { fromHistory, hist: !keepHistory });
     }
 
     _artBlkMenuAction(act) {
@@ -10183,7 +10183,7 @@ class VirtualBookshelf {
         // スマホの「戻る」= 完了 (Esc と同じ・②決裁)。直前のシート/⋯メニューの段があれば引き継ぐ
         const closeFs = (o) => this._artCloseBlockFs(true, o);
         if (!this._artHistHandOver('art-add-sheet', 'art-fs', closeFs) && !this._artHistHandOver('art-blk-menu', 'art-fs', closeFs)) {
-            this._modalHistPush('art-fs', closeFs, { extra: { articleId: this._artEditingId, blockId } });
+            this._surface().open('art-fs', { close: closeFs, extra: { articleId: this._artEditingId, blockId } });
         } else if (this._isHistMobile()) {
             // イシュー#291: handover(段を引き継ぐ)経路は _modalHistPush を通らず history も触らない
             // ため、state に blockId が入らない。進むで開き直せるよう、現在の段を blockId 付きで
@@ -10263,7 +10263,7 @@ class VirtualBookshelf {
                 if (!ok) return false; // 閉じなかった
             }
         }
-        this._modalHistPop('art-fs', { fromHistory });
+        this._surface().close('art-fs', { fromHistory });
         if (!commit && i >= 0 && this._artFsSnapshot) {
             blocks[i] = JSON.parse(this._artFsSnapshot);
             this._artScheduleSave();
@@ -10744,14 +10744,14 @@ class VirtualBookshelf {
         if (!sheet) return;
         this._artRenderLookSheet();
         sheet.hidden = false;
-        this._modalHistPush('art-look-sheet', (o) => this._artCloseLookSheet(o), { extra: { articleId: this._artEditingId } });
+        this._surface().open('art-look-sheet', { close: (o) => this._artCloseLookSheet(o), extra: { articleId: this._artEditingId } });
     }
 
     _artCloseLookSheet({ fromHistory = false } = {}) {
         const sheet = document.getElementById('art-look-sheet');
         if (!sheet || sheet.hidden) return;
         sheet.hidden = true;
-        this._modalHistPop('art-look-sheet', { fromHistory });
+        this._surface().close('art-look-sheet', { fromHistory });
     }
 
     _artRenderLookSheet() {
@@ -11756,7 +11756,7 @@ class VirtualBookshelf {
         if (side.classList.contains('is-open')) return;
         side.classList.add('is-open');
         if (scrim) scrim.classList.add('is-open');
-        this._modalHistPush('art-sheet', (o) => this._artCloseSheet(o), { isMobile: () => this._artIsDrawerNarrow(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
+        this._surface().open('art-sheet', { close: (o) => this._artCloseSheet(o), isMobile: () => this._artIsDrawerNarrow(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
     }
 
     _artCloseSheet({ fromHistory = false } = {}) {
@@ -11767,7 +11767,7 @@ class VirtualBookshelf {
         side.classList.remove('is-open');
         const scrim = document.getElementById('art-sheet-scrim');
         if (scrim) scrim.classList.remove('is-open');
-        this._modalHistPop('art-sheet', { fromHistory });
+        this._surface().close('art-sheet', { fromHistory });
     }
 
     _artIsDrawerNarrow() {
@@ -12187,8 +12187,8 @@ class VirtualBookshelf {
         btn.setAttribute('aria-expanded', String(open));
         if (open) this._placeAnchoredMenu(btn, menu);
         // 戻る=メニューだけ閉じる (D01)。開いた時だけ1段積み、閉じたら畳む
-        if (open && !wasOpen) this._modalHistPush('art-more-menu', (o) => this._artToggleMoreMenu(false, o), { extra: { articleId: this._artEditingId } });
-        else if (!open && wasOpen) this._modalHistPop('art-more-menu', { fromHistory: !!(arguments[1] && arguments[1].fromHistory) });
+        if (open && !wasOpen) this._surface().open('art-more-menu', { close: (o) => this._artToggleMoreMenu(false, o), extra: { articleId: this._artEditingId } });
+        else if (!open && wasOpen) this._surface().close('art-more-menu', { fromHistory: !!(arguments[1] && arguments[1].fromHistory) });
     }
 
     // ===== 公開パネル (イシュー#230): 公開前チェック / 公開先 / タグ / 広告 =====
@@ -13288,11 +13288,29 @@ class VirtualBookshelf {
         this._surface().push(id, close, { isMobile, extra, route });
     }
 
+    // 面の登録 (イシュー#509 U3)。振る舞いは載せ替え前と同じ指定にする (docs/arch/surface.md §2)
+    _defineSurfaces(S) {
+        // プラグインの一覧: 今どの幅でも段を積まない (旧 overlays.open hist:false のみ) を固定。変えるのは S6
+        S.define('plugins-modal', { kind: 'modal', size: 'md', hist: 'never' });
+        // 記事の6面 (#499 inventory O14〜O19): 今は overlays を通っていなかった。載せるが重なり順・Esc・枠外は今のまま
+        // = layer:false (自前の z-index のまま)・esc:false (各面の capture の Esc が先に処理)・backdrop:'ignore'・showClass:null
+        // (開閉は今どおり hidden / is-open)・kind:'sheet'+onOpen:'stack' (popover/menu の closeOthers に巻き込まない)
+        const artFace = { kind: 'sheet', size: 'none', layer: false, esc: false, backdrop: 'ignore', showClass: null, onOpen: 'stack' };
+        S.define('art-add-sheet', Object.assign({}, artFace));
+        S.define('art-blk-menu', Object.assign({}, artFace));
+        S.define('art-look-sheet', Object.assign({}, artFace));
+        S.define('art-sheet', Object.assign({ el: '#art-drawer' }, artFace));
+        S.define('art-more-menu', Object.assign({}, artFace));
+        // 全面編集 (art-fs) は1枚の root を持たない (編集ビューの中の状態) = 段だけ Surface 経由。overlays には載せない
+        S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
+    }
+
     // Surface (js/ui/surface.js・イシュー#509)。読み込み前・単体テスト等で無い時はこの場で作る
     _surface() {
         if (!this._surfaceInst) {
             const S = (typeof window !== 'undefined' && window.surface) || (typeof window !== 'undefined' && window.Surface ? new window.Surface() : null);
             this._surfaceInst = S ? S.bind(this) : null;
+            if (this._surfaceInst) this._defineSurfaces(this._surfaceInst);
         }
         return this._surfaceInst;
     }
@@ -14207,14 +14225,13 @@ class VirtualBookshelf {
     // ===== プラグイン管理 UI =====
 
     async showPluginsModal() {
-        const modal = document.getElementById('plugins-modal');
-        this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
+        this._surface().open('plugins-modal'); // Surface (イシュー#509 U3): md・どの幅でも段なし (hist:'never')
         document.getElementById('plugin-repo-url').value = '';
         await this._renderPluginsList();
     }
 
     closePluginsModal() {
-        this._overlays().close('plugins-modal', { reason: 'button' });
+        this._surface().close('plugins-modal', { reason: 'button' });
     }
 
     async _renderPluginsList() {
