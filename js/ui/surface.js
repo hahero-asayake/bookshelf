@@ -72,7 +72,8 @@
             const o = opts || {};
             const def = this.get(id);
             const ov = this._ov();
-            if ((!def || def.overlay !== false) && ov) ov.close(id, { reason: o.reason || 'program' });
+            // 未登録の面・overlay:false の面は段だけ外す (旧 _modalHistPop と同じ)
+            if (def && def.overlay !== false && ov) ov.close(id, { reason: o.reason || 'program' });
             if (o.hist !== false) this.pop(id, { fromHistory: !!o.fromHistory, route: o.route });
         }
 

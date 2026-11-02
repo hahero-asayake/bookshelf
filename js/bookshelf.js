@@ -702,7 +702,7 @@ class VirtualBookshelf {
                         // .modal-close を持たない面 (プレビュー等): 管理役で閉じ、履歴を自前で積む面 (hist:false) は段も外す
                         // (旧 fallback「remove('show') + _modalHistPop」と同じ・履歴を残留させない)
                         this._overlays().requestClose(topFace.id, 'esc');
-                        if (!topFace.hist && topFace.id) this._modalHistPop(topFace.id, {});
+                        if (!topFace.hist && topFace.id) this._surface().pop(topFace.id, {});
                     }
                     e.preventDefault();
                     return;
@@ -715,7 +715,7 @@ class VirtualBookshelf {
                 else {
                     top.classList.remove('show');
                     // .modal-close を持たない面 (プレビュー等) でも履歴を残留させない (汎用モーダル履歴)
-                    if (top.id) this._modalHistPop(top.id, {});
+                    if (top.id) this._surface().pop(top.id, {});
                 }
                 e.preventDefault();
             });
@@ -1232,7 +1232,7 @@ class VirtualBookshelf {
         document.body.classList.add('cmdk-open');
         input.value = '';
         this._renderPaletteResults('');
-        this._modalHistPush('command-palette', (o) => this._closePalette(o));
+        this._surface().open('command-palette', { close: (o) => this._closePalette(o) });
         setTimeout(() => { input.focus(); input.select(); }, 0);
     }
 
@@ -1250,7 +1250,7 @@ class VirtualBookshelf {
             if (st) { const i = st.findIndex((e) => e.id === 'command-palette'); if (i !== -1) st.splice(i, 1); }
             return;
         }
-        this._modalHistPop('command-palette', { fromHistory });
+        this._surface().close('command-palette', { fromHistory });
     }
 
     /**
@@ -5191,7 +5191,7 @@ class VirtualBookshelf {
         document.getElementById('report-reason').value = '';
         this._setReportError('');
         this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
-        this._modalHistPush('report-modal', (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)), { extra: { url } });
+        this._surface().open('report-modal', { close: (o) => this._formBackGuard('report-modal', o, (oo) => this.closeReportModal(oo)), extra: { url } });
         this._formSnapTake('report-modal');
     }
 
@@ -5199,7 +5199,7 @@ class VirtualBookshelf {
         const modal = document.getElementById('report-modal');
         this._overlays().close('report-modal', { reason: fromHistory ? 'history' : 'button' });
         this._pendingReportClear();
-        this._modalHistPop('report-modal', { fromHistory });
+        this._surface().close('report-modal', { fromHistory });
     }
 
     _setReportError(msg) {
@@ -6277,7 +6277,7 @@ class VirtualBookshelf {
         // 管理役から閉じられた時 (別の面を開いた等) は onClose → _closeDrawer
         const side = document.getElementById('app-sidebar');
         if (side) this._overlays().open(side, { kind: 'sheet', hist: false, showClass: null, size: 'none', onOpen: 'closeOthers', onClose: () => this._closeDrawer() });
-        this._modalHistPush('drawer', (o) => this._closeDrawer(o));
+        this._surface().open('drawer', { close: (o) => this._closeDrawer(o) });
     }
 
     _closeDrawer({ fromHistory = false, silent = false } = {}) {
@@ -6299,7 +6299,7 @@ class VirtualBookshelf {
             if (st) { const i = st.findIndex((e) => e.id === 'drawer'); if (i !== -1) st.splice(i, 1); }
             return;
         }
-        this._modalHistPop('drawer', { fromHistory });
+        this._surface().close('drawer', { fromHistory });
     }
 
     _initMobileNav() {
@@ -6968,7 +6968,7 @@ class VirtualBookshelf {
             // ===== イベントハンドラ =====
             const cleanup = ({ fromHistory = false } = {}) => {
                 this._overlays().close('icon-picker-modal', { reason: fromHistory ? 'history' : 'button' });
-                this._modalHistPop('icon-picker-modal', { fromHistory });
+                this._surface().close('icon-picker-modal', { fromHistory });
                 lucideGrid.removeEventListener('click', onLucideGridClick);
                 textGrid.removeEventListener('click', onTextGridClick);
                 lucideInput.removeEventListener('input', updateLucidePreview);
@@ -7031,7 +7031,7 @@ class VirtualBookshelf {
             // 履歴は従来どおり _modalHistPush/Pop (hist:false)
             this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false });
             // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
-            this._modalHistPush('icon-picker-modal', (o) => { cleanup(o); resolve(null); }, { extra: { pickerTitle: title, pickerCurrent: current } });
+            this._surface().open('icon-picker-modal', { close: (o) => { cleanup(o); resolve(null); }, extra: { pickerTitle: title, pickerCurrent: current } });
         });
     }
 
@@ -7147,7 +7147,7 @@ class VirtualBookshelf {
         if (!content || !detail || !target || !detail.contains(target)) return;
         const mobile = this._isSettingsMobile();
         // スマホは一覧→詳細で1段積む (戻る=一覧へ)。詳細から別の詳細へは積み増さない
-        if (mobile && push) this._modalHistPush('settings-cat', () => this._showSettingsMaster());
+        if (mobile && push) this._surface().open('settings-cat', { close: () => this._showSettingsMaster() });
         detail.querySelectorAll('.settings-section.pane-active').forEach(el => el.classList.remove('pane-active'));
         target.open = true;
         target.classList.add('pane-active');
@@ -7194,7 +7194,7 @@ class VirtualBookshelf {
         if (this._settingsPopstateBound) return;
         this._settingsPopstateBound = true;
         const backBtn = document.getElementById('settings-back');
-        if (backBtn) backBtn.addEventListener('click', () => { this._modalHistPop('settings-cat'); this._showSettingsMaster(); });
+        if (backBtn) backBtn.addEventListener('click', () => { this._surface().close('settings-cat'); this._showSettingsMaster(); });
     }
 
     // 設定モーダル内の特定要素/節へジャンプ (該当カテゴリを開いて要素へフォーカス)。
@@ -7802,7 +7802,7 @@ class VirtualBookshelf {
             document.body.appendChild(modal);
             const close = ({ fromHistory = false } = {}) => {
                 this._overlays().close('plugin-settings-modal', { reason: 'button' });
-                this._modalHistPop('plugin-settings-modal', { fromHistory });
+                this._surface().close('plugin-settings-modal', { fromHistory });
             };
             modal.querySelector('.psm-backdrop').addEventListener('click', () => close());
             modal.querySelector('.psm-close').addEventListener('click', () => close());
@@ -7939,7 +7939,7 @@ class VirtualBookshelf {
 
         if (typeof window.applyIcons === 'function') window.applyIcons(body);
         this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
-        this._modalHistPush('plugin-settings-modal', (o) => this._pluginSettingsModalClose(o), { extra: { pluginId: id } });
+        this._surface().open('plugin-settings-modal', { close: (o) => this._pluginSettingsModalClose(o), extra: { pluginId: id } });
     }
 
     _applyPluginSearchFilter() {
@@ -8066,8 +8066,8 @@ class VirtualBookshelf {
         if (this._overlays().close('settings-modal', { reason: fromHistory ? 'history' : 'button', fromHistory })) return;
         // 管理役に載っていない (読み込み前等) 時の従来の閉じ方
         modal.classList.remove('show');
-        this._modalHistPop('settings-cat');
-        this._modalHistPop('settings-modal', { fromHistory });
+        this._surface().close('settings-cat');
+        this._surface().close('settings-modal', { fromHistory });
         this._showSettingsMaster(); // 次回開いた時のために一覧へ戻す
     }
 
@@ -8483,13 +8483,13 @@ class VirtualBookshelf {
         const modal = document.getElementById('bookshelf-modal');
         this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false }); // 重なり管理役 (イシュー#367 step5): lg
         this.renderBookshelfList();
-        this._modalHistPush('bookshelf-modal', (o) => this.closeBookshelfModal(o));
+        this._surface().open('bookshelf-modal', { close: (o) => this.closeBookshelfModal(o) });
     }
 
     closeBookshelfModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('bookshelf-modal');
         this._overlays().close('bookshelf-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('bookshelf-modal', { fromHistory });
+        this._surface().close('bookshelf-modal', { fromHistory });
     }
 
     renderBookshelfList() {
@@ -8644,7 +8644,7 @@ class VirtualBookshelf {
         this.currentEditingBookshelf = bookshelfToEdit;
 
         this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
-        this._modalHistPush('bookshelf-form-modal', (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)), { extra: { bsKey: editKey } });
+        this._surface().open('bookshelf-form-modal', { close: (o) => this._formBackGuard('bookshelf-form-modal', o, (oo) => this.closeBookshelfForm(oo)), extra: { bsKey: editKey } });
         this._formSnapTake('bookshelf-form-modal');
         nameInput.focus();
     }
@@ -8653,7 +8653,7 @@ class VirtualBookshelf {
         const modal = document.getElementById('bookshelf-form-modal');
         this._overlays().close('bookshelf-form-modal', { reason: fromHistory ? 'history' : 'button' });
         this.currentEditingBookshelf = null;
-        this._modalHistPop('bookshelf-form-modal', { fromHistory });
+        this._surface().close('bookshelf-form-modal', { fromHistory });
     }
 
     async saveBookshelfForm() {
@@ -8877,7 +8877,7 @@ class VirtualBookshelf {
 
             const cleanup = ({ fromHistory = false } = {}) => {
                 this._overlays().close('descendants-pick-modal', { reason: fromHistory ? 'history' : 'button' });
-                this._modalHistPop('descendants-pick-modal', { fromHistory });
+                this._surface().close('descendants-pick-modal', { fromHistory });
                 confirmBtn.removeEventListener('click', onConfirm);
                 skipBtn.removeEventListener('click', onSkip);
                 closeBtn.removeEventListener('click', onSkip);
@@ -8896,7 +8896,7 @@ class VirtualBookshelf {
             skipBtn.addEventListener('click', onSkip);
             closeBtn.addEventListener('click', onSkip);
             // スマホ戻る: スキップ扱いで閉じる (Promise を必ず resolve する)
-            this._modalHistPush('descendants-pick-modal', (o) => { cleanup(o); resolve([]); }, { extra: { descIds: descendants.map((d) => d.internalId) } });
+            this._surface().open('descendants-pick-modal', { close: (o) => { cleanup(o); resolve([]); }, extra: { descIds: descendants.map((d) => d.internalId) } });
         });
     }
 
@@ -9217,7 +9217,7 @@ class VirtualBookshelf {
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
         // イシュー#468: #/publish を持たせる。閉じた時に戻す route (開く前にいた画面) を控える
         this._artPublishReturnRoute = (this.router && this.router.current) || { view: 'main' };
-        this._modalHistPush('publish-pages-modal', (o) => this.closePublishPagesModal(o), { route: { view: 'publish' } });
+        this._surface().open('publish-pages-modal', { close: (o) => this.closePublishPagesModal(o), route: { view: 'publish' } });
     }
 
     closePublishPagesModal({ fromHistory = false } = {}) {
@@ -9252,7 +9252,7 @@ class VirtualBookshelf {
         this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
         this._artPublishSettingsReturnRoute = (this.router && this.router.current) || { view: 'publish' }; // イシュー#468
-        this._modalHistPush('publish-settings-modal', (o) => this.closePublishSettingsModal(o), { route: { view: 'publish-settings' } });
+        this._surface().open('publish-settings-modal', { close: (o) => this.closePublishSettingsModal(o), route: { view: 'publish-settings' } });
     }
 
     closePublishSettingsModal({ fromHistory = false } = {}) {
@@ -9428,8 +9428,8 @@ class VirtualBookshelf {
         this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
         if (!skipSave && (this._artMode === 'edit' || this._artMode === 'form')) this._artFlushSave().catch(() => {});
         const st = this._modalHistStack;
-        if (st && st.some((e) => e.id === 'art-edit-mode')) this._modalHistPop('art-edit-mode', {});
-        if (st && st.some((e) => e.id === 'art-viewing')) this._modalHistPop('art-viewing', {});
+        if (st && st.some((e) => e.id === 'art-edit-mode')) this._surface().close('art-edit-mode', {});
+        if (st && st.some((e) => e.id === 'art-viewing')) this._surface().close('art-viewing', {});
         this._artMode = 'view'; // 次に記事を開いた時の _artSetMode 判定のため状態を正規化
         document.getElementById('art-list-view').hidden = false;
         document.getElementById('art-edit-view').hidden = true;
@@ -9458,7 +9458,7 @@ class VirtualBookshelf {
         this._overlays().setSize('publish-pages-modal', 'full');
         // イシュー#468: 記事個別ページを開く操作そのものに #/publish/<id> への route 変化を1 applyで乗せる
         // (新規記事は _artOpenEditor が確定した仮id・既存記事は実id。編集/閲覧のサブ状態はURLで区別しない、ADR-147)
-        this._modalHistPush('art-viewing', (o) => this._artShowList(o), { extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
+        this._surface().open('art-viewing', { close: (o) => this._artShowList(o), extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
     }
 
     _artCountBooks(blocks) {
@@ -9781,9 +9781,9 @@ class VirtualBookshelf {
         const newMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
         const prevMode = this._artMode;
         if (prevMode === 'view' && newMode === 'edit') {
-            this._modalHistPush('art-edit-mode', (o) => this._artCompleteEdit(o), { extra: { articleId: this._artEditingId } });
+            this._surface().open('art-edit-mode', { close: (o) => this._artCompleteEdit(o), extra: { articleId: this._artEditingId } });
         } else if (prevMode === 'edit' && newMode === 'view') {
-            this._modalHistPop('art-edit-mode', {});
+            this._surface().close('art-edit-mode', {});
         }
         this._artMode = newMode;
         const view = document.getElementById('art-edit-view');
@@ -12320,14 +12320,14 @@ class VirtualBookshelf {
         this._artRenderPublishPanel();
         // 重なり管理役 (イシュー#367): 中 (md)。記事エディタ (publish-pages-modal) の上に data-layer で積まれる (旧 CSS の z-index 1150 は撤去)
         this._overlays().open(m, { kind: 'modal', size: 'md', hist: false });
-        this._modalHistPush('art-publish-modal', (o) => this._artClosePublishPanel(o), { extra: { articleId: this._artEditingId } });
+        this._surface().open('art-publish-modal', { close: (o) => this._artClosePublishPanel(o), extra: { articleId: this._artEditingId } });
     }
 
     _artClosePublishPanel({ fromHistory = false } = {}) {
         const m = document.getElementById('art-publish-modal');
         if (!m || !m.classList.contains('show')) return;
         this._overlays().close('art-publish-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('art-publish-modal', { fromHistory });
+        this._surface().close('art-publish-modal', { fromHistory });
     }
 
     async _artPublishFromPanel() {
@@ -12715,11 +12715,11 @@ class VirtualBookshelf {
         // 重なり管理役 (イシュー#367): 全画面 (full)。公開パネル/記事エディタの上に data-layer で積まれる (旧 CSS の z-index 1200 は撤去)
         this._overlays().open(m, { kind: 'modal', size: 'full', hist: false, sizeTarget: '.pp-preview-dialog' });
         if (typeof window.applyIcons === 'function') window.applyIcons(m);
-        this._modalHistPush('pp-preview-modal', (o) => this._artClosePreviewModal(o), { extra: { articleId: this._artEditingId } });
+        this._surface().open('pp-preview-modal', { close: (o) => this._artClosePreviewModal(o), extra: { articleId: this._artEditingId } });
     }
     _artClosePreviewModal({ fromHistory = false } = {}) {
         this._overlays().close('pp-preview-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('pp-preview-modal', { fromHistory });
+        this._surface().close('pp-preview-modal', { fromHistory });
         // 進行中のビルド (進捗表示/ストール検知タイマー) を無効化する。build() 自体は裏で続いてよいが、
         // 結果が来ても閉じた後のプレビューへは反映しない (イシュー#143)。
         this._artPreviewGeneration = (this._artPreviewGeneration || 0) + 1;
@@ -12926,7 +12926,7 @@ class VirtualBookshelf {
                 <span>${esc(it.label)}</span><span class="mde-heading-check">${checkSvg}</span></button>`;
         }).join('');
         document.body.appendChild(menu);
-        this._modalHistPush('mde-heading-menu', (o) => this._mdeCloseHeadingMenu(o), { extra: { articleId: this._artEditingId } }); // D01
+        this._surface().open('mde-heading-menu', { close: (o) => this._mdeCloseHeadingMenu(o), extra: { articleId: this._artEditingId } }); // D01
         menu.querySelectorAll('.mde-heading-item').forEach((item) => {
             item.addEventListener('click', () => {
                 this._mdeApplyHeadingLevel(easymde, Number(item.dataset.level));
@@ -12943,7 +12943,7 @@ class VirtualBookshelf {
         if (!menu) return;
         if (menu._mdeAnchorBtn) menu._mdeAnchorBtn.setAttribute('aria-expanded', 'false');
         menu.remove();
-        this._modalHistPop('mde-heading-menu', { fromHistory }); // D01
+        this._surface().close('mde-heading-menu', { fromHistory }); // D01
     }
 
     _mdeCurrentHeadingLevel(easymde) {
@@ -13083,7 +13083,7 @@ class VirtualBookshelf {
             this._bookMemoEditorContext = null;
             textareaEl.value = '';
             this._overlays().open(modal, { kind: 'modal', size: 'full', hist: false }); // 重なり管理役 (イシュー#367): 全画面
-            this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
+            this._surface().open('book-memo-modal', { close: (o) => this._bookMemoFsDone(o), extra: { asin } });
             if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
             return;
         }
@@ -13097,7 +13097,7 @@ class VirtualBookshelf {
 
         // 重なり管理役 (イシュー#367): 全画面 (full・設計案 19 §5「編集に集中する」)。履歴は従来どおり _modalHistPush/Pop
         this._overlays().open(modal, { kind: 'modal', size: 'full', hist: false });
-        this._modalHistPush('book-memo-modal', (o) => this._bookMemoFsDone(o), { extra: { asin } });
+        this._surface().open('book-memo-modal', { close: (o) => this._bookMemoFsDone(o), extra: { asin } });
 
         try {
             await this._ensureEasyMDELoaded();
@@ -13164,7 +13164,7 @@ class VirtualBookshelf {
     // 長文メモ: モーダルを閉じて状態をリセットする共通処理 (完了/キャンセルの両方から呼ぶ)
     _bookMemoFsClose({ fromHistory = false } = {}) {
         this._overlays().close('book-memo-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('book-memo-modal', { fromHistory });
+        this._surface().close('book-memo-modal', { fromHistory });
         if (this._bookMemoEditor) {
             this._mdeDestroyEditor(this._bookMemoEditor);
             this._bookMemoEditor = null;
@@ -13303,6 +13303,9 @@ class VirtualBookshelf {
         S.define('art-more-menu', Object.assign({}, artFace));
         // 全面編集 (art-fs) は1枚の root を持たない (編集ビューの中の状態) = 段だけ Surface 経由。overlays には載せない
         S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
+        // 段だけ Surface 経由にする面 (overlays へは各画面が今どおり hist:false で載せる・または overlays を使わない面)。
+        // 載せ替え前の _modalHistPush/_modalHistPop と同じ判定・同じ呼び順 (イシュー#509 U3 step3)
+        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'publish-settings-modal', 'report-modal', 'settings-cat', 'settings-modal'].forEach((id) => S.define(id, { overlay: false }));
     }
 
     // Surface (js/ui/surface.js・イシュー#509)。読み込み前・単体テスト等で無い時はこの場で作る
@@ -13439,13 +13442,13 @@ class VirtualBookshelf {
         if (!modal) return;
         this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
         this.renderExclusionsList();
-        this._modalHistPush('exclusions-modal', (o) => this.closeExclusionsModal(o));
+        this._surface().open('exclusions-modal', { close: (o) => this.closeExclusionsModal(o) });
     }
 
     closeExclusionsModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('exclusions-modal');
         this._overlays().close('exclusions-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('exclusions-modal', { fromHistory });
+        this._surface().close('exclusions-modal', { fromHistory });
     }
 
     renderExclusionsList() {
@@ -14038,7 +14041,7 @@ class VirtualBookshelf {
         this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false }); // 重なり管理役 (イシュー#367 step5): lg
         // スマホ: 物理戻る/ブラウザバックで「アプリ離脱でなくモーダルを閉じる」ため履歴に積む (設定モーダルと同作法・ui-standards §1)
         // popstate 配線は設定モーダル初回オープン時だけだったので、取込単独オープンでも配線する
-        this._modalHistPush('import-modal', (o) => this.closeImportModal(o));
+        this._surface().open('import-modal', { close: (o) => this.closeImportModal(o) });
     }
 
     /**
@@ -14053,7 +14056,7 @@ class VirtualBookshelf {
         resultsDiv.style.display = 'none';
         resultsDiv.innerHTML = '';
         // 自前で積んだ履歴を掃除 (×/ESC で閉じた場合)。popstate 経由なら不要
-        this._modalHistPop('import-modal', { fromHistory });
+        this._surface().close('import-modal', { fromHistory });
     }
 
     /** 取込モーダルの端末レーンを UA から自動判定 ('pc' | 'ios' | 'android') */
@@ -14768,7 +14771,7 @@ class VirtualBookshelf {
     showAddBookModal() {
         const modal = document.getElementById('add-book-modal');
         this._overlays().open(modal, { kind: 'modal', size: 'md', hist: false }); // 重なり管理役 (イシュー#367 step5): md
-        this._modalHistPush('add-book-modal', (o) => this._formBackGuard('add-book-modal', o, (oo) => this.closeAddBookModal(oo)));
+        this._surface().open('add-book-modal', { close: (o) => this._formBackGuard('add-book-modal', o, (oo) => this.closeAddBookModal(oo)) });
         this._formSnapTake('add-book-modal');
     }
 
@@ -14778,7 +14781,7 @@ class VirtualBookshelf {
     closeAddBookModal({ fromHistory = false } = {}) {
         const modal = document.getElementById('add-book-modal');
         this._overlays().close('add-book-modal', { reason: fromHistory ? 'history' : 'button' });
-        this._modalHistPop('add-book-modal', { fromHistory });
+        this._surface().close('add-book-modal', { fromHistory });
 
         // フォームをリセット（存在する要素のみ）
         const amazonUrlInput = document.getElementById('amazon-url-input');
