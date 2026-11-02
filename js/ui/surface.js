@@ -6,10 +6,17 @@
 //   hist: 'mobile'      … 今の既定。host._isHistMobile() が真の時だけ段を積む (旧 _modalHistPush と同じ)
 //   hist: 'never'       … 段を積まない (plugins-modal: 今どの幅でも段なし)
 //   hist: { isMobile }  … 面ごとの判定関数 (art-sheet の _artIsDrawerNarrow)
+// 出口の決まり (イシュー#511 X1・docs/char/x1-exits.md §1)。画面ごとに別々の実装を書かず、define の2項目に寄せる:
+//   exit: 'page' | 'overlay' | 'edit'  … 既定 'overlay'。'page' は←で親(parent)へ行く面 (×は置かない)。
+//                                        'edit' は編集モード (Esc・戻る=完了。呼び手の close がその意味を持つ)
+//   parent: {view,...} または () => {view,...}  … exit:'page' の時の←の行き先。閉じる時の returnRoute は
+//                                                  ここから導く (parent(id) で取得)。履歴がアプリの外なら
+//                                                  呼び手 (nav.closeFace 等) が replace で親へ行く (push しない)
 // 使い方:
 //   surface.define('art-add-sheet', { el: '#art-add-sheet', kind: 'sheet', layer: false, esc: false, close: (o) => ... });
 //   surface.open('art-add-sheet', { extra });  /  surface.close('art-add-sheet', { reason: 'button' });
 //   surface.push(id, close, { isMobile, extra, route }) / surface.pop(id, { fromHistory, route }) … 段だけの操作 (旧 _modalHistPush/Pop)
+//   surface.parent('settings-modal') … define の parent を解決した route を返す (無ければ null)
 (function () {
     'use strict';
 
@@ -21,9 +28,17 @@
 
         bind(host) { this.host = host; return this; }
 
-        define(id, def) { this.defs[id] = Object.assign({ id, hist: 'mobile', overlay: true }, def || {}); return this; }
+        define(id, def) { this.defs[id] = Object.assign({ id, hist: 'mobile', overlay: true, exit: 'overlay' }, def || {}); return this; }
 
         get(id) { return this.defs[id] || null; }
+
+        // 出口 (イシュー#511 X1): exit:'page' の面の←の行き先 (parent) を解決して返す。無ければ null
+        parent(id) {
+            const def = this.get(id);
+            if (!def) return null;
+            const p = def.parent;
+            return typeof p === 'function' ? p() : (p || null);
+        }
 
         _ov() { return (typeof window !== 'undefined' && window.overlays) || null; }
 
