@@ -257,13 +257,19 @@ test.describe('#389 モバイル列数(大きさ=列数)・はみ出し・縦横
 });
 
 // イシュー#389 ②指摘(2026-10-28): 「大きさ」選択肢に列数を添える境界(JS)と、実際に列数が
-// 切り替わるCSSの境界が食い違っていないかを固定する。調査の結果、本棚一覧の列数グリッドを
-// 囲む@mediaは css/bookshelf.css:7581 の `max-width: 768px` であり(900pxではない。4594/4901/
-// 5022行の@media(max-width:900px)は記事エディタ用の別ルールで本棚グリッドとは無関係)、
+// 切り替わるCSSの境界が食い違っていないかを固定する。当時の調査では、本棚一覧の列数グリッドを
+// 囲む@mediaは css/bookshelf.css の `max-width: 768px` であり(900pxではない)、
 // js/bookshelf.js の _updateCoverSizeOptionLabels はこの境界の数字をJS側に複製せず、CSSの
 // --mobile-cols-covers/--mobile-cols-images を直接読んで判定するよう実装した(境界の値が変わっても
-// JS側の修正が要らない設計)。768px(境界内側)では列数を添え、850px(769〜900pxの範囲・実測)では
-// 添えない=実際の本棚グリッドの挙動と一致する、の両方を固定する。
+// JS側の修正が要らない設計)。
+//
+// // CHAR→U2 (イシュー#505・2026-11-03): U2で画面の切り替わる幅を900pxの1組に統一した結果、
+// この列数グリッドを囲む@mediaも(他の768系ルールと同じく)900pxへ揃った(js/ui/viewport.js・
+// css/bookshelf.cssの単一定義を参照。docs/char/u2-breakpoint-decision.md参照)。
+// _updateCoverSizeOptionLabels はCSSの実測を直接読む自己調整設計のため、JS側の修正は不要
+// (#389の設計どおり)。850px(769〜900pxの範囲)は境界が900pxに広がったことで新たに「境界内側」
+// になり、768pxと同じく列数ヒントが出る・実際のグリッドも列数固定になる。以下の期待を
+// その新しい振る舞いに書き換えた(実測で確認済み)。
 test.describe('#389 「大きさ」選択肢の列数表示とCSSの実際の境界が一致する', () => {
     async function setupAndCheck(page, context) {
         await setupFixture(page, context, 10);
@@ -281,17 +287,15 @@ test.describe('#389 「大きさ」選択肢の列数表示とCSSの実際の境
         expect(labels, '768pxでは列数ヒントが出るはず').toEqual(['小（3列）', '中（2列）', '大（1列）']);
     });
 
-    test('850px(769〜900pxの範囲・CSSの列数切替は効かない)では列数を添えない', async ({ page, context }) => {
-        // ②からは「900pxに揃える」指示だったが、本棚一覧の列数グリッドのCSS境界は実測768pxで
-        // あり(上のdescribeコメント参照)、850pxでは実際の表紙グリッドが列数固定ではなくPCと同じ
-        // auto-fillに戻る(列数はコンテンツ幅依存で3/2/1に固定されない)。「文言が出ること」ではなく
-        // 「文言と実際の列数が食い違わないこと」を固定するため、850pxでは列数ヒントを出さない
-        // (=CSSの実際の挙動と一致させる)ことをここで検証する。
+    test('850px(769〜900pxの範囲・U2で境界が900pxに統一=境界内側になった)でも列数を添える', async ({ page, context }) => {
+        // U2前は769〜900pxの範囲でCSSの列数切替が効かず(auto-fill)列数ヒントを出さなかったが、
+        // U2で境界が900pxに統一された結果、850pxも「境界内側」になり768pxと同じ振る舞いになる。
+        // 「文言が出ること」ではなく「文言と実際の列数が食い違わないこと」を固定する点は変えていない。
         await page.setViewportSize({ width: 850, height: 844 });
         const labels = await setupAndCheck(page, context);
-        expect(labels, '850pxでは本棚グリッドの列数切替CSSが効いていないため列数ヒントを出さないはず').toEqual(['小', '中', '大']);
-        // 実際のグリッドも列数固定(3)になっていないこと(auto-fillのまま)を確認し、文言と整合させる
+        expect(labels, '850pxでも境界内側=列数ヒントが出るはず').toEqual(['小（3列）', '中（2列）', '大（1列）']); // CHAR→U2
+        // 実際のグリッドも列数固定(現在の大きさ=中=2列)になっていることを確認し、文言と整合させる
         const cols = await page.evaluate(() => getComputedStyle(document.querySelector('.bookshelf')).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length);
-        expect(cols, '850pxでは表紙ビューの列数が3固定(モバイル小の値)になっていないはず(auto-fillなので本数は内容依存)').not.toBe(3);
+        expect(cols, '850pxでは表紙ビューの列数が2固定(モバイル中の値)になっているはず').toBe(2); // CHAR→U2
     });
 });
