@@ -7096,7 +7096,7 @@ class VirtualBookshelf {
         // 解消済み(#442のclosePublish3と同じ形)。onCloseは「settings-catのpop」を呼ばない(DOM後片付けのみ)。
         this._overlays().open(modal, {
             kind: 'modal', size: 'lg', hist: true,
-            route: { view: 'settings' }, returnRoute: { view: 'main' }, // イシュー#494
+            route: { view: 'settings' }, returnRoute: this._surface().parent('settings-modal') || { view: 'main' }, // イシュー#494・親はSurfaceのdefineで決める(イシュー#511 X1)
             onClose: () => {
                 this._showSettingsMaster();
             },
@@ -9248,15 +9248,16 @@ class VirtualBookshelf {
         }
         this._overlays().open(modal, { kind: 'modal', size: 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);
-        this._artPublishSettingsReturnRoute = (this.router && this.router.current) || { view: 'publish' }; // イシュー#468
         this._surface().open('publish-settings-modal', { close: (o) => this.closePublishSettingsModal(o), route: { view: 'publish-settings' } });
     }
 
     closePublishSettingsModal({ fromHistory = false } = {}) {
         this._overlays().close('publish-settings-modal', { reason: fromHistory ? 'history' : 'button' });
         if (fromHistory) return; // 旧 _modalHistPop と同じ規則
-        // イシュー#468: 公開一覧と同じ closePublish3 を使う(単独faceのみ除去される・②指示「同じ規則で揃える」)
-        this.nav.closePublish(this._artPublishSettingsReturnRoute || { view: 'publish' });
+        // イシュー#468: 公開一覧と同じ closePublish3 を使う(単独faceのみ除去される・②指示「同じ規則で揃える」)。
+        // イシュー#511 X1 (②判断§4-3): 親は常に公開の一覧に固定 (Surfaceのdefineで決める)。開いた場所(router.current)
+        // には戻さない=←/×と戻る(ブラウザの戻る)を別の動きにする。開いた場所に戻る動きは戻るが受け持つ
+        this.nav.closePublish(this._surface().parent('publish-settings-modal') || { view: 'publish' });
     }
 
     _artSetupUI() {
@@ -13297,7 +13298,11 @@ class VirtualBookshelf {
         S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
         // 段だけ Surface 経由にする面 (overlays へは各画面が今どおり hist:false で載せる・または overlays を使わない面)。
         // 載せ替え前の _modalHistPush/_modalHistPop と同じ判定・同じ呼び順 (イシュー#509 U3 step3)
-        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'publish-settings-modal', 'report-modal', 'settings-cat', 'settings-modal'].forEach((id) => S.define(id, { overlay: false }));
+        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'report-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
+        // 出口の決まり (イシュー#511 X1): ページとして開く面は exit:'page' + parent (←の行き先)。
+        // ×の代わりに←を出す/PCでは←も置かない、の見た目は各画面側 (index.html・CSS)。親は1か所 (ここ) で決める
+        S.define('settings-modal', { overlay: false, exit: 'page', parent: { view: 'main' } }); // 行き先の1つ (PCは←無し・§4-2)
+        S.define('publish-settings-modal', { overlay: false, exit: 'page', parent: { view: 'publish' } }); // 親は常に公開の一覧 (開いた場所には戻さない・§4-3)
     }
 
     // Surface (js/ui/surface.js・イシュー#509)。読み込み前・単体テスト等で無い時はこの場で作る

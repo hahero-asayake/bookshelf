@@ -1,6 +1,7 @@
-// イシュー#497 step0: 設定を全画面ページにした(#435)あと、PC(769px以上)では×も戻る(←)も隠れており、
-// 左ナビ以外に設定から出る手段が無かった。どの幅・一覧/詳細のどちらでも「アプリへ戻る手段」が
-// 画面内に1つ以上見えること、それを押すと実際に閉じて #/settings から抜けることを経路どおりに確かめる。
+// イシュー#497 step0 → イシュー#511 X1 で決まりの形に更新。
+// 決まり(docs/ui-standards.md §7c§3・x1-exits.md §4-2)：PC(901px以上)は設定が「行き先」の1つなので
+// ←もhidden×も出さない(左ナビ/戻るで出る)。狭い幅(900px以下)は一覧=← ホーム・詳細=← 設定を出す。
+// それを押すと実際に閉じて #/settings から抜けることを経路どおりに確かめる。
 // ESC・戻る操作(history.back)で閉じることも ui-standards §1 の期待表どおり確かめる。
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -49,24 +50,29 @@ async function openSettings(page, view) {
 
 for (const width of WIDTHS) {
     for (const view of ['master', 'detail']) {
-        test(`#497 幅${width} ${view}: 閉じる手段が画面内に見え、押すと閉じて#/settingsから抜ける`, async ({ page }) => {
+        const narrow = width <= 900; // js/ui/viewport.js の境目(900px)と揃える(イシュー#505)
+        test(`#511 幅${width} ${view}: 決まりどおりの閉じる手段が画面内に見え、押すと閉じて#/settingsから抜ける`, async ({ page }) => {
             await page.setViewportSize({ width, height: width <= 768 ? 844 : 1080 });
             const errors = await bootApp(page);
             await openSettings(page, view);
             const mobile = width <= 768;
             const content = page.locator('.settings-modal-content');
             if (mobile) await expect(content).toHaveAttribute('data-settings-view', view);
-            const close = page.locator('#settings-modal-close');
-            const back = page.locator('#settings-back');
-            // ×は全幅・一覧/詳細とも画面内に見える
-            expect(await inViewport(page, close)).toBe(true);
-            // スマホの詳細では戻る(←)も見える(一覧へ戻る)
-            if (mobile && view === 'detail') expect(await inViewport(page, back)).toBe(true);
+            const close = page.locator('#settings-modal-close'); // 狭い幅の一覧だけ「← ホーム」
+            const back = page.locator('#settings-back'); // 狭い幅の詳細だけ「← 設定」
+            const shouldShowClose = narrow && view === 'master';
+            const shouldShowBack = narrow && view === 'detail';
+            expect(await inViewport(page, close)).toBe(shouldShowClose);
+            expect(await inViewport(page, back)).toBe(shouldShowBack);
             if (SHOT_DIR && (width === 390 || width === 1920)) {
                 mkdirSync(SHOT_DIR, { recursive: true });
                 await page.screenshot({ path: join(SHOT_DIR, `497-step0-settings-${width}-${view}.png`) });
             }
-            await close.click();
+            // PCは左ナビ(サイドバー)かブラウザの戻るで出る。この経路の自動打鍵はP2(ux-p2-settings.spec.js)が持つため、
+            // ここでは「見える手段」で閉じられることだけを、見える手段がある幅/状態のときに確かめる
+            if (shouldShowClose) await close.click();
+            else if (shouldShowBack) { await back.click(); await expect(content).toHaveAttribute('data-settings-view', 'master'); return; }
+            else return; // PC: 画面内に閉じる手段が無い(決まりどおり)。経路の確認はP2側
             await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
             await expect.poll(() => page.evaluate(() => location.hash)).not.toContain('settings');
             expect(errors).toEqual([]);

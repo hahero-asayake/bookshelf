@@ -68,13 +68,14 @@ test('P2: 戻るボタンで一覧へ戻る (スマホ)', async ({ page }) => {
     await expect(content).toHaveAttribute('data-settings-view', 'master');
 });
 
-test('P2: フッターの「閉じる」は廃止。×は全幅で出す(イシュー#497 step0)。ESCでも出る', async ({ page }) => {
+test('P2: フッターの「閉じる」は廃止。PC(行き先の1つ)は←も×も出ない(イシュー#511 X1)。ESCでも閉じる', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await expect(page.locator('#settings-modal-done')).toHaveCount(0);
-    // イシュー#497 step0: #435で×を隠したため、PCでは左ナビ以外に設定から出る手段が無かった。×を全幅で出す
-    await expect(page.locator('#settings-modal-close')).toBeVisible();
+    // イシュー#511 X1 §4-2: PC(901px以上)は設定が「行き先」の1つなので、既定(デスクトップ)viewportでは
+    // ← ホーム(旧×)も← 設定も出ない(左ナビ/戻るで出る)
+    await expect(page.locator('#settings-modal-close')).toBeHidden();
     // 閉じ方は ESC (モーダルの技術基盤=overlays.open/NavStateは維持しているため従来どおり効く)
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
@@ -170,13 +171,13 @@ test('P2 (イシュー#435): 390でカードの左右余白が過大でない(�
     expect(errors).toEqual([]);
 });
 
-test('P2 (イシュー#435・②差し戻し): 390の一覧(master)はスマホのサイドバーが常設でなく戻るも無いため、×で閉じられること', async ({ page }) => {
+test('P2 (イシュー#511 X1): 390の一覧(master)は「← ホーム」で閉じられること', async ({ page }) => {
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const content = page.locator('.settings-modal-content');
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(content).toHaveAttribute('data-settings-view', 'master');
-    // 一覧では戻る(←)は出ない。×は全幅・一覧/詳細とも出る(イシュー#497)
+    // 一覧では「← 設定」(詳細へ戻る方)は出ない。「← ホーム」(親へ)が出る(イシュー#511 X1 §4-2)
     await expect(page.locator('#settings-back')).toBeHidden();
     await expect(page.locator('#settings-modal-close')).toBeVisible();
     await page.locator('#settings-modal-close').click();
@@ -184,14 +185,15 @@ test('P2 (イシュー#435・②差し戻し): 390の一覧(master)はスマホ�
     expect(errors).toEqual([]);
 });
 
-test('P2 (イシュー#435・②差し戻し): 390の節(detail)は戻る(←)で一覧に戻れ、×も出る(イシュー#497)', async ({ page }) => {
+test('P2 (イシュー#511 X1): 390の節(detail)は「← 設定」で一覧に戻れ、「← ホーム」は出ない', async ({ page }) => {
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const content = page.locator('.settings-modal-content');
     await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
     await expect(content).toHaveAttribute('data-settings-view', 'detail');
     await expect(page.locator('#settings-back')).toBeVisible();
-    await expect(page.locator('#settings-modal-close')).toBeVisible();
+    // 詳細では「← ホーム」(一覧でだけ出す方)は出ない(イシュー#511 X1 §4-2。一段ずつ戻る)
+    await expect(page.locator('#settings-modal-close')).toBeHidden();
     await page.locator('#settings-back').click();
     await expect(content).toHaveAttribute('data-settings-view', 'master');
     expect(errors).toEqual([]);

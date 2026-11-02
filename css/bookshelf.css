@@ -3744,14 +3744,15 @@ html.bs-likely-has-data #dashboard-welcome {
     margin: 0;
 }
 .settings-md-header h2 { flex: 1 1 auto; margin: 0; min-width: 0; }
-/* × はヘッダー内に配置 (既定の absolute を解除) */
-.settings-md-header .modal-close { position: static; flex: 0 0 auto; }
+/* ←戻り先の名前 (イシュー#511 X1・docs/ui-standards.md §7c§3): #settings-back(← 設定)・#settings-modal-close
+   (← ホーム) の両方がこのクラス。アイコン+文字・タップ領域44px以上。PC(901px超)はどちらも出さない (下の
+   @media min-width:901px で非表示)。旧 × (.modal-close) はここでは使わない */
 .settings-md-back {
     flex: 0 0 auto;
-    width: 34px; height: 34px; padding: 0;
+    min-height: 44px; padding: 0 0.7rem; gap: 0.3rem;
     display: inline-flex; align-items: center; justify-content: center;
     border: none; background: transparent; color: var(--fg2);
-    border-radius: 8px; cursor: pointer;
+    border-radius: 8px; cursor: pointer; font-size: 0.9rem; white-space: nowrap;
 }
 .settings-md-back .h-icon { color: inherit; }
 .settings-md-back:hover { background: var(--line2); color: var(--fg); }
@@ -3822,6 +3823,8 @@ html.bs-likely-has-data #dashboard-welcome {
 @media (max-width: 900px) {
     .settings-modal-content[data-settings-view="master"] .settings-detail { display: none; }
     .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
+    /* 一覧=← ホーム・詳細=← 設定 (#settings-back) のみ。詳細では←ホームを出さない (イシュー#511 X1 §4-2) */
+    .settings-modal-content[data-settings-view="detail"] #settings-modal-close { display: none; }
     /* 縦スクロールの受け皿。無指定だと .settings-modal-content の overflow:hidden で
        中身が切り捨てられ、スクロールできない (2026-07-28 本人実機報告) */
     .settings-md-body {
