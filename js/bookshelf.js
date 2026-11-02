@@ -6329,10 +6329,24 @@ class VirtualBookshelf {
             }
         });
 
-        // 詳細シートの戻る
+        // 詳細シートの戻る (スマホ)。PC の × (#book-detail-pc-close・イシュー#511 X1 P11) も同じ処理
         const back = document.getElementById('mobile-detail-back');
-        // D03: #book/ で開いている時は履歴で戻す (ハッシュの段を残さない)。それ以外は従来どおり
-        if (back) back.addEventListener('click', () => { if (location.hash.startsWith('#book/')) history.back(); else body.classList.remove('book-detail-pinned'); });
+        if (back) back.addEventListener('click', () => this._exitBookDetail());
+        const pcClose = document.getElementById('book-detail-pc-close');
+        if (pcClose) pcClose.addEventListener('click', () => this._exitBookDetail());
+        // PC (901px以上) だけ: Esc で本の詳細 (手元の資料) を閉じる。他の面が Esc で閉じた時 (defaultPrevented)
+        // は二重に動かない。本詳細は .modal ではない (右ペインに inject) ため既存の全モーダル共通 Esc (685行)
+        // には引っかからない=ここで個別に見る必要がある (イシュー#511 X1 P11: PCの本の詳細に×とEscを付ける)
+        if (!this._bdPcEscBound) {
+            this._bdPcEscBound = true;
+            window.Surface.onEsc(document, (e) => {
+                if (e.defaultPrevented) return;
+                if (this._isHistMobile()) return; // スマホは既存の履歴統合(戻る/端スワイプ)が担う
+                if (!document.body.classList.contains('book-detail-pinned')) return;
+                this._exitBookDetail();
+                e.preventDefault();
+            });
+        }
 
         // Esc でドロワーを閉じる
         if (!this._mobileEscBound) {
@@ -8451,6 +8465,13 @@ class VirtualBookshelf {
             if (ti !== -1) fb.splice(ti, 0, item); else fb.push(item);
         }
         return true;
+    }
+
+    // 本の詳細を閉じる (手元の資料・×/Esc/スマホ戻るの共通の閉じ手・イシュー#511 X1 P11)。
+    // D03: #book/ で開いている時は履歴で戻す (ハッシュの段を残さない)。それ以外 (ホームの右ペイン等) は従来どおり
+    _exitBookDetail() {
+        if (location.hash.startsWith('#book/')) history.back();
+        else document.body.classList.remove('book-detail-pinned');
     }
 
     /**
@@ -13303,6 +13324,10 @@ class VirtualBookshelf {
         // ×の代わりに←を出す/PCでは←も置かない、の見た目は各画面側 (index.html・CSS)。親は1か所 (ここ) で決める
         S.define('settings-modal', { overlay: false, exit: 'page', parent: { view: 'main' } }); // 行き先の1つ (PCは←無し・§4-2)
         S.define('publish-settings-modal', { overlay: false, exit: 'page', parent: { view: 'publish' } }); // 親は常に公開の一覧 (開いた場所には戻さない・§4-3)
+        // ホームの編集モード (イシュー#511 X1 W8): overlay(DOM)を持たない状態トグル。exit:'edit'=Esc/戻るは
+        // 完了と同じ(_exitEditMode)。hist既定(mobile)のまま=スマホは段を積み戻るで抜けられる・PCは積まない
+        // (P9と同じ非対称だが、ここは新設の面なのでS6を待たず既存のhist:'mobile'に素直に従うだけ)
+        S.define('dashboard-edit', { overlay: false, exit: 'edit' });
     }
 
     // Surface (js/ui/surface.js・イシュー#509)。読み込み前・単体テスト等で無い時はこの場で作る

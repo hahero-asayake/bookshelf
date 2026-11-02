@@ -40,16 +40,27 @@ test.describe('P9/pc-back ゲート1: 本の詳細を開く (reduce3 openBook3�
     test.skip('PC幅で本の詳細を開いてから戻る (ホームのウィジェット入口) — 実測が想定と食い違うため今回は見送り。要追加調査', () => {});
 });
 
-test.describe('P11: PCの本の詳細はEscで閉じない', () => {
-    test('PC幅で本の詳細を開いてEscを押しても、パネルは閉じない(今の振る舞い) // CHAR: 直す対象(step2 P11)', async ({ page }, testInfo) => {
+test.describe('P11: PCの本の詳細は×とEscで閉じる(手元の資料・イシュー#511 X1)', () => {
+    test('PC幅で本の詳細を開いてEscを押すと閉じる // CHAR: 直す対象(step2 P11)', async ({ page }, testInfo) => {
         test.skip(!PC_PROJECTS.includes(testInfo.project.name), 'P11はPC幅の右ペインの話');
         await bootApp(page);
         await page.locator(`.widget-book-cell[data-asin="${ASIN}"]`).first().click();
         await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();
+        await expect(page.locator('#book-detail-pc-close')).toBeVisible();
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(150);
-        // 今の振る舞い: #book-detail-pane に Esc の処理が無いため、閉じずに表示が残る
+        // 新しい振る舞い: Esc で閉じ、プレースホルダ表示に戻る(イシュー#511 X1・_exitBookDetail)
+        await expect(page.locator('#book-detail-pane .detail-placeholder')).toBeVisible();
+        await expect(page.locator('body')).not.toHaveClass(/book-detail-pinned/);
+    });
+
+    test('PC幅で本の詳細を開いて×を押すと閉じる // CHAR: 直す対象(step2 P11)', async ({ page }, testInfo) => {
+        test.skip(!PC_PROJECTS.includes(testInfo.project.name), 'P11はPC幅の右ペインの話');
+        await bootApp(page);
+        await page.locator(`.widget-book-cell[data-asin="${ASIN}"]`).first().click();
         await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();
+        await page.locator('#book-detail-pc-close').click();
+        await expect(page.locator('#book-detail-pane .detail-placeholder')).toBeVisible();
+        await expect(page.locator('body')).not.toHaveClass(/book-detail-pinned/);
     });
 });
 

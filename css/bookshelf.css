@@ -7610,6 +7610,32 @@ body.select-mode .drag-handle { display: none; }
 .mobile-scrim,
 .mobile-detail-back { display: none; }
 
+/* 本の詳細(手元の資料)の×(イシュー#511 X1 P11)。PC(901px以上)で、本を選んでいる時だけ出す。
+   ESCも同じ処理(js/bookshelf.js _exitBookDetail)。狭い幅は既存の戻るバー(.mobile-detail-back)のまま。
+   .app-detail(flex縦積み)の中で.detail-bodyより前の独立した行にする(本文側.bd-topbarの鉛筆ボタンと
+   絶対配置で重なり、タップ領域::afterが誤って×を奪っていた分を、別の行にして解消) */
+.bd-pc-close {
+    display: none;
+    align-self: flex-end;
+    flex: 0 0 auto;
+    width: 32px; height: 32px;
+    margin: 10px 10px 0 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.bd-pc-close:hover { background: var(--line2); color: var(--fg); border-color: var(--line); }
+@media (min-width: 901px) {
+    body.book-detail-pinned .bd-pc-close { display: inline-flex; }
+}
+
 /* ===== 下部フッターナビ (PC・モバイル共通で常時表示, ADR-047 P1) =====
    ホーム / 本棚 / 検索 / 設定 を集約。現在地ハイライト (.is-active) は
    _updateSidebarActive() が配線。PC では本棚タブはツリーが常時見えるため隠す。 */

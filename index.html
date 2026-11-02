@@ -339,6 +339,9 @@
             <!-- ===== 右ペイン (本詳細) ===== -->
             <aside class="app-detail" id="app-detail">
                 <button class="mobile-detail-back" id="mobile-detail-back" type="button"><span data-icon="arrow-left" data-icon-size="18"></span>戻る</button>
+                <!-- PC (901px以上): 本の詳細は「手元の資料」=×で閉じる(Escも同じ)。鉛筆(編集)と別の操作(イシュー#511 X1 P11)。
+                     .bd-topbar(本文側・鉛筆ボタン)とは別の行に置く(絶対配置での重なり・タップ領域::afterの誤爆を避ける) -->
+                <button class="bd-pc-close" id="book-detail-pc-close" type="button" aria-label="閉じる">×</button>
                 <div class="detail-body" id="book-detail-pane">
                     <div class="detail-placeholder">
                         <p class="detail-placeholder-icon" data-icon="book-open" data-icon-size="36"></p>
