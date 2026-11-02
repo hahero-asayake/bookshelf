@@ -10,7 +10,8 @@
     "check:version": "node scripts/check-version-bump.mjs",
     "lint:copy": "node scripts/extract-ui-strings.mjs && textlint _local/ui-strings.md",
     "lint:css": "stylelint \"css/**/*.css\"",
-    "lint:e2e-goto": "node scripts/check-e2e-goto.mjs"
+    "lint:e2e-goto": "node scripts/check-e2e-goto.mjs",
+    "lint:breakpoint": "node scripts/check-breakpoint-literal.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

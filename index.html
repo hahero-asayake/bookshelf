@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026110397">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026110398">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -351,7 +351,7 @@
         <!-- モバイル: ドロワー背面スクリム -->
         <div class="mobile-scrim" id="mobile-scrim" aria-hidden="true"></div>
 
-        <!-- モバイル: 下部ナビ (<=768px のみ表示) -->
+        <!-- モバイル: 下部ナビ (<=900px のみ表示・イシュー#505で旧768pxから統一) -->
         <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="モバイルナビゲーション">
             <button type="button" data-mobile-nav="home"><span class="mnav-icon" data-icon="home" data-icon-size="20"></span><span>ホーム</span></button>
             <button type="button" data-mobile-nav="shelves"><span class="mnav-icon" data-icon="library" data-icon-size="20"></span><span>本棚</span></button>
@@ -1440,9 +1440,12 @@
         </div>
     </div>
 
-    <!-- defer: 全23本ともDOM/documentクエリをトップレベルで行わず(window.X=クラス代入のみ)、
+    <!-- defer: 全24本ともDOM/documentクエリをトップレベルで行わず(window.X=クラス代入のみ)、
          起動処理はDOMContentLoadedでガード済み(bookshelf.js末尾)のため実行順序への影響は無い。
          render-blockingを解消しパース完了を早める(イシュー#247 決裁5 追加施策・#259対応後に実施)。 -->
+    <!-- イシュー#505: 画面の切り替わる幅(スマホ/PC)の境目を1か所で定義する部品。
+         dashboard.js・bookshelf.jsが使うため、両方より前に読む。 -->
+    <script defer src="js/ui/viewport.js?v=2026110301"></script>
     <script defer src="js/icons.js?v=2026101207"></script>
     <script defer src="js/overlay-manager.js?v=2026110208"></script>
     <script defer src="js/ui-feedback.js?v=2026102608"></script>
@@ -1466,9 +1469,9 @@
     <!-- イシュー#359: 画面遷移・履歴の正本は NavState (js/nav-state.js) (イシュー#407で kill-switch を物理撤去) -->
     <script defer src="js/router.js?v=2026110210"></script>
     <script defer src="js/nav-state.js?v=2026110211"></script>
-    <script defer src="js/dashboard.js?v=2026102905"></script>
+    <script defer src="js/dashboard.js?v=2026110301"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026110210"></script>
+    <script defer src="js/bookshelf.js?v=2026110301"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

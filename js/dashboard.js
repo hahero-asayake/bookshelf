@@ -24,20 +24,16 @@ class BookshelfDashboard {
         this._registry = this._buildRegistry();
         // ブレークポイントを跨いだら (PC↔スマホ) 大きさセレクトの中身が変わるので再描画。
         // m-half/m-full クラスは常時付くのでレイアウト自体は再描画なしでも正しい。
-        try {
-            const mq = window.matchMedia('(max-width: 768px)');
-            this._mqMobile = mq;
-            mq.addEventListener('change', () => {
-                const host = document.getElementById('dashboard');
-                if (host && host.offsetParent !== null) this.render();
-            });
-        } catch (_) { this._mqMobile = null; }
+        // 境目の判定はjs/ui/viewport.jsに一本化(イシュー#505)。
+        this._unsubViewport = window.viewport.onChange(() => {
+            const host = document.getElementById('dashboard');
+            if (host && host.offsetParent !== null) this.render();
+        });
     }
 
     /** 現在スマホ幅か (大きさ設定を「半分/全幅」に切替える基準)。 */
     _isMobile() {
-        return this._mqMobile ? this._mqMobile.matches
-            : window.matchMedia('(max-width: 768px)').matches;
+        return window.viewport.isNarrow();
     }
 
     /**

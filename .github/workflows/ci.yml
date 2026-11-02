@@ -40,6 +40,8 @@ jobs:
         run: npm run lint:css
       - name: E2E goto() 先頭スラッシュ禁止 (イシュー#396/#399)
         run: npm run lint:e2e-goto
+      - name: 画面の境目(スマホ/PC)の直書き禁止 (イシュー#505)
+        run: npm run lint:breakpoint
       - name: Unit tests (Vitest)
         run: npm test
       # イシュー#487: 以降のPlaywright系(Install Playwright browser〜annotate補完)は、

@@ -10,9 +10,16 @@
 
 ## 2. 820px：原因はアプリ側のCSS重なり（isMobileフラグの影響ではない）
 
-- **②の指示**：820でクリックが通らない件（W5）と選択肢数の揺れが、Playwrightの`isMobile:true`によるviewportの実効幅変化が原因かどうかを、`isMobile:false`・`hasTouch:true`の820で同じ操作をして切り分ける。
-- **実測結果**：`isMobile:false`に変えても、`innerWidth`は正しく820、`matchMedia('(max-width:768px)')`はfalse（＝CSSはPC側と判定）のまま、**W5のクリック不能（2番目のカードが1番目のカードのクリックを奪う`intercepts pointer events`）が同一に再現した**。選択肢数が2だった件は、**原因を取り違えていた**：最初に調べたウィジェット（`counter-total`）は`allowedSizes: ['sm','md']`で、そもそも設計上2択しかない（`js/dashboard.js`の`_buildRegistry`）。モバイル判定とは無関係。
-- **結論**：W5のクリック不能は**テストの設定(isMobile)の問題ではなく、アプリ側のCSSの重なりが原因**。820px幅で`.dashboard-widget`カードどうしが重なる(おそらく`span-3 m-half`のクラス組み合わせの計算か、12列PCグリッドと`m-half`スマホレイアウトの両方のCSSルールが同時に当たっている)。**U2（幅の境目を1つに）で、この重なりも合わせて直すべき**。選択肢数の揺れは誤報（原因はウィジェットごとのallowedSizesの違いであり、直す必要はない）。
+> 符号の訂正（イシュー#505 step2・②指示2026-11-03）：このセクションで使っていた「W5」は、
+> 499計画書の77件表における本来のW5（「部品を外す→元に戻す」）とは別物の誤記だった
+> （499-step1-inventory.md 119行等で確認）。以下、820pxクリック不能バグは **BP-820** と呼ぶ
+> （本文中の表記は当時の記録のまま残し、該当箇所にのみ訂正の注記を付ける）。
+
+- **②の指示**：820でクリックが通らない件（旧称「W5」→**BP-820**）と選択肢数の揺れが、Playwrightの`isMobile:true`によるviewportの実効幅変化が原因かどうかを、`isMobile:false`・`hasTouch:true`の820で同じ操作をして切り分ける。
+- **実測結果**：`isMobile:false`に変えても、`innerWidth`は正しく820、`matchMedia('(max-width:768px)')`はfalse（＝CSSはPC側と判定）のまま、**BP-820のクリック不能（2番目のカードが1番目のカードのクリックを奪う`intercepts pointer events`）が同一に再現した**。選択肢数が2だった件は、**原因を取り違えていた**：最初に調べたウィジェット（`counter-total`）は`allowedSizes: ['sm','md']`で、そもそも設計上2択しかない（`js/dashboard.js`の`_buildRegistry`）。モバイル判定とは無関係。
+- **結論**：BP-820のクリック不能は**テストの設定(isMobile)の問題ではなく、アプリ側のCSSの重なりが原因**。820px幅で`.dashboard-widget`カードどうしが重なる(おそらく`span-3 m-half`のクラス組み合わせの計算か、12列PCグリッドと`m-half`スマホレイアウトの両方のCSSルールが同時に当たっている)。**U2（幅の境目を1つに）で、この重なりも合わせて直すべき**。選択肢数の揺れは誤報（原因はウィジェットごとのallowedSizesの違いであり、直す必要はない）。
+> 追記（イシュー#505 step1・2026-11-03実測）：原因はより正確には「`.container.app-shell`の3ペイン常駐グリッド(220px+320px固定)が769〜900pxでも外れず、右パネルが幅連動では畳まれないため中央ペインが280pxまで圧縮される」こと。`span-3`/`m-half`の推定(上記)は実機再現で裏付けられなかった部分がある(詳細: docs/char/u2-breakpoint-decision.md §5)。
+> 追記（イシュー#505 step2・2026-11-03実測）：境目をjs/ui/viewport.js(900px)の1組に統一した結果、820pxで`.container.app-shell`が単一ペイン化(grid-template-columns:820px)・dashboardの`m-half`が適用され、カードの中心点ヒットテストは自分自身に当たるようになった(圧縮は構造的に解消)。bp-820.spec.jsの期待の書き換えと、クリック・サイズ変更が実際に通ることのテストはstep3で行う。
 
 ## 3. B4の対象幅（77件表の記載ミスの可能性）
 

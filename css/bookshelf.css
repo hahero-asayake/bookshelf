@@ -3300,7 +3300,7 @@ html.bs-likely-has-data #dashboard-welcome {
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     :root {
         --book-width: 120px;
         --book-height: 180px;
@@ -3793,8 +3793,8 @@ html.bs-likely-has-data #dashboard-welcome {
 .settings-detail > .settings-section > summary.settings-section-title { display: none; }
 .settings-detail > .settings-section > .settings-section-body { padding: 1rem 1.1rem 1.4rem; }
 
-/* PC (>=769px): 左レール + 右ペインの 2 ペイン（独立スクロール） */
-@media (min-width: 769px) {
+/* PC (>=901px): 左レール + 右ペインの 2 ペイン（独立スクロール）。境目はjs/ui/viewport.js(900px)と揃える(イシュー#505)。 */
+@media (min-width: 901px) {
     .settings-md-header { flex-shrink: 0; }
     .settings-md-body { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 0; overflow: hidden; }
     .settings-master {
@@ -3818,8 +3818,8 @@ html.bs-likely-has-data #dashboard-welcome {
     .settings-md-back { display: none !important; }
 }
 
-/* スマホ (<=768px): 一覧 or 詳細 を data-settings-view で全画面切替 */
-@media (max-width: 768px) {
+/* スマホ (<=900px): 一覧 or 詳細 を data-settings-view で全画面切替。境目はjs/ui/viewport.js(900px)と揃える(イシュー#505)。 */
+@media (max-width: 900px) {
     .settings-modal-content[data-settings-view="master"] .settings-detail { display: none; }
     .settings-modal-content[data-settings-view="detail"] .settings-master { display: none; }
     /* 縦スクロールの受け皿。無指定だと .settings-modal-content の overflow:hidden で
@@ -6358,7 +6358,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .import-shortcut-manual > summary { font-size: 0.8rem; color: var(--muted); cursor: pointer; }
 a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word-break: break-all; }
 .book-list-stats { margin-bottom: 1rem; padding: 0.5rem; background: var(--line2); border-radius: 4px; font-size: 0.9rem; color: var(--muted); }
-@media (max-width: 768px) { .import-device-tabs { overflow-x: auto; } }
+@media (max-width: 900px) { .import-device-tabs { overflow-x: auto; } }
 
 .upgrade-rec-badge {
     display: inline-block;
@@ -6536,7 +6536,7 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
 }
 
 /* Responsive Modal Improvements */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .import-options {
         gap: 1rem;
     }
@@ -6710,7 +6710,7 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     line-height: 1.4;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .selection-controls {
         flex-direction: column;
         gap: 0.5rem;
@@ -7506,8 +7506,9 @@ body.select-mode .drag-handle { display: none; }
 }
 
 /* =====================================================================
-   モバイル本格 UI (<=768px): 単一ペイン + 左ドロワー + 詳細フルシート + 下部ナビ
+   モバイル本格 UI (<=900px): 単一ペイン + 左ドロワー + 詳細フルシート + 下部ナビ
    ファイル末尾に置き、後勝ちで 3 ペイン用ルールを上書きする。
+   境目はjs/ui/viewport.js(900px)と揃える(イシュー#505・旧768pxから統一)。
    ===================================================================== */
 
 /* =====================================================================
@@ -7637,11 +7638,11 @@ body.select-mode .drag-handle { display: none; }
 .mobile-bottom-nav button.is-active { color: var(--accent); }
 
 /* PC: フッターナビは左ペインに統合済みのため非表示 */
-@media (min-width: 769px) {
+@media (min-width: 901px) {
     .mobile-bottom-nav { display: none; }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     /* --- 単一ペイン化: 中央のみ。左右はオーバーレイで重ねる --- */
     .container.app-shell { grid-template-columns: 1fr; }
 
@@ -7952,7 +7953,7 @@ body.select-mode .drag-handle { display: none; }
     padding: 0.35rem 0.7rem;
     font-size: 0.83rem;
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .settings-section-body select,
     .settings-section-body input[type="text"],
     .settings-section-body input[type="url"],
@@ -8256,9 +8257,9 @@ body.select-mode .drag-handle { display: none; }
 .ov-lg { max-width: min(900px, calc(100vw - 40px)); }
 .ov-full { width: 100vw; max-width: none; height: 100dvh; max-height: none; border-radius: 0; margin: 0; }
 .modal[data-ov-size="full"].show { padding: 0; } /* 全画面は root の余白 (2rem) も外す = 箱がビューポートに一致 */
-/* 狭幅 (<=768px) は段階の上限を外し、各面の既存の媒体ルール (全画面シート等) に従う = 現状踏襲。
+/* 狭幅 (<=900px・イシュー#505で旧768pxから統一) は段階の上限を外し、各面の既存の媒体ルール (全画面シート等) に従う = 現状踏襲。
    (lg の min(900px, 100vw-40px) が 390 幅で 350px に効いて全画面シートが縮んだ・イシュー#367 step3 実測) */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .ov-sm, .ov-md, .ov-lg { max-width: none; }
 }
 
@@ -8280,14 +8281,14 @@ body.select-mode .drag-handle { display: none; }
 }
 /* ×は全幅で出す(イシュー#497 step0)。PCの一覧/詳細では左ナビ以外に設定から出る手段が無かったため。閉じる/戻るの作法の確定は#497の設計に従う */
 #settings-modal.settings-fullpage .modal-header { box-shadow: none; } /* .modal-header既定の「ポップアップが浮いている」影はページ化後は不要な名残(②指摘) */
-@media (min-width: 769px) {
+@media (min-width: 901px) {
     #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
         /* margin-top: ヘッダー直下に白背景のカードが密着すると、ヘッダーのborder-bottomと継ぎ目のように
            見える「線の切れ端」が出る(②指摘)。余白を空けて切り離す */
         max-width: 760px; margin: 1.5rem auto 0; padding: 2rem 2rem 6rem; box-sizing: border-box;
     }
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     /* サイドバーはモバイルでは常設表示ではない(ドロワー等)ため、左右とも画面幅いっぱいを使う */
     #settings-modal.settings-fullpage { left: 0; width: 100%; }
     #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {

@@ -1256,7 +1256,7 @@ class VirtualBookshelf {
      */
     _paletteCommands() {
         const navMain = () => { if (this.router) this._navigateFromUi('main'); else this._setBodyView('main'); };
-        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        const isMobile = window.viewport.isNarrow(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
         const cmds = [
             { icon: 'home',              title: 'ホーム / 本棚一覧へ',            keywords: 'home ホーム main 戻る top', run: navMain },
             { icon: 'image',             title: '表示形式: 表紙',                 keywords: 'view 表示 表紙 cover ひょうじ', run: () => this.setView('covers') },
@@ -7051,7 +7051,7 @@ class VirtualBookshelf {
     ];
 
     _isSettingsMobile() {
-        try { return window.matchMedia('(max-width: 768px)').matches; } catch (_) { return false; }
+        return window.viewport.isNarrow(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
     }
 
     // 一覧 (master) を 1 度だけ構築。スマホでは縦リスト、PC では左レールとして使う。
@@ -9908,7 +9908,7 @@ class VirtualBookshelf {
                 else { h1.classList.remove('art-cv-h1-ph'); h1.removeAttribute('data-ph'); }
             }
             const sections = new Map([...doc.querySelectorAll('section[data-art-idx]')].map(el => [Number(el.dataset.artIdx), el]));
-            const pcReorder = !!(window.matchMedia && window.matchMedia('(min-width: 901px)').matches);
+            const pcReorder = window.viewport.isWide(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
             // PC はつまみと⋯をブロック枠の上辺の線の上に乗せる (下端=枠線・左右対称)。先頭の見出しの文字と重ならない (イシュー#278 ②指摘)
             doc.body.classList.toggle('art-cv-pc', pcReorder);
             const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
@@ -11769,7 +11769,7 @@ class VirtualBookshelf {
     }
 
     _artIsDrawerNarrow() {
-        return window.matchMedia('(max-width: 900px)').matches;
+        return window.viewport.isNarrow(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
     }
 
     // 900px超限定のユーザー操作による畳み (イシュー#168)。棚が空のとき自動で隠す
@@ -12843,7 +12843,7 @@ class VirtualBookshelf {
             toolbar: this._mdeToolbarConfig({ compact }),
         });
         this._mdeApplyToolbarLabels(editor);
-        if (autoFocusIfWide && window.matchMedia && window.matchMedia('(min-width: 901px)').matches) editor.codemirror.focus();
+        if (autoFocusIfWide && window.viewport.isWide()) editor.codemirror.focus(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
         if (onChange) editor.codemirror.on('change', () => onChange(editor.value()));
         return editor;
     }
@@ -13181,9 +13181,10 @@ class VirtualBookshelf {
     // 同じ操作内の pop をまとめて history.go(-n) を1回だけ呼ぶ。旧方式 (pop ごとに history.back()
     // + 抑制カウンタ) は WebKit で連続 back がまとめられた時にカウンタが余り、次のユーザーの戻るを
     // 食っていた (イシュー#284 H1)。数え合わせ方式は余分な popstate が来ても来なくても自己修復する。
-    // isMobile: 既定は _isHistMobile() (900px 以下・イシュー#284 K6 で判定幅を統一)。
+    // isMobile: 既定は _isHistMobile() (900px 以下・イシュー#284 K6 で判定幅を統一。
+    // #505でjs/ui/viewport.jsへ一本化=900pxの値自体は変えていない)。
     _isHistMobile() {
-        try { return window.matchMedia('(max-width: 900px)').matches; } catch (_) { return false; }
+        return window.viewport.isNarrow();
     }
 
     // D13 (イシュー#284): 入力途中のフォームを「戻る」で閉じる時、開いた時から変更があれば破棄を確認する。
