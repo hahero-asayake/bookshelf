@@ -8278,7 +8278,7 @@ body.select-mode .drag-handle { display: none; }
 #settings-modal.settings-fullpage .settings-modal-content {
     max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; margin: 0;
 }
-#settings-modal.settings-fullpage #settings-modal-close { display: none; } /* ×は使わない。戻る(settings-back)と左ナビで出入りする */
+/* ×は全幅で出す(イシュー#497 step0)。PCの一覧/詳細では左ナビ以外に設定から出る手段が無かったため。閉じる/戻るの作法の確定は#497の設計に従う */
 #settings-modal.settings-fullpage .modal-header { box-shadow: none; } /* .modal-header既定の「ポップアップが浮いている」影はページ化後は不要な名残(②指摘) */
 @media (min-width: 769px) {
     #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
@@ -8292,10 +8292,5 @@ body.select-mode .drag-handle { display: none; }
     #settings-modal.settings-fullpage { left: 0; width: 100%; }
     #settings-modal.settings-fullpage .settings-detail > .settings-section.pane-active {
         padding: 1rem 1rem 3rem; box-sizing: border-box; /* スマホはカード左右余白を16px前後に (②指摘) */
-    }
-    /* 一覧(master)画面はスマホでは左ナビ(ドロワー)が常設でなく、戻る(settings-back)も詳細画面専用のため
-       出て行く手段が無くなっていた(②指摘)。一覧の時だけ×を復活させ、アプリへ閉じて戻れるようにする */
-    #settings-modal.settings-fullpage .settings-modal-content[data-settings-view="master"] #settings-modal-close {
-        display: flex;
     }
 }

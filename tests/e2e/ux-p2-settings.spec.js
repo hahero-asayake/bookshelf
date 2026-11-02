@@ -68,13 +68,13 @@ test('P2: 戻るボタンで一覧へ戻る (スマホ)', async ({ page }) => {
     await expect(content).toHaveAttribute('data-settings-view', 'master');
 });
 
-test('P2: ×とフッターの「閉じる」は廃止。全画面ページ化(イシュー#435)でESC/左ナビ遷移から出る', async ({ page }) => {
+test('P2: フッターの「閉じる」は廃止。×は全幅で出す(イシュー#497 step0)。ESCでも出る', async ({ page }) => {
     const errors = await bootApp(page);
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await expect(page.locator('#settings-modal-done')).toHaveCount(0);
-    // イシュー#435: 「アプリのページ」として開く(#430と同じ統一方針)。×ボタンは使わない(非表示)
-    await expect(page.locator('#settings-modal-close')).toBeHidden();
+    // イシュー#497 step0: #435で×を隠したため、PCでは左ナビ以外に設定から出る手段が無かった。×を全幅で出す
+    await expect(page.locator('#settings-modal-close')).toBeVisible();
     // 閉じ方は ESC (モーダルの技術基盤=overlays.open/NavStateは維持しているため従来どおり効く)
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
@@ -176,7 +176,7 @@ test('P2 (イシュー#435・②差し戻し): 390の一覧(master)はスマホ�
     const content = page.locator('.settings-modal-content');
     await page.evaluate(() => window.bookshelf._openSettingsModal());
     await expect(content).toHaveAttribute('data-settings-view', 'master');
-    // 一覧では戻る(←)は出ない代わりに×が出る(詳細では逆に×は隠れ戻るが出る)
+    // 一覧では戻る(←)は出ない。×は全幅・一覧/詳細とも出る(イシュー#497)
     await expect(page.locator('#settings-back')).toBeHidden();
     await expect(page.locator('#settings-modal-close')).toBeVisible();
     await page.locator('#settings-modal-close').click();
@@ -184,14 +184,14 @@ test('P2 (イシュー#435・②差し戻し): 390の一覧(master)はスマホ�
     expect(errors).toEqual([]);
 });
 
-test('P2 (イシュー#435・②差し戻し): 390の節(detail)は戻る(←)で一覧に戻れ、×は出ない', async ({ page }) => {
+test('P2 (イシュー#435・②差し戻し): 390の節(detail)は戻る(←)で一覧に戻れ、×も出る(イシュー#497)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const content = page.locator('.settings-modal-content');
     await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
     await expect(content).toHaveAttribute('data-settings-view', 'detail');
     await expect(page.locator('#settings-back')).toBeVisible();
-    await expect(page.locator('#settings-modal-close')).toBeHidden();
+    await expect(page.locator('#settings-modal-close')).toBeVisible();
     await page.locator('#settings-back').click();
     await expect(content).toHaveAttribute('data-settings-view', 'master');
     expect(errors).toEqual([]);
