@@ -52,6 +52,7 @@
          *   onClose(reason)       … 閉じた後片付け
          *   owner      … 'core'|'plugin:<id>'
          *   showClass  … root に付けるクラス (既定 'show'。null で付けない = 動的生成の .cfm-overlay 等)
+         *   layer      … false なら data-layer/--layer を書かない (既定 true・イシュー#509)
          *   sizeTarget … .ov-* を付ける要素 (既定: root 内の .modal-content / .cfm-box、無ければ root)
          */
         open(elOrId, spec) {
@@ -81,6 +82,8 @@
                 onClose: typeof s.onClose === 'function' ? s.onClose : null,
                 owner: s.owner || 'core',
                 showClass: s.showClass === undefined ? 'show' : s.showClass,
+                // layer:false = data-layer/--layer を書かない (自前の z-index を持つ面をスタックに載せるだけ・イシュー#509 U3 で記事の面の重なり順を変えないため)
+                layer: s.layer !== false,
                 content: null, handle: null,
             };
             const target = typeof s.sizeTarget === 'string' ? el.querySelector(s.sizeTarget)
@@ -176,6 +179,7 @@
         // スタック内の位置 n を data-layer と --layer (CSS 変数) に書く。z-index は CSS 側が calc(帯 + n) で決める
         _applyLayers() {
             this.stack.forEach((f, n) => {
+                if (f.layer === false) return;
                 f.el.dataset.layer = String(n);
                 f.el.style.setProperty('--layer', String(n));
             });

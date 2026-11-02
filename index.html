@@ -1447,7 +1447,9 @@
          dashboard.js・bookshelf.jsが使うため、両方より前に読む。 -->
     <script defer src="js/ui/viewport.js?v=2026110301"></script>
     <script defer src="js/icons.js?v=2026101207"></script>
-    <script defer src="js/overlay-manager.js?v=2026110208"></script>
+    <script defer src="js/overlay-manager.js?v=2026110309"></script>
+    <!-- イシュー#509: 出口と重なりの部品 (overlays と NavState を束ねる)。bookshelf.js より前に読む -->
+    <script defer src="js/ui/surface.js?v=2026110309"></script>
     <script defer src="js/ui-feedback.js?v=2026102608"></script>
     <script defer src="js/storage-adapter.js?v=2026102903"></script>
     <script defer src="js/local-fs-adapter.js?v=2026090617"></script>
@@ -1471,7 +1473,7 @@
     <script defer src="js/nav-state.js?v=2026110211"></script>
     <script defer src="js/dashboard.js?v=2026110301"></script>
     <script defer src="js/ui-components.js?v=2026061404"></script>
-    <script defer src="js/bookshelf.js?v=2026110301"></script>
+    <script defer src="js/bookshelf.js?v=2026110309"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

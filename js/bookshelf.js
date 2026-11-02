@@ -692,7 +692,9 @@ class VirtualBookshelf {
                 if (document.querySelector('.plugin-settings-modal.show') && !document.querySelector('#icon-picker-modal.show')) return;
                 // 重なり管理役 (イシュー#367): 管理役に載っている面があれば DOM 順ではなくスタックの最前面 (top) を閉じる
                 // (設定が公開モーダルの上に積まれている時に、DOM が後ろの公開側を閉じない)。確認ダイアログは自前の capture ESC
-                const topFace = this._overlays().top();
+                // esc:false の面 (Surface 経由で載せた記事の面・イシュー#509) は自前の Esc を持つ = ここでは無いものとして下の面を見る
+                const ovStack = (this._overlays().stack || []).filter((f) => f.esc !== false);
+                const topFace = ovStack.length ? ovStack[ovStack.length - 1] : null;
                 if (topFace && topFace.kind !== 'dialog') {
                     const btn = topFace.el.querySelector('.modal-close');
                     if (btn) btn.click();
@@ -13281,24 +13283,22 @@ class VirtualBookshelf {
 
     // route: イシュー#468。渡された時だけ face の push/pop と NavState route の変化を1 apply で行う
     // (省略時は従来どおり route 不変 = 既存呼び出しの挙動は変えない)
+    // イシュー#509 U3: 中身は Surface.push へ移した (委譲・U9 で外す)
     _modalHistPush(id, close, { isMobile, extra, route } = {}) {
-        const mobile = isMobile ? isMobile() : this._isHistMobile();
-        if (!mobile) return;
-        this._bindSettingsPopstate();
-        if (route) this.nav.openRoute(id, extra || null, close, route, { mobile: true });
-        else this.nav.open(id, extra || null, close, { mobile: true }); // 台帳が pushState する
+        this._surface().push(id, close, { isMobile, extra, route });
+    }
+
+    // Surface (js/ui/surface.js・イシュー#509)。読み込み前・単体テスト等で無い時はこの場で作る
+    _surface() {
+        if (!this._surfaceInst) {
+            const S = (typeof window !== 'undefined' && window.surface) || (typeof window !== 'undefined' && window.Surface ? new window.Surface() : null);
+            this._surfaceInst = S ? S.bind(this) : null;
+        }
+        return this._surfaceInst;
     }
 
     _modalHistPop(id, { fromHistory = false, route } = {}) {
-        // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している
-        if (fromHistory) return;
-        // イシュー#494: settings-modal を × / Esc で閉じる時、詳細段 (settings-cat) が残っていれば
-        // 1回の apply でまとめて畳む (#442 の closePublish3 と同じ理由。個別に2回 apply すると
-        // go(遅延)とreplace(即時)の実行タイミングが噛み合わず段が余る・#494 step2で実測)。
-        // settings-cat 単独の「‹戻る」(_bindSettingsPopstate) はここを通らない(変更なし)
-        if (id === 'settings-modal' && this.nav.hasFace('settings-cat')) { this.nav.closeSettings(route); return; }
-        if (route) this.nav.closeFace(id, route); // イシュー#468: face除去+route復元を1 apply
-        else this.nav.close(id);
+        this._surface().pop(id, { fromHistory, route }); // イシュー#509 U3: 委譲 (U9 で外す)
     }
 
     // イシュー#291: 「進む」で長文メモを開き直す。state.asin から本を特定する。
