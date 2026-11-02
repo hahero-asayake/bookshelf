@@ -8,6 +8,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # イシュー#508: tests/e2e/char(#501で追加・6端末)が既存E2Eと同じジョブ・同じホストで
+    # 並列実行されると、ホストCPU(4コア)の奪い合いが増え、時間依存の既存テスト
+    # (publish-article-editor.spec.js:619等)が不安定になっていた(scripts/verify/
+    # 508-ci-breakdown.md・508-step2-repro.mdで実測)。既存E2Eとcharを別ジョブ(別ランナー)に
+    # 分けて並列化する(案A・②承認2026-11-03)。strategy.matrixで1つのジョブ定義のまま分ける
+    # (checkout/setup-node/npm ci/playwright installを2ジョブに書き写すDRY違反を避ける・
+    # ②指示)。matrix.suiteにより、lint/check:version/Unit testsはe2eレグのみで1回実行する。
+    # 注意: この変更でcheck-runの名前が従来の単一の「test」から「test (e2e)」「test (char)」の
+    # 2本に分かれる(GitHub Actionsのmatrix命名規則)。②の確認手順がジョブ名で引いている場合は
+    # 読み替えが必要(報告済み)。
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [e2e, char]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,6 +36,7 @@ jobs:
         id: npm_ci
         run: npm ci
       - name: Version bump check (?v=・イシュー#390)
+        if: matrix.suite == 'e2e'
         run: |
           ZERO="0000000000000000000000000000000000000000"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -37,12 +52,16 @@ jobs:
           fi
           CHECK_VERSION_RANGE="${BASE}..${HEAD}" npm run check:version
       - name: CSS lint (stylelint)
+        if: matrix.suite == 'e2e'
         run: npm run lint:css
       - name: E2E goto() 先頭スラッシュ禁止 (イシュー#396/#399)
+        if: matrix.suite == 'e2e'
         run: npm run lint:e2e-goto
       - name: 画面の境目(スマホ/PC)の直書き禁止 (イシュー#505)
+        if: matrix.suite == 'e2e'
         run: npm run lint:breakpoint
       - name: Unit tests (Vitest)
+        if: matrix.suite == 'e2e'
         run: npm test
       # イシュー#487: 以降のPlaywright系(Install Playwright browser〜annotate補完)は、
       # 直前の「Unit tests」がfailureでも実行する(デフォルトのif無しだとジョブ内の
@@ -52,22 +71,31 @@ jobs:
       # Playwrightブラウザ未インストールのままsort-perf-budgetが3回とも
       # 「browserType.launch: Executable doesn't exist」で空振りした)。
       # ジョブの最終結果はUnit testsが赤ならそのまま赤のまま(判定は緩めない・#377方針)。
+      # (charレグはUnit testsをそもそも実行しないため、npm_ciの成否だけを条件にする。)
       - name: Install Playwright browser
         id: install_playwright
         if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         run: npx playwright install --with-deps chromium
       # イシュー#476: sort-perf-budget.spec.jsは「並び替え1操作あたりの時間」をCPUx6スロットリング+
-      # 中央値判定(reps=5)で見ているが、全ファイルを他のchromiumインスタンスと並列実行する8 worker下では
+      # 中央値判定(reps=5)で見ているが、全ファイルを他のchromiumインスタンスと並列実行する下では
       # ホストCPU自体の奪い合い(このスロットリングとは別種の負荷)が乗り、CI実測(a1814cc 374.9ms・
       # 18bebfc 509.5ms、いずれもBUDGET.direction.inputDelay=320ms超過)のとおり不安定になる
       # (アプリの退行ではないことはscripts/verify/476-ci-breakdown.mdで確認済み)。上限値・判定方式
       # (#377方針)は変えず、計測環境だけ分ける: 他の全ファイルは今までどおり並列実行、
       # sort-perf-budget.spec.jsだけ別stepで--workers=1の単独実行にしてホスト競合を避ける。
+      # (イシュー#508: この並列実行のworker数は本来「8 worker」ではない。playwright.config.jsに
+      # workers指定が無く、Playwrightの既定は`50%`=CPU数の半分。CIランナーの実コア数は4
+      # (annotationの[sort-perf-gpu] hardwareConcurrency=4で実測)なので既定workers=2。
+      # #476時点の「8 worker」はホスト競合の再現実験のための仮定値であり、実測値ではなかった。
+      # イシュー#508: --project=chromiumを追加し、charの6 projectを明示的に除外した
+      # (charは下のcharレグで別ジョブとして実行する)。--grep-invert "sort-perf-budget"の
+      # パターン文字列自体は変えていない(scripts/verify/e2e-diff-main.mjsがこの行を
+      # ちょうど1件読む前提=#507と整合させるため)。)
       - name: Smoke tests (Playwright, sort-perf-budget以外・並列)
-        if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
-        run: npx playwright test --grep-invert "sort-perf-budget"
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
+        run: npx playwright test --project=chromium --grep-invert "sort-perf-budget"
       - name: E2Eテスト結果を退避 (並列分・イシュー#476/#487)
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.install_playwright.outcome == 'success' }}
         # イシュー#487: 旧退避先(test-results/e2e-parallel.json)はPlaywrightがテスト実行開始時に
         # outputDir(既定test-results/)を丸ごとクリアするため、2本目のstep開始時に消えてENOENTになっていた
         # (ローカルで2回連続実行して実測確認済み)。outputDirの外(e2e-results/)へ退避先を変える。
@@ -75,7 +103,7 @@ jobs:
         # 退避対象が無いので一緒にskipする(誤った空mv実行を避ける・従来のalways()は不要)。
         run: mkdir -p e2e-results && mv test-results/e2e.json e2e-results/e2e-parallel.json || true
       - name: Smoke tests (Playwright, sort-perf-budget単独・workers=1・イシュー#476/#487)
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.install_playwright.outcome == 'success' }}
         # イシュー#487: 判定方式を「機械の速さに応じてCPUスロットリング倍率を動的に決める」方式に
         # 変更した(②承認2026-11-02 06:30)ため、--repeat-each=3(データ収集用)は外しreps=5中央値の
         # 単発実行に戻す。標準出力をteeしつつ[sort-perf]系ログ行を::notice::としてcheck-run
@@ -97,8 +125,21 @@ jobs:
             echo "::notice::${line}"
           done || true
           exit $STATUS
+      # イシュー#508: charの6 project(tests/e2e/char)を専用ジョブ(別ランナー)で実行する。
+      # project名はtests/char-devices.jsのCHAR_DEVICES(char-390/768/820/1024/1440/1920)。
+      # sort-perf-budgetはchar対象外のため--grep-invertは使わない(e2e-diff-main.mjsが読む
+      # 「--grep-invertのあるplaywright testの行」をこの行では増やさない=#507との整合)。
+      - name: Smoke tests (Playwright, char 6端末・イシュー#508)
+        if: ${{ !cancelled() && matrix.suite == 'char' && steps.npm_ci.outcome == 'success' }}
+        run: >-
+          npx playwright test
+          --project=char-390 --project=char-768 --project=char-820
+          --project=char-1024 --project=char-1440 --project=char-1920
       - name: E2E 失敗テスト一覧 (annotation 補完・イシュー#349)
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.install_playwright.outcome == 'success' }}
         run: |
           node scripts/ci-annotate-failures.mjs e2e-results/e2e-parallel.json
           node scripts/ci-annotate-failures.mjs test-results/e2e.json
+      - name: E2E(char) 失敗テスト一覧 (annotation 補完・イシュー#508)
+        if: ${{ !cancelled() && matrix.suite == 'char' && steps.install_playwright.outcome == 'success' }}
+        run: node scripts/ci-annotate-failures.mjs test-results/e2e.json

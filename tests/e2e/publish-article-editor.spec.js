@@ -656,11 +656,20 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         // #384の再現条件(CPU0専有burner4本+CDP CPUスロットリング10倍)での反復(単独10回・ファイル全体
         // 95テスト1パス、いずれも0件失敗)で、アプリ側(生成処理・pp-preview-progressの開閉ロジック)に
         // 退行は見つからなかった(js/の該当差分も無し)。#372(article-pc-pane.spec.js)と同じCI全体並列
-        // 実行下のホスト側コンテンション依存と判断し、同じ対処(timeoutを15000msへ延長)を適用する。
+        // 実行下のホスト側コンテンション依存と判断し、同じ対処(timeoutを15000msへ延長)を適用した。
         // #384で「timeout延長方針(案C)は不採用」と決めたのは当時唯一の不具合がアプリのバグ(U1)だった
-        // ため(timeout延長ではなくアプリ修正が正しかった)。今回はアプリ側に不具合の証拠が無い点が異なる。
+        // ため(timeout延長ではなくアプリ修正が正しかった)。当時はアプリ側に不具合の証拠が無い点が異なる。
+        //
+        // イシュー#508: #501でcharの6 project(tests/e2e/char)がCIの既定コマンドに加わり、1ジョブの
+        // 並列実行時間が+2〜3分増えた(a0d90b3 約9分→52f713c以降 約11〜12分、実測はscripts/verify/
+        // 508-ci-breakdown.md)。この増加後、実際のCI runで15000msのこのpollが2回(52f713c・b06fdd5)
+        // タイムアウトした(同じエラー文言・同じ行)。#508のローカル再現(taskset -c 0-3・CI=1・
+        // --workers=2でCIの4コア/既定workers=2条件を再現)では今回は再現しなかったが、CI実測で
+        // 同一の失敗が2度(別コミットで)出ている以上、低頻度の間欠事象として扱う。#405と同じ考え方
+        // (アプリ側に不具合の証拠が無い・待っている状態そのものは変えない)で、ホスト競合の増加分を
+        // 吸収できるようtimeoutを30000msへ再延長する。
         await expect.poll(() => page.evaluate(() => document.getElementById('pp-preview-progress')?.hidden ?? true),
-            { timeout: 15000 }).toBe(true);
+            { timeout: 30000 }).toBe(true);
         expect(errors).toEqual([]);
     });
 
