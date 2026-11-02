@@ -1,6 +1,6 @@
 # X1：出口の決まりの表（画面 × {←・×・完了・Esc・戻る・枠外}）
 
-> イシュー#511 step1（実装前・tp）。まだ commit していない。
+> イシュー#511 step1で作成・step2〜4で更新。commit済み（7fda939以降の各commitに含まれる）。
 > 正本：`tmp/499/recovered/499-step4-plan.md` §4「### X1」（191〜205行目）・`docs/arch/surface.md`・`docs/char/u0-findings.md`・`docs/char/u0-targets.md`・`docs/ui-standards.md` §1/§7c。
 > ハヘロの判断①（11/03 03:34 OK）：**ページは←で親へ・重なった画面は×・編集モードは完了とEsc／戻る**。
 
@@ -102,9 +102,9 @@ grepで確認した（本ステップ冒頭）：`index.html`の設定セクシ�
 
 4-2-1で確認済み：設定モーダルから公開の設定を開く入口は現存しない（ADR-145で撤去済み）ため、この固定化で起きる副作用は無い。
 
-### 4-4 ←とreplaceの実装場所
+### 4-4 ←とreplaceの実装場所（実装済み）
 
-briefの「履歴がアプリの外を指しているときは、replaceで親へ行く」は、Surfaceの`define`に新しい概念（例：`exit: 'page'`＋`parent`）を足して実装する想定（U3時点のSurfaceにはまだ無い＝`js/ui/surface.js`確認済み、defineに`hist`/`close`/`reopen`等はあるが出口の種別は無い）。次ステップでSurfaceへ`exit`系のオプションを追加し、画面ごとに実装を書かない（brief末尾の指示どおり）。
+`js/ui/surface.js`の`define`に`exit`（'page'|'overlay'|'edit'）と`parent`（{view,...}かfn）を追加（commit 7fda939）。`Surface.parent(id)`で解決し、settings-modal/publish-settings-modalが`exit:'page'`で登録・既存のreturnRoute機構（イシュー#494のclosFace）がreplaceで親へ行く動きをそのまま使う。画面ごとに実装を書かず1か所（Surfaceの定義）で決める、のbrief末尾の指示どおり。
 
 ## 5. このイシューで変えないこと（確認・再掲）
 
