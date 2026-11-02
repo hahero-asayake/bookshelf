@@ -9239,9 +9239,16 @@ class VirtualBookshelf {
     }
 
     closePublishPagesModal({ fromHistory = false } = {}) {
-        // イシュー#279: ×ボタンは編集/閲覧状態からでも押せるため、残っている履歴段を先に畳む
+        // イシュー#511 X1 A-d: 編集画面(edit/form)を×・Escで出る時は、←(#art-back)と同じ行き先
+        // (公開の一覧)にする。_artExitEditToListが保存のflushと段の畳み(_artShowList)を行う。
+        // 戻る(fromHistory)はここに来ない(art-edit-mode/art-viewingの個別closerが先に段を1つずつ畳む・
+        // イシュー#279の多段chainのまま=行き先は「開いた場所」で変えない)
+        if (!fromHistory && (this._artMode === 'edit' || this._artMode === 'form')) {
+            this._artExitEditToList();
+            return;
+        }
+        // イシュー#279: ×ボタンは閲覧状態からでも押せるため、残っている履歴段を先に畳む
         // (段を残したまま閉じると、次に開いた時や次回の戻る操作で不整合になる・②指示「段を残さない」)。
-        if (this._artMode === 'edit' || this._artMode === 'form') this._artFlushSave().catch(() => {});
         this._artMode = 'view';
         this._overlays().close('publish-pages-modal', { reason: fromHistory ? 'history' : 'button' });
         // × / ESC は台帳が go(-1)・戻る由来 (fromHistory) は台帳が既に外している (旧 _modalHistPop と同じ規則)
@@ -9289,7 +9296,7 @@ class VirtualBookshelf {
         on('art-settings-open', 'click', () => this.openPublishSettingsModal()); // イシュー#442
         on('publish-settings-close', 'click', () => this.closePublishSettingsModal()); // イシュー#442
         on('art-new', 'click', () => this._artOpenEditor(null));
-        on('art-back', 'click', () => { this._artFlushRemoteNow(); this._artShowList(); });
+        on('art-back', 'click', () => this._artExitEditToList());
         this._artSetupDrawerShelfPicker();
         this._artBindViewportScroll(); // K-B (イシュー#276)
         // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
@@ -9432,6 +9439,20 @@ class VirtualBookshelf {
         on('pp-preview-retry', 'click', () => this._artRetryPreview());
         const pm = document.getElementById('pp-preview-modal');
         if (pm) pm.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, pm)) this._artClosePreviewModal(); });
+    }
+
+    // 編集画面を←・×・Escのどれで出ても同じ行き先・同じ保存にする(イシュー#511 X1 A-d・#497 D1に合わせ
+    // 確認ダイアログは出さない)。出る前に保存をflushしきり(ローカル反映→リモートへ即送信)、成功した時だけ
+    // 公開の一覧へ(_artShowListが編集/閲覧の段を畳む)。失敗した時はその場にとどまる(状態表示は
+    // _artFlushSave/_artFlushRemoteが既に出す。ブラウザの戻るはここを通らない=行き先は変えない)
+    async _artExitEditToList() {
+        if (this._artMode === 'edit' || this._artMode === 'form') {
+            await this._artFlushSave();
+            const r = await this._artFlushRemoteNow();
+            if (!r || !r.ok) return false; // 保存できなかった=その場にとどまる
+        }
+        this._artShowList({ skipSave: true });
+        return true;
     }
 
     // イシュー#279 (②承認4段構造の3→4): 一覧へ戻る唯一の経路。←ボタン・複製後・削除後・戻る操作

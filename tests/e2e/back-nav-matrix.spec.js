@@ -180,7 +180,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         expect(errors).toEqual([]);
     });
 
-    test('A35 記事: 編集中に×で閉じた後、段も抑制カウンタも残らない・保存される (H1)', async ({ page }, ti) => {
+    test('A35(イシュー#511 X1 A-dで更新) 記事: 編集中に×で公開の一覧へ(段は余らない)・保存される (H1)', async ({ page }, ti) => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'A35');
         const before = await snap(page);
@@ -191,8 +191,11 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         await settle(page, 800);
         const after = await snap(page);
         await r.step(page, 'after-close');
-        expect.soft(after.openModals).toEqual([]);
-        expectSameHistory(before, after);
+        // 新しい振る舞い(イシュー#511 X1 A-d): ×で編集画面を出ると公開の一覧へ(モーダルは閉じない)。
+        // 編集/閲覧の段は畳まれ、一覧の段だけ残る(余計な段は無い=抑制カウンタも残らない)
+        expect.soft(after.openModals).toEqual(['publish-pages-modal']);
+        expect.soft(after.navFaces).toEqual(['publish-pages-modal']);
+        expect.soft(after.suppress, '抑制カウンタが残らない').toBe(0);
         // 記事の保存は _artFlushSave → publishArticleStore.create/update({persist:false}) でまずストアのメモリへ入り、
         // ファイル (adapter.writeJSON) への書き出しは後段の一括コミット。旧判定はメモリMap (=書き出し先) だけを
         // 見ていたため、保存済みでも false になっていた (step2〜4 の A35「保存される」NG はテスト側の誤り)。
@@ -1090,13 +1093,15 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
             expect.soft(s.stack, how).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
         }
     }));
-    test('A37 編集中に Esc＝記事モーダルごと閉じる (D09)・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'A37', async (r, before) => {
+    test('A37 編集中に Esc＝公開の一覧へ(イシュー#511 X1 A-d。旧D09=モーダルごと閉じる、は決まりに合わせて変更)・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'A37', async (r, before) => {
         await newArticleView(page);
         await tap(page, '#art-mode-edit');
         await page.keyboard.press('Escape'); await settle(page, 600);
         const s = await snap(page); await r.step(page, 'esc');
-        expect.soft(s.openModals).not.toContain('publish-pages-modal');
-        expectSameHistory(before, s);
+        // 新しい振る舞い: ×/Escは公開の一覧へ(←と同じ行き先)。モーダル自体は閉じない
+        expect.soft(s.openModals).toContain('publish-pages-modal');
+        expect.soft(s.artMode).toBe('view');
+        expect.soft(s.stack).toEqual(['publish-pages-modal']); // 編集/閲覧の段は畳まれ、一覧の段だけ残る(段が余らない)
     }));
     test('A38 閲覧で下へスクロール→編集→戻る＝閲覧の同じ位置 (D07)', async ({ page }, ti) => caseRun(page, ti, 'A38', async (r) => {
         await newArticleView(page);
@@ -1801,20 +1806,27 @@ test.describe('ブロックのチップ (イシュー#288)', () => {
 // 戻るを挟まない)では発覚しなかった。本ブロックは「閉じた直後に開く前と段の位置が一致」
 // 「さらに戻る1回で開く前の1つ前(期待するhash)へ」の2点を両方について明示的にassertする。
 test.describe('戻る: イシュー#495回帰(公開/設定の複数face close)', () => {
-    test('#495-pub 公開記事を×で閉じる→段の位置が開く前と一致、さらに戻る1回で1つ前へ', async ({ page }) => {
+    test('#495-pub(イシュー#511 X1 A-dで更新) 編集画面を×で閉じると公開の一覧の段まで畳まれる。一覧の×でさらに閉じると開く前と一致、戻る1回で1つ前へ', async ({ page }) => {
         const errors = await bootApp(page);
         const { id } = await shelfInfo(page);
         await page.evaluate((x) => window.bookshelf.switchBookshelf(x), id);
         await settle(page, 600);
-        const shelfSnap = await snap(page); // 公開を開く前(=×で閉じた直後が戻るべき位置)
+        const shelfSnap = await snap(page); // 公開を開く前(=一覧も×で閉じた直後が戻るべき位置)
         await openNewArticleEdit(page); // list→新規記事→編集モード(3face push: publish-pages-modal/art-viewing/art-edit-mode)
         const openedSnap = await snap(page);
         expect.soft(openedSnap.navFaces, '3face積まれる').toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
         await page.evaluate(() => document.getElementById('publish-pages-close').click());
         await settle(page, 800);
+        const afterEditClose = await snap(page);
+        // 新しい振る舞い(イシュー#511 X1 A-d): 編集画面を×で出ると公開の一覧へ(←と同じ行き先)。
+        // 編集/閲覧の段だけ畳まれ、一覧の段(publish-pages-modal)は残る(段が余らない=余計な段が無いこと)
+        expect.soft(afterEditClose.navFaces, '編集/閲覧の段が畳まれ、一覧の段だけ残る').toEqual(['publish-pages-modal']);
+        expect.soft(afterEditClose.artMode, '一覧(view)に戻る').toBe('view');
+        // ①さらに一覧を×で閉じると、段の位置(navFaces/hash/_modalHistStack)が「公開を開く前」と一致する
+        await page.evaluate(() => document.getElementById('publish-pages-close').click());
+        await settle(page, 800);
         const closedSnap = await snap(page);
-        // ①閉じた直後、段の位置(navFaces/hash/_modalHistStack)が「公開を開く前」と一致していること
-        expect.soft(closedSnap.navFaces, '×で閉じた直後、faceが残っていない').toEqual([]);
+        expect.soft(closedSnap.navFaces, '一覧も×で閉じた直後、faceが残っていない').toEqual([]);
         expect.soft(closedSnap.hash, '×で閉じた直後、公開を開く前のhashに一致(段が余らない)').toEqual(shelfSnap.hash);
         expect.soft(closedSnap.stack, '×で閉じた直後、_modalHistStackが開く前と一致').toEqual(shelfSnap.stack);
         // ②さらに戻る1回で、公開を開く前の1つ前(ホーム)へ

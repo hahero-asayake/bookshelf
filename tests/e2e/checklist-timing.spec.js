@@ -238,7 +238,7 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         expect(errors).toEqual([]);
     });
 
-    test('CHK6 記事編集→×で閉じる→戻る1回で効く(空振りしない)', async ({ page }, ti) => {
+    test('CHK6(イシュー#511 X1 A-dで更新) 記事編集→×で公開の一覧へ→戻る1回で効く(空振りしない)→さらに戻る1回でホームへ', async ({ page }, ti) => {
         const errors = await bootApp(page);
         let before, closedSnap;
         const v = await runCase(page, ti, 'CHK6', { ms: 3000 }, async (p) => {
@@ -252,7 +252,12 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         });
         const afterOneBack = await snapState(page);
         expect.soft(JSON.stringify(afterOneBack) === JSON.stringify(closedSnap), '戻る1回で効く(空振りしない)').toBe(false);
-        expect.soft(afterOneBack.hash, '戻る1回でさらに1つ前(ホーム)へ').toEqual(before.hash);
+        // 新しい振る舞い(イシュー#511 X1 A-d): ×で編集画面を出ると公開の一覧へ(段が1つ増える)。
+        // 戻る1回は一覧→本棚(toShelfで開いた場所)へ。もう1回戻るとホームへ(before.hash)
+        expect.soft(afterOneBack.hash, '戻る1回で一覧→本棚(toShelfで開いた場所)へ').not.toEqual(before.hash);
+        await back(page);
+        const afterTwoBacks = await snapState(page);
+        expect.soft(afterTwoBacks.hash, 'さらに戻る1回でホームへ').toEqual(before.hash);
         expect.soft(v.ok, `CHK6 observe: ${v.reasons.join(' / ')}`).toBe(true);
         expect(errors).toEqual([]);
     });

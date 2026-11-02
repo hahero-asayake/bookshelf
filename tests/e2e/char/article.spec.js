@@ -105,8 +105,64 @@ test.describe('A-c: 引き出しが自動で開かない・1冊で閉じる(390/
     });
 });
 
-test.describe('A-d: 未保存のまま閉じても確認が出ない', () => {
-    test('文章ブロックに未保存の入力をしてEscで閉じても、破棄の確認が出ない(今の振る舞い) // CHAR: 直す対象(step2 A-d)', async ({ page }, testInfo) => {
+// A-d(②判断2026-11-03 step3差し戻し): CHARテストの字面(ブロック単位のEscで確認を出す)は採らない。
+// ブロック全面編集のEscは完了(保存)になるのが決まりどおり=直す対象ではない(下のテストで固定)。
+// A-dの対象は「記事全体の編集画面から出るとき」(u0-targets.mdの推定どおりA5の場面)。直し方は
+// 確認ダイアログではなく#497 D1(自動保存と状態表示)に合わせる=出る前にflushしきる。
+// 行き先は決まりどおり←/×/Escが「公開の一覧」、ブラウザの戻るが「開いた場所」(既存の多段chainのまま)。
+test.describe('A-d→X1: 記事全体の編集画面を出る時は保存をflushしてから出る', () => {
+    async function typeTitle(page, title) {
+        await page.fill('#art-title', title);
+        // _artOnTitleInput → _artScheduleSave (600msデバウンス)。flushを試す前にまだ保存されていないことを確かめる
+        await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.articles().length)).toBe(0);
+    }
+
+    test('×で出ると、未保存のタイトルがflushされ、公開の一覧に戻る // CHAR→X1', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.click('#art-mode-edit'); // 開いた直後は閲覧状態(イシュー#268)。編集状態(_artMode==='edit')にする
+        await typeTitle(page, 'A-d ×で出るテスト');
+        // #publish-pages-closeは編集中は見た目上隠れる(.art-editing > .modal-close{display:none}・「完了」と
+        // 重複するため・イシュー#430)。グローバルのEscハンドラもこの×をJSのclick()で叩く経路のため、
+        // 同じ関数(closePublishPagesModal)をEscと同じ形(ボタンのclick()呼び出し)で検証する
+        await page.evaluate(() => document.getElementById('publish-pages-close').click());
+        // 新しい振る舞い: 出る前にflushされ、一覧にタイトルが反映されている(破棄されない)
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.articles().map(a => a.title))).toContain('A-d ×で出るテスト');
+    });
+
+    test('Escで出ると、未保存のタイトルがflushされ、公開の一覧に戻る // CHAR→X1', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.click('#art-mode-edit');
+        await typeTitle(page, 'A-d Escで出るテスト');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.articles().map(a => a.title))).toContain('A-d Escで出るテスト');
+    });
+
+    test('←(#art-back)で出ると、未保存のタイトルがflushされ、公開の一覧に戻る // CHAR→X1', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.click('#art-mode-edit');
+        await typeTitle(page, 'A-d ←で出るテスト');
+        await page.click('#art-back');
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect.poll(() => page.evaluate(() => window.bookshelf.publishArticleStore.articles().map(a => a.title))).toContain('A-d ←で出るテスト');
+    });
+});
+
+test.describe('ブロックの全面編集: Escは完了(保存)になる(決まりどおり・直す対象ではない)', () => {
+    test('文章ブロックに未保存の入力をしてEscで閉じると、確認は出ず保存されて閉じる', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PC幅で基本形を固定する');
         await bootApp(page);
         await openPublishPagesModal(page);
@@ -116,8 +172,11 @@ test.describe('A-d: 未保存のまま閉じても確認が出ない', () => {
         await page.evaluate(() => { window.bookshelf._artTextFsEditor.value('未保存のテキスト'); });
         await page.keyboard.press('Escape');
         await page.waitForTimeout(200);
-        // 今の振る舞い: 破棄の確認(.cfm-overlay)が出ない
+        // 決まりどおり: Esc=完了(保存)。破棄の確認(.cfm-overlay)は出ない。エディタは残る(記事全体を出ない)
         await expect(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        const saved = await page.evaluate(() => window.bookshelf._artDraft.blocks.some(b => b.markdown === '未保存のテキスト'));
+        expect(saved).toBe(true);
     });
 });
 
