@@ -20,12 +20,28 @@
 - **実測**：390・768では本の詳細が全画面オーバーレイになり、背後の2冊目をクリックできず測定不可能。1024のみ測れた。
 - **②の回答**：1024だけを測れる幅として受け取る（表の記載は直してよい）、との回答済み。本ファイルはその根拠の記録。
 
-## 4. 記事エディタの公開フロー（A1・A7）がタッチ3端末でハングする
+## 4. 記事エディタの公開フロー（A1・A7）がタッチ3端末でハングする（U0c #506 で解消・原因確定）
 
 - A1/A7の「新規作成→本棚ブロック→本を3冊→公開」の一連の操作を、タッチ端末（390/768/1024）で実行すると60秒のテストタイムアウトを超えてハングした。PC幅（1440/1920）では実行していない（A1/A7はタッチ3端末のみが対象のため）。
 - 切り分けの途中経過：`#sidebar-publish`がモバイルではドロワーに隠れている問題は特定・修正した（`[data-mobile-nav="shelves"]`で開く）。しかしその後も別の場所でハングが続き、このstepの時間内に根本原因を特定できなかった。
 - 推定（未確認）：`addBlock`ヘルパーの`toPass`リトライ（最大15秒）が、モバイル幅の引き出し（drawer sheet）の開閉と絡んで繰り返し失敗し続けている可能性がある。
 - **提案**：U0bの続き、または別の調査イシューで、`addBlock`のtoPassリトライをモバイル幅で単体実行し、リトライが実際に何を待っているか（スクリーンショット・トレース）を確認するとよい。
+
+### 4-1. 原因確定（イシュー#506 step1、`--trace=on`での1手ずつの切り分け）
+
+- `addBlock`ヘルパー自体（`toPass`リトライ）はシートを開く部分であり、1.4秒で完了していた＝ハングとは無関係だった（推定は外れ）。
+- 真因：`addBlock(page, 'shelf', 'last')`完了直後、`#art-drawer`は`is-open`クラスが付かない（A-cの既知の振る舞い＝本棚ブロック追加では引き出しは自動で開かない）。この状態で既存のA1/A7骨組みコードが`#art-drawer-list .art-drawer-item`を直接クリックしようとしていた。`.art-drawer-item`は`isVisible()`ではtrue判定になるが、実際のboundingClientRectは`{x:0, y:844, width:390, height:426}`（390幅のビューポート`844`の真下＝オフキャンバス）だった。Playwrightのclickはactionability待ち（`element is outside of the viewport`）を満たせないまま30秒リトライを続け、タイムアウトしていた。
+- `js/bookshelf.js`で引き出しを開くトリガーを特定：本棚ブロックは`.art-shelf-add`、本ブロックは`.art-book-pick`のクリック（11745-11767行目、`.is-open`クラスの付与/除去を実装）。既存の骨組みコードは、本棚ブロック追加後に引き出しを開くクリックを一切していなかった。
+- さらに、900pxの画面幅境界で引き出しの実装方式自体が変わることも判明した：**390/768（900px以下）はボトムシート方式**で、`window.bookshelf._artOpenSheet()`/`_artCloseSheet()`を明示的に呼んで開閉する必要がある（イシュー#165）。**1024（900px超）は常駐の畳める引き出し**（イシュー#168の仕様）で、開閉関数を呼ばずに直接選択できる＝390/768とは別の経路。この分岐を知らずに同じ手順を3端末に当てはめると1024だけ不要な操作で失敗する落とし穴がある。
+- **対処（`tests/e2e/char/publish-hub.spec.js`に実装済み）**：`ensureDrawerPickable()`で`window.matchMedia('(max-width: 900px)').matches`により分岐し、900px以下は`_artOpenSheet()`呼び出し後に`#art-drawer`の`is-open`クラスで開いたことを確認、900px超は`getBoundingClientRect().x >= 0`で確認する（`isVisible()`は使わない・#502の知見どおり）。
+- 副次的に見つかった前提漏れ：`_artPublishCheck()`（js/bookshelf.js:12203）はタイトル必須。u0-targets.mdの手順文には明記が無いが、タイトルを入れないと`#art-pub-go`がdisabledのまま（今の振る舞い）だったため、テスト側でタイトル入力を補った。
+
+## 8. E4（ハブの412衝突→O27）の固定（イシュー#506 U0c）
+
+- `tests/e2e/sync-conflict.spec.js`は`window.bookshelf._handleSyncConflict()`を直接呼ぶ単体テストだったため、`tests/e2e/char/hub-conflict.spec.js`では実際のHTTP応答経路を通して固定した。
+- 経路：`sync.method='hub'`で起動→`_scheduleSync()`→`_runPendingSync()`→`_syncWithAuthRetry()`→`syncToObsidianFolder()`→`storage.syncBatch()`→`hub-adapter.commitBatch()`（HEAD→POST `/data/batch`）→412応答→`_recoverBatchConflictAndRetry()`（`conflicts`詳細が応答に無い＝js/hub-adapter.js:291-296の「個別判定できないので安全側に倒す」経路）→即座に`HubConflictError`→js/bookshelf.js:5936-5938でキャッチ→`_handleSyncConflict('Asayake ハブ')`→`#sync-conflict-dialog`（O27）表示。
+- `_handleSyncConflict`はダイアログで選択されるまでPromiseが解決しない設計のため、トリガー呼び出し（`page.evaluate`）自体はawaitせず、ダイアログの出現をPlaywrightのlocator自動待ちで確認する形にした。
+- 確認内容：ダイアログの`.cfm-message`に同期元名（「Asayake ハブ」）が入ること、3択（`.cfm-cancel`「何もしない」/`.cfm-export`「編集内容をJSONで書き出す」/`.cfm-ok`「再読込して最新版を取得」）のラベル、「何もしない」でダイアログが閉じることを確認した（今の振る舞い）。
 
 ## 5. このstepで測れなかったものの全体像
 
