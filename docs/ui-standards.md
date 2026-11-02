@@ -256,18 +256,18 @@
 
 | 画面 | 390 | 1024 | 1920 |
 |---|---|---|---|
-| 設定（分類の一覧＋中身） | ![](images/497/settings-390.png) | ![](images/497/settings-1024.png) | ![](images/497/settings-1920.png) |
+| 設定（分類の一覧＋中身） | ![](images/497/settings-390.png) | — | ![](images/497/settings-1920.png) |
 | 設定の中身（スマホ・← 設定） | ![](images/497/settings-detail-390.png) | — | — |
-| 記事の一覧 | ![](images/497/articles-390.png) | — | ![](images/497/articles-1920.png) |
-| 記事の編集＋本を選ぶ | ![](images/497/article-edit-390.png) | ![](images/497/article-edit-1024.png) | ![](images/497/article-edit-1920.png) |
-| 本の一覧＋本の詳細 | ![](images/497/book-detail-390.png) | ![](images/497/book-detail-1024.png) | ![](images/497/book-detail-1920.png) |
+| 記事の一覧 | ![](images/497/articles-390.png) | — | — |
+| 記事の編集＋本を選ぶ | ![](images/497/article-edit-390.png) | — | ![](images/497/article-edit-1920.png) |
+| 本の一覧＋本の詳細 | ![](images/497/book-detail-390.png) | 比較画像 compare/4 | — |
 
 ホームの部品の編集（手順のコマ割り。入る→操作が常に見える→並べ替え→追加→外す・元に戻す）：
 
 - スマホ 390：![](images/497/home-edit-steps-390.png)
-- PC 1920：![](images/497/home-edit-steps-1920.png)
+- PC：比較画像 compare/3（ホームの部分を拡大）
 
-現状との左右比較（理想が左）：`images/497/compare/` の4枚（設定 1920・記事の編集 390・ホームの編集 拡大・本の詳細 1024）。差分の表と実装の分け方は `tmp/497/497-step2-gap.md`（イシュー#497 step2）。
+現状との左右比較（理想が左）：`images/497/compare/` の4枚（![](images/497/compare/1-settings-1920.png) ![](images/497/compare/2-article-390.png) ![](images/497/compare/3-home-edit-1920.png) ![](images/497/compare/4-book-detail-1024.png)）（設定 1920・記事の編集 390・ホームの編集 拡大・本の詳細 1024）。差分の表と実装の分け方は `tmp/497/497-step2-gap.md`（イシュー#497 step2）。
 
 撮影時の検査（10画面×3幅＝30枚）：画面外への漏れ 0、切れ 0、操作部品の重なり 0、内部の注記の紛れ込み 0、書影の読み込み失敗 0。「←」の高さはすべて 44px。390 では、状態表示を ✓ の印だけにしている（帯が狭いため）。表の全体は `tmp/497/shots/checks.md`。
 
