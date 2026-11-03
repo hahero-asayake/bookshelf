@@ -5,6 +5,15 @@
 //   A-d：未保存のまま閉じても、確認が出ない。×・Esc・戻るの行き先がそろっていない。
 //   A-e：PCで記事の編集中に戻ると、アプリから抜ける。
 // 既存spec(publish-article-editor.spec.js)の型(bootApp・addBlockヘルパー)を使う。操作はクリック・タップ・キーだけ。
+//
+// X3(イシュー#528 step2・②判断2026-11-04): A-a〜A-cを新しい振る舞いへ書き換えた(// CHAR→X3)。
+//   A-a: 「本」単体ブロックの新規追加入口をシートから外し、本棚ブロックに統一した(案A)。1冊だけの
+//        本棚ブロックは旧「本」ブロックと同じ大きさで見せる(is-single・CSSのみ)。既存データのtype:'book'
+//        ブロックは後方互換の描画だけ残す(別テストで固定)。
+//   A-b: 入れ先ブロックに限らず、記事のどこかに既に入っている本すべてに印(✓入れた)を付けた。
+//        引き出しの上に「このブロックにN冊」を出すようにした。
+//   A-c: 本棚ブロックを足すと引き出しが自動で開くようにし、「完了」を押すまで閉じないようにした
+//        (900px以下のまとめて追加の自動クローズを廃止)。
 import { test, expect } from '../helpers/test-base.js';
 import { addBlock, canvas } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
@@ -68,27 +77,88 @@ async function openPublishPanel(page) {
     else await page.click('#art-bar-publish');
 }
 
-test.describe('A-a/A-b: 本を入れたときの印・ブロック形式の割れ', () => {
-    test('「本」ブロックを2回追加して本を選ぶと、1冊目と2冊目でブロックの形が違う(今の振る舞い) // CHAR: 直す対象(step2 A-a,A-b)', async ({ page }, testInfo) => {
+test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚ブロックに統一する', () => {
+    test('「ブロックを追加」シートに「本」単体の選択肢は無い(本棚のみ) // CHAR→X3', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.click('#art-mode-edit');
+        await canvas(page).locator('.art-cv-ins-btn').last().click();
+        await expect(page.locator('#art-add-sheet')).toBeVisible();
+        const types = await page.locator('#art-add-sheet [data-block-type]').evaluateAll(els => els.map(el => el.dataset.blockType));
+        expect(types).toEqual(['text', 'shelf']);
+    });
+
+    // 編集中の通常表示(data-art-mode="edit")は、ブロック一覧(#art-blocks)ではなくキャンバス
+    // (#art-canvas、公開生成器の出力そのものをiframeで描く「見たまま編集」・イシュー#268)を見せる。
+    // #art-blocksはformモード(全画面・対象ブロック1つの編集)でだけ表示される(css/bookshelf.css 8157〜8159)。
+    // そのため is-single(ブロック一覧側の見た目)は、全画面編集を開いている間で確かめる。
+    // iframe側(キャンバス・公開ページ)の1冊表示をそろえるかどうかは、公開生成器
+    // (js/publish-article-generator.js _renderShelfBlock・複数テーマに影響)の変更が要るため、
+    // X3のこのステップでは対象外にし、②へ別途確認する(申し送り参照)。
+    test('本棚ブロックに1冊だけ入れると、全画面編集の中は旧「本」ブロックと同じ大きさで見える(is-single) // CHAR→X3', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
         const errors = await bootApp(page);
         await openPublishPagesModal(page);
         await page.click('#art-new');
         await expect(page.locator('#art-edit-view')).toBeVisible();
 
-        await addBlock(page, 'book', 'last');
+        await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        await leaveForm(page);
-        const firstBlockHtml = await page.evaluate(() => document.querySelector('.art-block')?.className || '');
+        // 全画面編集(form)の中でのみ #art-blocks が見える。1冊だけなら is-single。
+        await expect(page.locator('.art-shelf-list.is-single')).toBeVisible();
 
-        await addBlock(page, 'book', 'last');
+        // 入れ先は固定済みなので、引き出しから選ぶだけで同じブロックに追加される(本を追加ボタン不要)。
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-        await leaveForm(page);
-        const blocks = await page.evaluate(() => Array.from(document.querySelectorAll('.art-block')).map((b) => b.className));
-        // 今の振る舞い: 「本」ブロックは1ブロック=1冊(本棚ブロックとは別のクラス構成)。
-        // 何冊入ったか(合計件数)を示すバッジ等はブロック一覧に無い(要実測の記録として残す)。
-        expect(blocks.length).toBe(2);
+        await expect(page.locator('.art-shelf-list.is-single')).toHaveCount(0); // 2冊になったら大きい表示は外れる
+        const n = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+        expect(n).toBe(1); // 2冊目も同じブロックのまま(ブロックは増えない)
         test.skip(errors.length > 0, `コンソールエラーが出た: ${errors.join(', ')}`);
+    });
+
+    test('既存データのtype:\'book\'ブロック(後方互換)は、今までどおり本ブロックの見た目で描画される // CHAR→X3', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.evaluate(() => {
+            window.bookshelf._artDraft.blocks = [{ id: 'legacy-book-1', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }];
+            window.bookshelf._artEditBlock('legacy-book-1'); // 全画面編集に入ってはじめて#art-blocksが見える
+        });
+        await expect(page.locator('.art-block[data-block-id="legacy-book-1"] .art-block-book-body')).toBeVisible();
+    });
+});
+
+test.describe('A-b: 入れた冊数と、記事全体で使われている本の印', () => {
+    test('引き出しの上に「このブロックにN冊」が出て、本を入れると増える // CHAR→X3', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'last');
+        await expect(page.locator('#art-drawer-target-hint .art-drawer-target-count')).toHaveText('このブロックに0冊');
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await expect(page.locator('#art-drawer-target-hint .art-drawer-target-count')).toHaveText('このブロックに1冊');
+    });
+
+    test('入れ先のブロック以外に入っている本にも「✓入れた」の印が付く // CHAR→X3', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'last');
+        const first = page.locator('#art-drawer-list .art-drawer-item').first();
+        const firstAsin = await first.getAttribute('data-asin');
+        await first.click(); // 1冊目のブロックに入れる(「追加済み」になる)
+        await leaveForm(page);
+
+        await addBlock(page, 'shelf', 'last'); // 2つ目のブロック(入れ先が切り替わる)
+        const inOtherBlock = page.locator(`#art-drawer-list .art-drawer-item[data-asin="${firstAsin}"]`);
+        await expect(inOtherBlock).toHaveClass(/is-used/);
+        await expect(inOtherBlock.locator('.art-drawer-item-used')).toHaveText('✓入れた');
     });
 });
 

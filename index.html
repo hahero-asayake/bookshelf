@@ -897,14 +897,17 @@
                     <span id="art-fs-title" class="art-fs-title">本棚を編集</span>
                     <button type="button" id="art-fs-done" class="btn btn-primary btn-small">完了</button>
                 </div>
-                <!-- イシュー#268: ＋で出すブロック追加シート (下から・3択) -->
+                <!-- イシュー#268: ＋で出すブロック追加シート (下から)。
+                     X3(イシュー#528・A-a/A-b②判断): 「本」単体ブロック(1冊専用)の新規追加入口はここから外した。
+                     本棚ブロックは1冊だけのときも大きく表示する(_artRenderShelfBlock・css .art-shelf-list.is-single)
+                     ので、1冊目だけ形が割れる問題がここで解消する。既存データのtype:'book'ブロックは
+                     _artRenderBlockの描画(後方互換)だけ残し、選び直し・削除は引き続きできる。 -->
                 <div id="art-add-sheet" class="art-add-sheet" role="dialog" aria-modal="true" aria-label="ブロックを追加" hidden>
                     <div class="art-add-sheet-backdrop" data-close></div>
                     <div class="art-add-sheet-panel">
                         <div class="art-add-sheet-hd">ブロックを追加</div>
                         <button type="button" class="art-add-sheet-item" data-block-type="text"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="pen-line" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>文章</b><small>見出しと本文を書く</small></span></button>
-                        <button type="button" class="art-add-sheet-item" data-block-type="shelf"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="library" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>本棚</b><small>複数冊を並べて紹介する</small></span></button>
-                        <button type="button" class="art-add-sheet-item" data-block-type="book"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="book" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>本</b><small>1冊を大きく紹介する</small></span></button>
+                        <button type="button" class="art-add-sheet-item" data-block-type="shelf"><span class="art-add-sheet-ic"><span class="h-icon" data-icon="library" data-icon-size="20"></span></span><span class="art-add-sheet-body"><b>本棚</b><small>1冊でも複数でも紹介する</small></span></button>
                     </div>
                 </div>
                 <!-- イシュー#268 step4: 見た目シート (下から・テンプレ3種/配色12案。押した瞬間に背後の記事へ反映・×か枠外で閉じる) -->

@@ -1849,9 +1849,12 @@ class _ArticleEditorMethods {
                 </div>
             </div>`;
         }).join('');
+        // X3(イシュー#528・A-a②判断): 1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる
+        // (is-single・CSSのみの分岐)。行の構造(.art-fs-row)は変えないので、並べ替え・外す・短文メモは
+        // 複数冊のときと同じ経路のまま使える。
         return `<div class="art-block art-fs-block is-fs-target is-add-target" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-fs-sec">本（${items.length}冊）</div>
-            <div class="art-shelf-list art-fs-list">${rows}</div>
+            <div class="art-shelf-list art-fs-list${items.length === 1 ? ' is-single' : ''}">${rows}</div>
             <div class="art-fs-actions">
                 <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
                 <button type="button" class="art-fs-sort-btn" aria-expanded="false"${items.length < 2 ? ' disabled' : ''}>並び順を揃える</button>
@@ -1995,8 +1998,11 @@ class _ArticleEditorMethods {
                 <span class="art-shelf-add-tile-label">本を追加</span>
             </button>`
             : '';
+        // X3(イシュー#528・A-a②判断): 本棚ブロックが1冊だけのときは、旧「本」単体ブロックと同じ大きさで
+        // 見せる(is-single・CSSのみの分岐)。DOM構造(.art-shelf-item)は変えないので、外す・並べ替え・
+        // チップ切替は複数冊のときと同じ経路のまま使える。
         const bodyHtml = items.length
-            ? `<div class="art-shelf-list">${itemsHtml}${addTileHtml}</div>`
+            ? `<div class="art-shelf-list${items.length === 1 ? ' is-single' : ''}">${itemsHtml}${addTileHtml}</div>`
             : `<button type="button" class="art-shelf-add art-shelf-add-empty pp-empty pp-empty-btn" title="このブロックに本を追加">
                 <span class="h-icon" data-icon="book-plus" data-icon-size="20"></span>
                 <span>このボタンから本を追加してください</span>
@@ -2595,6 +2601,9 @@ class _ArticleEditorMethods {
 
     // #133 項目3: 引き出し側にも「どこに追加されるか」の手掛かりを出す (Nielsen #1)。
     // 本棚ブロックのうち何番目か (同名の棚から複数ブロックを作った場合も番号で区別できる)。
+    // X3(イシュー#528・A-a/A-b): 入れ先は「いま選んでいるブロック」(_artActiveShelfBlockId)に固定済み
+    // (2207〜2214行のブロッククリック・2076行の「本を追加」タイル・2298行の新規作成で切り替わる)。
+    // ここでは固定された入れ先に「このブロックにN冊」を加えて出す(今までは冊数が無かった)。
     _artRenderDrawerTargetHint() {
         const hintEl = document.getElementById('art-drawer-target-hint');
         if (!hintEl) return;
@@ -2619,9 +2628,11 @@ class _ArticleEditorMethods {
         const shelf = this.bookshelfManager.getById(block.shelfId);
         const iconName = shelf ? (shelf.iconName || 'library') : null;
         const label = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(block.shelfId)) : (block.shelfId ? '削除済みの本棚' : '未選択の本棚');
+        const count = (block.items || []).length;
         hintEl.innerHTML = `<span class="art-drawer-target-label">追加先:</span>
             ${iconName ? `<span class="art-drawer-target-icon" data-icon-value="${esc(iconName)}">${window.renderIcon(iconName, { size: 12 })}</span>` : ''}
-            <span class="art-drawer-target-name">${esc(label)}（本棚ブロック${orderIndex + 1}）</span>`;
+            <span class="art-drawer-target-name">${esc(label)}（本棚ブロック${orderIndex + 1}）</span>
+            <span class="art-drawer-target-count">このブロックに${count}冊</span>`;
     }
 
     // #133 項目5: 棚選択+検索絞り込み後に実際に表示されている asin のみを対象にする
@@ -2734,14 +2745,18 @@ class _ArticleEditorMethods {
             const book = this.books.find(b => b.asin === asin);
             const title = book ? book.title : asin;
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
-            const isNew = !usedAsins.has(asin);
             // K (イシュー#276): 追加先のブロックに既に入っている本は「追加済み」を出す (NEW バッジより優先)。
             // 同じ本を複数回配置する多重配置 (ADR-058 §11.1) は既存仕様のため、印を付けるだけでクリックは禁じない。
-            const added = addedToTarget.has(asin);
-            const badge = added
+            const inTarget = addedToTarget.has(asin);
+            // X3(イシュー#528・A-b): 入れ先ブロックに限らず、記事のどこかに既に入っている本すべてに印を付ける。
+            const inArticle = usedAsins.has(asin);
+            const isNew = !inArticle;
+            const badge = inTarget
                 ? `<span class="art-drawer-item-added"><span class="h-icon" data-icon="check" data-icon-size="12"></span>追加済み</span>`
-                : (isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>');
-            return `<div class="art-drawer-item${added ? ' is-added' : ''}" data-asin="${esc(asin)}" title="${added ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">
+                : inArticle
+                    ? `<span class="art-drawer-item-used"><span class="h-icon" data-icon="check" data-icon-size="12"></span>✓入れた</span>`
+                    : (isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>');
+            return `<div class="art-drawer-item${inTarget ? ' is-added' : ''}${inArticle && !inTarget ? ' is-used' : ''}" data-asin="${esc(asin)}" title="${inTarget ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">
                 <div class="art-cover">${cover}</div>
                 <div class="art-drawer-item-title">${esc(title)}</div>
                 ${badge}

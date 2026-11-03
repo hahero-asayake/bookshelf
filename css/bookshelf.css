@@ -5007,6 +5007,24 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-list .art-shelf-item-order-btns { grid-column: 6; }
 .art-shelf-list .art-shelf-item-remove { grid-column: 7; justify-self: center; }
 
+/* X3(イシュー#528・A-a②判断): 本棚ブロックが1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる。
+   DOM構造(.art-shelf-item)は変えず、1冊しか無いときは意味が薄い要素(複数選択チェック・ドラッグの
+   グリップ・並べ替えボタン)を隠し、書影を大きくする見た目だけのCSS分岐。 */
+.art-shelf-list.is-single .art-shelf-item {
+    grid-template-columns: 6rem 1fr;
+    grid-template-rows: auto auto auto;
+    column-gap: 1rem; row-gap: 0.4rem;
+    padding: 0.75rem var(--art-pad, 14px);
+    border-bottom: none;
+}
+.art-shelf-list.is-single .art-shelf-item .art-item-check,
+.art-shelf-list.is-single .art-shelf-item .art-shelf-item-grip,
+.art-shelf-list.is-single .art-shelf-item .art-shelf-item-order-btns { display: none; }
+.art-shelf-list.is-single .art-shelf-item .art-cover { grid-column: 1; grid-row: 1 / 4; width: 100%; height: auto; aspect-ratio: 5/7; max-height: none; }
+.art-shelf-list.is-single .art-shelf-item .art-shelf-item-title { grid-column: 2; grid-row: 1; font-size: 0.92rem; font-weight: 700; white-space: normal; }
+.art-shelf-list.is-single .art-shelf-item .art-chips { grid-column: 2; grid-row: 2; grid-template-columns: repeat(2, var(--art-chip-w)); }
+.art-shelf-list.is-single .art-shelf-item .art-shelf-item-remove { grid-column: 2; grid-row: 3; justify-self: start; }
+
 .art-shelf-selbar.art-gx { padding: 0.45rem var(--art-pad); row-gap: 0.4rem; }
 .art-shelf-selbar.art-gx .art-shelf-selbar-master { grid-column: 1 / 5; padding: 0; min-width: 0; }
 .art-shelf-selbar.art-gx .art-chips { grid-column: 5; }
@@ -5129,6 +5147,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-drawer-target-label { flex: 0 0 auto; white-space: nowrap; }
 .art-drawer-target-icon { display: inline-flex; flex: 0 0 auto; }
 .art-drawer-target-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--fg2); font-weight: 600; }
+/* X3(イシュー#528・A-a/A-b): 「このブロックにN冊」。入れ先の固定を見える化する(Nielsen #1)。 */
+.art-drawer-target-count { flex: 0 0 auto; white-space: nowrap; background: var(--accent-bg); color: var(--accent-strong); border-radius: 999px; padding: 0.08rem 0.5rem; font-weight: 700; }
 .art-drawer-search { margin: 0.5rem 0.7rem 0; padding: 0.35rem 0.6rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.78rem; color: var(--fg); background: var(--panel); flex: 0 0 auto; }
 .art-drawer-search:focus { outline: none; border-color: var(--accent); }
 /* #133 項目5: 表示中 (棚選択+検索絞り込み後) の本だけをまとめて追加。全件ボタンは無く「表示中の分だけ」に限定する設計。 */
@@ -5158,6 +5178,8 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* K (イシュー#276): 追加先のブロックに既に入っている本には「追加済み」を出す (印のみ・クリックは禁じない=
    同じ本の多重配置は既存仕様 ADR-058 §11.1 のため) */
 .art-drawer-item-added { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--success, #3aa657); font-size: 0.7rem; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+/* X3(イシュー#528・A-b): 入れ先ブロック以外に入っている本の印(✓入れた)。「追加済み」(緑)より弱い色にして区別する。 */
+.art-drawer-item-used { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--fg2); font-size: 0.7rem; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 .art-drawer-empty { padding: 1rem 0.7rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 900px) {
@@ -8230,6 +8252,16 @@ body.select-mode .drag-handle { display: none; }
     padding: 0 9px; font-size: 13px; color: var(--fg); background: var(--panel); }
 .art-fs-body .art-chips { margin-top: 6px; }
 .art-fs-ops { display: flex; flex-direction: column; gap: 4px; }
+/* X3(イシュー#528・A-a②判断): 全画面編集で1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる。
+   行の構造(.art-fs-row)は変えず、書影を大きくして縦積みにするだけ(外す・短文メモ・並べ替えは
+   複数冊のときと同じ)。並べ替え(↑↓)は1冊だと意味が無いので隠す。
+   詳細度: 8364行目の #art-edit-view ... .art-fs-row (1 ID+3class) に勝つため同じ形にする。 */
+#art-edit-view .art-shelf-list.art-fs-list.is-single .art-shelf-item.art-fs-row { grid-template-columns: 7.5rem 1fr; gap: 1rem; padding: 14px 0; }
+.art-fs-list.is-single .art-fs-cover { width: 7.5rem; height: auto; aspect-ratio: 5/7; }
+.art-fs-list.is-single .art-fs-ttl { font-size: 17px; }
+.art-fs-list.is-single .art-fs-au { font-size: 13px; }
+.art-fs-list.is-single .art-fs-up,
+.art-fs-list.is-single .art-fs-down { display: none; }
 .art-fs-ic { width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg2);
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
 .art-fs-ic[disabled] { opacity: 0.4; cursor: default; }
