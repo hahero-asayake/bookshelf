@@ -9103,10 +9103,18 @@ class VirtualBookshelf {
         // 重なり(見た目)だけここで閉じ、段はSurface.switchTo(_openSettingsModalのswitchFrom)で1回に。
         // 記事編集中の設定リンクは閉じずに上に積む (_closeOverlaysForTransition・イシュー#367)
         const PUBLISH_FACE_IDS = ['art-edit-mode', 'art-viewing', 'art-publish-modal', 'publish-settings-modal', 'publish-pages-modal'];
-        const openIds = this.nav ? PUBLISH_FACE_IDS.filter((id) => this.nav.hasFace(id)) : [];
-        for (const id of openIds) this._overlays().close(id, { reason: 'program' });
-        if (openIds.length) this._artMode = 'view';
-        await this._openSettingsModal(targetId, { switchFrom: openIds });
+        // イシュー#513 S6 step5(②承認時の実測で発見・修正): 見た目(overlays)で実際に開いている
+        // ものを閉じる判定は、段(nav.hasFace)とは別に取る。フラグ旧ではPCで段を積まないため、
+        // 見た目は開いていてもhasFaceはfalseになり、見た目を閉じ忘れる退行があった
+        // (実測・overlay-front.spec.js:163「確認ダイアログ経由は公開モーダルを閉じる」)。
+        const ov = this._overlays();
+        const openOverlayIds = PUBLISH_FACE_IDS.filter((id) => ov.has(id));
+        for (const id of openOverlayIds) ov.close(id, { reason: 'program' });
+        // 段の操作(Surface.switchTo)は、実際にfacesにある面だけを対象にする(フラグ新で段を積む面のみ・
+        // フラグ旧ならここは空配列になり_openSettingsModalは通常のhist:trueパスを使う=無改修で安全)
+        const openFaceIds = this.nav ? PUBLISH_FACE_IDS.filter((id) => this.nav.hasFace(id)) : [];
+        if (openOverlayIds.length) this._artMode = 'view';
+        await this._openSettingsModal(targetId, { switchFrom: openFaceIds });
     }
 
     async _runPublishExport() {
