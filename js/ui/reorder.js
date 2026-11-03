@@ -1,10 +1,14 @@
 // Reorder — 並べ替えの部品 (イシュー#517 U4・ドラッグの並べ替えを独立したモジュールにする)
 //
-// js/bookshelf.js の _bindPointerReorder (旧2711-2897行、イシュー#337) をそのまま移した。
-// このcommitは移すだけ = 振る舞いは変えない。bookshelf.js 側は Reorder.bindPointerReorder へ
-// 委譲する1行の _bindPointerReorder を残すため、6か所の呼び出し元 (_bindDetailSectionReorder・
+// js/bookshelf.js の _bindPointerReorder (旧2711-2897行、イシュー#337) をそのまま移した
+// (移すだけのcommit)。bookshelf.js 側は Reorder.bindPointerReorder へ委譲する1行の
+// _bindPointerReorder を残すため、6か所の呼び出し元 (_bindDetailSectionReorder・
 // _renderSidebarTree・_bindSidebarUtilityDnD・_bindPluginListEvents・setupBookshelfDragAndDrop・
 // js/dashboard.js の this.app._bindPointerReorder) は変更不要。
+//
+// 別のcommitで、2つを足した (holeSelector/onDropHole・取り消し。下記opts参照)。どちらも
+// 既存6か所は未指定・無反応のため振る舞いは変わらない。足した口はまだどこからも使わない
+// (次のX2で使う)。
 //
 // 独自のドラッグ4つ (本カードの _onBookPointerDown 系・記事エディタの3つ) はここでは移さない。
 // docs/char/u4-reorder-inventory.md に一覧を残した (U7・U8で各画面と一緒に移す)。
@@ -24,7 +28,22 @@
 //   getKey(itemEl),      // アイテムの識別子
 //   onDrop(dragKey, targetKeyOrIndex, zone),  // ドロップ確定時 (既存の保存/並べ替え関数をそのまま呼ぶ)
 //   scrollContainer,     // 自動スクロール対象 (要素 or 要素を返す関数, 省略可)
+//   holeSelector,        // (省略可・イシュー#517 U4) 落とす先として受け付ける「穴の要素」の選択子。
+//                        // 指定時のみ、指の下に itemSelector に一致するカードが無く、この選択子に
+//                        // 一致する要素がある時、それを落とす先として扱う。未指定なら今まで通り
+//                        // 何も起きない (u0-findings の lastIndex=null の挙動を保つ)
+//   onDropHole(dragKey, holeEl),  // 穴へドロップ確定時 (holeSelector 指定時のみ呼ばれる。まだ
+//                                 // どこからも使わない。次のX2で使う)
 // }
+//
+// 取り消し (イシュー#517 U4・#499 W7の影残りの穴を塞ぐ): ドラッグ中に Esc・window blur・
+// document visibilitychange(hidden) が起きたら、影・ゾーン印・インジケータ・pending・自動
+// スクロール・付けたリスナーを全部片付け、onDrop/onDropHole を呼ばずに終える。ドラッグ中でない
+// 時は何もしない (既存6か所・口を使わない画面への影響はゼロ)。
+// Esc の keydown は document に capture で登録する。ドラッグ中だけ preventDefault・
+// stopPropagation し、重なった画面を閉じる Surface の Esc (X1 の決まり) まで届かせない
+// (②指示2026-11-03・設定やプラグインの一覧など、重なった画面の中でも並べ替えを使うため)。
+// ドラッグしていない時は何もしないので、Surface の Esc はそのまま効く。
 (function () {
     'use strict';
 
@@ -93,8 +112,17 @@
             const targetEl = el && el.closest(opts.itemSelector);
 
             clearZoneMarks();
-            drag.lastTarget = null; drag.lastZone = null; drag.lastIndex = null;
-            if (!targetEl || targetEl === drag.itemEl || !container.contains(targetEl)) return;
+            drag.lastTarget = null; drag.lastZone = null; drag.lastIndex = null; drag.lastHole = null;
+            if (!targetEl) {
+                // 落とす先として「穴の要素」を受け付ける口 (省略可)。指定時のみ、指の下にカードが
+                // 無い時に穴要素を落とす先として記録する。未指定なら何もしない (今の早期returnを保つ)
+                if (opts.holeSelector) {
+                    const holeEl = el && el.closest(opts.holeSelector);
+                    if (holeEl && container.contains(holeEl)) drag.lastHole = holeEl;
+                }
+                return;
+            }
+            if (targetEl === drag.itemEl || !container.contains(targetEl)) return;
 
             if (opts.zoneMode === 'segment') {
                 const zone = opts.computeZone(targetEl, e.clientY);
@@ -118,6 +146,7 @@
 
         const finishDrag = () => {
             if (!drag) return;
+            clearPending(); // 取り消し経路で万一pendingが残っていても片付ける (防御的)
             drag.itemEl.classList.remove(opts.dragClass);
             drag.itemEl.style.touchAction = '';
             drag.ghost.remove();
@@ -134,11 +163,13 @@
 
         const onUp = () => {
             if (!drag) return;
-            const { dragKey, lastTarget, lastZone, lastIndex } = drag;
+            const { dragKey, lastTarget, lastZone, lastIndex, lastHole } = drag;
             if (opts.zoneMode === 'segment') {
                 if (lastTarget && lastZone) opts.onDrop(dragKey, opts.getKey(lastTarget), lastZone);
             } else if (typeof lastIndex === 'number') {
                 opts.onDrop(dragKey, lastIndex);
+            } else if (lastHole && opts.onDropHole) {
+                opts.onDropHole(dragKey, lastHole);
             }
             finishDrag();
         };
@@ -174,7 +205,7 @@
             drag = {
                 pointerId: e.pointerId, itemEl, ghost, prevUserSelect, suppressedFormEls,
                 offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, pointerY: e.clientY,
-                dragKey: opts.getKey(itemEl), lastTarget: null, lastZone: null, lastIndex: null,
+                dragKey: opts.getKey(itemEl), lastTarget: null, lastZone: null, lastIndex: null, lastHole: null,
             };
             document.addEventListener('pointermove', onMove);
             document.addEventListener('pointerup', onUp);
@@ -214,6 +245,19 @@
                 }, LONG_PRESS_MS);
             }
         });
+
+        // ドラッグ中の取り消し (イシュー#517 U4)。ドラッグ中でなければ何もしない
+        // (Surface の Esc がそのまま効く・既存6か所・口を使わない画面への影響はゼロ)。
+        document.addEventListener('keydown', (e) => {
+            if (!drag) return;
+            if (e.key !== 'Escape') return;
+            // 重なった画面を閉じる Surface の Esc (X1 の決まり) まで届かせない。ドラッグ中だけ。
+            e.preventDefault();
+            e.stopPropagation();
+            finishDrag();
+        }, true); // capture: Surfaceより先に受ける
+        window.addEventListener('blur', () => { if (drag) finishDrag(); });
+        document.addEventListener('visibilitychange', () => { if (drag && document.hidden) finishDrag(); });
     }
 
     window.Reorder = { bindPointerReorder };
