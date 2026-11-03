@@ -2306,7 +2306,13 @@ class _ArticleEditorMethods {
         if (!this._artDraft.blocks) this._artDraft.blocks = [];
         this._artDraft.blocks.splice(index, 0, newBlock);
         this._artRenderBlocks();
-        if (type === 'shelf') this._artRenderDrawer();
+        if (type === 'shelf') {
+            this._artRenderDrawer();
+            // X3(イシュー#528・A-c): 本棚ブロックを足したら引き出しを開く(900px超は畳みを解除するだけ・
+            // 900px以下はボトムシートを開く)。完了を押すまで閉じないのは _artOnDrawerAddAllClick 側の
+            // 自動クローズ廃止とセット。
+            this._artOpenSheet();
+        }
         // 本ブロックは asin 確定まで保存しない (normalizeBlocks が asin 無しを捨てるため)
         if (type !== 'book') this._artScheduleSave();
     }
@@ -2795,8 +2801,8 @@ class _ArticleEditorMethods {
             if (!ok) return;
         }
         this._artAddBooksToShelf(asins);
-        // イシュー#165: 「まとめて追加」も1操作で完結するため900px以下では自動で閉じる (理由は_artOnDrawerBookClick参照)
-        this._artCloseSheet();
+        // X3(イシュー#528・A-c②判断): 本棚ブロックへの追加は「完了」を押すまで引き出しを閉じない。
+        // 旧イシュー#165の自動クローズ(900px以下)はここで廃止した(単発クリック追加は元々閉じない経路のまま)。
     }
 
     _artOnDrawerBookClick(asin) {
