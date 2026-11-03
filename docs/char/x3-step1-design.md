@@ -206,3 +206,21 @@
 一時spec（`tests/e2e/char/x3-main-ops-count.spec.js`、origin/mainの一時worktree`/home/kuroko/worktrees/bookshelf/_artifacts/528-main-measure/repo`で実行）はcommit対象外、`tmp528/x3-main-ops-count.spec.js`へ保存した。実行ログは`tmp528/main-measure2.log`。
 
 **#529（A-cの入れ直し）への申し送り**：`_artInsertBlock`内の`_artOpenSheet()`呼び出しを、addSheetの段をart-fsへ引き継ぐ`_artHistHandOver`より**後**（`_artEditBlock`側・hand over成功後）に移し、段を常に「art-fs→art-sheet」の順（renameされた段が先、新しく積む段が後）で積むこと。LIFOでなくなる食い違いはこの順序を守れば起きない。どうしても両方を同時に閉じる必要がある場面が出たら、`js/nav-state.js`の既存パターン（`closeArtSubStates3`/`closePublish3`＝複数faceを1 applyで一括除去し`unwind:true`でdFaces分だけ正しくgoする）に倣うこと。個別に`close`を2回呼んでgoを重ねがける対処（#528 step4で一度試みた）は画面状態が壊れる副作用が出たため避ける。詳細はkuroko-recordsの lesson `20261104-issue-528-surface-rename-stacking-bug`（source=528）。
+
+## 13. #529（A-cの入れ直し）で回収した実測値（②判断2026-11-04）
+
+12-4節は「#529で回収する前提で許容」としていたPCの+1手・モバイルの未解消分を、#529で
+実際に回収した後の値。計測は`tests/e2e/char/article-ops-count.spec.js`（1クリック/1入力=1手）
+に統一（12-4節はpublish-hub.spec.jsのpublishNewArticleヘルパーに合わせた別の一時specで
+数え方の粒度が異なるため、本節の値とは直接比較しない）。
+
+| 場面 | 端末 | #529前（A-cなし） | #529後（A-c入り） | 差 |
+|---|---|---|---|---|
+| A1相当（新規記事に3冊入れて初公開） | 390/768 | 17 | 15 | -2 |
+| 同上 | 1024/1440/1920 | 15 | 14 | -1 |
+| A7相当（公開済みに3冊足して変更を公開） | 390/768 | 11 | 9 | -2 |
+| 同上 | 1024/1440/1920 | 10 | 9 | -1 |
+
+モバイルは「本を追加ボタンで開く」「×で閉じる」の2手が無くなり-2、PCは「本を追加ボタンで開く
+(畳み解除)」の1手が無くなり-1（PCの引き出しは元々×閉じる経路が無い常駐パネルのため）。
+詳細・ハヘロ向け画像のパスはイシュー#529のtmp529/step4-findings.mdを参照。
