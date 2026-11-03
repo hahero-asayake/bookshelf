@@ -120,8 +120,14 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 - **なぜ全面に適用しなかったか（実測で確定）**：reopen表(`_navReopen`)には`settings-modal`・`book-memo-modal`等も載っているが、これらは既存の決まり(D06「再読込は段を畳む」)でreload時は畳むのが正しい挙動。一律に「reopen表にあるものは全部開き直す」規則にすると、back-nav-matrixの`X12`「設定を開いて再読込→戻るが空振りしない」・`A39`「編集中に再読込→段が畳まれ空振りしない」・`L16`「長文メモを開いて再読込→段が畳まれる」の3件がregressionになる(実測で確認・一度失敗させてから対象をreport-modalだけに絞った)。`reloadReopen:true`を面ごとに明示指定する形にしたことで、個別のif文(boot()の特殊ケース)ではなく「Surfaceの定義1個」で対象を絞れる。
 - 実測：report-moderation.spec.js全19件pass・back-nav-matrix X12/A39/L16含む該当箇所pass・npm test 787件pass。フラグ旧では対象の面がそもそも段を積まない(depth=0)ため分岐自体に入らず、新規追加の規則はフラグ新旧どちらでも安全(フラグ旧の挙動は無変更)。
 
-### 6-5. publish-article-editor.spec.js:988（未解決・次回に持ち越し）
+### 6-5. publish-article-editor.spec.js:988（原因を一部特定・修正は次回に持ち越し）
 
-「公開中記事の一括更新の案内」：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。原因未特定(reload/boot絡みではなく、複数記事を連続で作成・公開する一連の流れの中の状態不整合の疑い)。
+「公開中記事の一括更新の案内」：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。
+
+**②指示の確認結果**：switchTo／close-Promiseを待つ形がこの経路に無いことを先に確かめた結果、**close直後openパターン(2e8a041のswitchTo対象)とは別の種類の問題**だった。一時的に`window.__DEBUG`相当の実測で以下が判明：2回目の`openPublishPagesModal()`直後、`_artMode:'view'`・`faces:['publish-pages-modal','art-viewing']`なのに、DOMは`art-list-view.hidden=true`・`art-edit-view.hidden=false`(=一覧が畳まれる前に別経路でart-viewingが開かれた状態と矛盾)。
+
+**仮説（未確定）**：`_artShowList()`は呼び出し時点のfaces(`this._modalHistStack`)を見て`art-viewing`があればSurface.closeするが、全幅化でPCでも`art-viewing`が段を積むようになった結果、1本目の記事公開完了後に`art-viewing`のfaceが(非同期の)別タイミングで追加され、`_artShowList()`実行時点ではまだfacesに入っていなかった可能性がある(要出典確認・`_artSetMode('view')`の呼び出し元を全部洗う必要がある・時間切れで未完了)。
+
+次回の調査方針：`_artSetMode('view')`→`art-viewing`を開く処理(9533行目)の呼び出し元を全部grepし、公開完了処理(`_artPublishFromPanel`/`_runPublishExport`等)のどこで非同期に呼ばれているかを特定する。特定できたら、`openPublishPagesModal()`→`_artShowList()`の呼び出しとの実行順序を強制する(例:公開完了のPromiseをawaitしてから一覧に戻る、またはSurface側で「最新のfacesを見てから閉じる」保証を入れる)修正を検討する。
 
 次のrunでの調査方針：`--trace`は使わず（既知の罠）、`window.__DEBUG`変数を一時的に仕込んでfaces/historyの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。
