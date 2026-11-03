@@ -293,6 +293,17 @@
                 const route = canonRoute(input.route);
                 return { ...s, faces, route, source: 'ui' };
             }
+            // イシュー#513 S6: 「今の面(複数可)を閉じて、別の面を開く」を1回のapplyにする(Surface.switchTo)。
+            // dFaces=0(n個除去+1個追加)のままrouteだけ変わる形にして、historyOp側は常にreplace(m.replaceで
+            // 強制)にする=非同期go(-n)を発行しない。close(go予約)→open(push)の2回apply構成だと、closeの
+            // go(-n)がmicrotaskで未消化のままopenのpushが先にreplaceへ変換されてしまい、残りのgo(-n)が
+            // 後から書き換え済みの段を巻き戻す競合を起こす(#513 step3で実測・_confirmOpenSettings等)。
+            case 'switchFace3': {
+                const removeIds = Array.isArray(input.fromIds) ? input.fromIds : [input.fromIds];
+                const faces = [...s.faces.filter((f) => !removeIds.includes(f.id)), { id: input.toId, extra: input.extra || null, close: input.close || null }];
+                const route = canonRoute(input.route);
+                return { ...s, faces, route, source: 'ui' };
+            }
             // 単一 face を除去しつつ route を戻す (設定・公開の設定の × 閉じ。汎用)
             case 'closeFace3': {
                 const faces = s.faces.filter((f) => f.id !== input.id);
@@ -425,6 +436,11 @@
             rename(from, to, close, meta) { return this.apply({ type: 'rename', from, to, close }, Object.assign({ renamed: true }, meta || {})); },
             // イシュー#468: face の push と route 変化を1 apply で行う (公開一覧・記事個別を開く用)
             openRoute(id, extra, close, route, meta) { return this.apply({ type: 'openRoute3', id, extra: extra || null, close, route }, meta || {}); },
+            // イシュー#513 S6: fromIds(複数可)を閉じてtoIdを開く。1回のreplaceにまとめ、go(-n)を発行しない
+            // (Surface.switchTo の中身)。戻ると「fromを開く前の場所」へ行く(fromには戻らない)
+            switchTo(fromIds, toId, extra, close, route, meta) {
+                return this.apply({ type: 'switchFace3', fromIds, toId, extra: extra || null, close, route }, Object.assign({ replace: true }, meta || {}));
+            },
             // 単一 face の除去 + route 復元を1 apply で (設定・公開の設定の × 閉じ)
             closeFace(id, route, meta) { return this.apply({ type: 'closeFace3', id, route }, Object.assign({ replace: true }, meta || {})); },
             // 公開記事モーダルの × 閉じ専用 (記事サブ状態を一括除去)。unwind:true (イシュー#495) =

@@ -7099,7 +7099,7 @@ class VirtualBookshelf {
         if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
-    async _openSettingsModal(targetId) {
+    async _openSettingsModal(targetId, { switchFrom } = {}) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
         this._buildSettingsMaster();
@@ -7109,6 +7109,10 @@ class VirtualBookshelf {
         // イシュー#435: 「アプリのページ」として開く(#430の統一方針の横展開)。技術基盤(overlays.open/NavState)は
         // そのまま、見た目だけ全画面+サイドバー残存+×なしにする(css/bookshelf.css「設定を全画面ページとして開く」節)。
         modal.classList.add('settings-fullpage');
+        // イシュー#513 S6: switchFrom(呼び手が既に閉じた公開系の面のid配列)が渡された時は、段は
+        // Surface.switchToの1回のreplaceに任せる(下のswitchTo呼び出し)。hist:falseにしてここでは
+        // 重ねてpushしない(二重に段を積まないため)。
+        const hasSwitchFrom = Array.isArray(switchFrom) && switchFrom.length > 0;
         // 重なり管理役: 大 (lg・左に項目一覧・右に中身)。hist:true = 履歴の段 (settings-modal) は管理役の hooks 経由で
         // _modalHistPush/Pop (NavState) に積む。戻る/×/ESC で閉じた後片付け (一覧へ戻す) は onClose。
         // イシュー#468では route/returnRoute付与で back-nav-matrix X08 が新規に落ち撤回したが、イシュー#494 step2で
@@ -7117,12 +7121,21 @@ class VirtualBookshelf {
         // _modalHistPop側(id==='settings-modal'の分岐)でsettings-cat残存時は1回のnav.closeSettingsにまとめて
         // 解消済み(#442のclosePublish3と同じ形)。onCloseは「settings-catのpop」を呼ばない(DOM後片付けのみ)。
         this._overlays().open(modal, {
-            kind: 'modal', size: 'lg', hist: true,
+            kind: 'modal', size: 'lg', hist: !hasSwitchFrom,
             route: { view: 'settings' }, returnRoute: this._surface().parent('settings-modal') || { view: 'main' }, // イシュー#494・親はSurfaceのdefineで決める(イシュー#511 X1)
             onClose: () => {
                 this._showSettingsMaster();
             },
         });
+        if (hasSwitchFrom) {
+            // イシュー#513 S6: close直後にopenする2回apply構成(go予約→push)は、goがmicrotaskで未消化の
+            // まま次のpushがreplaceへ変換され、残ったgoが書き換え済みの段を後から巻き戻す競合を起こす
+            // (実測・#513 step3)。段だけSurface.switchToの1回のreplaceで差し替える。
+            this._surface().switchTo(switchFrom, 'settings-modal', {
+                close: (o) => this._overlays().close('settings-modal', { reason: 'history', fromHistory: !!(o && o.fromHistory) }),
+                route: { view: 'settings' },
+            });
+        }
         // 開くたびに最新化 (プラン変化・別端末更新に追従)。軽い再描画のみ。重い market/プラグイン一覧は
         // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
         this._reflectAffiliateField();
@@ -9080,11 +9093,17 @@ class VirtualBookshelf {
     async _confirmOpenSettings(message, targetId) {
         const ok = await confirmDialog({ title: '設定が必要です', message, okLabel: '設定を開く', cancelLabel: '閉じる' });
         if (!ok) return;
-        // 確認を経て設定へ行く = 公開の仕事をやめる入口なので、公開モーダル (一覧状態・1 段) を閉じてから開く。
-        // close 関数経由で閉じる (raw remove だと push 済み履歴が残留し、次の戻るが食われる)。
+        // 確認を経て設定へ行く = 公開の仕事をやめる入口なので、開いている公開系の面を閉じてから開く。
+        // イシュー#513 S6: 「close直後にopen」の2回apply構成(go予約→push)は、全幅化でPCでも段を積む
+        // ようになった結果、goがmicrotaskで未消化のまま次のpushがreplaceへ変換され、残ったgoが
+        // 書き換え済みの段を後から巻き戻す競合を起こす(実測・#513 step3・username-publish-gate等)。
+        // 重なり(見た目)だけここで閉じ、段はSurface.switchTo(_openSettingsModalのswitchFrom)で1回に。
         // 記事編集中の設定リンクは閉じずに上に積む (_closeOverlaysForTransition・イシュー#367)
-        this.closePublishPagesModal();
-        await this._openSettingsModal(targetId);
+        const PUBLISH_FACE_IDS = ['art-edit-mode', 'art-viewing', 'art-publish-modal', 'publish-settings-modal', 'publish-pages-modal'];
+        const openIds = this.nav ? PUBLISH_FACE_IDS.filter((id) => this.nav.hasFace(id)) : [];
+        for (const id of openIds) this._overlays().close(id, { reason: 'program' });
+        if (openIds.length) this._artMode = 'view';
+        await this._openSettingsModal(targetId, { switchFrom: openIds });
     }
 
     async _runPublishExport() {

@@ -15,15 +15,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../../fixtures/fixture-userdata.json'), 'utf-8');
 const fixtureLibrary = readFileSync(join(here, '../../fixtures/fixture-library.json'), 'utf-8');
 
-async function bootApp(page) {
+async function bootApp(page, { histFlagOld = false } = {}) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
-    await page.addInitScript(([userData, library]) => {
+    await page.addInitScript(([userData, library, old]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-    }, [fixtureUserData, fixtureLibrary]);
+        if (old) localStorage.setItem('bookshelf.flag.histAllWidths', '0'); // イシュー#513 S6
+    }, [fixtureUserData, fixtureLibrary, histFlagOld]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
@@ -181,16 +182,31 @@ test.describe('ブロックの全面編集: Escは完了(保存)になる(決ま
 });
 
 test.describe('A-e: PCで記事の編集中に戻るとアプリから抜ける', () => {
-    test('PC幅で記事エディタを開いてから戻る → アプリの外に出る(今の振る舞い) // CHAR: 直す対象(step2 A-e)', async ({ page }, testInfo) => {
+    // イシュー#513 S6で期待を書き換え(②判断2026-11-03 S6差し戻し): PC記事エディタの戻るはP9と同種の
+    // CHAR(出口の決まり)であり、S6のスコープに含まれる。全幅化で記事エディタ(art-edit-mode)の面も
+    // 段を積むようになったため、戻るは公開の一覧(#/publish)へ1段戻るだけになり、アプリの外には出ない。
+    test('PC幅で記事エディタを開いてから戻る → 公開の一覧へ1段戻る(アプリ内に留まる) // CHAR→S6', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PCの戻るはPC幅(マウス)だけが対象');
         await bootApp(page);
         await openPublishPagesModal(page);
         await page.click('#art-new');
         await expect(page.locator('#art-edit-view')).toBeVisible();
         await page.goBack();
+        await expect(page.locator('#art-edit-view')).not.toBeVisible();
+        await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/publish');
+        await expect.poll(() => page.url()).not.toBe('about:blank');
+    });
+
+    test('PC幅(フラグ旧)で記事エディタを開いてから戻る → アプリの外に出る(元の振る舞いを維持) // CHAR: 直す対象(step2 A-e)の原文を保存', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'PCの戻るはPC幅(マウス)だけが対象');
+        await bootApp(page, { histFlagOld: true });
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+        await page.goBack();
         await page.waitForTimeout(200);
-        // 今の振る舞い: 記事エディタを開く経路は_modalHistPushの中央ゲート(js/bookshelf.js:13283-13285)を
-        // 通るため、PCでは履歴が積まれておらず、戻るでアプリの外に出る。
+        // フラグ旧: 記事エディタを開く経路はSurface.pushの早期return(_navMobile→_isHistMobile)を
+        // 通るため、PCでは履歴が積まれておらず、戻るでアプリの外に出る(元の振る舞い)。
         await expect.poll(() => page.url()).toBe('about:blank');
     });
 });

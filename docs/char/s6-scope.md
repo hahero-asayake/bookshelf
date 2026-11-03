@@ -88,4 +88,28 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 
 ## 5. 検証スクリプトの追加要件（②指示）
 
-`scripts/verify/e2e-diff-main.mjs`に汎用オプション `--init-storage key=value`（複数回指定可）を追加し、base/work両方のPlaywright実行でlocalStorageへ値を注入できるようにする（S6専用分岐は書かない）。現状このオプションは無い（grep確認済み・既存オプションは`--exclude`/`--no-default-exclude`/`--skip-e2e`/`--skip-vitest`/`--visual`等）。注入経路は実装時に検討（環境変数→test-base.jsのcontext fixtureでaddInitScript、等）。
+`scripts/verify/e2e-diff-main.mjs`に汎用オプション `--init-storage key=value`（複数回指定可）を追加し、base/work両方のPlaywright実行でlocalStorageへ値を注入できるようにする（S6専用分岐は書かない）。実装済み：`--init-storage`を`{key:value,...}`のJSONにして環境変数`E2E_INIT_STORAGE`へ渡し、`tests/e2e/helpers/test-base.js`のcontext fixtureが読んでaddInitScriptする（全specに効く汎用口・S6専用分岐なし）。
+
+## 6. close直後にopenする競合（②判断2026-11-03 step3差し戻し・案B）
+
+### 6-1. 根本原因（実測で確定）
+
+全幅化で「close(段を複数face除去・unwind:true)→open(段をpush)」の2回apply構成が、非同期のgo予約と競合する。`closePublish3`/`closeSettings3`のようなunwind付きcloseは`historyOp`で`go(dFaces)`（dFaces<0）を返し、`_scheduleGo()`でmicrotaskにgoを予約する(`js/nav-state.js` apply)。直後に別の面をopen(push)すると、`if (op.op === 'push' && this._pendingGo < 0) { this._pendingGo += 1; op = {op:'replace',...}; }`が1段分だけ変換・消費するが、dFacesが2以上（複数face close）だと消化しきれない残りが`_pendingGo`に残る。これが後からmicrotaskで`history.go(n)`として発火し、直前にreplaceした新しい段（例: settings-modal）を巻き戻す。popstateハンドラが着地先スナップショットとのdiffを解消しようとして新しい面を閉じてしまう＝「設定を開いたのに表示されない」という症状になる（実測：`_confirmOpenSettings`経由の5件すべてがこの型）。
+
+### 6-2. 修正：Surface.switchTo（履歴の段だけ1回のreplaceにまとめる）
+
+`js/ui/surface.js Surface.switchTo(fromIds, toId, opts)`を新設。対応する`js/nav-state.js`の`switchFace3`reduceケースと`nav.switchTo()`を追加。fromIds(複数可)を除去しtoIdを追加する1回の操作にし、`meta.replace:true`を渡すことで`historyOp`は常に`replace`を返す（`go`を一切発行しない）。重なり(見た目)の開閉は呼び手が自分で`overlays.close(fromId)`を呼ぶ（Surface.switchTo自身はtoDef.overlay!==falseの時だけov.openする。settings-modal等overlay:falseの面は呼び手が自前でDOM操作する既存構造に合わせた）。戻ると「fromを開く前の場所」へ行く（fromには戻らない・②の見立てどおり決まりに合う）。
+
+### 6-3. 横展開：close直後にopenしている箇所の洗い出し（grep "_openSettingsModal\|openPublishPagesModal\|openPublishSettingsModal"＋close系の近傍確認）
+
+| 呼び出し元 | パターン | 対応 |
+|---|---|---|
+| `_confirmOpenSettings(message, targetId)`（9093行） | `closePublishPagesModal()`→`await _openSettingsModal(targetId)` | **修正済み**。開いている公開系face(`art-edit-mode`/`art-viewing`/`art-publish-modal`/`publish-settings-modal`/`publish-pages-modal`)を検出し重なりだけ閉じ、`_openSettingsModal(targetId, {switchFrom: openIds})`でSurface.switchTo経由に。呼び出し元は5箇所(5185/9097/9108/9115/9119/12164行)全部これ経由なので一括で直った |
+| `_openSettingsModal(targetId, {switchFrom})` | hist:true固定だったoverlays.open呼び出し | **修正済み**。switchFromがある時はhist:falseにし、Surface.switchToで段を1回にまとめる |
+| `report-moderation.spec.js:204`「開いたままリロードしても開き直し」 | close/openではなく、リロード後のreopener(_navReopen)絡み | **未解決**（原因未特定・close直後open型とは別の経路の可能性。時間切れのため次回に持ち越し） |
+| `publish-article-editor.spec.js:988`「公開中記事の一括更新の案内」 | 未特定 | **未解決**（原因未特定・時間切れのため次回に持ち越し） |
+| `openPublishPagesModal().then(openArticleIfNeeded)`（8408行）・`openPublishPagesModal().then(() => openPublishSettingsModal())`（8414行） | close処理を挟まずopenのみの連続呼び出し | **対象外**（closeを挟まない単純な連続open。今回の競合パターンには当たらない） |
+
+### 6-4. 未解決の2件（次回に持ち越し）
+
+`report-moderation.spec.js:204`・`publish-article-editor.spec.js:988`はこのrunの時間内に根本原因を特定できなかった。両方ともPUBLISH_FACE_IDSのパターンとは異なる経路（reopener・または別の非同期処理）で全幅化の影響を受けている可能性がある。次のrunでの調査方針：`--trace`は使わず（既知の罠）、`page.on('console')`でNAV_SHADOW_CHECK=logを使った差分ログか、本件と同様に`window.__DEBUG`変数を一時的に仕込んでfacesの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。

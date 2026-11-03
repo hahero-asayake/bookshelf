@@ -62,7 +62,7 @@
 | `article.spec.js:109`（旧）→`article.spec.js`内「A-d→X1」3件＋「ブロックの全面編集」1件（新） | 直す対象(step2 A-d) → `// CHAR→X1` | **対象（実装済み。印を`// CHAR→X1`に変更）**。対象を「ブロック単位のEsc」から「記事全体の編集画面を出るとき」(A5)に差し替え |
 | `pc-back.spec.js:28` | 直す対象(step2 P9) | **対象外**（設定モーダルのPC戻る＝S6。注意事項により`hist:'mobile'`は変えない） |
 | `pc-back.spec.js:38` | 直す対象(step2 P9) | **対象外**（公開ページ管理のPC戻る＝同上。S6で扱う） |
-| `article.spec.js:125`付近 | 直す対象(step2 A-e) | **対象外**（PCの記事エディタの戻る＝S6と同じ理由で対象外。brief注意事項に明記） |
+| `article.spec.js:125`付近 | 直す対象(step2 A-e) → `// CHAR→S6` | **対象（S6で書き換え。②判断2026-11-03 S6差し戻し）**。PCの記事エディタの戻る＝P9と同種（出口の決まりに関わるCHAR）。X1時点の「対象外」判断は誤りだった（記事エディタの面(art-fs等)もSurfaceのhist:'mobile'既定を使うため、全幅化の影響を受ける）。印は`// CHAR→S6`に変更 |
 | `article.spec.js:71`付近 | 直す対象(step2 A-a,A-b) | 対象外（X3の範囲。本の選び方・印） |
 | `article.spec.js:95`付近 | 直す対象(step2 A-c) | 対象外（X3の範囲。引き出しの自動開閉） |
 | `widgets.spec.js:77` | 直す対象(step2 W1) | 対象外（X2の範囲。部品の配置） |

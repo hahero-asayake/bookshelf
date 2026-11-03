@@ -31,6 +31,11 @@
 //   --port        既定は環境変数PORTまたは8000(playwright.config.jsと同じ規則)。
 //   --retries     新しく落ちたものの流し直し回数(既定3・計画§3-2の4)。
 //   --keep        デバッグ用。一時worktreeを片付けずに残す(通常は使わない)。
+//   --init-storage key=value
+//                 E2E実行前にlocalStorageへ値を注入する(複数回指定可)。base/work両方の
+//                 playwright実行に対して効く(S6専用の分岐ではない汎用オプション・②指示・
+//                 docs/char/s6-scope.md §5)。tests/e2e/helpers/test-base.jsのcontext fixtureが
+//                 環境変数E2E_INIT_STORAGE(JSON)を読んでaddInitScriptする。
 //
 // 除外(イシュー#507): sort-perf-budgetはCPU負荷で結果が揺れる既知のテストで、
 // CIも.github/workflows/ci.ymlの「sort-perf-budget以外・並列」stepで
@@ -89,6 +94,15 @@ const RETRIES = parseInt(opt('retries', '3'), 10);
 const KEEP = flag('keep');
 const NO_DEFAULT_EXCLUDE = flag('no-default-exclude');
 const EXTRA_EXCLUDE_PATTERNS = optAll('exclude');
+// --init-storage key=value (複数回指定可) → {key: value, ...} のJSONにしてE2E_INIT_STORAGEへ渡す
+const INIT_STORAGE_PAIRS = optAll('init-storage');
+const INIT_STORAGE_JSON = INIT_STORAGE_PAIRS.length ? JSON.stringify(Object.fromEntries(
+    INIT_STORAGE_PAIRS.map((kv) => {
+        const i = kv.indexOf('=');
+        if (i < 0) throw new Error(`--init-storage は key=value の形で指定すること(受け取った値: ${kv})`);
+        return [kv.slice(0, i), kv.slice(i + 1)];
+    }),
+)) : '';
 
 // ---------- 除外(sort-perf-budget等・イシュー#507) ----------
 // 既定の除外一覧はci.ymlの「sort-perf-budget以外・並列」stepの--grep-invertを正本として読む
@@ -258,6 +272,7 @@ async function runE2E(sideDir, outFile, {
     const env = {
         ...process.env, PORT, PLAYWRIGHT_BASE_URL: `http://localhost:${PORT}`, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
     };
+    if (INIT_STORAGE_JSON) env.E2E_INIT_STORAGE = INIT_STORAGE_JSON;
     log(`[E2E] cwd=${sideDir} args=${args.join(' ')}`);
     const r = await run(PW_BIN, args, { cwd: sideDir, env });
     writeFileSync(`${outFile}.log`, `exit=${r.code}\n${r.out}\n${r.err}`);
@@ -372,6 +387,7 @@ async function main() {
     log(`REPO_ROOT=${REPO_ROOT}`);
     log(`OUT=${OUT}`);
     log(`BASE_REF=${BASE_REF} SELF=${SELF} PORT=${PORT} GREP=${GREP || '(none)'}`);
+    log(`INIT_STORAGE: ${INIT_STORAGE_JSON || '(none)'}`);
     log(EXCLUDES.length
         ? `除外(E2E): ${EXCLUDES.map((e) => e.pattern).join('|')} (${EXCLUDES.length}件・出どころと理由はreport参照)`
         : '除外(E2E): なし(全件実行)');

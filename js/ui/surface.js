@@ -95,6 +95,44 @@
 
         isOpen(id) { const ov = this._ov(); return !!(ov && ov.has(id)); }
 
+        // イシュー#513 S6: 「今の面(複数可)を閉じて、別の面を開く」を1回の履歴操作にする。
+        // close→openの2回apply(go予約→push)だと、closeのgo(-n)がmicrotaskで未消化のまま次のpushが
+        // 先にreplaceへ変換され、残ったgo(-n)が書き換え済みの新しい段を後から巻き戻す競合が起きる
+        // (#513 step3で実測・_confirmOpenSettings等)。重なり(見た目)はfrom毎にov.closeしov.openするが、
+        // 履歴の段はnav.switchToの1回のreplaceにまとめる(goを一切発行しない)。戻ると「fromを開く前の
+        // 場所」へ行く(fromそのものには戻らない・②判断2026-11-03)。
+        switchTo(fromIds, toId, opts) {
+            const h = this.host;
+            if (!h) return null;
+            const o = opts || {};
+            const ids = Array.isArray(fromIds) ? fromIds : [fromIds];
+            const ov = this._ov();
+            for (const fromId of ids) {
+                const fromDef = this.get(fromId);
+                if (fromDef && fromDef.overlay !== false && ov) ov.close(fromId, { reason: o.fromReason || 'program' });
+            }
+            const toDef = this.get(toId);
+            let handle = null;
+            if (toDef && toDef.overlay !== false && ov) {
+                const el = this._el(toDef);
+                if (ov && el) {
+                    handle = ov.open(el, {
+                        id: toId, kind: toDef.kind || 'modal', size: toDef.size, hist: false,
+                        esc: toDef.esc, backdrop: toDef.backdrop, showClass: toDef.showClass, onOpen: toDef.onOpen,
+                        layer: toDef.layer, sizeTarget: toDef.sizeTarget, onClose: toDef.onClose,
+                    });
+                }
+            }
+            const close = o.close || (toDef && toDef.close);
+            const isMobile = o.isMobile || (toDef && toDef.hist && toDef.hist.isMobile);
+            const mobile = isMobile ? isMobile() : h._navMobile();
+            if (mobile && close) {
+                h._bindSettingsPopstate();
+                h.nav.switchTo(ids, toId, o.extra, close, o.route || (toDef && toDef.route));
+            }
+            return handle;
+        }
+
         // 段を積む (旧 VirtualBookshelf._modalHistPush の中身そのもの)
         push(id, close, { isMobile, never, extra, route } = {}) {
             const h = this.host;

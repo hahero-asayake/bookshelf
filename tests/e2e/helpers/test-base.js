@@ -104,6 +104,16 @@ function installGisMock() {
 export const test = base.extend({
     context: async ({ context }, use, testInfo) => {
         await context.addInitScript(installGisMock);
+        // イシュー#513 S6: フラグ旧状態での比較(e2e-diff-main.mjs --init-storage)用の汎用口。
+        // E2E_INIT_STORAGE は {"key":"value",...} のJSON文字列(環境変数)。S6専用の分岐は書かず、
+        // どのテストでも使える汎用のlocalStorage事前注入にする(②指示・s6-scope.md §5)。
+        // 既定(未設定)は何もしない=既存スイートの結果に影響しない。
+        if (process.env.E2E_INIT_STORAGE) {
+            const kv = JSON.parse(process.env.E2E_INIT_STORAGE);
+            await context.addInitScript((pairs) => {
+                for (const [k, v] of pairs) localStorage.setItem(k, v);
+            }, Object.entries(kv));
+        }
         // index.html の AdSense 審査用スニペット (adsbygoogle.js) を止める。
         // このスクリプト自体を止めれば、それが内部で発生させる広告配信/不正検出通信
         // (googleads.g.doubleclick.net・adtrafficquality.google・www.google.com/recaptcha 等)
