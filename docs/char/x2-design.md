@@ -84,3 +84,8 @@ computeHoles(items:[{cols}], C) -> [{ index, col, row, width }]
 ## 7. 書き換える char テスト（予定）
 
 `tests/e2e/char/widgets.spec.js` の W1（77行）・W2（93行）・W5（147行）・W6（168行）だけを書き換え、印を `// CHAR→X2` にする。W3・W4（CHAR の印が無い）と W8（184・193行）は触らない。
+
+## 8. 後で直す候補（このイシューでは直さない・②指示 2026-11-04）
+
+- 1440 で、小のカードの題名が「今月…」と省略される。操作欄の部品（大きさ・＋・×）が題名の幅を食っているため（題名の最小幅は 2.5em。css/bookshelf.css の `.dashboard-grid.is-edit-mode .widget-title`）。
+- 1024 の小のカードで、中央を長押しするとドラッグが始まらないことがある。操作欄が2行に折り返し、中央が大きさの選択欄に当たる（excludeSelector の `.widget-actions`）。つまみ・本体・「選んで置く」からは動かせる。
