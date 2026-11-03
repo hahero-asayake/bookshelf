@@ -1590,7 +1590,7 @@ class VirtualBookshelf {
         }
         const asins = [...(this.selectedAsins || [])].filter(a => (curShelf.books || []).includes(a));
         if (!asins.length) { toast('この本棚にある本を選択してください'); return; }
-        if (!confirm(`選択した ${asins.length} 冊を「${curShelf.name}」から外しますか？\n\n本自体は削除されません（子の本棚に入っている場合はそこからも外れます）。`)) return;
+        if (!(await window.confirmDialog({ message: `選択した ${asins.length} 冊を「${curShelf.name}」から外しますか？\n\n本自体は削除されません（子の本棚に入っている場合はそこからも外れます）。`, danger: true }))) return;
         for (const asin of asins) {
             this.bookshelfManager.removeBookFromBookshelf(curShelf.internalId, asin);
         }
@@ -3225,18 +3225,15 @@ class VirtualBookshelf {
         const existing = this._noteAutoSaveTimers.get(key);
         if (existing) clearTimeout(existing);
         const statusEl = (modalRoot || document).querySelector(`.save-note-status[data-asin="${asin}"][data-scope="${scope}"]`);
-        if (statusEl) statusEl.textContent = '入力中…';
+        window.SaveStatus.set(statusEl, '入力中…'); // イシュー#518: SaveStatus経由(短文メモ)
         const timer = setTimeout(async () => {
             this._noteAutoSaveTimers.delete(key);
             try {
                 await this.saveNote(asin, value);
-                if (statusEl) {
-                    statusEl.textContent = '保存しました';
-                    setTimeout(() => { if (statusEl.textContent === '保存しました') statusEl.textContent = ''; }, 1500);
-                }
+                window.SaveStatus.set(statusEl, '保存しました', { autoClearMs: 1500 });
             } catch (e) {
                 console.error('メモ自動保存エラー:', e);
-                if (statusEl) statusEl.textContent = e.message || '保存失敗';
+                window.SaveStatus.set(statusEl, e.message || '保存失敗');
             }
         }, 300);
         this._noteAutoSaveTimers.set(key, timer);
@@ -3489,9 +3486,11 @@ class VirtualBookshelf {
             if (format === 'empty') {
                 // 別端末からの再ログイン直後などにハブが空に見えても、無確認で初期化しない
                 // (GitHub と対称。誤って既存アカウントを空データで上書きする事故を防ぐ)。
-                // init 中はローディング表示が前面にあるため、確実に出るネイティブ confirm を使う。
+                // init 中はローディング表示が前面にある (イシュー#518: confirmDialog は overlay-manager の
+                // ダイアログ帯 (--ov-z-dialog) に載るため前面に出る。tests/e2e/char/boot-confirm-dialog.spec.js
+                // でローディング表示の上からクリックできることを確認済み)。
                 this.updateSyncStatus('reconnect', `${label} (空)`);
-                const ok = confirm(`${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）`);
+                const ok = await window.confirmDialog({ message: `${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）` });
                 if (!ok) {
                     // 初期化せず中断。接続済みのまま放置すると次回 save で手元の古いデータが
                     // 空ハブへ上書きされる恐れがあるため、目立つ警告を出して状態を error にする。
@@ -3611,8 +3610,8 @@ class VirtualBookshelf {
         try {
             const format = await this.storage.detectFormat();
             if (format === 'empty') {
-                this.updateSyncStatus('reconnect', `${label} (空)`);
-                const ok = confirm(`GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？`);
+                this.updateSyncStatus('reconnect', `${label} (空)`); // イシュー#518: confirmDialog化 (前面表示はboot-confirm-dialog.spec.jsで確認)
+                const ok = await window.confirmDialog({ message: `GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？` });
                 if (!ok) return;
                 await this.storage.initEmpty();
             } else if (format === 'pre-notes-split') {
@@ -3689,12 +3688,16 @@ class VirtualBookshelf {
         this._renderHubAuthState();
         this._setupHubUI();
 
-        selector.addEventListener('change', () => {
+        selector.addEventListener('change', async () => {
             const newMethod = selector.value;
             showPanel(newMethod);
             const current = (this.syncConfig && this.syncConfig.method) || 'local';
             if (newMethod === 'local' && current !== 'local') {
-                const ok = confirm('保存先を「この端末のフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。');
+                // イシュー#518: confirmDialog は Promise のため、確認待ち中にセレクタを
+                // 再操作できないよう disabled にする (棚卸しの「守り方」どおり)。
+                selector.disabled = true;
+                const ok = await window.confirmDialog({ message: '保存先を「この端末のフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。' });
+                selector.disabled = false;
                 if (ok) {
                     const merged = { ...SyncConfigManager.load(), method: 'local' };
                     SyncConfigManager.save(merged);
@@ -4287,8 +4290,8 @@ class VirtualBookshelf {
         }
     }
 
-    _disconnectGitHub() {
-        const ok = confirm('GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。');
+    async _disconnectGitHub() {
+        const ok = await window.confirmDialog({ message: 'GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。', danger: true });
         if (!ok) return;
         const merged = SyncConfigManager.load();
         merged.method = 'local';
@@ -4510,10 +4513,10 @@ class VirtualBookshelf {
         const admFree = document.getElementById('account-admin-free');
         if (admFree) admFree.addEventListener('click', () => this._adminSetPlan('free'));
         const admReset = document.getElementById('account-admin-reset');
-        if (admReset) admReset.addEventListener('click', () => {
+        if (admReset) admReset.addEventListener('click', async () => {
             const email = (document.getElementById('account-admin-email') || {}).value || '';
             if (!email.trim()) { toast('対象のメールを入力してください。', { type: 'warn' }); return; }
-            if (confirm(`${email.trim()} の Stripe 課金リンク（customer/subscription）を外して無料に戻します。\n（test→live 切替で詰まった時の復旧用。Stripe 側の課金は止めません）\nよろしいですか？`)) this._adminSetPlan('free', true);
+            if (await window.confirmDialog({ message: `${email.trim()} の Stripe 課金リンク（customer/subscription）を外して無料に戻します。\n（test→live 切替で詰まった時の復旧用。Stripe 側の課金は止めません）\nよろしいですか？` })) this._adminSetPlan('free', true);
         });
         // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
         this._handleBillingReturn();
@@ -4800,8 +4803,8 @@ class VirtualBookshelf {
         banner.hidden = false;
     }
 
-    _logoutAccount() {
-        if (!confirm('ログアウトしますか？\nこの端末からハブの接続情報を消します（ハブ上のデータは残ります）。\nOK を押すとページを再読み込みします。')) return;
+    async _logoutAccount() {
+        if (!(await window.confirmDialog({ message: 'ログアウトしますか？\nこの端末からハブの接続情報を消します（ハブ上のデータは残ります）。\nOK を押すとページを再読み込みします。', danger: true }))) return;
         this._disconnectHub();   // 切断 + 同期=hub なら local に戻す + reload
     }
 
@@ -4809,9 +4812,14 @@ class VirtualBookshelf {
     async _deleteAccount() {
         const hub = (SyncConfigManager.load().hub) || {};
         if (!(hub.key && hub.apiBase)) { toast('ログインしていません。', { type: 'warn' }); return; }
-        if (!confirm('アカウントを削除しますか？\n\nハブ上の保存データと、ハブで公開したサイトがすべて削除されます。この操作は取り消せません。\n（GitHub やこの端末に保存したデータは消えません）\n\nOK を押すと削除して再読み込みします。')) return;
         const btn = document.getElementById('account-delete-btn');
+        // イシュー#518: confirmDialog は Promise のため、確認待ち中の連打で2回 DELETE が飛ばないよう
+        // confirm の前に disabled にする (ネイティブ confirm はブロッキングのため問題化していなかった)。
         if (btn) btn.disabled = true;
+        if (!(await window.confirmDialog({ message: 'アカウントを削除しますか？\n\nハブ上の保存データと、ハブで公開したサイトがすべて削除されます。この操作は取り消せません。\n（GitHub やこの端末に保存したデータは消えません）\n\nOK を押すと削除して再読み込みします。', danger: true }))) {
+            if (btn) btn.disabled = false;
+            return;
+        }
         try {
             const res = await fetch(`${hub.apiBase}/account`, {
                 method: 'DELETE',
@@ -7853,12 +7861,15 @@ class VirtualBookshelf {
             })();
         }, { signal });
 
-        host.addEventListener('click', (e) => {
+        host.addEventListener('click', async (e) => {
             const uninstall = e.target.closest('[data-uninstall-plugin]');
             if (uninstall) {
                 e.stopPropagation();
                 const id = uninstall.dataset.uninstallPlugin;
-                if (!confirm(`プラグイン "${id}" を削除しますか？同期フォルダから plugins/${id}/ も削除されます。`)) return;
+                // イシュー#518: 確認待ち中の連打で二重アンインストールにならないよう disabled にする。
+                uninstall.disabled = true;
+                const ok = await window.confirmDialog({ message: `プラグイン "${id}" を削除しますか？同期フォルダから plugins/${id}/ も削除されます。`, danger: true });
+                if (!ok) { uninstall.disabled = false; return; }
                 (async () => {
                     try {
                         await this.uninstallPluginById(id);
@@ -8770,7 +8781,7 @@ class VirtualBookshelf {
             confirmMsg += `\n\n子孫本棚にも含まれているため、自動カスケード削除されます:\n${names}`;
         }
 
-        if (!confirm(confirmMsg)) return;
+        if (!(await window.confirmDialog({ message: confirmMsg, danger: true }))) return;
 
         // BookshelfManager 経由でカスケード削除
         this.bookshelfManager.removeBookFromBookshelf(bookshelf.internalId, asin);
@@ -11933,8 +11944,8 @@ class VirtualBookshelf {
 
     _artSetSaveStatus(text, { error = false, retry = false, stale = false } = {}) {
         const el = document.getElementById('art-save-status');
+        window.SaveStatus.set(el, text); // イシュー#518: SaveStatus経由(記事)。state未指定=テキストのみ変更
         if (el) {
-            el.textContent = text;
             el.classList.toggle('is-error', error);
             el.classList.toggle('is-stale', stale);
         }
@@ -12696,7 +12707,7 @@ class VirtualBookshelf {
                 const subPath = (settings.obsidianSubPath || '').replace(/^\/+|\/+$/g, '');
                 const filePath = subPath ? `${subPath}/${fullPath}` : fullPath;
                 const obsidianUrl = `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(filePath)}`;
-                if (confirm(`${created ? '詳細メモを作成しました' : '詳細メモ'}\n\n${fullPath}\n（パスをクリップボードにコピー済）\n\nObsidian vault "${vaultName}" で開きますか？`)) {
+                if (await window.confirmDialog({ message: `${created ? '詳細メモを作成しました' : '詳細メモ'}\n\n${fullPath}\n（パスをクリップボードにコピー済）\n\nObsidian vault "${vaultName}" で開きますか？` })) {
                     window.location.href = obsidianUrl;
                 }
             } else {
@@ -12950,7 +12961,7 @@ class VirtualBookshelf {
             titleEl.setAttribute('aria-label', `長文メモ: ${plain}`);
             titleEl.setAttribute('title', `長文メモ: ${plain}`);
         }
-        if (statusEl) statusEl.textContent = '読み込み中...';
+        window.SaveStatus.set(statusEl, '読み込み中...'); // イシュー#518: SaveStatus経由(長文メモ)
 
         // 旧 EasyMDE インスタンスがあれば破棄
         if (this._bookMemoEditor) {
@@ -12971,7 +12982,7 @@ class VirtualBookshelf {
             textareaEl.value = '';
             this._overlays().open(modal, { kind: 'modal', size: 'full', hist: false }); // 重なり管理役 (イシュー#367): 全画面
             this._surface().open('book-memo-modal', { close: (o) => this._bookMemoFsDone(o), extra: { asin } });
-            if (statusEl) statusEl.textContent = '読み込めませんでした。接続を確認して開き直してください。';
+            window.SaveStatus.set(statusEl, '読み込めませんでした。接続を確認して開き直してください。');
             return;
         }
         if (existing == null) {
@@ -12990,7 +13001,7 @@ class VirtualBookshelf {
             await this._ensureEasyMDELoaded();
         } catch (e) {
             console.error('EasyMDE読み込みに失敗:', e);
-            if (statusEl) statusEl.textContent = 'エディタライブラリの読み込みに失敗しました';
+            window.SaveStatus.set(statusEl, 'エディタライブラリの読み込みに失敗しました');
             return;
         }
         // モーダルを開いた後の非同期読み込みなので、待っている間にモーダルが閉じられている
@@ -12999,7 +13010,7 @@ class VirtualBookshelf {
         // イシュー#279: EasyMDE生成は _openMdEditor (文章ブロック全画面と共通)。
         // showStatus:false (EasyMDE内蔵の行数/単語数バーは使わない) + onChange で行数・文字数を
         // ヘッダー2行目(#book-memo-status)へ出す (イシュー#282)。
-        const updateSub = (md) => { if (statusEl) statusEl.textContent = this._bookMemoFsSubText(md); };
+        const updateSub = (md) => { window.SaveStatus.set(statusEl, this._bookMemoFsSubText(md)); };
         this._bookMemoEditor = this._openMdEditor({ textareaEl, compact: false, showStatus: false, autoFocusIfWide: false, onChange: updateSub });
         this._bookMemoEditorContext = { asin, title: book.title };
         this._bookMemoInitial = body;   // 閉じる時の破棄確認用 (未保存の変更検出)
@@ -13014,7 +13025,7 @@ class VirtualBookshelf {
         const editor = this._bookMemoEditor;
         if (!ctx || !editor) return this._bookMemoFsClose({ fromHistory });
         const statusEl = document.getElementById('book-memo-status');
-        if (statusEl) statusEl.textContent = '保存中...';
+        window.SaveStatus.set(statusEl, '保存中...'); // イシュー#518: SaveStatus経由(長文メモ)
         try {
             // body のみ編集させ、保持していた frontmatter (updated を自動更新) と再結合 (ADR-024)
             const content = BookshelfStorage.joinFrontmatter(this._bookMemoFrontmatter, editor.value());
@@ -13026,7 +13037,7 @@ class VirtualBookshelf {
             return this._bookMemoFsClose({ fromHistory });
         } catch (e) {
             console.error('長文メモ保存失敗:', e);
-            if (statusEl) statusEl.textContent = `${e.message}`;
+            window.SaveStatus.set(statusEl, `${e.message}`);
             return false; // 閉じない (保存失敗時は編集を続けさせる・detail指定どおり)
         }
     }
@@ -13431,7 +13442,7 @@ class VirtualBookshelf {
 この操作は取り消せません。
 お気に入り、メモ、本棚からも削除されます。`;
 
-        if (!confirm(confirmMessage)) {
+        if (!(await window.confirmDialog({ message: confirmMessage, danger: true }))) {
             return;
         }
 
@@ -14287,7 +14298,7 @@ class VirtualBookshelf {
     }
 
     async uninstallPluginById(id) {
-        if (!confirm(`プラグイン "${id}" を削除しますか？\n同期フォルダの plugins/${id}/ も削除されます。`)) return;
+        if (!(await window.confirmDialog({ message: `プラグイン "${id}" を削除しますか？\n同期フォルダの plugins/${id}/ も削除されます。`, danger: true }))) return;
         try {
             await this.pluginLoader.uninstall(id);
             await this._renderPluginsList();

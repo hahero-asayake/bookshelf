@@ -289,7 +289,7 @@ class BookshelfPluginLoader {
             `version: ${manifest.version || '(未指定)'}\n` +
             `publishable: ${manifest.publishable ? 'yes' : 'no'}\n\n` +
             `${manifest.description || ''}`;
-        if (!opts.skipConfirm && !confirm(confirmMsg)) return null;
+        if (!opts.skipConfirm && !(await window.confirmDialog({ message: confirmMsg, danger: true }))) return null;
 
         if (!this._isReady()) throw new Error('同期先が未接続です');
 
