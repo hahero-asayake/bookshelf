@@ -1048,6 +1048,66 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
     });
 
+    // 回帰テスト (イシュー#515): CIの遅い環境では、直前の記事単体公開のtoastがまだDOMに
+    // 残っている間に一括更新のtoastを`.last()`で1回読むと、古いtoastを取り違える
+    // (CI実機 0667131で再現)。/publishの応答をわざと遅らせて同じ窓を作り、上の
+    // 本体テストの読み方(文言で絞り込んで待つ)がこの窓でも正しく動くことを固定する。
+    test('公開中記事の一括更新: hubの応答が遅れても直前のtoastを取り違えない (イシュー#515回帰)', async ({ page }) => {
+        const { errors, hubCaptured } = await bootAppForPublish(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+
+        await page.click('#art-new');
+        await page.fill('#art-title', '515回帰テスト1');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文1');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await publishViaPanel(page);
+        await expect(page.locator('.cfm-box')).toBeVisible();
+        await page.click('.cfm-ok');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+
+        // 一覧に戻ってから2本目を作る(公開パネルが開いたままだと#art-newが見えない)
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await closePublishPanelIfOpen(page);
+        await page.click('#art-new');
+        await page.fill('#art-title', '515回帰テスト2');
+        await addBlock(page, 'text', 'first');
+        await fillTextBlock(page, '本文2');
+        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        hubCaptured.files = null;
+        await publishViaPanel(page);
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        // 記事2単体公開のtoast(「『515回帰テスト2』を公開しました」)がDOMに残っている間に、
+        // 一括更新のhub応答だけを1秒遅らせる(CIの遅さを模す)。
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        hubCaptured.files = null;
+        await closePublishPanelIfOpen(page);
+        await page.route(`${HUB}/**`, async (route) => {
+            const url = route.request().url();
+            if (url.includes('/publish')) {
+                const body = route.request().postDataJSON();
+                hubCaptured.files = body.files;
+                hubCaptured.deleteMissing = body.deleteMissing;
+                hubCaptured.index = body.index;
+                await new Promise((r) => setTimeout(r, 1000));
+                return route.fulfill({ json: { ok: true, siteUrl: `${HUB}/public/sid/` } });
+            }
+            return route.fallback();
+        });
+        await page.click('#art-republish-all');
+        await expect.poll(() => hubCaptured.files).not.toBeNull();
+        expect(hubCaptured.files.length).toBe(5); // 記事2件分(index.html+og.pngが2組)+サイトのindex.html
+        const republishToast = page.locator('.toast-success', { hasText: '公開中の' });
+        await expect(republishToast.last()).toBeVisible();
+        const toastText2 = await republishToast.last().textContent();
+        expect(toastText2).toContain('公開中の 2 記事を更新しました');
+        expect(errors).toEqual([]);
+    });
+
     test('星(評価)トグルをオンにすると生成HTMLに★★★☆☆とaria-labelが含まれる (イシュー#135)', async ({ page }) => {
         const { errors, hubCaptured } = await bootAppForPublish(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
