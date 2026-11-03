@@ -2006,7 +2006,7 @@ html.bs-likely-has-data #dashboard-welcome {
 /* イシュー#521 X2: 編集モードの操作欄 (大きさ・＋・×) が細いカード (1024 の小＝約99px) に入りきらない時は、
    次の行へ折り返す (はみ出して隣のカードに重なり、押せなくなるのを防ぐ)。 */
 .dashboard-grid.is-edit-mode .widget-header { flex-wrap: wrap; }
-.dashboard-grid.is-edit-mode .widget-title { flex: 1 1 4em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-grid.is-edit-mode .widget-title { flex: 1 1 2.5em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-grid.is-edit-mode .widget-actions { margin-left: auto; }
 
 .widget-size-select {
