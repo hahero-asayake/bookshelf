@@ -162,17 +162,39 @@ test.describe('A-b: 入れた冊数と、記事全体で使われている本の
     });
 });
 
-test.describe('A-c: 引き出しが自動で開かない・1冊で閉じる(390/768)', () => {
-    test('390/768: 「本棚」ブロックを追加しても引き出しは自動で開かない。1冊選ぶと閉じる(今の振る舞い) // CHAR: 直す対象(step2 A-c)', async ({ page }, testInfo) => {
+test.describe('A-c: 本棚ブロックを足すと引き出しが開き、完了を押すまで閉じない(390/768)', () => {
+    test('390/768: 「本棚」ブロックを追加すると引き出しが自動で開く。1冊入れても閉じない。完了を押すと引き出しも閉じ、#art-add-sheetは開き直らない // CHAR→X3', async ({ page }, testInfo) => {
         test.skip(!['char-390', 'char-768'].includes(testInfo.project.name), 'A-cの対象は390・768');
         await bootApp(page);
         await openPublishPagesModal(page);
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'last');
         // addBlock完了時点でdata-art-mode='form'(全画面編集)に入っている。引き出し(#art-drawer)の
-        // 開閉は.is-openクラスで管理される(closeDrawerSheetIfOpen参照・publish-article-editor.spec.js 203〜206行)。
-        const openAfterAdd = await page.evaluate(() => document.getElementById('art-drawer')?.classList.contains('is-open'));
-        expect(openAfterAdd).toBeFalsy(); // 自動では開かない(今の振る舞い)
+        // 開閉は.is-openクラスで管理される。X3(イシュー#529・A-c): 本棚ブロックを足すと自動で開く。
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        // 1冊入れても閉じない(旧イシュー#165の自動クローズ(900px以下)は廃止した)
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        // 完了を押すと全画面も引き出しも閉じ、#art-add-sheetが開き直らない(経路で検査・#528で退行した退路)
+        await page.locator('#art-fs-done').click();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        await expect(page.locator('#art-add-sheet')).toBeHidden();
+    });
+
+    test('390/768: 完了後にブラウザの戻るを押しても#art-add-sheetは開き直らない(back-nav) // CHAR→X3', async ({ page }, testInfo) => {
+        test.skip(!['char-390', 'char-768'].includes(testInfo.project.name), 'A-cの対象は390・768');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'last');
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await page.locator('#art-fs-done').click();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        // 戻る1回目: 引き出しだけが積まれていた段を1段閉じる動作にはならない(完了は1 applyで両方畳んだ後なので
+        // 戻る対象はさらに1つ前=公開ページの一覧)。ここではart-add-sheetが開き直らないことだけを確かめる。
+        await page.goBack();
+        await expect(page.locator('#art-add-sheet')).toBeHidden();
     });
 });
 

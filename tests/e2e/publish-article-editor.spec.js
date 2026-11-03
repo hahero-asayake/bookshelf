@@ -2559,13 +2559,8 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         await page.fill('#art-title', 'ボトムシートテスト記事');
         await addBlock(page, 'shelf', 'first');
 
-        // シートは既定で閉じている。閉じている間、引き出しの本はビューポート外にある (toBeVisible() は
-        // 画面外でも真になるため使わない・ui-standards §2-12。boundingBox で実座標を見る)。
-        const closedBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
-        expect(closedBox.y).toBeGreaterThanOrEqual(844);
-
-        // 本棚ブロックの追加ボタンでシートがせり上がり、本が画面内でクリックできる (transform transition 0.25s待つ)
-        await page.locator('.art-shelf-add').first().click();
+        // X3(イシュー#529・A-c): 本棚ブロックを足すと引き出しが自動で開く(完了を押すまで閉じない)。
+        // シートは既に開いているため、本は画面内でクリックできる (transform transition 0.25s待つ)。
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         await page.waitForTimeout(400);
         const openBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
@@ -2679,7 +2674,8 @@ test.describe('記事エディタ: 狭い画面は#166のボトムシートの�
         await addBlock(page, 'shelf', 'first');
 
         await expect(page.locator('#art-drawer-collapse-btn')).toBeHidden();
-        await page.locator('.art-shelf-add').first().click();
+        // X3(イシュー#529・A-c): 引き出しは自動で開くため、.art-shelf-addでの手動オープンは不要
+        // (クリックしてもscrimに遮られる)。既に開いている状態から×で閉じるのを確認する。
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         await page.click('#art-sheet-close');
         await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
@@ -2733,15 +2729,16 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
 
-        await page.locator('.art-shelf-add').first().click();
+        // X3(イシュー#529・A-c): 引き出しは自動で開くため、.art-shelf-addでの手動オープンは不要
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
         await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック');
         await page.waitForTimeout(400);
 
         await page.locator('#art-drawer-add-all').click();
-        // イシュー#165: 「まとめて追加」も1操作で完結するため自動で閉じる
-        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        // X3(イシュー#529・A-c): 完了を押すまで閉じないため、「まとめて追加」後も開いたまま
+        // (旧イシュー#165の自動クローズは#529で廃止した)
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
         expect(itemCount).toBeGreaterThan(0);
         expect(errors).toEqual([]);
@@ -2753,7 +2750,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
 
-        await page.locator('.art-shelf-add').first().click();
+        // X3(イシュー#529・A-c): 引き出しは自動で開くため、.art-shelf-addでの手動オープンは不要
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
         await page.waitForTimeout(400);
 

@@ -330,6 +330,12 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await frame.locator('.art-cv-ins-btn').last().click();
         await page.click('#art-add-sheet [data-block-type="shelf"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        // X3(イシュー#529・A-c): +シート経由で本棚ブロックを足すと引き出し(art-sheet)が自動で開き、
+        // 段がart-fsの上にもう1つ積まれる。戻る1回目は引き出しだけを閉じ(formは残る)、
+        // 戻る2回目で全画面(art-fs)も閉じてedit扱いになる(#529 step2で軸③を実測・back-nav-matrix
+        // A17/A18と同じ理由)。
+        await page.goBack();
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         await page.goBack();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);

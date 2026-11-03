@@ -119,18 +119,12 @@ async function countOpsNewArticlePublish(page, hubCaptured, title) {
     ops.push('キャンバスの「+」をクリック');
     ops.push('「ブロックを追加」シートで「本棚」を選ぶ');
 
-    // A-cはrevert済み(イシュー#528 step4差し戻し・段の積み順の不整合のため)。
-    // 本棚ブロックを足しても引き出しは自動で開かないため、「本を追加」ボタンで開く操作が1手増える。
-    await page.locator('.art-shelf-add').first().click(); ops.push('「本を追加」ボタンで引き出しを開く');
+    // イシュー#529 (A-c入れ直し): 本棚ブロックを足すと引き出しが自動で開くため、「本を追加」ボタンで
+    // 開く手は不要。完了を押すまで閉じないため、×で閉じる手も不要(leaveFormの「完了」が両方畳む)。
     const items = page.locator('#art-drawer-list .art-drawer-item');
     const n = Math.min(3, await items.count());
     for (let i = 0; i < n; i++) { await items.nth(i).click(); ops.push(`引き出しで本${i + 1}冊目をクリック`); }
     expect(n).toBe(3);
-
-    // 本棚ブロックは複数冊追加できるため、本を選んでも引き出しは自動で閉じない(_artOnDrawerBookClick)。
-    // 390/768は×ボタン(#art-sheet-close)で手動で閉じる必要がある(900px超は常駐表示のため不要)。
-    const sheetClose = page.locator('#art-sheet-close');
-    if (await sheetClose.isVisible()) { await sheetClose.click(); ops.push('引き出しの×で閉じる'); }
 
     await leaveForm(page, ops);
 
@@ -157,11 +151,9 @@ async function countOpsUpdatePublished(page, hubCaptured) {
     await page.click('#art-mode-edit');
     await page.fill('#art-title', '既存記事(準備)');
     await addBlock(page, 'shelf', 'last');
-    await page.locator('.art-shelf-add').first().click();
+    // イシュー#529: 引き出しは自動で開く(「本を追加」での手動オープンは不要)
     const prepItems = page.locator('#art-drawer-list .art-drawer-item');
     await prepItems.nth(0).click();
-    const prepSheetClose = page.locator('#art-sheet-close');
-    if (await prepSheetClose.isVisible()) await prepSheetClose.click();
     await leaveForm(page, []);
     await clickPublishHeader(page);
     await expect(page.locator('#art-pub-go')).toBeEnabled();
@@ -175,13 +167,12 @@ async function countOpsUpdatePublished(page, hubCaptured) {
     await addBlock(page, 'shelf', 'last');
     ops.push('キャンバスの「+」をクリック');
     ops.push('「ブロックを追加」シートで「本棚」を選ぶ');
-    await page.locator('.art-shelf-add').last().click(); ops.push('「本を追加」ボタンで引き出しを開く');
+    // イシュー#529: 引き出しは自動で開き、完了まで閉じない(「本を追加」での手動オープン・×での
+    // 手動クローズのいずれも不要)
     const items = page.locator('#art-drawer-list .art-drawer-item');
     const n = Math.min(3, await items.count());
     for (let i = 0; i < n; i++) { await items.nth(i).click(); ops.push(`引き出しで本${i + 1}冊目をクリック`); }
     expect(n).toBe(3);
-    const sheetClose2 = page.locator('#art-sheet-close');
-    if (await sheetClose2.isVisible()) { await sheetClose2.click(); ops.push('引き出しの×で閉じる'); }
     await leaveForm(page, ops);
 
     // ②判断2026-11-03「3」: 公開済み記事の「変更を公開」はヘッダーから直接(公開パネルを経由しない)。

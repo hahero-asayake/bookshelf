@@ -319,6 +319,16 @@
                 const faces = s.faces.filter((f) => !removeIds.includes(f.id));
                 return { ...s, faces, source: 'ui' };
             }
+            // イシュー#529 (A-c入れ直し): art-fs(全画面)を完了/キャンセルで閉じる時、art-sheet(本棚
+            // ブロックの引き出し)が一緒に積まれていれば同じ1 applyで畳む。closeArtSubStates3と同じ理由
+            // (unwind:true・各faceは開いた時点でそれぞれ実エントリをpushしていたのでdFaces分だけ
+            // go(-n)すれば物理的に正しい位置へ戻る。個別closeを2回呼ぶとgoが重ねがけになり画面が壊れる
+            // 副作用があった・#528 step4で実測・#529 step2でも(b)単独の弱点として再確認)
+            case 'closeArtFsSheet3': {
+                const removeIds = ['art-fs', 'art-sheet'];
+                const faces = s.faces.filter((f) => !removeIds.includes(f.id));
+                return { ...s, faces, source: 'ui' };
+            }
             // 公開記事モーダルの × 閉じ。記事サブ状態 (閲覧/編集/一覧/公開の設定) をまとめて除去し route を戻す。
             // 旧実装は _modalHistPop を複数回individually呼んでいた (= 別々の apply) のを1回に統合 (#442 step3の崩れの原因)
             case 'closePublish3': {
@@ -458,6 +468,8 @@
             closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },
             // イシュー#513 S6: 記事のサブ状態だけをまとめて畳む(_artShowList用・routeは変えない)
             closeArtSubStates(meta) { return this.apply({ type: 'closeArtSubStates3' }, Object.assign({ unwind: true }, meta || {})); },
+            // イシュー#529: art-fs+art-sheetを1 applyで畳む(unwind:true・理由はreduce3側コメント参照)
+            closeArtFsSheet(meta) { return this.apply({ type: 'closeArtFsSheet3' }, Object.assign({ unwind: true }, meta || {})); },
             // 設定モーダルの × / Esc / 戻る閉じ専用 (settings-cat が残っていれば一括除去・イシュー#494)。
             // unwind:true は closePublish と同じ理由 (イシュー#495)
             closeSettings(route, meta) { return this.apply({ type: 'closeSettings3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },

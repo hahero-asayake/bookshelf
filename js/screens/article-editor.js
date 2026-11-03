@@ -292,6 +292,13 @@ class _ArticleEditorMethods {
                 this._artInsertBlock(item.dataset.blockType, at);
                 const added = (this._artDraft.blocks || [])[at];
                 if (added) this._artEditBlock(added.id);
+                // X3(イシュー#529・A-c): 本棚ブロックを足したら引き出しを開く(完了まで閉じない)。
+                // handover(_artEditBlock内の_artHistHandOver・art-add-sheet→art-fsのrename)が終わった
+                // 後に開くことで、段の積み順を常に art-fs(renameされた段)→art-sheet(新規push) に固定する
+                // (#528で一度入れたaf26d73は逆順だったため、完了のgo(-1)が古い段へ戻りart-add-sheetが
+                // 開き直る退行があった。back1回でart-sheetだけ畳めることを#529 step2で実測済み)。
+                // 完了/キャンセル側はart-fs+art-sheetを1 applyで畳む(_artCloseBlockFs参照)
+                if (added && added.type === 'shelf') this._artOpenSheet();
             });
         }
         const blkMenu = document.getElementById('art-blk-menu');
@@ -1196,7 +1203,22 @@ class _ArticleEditorMethods {
                 if (!ok) return false; // 閉じなかった
             }
         }
-        this._surface().close('art-fs', { fromHistory });
+        // X3(イシュー#529・A-c): art-sheet(本棚ブロックの引き出し)も一緒に積まれていれば、1回の
+        // applyで両方を畳む(nav.closeArtFsSheet・unwind:true)。個別closeを2回呼ぶとgoが重ねがけに
+        // なり画面が壊れる副作用があった(#528 step4で実測)ため避ける。戻る由来(fromHistory)は
+        // 台帳が既に外しているのでhistory操作はしない(DOM/overlayの後始末だけ)
+        const sheetAlsoOpen = this.nav && this.nav.hasFace('art-sheet');
+        if (sheetAlsoOpen) {
+            const ov = window.overlays;
+            if (ov) { ov.close('art-fs', { reason: 'program' }); ov.close('art-sheet', { reason: 'program' }); }
+            const side = document.getElementById('art-drawer');
+            if (side) side.classList.remove('is-open');
+            const scrim = document.getElementById('art-sheet-scrim');
+            if (scrim) scrim.classList.remove('is-open');
+            if (!fromHistory) this.nav.closeArtFsSheet();
+        } else {
+            this._surface().close('art-fs', { fromHistory });
+        }
         if (!commit && i >= 0 && this._artFsSnapshot) {
             blocks[i] = JSON.parse(this._artFsSnapshot);
             this._artScheduleSave();
@@ -2787,8 +2809,8 @@ class _ArticleEditorMethods {
             if (!ok) return;
         }
         this._artAddBooksToShelf(asins);
-        // イシュー#165: 「まとめて追加」も1操作で完結するため900px以下では自動で閉じる (理由は_artOnDrawerBookClick参照)
-        this._artCloseSheet();
+        // X3(イシュー#529・A-c): 本棚ブロックへの追加は「完了」を押すまで引き出しを閉じない。
+        // 旧イシュー#165の自動クローズ(900px以下)はここで廃止する(単発クリック追加は元々閉じない経路のまま)。
     }
 
     _artOnDrawerBookClick(asin) {

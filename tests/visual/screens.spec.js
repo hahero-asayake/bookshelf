@@ -146,13 +146,13 @@ test('引き出し', async ({ page }) => {
     await expect(page.locator('#art-edit-view')).toBeVisible();
     await addBlock(page, 'shelf', 'first');
     // 900px超(char-1024/1440/1920)は本棚ブロックの追加直後から引き出し(#art-drawer)が
-    // 常設パネルとして開く(js/bookshelf.js _artOpenSheet: 900px超は無条件に畳み解除のみ)。
-    // 900px以下(char-390/768/820)は閉じたまま=「本を追加（本棚・リストから選ぶ）」(.art-shelf-add)
-    // を押すとオフキャンバスのシートとして開く(900px以下専用の分岐)。この時点では別の画面
-    // (「引き出しの入口」)になるため、②判断(案C・2026-11-03)で名前を分ける:
-    // 900px超=09-drawer(引き出し本体)、900px以下=09b-drawer-entry(引き出しの入口)。
-    // 900px以下で引き出し本体そのものを撮ることは、X3(記事の本の選び方)で画面を作り直す
-    // ときにそちらで行う(今回は見送り)。
+    // 常設パネルとして開く(js/screens/article-editor.js _artOpenSheet: 900px超は無条件に畳み解除のみ)。
+    // X3(イシュー#529・A-c): 900px以下(char-390/768/820)も本棚ブロックを足した直後に
+    // ボトムシートとして自動で開くようになった(完了を押すまで閉じない)。900px超との名前の
+    // 区別(②判断(案C・2026-11-03)=09-drawer(引き出し本体)/09b-drawer-entry(引き出しの入口))は
+    // 元々「900px以下は閉じたまま」だった前提で分けたもので、今は両方とも開いた状態を撮る。
+    // 名前はそのまま維持する(撮っている中身がentry→実体に変わったが、09b系の呼称は他ドキュメントの
+    // 参照先として残す・画像の中身だけ撮り直す)。
     const name = page.viewportSize().width > 900 ? '09-drawer' : '09b-drawer-entry';
     await shot(page, name);
 });

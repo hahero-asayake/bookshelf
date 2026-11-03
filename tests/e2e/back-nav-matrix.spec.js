@@ -1005,9 +1005,17 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
         await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
         await tap(page, '#art-add-sheet [data-block-type="shelf"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-        s = await snap(page); expect.soft(s.stack.length, 'A18: シートの段を引き継ぎ二重に積まない').toBe(4);
+        // X3(イシュー#529・A-c): 本棚ブロックを足すと引き出し(art-sheet)が自動で開き、段を1つ積む
+        // (art-add-sheet→art-fsのrenameは段数を変えない・art-sheetの新規pushで4→5)。
+        s = await snap(page); expect.soft(s.stack.length, 'A18: 本棚ブロック追加でart-sheetが1段積まれる(X3・#529)').toBe(5);
         await back(page);
         s = await snap(page); await r.step(page, 'A18');
+        // 戻る1回目: 引き出し(art-sheet)だけが閉じ、全画面(art-fs)はそのまま残る(②指示の軸③・#529 step2実測)
+        expect.soft(await artMode(page)).toBe('form');
+        expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode', 'art-fs']);
+        await back(page);
+        s = await snap(page); await r.step(page, 'A18b');
+        // 戻る2回目: 全画面(art-fs)も閉じて編集一覧に戻る
         expect.soft(await artMode(page)).toBe('edit');
         expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing', 'art-edit-mode']);
     }));
