@@ -4817,7 +4817,14 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-wrap.art-drawer-collapsed .art-side { display: none; }
 .art-wrap.art-drawer-user-collapsed { grid-template-columns: 1fr; }
 .art-wrap.art-drawer-user-collapsed .art-side { display: none; }
-.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
+/* X3(イシュー#528・A-f②判断2026-11-04): 本文の最大幅を、公開の出力(publish-article-generator.js
+   133行の.article)と同じ860pxにそろえる(見た目の一致)。.art-colはview/editのキャンバス(iframe)と
+   formのブロック一覧の両方の親なので、ここ1箇所で両方に効く。引き出しが開いているときは左詰め
+   (本文と引き出しを横に並べる)。閉じているとき(art-drawer-collapsed/art-drawer-user-collapsed)は
+   中央に置く。 */
+.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; max-width: 860px; max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
+.art-wrap.art-drawer-collapsed .art-col,
+.art-wrap.art-drawer-user-collapsed .art-col { margin: 0 auto; }
 
 /* --- ブロック共通 --- */
 /* 区切りの視認性 (イシュー#99): 罫線トークンの濃さで押すのではなく、影で「面として浮いている」ことを

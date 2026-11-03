@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026110401">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026110417">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -1461,7 +1461,7 @@
     <!-- イシュー#523 U6: HTMLエスケープの単一実装。icons.js以下すべてが使うため最初に読む。 -->
     <script defer src="js/ui/escape.js?v=2026110405"></script>
     <!-- イシュー#523 U6: 本のカード・行の描画の単一実装。dashboard.js・bookshelf.jsより前に読む。 -->
-    <script defer src="js/ui/book-list.js?v=2026110412"></script>
+    <script defer src="js/ui/book-list.js?v=2026110418"></script>
     <!-- イシュー#505: 画面の切り替わる幅(スマホ/PC)の境目を1か所で定義する部品。
          dashboard.js・bookshelf.jsが使うため、両方より前に読む。 -->
     <script defer src="js/ui/viewport.js?v=2026110301"></script>
@@ -1507,7 +1507,7 @@
     <script defer src="js/bookshelf.js?v=2026110416"></script>
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける -->
-    <script defer src="js/screens/article-editor.js?v=2026110400"></script>
+    <script defer src="js/screens/article-editor.js?v=2026110419"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
