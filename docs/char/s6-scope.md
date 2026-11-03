@@ -138,3 +138,23 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 実測：publish-article-editor.spec.js全108件pass、npm test 787件pass。back-nav-matrix全件確認中(§6-6参照)。
 
 次のrunでの調査方針：`--trace`は使わず（既知の罠）、`window.__DEBUG`変数を一時的に仕込んでfaces/historyの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。
+
+## 7. フラグ旧でのe2e-diff-main.mjs比較（②指示・step5）
+
+`scripts/verify/e2e-diff-main.mjs --init-storage=bookshelf.flag.histAllWidths=0`でorigin/main(a67501b)と比較。
+
+### 7-1. 1回目の実行で検出した本物の退行（修正済み・089d06b）
+
+`overlay-front.spec.js:163`「確認ダイアログの『設定を開く』経由は公開モーダルを閉じる」がregression。
+
+原因：`_confirmOpenSettings`が「開いている公開系の面」を`this.nav.hasFace(id)`(段=facesにあるか)で判定し、見た目(overlays)のcloseもこの同じ判定で行っていた。フラグ旧ではPC幅で段を積まない(`hasFace`はfalse)ため、見た目は実際に開いていてもcloseが呼ばれず、公開モーダルが閉じずに残ってしまう退行だった(段の状態と見た目の状態を混同していた)。
+
+修正：見た目を閉じる判定(`overlays.has(id)`)と、段を操作する判定(`nav.hasFace(id)`)を分離した。フラグ新では両方一致するため既存の挙動を維持し、フラグ旧でも見た目だけは正しく閉じるようになった。実測：overlay-front.spec.js・username-publish-gate.spec.js全件pass(フラグ新・旧両方)。
+
+### 7-2. 残り9件（CHAR系）：検証方法自体の制約による誤検知・退行ではない
+
+`--init-storage`はグローバルに全テストへlocalStorageを注入する(test-base.jsのcontext fixture経由)。これはS6のCHAR系テストが各自`bootApp(page, {histFlagOld: true})`で個別に「フラグ旧用の期待」を検証する設計と衝突する：**「フラグ新を前提にした新しい振る舞いの期待」のテスト自体が、グローバルにフラグ旧を強制された状態で実行され、当然失敗する**。
+
+対象9件：`char/article.spec.js:188`(A-e・CHAR→S6)、`char/pc-back.spec.js:30,41`×2幅(P9・新しい振る舞い)、`char/exits.spec.js:72`(P10・新しい振る舞い)、`char/settings-shelves-nav.spec.js:98`×2幅(S6@...様子見固定)。これらは全て、step2〜3で「フラグ新を前提に書き換えた期待」であり、各テストファイル内に別途「(フラグ旧)」という対になるテストが存在し、そちらは自分でlocalStorageを設定して検証済み(pc-back.spec.js/article.spec.js/exits.spec.jsで実測pass確認済み)。
+
+これはS6の実装の退行ではなく、`e2e-diff-main.mjs --init-storage`という汎用の検証手段が「全体に1つのフラグを強制する」設計である以上、原理的に避けられない誤検知。実際のフラグ旧の振る舞いは、各テストファイル内の専用テスト(フラグ旧用)で個別に確認済み。
