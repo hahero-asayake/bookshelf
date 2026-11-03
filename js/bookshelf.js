@@ -3486,11 +3486,10 @@ class VirtualBookshelf {
             if (format === 'empty') {
                 // 別端末からの再ログイン直後などにハブが空に見えても、無確認で初期化しない
                 // (GitHub と対称。誤って既存アカウントを空データで上書きする事故を防ぐ)。
-                // init 中はローディング表示が前面にある (イシュー#518: confirmDialog は overlay-manager の
-                // ダイアログ帯 (--ov-z-dialog) に載るため前面に出る。tests/e2e/char/boot-confirm-dialog.spec.js
-                // でローディング表示の上からクリックできることを確認済み)。
+                // init 中はローディング表示が前面にあるため、確実に出るネイティブ confirm を使う。
+                // U5 対象外：起動フローの同期 confirm。別イシューで起動フローごと設計する。
                 this.updateSyncStatus('reconnect', `${label} (空)`);
-                const ok = await window.confirmDialog({ message: `${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）` });
+                const ok = confirm(`${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）`);
                 if (!ok) {
                     // 初期化せず中断。接続済みのまま放置すると次回 save で手元の古いデータが
                     // 空ハブへ上書きされる恐れがあるため、目立つ警告を出して状態を error にする。
@@ -3610,8 +3609,9 @@ class VirtualBookshelf {
         try {
             const format = await this.storage.detectFormat();
             if (format === 'empty') {
-                this.updateSyncStatus('reconnect', `${label} (空)`); // イシュー#518: confirmDialog化 (前面表示はboot-confirm-dialog.spec.jsで確認)
-                const ok = await window.confirmDialog({ message: `GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？` });
+                // U5 対象外：起動フローの同期 confirm。別イシューで起動フローごと設計する。
+                this.updateSyncStatus('reconnect', `${label} (空)`);
+                const ok = confirm(`GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？`);
                 if (!ok) return;
                 await this.storage.initEmpty();
             } else if (format === 'pre-notes-split') {
