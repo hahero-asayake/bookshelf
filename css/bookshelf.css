@@ -4822,7 +4822,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
    formのブロック一覧の両方の親なので、ここ1箇所で両方に効く。引き出しが開いているときは左詰め
    (本文と引き出しを横に並べる)。閉じているとき(art-drawer-collapsed/art-drawer-user-collapsed)は
    中央に置く。 */
-.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; width: min(860px, 100%); max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
+/* イシュー#528 step4: 本文の実効幅(border-box, *{box-sizing:border-box}の影響下)を860pxに
+   そろえる。右paddingの0.3rem分を幅に加算しないと、コンテンツ幅(iframeの実効幅)が860-4.8=855.2px
+   になり公開ページ(860px固定)と1px単位で揃わない(back-nav-matrix article-pc-pane実測)。 */
+.art-col { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; width: min(calc(860px + 0.3rem), 100%); max-height: 100%; overflow: auto; padding: 0.15rem 0.3rem 0.15rem 0; }
 .art-wrap.art-drawer-collapsed .art-col,
 .art-wrap.art-drawer-user-collapsed .art-col { justify-self: center; }
 
@@ -5240,6 +5243,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
         z-index: 1055; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
     }
     .art-sheet-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+    /* イシュー#528 step4: 引き出し(.art-side 1060 / .art-sheet-scrim 1055)が開いた状態でも
+       全画面編集のヘッダー(キャンセル/完了)は手前に出す。帯のすぐ上(1065)に置く
+       (.art-publish-modal 等1150+のモーダル群よりは下のまま・個別の決め打ちではなく既存の帯に揃える)。 */
+    #art-edit-view[data-art-mode="form"] .art-fs-hd { z-index: 1065; }
 }
 @media (max-width: 760px) {
     .art-hd { flex-wrap: wrap; }
@@ -8202,6 +8210,9 @@ body.select-mode .drag-handle { display: none; }
        このブレークポイント固有に残すのはレイアウトのギャップ調整のみ。 */
     .art-modal-content.art-editing .art-wrap { gap: 0.75rem; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-wrap { position: relative; grid-template-columns: 1fr 26rem; }
+    /* イシュー#528 step4: 文章ブロック編集は右ペイン(#art-blocks)が本文の横に出るため、.art-col の
+       860px上限(公開ページと幅をそろえる目的)はここでは解除する(キャンバスは残りの幅を使う・#430)。 */
+    #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-col { width: auto; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] .art-side { display: none; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-canvas { display: block; }
     #art-edit-view[data-art-mode="form"][data-art-fs-type="text"] #art-blocks { position: absolute; top: 0; right: 0; bottom: 0; width: 26rem;
@@ -8215,7 +8226,11 @@ body.select-mode .drag-handle { display: none; }
 /* 本棚/本ブロックの全画面編集 ('form'): 上端は キャンセル/題/完了 だけ。中身は対象ブロック1つと本の引き出し */
 .art-fs-hd { display: none; }
 #art-edit-view[data-art-mode="form"] .art-fs-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+    padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px;
+    /* イシュー#528 step4: 本の引き出し(900px以下はボトムシート化, 1055/1060の帯)を手動で開いた
+       状態でも、全画面編集の確定操作(キャンセル/完了)は常に押せる必要がある。position:static だと
+       z-index が効かないため relative にし、900px以下専用の値は下のメディアクエリ側に置く。 */
+    position: relative; }
 /* 長いタイトルの1行省略(イシュー#282・ハヘロ精査後の方針)。.art-fs-hd/#book-memo-modal .art-fs-hd
    共通: ボタン(キャンセル/完了)はflex-shrink:0で縮まず、タイトル側だけがflex:1 1 autoで
    縮小対象になりellipsisが効く(2行目の.art-save-statusは別要素なので崩れない)。 */

@@ -95,6 +95,14 @@ async function leaveForm(page, ops, label = '全画面編集の「完了」') {
     if (await done.isVisible()) { await done.click(); ops.push(label); }
 }
 
+// 構成A(イシュー#276): 600px以下は見た目/公開ボタンがヘッダーでなく下部バー(#art-bar-publish)。
+// standard-ops.spec.jsのclickPublishHeaderと同じフォールバック(390/768はこちらを通る)。
+async function clickPublishHeader(page) {
+    const headerBtn = page.locator('#art-publish-header');
+    if (await headerBtn.isVisible()) await headerBtn.click();
+    else await page.click('#art-bar-publish');
+}
+
 // A1相当: 新しい記事に本を3冊入れて初めて公開する(公開パネルを通す・②判断2026-11-03「3」)。
 async function countOpsNewArticlePublish(page, hubCaptured, title) {
     const ops = [];
@@ -111,17 +119,23 @@ async function countOpsNewArticlePublish(page, hubCaptured, title) {
     ops.push('キャンバスの「+」をクリック');
     ops.push('「ブロックを追加」シートで「本棚」を選ぶ');
 
-    // A-c実装により、本棚ブロックを足した時点で引き出しは自動で開いている(900px以下はボトムシート・
-    // 900px超は常駐畳み解除)。手としては数えない(ユーザー操作ではなく自動化された結果)。
+    // A-cはrevert済み(イシュー#528 step4差し戻し・段の積み順の不整合のため)。
+    // 本棚ブロックを足しても引き出しは自動で開かないため、「本を追加」ボタンで開く操作が1手増える。
+    await page.locator('.art-shelf-add').first().click(); ops.push('「本を追加」ボタンで引き出しを開く');
     const items = page.locator('#art-drawer-list .art-drawer-item');
     const n = Math.min(3, await items.count());
     for (let i = 0; i < n; i++) { await items.nth(i).click(); ops.push(`引き出しで本${i + 1}冊目をクリック`); }
     expect(n).toBe(3);
 
+    // 本棚ブロックは複数冊追加できるため、本を選んでも引き出しは自動で閉じない(_artOnDrawerBookClick)。
+    // 390/768は×ボタン(#art-sheet-close)で手動で閉じる必要がある(900px超は常駐表示のため不要)。
+    const sheetClose = page.locator('#art-sheet-close');
+    if (await sheetClose.isVisible()) { await sheetClose.click(); ops.push('引き出しの×で閉じる'); }
+
     await leaveForm(page, ops);
 
     // ②判断2026-11-03「3」: 初めて公開する記事は公開パネルを必ず通す(公開事故防止)。
-    await page.click('#art-publish-header'); ops.push('ヘッダーの「公開する」をクリック(公開パネルを開く)');
+    await clickPublishHeader(page); ops.push('ヘッダーの「公開する」をクリック(公開パネルを開く)');
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     await expect(page.locator('#art-pub-go')).toBeEnabled();
     await page.click('#art-pub-go'); ops.push('公開パネルの「公開する」を実行');
@@ -143,10 +157,13 @@ async function countOpsUpdatePublished(page, hubCaptured) {
     await page.click('#art-mode-edit');
     await page.fill('#art-title', '既存記事(準備)');
     await addBlock(page, 'shelf', 'last');
+    await page.locator('.art-shelf-add').first().click();
     const prepItems = page.locator('#art-drawer-list .art-drawer-item');
     await prepItems.nth(0).click();
+    const prepSheetClose = page.locator('#art-sheet-close');
+    if (await prepSheetClose.isVisible()) await prepSheetClose.click();
     await leaveForm(page, []);
-    await page.click('#art-publish-header');
+    await clickPublishHeader(page);
     await expect(page.locator('#art-pub-go')).toBeEnabled();
     await page.click('#art-pub-go');
     if (await page.locator('.cfm-box').isVisible({ timeout: 2000 }).catch(() => false)) await page.click('.cfm-ok');
@@ -158,14 +175,17 @@ async function countOpsUpdatePublished(page, hubCaptured) {
     await addBlock(page, 'shelf', 'last');
     ops.push('キャンバスの「+」をクリック');
     ops.push('「ブロックを追加」シートで「本棚」を選ぶ');
+    await page.locator('.art-shelf-add').last().click(); ops.push('「本を追加」ボタンで引き出しを開く');
     const items = page.locator('#art-drawer-list .art-drawer-item');
     const n = Math.min(3, await items.count());
     for (let i = 0; i < n; i++) { await items.nth(i).click(); ops.push(`引き出しで本${i + 1}冊目をクリック`); }
     expect(n).toBe(3);
+    const sheetClose2 = page.locator('#art-sheet-close');
+    if (await sheetClose2.isVisible()) { await sheetClose2.click(); ops.push('引き出しの×で閉じる'); }
     await leaveForm(page, ops);
 
     // ②判断2026-11-03「3」: 公開済み記事の「変更を公開」はヘッダーから直接(公開パネルを経由しない)。
-    await page.click('#art-publish-header'); ops.push('ヘッダーの「公開する」(更新)をクリック');
+    await clickPublishHeader(page); ops.push('ヘッダーの「公開する」(更新)をクリック');
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     await expect(page.locator('#art-pub-go')).toBeEnabled();
     await page.click('#art-pub-go'); ops.push('公開パネルの「公開する」を実行');
