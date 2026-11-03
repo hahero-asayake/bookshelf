@@ -934,16 +934,13 @@ class BookshelfDashboard {
             host.innerHTML = '<p style="color:var(--muted);">最近追加された本はありません</p>';
             return;
         }
+        const cellOpts = {
+            hasCoverImage: (b) => app.bookManager.hasCoverImage(b),
+            getProductImageUrl: (b) => app.bookManager.getProductImageUrl(b),
+        };
         host.innerHTML = `
             <div class="widget-book-row">
-                ${sorted.map(b => `
-                    <button type="button" class="widget-book-cell" data-asin="${BookshelfEscape.escapeHtml(b.asin)}" title="${BookshelfEscape.escapeHtml(b.title)}">
-                        ${app.bookManager.hasCoverImage(b)
-                            ? `<img src="${BookshelfEscape.escapeHtml(app.bookManager.getProductImageUrl(b))}" alt="" loading="lazy" data-cover-fallback="">`
-                            : `<div class="widget-book-cell-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`}
-                        <div class="widget-book-cell-title">${BookshelfEscape.escapeHtml(b.title)}</div>
-                    </button>
-                `).join('')}
+                ${sorted.map(b => BookList.recentCellHtml(b, cellOpts)).join('')}
             </div>
         `;
         host.querySelectorAll('[data-asin]').forEach(btn => {

@@ -1337,7 +1337,7 @@ class VirtualBookshelf {
                 if (excludedSet.has(book.asin)) continue;
                 if (matches(book.title) || matches(book.authors) || matches(book.asin)) {
                     const b = book;
-                    items.push({ group: '本', icon: 'book-open', title: b.title, sub: b.authors || '', run: () => { this._closePalette(); this.showBookDetail(b); } });
+                    items.push({ ...BookList.cmdkEntry(b), run: () => { this._closePalette(); this.showBookDetail(b); } });
                     count++;
                 }
             }
@@ -2362,21 +2362,6 @@ class VirtualBookshelf {
         return wrap;
     }
 
-    // Kindle 取込のステータス系フィールドからバッジ HTML を組み立てる (イシュー#41)。
-    // 「利用終了」は必ず出す。KU/Prime は購入と区別できれば十分 (増やしすぎない)。
-    _kindleBadgesHtml(book) {
-        const badges = [];
-        if (book.statusFromPlatformSearch === 'Revoked') {
-            badges.push('<span class="book-badge">利用終了</span>');
-        }
-        if (book.originType === 'Ku') {
-            badges.push('<span class="book-badge book-badge-accent">KU</span>');
-        } else if (book.originType === 'Prime') {
-            badges.push('<span class="book-badge book-badge-accent">Prime</span>');
-        }
-        return badges.length ? `<div class="book-badges">${badges.join('')}</div>` : '';
-    }
-
     // イシュー#484: 同じ asin を持つ本のグループ (bookManager.findDuplicateAsinGroups()) を
     // asin → group の Map にしてキャッシュする。蔵書が変わらない限り再計算しない (#398 と同じ
     // _rev 方式)。データ構造は変えない(検出のみ)ため notes/bookOrder/exclusions 側には影響しない。
@@ -2389,120 +2374,40 @@ class VirtualBookshelf {
         return map;
     }
 
-    // イシュー#484: 重複ASIN検出バッジ(1項目)。別の本に同じASINが付いた場合(sameTitle=false)は
-    // 付け直しを促す文言、同じ本の二重登録(sameTitle=true・実害小)は文言を分け、削除/統合は促さない
-    // (②指示: 既存データは削除・統合しない方針のため)。無ければ null。
-    _duplicateAsinBadgeItem(book) {
-        const g = this._dupAsinInfo().get(book.asin);
-        if (!g) return null;
-        const label = g.sameTitle ? '重複登録' : 'ASIN共有';
-        const title = g.sameTitle
-            ? '同じ本が複数登録されています(統合・削除の必要はありません)'
-            : 'このASINは他の本と共有されています。本の詳細から付け直しをご検討ください';
-        return `<span class="book-badge book-badge-warn" title="${BookshelfEscape.escapeHtml(title)}">${label}</span>`;
-    }
-
-    // イシュー#484: 一覧カードは Kindle バッジと重複ASINバッジを1つの .book-badges にまとめて出す
-    // (既存の _kindleBadgesHtml 単独の呼び出し元(3箇所)には影響させず、createBookElement だけで使う)。
-    _allBadgesHtml(book) {
-        const items = [];
-        if (book.statusFromPlatformSearch === 'Revoked') items.push('<span class="book-badge">利用終了</span>');
-        if (book.originType === 'Ku') items.push('<span class="book-badge book-badge-accent">KU</span>');
-        else if (book.originType === 'Prime') items.push('<span class="book-badge book-badge-accent">Prime</span>');
-        const dup = this._duplicateAsinBadgeItem(book);
-        if (dup) items.push(dup);
-        return items.length ? `<div class="book-badges">${items.join('')}</div>` : '';
-    }
-
     createBookElement(book, displayType) {
         const bookElement = document.createElement('div');
         bookElement.className = 'book-item';
         bookElement.dataset.asin = book.asin;
-        
+
         bookElement.setAttribute('data-book-asin', book.asin);
-        
-        const userNote = this.userData.notes[book.asin];
-        // 一覧表示用メモ: ALL の短文メモ (2026-06-20: 本棚 override は廃止)
-        const listMemo = this.bookshelfManager.resolveMemo(book.asin);
-        const listRating = userNote?.rating || 0;
-
-        // 一覧カードの星・メモ表示は全体設定で制御。
-        //  星: visibility (always/hover/hidden) + overlay (表紙に重ねる) boolean
-        //  メモ: visibility (always/hover/hidden)
-        //  hover は「表紙に重なるポップアップ」で表示し、行のスペースを取らず位置もずらさない。
-        // リスト表示は表紙が小さいので overlay でも below 配置にフォールバック。
-        const isCoverView = (displayType === 'cover' || displayType === 'covers');
-        // 画像のみビュー: 表紙ウォール。星・メモ・ホバーポップ・book-info を一切出さない
-        const isImagesView = (displayType === 'images');
-        const starVis = this._getStarVisibility();
-        const overlayOn = this._getStarOverlay() && isCoverView;
-        let starSize;
-        if (starVis === 'hover') starSize = 16;             // ホバーポップアップ
-        else if (overlayOn) starSize = 18;                  // 常に表示 + 表紙に重ねる (大きめ)
-        else starSize = isCoverView ? 15 : 16;              // 常に表示 + 独立
-        const starWidget = (starVis === 'hidden' || isImagesView) ? '' : this._starWidgetHtml(book.asin, listRating, starSize);
-        const memoVis = isImagesView ? 'hidden' : this._getMemoVisibility();
-
-        // 常時表示 (in-flow)
-        const overlayAlwaysStars = (starVis === 'always' && overlayOn && starWidget)
-            ? `<div class="cover-stars-layer stars-overlay">${starWidget}</div>` : '';
-        const belowAlwaysStars = (starVis === 'always' && !overlayOn && starWidget)
-            ? `<div class="book-rating">${starWidget}</div>` : '';
-        const alwaysMemo = (memoVis === 'always' && listMemo)
-            ? `<div class="book-memo">${this.formatMemoForDisplay(listMemo, isCoverView ? 90 : 140)}</div>` : '';
-
-        // ホバーポップアップ (表紙に重ねる absolute、レイアウトに影響しない)
-        const popStars = (starVis === 'hover' && starWidget)
-            ? `<div class="pop-stars stars-overlay">${starWidget}</div>` : '';
-        const popMemo = (memoVis === 'hover' && listMemo)
-            ? `<div class="book-memo pop-memo">${this.formatMemoForDisplay(listMemo, 160)}</div>` : '';
-        const hoverPop = (popStars || popMemo)
-            ? `<div class="card-hover-pop">${popStars}${popMemo}</div>` : '';
-        // 表紙表示: ポップは表紙 (.book-cover-container) に重ねる。
-        // リスト表示: 表紙が小さいので行 (.book-item) 全体に重ねる (CSS で位置を分岐)。
-        const coverHoverPop = isCoverView ? hoverPop : '';
-        const rowHoverPop = isCoverView ? '' : hoverPop;
-
-        const placeholderHtml = (isCoverView || isImagesView)
-            ? `<div class="book-cover-placeholder">${BookshelfEscape.escapeHtml(book.title)}</div>`
-            : `<div class="book-cover-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`;
 
         bookElement.classList.add('clickable');
         // 複数選択モード中は選択状態を維持
         if (this.selectMode && this.selectedAsins && this.selectedAsins.has(book.asin)) {
             bookElement.classList.add('selected');
         }
-        // 画像のみビューは book-info (タイトル・著者・星・メモ) を出力しない
-        // イシュー#484: Kindleバッジに加え、重複ASIN検出バッジも同じ枠で出す
-        const kindleBadges = this._allBadgesHtml(book);
-        const infoHtml = isImagesView ? '' : `
-                <div class="book-info">
-                    <div class="book-title">${BookshelfEscape.escapeHtml(book.title)}</div>
-                    <div class="book-author">${BookshelfEscape.escapeHtml(book.authors)}</div>
-                    ${kindleBadges}
-                    ${belowAlwaysStars}
-                    ${alwaysMemo}
-                </div>`;
-        // 画像のみビューは book-info を出さないため、バッジは表紙に重ねる小さなオーバーレイにする
-        const imagesBadges = (isImagesView && kindleBadges)
-            ? `<div class="cover-badges-layer">${kindleBadges}</div>` : '';
-        bookElement.innerHTML = `
-                <div class="book-cover-container">
-                    <div class="drag-handle">${window.renderIcon('grip-vertical', { size: 14 })}</div>
-                    <div class="book-select-check" aria-hidden="true">${window.renderIcon('check', { size: 13 })}</div>
-                    <div class="book-cover-link">
-                        ${this.bookManager.hasCoverImage(book) ?
-                            `<img class="book-cover lazy" data-src="${BookshelfEscape.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${BookshelfEscape.escapeHtml(book.title)}" data-cover-fallback="${BookshelfEscape.escapeHtml(book.title)}">` :
-                            placeholderHtml
-                        }
-                    </div>
-                    ${overlayAlwaysStars}
-                    ${imagesBadges}
-                    ${coverHoverPop}
-                </div>${infoHtml}
-                ${rowHoverPop}
-            `;
-        
+
+        // 描画は BookList (イシュー#523 U6) に寄せる。一覧カードの星・メモ表示は全体設定で制御。
+        //  星: visibility (always/hover/hidden) + overlay (表紙に重ねる) boolean
+        //  メモ: visibility (always/hover/hidden)
+        //  hover は「表紙に重なるポップアップ」で表示し、行のスペースを取らず位置もずらさない。
+        // リスト表示は表紙が小さいので overlay でも below 配置にフォールバック。
+        bookElement.innerHTML = BookList.cardInnerHtml(book, {
+            displayType,
+            userNote: this.userData.notes[book.asin],
+            // 一覧表示用メモ: ALL の短文メモ (2026-06-20: 本棚 override は廃止)
+            listMemo: this.bookshelfManager.resolveMemo(book.asin),
+            starVisibility: this._getStarVisibility(),
+            starOverlay: this._getStarOverlay(),
+            memoVisibility: this._getMemoVisibility(),
+            starWidgetHtml: (asin, rating, size) => this._starWidgetHtml(asin, rating, size),
+            formatMemo: (memo, maxLen) => this.formatMemoForDisplay(memo, maxLen),
+            // イシュー#484: Kindleバッジに加え、重複ASIN検出バッジも同じ枠で出す
+            dupGroup: this._dupAsinInfo().get(book.asin),
+            hasCoverImage: (b) => this.bookManager.hasCoverImage(b),
+            getProductImageUrl: (b) => this.bookManager.getProductImageUrl(b),
+        });
+
         // Pointer Events drag (カスタム順のみ有効。drag-handle 上の pointerdown で起動)
         const dragHandle = bookElement.querySelector('.drag-handle');
         if (dragHandle) {
@@ -3027,7 +2932,7 @@ class VirtualBookshelf {
 
                 <h3 class="bd-title">${esc(book.title)}</h3>
                 <div class="bd-author">${esc(book.authors)}</div>
-                ${this._kindleBadgesHtml(book)}
+                ${BookList.kindleBadgesHtml(book)}
 
                 ${kindleReadHtml}
 
@@ -13387,23 +13292,9 @@ class VirtualBookshelf {
         }
 
         const libraryBooks = (this.userData._storage && this.userData._storage.libraryBooks) || [];
-        const escapeHtml = BookshelfEscape.escapeHtml;
         const items = exclusions.map(asin => {
             const book = libraryBooks.find(b => b.asin === asin) || {};
-            const title = escapeHtml(book.title || asin);
-            const authors = escapeHtml(book.authors || '');
-            const image = book.productImage ? escapeHtml(book.productImage) : '';
-            return `
-                <div class="exclusion-item">
-                    ${image ? `<img class="exclusion-cover" src="${image}" alt="">` : '<div class="exclusion-cover exclusion-cover-empty"></div>'}
-                    <div class="exclusion-meta">
-                        <div class="exclusion-title">${title}</div>
-                        <div class="exclusion-authors">${authors}</div>
-                        <div class="exclusion-asin">${escapeHtml(asin)}</div>
-                    </div>
-                    <button class="btn btn-small btn-secondary unexclude-btn" data-asin="${escapeHtml(asin)}">元に戻す</button>
-                </div>
-            `;
+            return BookList.exclusionItemHtml(book, asin);
         }).join('');
 
         listDiv.innerHTML = items;
@@ -13537,15 +13428,7 @@ class VirtualBookshelf {
             const bookItem = document.createElement('div');
             bookItem.className = `book-selection-item ${stateClass}`;
             bookItem.dataset.bookIndex = index;
-            bookItem.innerHTML = `
-                <input type="checkbox" id="book-${index}" value="${index}" ${isBlocked ? 'disabled' : ''}>
-                <div class="book-selection-info">
-                    <div class="book-selection-title">${BookshelfEscape.escapeHtml(book.title)} ${stateLabel}</div>
-                    <div class="book-selection-author">${BookshelfEscape.escapeHtml(book.authors)}</div>
-                    <div class="book-selection-meta">${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</div>
-                    ${this._kindleBadgesHtml(book)}
-                </div>
-            `;
+            bookItem.innerHTML = BookList.selectionItemInnerHtml(book, { index, isBlocked, stateLabel });
             bookList.appendChild(bookItem);
         });
 

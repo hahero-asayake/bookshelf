@@ -6,6 +6,10 @@
 // CSS は .bsr-icon / .bsr-label / .bsr-count を共有し、配置だけコンテナ側が決める。
 //
 // 参照: T12 (モジュール分割 + 描画重複排除) / ADR 「同一ドメインオブジェクト=単一描画コンポーネント」
+//
+// イシュー#523 U6 で未使用関数を確認: pickRow/tree (選択可能なツリー描画) は外部から
+// 呼ばれていなかったため撤去した (rowCore は js/bookshelf.js:6245 が使用中・esc/keyOf は
+// 公開APIとして残す)。復元する時は本commitの直前を参照。
 
 (function () {
     const esc = BookshelfEscape.escapeHtml;
@@ -33,49 +37,6 @@
                 + countHtml;
         },
 
-        // 選択可能な本棚行 1 つ (階層インデント付き)。値は keyOf(bs)。
-        // クリックでトグルする前提で aria-pressed と .is-selected を持つ。
-        pickRow(bs, opts = {}) {
-            const selected = !!opts.selected;
-            const value = (opts.value != null) ? opts.value : keyOf(bs);
-            const depth = opts.depth || 0;
-            const checkSvg = (typeof window !== 'undefined' && window.renderIcon)
-                ? window.renderIcon('check', { size: 14 }) : '';
-            return `<button type="button" class="bs-pick-row${selected ? ' is-selected' : ''}"`
-                + ` data-value="${esc(value)}" aria-pressed="${selected ? 'true' : 'false'}"`
-                + ` style="padding-left:calc(0.5rem + ${depth * 14}px)">`
-                + `<span class="bsr-check">${checkSvg}</span>`
-                + this.rowCore(bs, { count: opts.count })
-                + `</button>`;
-        },
-
-        // 本棚の**階層**を保ったまま選択可能なツリーを描く (サイドバーのツリーと同じ親子・並び)。
-        // shelves は bookshelfManager.getBookshelves() (bs.parent を持つ)。selectedSet/selected で初期選択。
-        tree(shelves, opts = {}) {
-            const selected = (opts.selectedSet instanceof Set) ? opts.selectedSet : new Set(opts.selected || []);
-            const list = Array.isArray(shelves) ? shelves : [];
-            const byParent = new Map();
-            for (const bs of list) {
-                const pk = bs.parent || null;
-                if (!byParent.has(pk)) byParent.set(pk, []);
-                byParent.get(pk).push(bs);
-            }
-            // ルートは特殊本棚 (すべて) を先頭に (サイドバーと同じ並び)
-            const roots = (byParent.get(null) || []).slice()
-                .sort((a, b) => (b.isSpecial ? 1 : 0) - (a.isSpecial ? 1 : 0));
-            const out = [];
-            const walk = (bs, depth) => {
-                const key = keyOf(bs);
-                out.push(this.pickRow(bs, {
-                    value: key, depth,
-                    count: (bs.books && bs.books.length) || 0,
-                    selected: selected.has(key)
-                }));
-                for (const child of (byParent.get(key) || [])) walk(child, depth + 1);
-            };
-            for (const r of roots) walk(r, 0);
-            return out.join('');
-        }
     };
 
     if (typeof window !== 'undefined') window.BookshelfUI = BookshelfUI;
