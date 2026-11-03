@@ -36,6 +36,24 @@ jobs:
         id: install_playwright
         if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         run: npx playwright install --with-deps chromium
+      # イシュー#527 ②承認(2026-11-04)：差分がフォント由来か実測で確かめるため、
+      # fonts-noto-cjk 導入の前後で fc-list/fc-match の結果を annotation に記録する
+      # (artifactはgh未インストール環境から未認証で読めないため、annotationに出す・
+      # ci-visual-summary.mjsと同じエスケープ規則(%→%25、CR→%0D、LF→%0A)をnode -eで適用)。
+      - name: フォント確認(fonts-noto-cjk 導入前・イシュー#527)
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        run: |
+          export FONT_CHECK_OUT="$(fc-list :lang=ja | head; echo '---fc-match sans-serif:lang=ja---'; fc-match sans-serif:lang=ja)"
+          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(導入前)::'+esc)"
+      - name: fonts-noto-cjk を apt 導入 (イシュー#527)
+        id: install_noto_cjk
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: フォント確認(fonts-noto-cjk 導入後・イシュー#527)
+        if: ${{ !cancelled() && steps.install_noto_cjk.outcome == 'success' }}
+        run: |
+          export FONT_CHECK_OUT="$(fc-list :lang=ja | head; echo '---fc-match sans-serif:lang=ja---'; fc-match sans-serif:lang=ja)"
+          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(導入後)::'+esc)"
       # visual自体の失敗(toHaveScreenshotの差分)でジョブを赤くしない・後続のartifact保存/
       # summary出力を止めない(stepのcontinue-on-error: trueでoutcome=failureでもconclusion=
       # successにし、以降のデフォルトif(success())を通す)。JSON出力先はoutputDir
@@ -43,7 +61,7 @@ jobs:
       # (イシュー#527計画メモ: ローカル実測で出力形式を確認済み)。
       - name: Visual tests (Playwright, 9画面×6端末)
         id: run_visual
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' && steps.install_noto_cjk.outcome == 'success' }}
         continue-on-error: true
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: visual-results.json
