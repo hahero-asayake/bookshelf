@@ -128,3 +128,5 @@ scripts/・.github を検索したが、この上限を強制する仕組みは�
 ## 10. 次段への足場
 
 この一覧（特に§3・§4）は、記事エディタをクラス化し、VirtualBookshelfへの依存を注入の形に変える次の段（U9以降）のための足場として残す。今回（U7）ではクラス化・注入はしない。
+
+②指摘（step4）：`ART_LOCAL_DRAFT_PREFIX`・`ART_DRAWER_COLLAPSE_KEY`の2定数は`js/bookshelf.js`に残っており、`js/screens/article-editor.js`側はclassic `<script>`同士がトップレベルscopeを共有すること（index.htmlの読み込み順＝bookshelf.js→article-editor.jsに依存）に頼って参照している。次段（クラス化・注入）で、この2定数もarticle-editor.js側へ移すこと。
