@@ -204,3 +204,5 @@
 **判定（②基準）**：PCの+1手（A1・A7とも）は、A-cを外したことだけが理由（「本を追加」ボタンで引き出しを開く手が増えた分）。モバイル(390/768)は差0（A-c有りは「自動で開く(数えない)+閉じない」、A-c無しは「手動で開く(1手)+手動で閉じる(1手)」で、増減が相殺される）。A-c以外の理由で増えたセルは無い。完了条件は「#529で回収する前提で許容」の形で満たしている（公開パネルを飛ばす構成への変更は行っていない）。
 
 一時spec（`tests/e2e/char/x3-main-ops-count.spec.js`、origin/mainの一時worktree`/home/kuroko/worktrees/bookshelf/_artifacts/528-main-measure/repo`で実行）はcommit対象外、`tmp528/x3-main-ops-count.spec.js`へ保存した。実行ログは`tmp528/main-measure2.log`。
+
+**#529（A-cの入れ直し）への申し送り**：`_artInsertBlock`内の`_artOpenSheet()`呼び出しを、addSheetの段をart-fsへ引き継ぐ`_artHistHandOver`より**後**（`_artEditBlock`側・hand over成功後）に移し、段を常に「art-fs→art-sheet」の順（renameされた段が先、新しく積む段が後）で積むこと。LIFOでなくなる食い違いはこの順序を守れば起きない。どうしても両方を同時に閉じる必要がある場面が出たら、`js/nav-state.js`の既存パターン（`closeArtSubStates3`/`closePublish3`＝複数faceを1 applyで一括除去し`unwind:true`でdFaces分だけ正しくgoする）に倣うこと。個別に`close`を2回呼んでgoを重ねがける対処（#528 step4で一度試みた）は画面状態が壊れる副作用が出たため避ける。詳細はkuroko-recordsの lesson `20261104-issue-528-surface-rename-stacking-bug`（source=528）。
