@@ -8402,3 +8402,30 @@ body.select-mode .drag-handle { display: none; }
         padding: 1rem 1rem 3rem; box-sizing: border-box; /* スマホはカード左右余白を16px前後に (②指摘) */
     }
 }
+
+/* イシュー#521 X2: 「選んで置く」。つまみは button (フォーカスが当たる＝W6)。選んだ部品は枠を強調し、
+   他の部品と穴の枠は「ここへ置ける」ことが分かるよう枠線をアクセントにする */
+.widget-grip {
+    background: none;
+    border: none;
+    padding: 2px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    font-family: inherit;
+}
+.widget-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.widget-grip[aria-pressed="true"] { color: var(--accent); background: var(--accent-bg); }
+.dashboard-grid.is-picking .dashboard-widget { cursor: pointer; }
+.dashboard-grid.is-picking .dashboard-widget:not(.is-picked):hover,
+.dashboard-grid.is-picking .widget-hole { border-color: var(--accent); }
+.dashboard-widget.is-picked { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 読み上げ専用 (見た目には出さない) */
+.dashboard-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

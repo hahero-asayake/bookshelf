@@ -247,7 +247,16 @@ class BookshelfDashboard {
             grid.id = 'dashboard-grid';
             host.appendChild(grid);
         }
-        grid.className = `dashboard-grid${this.editMode ? ' is-edit-mode' : ''}`;
+        if (!this.editMode) this._picking = null; // 編集モードを出たら「選んで置く」も解除
+        grid.className = `dashboard-grid${this.editMode ? ' is-edit-mode' : ''}${this._picking ? ' is-picking' : ''}`;
+        // イシュー#521 X2: 並べ替え・追加・外すの結果を読み上げる場所 (grid の外に1つ。再描画で消さない)
+        if (!document.getElementById('dashboard-live')) {
+            const live = document.createElement('div');
+            live.id = 'dashboard-live';
+            live.className = 'dashboard-live';
+            live.setAttribute('aria-live', 'polite');
+            host.appendChild(live);
+        }
         grid.innerHTML = '';
         // イシュー#521 X2 (G3): 編集モードの時だけ、流し方で残る穴に「＋ここに追加」の枠を出す。
         // 枠は穴の幅ぴったりなので、差し込んでも他の部品の位置は変わらない。穴の位置は保存しない。
@@ -269,12 +278,12 @@ class BookshelfDashboard {
             const markerClass = entry.counter ? ' is-counter' : (entry.heading || w.id === 'heading' ? ' is-heading' : '');
             // span-N = PC の列幅 / m-half・m-full = スマホの幅 (CSS のメディアクエリで切替)
             const mSize = this._mobileSizeOf(w, entry);
-            card.className = `dashboard-widget span-${w.span} m-${mSize}${markerClass}`;
+            card.className = `dashboard-widget span-${w.span} m-${mSize}${markerClass}${this._picking === w.uid ? ' is-picked' : ''}`;
             card.dataset.widgetId = w.uid;          // インスタンス一意キー (同一ウィジェット複数配置に対応)
             card.dataset.widgetIndex = String(i);
             card.innerHTML = `
                 <div class="widget-header">
-                    ${this.editMode ? `<span class="widget-grip" title="ドラッグで並び替え">${window.renderIcon('grip-vertical', { size: 14 })}</span>` : ''}
+                    ${this.editMode ? `<button type="button" class="widget-grip" title="押して移動先を選ぶ・ドラッグ・↑↓で並び替え" aria-label="「${this._escape(entry.label)}」を移動" aria-pressed="${this._picking === w.uid}">${window.renderIcon('grip-vertical', { size: 14 })}</button>` : ''}
                     <span class="widget-title">${this._escape(entry.label)}</span>
                     ${this.editMode ? `
                         <span class="widget-actions">
@@ -452,12 +461,50 @@ class BookshelfDashboard {
         document.addEventListener('keydown', (e) => {
             if (!this.editMode || e.defaultPrevented) return;
             if (!window.Surface.isEsc(e)) return;
+            // イシュー#521 X2: 「選んで置く」の途中なら、Esc はその解除だけ (編集モードは終えない)
+            if (this._picking) { this._cancelPicking(); e.preventDefault(); return; }
             this._exitEditMode();
             e.preventDefault();
         }, { signal });
 
         const grid = document.getElementById('dashboard-grid');
         if (!grid) return;
+        // イシュー#521 X2「選んで置く」: つまみを押す → 置きたい部品 (その前に入る)・穴の枠・末尾の追加カードを押す。
+        // 選んでいる間は、部品の中のリンクやボタンを動かさない (capture で先に受けて止める)
+        grid.addEventListener('click', (e) => {
+            const grip = e.target.closest('.widget-grip');
+            if (grip) {
+                e.preventDefault(); e.stopPropagation();
+                const uid = grip.closest('.dashboard-widget')?.dataset.widgetId;
+                if (this._picking === uid) this._cancelPicking();
+                else this._startPicking(uid);
+                return;
+            }
+            if (!this._picking) return;
+            e.preventDefault(); e.stopPropagation();
+            const uid = this._picking;
+            this._picking = null;
+            const holeEl = e.target.closest('.widget-hole');
+            const card = e.target.closest('.dashboard-widget');
+            if (holeEl) {
+                this._moveWidgetToHole(uid, Number(holeEl.dataset.holeIndex), Number(holeEl.dataset.holeWidth)).then(() => this._announceMoved(uid));
+            } else if (e.target.closest('#add-widget-card')) {
+                this._moveWidgetTo(uid, Infinity);
+            } else if (card && card.dataset.widgetId !== uid) {
+                this._moveWidgetTo(uid, Number(card.dataset.widgetIndex));
+            } else {
+                this._cancelPicking();
+            }
+        }, { signal, capture: true });
+        // つまみにフォーカスがある時の ↑↓ (記事のブロックに合わせて Alt+↑↓ も同じ)
+        grid.addEventListener('keydown', (e) => {
+            const grip = e.target.closest('.widget-grip');
+            if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+            e.preventDefault();
+            const card = grip.closest('.dashboard-widget');
+            const from = Number(card?.dataset.widgetIndex);
+            this._moveWidgetBy(card?.dataset.widgetId, from, e.key === 'ArrowUp' ? -1 : 1);
+        }, { signal });
         grid.addEventListener('click', (e) => {
             const removeBtn = e.target.closest('.widget-remove-btn');
             if (removeBtn) {
@@ -509,7 +556,8 @@ class BookshelfDashboard {
         // 許可するかは canDrag で都度の this.editMode を見て判定する。
         this.app._bindPointerReorder(grid, {
             itemSelector: '.dashboard-widget',
-            excludeSelector: '.widget-actions, button, select',
+            // つまみ (button) からはドラッグを始められるようにする (#521 X2・つまみを button にしたため)
+            excludeSelector: '.widget-actions, button:not(.widget-grip), select',
             dragClass: 'is-dragging',
             zoneMode: 'index',
             indicatorClass: 'widget-drop-indicator',
@@ -575,6 +623,7 @@ class BookshelfDashboard {
         }
         const insertIdx = Math.max(0, Math.min(fromIdx < holeIndex ? holeIndex - 1 : holeIndex, layout.length));
         layout.splice(insertIdx, 0, moved);
+        this._lastMovedIndex = insertIdx;
         await this.saveLayout(layout);
         this.render();
     }
@@ -589,11 +638,105 @@ class BookshelfDashboard {
         this.render();
     }
 
+    // イシュー#521 X2: 外した時は UndoToast で「元に戻す」を出す。押すと元の位置へ、大きさ・設定もそのまま戻す
+    // (1段だけ。記事のブロック削除の Undo と同じ考え方)。
     async _removeWidget(uid) {
         if (!uid) return;
-        const layout = this.getLayout().filter(w => w.uid !== uid);
+        const all = this.getLayout();
+        const index = all.findIndex(w => w.uid === uid);
+        if (index < 0) return;
+        const { uid: _u, ...removed } = all[index];
+        const layout = all.filter(w => w.uid !== uid);
         await this.saveLayout(layout);
         this.render();
+        const label = this._registry[removed.id]?.label || removed.id;
+        this._announce(`「${label}」を外しました。`);
+        if (window.UndoToast) {
+            window.UndoToast.show(`「${label}」を外しました。`, {
+                onUndo: async () => {
+                    const cur = this.getLayout();
+                    cur.splice(Math.min(index, cur.length), 0, removed);
+                    await this.saveLayout(cur);
+                    this.render();
+                    this._announce(`「${label}」を元に戻しました。`);
+                },
+            });
+        }
+    }
+
+    // --- イシュー#521 X2: 「選んで置く」と ↑↓ ---
+    _startPicking(uid) {
+        if (!uid || !this.editMode) return;
+        this._picking = uid;
+        this.render();
+        const label = this._labelOfUid(uid);
+        this._announce(`「${label}」を選びました。置きたい部品か「ここに追加」の枠を押してください。Esc で取り消します。`);
+        this._focusGripOf(uid);
+    }
+
+    _cancelPicking() {
+        const uid = this._picking;
+        if (!uid) return;
+        this._picking = null;
+        this.render();
+        this._announce('移動を取り消しました。');
+        this._focusGripOf(uid);
+    }
+
+    // to = 「今の並び」での目標位置 (その部品の前に入る。Infinity なら末尾)。
+    async _moveWidgetTo(uid, to) {
+        const layout = this.getLayout();
+        const from = layout.findIndex(w => w.uid === uid);
+        if (from < 0) return;
+        const idx = from < to ? to - 1 : to; // 取り出した分を引く (_reorderWidgetByIndex は取り出した後の位置)
+        await this._reorderWidgetByIndex(uid, Math.min(idx, layout.length - 1));
+        this._announceMoved(uid, Math.min(idx, layout.length - 1));
+    }
+
+    // ↑↓: 1つ前 / 後ろへ。描画し直した後もフォーカスはつまみに残す (uid は id#index なので新しい位置で探す)
+    async _moveWidgetBy(uid, from, delta) {
+        const layout = this.getLayout();
+        if (!uid || !Number.isFinite(from)) return;
+        const to = from + delta;
+        if (to < 0 || to >= layout.length) {
+            this._announce(delta < 0 ? 'これ以上前へは動かせません。' : 'これ以上後ろへは動かせません。');
+            return;
+        }
+        await this._reorderWidgetByIndex(uid, to);
+        this._announceMoved(uid, to);
+        this._focusGripAt(to);
+    }
+
+    _labelOfUid(uid) {
+        const id = String(uid || '').split('#')[0];
+        return this._registry[id]?.label || id;
+    }
+
+    // 移動の後の読み上げ。toIdx を省いた時は、移した部品を並びから探す (穴へ移した時など)
+    _announceMoved(uid, toIdx) {
+        const layout = this.getLayout();
+        const label = this._labelOfUid(uid);
+        let n = toIdx;
+        if (!Number.isFinite(n)) {
+            n = this._lastMovedIndex;
+        }
+        if (Number.isFinite(n)) this._announce(`「${label}」を ${n + 1} 番目に移動しました（全 ${layout.length} 件）。`);
+    }
+
+    _announce(text) {
+        const live = document.getElementById('dashboard-live');
+        if (!live) return;
+        live.textContent = '';
+        // 同じ文でも読み上げ直されるよう、空にしてから次のフレームで入れる
+        requestAnimationFrame(() => { live.textContent = text; });
+    }
+
+    _focusGripOf(uid) {
+        document.querySelector(`#dashboard-grid .dashboard-widget[data-widget-id="${CSS.escape(uid)}"] .widget-grip`)?.focus();
+    }
+
+    _focusGripAt(index) {
+        document.querySelector(`#dashboard-grid .dashboard-widget[data-widget-index="${index}"] .widget-grip`)?.focus();
     }
 
     async _changeSpan(uid, span) {
