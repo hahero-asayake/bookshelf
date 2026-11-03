@@ -73,39 +73,80 @@ async function dragWidget(page, project, fromLocator, toBox) {
     else await mouseDrag(page, box, { x: toBox.x, y: toBox.y });
 }
 
-test.describe('W1/W2: ウィジェットの追加先 (穴に入らない・隣に置けない)', () => {
-    test('W1: 編集モードで部品を追加 → 末尾に入る (隣には入らない・今の振る舞い) // CHAR: 直す対象(step2 W1)', async ({ page }, testInfo) => {
+test.describe('W1/W2: ウィジェットの追加先 (X2で隣・空きに置けるようにした)', () => {
+    test('W1: 編集モードで先頭の小の＋→候補で、小の隣に小が入る(2手) // CHAR→X2: 直した(step2 W1)', async ({ page }, testInfo) => {
         await bootApp(page);
         await enterEditMode(page);
         const before = await widgetIds(page);
         expect(before[0]).toBe('counter-total'); // 既定レイアウトの先頭(小)
-        await page.click('#dashboard-add-widget');
+        const cards = page.locator('#dashboard-grid .dashboard-widget');
+        await cards.first().locator('.widget-insert-btn').click();                    // 1手目
         await expect(page.locator('.widget-picker-panel')).toBeVisible();
-        await page.click('.widget-picker-item[data-wid="counter-unrated"]'); // 既に配置済みの小を追加 → 2個目
+        await page.click('.widget-picker-item[data-wid="counter-unrated"]');          // 2手目
         await expect(page.locator('.widget-picker-panel')).toHaveCount(0);
         const after = await widgetIds(page);
-        // 今の振る舞い: 追加された小は末尾に入る。先頭の小(counter-total)の隣にはならない。
         expect(after.length).toBe(before.length + 1);
-        expect(after[after.length - 1]).toBe('counter-unrated');
-        expect(after[1]).not.toBe('counter-unrated'); // 隣(index1)には入らない
+        expect(after[1]).toBe('counter-unrated'); // 先頭の小の隣(index1)に入る
+        const y = await cards.evaluateAll((els) => els.slice(0, 2).map((e) => Math.round(e.getBoundingClientRect().y)));
+        expect(y[1]).toBe(y[0]); // 同じ行
     });
 
-    test('W2: 部品を外した穴は、別の部品をドラッグしても埋まらない (今の振る舞い) // CHAR: 直す対象(step2 W2)', async ({ page }, testInfo) => {
+    test('W2: 部品を外した後、別の部品を「＋ここに追加」の枠へドラッグすると、その空きに入る // CHAR→X2: 直した(step2 W2)', async ({ page }, testInfo) => {
         await bootApp(page);
         await enterEditMode(page);
-        // bookshelf-highlights(全幅)を外し、小4つの右(存在しない5列目=穴)を作る
+        const narrow = (testInfo.project.use.viewport?.width || 1280) <= 900;
         const cards = page.locator('#dashboard-grid .dashboard-widget');
         const target = cards.filter({ has: page.locator('.widget-title', { hasText: '本棚ハイライト' }) });
         await target.locator('.widget-remove-btn').click();
         const before = await widgetIds(page);
         expect(before).not.toContain('bookshelf-highlights');
-        // 残る「今日の一冊」をドラッグしても、穴(12列グリッドの空き)自体は落とす先として機能しない
-        // (アプリは order 配列への挿入位置計算のみで、穴という概念を持たない=今の振る舞い)
-        const todayPick = cards.filter({ has: page.locator('.widget-title', { hasText: '今日の一冊' }) });
-        const box = await todayPick.boundingBox();
-        await dragWidget(page, testInfo.project, todayPick, { x: box.x, y: box.y });
+        // 外した直後の「元に戻す」toast (6秒) は右下に出て、12列では枠に重なる。消えてからドラッグする
+        await expect(page.locator('.toast')).toHaveCount(0, { timeout: 10000 });
+        // ×を押した時に下へスクロールしている (スクロールするのは window ではなく内側の容器)。
+        // 先頭の小を画面の上端へ戻し、先頭の小と枠の両方を画面に入れる
+        // (12列では上端に寄せると上に重なる帯の下に入るので中央へ。2列は枠が下にあるので上端へ)
+        await cards.first().evaluate((e, nar) => e.scrollIntoView({ block: nar ? 'start' : 'center' }), narrow);
+        await page.waitForTimeout(100);
+        // 空き(穴)は点線の枠として見える。先頭の小をその枠へドラッグする
+        const hole = page.locator('#dashboard-grid .widget-hole').first();
+        await expect(hole).toBeVisible();
+        const hb = await hole.boundingBox();
+        const to = { x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 };
+        if (testInfo.project.use.hasTouch) {
+            // touchLongPressDrag と同じ経路 (長押し→移動→離す)。枠の上での移動を2回送る (1回目はドラッグ開始に使われうる)
+            const sb = await cards.first().boundingBox();
+            // 中央は折り返した操作欄 (大きさ) に当たることがある (1024) ので、カードの下の方 (本体) を掴む
+            const x0 = sb.x + sb.width / 2, y0 = sb.y + sb.height * 0.8;
+            const fire = (type, x, y, target) => page.evaluate(([t, x, y, tg]) => {
+                const el = tg ? document.elementFromPoint(x, y) : document;
+                el.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 78, clientX: x, clientY: y }));
+            }, [type, x, y, target]);
+            await fire('pointerdown', x0, y0, true);
+            await page.waitForTimeout(550);
+            await fire('pointermove', x0, y0 + 10, false);
+            await fire('pointermove', to.x, to.y - 2, false);
+            await fire('pointermove', to.x, to.y, false);
+            await page.waitForTimeout(100);
+            await fire('pointerup', to.x, to.y, false);
+            await page.waitForTimeout(200);
+        } else {
+            // mouseDrag は閾値(6px)を超えた最初の移動で落とす先へ飛ぶため、枠の上での移動が起きない。
+            // 先に閾値を超えてから、枠まで刻んで動かす
+            const sb = await cards.first().boundingBox();
+            await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height * 0.8);
+            await page.mouse.down();
+            await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height * 0.8 + 10, { steps: 3 });
+            await page.mouse.move(to.x, to.y, { steps: 8 });
+            await page.waitForTimeout(100);
+            await page.mouse.up();
+            await page.waitForTimeout(200);
+        }
         const after = await widgetIds(page);
-        expect(after.length).toBe(before.length); // 個数は変わらない(埋める特別処理が無い)
+        expect(after.length).toBe(before.length);
+        const pos = after.indexOf('counter-total');
+        expect(after[pos - 1]).toBe(narrow ? 'today-pick' : 'recent-books'); // 穴の位置(その部品の右)に入る
+        const y = await cards.evaluateAll((els, i) => [els[i - 1], els[i]].map((e) => Math.round(e.getBoundingClientRect().y)), pos);
+        expect(y[1]).toBe(y[0]);
     });
 });
 
@@ -143,8 +184,8 @@ test.describe('W4: 大きさ変更', () => {
     });
 });
 
-test.describe('W5: 外すと確認なし・元に戻せない', () => {
-    test('W5: ×を押すと確認なしで外れる。元に戻す導線が無い(今の振る舞い) // CHAR: 直す対象(step2 W5)', async ({ page }, testInfo) => {
+test.describe('W5: 外すと確認なし・元に戻せる (X2)', () => {
+    test('W5: ×を押すと確認なしで外れ、「元に戻す」で元の位置と大きさに戻る // CHAR→X2: 直した(step2 W5)', async ({ page }, testInfo) => {
         // 820pxでは、820px(.m-half/.m-full決定の768px境目と、12列PCグリッドの描画が重なり)で
         // 隣のカードがクリックを奪い続けるレイアウトの重なりを実測した(bp-820.spec.jsの対象と同種の
         // 現象。CSSの768/900境目の分裂が原因の候補)。原因調査はbp-820側の課題として残し、ここでは
@@ -153,19 +194,23 @@ test.describe('W5: 外すと確認なし・元に戻せない', () => {
         await bootApp(page);
         await enterEditMode(page);
         const before = await widgetIds(page);
+        const spansBefore = await page.evaluate(() => window.bookshelf.dashboard.getLayout().map((w) => w.span));
         const card = page.locator('#dashboard-grid .dashboard-widget').first();
         await card.locator('.widget-remove-btn').click();
-        // 確認ダイアログが出ない(今の振る舞い)
+        // 確認ダイアログは出ない(今までどおり)
         await expect(page.locator('.cfm-overlay')).toHaveCount(0);
-        const after = await widgetIds(page);
-        expect(after.length).toBe(before.length - 1);
-        // 「元に戻す」操作の導線(toast)が、外した直後に出ない
-        await expect(page.locator('.toast')).toHaveCount(0);
+        expect((await widgetIds(page)).length).toBe(before.length - 1);
+        // 外した直後に「元に戻す」の toast が出て、押すと元どおり
+        const undo = page.locator('.toast button', { hasText: '元に戻す' });
+        await expect(undo).toBeVisible();
+        await undo.click();
+        expect(await widgetIds(page)).toEqual(before);
+        expect(await page.evaluate(() => window.bookshelf.dashboard.getLayout().map((w) => w.span))).toEqual(spansBefore);
     });
 });
 
-test.describe('W6: キーボードでは並べ替えられない', () => {
-    test('W6: つまみにフォーカスして矢印キーを押しても並びが変わらない(今の振る舞い) // CHAR: 直す対象(step2 W6)', async ({ page }) => {
+test.describe('W6: キーボードで並べ替えられる (X2)', () => {
+    test('W6: つまみにフォーカスして↓↓を押すと3番目へ動き、フォーカスはつまみに残る // CHAR→X2: 直した(step2 W6)', async ({ page }) => {
         await bootApp(page);
         await enterEditMode(page);
         const before = await widgetIds(page);
@@ -174,9 +219,10 @@ test.describe('W6: キーボードでは並べ替えられない', () => {
         await page.keyboard.press('ArrowDown');
         await page.keyboard.press('ArrowDown');
         const after = await widgetIds(page);
-        // 今の振る舞い: grip にキーボードの並べ替えハンドラが無いため、並びは変わらない
-        // (js/dashboard.js の _bindPointerReorder 呼び出しに keydown 系の opt は渡されていない)
-        expect(after).toEqual(before);
+        expect(after[2]).toBe(before[0]);
+        expect(after.length).toBe(before.length);
+        expect(await page.evaluate(() => document.activeElement?.classList.contains('widget-grip') && document.activeElement.closest('.dashboard-widget')?.dataset.widgetIndex)).toBe('2');
+        await expect(page.locator('#dashboard-live')).toContainText('3 番目に移動しました');
     });
 });
 
