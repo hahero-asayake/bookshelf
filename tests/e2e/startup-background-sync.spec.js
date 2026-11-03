@@ -11,8 +11,6 @@ const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.js
 const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json'), 'utf-8');
 
 test('ローカルデータあり: ハブ同期が終わる前に loading が消え、「確認しています」帯が出る', async ({ page }) => {
-    // ハブ空判定の confirm (初期化しますか？) は「キャンセル」相当で流す
-    page.on('dialog', (d) => d.dismiss());
     await page.addInitScript(([userData, library]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);
@@ -46,8 +44,16 @@ test('ローカルデータあり: ハブ同期が終わる前に loading が消
     // 全画面スピナーの代わりに、細い帯で「最新のデータを確認しています…」
     await expect(page.locator('#app-status-bar .status-checking')).toBeVisible();
 
-    // 同期を出し切ると帯は消える (404 → ハブ空 → confirm dismiss → エラー帯へ遷移してよい)
+    // 同期を出し切ると帯は消える (404 → ハブ空 → confirmDialog が出る → キャンセル → エラー帯へ遷移してよい)。
+    // プラグイン読込等の後続フェッチも hub.example 宛のため、.status-checking が消えるまで interval は
+    // 止めない (キャンセル直後に止めると後続fetchが永久pendingになりfinishStartupが終わらなかった＝実測)。
     await page.evaluate(() => { window.__hubAuto = setInterval(() => window.__resolveHubFetches(), 50); });
+    // ハブ空判定の confirmDialog (初期化しますか？) は「キャンセル」相当で流す
+    // (旧 confirm() は page.on('dialog') 未設定時の Playwright 既定で自動キャンセルされていた経路と同じにする)
+    const cfmOverlay = page.locator('.cfm-overlay');
+    await cfmOverlay.waitFor({ state: 'visible' });
+    await cfmOverlay.locator('.cfm-cancel').click();
+    await cfmOverlay.waitFor({ state: 'hidden' });
     await expect(page.locator('#app-status-bar .status-checking')).toBeHidden({ timeout: 10000 });
     await page.evaluate(() => clearInterval(window.__hubAuto));
 });

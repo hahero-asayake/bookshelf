@@ -101,6 +101,14 @@ async function bootAppGitHub(page, { onContentsGet } = {}) {
         window.bookshelf.saveUserData = async () => {};
         window.HubAuth.renderSignInButton = () => {};
     });
+    // イシュー#519: このモックは起動時に GitHub リポジトリが「空」と判定される (contents GET への
+    // 既定応答が実データ構造と一致しないため)。起動時の「新規データで初期化しますか？」confirmDialog
+    // が必ず出る経路なので、ここで「キャンセル」を押して流す (旧 confirm() が Playwright の未処理dialog
+    // 既定で自動キャンセルされていた経路と同じにする＝このテストの関心は初期化の有無ではない)。
+    const cfmOverlay = page.locator('.cfm-overlay');
+    await cfmOverlay.waitFor({ state: 'visible' });
+    await cfmOverlay.locator('.cfm-cancel').click();
+    await cfmOverlay.waitFor({ state: 'hidden' });
     return errors;
 }
 

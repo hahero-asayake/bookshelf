@@ -83,10 +83,13 @@ async function installMockHub(page) {
     return { store, writes };
 }
 
-/** ハブ接続済みの状態でアプリを起動する。空のハブでは「新規データで初期化しますか？」の confirm が出る (承諾する) */
+/** ハブ接続済みの状態でアプリを起動する。空のハブでは「新規データで初期化しますか？」の confirmDialog が
+ * 必ず出るので OK を押して承諾する (このテストの検証対象 ensureStandardPlugins は初期化後の経路なので、
+ * ここだけは起動時confirmに OK で応答する＝イシュー#519 ②指示どおり、新規データ初期化の経路は
+ * ここで確かめる)。文言は DOM の .cfm-message から取る (confirmDialog 化でネイティブ dialog イベントは
+ * 発火しないため) */
 async function bootWithHub(page) {
     const dialogs = [];
-    page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
     const mock = await installMockHub(page);
     await page.addInitScript((hub) => {
         localStorage.setItem('bookshelf_sync', JSON.stringify({
@@ -95,6 +98,11 @@ async function bootWithHub(page) {
         }));
     }, HUB);
     await page.goto('index.html');
+    const cfmOverlay = page.locator('.cfm-overlay');
+    await cfmOverlay.waitFor({ state: 'visible' });
+    dialogs.push(await cfmOverlay.locator('.cfm-message').textContent());
+    await cfmOverlay.locator('.cfm-ok').click();
+    await cfmOverlay.waitFor({ state: 'hidden' });
     return { ...mock, dialogs };
 }
 

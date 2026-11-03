@@ -146,6 +146,14 @@ async function bootApp(page, { conflictOnce, onPut, onPublish } = {}) {
         window.bookshelf.userData.settings = window.bookshelf.userData.settings || {};
         window.bookshelf.userData.settings.ackFreeAffiliate = true;
     });
+    // イシュー#519: mockHubData の store は空から始まるため、起動時にハブが「空」と判定され
+    // 「新規データで初期化しますか？」confirmDialog が必ず出る。このテストの関心は公開衝突の
+    // 挙動であって初期化の有無ではないため「キャンセル」を押して流す (旧 confirm() が
+    // Playwright の未処理dialog既定で自動キャンセルされていた経路と同じにする)。
+    const cfmOverlay = page.locator('.cfm-overlay');
+    await cfmOverlay.waitFor({ state: 'visible' });
+    await cfmOverlay.locator('.cfm-cancel').click();
+    await cfmOverlay.waitFor({ state: 'hidden' });
     return { errors, getPublishCount: () => publishCount };
 }
 
