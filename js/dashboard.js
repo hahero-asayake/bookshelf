@@ -249,10 +249,21 @@ class BookshelfDashboard {
         }
         grid.className = `dashboard-grid${this.editMode ? ' is-edit-mode' : ''}`;
         grid.innerHTML = '';
+        // イシュー#521 X2 (G3): 編集モードの時だけ、流し方で残る穴に「＋ここに追加」の枠を出す。
+        // 枠は穴の幅ぴったりなので、差し込んでも他の部品の位置は変わらない。穴の位置は保存しない。
+        const holesAt = new Map();
+        if (this.editMode) {
+            for (const h of this._computeHoles(layout)) {
+                if (!holesAt.has(h.index)) holesAt.set(h.index, []);
+                holesAt.get(h.index).push(h);
+            }
+        }
+        const appendHoles = (idx) => (holesAt.get(idx) || []).forEach(h => grid.appendChild(this._holeEl(h)));
         for (let i = 0; i < layout.length; i++) {
             const w = layout[i];
             const entry = this._registry[w.id];
             if (!entry) continue;
+            appendHoles(i);
             const card = document.createElement('div');
             // #4: 常時 accent 反転はやめ、カウンターは hover/focus 時のみ accent (CSS 側)
             const markerClass = entry.counter ? ' is-counter' : (entry.heading || w.id === 'heading' ? ' is-heading' : '');
@@ -268,6 +279,7 @@ class BookshelfDashboard {
                     ${this.editMode ? `
                         <span class="widget-actions">
                             ${this._sizeSelectHtml(w, entry)}
+                            <button class="widget-insert-btn" type="button" title="この後ろに追加" aria-label="「${this._escape(entry.label)}」の後ろに追加">${window.renderIcon('plus', { size: 14 })}</button>
                             <button class="widget-remove-btn" type="button" title="外す">${window.renderIcon('x', { size: 14 })}</button>
                         </span>
                     ` : ''}
@@ -284,6 +296,8 @@ class BookshelfDashboard {
             }
         }
 
+        appendHoles(layout.length); // 最後の行の残り
+
         // 編集モード中、末尾に「+ ウィジェット追加」dashed カードを追加 (モックアップ準拠)。
         // 同一ウィジェットを複数置けるので、配置済みかどうかに関わらず常に表示する。
         if (this.editMode) {
@@ -297,6 +311,41 @@ class BookshelfDashboard {
         }
 
         this._bindEvents();
+    }
+
+    // 部品1つの、今の格子での幅 (列数)。PC は span (12列)、スマホは half=1 / full=2 (2列)。
+    _colsOf(w) {
+        const entry = this._registry[w.id];
+        if (this._isMobile()) return this._mobileSizeOf(w, entry) === 'full' ? 2 : 1;
+        return Number(w.span) || (entry ? entry.defaultSpan : 6);
+    }
+
+    // 今の格子の列の数と、並びから計算した穴 (js/ui/widget-holes.js)。
+    _computeHoles(layout) {
+        const C = this._isMobile() ? 2 : 12;
+        return window.WidgetHoles.compute(layout.filter(w => this._registry[w.id]).map(w => this._colsOf(w)), C);
+    }
+
+    // 「＋ここに追加」の枠。押すと穴の幅に入る候補が出る。ドラッグの落とす先にもなる (holeSelector)。
+    // .dashboard-widget は付けない (並べ替えの挿入位置の計算が、このクラスで部品を数えるため)。
+    _holeEl(h) {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'widget-hole';
+        el.style.gridColumn = `span ${h.width}`;
+        el.dataset.holeIndex = String(h.index);
+        el.dataset.holeWidth = String(h.width);
+        el.setAttribute('aria-label', `ここに追加（${this._isMobile() ? '半分' : `${h.width}列`}の空き）`);
+        el.innerHTML = `${window.renderIcon('plus', { size: 16 })}<span>ここに追加</span>`;
+        return el;
+    }
+
+    // 穴 (幅 width 列) に入る大きさ。PC は部品の allowedSizes のうち列数が width 以下のもの、
+    // スマホの穴は常に1列 (=半分) なので sm/md を持つ部品だけ (見出しは全幅だけなので入らない)。
+    _sizesFitting(entry, width) {
+        const sizes = entry.allowedSizes || [];
+        if (this._isMobile()) return (entry.heading || !sizes.some(k => k === 'sm' || k === 'md')) ? [] : ['half'];
+        return sizes.filter(k => BookshelfDashboard.SIZE_COLS[k] <= width);
     }
 
     // ===== 初回オンボーディング (蔵書0のときだけ出す3ステップ案内) =====
@@ -417,6 +466,19 @@ class BookshelfDashboard {
                 this._removeWidget(card?.dataset.widgetId);
                 return;
             }
+            // イシュー#521 X2: 穴の枠 → その位置に入る大きさだけの候補。カードの＋ → そのカードの直後へ
+            const holeEl = e.target.closest('.widget-hole');
+            if (holeEl) {
+                this._openWidgetPicker({ insertAt: Number(holeEl.dataset.holeIndex), holeWidth: Number(holeEl.dataset.holeWidth) });
+                return;
+            }
+            const insertBtn = e.target.closest('.widget-insert-btn');
+            if (insertBtn) {
+                e.stopPropagation();
+                const card = insertBtn.closest('.dashboard-widget');
+                this._openWidgetPicker({ insertAt: Number(card?.dataset.widgetIndex) + 1 });
+                return;
+            }
             // dashed 「+ ウィジェット追加」 カード or ツールバーの追加ボタンから picker 起動
             const addCardEl = e.target.closest('#add-widget-card');
             if (addCardEl) {
@@ -454,6 +516,9 @@ class BookshelfDashboard {
             computeInsertIndex: (container, clientX, clientY) => this._computeWidgetInsertIndex(container, clientX, clientY),
             getKey: (el) => el.dataset.widgetId,
             onDrop: (uid, idx) => this._reorderWidgetByIndex(uid, idx),
+            // イシュー#521 X2: 穴の枠も落とす先 (U4 の口)。指の下にカードが無い時だけ拾われる
+            holeSelector: '.widget-hole',
+            onDropHole: (uid, holeEl) => this._moveWidgetToHole(uid, Number(holeEl.dataset.holeIndex), Number(holeEl.dataset.holeWidth)),
             canDrag: () => this.editMode,
             // Home (#dashboard) はページ自体がスクロールする (本棚一覧の.view-bookshelfのような
             // 専用スクロール容器が無い) ため、window をスクロール対象とする薄いアダプタを渡す。
@@ -488,6 +553,27 @@ class BookshelfDashboard {
         if (fromIdx < 0) return;
         const [moved] = layout.splice(fromIdx, 1);
         const insertIdx = Math.max(0, Math.min(idx, layout.length));
+        layout.splice(insertIdx, 0, moved);
+        await this.saveLayout(layout);
+        this.render();
+    }
+
+    // イシュー#521 X2: 部品を穴へ移す。holeIndex は「今の並び」での挿入位置なので、前から後ろへ
+    // 動かす時は取り出した分を1つ引く。穴より大きい部品は、穴に入る大きさがあればそれに縮める
+    // (PC は入る中で最大の大きさ、スマホは半分)。入る大きさが無ければ大きさは変えずに位置だけ移す。
+    async _moveWidgetToHole(uid, holeIndex, holeWidth) {
+        if (!uid || !Number.isFinite(holeIndex)) return;
+        const layout = this.getLayout();
+        const fromIdx = layout.findIndex(w => w.uid === uid);
+        if (fromIdx < 0) return;
+        const [moved] = layout.splice(fromIdx, 1);
+        const entry = this._registry[moved.id];
+        if (entry && this._colsOf(moved) > holeWidth) {
+            const fit = this._sizesFitting(entry, holeWidth);
+            if (fit[0] === 'half') moved.spanMobile = 'half';
+            else if (fit.length) moved.span = BookshelfDashboard.SIZE_COLS[fit[fit.length - 1]];
+        }
+        const insertIdx = Math.max(0, Math.min(fromIdx < holeIndex ? holeIndex - 1 : holeIndex, layout.length));
         layout.splice(insertIdx, 0, moved);
         await this.saveLayout(layout);
         this.render();
@@ -529,9 +615,22 @@ class BookshelfDashboard {
         this.render();
     }
 
-    _openWidgetPicker() {
-        // 同一ウィジェットを複数置けるようにするため、全ウィジェットを常に候補にする
-        const candidates = Object.keys(this._registry);
+    // opts (イシュー#521 X2): insertAt=並びへの挿入位置 (省略=末尾)、holeWidth=穴の幅 (列数。穴の枠から開いた時だけ)。
+    // 大きさの欄: 「既定」か、PC は 小/中/大/全幅・スマホは 半分/全幅。穴から開いた時は入らない大きさを選べない。
+    _openWidgetPicker(opts = {}) {
+        const insertAt = Number.isFinite(opts.insertAt) ? opts.insertAt : null;
+        const holeWidth = Number.isFinite(opts.holeWidth) ? opts.holeWidth : null;
+        const mobile = this._isMobile();
+        // 同一ウィジェットを複数置けるようにするため、全ウィジェットを常に候補にする。
+        // 穴から開いた時だけ、穴に入る大きさを持つ部品に絞る
+        const candidates = Object.keys(this._registry)
+            .filter(id => holeWidth === null || this._sizesFitting(this._registry[id], holeWidth).length > 0);
+        const sizeKeys = mobile ? ['half', 'full'] : Object.keys(BookshelfDashboard.SIZE_COLS);
+        const sizeLabel = (k) => mobile ? BookshelfDashboard.MOBILE_SIZE_LABEL[k] : BookshelfDashboard.SIZE_LABEL[k];
+        const sizeFits = (k) => holeWidth === null || (mobile ? k === 'half' : BookshelfDashboard.SIZE_COLS[k] <= holeWidth);
+        // 部品がその大きさを選べるか (スマホの半分/全幅は見出し以外どれでも選べる)
+        const entryHas = (entry, k) => mobile ? (k === 'full' || !entry.heading) : (entry.allowedSizes || []).includes(k);
+        const initialSize = (holeWidth !== null && mobile) ? 'half' : 'auto';
 
         // 既存があれば撤去
         document.getElementById('widget-picker-overlay')?.remove();
@@ -544,8 +643,13 @@ class BookshelfDashboard {
             <div class="widget-picker-backdrop"></div>
             <div class="widget-picker-panel" role="dialog" aria-modal="true" aria-label="ウィジェットを追加">
                 <div class="widget-picker-head">
-                    <span>ウィジェットを追加</span>
+                    <span>${holeWidth !== null ? 'この空きに追加' : 'ウィジェットを追加'}</span>
                     <button type="button" class="widget-picker-close" title="閉じる">${window.renderIcon('x', { size: 16 })}</button>
+                </div>
+                <div class="widget-picker-sizes" role="radiogroup" aria-label="大きさ">
+                    <span class="wps-label">大きさ</span>
+                    ${['auto', ...sizeKeys].map(k => `
+                        <button type="button" class="wps-btn" role="radio" data-size="${k}" aria-checked="${k === initialSize}"${sizeFits(k) || k === 'auto' ? '' : ' disabled'}>${k === 'auto' ? '既定' : sizeLabel(k)}</button>`).join('')}
                 </div>
                 <div class="widget-picker-grid">
                     ${candidates.map(id => `
@@ -568,13 +672,40 @@ class BookshelfDashboard {
         document.addEventListener('keydown', onKey);
         overlay.querySelector('.widget-picker-backdrop').addEventListener('click', close);
         overlay.querySelector('.widget-picker-close').addEventListener('click', close);
+        // 大きさの欄: 選んだ大きさを持たない部品は隠す (.is-unfit。.widget-picker-item は display:flex
+        // なので [hidden] ではなくクラスで隠す＝ui-standards の [hidden] の罠)
+        let chosen = initialSize;
+        const applySize = () => {
+            overlay.querySelectorAll('.wps-btn').forEach(b => b.setAttribute('aria-checked', String(b.dataset.size === chosen)));
+            overlay.querySelectorAll('.widget-picker-item').forEach(btn => {
+                const entry = this._registry[btn.dataset.wid];
+                btn.classList.toggle('is-unfit', chosen !== 'auto' && !entryHas(entry, chosen));
+            });
+        };
+        overlay.querySelectorAll('.wps-btn').forEach(b => b.addEventListener('click', () => {
+            if (b.disabled) return;
+            chosen = b.dataset.size;
+            applySize();
+        }));
+        applySize();
         overlay.querySelectorAll('.widget-picker-item').forEach(btn => {
             btn.addEventListener('click', () => {
                 const newId = btn.dataset.wid;
                 const entry = this._registry[newId];
                 if (!entry) return;
+                const item = { id: newId, span: entry.defaultSpan };
+                if (mobile) {
+                    if (chosen === 'half' || chosen === 'full') item.spanMobile = chosen;
+                } else if (chosen !== 'auto') {
+                    item.span = BookshelfDashboard.SIZE_COLS[chosen];
+                } else if (holeWidth !== null && item.span > holeWidth) {
+                    // 既定のままでは穴に入らない時は、入る中で最大の大きさにする
+                    const fit = this._sizesFitting(entry, holeWidth);
+                    item.span = BookshelfDashboard.SIZE_COLS[fit[fit.length - 1]];
+                }
                 const layout = this.getLayout();
-                layout.push({ id: newId, span: entry.defaultSpan });
+                if (insertAt === null) layout.push(item);
+                else layout.splice(Math.max(0, Math.min(insertAt, layout.length)), 0, item);
                 close();
                 this.saveLayout(layout).then(() => this.render());
             });

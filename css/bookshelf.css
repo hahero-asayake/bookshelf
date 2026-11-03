@@ -2003,6 +2003,12 @@ html.bs-likely-has-data #dashboard-welcome {
     gap: 0.3rem;
 }
 
+/* イシュー#521 X2: 編集モードの操作欄 (大きさ・＋・×) が細いカード (1024 の小＝約99px) に入りきらない時は、
+   次の行へ折り返す (はみ出して隣のカードに重なり、押せなくなるのを防ぐ)。 */
+.dashboard-grid.is-edit-mode .widget-header { flex-wrap: wrap; }
+.dashboard-grid.is-edit-mode .widget-title { flex: 1 1 4em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-grid.is-edit-mode .widget-actions { margin-left: auto; }
+
 .widget-size-select {
     font-size: 0.75rem;
     padding: 0.1rem 0.3rem;
@@ -2028,6 +2034,75 @@ html.bs-likely-has-data #dashboard-welcome {
 .widget-remove-btn:hover {
     background: #fee2e2;
 }
+
+/* イシュー#521 X2: カードの「この後ろに追加」(＋)。×と同じ大きさ・色はアクセント */
+.widget-insert-btn {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.widget-insert-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+
+/* イシュー#521 X2 (G3): 流し方で残る穴の「＋ここに追加」枠。編集モードでは常に見える
+   (タッチにはマウスを乗せる操作が無いため hover で出し分けない)。幅は dashboard.js が
+   grid-column: span N を直接付ける (穴の幅ぴったり＝他の部品は動かない)。 */
+.widget-hole {
+    min-height: 44px;
+    background: transparent;
+    border: 2px dashed var(--line);
+    border-radius: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.6rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    flex-wrap: wrap; /* 細い穴 (1024 の3列＝約99px) では＋の下に文言を置く (文言の途中で折らない) */
+    transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.widget-hole span { white-space: nowrap; }
+.widget-hole:hover,
+.widget-hole:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-bg);
+}
+
+/* 追加の一覧の「大きさ」欄 */
+.widget-picker-sizes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.7rem 1rem 0;
+}
+.wps-label { font-size: 0.8rem; color: var(--muted); margin-right: 0.2rem; }
+.wps-btn {
+    min-height: 32px;
+    padding: 0.2rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--fg2);
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.wps-btn[aria-checked="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.wps-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.widget-picker-item.is-unfit { display: none; }
 
 .widget-body {
     flex: 1;

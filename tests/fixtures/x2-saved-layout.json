@@ -1,0 +1,13 @@
+{
+  "widgets": [
+    { "id": "counter-total", "span": 3 },
+    { "id": "counter-shelves", "span": 3, "spanMobile": "full" },
+    { "id": "counter-unrated", "span": 3 },
+    { "id": "heading", "span": 12, "config": { "text": "読書" } },
+    { "id": "recent-books", "span": 9, "config": { "limit": 12 } },
+    { "id": "today-pick", "span": 4 },
+    { "id": "pinned-memo", "span": 8, "spanMobile": "half", "config": { "limit": 80 } },
+    { "id": "heatmap", "span": 12 },
+    { "id": "reading-stats", "span": 6 }
+  ]
+}
