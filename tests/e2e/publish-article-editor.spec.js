@@ -1010,7 +1010,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await closePublishPanelIfOpen(page);
         await page.click('#art-republish-all');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
-        let toastText = await page.locator('.toast-success').last().textContent();
+        // イシュー#515: CIの遅い環境では、直前の記事公開toastがまだDOMに残っている間に
+        // `.last()`を1回読むと、古いtoastを一括更新のtoastと取り違える(実測・CI 0667131)。
+        // 文言(「公開中の」)で絞り込んだlocatorをtoBeVisible()で待ち、現れたものを読む
+        // (順番に頼らず、現れるべきtoastが現れたことを確かめてから読む)。
+        const republishToast1 = page.locator('.toast-success', { hasText: '公開中の' });
+        await expect(republishToast1.last()).toBeVisible();
+        let toastText = await republishToast1.last().textContent();
         expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/${article1.publicId}/`);
 
         // 2本目を作成・公開 (これで公開中記事が2件になる)
@@ -1031,7 +1037,11 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await closePublishPanelIfOpen(page);
         await page.click('#art-republish-all');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
-        toastText = await page.locator('.toast-success').last().textContent();
+        // イシュー#515: 同上。直前の記事2単体公開toastが残っている間に`.last()`を1回読んで
+        // 取り違えていた(CI実測の失敗そのもの)。文言で絞り込んで待つ形にそろえる。
+        const republishToast2 = page.locator('.toast-success', { hasText: '公開中の' });
+        await expect(republishToast2.last()).toBeVisible();
+        toastText = await republishToast2.last().textContent();
         expect(toastText).toContain('公開中の 2 記事を更新しました');
         expect(toastText).toContain(`公開 URL: ${HUB}/public/sid/`);
         expect(toastText).not.toContain(`公開 URL: ${HUB}/public/sid/${article1.publicId}/`);
