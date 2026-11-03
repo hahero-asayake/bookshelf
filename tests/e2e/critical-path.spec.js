@@ -39,8 +39,12 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
-    // ネイティブ confirm (退会・ログアウト) は常に OK
-    page.on('dialog', (d) => d.accept());
+    // ネイティブ confirm (退会) は常に OK。
+    // // CHAR→U5: confirm() が confirmDialog (DOM・Promise) になったため page.on('dialog') は発火しない。
+    // このシナリオでconfirmが出るのは退会(アカウント削除)の1か所だけなので、MutationObserverで
+    // ページ全体を監視せず、クリック後に出る.cfm-okを明示的に押す(他ファイルのreimport-diff・
+    // bookdetailと同じ方式。about:blank sandboxed警告がMutationObserverのsubtree監視による
+    // 干渉だった可能性を検証するため、ここでは使わない)。
 
     // --- ハブ API モック (plan は課金後に plus へ遷移) ---
     const hubState = { plan: 'free' };
@@ -183,6 +187,7 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
     await test.step('退会: アカウント削除→接続情報が消えてログイン表示に戻る', async () => {
         await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('account-section'); });
         await page.locator('#account-delete-btn').click();
+        await page.locator('.cfm-overlay .cfm-ok').click();
         // DELETE 成功 → HubAuth.disconnect() が接続情報を消して reload する
         await page.waitForFunction(
             () => !((JSON.parse(localStorage.getItem('bookshelf_sync') || '{}').hub || {}).key),

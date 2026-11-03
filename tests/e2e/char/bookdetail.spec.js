@@ -46,10 +46,11 @@ for (const [name] of WIDTHS) {
         const chipsRow = page.locator(`#current-bookshelves-${ASIN}`);
         const before = await chipsRow.locator('.bd-chip').count();
         expect(before).toBeGreaterThan(0); // fixtureで複数本棚に所属(all + fixshelf)
-        // removeFromBookshelf() は window.confirm() を使う(今の振る舞い)。Playwrightは未処理のdialogを
-        // 既定で自動キャンセルするため、明示的にacceptする(内部メソッドは呼ばない=UI操作の結果)。
-        page.once('dialog', (d) => d.accept());
+        // // CHAR→U5: removeFromBookshelf() は window.confirm() ではなく confirmDialog(DOM) を使うようになった
+        // (今の振る舞い)。page.once('dialog') は発火しないため、クリック後に出る .cfm-ok を明示的に押す
+        // (内部メソッドは呼ばない=UI操作の結果という元の方針を保つ)。
         await chipsRow.locator('.remove-from-bookshelf').first().click();
+        await page.locator('.cfm-overlay .cfm-ok').click();
         await expect.poll(() => chipsRow.locator('.bd-chip').count()).toBe(before - 1);
     });
 }

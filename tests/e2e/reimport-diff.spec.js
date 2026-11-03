@@ -37,8 +37,15 @@ const userData = {
 async function setup(page) {
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
-    // ネイティブ confirm (削除確認) は常に OK (#480 削除テスト用)
-    page.on('dialog', (d) => d.accept());
+    // ネイティブ confirm (削除確認) は常に OK (#480 削除テスト用)。
+    // // CHAR→U5: confirm() が confirmDialog (DOM・Promise) になったため page.on('dialog') は発火しない。
+    // 出現を MutationObserver で監視して自動で OK を押す。
+    await page.addInitScript(() => {
+        new MutationObserver(() => {
+            const btn = document.querySelector('.cfm-overlay .cfm-ok');
+            if (btn) btn.click();
+        }).observe(document, { childList: true, subtree: true });
+    });
     await page.route('https://pagead2.googlesyndication.com/**', (r) => r.fulfill({ status: 200, contentType: 'application/javascript', body: '// stub' }));
     await page.route('https://unpkg.com/lucide-static@*/icons/**', (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }));
     await page.setViewportSize({ width: 390, height: 844 });
