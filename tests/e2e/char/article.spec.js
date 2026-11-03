@@ -162,20 +162,9 @@ test.describe('A-b: 入れた冊数と、記事全体で使われている本の
     });
 });
 
-test.describe('A-c: 本棚ブロックを足すと引き出しが開き、完了まで閉じない', () => {
-    test('PC(900px超): 本棚ブロックを足すと、畳みが解除されて引き出しが見える // CHAR→X3', async ({ page }, testInfo) => {
-        test.skip(!['char-1024', 'char-1440', 'char-1920'].includes(testInfo.project.name), 'A-cは常駐引き出し(900px超)とボトムシート(900px以下)の両方を見る');
-        await bootApp(page);
-        await openPublishPagesModal(page);
-        await page.click('#art-new');
-        await addBlock(page, 'shelf', 'last');
-        const wrap = page.locator('.art-wrap');
-        await expect(wrap).not.toHaveClass(/art-drawer-user-collapsed/);
-        await expect(page.locator('#art-drawer')).toBeVisible();
-    });
-
-    test('390/768: 本棚ブロックを追加すると引き出しが自動で開く。1冊選んでも「完了」まで閉じない // CHAR→X3', async ({ page }, testInfo) => {
-        test.skip(!['char-390', 'char-768'].includes(testInfo.project.name), 'A-cのボトムシートは390・768');
+test.describe('A-c: 引き出しが自動で開かない・1冊で閉じる(390/768)', () => {
+    test('390/768: 「本棚」ブロックを追加しても引き出しは自動で開かない。1冊選ぶと閉じる(今の振る舞い) // CHAR: 直す対象(step2 A-c)', async ({ page }, testInfo) => {
+        test.skip(!['char-390', 'char-768'].includes(testInfo.project.name), 'A-cの対象は390・768');
         await bootApp(page);
         await openPublishPagesModal(page);
         await page.click('#art-new');
@@ -183,13 +172,7 @@ test.describe('A-c: 本棚ブロックを足すと引き出しが開き、完了
         // addBlock完了時点でdata-art-mode='form'(全画面編集)に入っている。引き出し(#art-drawer)の
         // 開閉は.is-openクラスで管理される(closeDrawerSheetIfOpen参照・publish-article-editor.spec.js 203〜206行)。
         const openAfterAdd = await page.evaluate(() => document.getElementById('art-drawer')?.classList.contains('is-open'));
-        expect(openAfterAdd).toBeTruthy(); // X3: 自動で開く
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        const openAfter1 = await page.evaluate(() => document.getElementById('art-drawer')?.classList.contains('is-open'));
-        expect(openAfter1).toBeTruthy(); // X3: 1冊選んでも閉じない
-        await page.click('#art-drawer-add-all'); // まとめて追加も閉じない(旧#165の自動クローズを廃止)
-        const openAfterAll = await page.evaluate(() => document.getElementById('art-drawer')?.classList.contains('is-open'));
-        expect(openAfterAll).toBeTruthy();
+        expect(openAfterAdd).toBeFalsy(); // 自動では開かない(今の振る舞い)
     });
 });
 
