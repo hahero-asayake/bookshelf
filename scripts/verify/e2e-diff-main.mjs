@@ -16,10 +16,16 @@
 //
 // 使い方:
 //   node scripts/verify/e2e-diff-main.mjs [--base=origin/main] [--self]
-//     [--skip-e2e] [--skip-vitest] [--visual] [--grep=<pattern>]
+//     [--skip-e2e] [--skip-vitest] [--no-visual] [--grep=<pattern>]
 //     [--exclude=<pattern>]... [--no-default-exclude]
 //     [--out=<dir>] [--port=<n>] [--retries=<n>] [--keep]
 //
+//   --no-visual   画像比較(playwright.visual.config.js・work側のみ)を外す。既定はオン
+//                 (イシュー#526。UI変更時に画像比較の付け忘れが起きた反省から、判定ロジックを
+//                 持たず常時オンにした。visual自体はbase比較をしないため、非UI差分でも
+//                 コストは一定(実測約8秒・#526 _vault-work/526/step1-compare.md)。
+//                 UIに一切触れない調査中で高速に回したい時だけ付ける)。
+//                 `--visual` は後方互換で受け付ける(既定で既にオンのため何も変えない)。
 //   --self        base側と同じrefで、workも別の一時worktreeにする(自分自身との比較=誤検知の確認用)。
 //   --grep        両側・絞り込み試走用。playwrightの--grep/vitestの-tにそのまま渡す。
 //   --exclude     E2E(playwright)から除外するテスト名パターン。複数回指定可(既定の除外に追加)。
@@ -44,7 +50,7 @@
 // 起動時にci.ymlの該当行を読んで既定除外パターンにする(一意に読めなければ黙って
 // 全件流さずエラーで止める=ci.ymlの形が変わったことに気づける)。vitestはCI側に
 // 除外が無いため対象外(そのままreportに書く)。playwright.visual.config.js側の画像比較
-// (--visual)にも適用しない(base対work比較ではなくwork側単独の基準画像比較のため)。
+// (既定オン・--no-visualで外す)にも適用しない(base対work比較ではなくwork側単独の基準画像比較のため)。
 //
 // 子プロセスの node は process.execPath を使う(呼び出し元と同じnode)。特定ユーザーの
 // nvmパスを固定で埋め込まない(③はkurokoユーザーで動き、seiユーザーのnvmパスとは食い違う)。
@@ -65,7 +71,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     buildVitestRetryArgs, categorize, countRegressions, countUndetermined, findMatchOutcome,
-    groupE2ERetryTargetsByProject, parsePlaywrightJson, parseVitestJson, verdictLabel,
+    groupE2ERetryTargetsByProject, parsePlaywrightJson, parseVitestJson, resolveVisual, verdictLabel,
     classifyVerdict,
 } from './e2e-diff-lib.mjs';
 
@@ -87,7 +93,7 @@ const BASE_REF = opt('base', 'origin/main');
 const SELF = flag('self');
 const SKIP_E2E = flag('skip-e2e');
 const SKIP_VITEST = flag('skip-vitest');
-const VISUAL = flag('visual');
+const { run: VISUAL, reason: VISUAL_REASON } = resolveVisual(argv);
 const GREP = opt('grep', '');
 const PORT = opt('port', process.env.PORT || '8000');
 const RETRIES = parseInt(opt('retries', '3'), 10);
@@ -362,7 +368,7 @@ function excludeSection(excludes) {
     s += '_(vitestはCI設定(ci.yml)に除外が無いため対象外。上記はE2E(playwright)にのみ適用)_\n';
     return s;
 }
-function buildReport({ baseRef, baseSha, workLabel, excludes, results }) {
+function buildReport({ baseRef, baseSha, workLabel, excludes, results, visualStatus }) {
     const undeterminedCount = countUndetermined(results);
     const md = [
         '# e2e-diff-main 結果', '',
@@ -375,10 +381,10 @@ function buildReport({ baseRef, baseSha, workLabel, excludes, results }) {
         toolSection('E2E (playwright)', results.e2e),
         toolSection('Unit (vitest)', results.unit),
         results.visual
-            ? `### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n- ${visualFailedCount(results)}件 / ${results.visual.total}件 が差分あり\n${results.visual.failedNames.length ? table(['file > title [project]'], results.visual.failedNames.map((n) => [n])) : ''}`
-            : '### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n(skip)\n',
+            ? `### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n- ${visualStatus}\n- ${visualFailedCount(results)}件 / ${results.visual.total}件 が差分あり\n${results.visual.failedNames.length ? table(['file > title [project]'], results.visual.failedNames.map((n) => [n])) : ''}`
+            : `### 画像の差分 (playwright.visual.config.js・work側のみ)\n\n- ${visualStatus}\n`,
     ].join('\n');
-    return { md, json: { baseRef, baseSha, workLabel, excludes, results } };
+    return { md, json: { baseRef, baseSha, workLabel, excludes, results, visualStatus } };
 }
 function visualFailedCount(results) { return results.visual ? results.visual.failed : 0; }
 
@@ -438,10 +444,12 @@ async function main() {
         log('--skip-vitest: vitestはスキップした');
     }
 
+    let visualStatus = VISUAL_REASON;
     if (VISUAL) {
         const cfgPath = join(workDir, 'playwright.visual.config.js');
         if (!existsSync(cfgPath)) {
-            log('--visual: playwright.visual.config.js が無い。今回はスキップした');
+            visualStatus = 'スキップ（playwright.visual.config.js が無い）';
+            log(`visual: ${visualStatus}`);
         } else {
             // 画像比較は「base(origin/main)にはまだ無い基準画像」を前提にするものなので、
             // E2E/vitestのようなbase対work比較にはしない。work側(=基準画像とその場のレンダリングの
@@ -464,6 +472,8 @@ async function main() {
             };
             log(`[visual] ${visualTests.size}件中${failed.length}件が画像差分で失敗`);
         }
+    } else {
+        log(`visual: ${visualStatus}`);
     }
 
     const newlyFailedCount = (results.e2e?.newlyFailed.length ?? 0) + (results.unit?.newlyFailed.length ?? 0);
@@ -472,7 +482,7 @@ async function main() {
         await classifyRetries(workDir, results);
     }
 
-    const report = buildReport({ baseRef: BASE_REF, baseSha, workLabel, excludes: EXCLUDES, results });
+    const report = buildReport({ baseRef: BASE_REF, baseSha, workLabel, excludes: EXCLUDES, results, visualStatus });
     writeFileSync(join(OUT, 'report.md'), report.md);
     writeFileSync(join(OUT, 'report.json'), JSON.stringify(report.json, null, 2));
     console.log('');

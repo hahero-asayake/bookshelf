@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     categorize, classifyVerdict, countRegressions, countUndetermined, escapeRegExp,
-    findMatchOutcome, groupE2ERetryTargetsByProject, buildVitestRetryArgs, verdictLabel,
+    findMatchOutcome, groupE2ERetryTargetsByProject, buildVitestRetryArgs, resolveVisual, verdictLabel,
 } from '../../scripts/verify/e2e-diff-lib.mjs';
 
 describe('classifyVerdict (#510)', () => {
@@ -121,6 +121,21 @@ describe('verdictLabel (#510)', () => {
     it('flake/regressionはそのまま', () => {
         expect(verdictLabel('flake')).toBe('flake');
         expect(verdictLabel('regression')).toBe('regression');
+    });
+});
+
+describe('resolveVisual (#526・画像比較の既定判定)', () => {
+    it('指定なし: 既定でオン', () => {
+        expect(resolveVisual([])).toEqual({ run: true, reason: '実行（既定）' });
+    });
+    it('--visual: 後方互換で受け付けるが既定と同じ(オン)', () => {
+        expect(resolveVisual(['--visual'])).toEqual({ run: true, reason: '実行（既定）' });
+    });
+    it('--no-visual: 明示的にオフ・理由がreportに残る形で返る', () => {
+        expect(resolveVisual(['--no-visual'])).toEqual({ run: false, reason: 'スキップ（--no-visual 指定）' });
+    });
+    it('--visualと--no-visualが両方あれば明示的な除外(--no-visual)を優先する', () => {
+        expect(resolveVisual(['--visual', '--no-visual']).run).toBe(false);
     });
 });
 

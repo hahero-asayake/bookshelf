@@ -147,6 +147,17 @@ export function verdictLabel(verdict) {
     return VERDICT_LABELS[verdict] ?? verdict;
 }
 
+// ---------- 画像比較(visual)の既定判定(イシュー#526) ----------
+// #521の見た目の変化が--visual未指定のまま画像比較をすり抜けた反省から、UI対象パスで
+// オン/オフを判定するロジックは持たず、既定で常にオンにする(判定ロジックが無い=
+// 「新しいUIファイルを判定の対象一覧に追加し忘れる」という同種の見落としが構造的に起きない)。
+// --no-visualを明示した時だけオフにする。--visualは後方互換で受け付けるが、既定で既に
+// オンのため何も変えない(--visualと--no-visualが両方ある場合は明示的な除外を優先する)。
+export function resolveVisual(argv) {
+    if (argv.includes('--no-visual')) return { run: false, reason: 'スキップ（--no-visual 指定）' };
+    return { run: true, reason: '実行（既定）' };
+}
+
 // ---------- 集計 ----------
 export function countRegressions(results) {
     let n = 0;

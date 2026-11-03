@@ -18,14 +18,14 @@ bookshelf の検証コマンドの一覧と、本番(origin/main)との比較の
 `scripts/verify/e2e-diff-main.mjs` は、origin/main を作業ツリーの外に一時 worktree として取り出し、同じ port 規則で作業側(work)と origin/main 側(base)の E2E 全件・vitest 全件を順番に流し、失敗の集合を3つに分けて報告する。
 
 ```bash
-# 既定（base=origin/main・work=今の作業ツリー・E2E全件+vitest全件）
+# 既定（base=origin/main・work=今の作業ツリー・E2E全件+vitest全件+画像の差分(visual)も含む）
 node scripts/verify/e2e-diff-main.mjs
 
 # 自分自身との比較（誤検知が無いことの確認。base/workとも一時worktreeのorigin/main）
 node scripts/verify/e2e-diff-main.mjs --self
 
-# 画像の差分もあわせて流す（work側のみ。下の2節を参照）
-node scripts/verify/e2e-diff-main.mjs --visual
+# 画像の差分(visual)だけ外す（UI に一切触れない調査中など、速さを優先したい時だけ。イシュー#526）
+node scripts/verify/e2e-diff-main.mjs --no-visual
 
 # 重い処理を分けて流す（1 runの時間制約に収めるため。vitestだけ先に・E2Eは一部だけ試走）
 node scripts/verify/e2e-diff-main.mjs --skip-e2e
@@ -40,7 +40,7 @@ node scripts/verify/e2e-diff-main.mjs --skip-vitest --grep="ホーム"
 | `--self` | off | work 側も base と同じ ref の別の一時 worktree にする（自分自身との比較＝誤検知の確認用） |
 | `--skip-e2e` | off | E2E を流さない |
 | `--skip-vitest` | off | vitest を流さない |
-| `--visual` | off | `playwright.visual.config.js` があれば、work 側の画像比較も流す |
+| `--no-visual` | off(=visualは既定オン) | `playwright.visual.config.js` があっても、work 側の画像比較を外す（イシュー#526。以前は逆に`--visual`を付けないと動かず、UI変更時の付け忘れの原因になった→下の「画像の差分」節参照） |
 | `--grep=<pattern>` | なし | 両側・試走用の絞り込み（playwright の `--grep`・vitest の `-t` にそのまま渡す） |
 | `--out=<dir>` | 作業ツリーの外・恒久的な場所（`<親dir>/_artifacts/e2e-diff-<時刻>-<pid>/`。`/tmp` ではなく、run をまたいで結果が残る） | 結果の置き場 |
 | `--port=<n>` | `$PORT` または `8000` | E2E のサーバー port（`playwright.config.js` と同じ規則） |
@@ -68,7 +68,9 @@ node scripts/verify/e2e-diff-main.mjs --skip-vitest --grep="ホーム"
 
 ### 4. 画像の差分（画面の見た目の基準）
 
-`playwright.visual.config.js`（testDir: `tests/visual`）が、画面の見た目の基準（9画面 × 6端末 ≒ 54枚）を持つ。通常の `npm run test:e2e` や CI には一切入らない、完全に別の設定。6端末の定義は `tests/char-devices.js` に1本化してあり、`playwright.config.js`（キャラクタリゼーションテスト用・イシュー#501）もここから同じ定義を使う。
+`playwright.visual.config.js`（testDir: `tests/visual`）が、画面の見た目の基準（9画面 × 6端末 ＝ 54枚）を持つ。通常の `npm run test:e2e` や CI には一切入らない、完全に別の設定。6端末の定義は `tests/char-devices.js` に1本化してあり、`playwright.config.js`（キャラクタリゼーションテスト用・イシュー#501）もここから同じ定義を使う。
+
+`scripts/verify/e2e-diff-main.mjs`（push前のbase対work比較）からは、イシュー#526により既定でこれも流れる（work側単独・実測約8秒）。手元で `playwright.visual.config.js` だけ単独で流したい時は下記のコマンドを使う。
 
 ```bash
 # 比較（基準と今のレンダリングを比べる。差があれば失敗する）
