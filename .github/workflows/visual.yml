@@ -1,0 +1,63 @@
+name: Visual
+
+# イシュー#527: visual(画像比較・tests/visual/screens.spec.js、playwright.visual.config.js)を
+# CI(ubuntu-latest)に入れられるかを実測で決めるための試験ジョブ。
+#
+# 基準画像66枚(tests/visual/__screenshots__/*-linux.png)は手元のLinuxで撮ったもので、
+# GitHub ランナーとのフォント描画ゆれを確かめていない(#512で見送った経緯あり)。実測が済むまで
+# 他のpushのたびに走って既存のci.yml(test (e2e)/test (char))の横でノイズになることを避けるため、
+# on.push.paths を visual.yml 自身に絞る(このファイルを変えた時だけ走る)。workflow_dispatch も
+# 残すが、未認証環境からは起動できない(手元の実測はpushで行う・イシュー#527計画メモ)。
+#
+# .github/workflows/ci.yml は一切変更しない。別ファイル・別ワークフローなので、このジョブの
+# 合否は test (e2e) / test (char) の結果にも、ブランチ保護にも影響しない。
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/visual.yml'
+  workflow_dispatch:
+
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    # ジョブ全体の失敗をワークフローの最終結果に昇格させない(試験段階・②へ数字を出すのが目的)。
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        id: npm_ci
+        run: npm ci
+      - name: Install Playwright browser
+        id: install_playwright
+        if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
+        run: npx playwright install --with-deps chromium
+      # visual自体の失敗(toHaveScreenshotの差分)でジョブを赤くしない・後続のartifact保存/
+      # summary出力を止めない(stepのcontinue-on-error: trueでoutcome=failureでもconclusion=
+      # successにし、以降のデフォルトif(success())を通す)。JSON出力先はoutputDir
+      # (test-results-visual/、既定でPlaywrightがテスト開始時にクリアする)の外にする
+      # (イシュー#527計画メモ: ローカル実測で出力形式を確認済み)。
+      - name: Visual tests (Playwright, 9画面×6端末)
+        id: run_visual
+        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: visual-results.json
+        run: npx playwright test -c playwright.visual.config.js --reporter=list,json
+      - name: visual 結果の要約 (annotation + step summary・イシュー#527)
+        if: ${{ !cancelled() && steps.run_visual.outcome != 'skipped' }}
+        run: node scripts/ci-visual-summary.mjs visual-results.json
+      - name: 差分画像・結果をartifactへ保存 (イシュー#527)
+        if: ${{ !cancelled() && steps.run_visual.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-results
+          path: |
+            test-results-visual/
+            visual-results.json
+          retention-days: 14
+          if-no-files-found: warn
