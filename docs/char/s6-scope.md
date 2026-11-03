@@ -120,14 +120,21 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 - **なぜ全面に適用しなかったか（実測で確定）**：reopen表(`_navReopen`)には`settings-modal`・`book-memo-modal`等も載っているが、これらは既存の決まり(D06「再読込は段を畳む」)でreload時は畳むのが正しい挙動。一律に「reopen表にあるものは全部開き直す」規則にすると、back-nav-matrixの`X12`「設定を開いて再読込→戻るが空振りしない」・`A39`「編集中に再読込→段が畳まれ空振りしない」・`L16`「長文メモを開いて再読込→段が畳まれる」の3件がregressionになる(実測で確認・一度失敗させてから対象をreport-modalだけに絞った)。`reloadReopen:true`を面ごとに明示指定する形にしたことで、個別のif文(boot()の特殊ケース)ではなく「Surfaceの定義1個」で対象を絞れる。
 - 実測：report-moderation.spec.js全19件pass・back-nav-matrix X12/A39/L16含む該当箇所pass・npm test 787件pass。フラグ旧では対象の面がそもそも段を積まない(depth=0)ため分岐自体に入らず、新規追加の規則はフラグ新旧どちらでも安全(フラグ旧の挙動は無変更)。
 
-### 6-5. publish-article-editor.spec.js:988（原因を一部特定・修正は次回に持ち越し）
+### 6-5. publish-article-editor.spec.js:988（解決済み・②判断2026-11-03 step4 3回目差し戻し対応）
 
 「公開中記事の一括更新の案内」：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。
 
-**②指示の確認結果**：switchTo／close-Promiseを待つ形がこの経路に無いことを先に確かめた結果、**close直後openパターン(2e8a041のswitchTo対象)とは別の種類の問題**だった。一時的に`window.__DEBUG`相当の実測で以下が判明：2回目の`openPublishPagesModal()`直後、`_artMode:'view'`・`faces:['publish-pages-modal','art-viewing']`なのに、DOMは`art-list-view.hidden=true`・`art-edit-view.hidden=false`(=一覧が畳まれる前に別経路でart-viewingが開かれた状態と矛盾)。
+**根本原因（タイムスタンプ付きログで実測確定）**：`_artSetMode`→`art-viewing`を開くまでの呼び出し元を洗った結果、`_artShowEditor()`(art-viewingを開く唯一の関数)の呼び出し元自体は2箇所(`_artOpenEditor`経由のユーザー操作、`_reopenArtContext`経由のpopstate reopener)で、どちらも想定された経路。問題は「閉じる側」にあった：
 
-**仮説（未確定）**：`_artShowList()`は呼び出し時点のfaces(`this._modalHistStack`)を見て`art-viewing`があればSurface.closeするが、全幅化でPCでも`art-viewing`が段を積むようになった結果、1本目の記事公開完了後に`art-viewing`のfaceが(非同期の)別タイミングで追加され、`_artShowList()`実行時点ではまだfacesに入っていなかった可能性がある(要出典確認・`_artSetMode('view')`の呼び出し元を全部洗う必要がある・時間切れで未完了)。
+記事を開く→編集ボタン→公開パネルを開く、の順でfacesは`[publish-pages-modal, art-viewing, art-edit-mode, art-publish-modal]`の3段積みになる。`_artShowList()`は`art-edit-mode`と`art-viewing`の2つだけをSurface.closeし、**`art-publish-modal`を閉じる処理が無かった**(既存の見落とし)。2回のSurface.closeはそれぞれ`go(-1)`をmicrotaskで非同期予約し、合計`_pendingGo=-2`で`H.go(-2)`が実行される。しかし実際に開いていたのは3段(art-viewing/art-edit-mode/art-publish-modalの3面)なので、2段しか戻らず、着地先のhistoryエントリには`art-viewing`がまだ残っている状態になる。popstateハンドラが着地先スナップショットと現在の状態(すでにart-viewing/art-edit-modeを除去済み)を比較し、差分(`art-viewingが無い→ある`)をreopenerで解消しようとして`_artShowEditor()`を呼び、一覧が再度隠れる。
 
-次回の調査方針：`_artSetMode('view')`→`art-viewing`を開く処理(9533行目)の呼び出し元を全部grepし、公開完了処理(`_artPublishFromPanel`/`_runPublishExport`等)のどこで非同期に呼ばれているかを特定する。特定できたら、`openPublishPagesModal()`→`_artShowList()`の呼び出しとの実行順序を強制する(例:公開完了のPromiseをawaitしてから一覧に戻る、またはSurface側で「最新のfacesを見てから閉じる」保証を入れる)修正を検討する。
+全幅化前(フラグ旧でPC幅)はこれら3面とも段を積まなかった(depth常に0)ため、この「art-publish-modalの close漏れ」は実害を持たなかった。全幅化で初めて露出した既存の潜在バグ。
+
+**修正（②指示：awaitで順番を揃えるのではなく、Surface/NavStateのguardで1つの決まりにする）**：
+- `js/nav-state.js`に`closeArtSubStates3`reduceケースと`nav.closeArtSubStates()`を新設。`art-publish-modal`/`art-edit-mode`/`art-viewing`の3面を**実際に開いているものだけ動的にfilterして1回のunwind操作で畳む**(`closePublish3`と同じパターン)。
+- `js/bookshelf.js _artShowList()`を、個別の`Surface.close(id)`羅列から、`ART_SUB_FACE_IDS`配列を1回だけ走査してoverlays.closeし、`nav.closeArtSubStates()`を1回呼ぶ形に変更。
+- **これが「順番に頼らない」理由**：`dFaces`(戻る段数)は実際にfacesから除去された数から自動計算されるため、将来この3面以外に記事サブ面が増えても、`ART_SUB_FACE_IDS`に追加するだけで済み、「閉じるのを忘れて段数が合わなくなる」というクラスの問題自体が起きない(個別close呼び出しの数え漏れという原因そのものを無くした)。
+
+実測：publish-article-editor.spec.js全108件pass、npm test 787件pass。back-nav-matrix全件確認中(§6-6参照)。
 
 次のrunでの調査方針：`--trace`は使わず（既知の罠）、`window.__DEBUG`変数を一時的に仕込んでfaces/historyの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。

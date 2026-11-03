@@ -310,6 +310,15 @@
                 const route = input.route ? canonRoute(input.route) : { view: 'main' };
                 return { ...s, faces, route, source: 'ui' };
             }
+            // イシュー#513 S6: 記事のサブ状態(art-publish-modal/art-edit-mode/art-viewing)だけを
+            // まとめて畳む(publish-pages-modal自体は残す・_artShowList用)。closePublish3と同じ理由
+            // (unwind:true)で1回のapplyにする＝実際に開いているfaceの数だけdFacesが決まるため、
+            // 呼び手が個別closeを数え漏れても段数がずれない(実測・#513 step4)
+            case 'closeArtSubStates3': {
+                const removeIds = ['art-publish-modal', 'art-edit-mode', 'art-viewing'];
+                const faces = s.faces.filter((f) => !removeIds.includes(f.id));
+                return { ...s, faces, source: 'ui' };
+            }
             // 公開記事モーダルの × 閉じ。記事サブ状態 (閲覧/編集/一覧/公開の設定) をまとめて除去し route を戻す。
             // 旧実装は _modalHistPop を複数回individually呼んでいた (= 別々の apply) のを1回に統合 (#442 step3の崩れの原因)
             case 'closePublish3': {
@@ -447,6 +456,8 @@
             // 除去される各faceは開いた時点でそれぞれ実エントリをpushしていた保証があるため、
             // historyOp()にrouteChangedの有無に関わらずgo(dFaces)で物理的に正しい段数戻らせる
             closePublish(route, meta) { return this.apply({ type: 'closePublish3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },
+            // イシュー#513 S6: 記事のサブ状態だけをまとめて畳む(_artShowList用・routeは変えない)
+            closeArtSubStates(meta) { return this.apply({ type: 'closeArtSubStates3' }, Object.assign({ unwind: true }, meta || {})); },
             // 設定モーダルの × / Esc / 戻る閉じ専用 (settings-cat が残っていれば一括除去・イシュー#494)。
             // unwind:true は closePublish と同じ理由 (イシュー#495)
             closeSettings(route, meta) { return this.apply({ type: 'closeSettings3', route }, Object.assign({ replace: true, unwind: true }, meta || {})); },

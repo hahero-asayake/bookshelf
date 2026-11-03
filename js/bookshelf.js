@@ -9499,9 +9499,18 @@ class VirtualBookshelf {
     _artShowList({ skipSave = false } = {}) {
         this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
         if (!skipSave && (this._artMode === 'edit' || this._artMode === 'form')) this._artFlushSave().catch(() => {});
+        // イシュー#513 S6: 記事のサブ状態(art-viewing/art-edit-mode/art-publish-modal、将来増える
+        // ものも含む)は1回のunwind操作でまとめて畳む(「一覧を出す=これらの段は残さない」という
+        // 1つの決まりをSurface/NavState側に置く)。全幅化でPCでもこれらの面が段を積むように
+        // なった結果、個別にSurface.closeを並べて閉じ忘れが1つでもあると、go(-n)の段数が実際の
+        // 段数より少なくなり、着地点がずれてpopstateのreopenで古い面(art-viewing)が開き直って
+        // しまう競合があった(実測・#513 step4：公開パネル(art-publish-modal)を開いたまま一覧に
+        // 戻る経路で発生)。個別closeの数え漏れという問題のクラス自体をここで無くす。
         const st = this._modalHistStack;
-        if (st && st.some((e) => e.id === 'art-edit-mode')) this._surface().close('art-edit-mode', {});
-        if (st && st.some((e) => e.id === 'art-viewing')) this._surface().close('art-viewing', {});
+        const ART_SUB_FACE_IDS = ['art-publish-modal', 'art-edit-mode', 'art-viewing'];
+        const openArtSubFaces = st ? ART_SUB_FACE_IDS.filter((id) => st.some((e) => e.id === id)) : [];
+        for (const id of openArtSubFaces) this._overlays().close(id, { reason: 'program' }); // 重なり(見た目)を先に外す
+        if (this.nav && openArtSubFaces.length) this.nav.closeArtSubStates();
         this._artMode = 'view'; // 次に記事を開いた時の _artSetMode 判定のため状態を正規化
         document.getElementById('art-list-view').hidden = false;
         document.getElementById('art-edit-view').hidden = true;
