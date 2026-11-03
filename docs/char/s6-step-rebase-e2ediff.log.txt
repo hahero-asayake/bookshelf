@@ -1,0 +1,64 @@
+[e2e-diff-main] REPO_ROOT=/home/kuroko/worktrees/bookshelf/issue-514
+[e2e-diff-main] OUT=/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878
+[e2e-diff-main] BASE_REF=origin/main SELF=false PORT=8114 GREP=(none)
+[e2e-diff-main] INIT_STORAGE: (none)
+[e2e-diff-main] 除外(E2E): sort-perf-budget (1件・出どころと理由はreport参照)
+[e2e-diff-main] git worktree add --detach /home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878/_worktree-base origin/main
+[e2e-diff-main] base: origin/main @ a67501b872e320bce739813681e1629f94d8f95d
+[e2e-diff-main] work: 作業ツリー(HEAD=0f3fa0fc36c1ea3e34b4ef0bbd2b9654db4eafd6・未コミット差分含む可能性あり)
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878/_worktree-base args=test --reporter=json --grep-invert sort-perf-budget
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/issue-514 args=test --reporter=json --grep-invert sort-perf-budget
+[e2e-diff-main] [vitest] cwd=/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878/_worktree-base args=run --reporter=json --outputFile=/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878/base.vitest.json
+[e2e-diff-main] [vitest] cwd=/home/kuroko/worktrees/bookshelf/issue-514 args=run --reporter=json --outputFile=/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878/work.vitest.json
+
+# e2e-diff-main 結果
+
+- base: origin/main @ a67501b872e320bce739813681e1629f94d8f95d
+- work: 作業ツリー(HEAD=0f3fa0fc36c1ea3e34b4ef0bbd2b9654db4eafd6・未コミット差分含む可能性あり)
+- 生成: 2026-11-03T02:23:03.612Z
+- 判定不能（流し直しで実行0件・regressionに含めない・イシュー#510）: 0件
+
+### 除外したテスト (E2E・playwright)
+
+| パターン | 出どころ | 理由 |
+| --- | --- | --- |
+| sort-perf-budget | .github/workflows/ci.yml:96 | 負荷で揺れる・CIでは別stepで単独実行(workers=1)(#405/#476/#492) |
+
+_(vitestはCI設定(ci.yml)に除外が無いため対象外。上記はE2E(playwright)にのみ適用)_
+
+### E2E (playwright)
+
+**新しく落ちた (0件)**
+
+_(0件)_
+
+**新しく通った (0件)**
+
+_(0件)_
+
+**両方で落ちた/既存の問題 (0件)**
+
+_(0件)_
+
+
+### Unit (vitest)
+
+**新しく落ちた (0件)**
+
+_(0件)_
+
+**新しく通った (0件)**
+
+_(0件)_
+
+**両方で落ちた/既存の問題 (0件)**
+
+_(0件)_
+
+
+### 画像の差分 (playwright.visual.config.js・work側のみ)
+
+(skip)
+
+[e2e-diff-main] 結果一式: /home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261103-111628-2972878
+[e2e-diff-main] 新しく落ちたテストは0件(またはフレーク判定/判定不能のみ)
