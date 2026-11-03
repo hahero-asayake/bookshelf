@@ -139,4 +139,18 @@ u0-77-table.md E2/E3/E5/E6 と 499-step1-inventory.md §4 の記載に沿って�
 - grep確認：`confirm(`直呼びは起動時2件のみ（§8-1）。`check:version --range=origin/main..HEAD`はOK。
 - lint:copy（extract-ui-strings）：抽出575件（前段と同数）、既存の半角括弧警告1件のみ（未編集箇所・今回の差分ではない）。
 - 保存表示の画像は、DOM/クラス不変をdiffで示したことで足りるため不要（②指示どおり）。空/失敗表示のEmptyState置き換えはX4で行う（②指示どおり、completion条件から除外）。
-- 次：e2e-diff-main.mjsをフルで実行し、新しく落ちたテストが0件であることを確認してからpush前のtpを出す（本ステップ内で継続）。
+
+### 8-6. e2e-diff-main.mjs フル実行（最終・並行作業なし）
+
+- `PORT=8118 node scripts/verify/e2e-diff-main.mjs --out=/tmp/u518-e2ediff-final`（23:09〜23:16、約7分、1回で完結）。
+- base: origin/main @ `79ff2b0`。work: HEAD `b6cc748`。
+- **E2E：新しく落ちた0件。新しく通った0件。両方で落ちた0件**。
+- **Unit(vitest)：新しく落ちた0件**。
+- 流し直しフェーズは発生しなかった（1回目の本実行で新規落ちが無かったため）。確認条件③（新しく落ちたテスト0件）を満たした。
+
+### 8-7. 画像（confirm→confirmDialog）
+
+- `docs/char/u5-shots/confirm-{before,after}.png`：以前の試行（削除済みブランチ`issue/518-attempt1`のcommit 8efcdae）で撮影済みの画像を復元した。origin/mainの一時worktree（port 8319）でネイティブ`confirm()`を発火した状態（before）と、変更後のworktree（port 8218）で`confirmDialog`を発火した状態（after）の比較。
+- before：ネイティブ`confirm()`はページのレンダリング層に一切描画されない（CDPのdialogイベントのみ）ため、視覚上の変化は無い。
+- after：`.cfm-overlay`が実際にDOMへ描画され、ページ中央にカスタムモーダルが表示される。
+- 14か所中12か所（起動時2件を除く）がこの見た目になる。文言・ボタン配置はconfirmDialogの既定（title無し・OK/キャンセル）で統一されるため、見た目の差のパターンは1種類。
