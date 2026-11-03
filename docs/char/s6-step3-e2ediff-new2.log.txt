@@ -1,0 +1,74 @@
+[e2e-diff-main] REPO_ROOT=/home/kuroko/worktrees/bookshelf/issue-513
+[e2e-diff-main] OUT=/tmp/e2ediff-new2
+[e2e-diff-main] BASE_REF=origin/main SELF=false PORT=8114 GREP=(none)
+[e2e-diff-main] INIT_STORAGE: (none)
+[e2e-diff-main] 除外(E2E): sort-perf-budget (1件・出どころと理由はreport参照)
+[e2e-diff-main] git worktree add --detach /tmp/e2ediff-new2/_worktree-base origin/main
+[e2e-diff-main] base: origin/main @ a67501b872e320bce739813681e1629f94d8f95d
+[e2e-diff-main] work: 作業ツリー(HEAD=2e8a0410239a9c18b74bf2fa098ba72c377cdcda・未コミット差分含む可能性あり)
+[e2e-diff-main] [E2E] cwd=/tmp/e2ediff-new2/_worktree-base args=test --reporter=json --grep-invert sort-perf-budget
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/issue-513 args=test --reporter=json --grep-invert sort-perf-budget
+[e2e-diff-main] [vitest] cwd=/tmp/e2ediff-new2/_worktree-base args=run --reporter=json --outputFile=/tmp/e2ediff-new2/base.vitest.json
+[e2e-diff-main] [vitest] cwd=/home/kuroko/worktrees/bookshelf/issue-513 args=run --reporter=json --outputFile=/tmp/e2ediff-new2/work.vitest.json
+[e2e-diff-main] 新しく落ちたテスト 2件 を work側で3回流し直す
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/issue-513 args=test --reporter=json publish-article-editor.spec.js:988 report-moderation.spec.js:204 --project chromium --grep-invert sort-perf-budget
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/issue-513 args=test --reporter=json publish-article-editor.spec.js:988 report-moderation.spec.js:204 --project chromium --grep-invert sort-perf-budget
+[e2e-diff-main] [E2E] cwd=/home/kuroko/worktrees/bookshelf/issue-513 args=test --reporter=json publish-article-editor.spec.js:988 report-moderation.spec.js:204 --project chromium --grep-invert sort-perf-budget
+
+# e2e-diff-main 結果
+
+- base: origin/main @ a67501b872e320bce739813681e1629f94d8f95d
+- work: 作業ツリー(HEAD=2e8a0410239a9c18b74bf2fa098ba72c377cdcda・未コミット差分含む可能性あり)
+- 生成: 2026-11-03T00:57:19.268Z
+- 判定不能（流し直しで実行0件・regressionに含めない・イシュー#510）: 0件
+
+### 除外したテスト (E2E・playwright)
+
+| パターン | 出どころ | 理由 |
+| --- | --- | --- |
+| sort-perf-budget | .github/workflows/ci.yml:96 | 負荷で揺れる・CIでは別stepで単独実行(workers=1)(#405/#476/#492) |
+
+_(vitestはCI設定(ci.yml)に除外が無いため対象外。上記はE2E(playwright)にのみ適用)_
+
+### E2E (playwright)
+
+**新しく落ちた (2件)**
+
+| file | title | project | 判定 |
+| --- | --- | --- | --- |
+| publish-article-editor.spec.js | publish-article-editor.spec.js > 記事エディタ: 公開結線 (PublishArticleGenerator.build → 公開先アダプタへ push) > 公開中記事の一括更新: 1件だけならその記事URL、複数件ならサイトのトップ+件数を案内する (イシュー#152) | chromium | regression |
+| report-moderation.spec.js | report-moderation.spec.js > 通報ダイアログ × リロード (イシュー#221) > 開いたままリロードしても開き直し、閉じた後のリロードでは出ない | chromium | regression |
+
+**新しく通った (1件)**
+
+| file | title | project |
+| --- | --- | --- |
+| duplicate-asin-notice.spec.js | duplicate-asin-notice.spec.js > 重複していない単独本の通常の付け直しは、従来どおり移して元を消す | chromium |
+
+**両方で落ちた/既存の問題 (0件)**
+
+_(0件)_
+
+
+### Unit (vitest)
+
+**新しく落ちた (0件)**
+
+_(0件)_
+
+**新しく通った (0件)**
+
+_(0件)_
+
+**両方で落ちた/既存の問題 (0件)**
+
+_(0件)_
+
+
+### 画像の差分 (playwright.visual.config.js・work側のみ)
+
+(skip)
+
+[e2e-diff-main] 結果一式: /tmp/e2ediff-new2
+[e2e-diff-main] リグレ 2件 → exit 1
+EXIT=1

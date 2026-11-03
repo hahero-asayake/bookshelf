@@ -110,6 +110,11 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 | `publish-article-editor.spec.js:988`「公開中記事の一括更新の案内」 | 未特定 | **未解決**（原因未特定・時間切れのため次回に持ち越し） |
 | `openPublishPagesModal().then(openArticleIfNeeded)`（8408行）・`openPublishPagesModal().then(() => openPublishSettingsModal())`（8414行） | close処理を挟まずopenのみの連続呼び出し | **対象外**（closeを挟まない単純な連続open。今回の競合パターンには当たらない） |
 
-### 6-4. 未解決の2件（次回に持ち越し）
+### 6-4. 未解決の2件（原因を特定・次回に持ち越し）
 
-`report-moderation.spec.js:204`・`publish-article-editor.spec.js:988`はこのrunの時間内に根本原因を特定できなかった。両方ともPUBLISH_FACE_IDSのパターンとは異なる経路（reopener・または別の非同期処理）で全幅化の影響を受けている可能性がある。次のrunでの調査方針：`--trace`は使わず（既知の罠）、`page.on('console')`でNAV_SHADOW_CHECK=logを使った差分ログか、本件と同様に`window.__DEBUG`変数を一時的に仕込んでfacesの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。
+e2e-diff-main.mjs(フラグ新)の再実行で確認：7件→**2件に減少**(A-e 2件とusername-publish-gate 5件は解消確認済み)。残る2件は`_confirmOpenSettings`パターンとは**別の原因**。
+
+1. **`report-moderation.spec.js:204`「開いたままリロードしても開き直し」**：原因を特定した。`js/nav-state.js boot()`（512-530行）は、`history.state`に段(faces)が残っている(`depth>0`)時、`top.id==='book-detail'`の特殊ケース以外は無条件に`H.go(-depth)`を呼んで段を畳む設計。全幅化でreport-modalもPC幅(chromiumプロジェクトの既定viewport)で段を積むようになったため、`page.reload()`後の`boot()`が`report-modal`の段を見て`H.go(-1)`を呼んでしまう。これと、アプリ起動処理内で別途呼ばれる`_handleReportParam()`(sessionStorageの`bookshelf.pendingReport`から`openReportModal()`を明示的に呼び直す既存の仕組み・5146-5162行)が競合し、どちらが先に完了するかでreport-modalが開いたままにならない。**これはclose/open競合(switchTo案)とは別の構造的問題**＝`boot()`の`go(-depth)`無条件ロジックに「report-modal等、reopener表(`_navReopen`)に載っている面はgoで畳まずadoptする」という`book-detail`と同種の特殊ケースを増やす修正が必要(影響範囲の精査が要るため次回に持ち越し)。
+2. **`publish-article-editor.spec.js:988`「公開中記事の一括更新の案内」**：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。原因未特定(reload/boot絡みではなく、複数記事を連続で作成・公開する一連の流れの中の状態不整合の疑い)。
+
+次のrunでの調査方針：`--trace`は使わず（既知の罠）、`window.__DEBUG`変数を一時的に仕込んでfaces/historyの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。
