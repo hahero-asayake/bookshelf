@@ -1270,7 +1270,8 @@ class _ArticleEditorMethods {
         // 見た目は一度決めればあまり触らないため、既存記事 (ブロック2個以上) を開いた時は畳んで始める。
         // 新規記事 (ブロック0〜1個) は開いて始める。畳み状態は保存しない UI 状態 (イシュー#230・②差し戻し)
         if (id && (this._artDraft.blocks || []).length >= 2) this._artCollapsed.add('look');
-        const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = !id;
+        // X3(イシュー#528): ⋯は編集中も出す。旧仕様(id=既存記事のみ)は新規作成直後に隠れていた。
+        const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
         const unpub = document.getElementById('art-unpublish'); if (unpub) unpub.hidden = !this._artDraft.published;
         document.getElementById('art-title').value = this._artDraft.title || '';
         this._artRenderTags();

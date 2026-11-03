@@ -44,7 +44,7 @@ async function publishViaPanel(page) {
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     if (await page.locator('#art-pub-go').isDisabled()) {
         await page.click('#art-pub-close');
-        await addBlock(page, 'book', 'last');
+        await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
         const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
         await page.locator('#art-drawer-list .art-drawer-item').first().click();

@@ -4764,6 +4764,15 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 /* --- ヘッダー: 戻る/タイトル/テーマ/プレビュー/公開 --- */
 .art-hd { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; }
+/* X3(イシュー#528・A-g/A-h/A-i): タッチ(pointer:coarse)はヘッダーのボタンのタップ領域を44pxに広げる
+   (見た目は変えない・::afterで領域だけ足す・#258の型・ui-standards §2-24)。 */
+@media (hover: none) and (pointer: coarse) {
+    .art-hd > .btn, .art-more-host > .btn { position: relative; }
+    .art-hd > .btn::after, .art-more-host > .btn::after {
+        content: ""; position: absolute; inset: 50% auto auto 50%;
+        width: 44px; height: 44px; transform: translate(-50%, -50%);
+    }
+}
 .art-title-input { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; font-size: 1.05rem; font-weight: 700;
     padding: 0.4rem 0.55rem; border-radius: 6px; color: var(--fg); font-family: inherit; }
 .art-title-input:hover { border-color: var(--line); }

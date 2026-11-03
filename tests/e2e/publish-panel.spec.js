@@ -73,7 +73,8 @@ async function newArticleWithBook(page, title = '公開テスト') {
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
     if (title) await page.fill('#art-title', title);
-    await addBlock(page, 'book', 'last');
+    // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無くなった。1冊入れるだけなら本棚ブロックで足りる。
+    await addBlock(page, 'shelf', 'last');
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
     await leaveForm(page);
 }
@@ -95,7 +96,7 @@ test('公開前チェック: 必須 (タイトル・本1冊以上) が欠ける�
     await page.click('#art-pub-close');
 
     await page.fill('#art-title', 'タイトルあり');
-    await addBlock(page, 'book', 'last');
+    await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
     await openPanel(page);
     await expect(page.locator('#art-pub-go')).toBeEnabled();

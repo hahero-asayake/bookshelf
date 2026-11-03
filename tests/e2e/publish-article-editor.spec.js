@@ -18,7 +18,8 @@ async function publishViaPanel(page) {
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
     if (await page.locator('#art-pub-go').isDisabled()) {
         await page.click('#art-pub-close');
-        await addBlock(page, 'book', 'last');
+        // X3(イシュー#528・②判断「案A」): 「本」単体ブロックの新規追加入口は無くなった。1冊入れるだけなら本棚ブロックで足りる。
+        await addBlock(page, 'shelf', 'last');
         const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
         if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
@@ -529,15 +530,19 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-new');
         // 本棚ブロックでは長文メモを選べない (イシュー#238) ため、複数冊分の長文メモ読込は
         // 本ブロックを冊数分並べて作る (1ブロック=1冊、旧実装は本棚ブロック+複数配置だった)。
-        const drawerCount = await page.locator('#art-drawer-list .art-drawer-item').count();
-        for (let i = 0; i < drawerCount; i++) {
-            await addBlock(page, 'book', 'last');
-            await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
-            // 本ブロックごとの個別トグル (既定 longMemo:false)。イシュー#268: 全画面編集中の1ブロック分だけ見えるので、追加のたびに押す
-            const t = page.locator('.art-block.is-fs-target .art-book-show-toggle[data-show-key="longMemo"]');
-            if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
-        }
-        await leaveForm(page);
+        // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+        // (type:'book')の描画・機能は後方互換で残している。ここはその既存データを直接注入する。
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            const shelf = bs.bookshelfManager.getById(bs._artResolveSourceShelfId());
+            const asins = (shelf && shelf.books) || [];
+            bs._artDraft.blocks = asins.map((asin, i) => ({
+                id: 'char-legacy-book-' + i, type: 'book', asin,
+                show: { shortMemo: false, longMemo: true, rating: false }
+            }));
+            bs._artRenderBlocks();
+            bs._artScheduleSave();
+        });
 
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 5000; // 個別検知は発火させない値 (5冊分の合計1500ms未満にはならない設計)
@@ -564,8 +569,14 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
-        await addBlock(page, 'book', 'first');
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+        // (type:'book')の描画・機能は後方互換で残している。ここはその既存データを直接注入する。
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            bs._artDraft.blocks = [{ id: 'char-legacy-book-0', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }];
+            bs._artRenderBlocks();
+            bs._artEditBlock('char-legacy-book-0');
+        });
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
 
@@ -626,8 +637,14 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // 本棚ブロックでは長文メモを選べない (イシュー#238) ため本ブロックで作る。
-        await addBlock(page, 'book', 'first');
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+        // (type:'book')の描画・機能は後方互換で残している。ここはその既存データを直接注入する。
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            bs._artDraft.blocks = [{ id: 'char-legacy-book-0', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }];
+            bs._artRenderBlocks();
+            bs._artEditBlock('char-legacy-book-0');
+        });
         // 長文メモ表示をON (既定でON想定だが、明示的に押して確実にする)
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
@@ -1429,7 +1446,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '更新前のタイトル');
-        await addBlock(page, 'book', 'last');
+        await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         await publishViaPanel(page);
         // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
@@ -2198,8 +2215,14 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await addBlock(page, 'book', 'first');
-        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+        // (type:'book')の描画・機能は後方互換で残している。ここはその既存データを直接注入する。
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            bs._artDraft.blocks = [{ id: 'char-legacy-book-0', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }];
+            bs._artRenderBlocks();
+            bs._artEditBlock('char-legacy-book-0');
+        });
 
         const toggles = page.locator('.art-book-show-toggle');
         await expect(toggles).toHaveCount(3);
@@ -2675,7 +2698,14 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await addBlock(page, 'book', 'first');
+        // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+        // (type:'book'・asin未選択の待ち状態)の描画・機能は後方互換で残している。直接注入して全画面編集を開く。
+        await page.evaluate(() => {
+            const bs = window.bookshelf;
+            bs._artDraft.blocks = [{ id: 'char-legacy-book-0', type: 'book', asin: null, show: { shortMemo: false, longMemo: false, rating: false } }];
+            bs._artRenderBlocks();
+            bs._artEditBlock('char-legacy-book-0');
+        });
 
         // 空状態ボタン (バー内アイコン+本文中の空状態ボタンの2箇所が同じ .art-book-pick クラスを持つ)
         expect(await page.locator('.art-book-pick').count()).toBe(2);

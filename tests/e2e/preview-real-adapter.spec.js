@@ -125,21 +125,17 @@ async function createArticleWithLongMemoShelf(page, { bookCount = 3 } = {}) {
     }, bookCount);
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
-    const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
-    for (let i = 0; i < bookCount; i++) {
-        await addBlock(page, 'book', 'last');
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
-        await page.locator('#art-drawer-list .art-drawer-item').nth(i).click();
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
-        // 全画面編集(form)では対象ブロックだけが出るので、追加した本ごとに長文メモ表示をONにする
-        const longToggles = page.locator('.art-block.is-fs-target .art-book-show-toggle[data-show-key="longMemo"]');
-        const toggleCount = await longToggles.count();
-        for (let j = 0; j < toggleCount; j++) {
-            const t = longToggles.nth(j);
-            if (!(await t.getAttribute('aria-pressed')).includes('true')) await t.click();
-        }
-    }
-    await leaveForm(page);
+    // X3(イシュー#528): 「本」単体ブロックの新規追加入口はシートから無くなったが、既存データ
+    // (type:'book')の描画・機能は後方互換で残している。ここはその既存データを直接注入する。
+    await page.evaluate((count) => {
+        const bs = window.bookshelf;
+        bs._artDraft.blocks = Array.from({ length: count }, (_, i) => ({
+            id: 'char-legacy-book-' + i, type: 'book', asin: `B${String(i + 1).padStart(9, '0')}`,
+            show: { shortMemo: false, longMemo: true, rating: false }
+        }));
+        bs._artRenderBlocks();
+        bs._artScheduleSave();
+    }, bookCount);
 }
 
 test('(a) 通常応答: 実GitHubAdapter+実fetch経由でプレビューが完走する(容疑者②=fetchハングは実アダプタでも再現せず)', async ({ page }) => {

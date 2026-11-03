@@ -866,7 +866,8 @@
                 <!-- イシュー#230: ヘッダー1行 (戻る / タイトル+保存状態 / プレビュー / 公開する / ⋯)。フッターは撤去し、
                      複製・公開の取消・削除は ⋯ メニューへ。タグは公開パネルへ移設 -->
                 <div class="art-hd">
-                    <button id="art-back" class="btn btn-secondary btn-small" title="一覧へ戻る" aria-label="一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span></button>
+                    <!-- X3(イシュー#528): 左は「← 記事の一覧」。狭幅はart-hd-lbl(8114行)が隠れアイコンのみになる -->
+                    <button id="art-back" class="btn btn-secondary btn-small" title="記事の一覧へ戻る" aria-label="記事の一覧へ戻る"><span class="h-icon" data-icon="arrow-left" data-icon-size="15"></span><span class="art-hd-lbl">記事の一覧</span></button>
                     <div class="art-hd-title">
                         <input id="art-title" class="art-title-input" type="text" placeholder="記事タイトル">
                         <span id="art-save-status" class="art-save-status"></span>
