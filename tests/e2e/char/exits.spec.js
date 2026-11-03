@@ -16,12 +16,13 @@ const fixtureUserData = readFileSync(join(here, '../../fixtures/fixture-userdata
 const fixtureLibrary = readFileSync(join(here, '../../fixtures/fixture-library.json'), 'utf-8');
 const ASIN = 'B000000001';
 
-async function bootApp(page) {
-    await page.addInitScript(([userData, library]) => {
+async function bootApp(page, { histFlagOld = false } = {}) {
+    await page.addInitScript(([userData, library, old]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-    }, [fixtureUserData, fixtureLibrary]);
+        if (old) localStorage.setItem('bookshelf.flag.histAllWidths', '0'); // イシュー#513 S6
+    }, [fixtureUserData, fixtureLibrary, histFlagOld]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
@@ -64,8 +65,11 @@ test.describe('P11: PCの本の詳細は×とEscで閉じる(手元の資料・�
     });
 });
 
-test.describe('P10: 1024幅で手動追加の破棄確認が出ない', () => {
-    test('1024(タッチ)で本を手動追加→入力→戻る。破棄の確認(.cfm-overlay)が出ない(今の振る舞い) // CHAR: 直す対象(step2 P10)', async ({ page }, testInfo) => {
+test.describe('P10: 1024幅で手動追加の破棄確認', () => {
+    // イシュー#513 S6で期待を書き換え(②承認済み): 全幅化のフラグ(既定=新しい動き)で1024幅も
+    // 段を積むようになったため、戻るは履歴の1段を消費し _formBackGuard が発火、破棄の確認
+    // (.cfm-overlay)が出る。フラグ旧では元の振る舞い(確認が出ないまま遷移)を維持する。
+    test('1024(タッチ)で本を手動追加→入力→戻る。破棄の確認(.cfm-overlay)が出る // CHAR: 新しい振る舞い(S6・旧はP10)', async ({ page }, testInfo) => {
         test.skip(testInfo.project.name !== 'char-1024', 'P10は1024幅が対象(499-step4-plan.md 198行目)');
         await bootApp(page);
         // ⌘K から「本を手動追加」を実行(クリック+入力のみ。内部メソッド不使用)
@@ -77,9 +81,23 @@ test.describe('P10: 1024幅で手動追加の破棄確認が出ない', () => {
         const titleInput = page.locator('#add-book-modal input[name="title"], #add-book-modal #manual-title');
         if (await titleInput.count() > 0) await titleInput.first().fill('未保存のタイトル');
         await page.goBack();
+        await expect(page.locator('.cfm-overlay')).toHaveCount(1);
+    });
+
+    test('1024(タッチ・フラグ旧)で本を手動追加→入力→戻る。破棄の確認(.cfm-overlay)が出ない(元の振る舞いを維持) // CHAR: 直す対象(step2 P10)の原文を保存', async ({ page }, testInfo) => {
+        test.skip(testInfo.project.name !== 'char-1024', 'P10は1024幅が対象(499-step4-plan.md 198行目)');
+        await bootApp(page, { histFlagOld: true });
+        await page.locator('#sidebar-search').click();
+        await page.fill('#command-palette input', '本を手動追加');
         await page.waitForTimeout(200);
-        // 今の振る舞い: 1024はmobile=false(_isHistMobile:900px境目)のため、モーダルは
-        // 履歴に積まれておらず、戻るで破棄の確認(.cfm-overlay)が出ないまま遷移する。
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#add-book-modal')).toHaveClass(/show/);
+        const titleInput = page.locator('#add-book-modal input[name="title"], #add-book-modal #manual-title');
+        if (await titleInput.count() > 0) await titleInput.first().fill('未保存のタイトル');
+        await page.goBack();
+        await page.waitForTimeout(200);
+        // フラグ旧: 1024はmobile=false(_navMobile→_isHistMobile:900px境目)のため、モーダルは
+        // 履歴に積まれておらず、戻るで破棄の確認(.cfm-overlay)が出ないまま遷移する(元の振る舞い)。
         await expect(page.locator('.cfm-overlay')).toHaveCount(0);
     });
 });

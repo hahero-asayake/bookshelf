@@ -117,6 +117,11 @@ bookshelf.js: 689（settings 系）, 951, 962, 1171, 1376（palette）, 6006（s
 
 step4 では上のコマンドに `\| grep -v "^js/ui/surface.js"` を足して「Surface の外」を数える。brief の 15/9/約30 は #499 時点の別の数え方（例: step3-arch は `key === 'Escape'` のみで8）で、比較は本表の定義で前後をそろえる。
 
+## 9. S6（イシュー#513）実装後の追記 — 2026-11-03
+
+- §3-1・§5 の「PC で段を積まない差は Surface の `hist:'mobile'` がそのまま持つ」は**期限付きフラグ付きで実装済み**。判定は `host._navMobile()`（`js/bookshelf.js`）の1関数に集約し、`Surface._histOn`／`Surface.push` は `host._isHistMobile()` の代わりにこれを呼ぶ。`host._isHistMobile()` 自体は画面幅判定として他用途（PCのEscガード等）に残る。フラグは `localStorage['bookshelf.flag.histAllWidths']`（`'0'`=旧・既定=新）。詳細・撤去単位でやることは `docs/char/s6-scope.md`。
+- §5「公開の一覧/設定の route が PC で効かない」は、フラグ新の下で `_navMobile()` が true を返すことにより自然に解決した（`Surface.push` の早期 return 自体の位置は変えていない）。「URL に今のページを映すこと」と「段を積むかどうか」が1つの早期 return に結びついている根本問題は**未解消**＝フラグ撤去の単位で分離する（s6-scope.md §4-5）。
+
 ## 8. 未確認・リスク
 - 記事6面を overlays に載せると data-layer/z-index が付く。画像差が出たら退行として showClass/size で吸収する（commit 3 で確認）。
 - `_artToggleMoreMenu` はトグル型（開閉を1関数で）＝Surface.open/close の両方から呼べる形に分ける必要がある。

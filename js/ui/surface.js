@@ -3,9 +3,10 @@
 // 面1枚の「開く・閉じる・Esc・枠外・戻る (履歴の段)・開き直し」を1回の登録 (define) で束ね、
 // 重なり管理役 (window.overlays・ADR-131) と画面遷移の台帳 (NavState・ADR-129) を正しい順で呼ぶ。
 // U3 は構造の単位 = 振る舞いは変えない。段を積むかどうか (PC は積まない) は hist で面ごとに持つ:
-//   hist: 'mobile'      … 今の既定。host._isHistMobile() が真の時だけ段を積む (旧 _modalHistPush と同じ)
-//   hist: 'never'       … 段を積まない (plugins-modal: 今どの幅でも段なし)
-//   hist: { isMobile }  … 面ごとの判定関数 (art-sheet の _artIsDrawerNarrow)
+//   hist: 'mobile'      … 今の既定。host._navMobile() が真の時だけ段を積む (旧 _modalHistPush と同じ。
+//                          イシュー#513 S6 で全幅化のフラグを host._navMobile() の1関数に集約した)
+//   hist: 'never'       … 段を積まない (plugins-modal: 今どの幅でも段なし。S6の対象外・②判断)
+//   hist: { isMobile }  … 面ごとの判定関数 (art-sheet の _artIsDrawerNarrow。S6の対象外・②判断)
 // 出口の決まり (イシュー#511 X1・docs/char/x1-exits.md §1)。画面ごとに別々の実装を書かず、define の2項目に寄せる:
 //   exit: 'page' | 'overlay' | 'edit'  … 既定 'overlay'。'page' は←で親(parent)へ行く面 (×は置かない)。
 //                                        'edit' は編集モード (Esc・戻る=完了。呼び手の close がその意味を持つ)
@@ -23,7 +24,7 @@
     class Surface {
         constructor() {
             this.defs = {};
-            this.host = null;     // VirtualBookshelf (nav・_isHistMobile・_bindSettingsPopstate を持つ)
+            this.host = null;     // VirtualBookshelf (nav・_navMobile・_bindSettingsPopstate を持つ)
         }
 
         bind(host) { this.host = host; return this; }
@@ -54,7 +55,7 @@
         _histOn(hist) {
             if (hist === 'never') return false;
             if (hist && typeof hist === 'object' && typeof hist.isMobile === 'function') return !!hist.isMobile();
-            return !!(this.host && this.host._isHistMobile());
+            return !!(this.host && this.host._navMobile());
         }
 
         // 面を開く: overlays に載せ (段は Surface が積むので hist:false)、条件を満たせば段を積む
@@ -98,7 +99,10 @@
         push(id, close, { isMobile, never, extra, route } = {}) {
             const h = this.host;
             if (!h || never) return;
-            const mobile = isMobile ? isMobile() : h._isHistMobile();
+            // イシュー#513 S6: 全幅化のフラグは h._navMobile() の1関数に集約 (面ごとの isMobile 指定は優先)。
+            // この早期return は「段を積むか」と「route 処理をするか」を1つに結びつけている (URLに今の
+            // ページを映すこととは本来別の話)。フラグ撤去の単位でこの結び付きを分ける(s6-scope.md §4-5)。
+            const mobile = isMobile ? isMobile() : h._navMobile();
             if (!mobile) return;
             h._bindSettingsPopstate();
             if (route) h.nav.openRoute(id, extra || null, close, route, { mobile: true });

@@ -242,11 +242,11 @@ class VirtualBookshelf {
         // フォールバックせずエラーを出す)。
         if (window.NavState && typeof window.NavState.createNav === 'function') {
             this.nav = window.NavState.createNav(this, {
-                isMobile: () => this._isHistMobile(),
+                isMobile: () => this._navMobile(), // イシュー#513 S6: 段を積む判定はここ(1関数)に集約
                 reopeners: (id, extra, snap) => this._navReopen(id, extra, snap),
                 onLanded: (snap, m) => this._navOnLanded(snap, m),
             });
-            this.nav.isMobile = () => this._isHistMobile();
+            this.nav.isMobile = () => this._navMobile();
             // 本詳細の段の閉じ方 (戻る由来はアニメ無し=ADR-125)
             this.nav.closers['book-detail'] = (o) => { if (o && o.fromHistory) this._histNoAnimOnce(document.getElementById('app-detail')); this._closeBookModalDom(); return true; };
             if (this.router) {
@@ -1028,6 +1028,14 @@ class VirtualBookshelf {
                 this.saveUserData();
                 reRenderForDisplay();   // 開いている本詳細のリンクを更新
             });
+        }
+
+        // イシュー#513 S6: PC/タブレットも段を積む(新しい動き)の期限付きフラグ。userData には乗せない
+        // (端末ごとの見た目設定でもなく、確認用の切替なので localStorage 直書き・同期対象外)。
+        const histFlagCb = document.getElementById('setting-hist-all-widths');
+        if (histFlagCb) {
+            histFlagCb.checked = !this._histFlagOld();
+            histFlagCb.addEventListener('change', () => { this._setHistFlagOld(!histFlagCb.checked); });
         }
 
         // Amazon アソシエイト タグ (settings.affiliateId) — Plus 限定 (ADR-033)。
@@ -3023,7 +3031,7 @@ class VirtualBookshelf {
             // 着地 (_applyRoute 由来・_suppressRouterUpdate) では台帳が既に正しいので入力しない
             if (!this._suppressRouterUpdate && book && book.asin) {
                 this._closeOverlayFacesSilently();
-                this.nav.openBook(book.asin, !!isEditMode, this._currentBookshelfInternalId(), { mobile: this._isHistMobile() });
+                this.nav.openBook(book.asin, !!isEditMode, this._currentBookshelfInternalId(), { mobile: this._navMobile() }); // イシュー#513 S6
             }
         } else if (this.router && !this._suppressRouterUpdate && book && book.asin) {
             const fromInternalId = this._currentBookshelfInternalId();
@@ -10225,7 +10233,7 @@ class VirtualBookshelf {
         const closeFs = (o) => this._artCloseBlockFs(true, o);
         if (!this._artHistHandOver('art-add-sheet', 'art-fs', closeFs) && !this._artHistHandOver('art-blk-menu', 'art-fs', closeFs)) {
             this._surface().open('art-fs', { close: closeFs, extra: { articleId: this._artEditingId, blockId } });
-        } else if (this._isHistMobile()) {
+        } else if (this._navMobile()) { // イシュー#513 S6: 段を積む判定(_isHistMobile()の全幅化版)に揃える
             // イシュー#291: handover(段を引き継ぐ)経路は _modalHistPush を通らず history も触らない
             // ため、state に blockId が入らない。進むで開き直せるよう、現在の段を blockId 付きで
             // replaceState しておく(段数・位置は変えない)。
@@ -13226,8 +13234,32 @@ class VirtualBookshelf {
     // 食っていた (イシュー#284 H1)。数え合わせ方式は余分な popstate が来ても来なくても自己修復する。
     // isMobile: 既定は _isHistMobile() (900px 以下・イシュー#284 K6 で判定幅を統一。
     // #505でjs/ui/viewport.jsへ一本化=900pxの値自体は変えていない)。
+    // この関数自体は「画面幅がスマホか」の判定として他の用途(例: 6360行付近のPC Escガード・
+    // スマホの戻る統合と二重処理しない判定)にも使われているため意味を変えない。
     _isHistMobile() {
         return window.viewport.isNarrow();
+    }
+
+    // イシュー#513 S6: 「段を積むかどうか(PCでも1段ずつ戻る)」の判定だけをここへ集約する
+    // (期限付きフラグ・既定は新しい動き)。_isHistMobile() 自体は上の用途のため変えない。
+    // 旧い動きに戻すフラグが立っている間だけ _isHistMobile() (幅判定) にフォールバックする。
+    // フラグ撤去の単位(2026-11-17目安)で、この関数と _histFlagOld() を外し、呼び出し元を
+    // 「常に true」へ畳む(docs/char/s6-scope.md §4-5)。
+    _navMobile() {
+        return this._histFlagOld() ? this._isHistMobile() : true;
+    }
+
+    // S6フラグ: localStorage 'bookshelf.flag.histAllWidths' === '0' の時だけ旧い動き
+    // (PC/タブレットは段を積まない)。未設定・それ以外は新しい動き(既定)。
+    _histFlagOld() {
+        try { return window.localStorage.getItem('bookshelf.flag.histAllWidths') === '0'; } catch (_) { return false; }
+    }
+
+    _setHistFlagOld(old) {
+        try {
+            if (old) window.localStorage.setItem('bookshelf.flag.histAllWidths', '0');
+            else window.localStorage.removeItem('bookshelf.flag.histAllWidths');
+        } catch (_) { /* no-op: ストレージ不可時は既定(新しい動き)のまま */ }
     }
 
     // D13 (イシュー#284): 入力途中のフォームを「戻る」で閉じる時、開いた時から変更があれば破棄を確認する。

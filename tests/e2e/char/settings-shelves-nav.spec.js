@@ -91,7 +91,11 @@ test.describe('S: 設定', () => {
     }
 
     for (const name of ['char-1440', 'char-1920']) {
-        test(`S6@${name}: 入力途中で戻ると破棄の確認が出る(既に動く機能・直す対象ではない)`, async ({ page }, testInfo) => {
+        // イシュー#513 S6で期待を固定(②指示2026-11-03・フラグ新で実測): 本棚管理→本棚フォームの
+        // 2面とも全幅化で段を積むようになったため、戻る(fromHistory)で _formBackGuard が発火し、
+        // 破棄の確認(.cfm-overlay)が出る。フラグ旧(localStorage 'bookshelf.flag.histAllWidths'='0')
+        // では元の動き(段を積まない・確認が出ない)に戻る。
+        test(`S6@${name}: 入力途中で戻ると破棄の確認が出る(全幅化で新たに通る経路・イシュー#513)`, async ({ page }, testInfo) => {
             test.skip(testInfo.project.name !== name, `この端末専用`);
             await bootApp(page);
             await openSearch(page);
@@ -103,11 +107,7 @@ test.describe('S: 設定', () => {
             await expect(page.locator('#bookshelf-form-modal')).toHaveClass(/show/);
             await page.fill('#bookshelf-form-modal input[type="text"]', '未保存の本棚名');
             await page.goBack();
-            await page.waitForTimeout(200);
-            // #284 D13(_formBackGuard)はfromHistory時のみ発火する。本棚フォームの入力欄が
-            // _formSnapTake対象に含まれているかどうかをここで実測する(無理に期待を固定しない)。
-            const hasConfirm = await page.locator('.cfm-overlay').count();
-            test.info().annotations.push({ type: 'CHAR-77', description: `S6@${name}: 破棄確認が出たか=${hasConfirm > 0}` });
+            await expect(page.locator('.cfm-overlay')).toHaveCount(1);
         });
     }
 });
