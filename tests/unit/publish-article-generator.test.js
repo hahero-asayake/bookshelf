@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+await import('../../js/ui/escape.js');
 await import('../../js/publish-article-store.js');
 await import('../../js/vendor/marked.umd.js');
 await import('../../js/publish-article-generator.js');

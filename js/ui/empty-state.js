@@ -17,11 +17,10 @@
 (function () {
     'use strict';
 
-    // bookshelf.js の escapeHtml と同じ最小実装 (依存を増やさないため自前で持つ)。
+    // 実装は BookshelfEscape.escapeHtml (js/ui/escape.js・イシュー#523 U6) への委譲。
+    // EmptyState.escapeHtml という名前は既存テスト (empty-state.test.js) が直接呼ぶため残す。
     function escapeHtml(s) {
-        return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-        }[c]));
+        return BookshelfEscape.escapeHtml(s);
     }
 
     // tag: 要素名 (既定 'div')。className: 既存のクラス文字列そのまま (必須ではない)。

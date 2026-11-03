@@ -3,6 +3,7 @@
 // 既存の実例(tree-empty・pp-empty pp-error 等)をそのまま引数に渡した時の出力を確認する。
 import { describe, it, expect } from 'vitest';
 
+await import('../../js/ui/escape.js');
 await import('../../js/ui/empty-state.js');
 const { EmptyState } = globalThis;
 

@@ -7,6 +7,7 @@
 // tests/e2e 側で検証する)。
 import { describe, it, expect } from 'vitest';
 
+await import('../../js/ui/escape.js');
 await import('../../js/bookshelf.js');
 const { extractAppVersionFromHtml } = globalThis;
 

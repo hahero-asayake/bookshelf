@@ -8,11 +8,7 @@
 // 参照: T12 (モジュール分割 + 描画重複排除) / ADR 「同一ドメインオブジェクト=単一描画コンポーネント」
 
 (function () {
-    function esc(s) {
-        return String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    const esc = BookshelfEscape.escapeHtml;
 
     // internalId || id(slug)。bookshelf-manager._keyOf と同じ規則 (依存を持たないよう再実装)
     function keyOf(bs) {

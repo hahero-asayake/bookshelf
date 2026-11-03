@@ -414,10 +414,6 @@ function _isLucideShape(v) {
     return typeof v === 'string' && /^[a-z][a-z0-9-]*$/.test(v);
 }
 
-function _escapeXml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
 /**
  * テキストを SVG <text> として描画 (1〜数文字を size 内に収める)
  * 文字数に応じて font-size を自動調整。絵文字 / 漢字 / 任意 ASCII 対応。
@@ -437,7 +433,7 @@ function renderTextIcon(text, opts) {
     else fontSize = size * 0.22;
     // 絵文字には emoji フォントが当たるよう font-family を指定
     const family = `"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", system-ui, sans-serif`;
-    const escaped = _escapeXml(text);
+    const escaped = BookshelfEscape.escapeHtml(text);
     // y を 50% + 0.05em ぶん下げて視覚的に中央へ (text-rendering 微調整)
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"${cls}><text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family='${family}' fill="currentColor">${escaped}</text></svg>`;
 }

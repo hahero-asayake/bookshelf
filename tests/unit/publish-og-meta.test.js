@@ -4,6 +4,7 @@
 //  - 生成できない時 (Canvas 無し・グリフ不可等) は画像なし (summary カード) で公開を続ける。
 import { describe, it, expect } from 'vitest';
 
+await import('../../js/ui/escape.js');
 await import('../../js/publish-article-store.js');
 await import('../../js/vendor/marked.umd.js');
 await import('../../js/publish-ogp-image.js');

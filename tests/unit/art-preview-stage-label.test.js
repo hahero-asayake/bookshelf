@@ -5,6 +5,7 @@
 // 検証したいロジックは純粋関数として window に切り出してある (extractAppVersionFromHtml と同じ型)。
 import { describe, it, expect } from 'vitest';
 
+await import('../../js/ui/escape.js');
 await import('../../js/bookshelf.js');
 const { ART_PREVIEW_STAGE_LABEL } = globalThis;
 

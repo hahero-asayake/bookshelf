@@ -1364,8 +1364,8 @@ class VirtualBookshelf {
             html += `
                 <div class="cmdk-item${idx === 0 ? ' is-active' : ''}" data-idx="${idx}">
                     ${iconHtml}
-                    <span class="cmdk-item-title">${this.escapeHtml(it.title)}</span>
-                    ${it.sub ? `<span class="cmdk-item-sub">${this.escapeHtml(it.sub)}</span>` : ''}
+                    <span class="cmdk-item-title">${BookshelfEscape.escapeHtml(it.title)}</span>
+                    ${it.sub ? `<span class="cmdk-item-sub">${BookshelfEscape.escapeHtml(it.sub)}</span>` : ''}
                 </div>`;
         });
         results.innerHTML = html;
@@ -1494,7 +1494,7 @@ class VirtualBookshelf {
         host.innerHTML = shelves.map(bs => `
             <button type="button" class="bookshelf-popover-item" data-bs-internal="${bs.internalId || bs.id}">
                 <span class="bs-popover-icon" data-icon-value="${(bs.iconName || '').replace(/"/g, '&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 16 })}</span>
-                <span>${this.escapeHtml(bs.name)}</span>
+                <span>${BookshelfEscape.escapeHtml(bs.name)}</span>
             </button>`).join('');
         host.querySelectorAll('[data-bs-internal]').forEach(btn => {
             btn.addEventListener('click', () => this._bulkAddToShelf(btn.dataset.bsInternal));
@@ -1999,12 +1999,6 @@ class VirtualBookshelf {
         }
     }
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     updateDisplay() {
         const bookshelf = document.getElementById('bookshelf');
         // Apply view and cover size classes
@@ -2405,7 +2399,7 @@ class VirtualBookshelf {
         const title = g.sameTitle
             ? '同じ本が複数登録されています(統合・削除の必要はありません)'
             : 'このASINは他の本と共有されています。本の詳細から付け直しをご検討ください';
-        return `<span class="book-badge book-badge-warn" title="${this.escapeHtml(title)}">${label}</span>`;
+        return `<span class="book-badge book-badge-warn" title="${BookshelfEscape.escapeHtml(title)}">${label}</span>`;
     }
 
     // イシュー#484: 一覧カードは Kindle バッジと重複ASINバッジを1つの .book-badges にまとめて出す
@@ -2470,7 +2464,7 @@ class VirtualBookshelf {
         const rowHoverPop = isCoverView ? '' : hoverPop;
 
         const placeholderHtml = (isCoverView || isImagesView)
-            ? `<div class="book-cover-placeholder">${this.escapeHtml(book.title)}</div>`
+            ? `<div class="book-cover-placeholder">${BookshelfEscape.escapeHtml(book.title)}</div>`
             : `<div class="book-cover-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`;
 
         bookElement.classList.add('clickable');
@@ -2483,8 +2477,8 @@ class VirtualBookshelf {
         const kindleBadges = this._allBadgesHtml(book);
         const infoHtml = isImagesView ? '' : `
                 <div class="book-info">
-                    <div class="book-title">${this.escapeHtml(book.title)}</div>
-                    <div class="book-author">${this.escapeHtml(book.authors)}</div>
+                    <div class="book-title">${BookshelfEscape.escapeHtml(book.title)}</div>
+                    <div class="book-author">${BookshelfEscape.escapeHtml(book.authors)}</div>
                     ${kindleBadges}
                     ${belowAlwaysStars}
                     ${alwaysMemo}
@@ -2498,7 +2492,7 @@ class VirtualBookshelf {
                     <div class="book-select-check" aria-hidden="true">${window.renderIcon('check', { size: 13 })}</div>
                     <div class="book-cover-link">
                         ${this.bookManager.hasCoverImage(book) ?
-                            `<img class="book-cover lazy" data-src="${this.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${this.escapeHtml(book.title)}" data-cover-fallback="${this.escapeHtml(book.title)}">` :
+                            `<img class="book-cover lazy" data-src="${BookshelfEscape.escapeHtml(this.bookManager.getProductImageUrl(book))}" alt="${BookshelfEscape.escapeHtml(book.title)}" data-cover-fallback="${BookshelfEscape.escapeHtml(book.title)}">` :
                             placeholderHtml
                         }
                     </div>
@@ -2868,7 +2862,7 @@ class VirtualBookshelf {
         const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
         const amazonUrl = this.bookManager.getAmazonUrl(book, this.userData.settings.affiliateId);
         const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-        const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
+        const esc = BookshelfEscape.escapeHtml;
 
         // Kindleで読む (タイトル直下)。開き方は設定 settings.kindleOpenWith ('web' 既定 / 'app')。
         // 紙書籍 (ISBN ASIN) では出さない。app スキームは別タブ不要 (現タブのまま外部アプリ起動)。
@@ -3882,12 +3876,8 @@ class VirtualBookshelf {
                 listEl.appendChild(li);
             }
         } catch (e) {
-            listEl.innerHTML = `<li>(取得失敗: ${this._escapeHtml(e.message)})</li>`;
+            listEl.innerHTML = `<li>(取得失敗: ${BookshelfEscape.escapeHtml(e.message)})</li>`;
         }
-    }
-
-    _escapeHtml(s) {
-        return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     _renderGitHubAuthState() {
@@ -6698,9 +6688,9 @@ class VirtualBookshelf {
 
             // セル生成
             const cellHtml = (value, isSel) => `
-                <button type="button" class="icon-picker-cell${isSel ? ' is-selected' : ''}" data-icon-value="${this._escapeAttr(value)}" title="${this._escapeAttr(value)}">
+                <button type="button" class="icon-picker-cell${isSel ? ' is-selected' : ''}" data-icon-value="${BookshelfEscape.escapeHtml(value)}" title="${BookshelfEscape.escapeHtml(value)}">
                     ${window.renderIcon(value, { size: 22 })}
-                    <span class="icon-picker-cell-name">${this._escapeAttr(value)}</span>
+                    <span class="icon-picker-cell-name">${BookshelfEscape.escapeHtml(value)}</span>
                 </button>
             `;
 
@@ -6790,7 +6780,7 @@ class VirtualBookshelf {
                     return;
                 }
                 const v = raw.trim();
-                textPreview.innerHTML = window.renderTextIcon(v, { size: 28 }) + `<span style="color:#374151;font-size:0.8rem;">${this._escapeAttr(v)}</span>`;
+                textPreview.innerHTML = window.renderTextIcon(v, { size: 28 }) + `<span style="color:#374151;font-size:0.8rem;">${BookshelfEscape.escapeHtml(v)}</span>`;
                 textUseBtn.disabled = false;
                 textUseBtn.dataset.pendingValue = v;
             };
@@ -6863,10 +6853,6 @@ class VirtualBookshelf {
             // スマホ戻る: キャンセル扱いで閉じる (Promise を必ず resolve する)
             this._surface().open('icon-picker-modal', { close: (o) => { cleanup(o); resolve(null); }, extra: { pickerTitle: title, pickerCurrent: current } });
         });
-    }
-
-    _escapeAttr(s) {
-        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     // 設定 master-detail のカテゴリ定義 (順序 = 一覧/レールの並び)。ADR-047 P2。
@@ -7418,7 +7404,7 @@ class VirtualBookshelf {
             const descForSearch = (m.description || '').slice(0, VirtualBookshelf.PLUGIN_SEARCH_DESC_LIMIT);
             const searchText = `${nameForSearch}${descForSearch}`.toLowerCase();
             // 検索文字列の HTML 属性用エスケープ
-            const searchAttr = searchText.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const searchAttr = BookshelfEscape.escapeHtml(searchText);
             // アイコン (override 優先 → manifest.icon → 既定 puzzle)。常に chip 表示にして一覧を走査しやすく
             const currentIcon = this._getPluginIconOverride(id) || m.icon || '';
             const iconChip = `<span class="pcard-icon${enabled ? '' : ' is-off'}" data-icon-value="${(currentIcon || '').replace(/"/g, '&quot;')}"${currentIcon ? ` title="現在のアイコン: ${currentIcon}"` : ''}>${window.renderIcon(currentIcon || 'puzzle', { size: 18 })}</span>`;
@@ -7471,7 +7457,7 @@ class VirtualBookshelf {
             const data = await res.json();
             plugins = Array.isArray(data.plugins) ? data.plugins : [];
         } catch (e) {
-            host.innerHTML = `<p style="color:#888;">マーケットを読み込めませんでした（${this.escapeHtml(e.message)}）。 <button type="button" class="btn btn-small" id="market-retry">再試行</button></p>`;
+            host.innerHTML = `<p style="color:#888;">マーケットを読み込めませんでした（${BookshelfEscape.escapeHtml(e.message)}）。 <button type="button" class="btn btn-small" id="market-retry">再試行</button></p>`;
             host.querySelector('#market-retry')?.addEventListener('click', () => this._renderMarketSection());
             return;
         }
@@ -7483,7 +7469,7 @@ class VirtualBookshelf {
         if (this.pluginLoader && this._isSyncReady()) {
             try { installedIds = new Set((await this.pluginLoader.listInstalledPlugins()).map(p => p.id)); } catch (_) {}
         }
-        const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
+        const esc = BookshelfEscape.escapeHtml;
         host.innerHTML = plugins.map(p => {
             const installed = installedIds.has(p.id);
             const catBadges = this._renderPluginCategoryBadges(Array.isArray(p.categories) ? p.categories : []);
@@ -7557,8 +7543,8 @@ class VirtualBookshelf {
             <ul class="plugin-cat-legend-list">
             ${Object.values(meta).map(m => `
                 <li>
-                    <span class="plugin-cat-badge">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>
-                    <span class="plugin-cat-legend-desc">${this.escapeHtml(m.desc)}</span>
+                    <span class="plugin-cat-badge">${window.renderIcon(m.icon, { size: 11 })}${BookshelfEscape.escapeHtml(m.label)}</span>
+                    <span class="plugin-cat-legend-desc">${BookshelfEscape.escapeHtml(m.desc)}</span>
                 </li>`).join('')}
             </ul>`;
     }
@@ -7569,7 +7555,7 @@ class VirtualBookshelf {
         const badges = cats.map(c => {
             const m = meta[c] || { label: c, icon: 'puzzle', desc: '' };
             const tip = m.desc ? `${m.label}: ${m.desc}` : m.label;
-            return `<span class="plugin-cat-badge" title="${this.escapeHtml(tip)}">${window.renderIcon(m.icon, { size: 11 })}${this.escapeHtml(m.label)}</span>`;
+            return `<span class="plugin-cat-badge" title="${BookshelfEscape.escapeHtml(tip)}">${window.renderIcon(m.icon, { size: 11 })}${BookshelfEscape.escapeHtml(m.label)}</span>`;
         }).join('');
         return `<div class="plugin-card-cats">${badges}</div>`;
     }
@@ -7679,14 +7665,14 @@ class VirtualBookshelf {
             : window.renderIcon('puzzle', { size: 22 });
         modal.querySelector('.psm-title').textContent = manifest.name || id;
         modal.querySelector('.psm-head-sub').innerHTML =
-            `<span class="psm-version">v${this.escapeHtml(manifest.version || '?')}</span>${this._renderPluginCategoryBadges(cats)}`;
+            `<span class="psm-version">v${BookshelfEscape.escapeHtml(manifest.version || '?')}</span>${this._renderPluginCategoryBadges(cats)}`;
 
         const stateClass = enabled ? (loaded ? 'ok' : 'warn') : 'muted';
         const stateText  = enabled ? (loaded ? '有効' : '読み込み失敗') : '無効';
 
         const body = modal.querySelector('.psm-body');
         body.innerHTML = `
-            ${manifest.description ? `<p class="psm-desc">${this.escapeHtml(manifest.description)}</p>` : ''}
+            ${manifest.description ? `<p class="psm-desc">${BookshelfEscape.escapeHtml(manifest.description)}</p>` : ''}
 
             <div class="psm-enable-card ${enabled ? 'is-on' : 'is-off'}">
                 <div class="psm-enable-text">
@@ -7775,7 +7761,7 @@ class VirtualBookshelf {
         const renderer = loaded ? this.pluginAPI.getPluginSettingsRenderer(id) : null;
         if (renderer) {
             try { renderer(host, this.pluginAPI.forPlugin(id)); }
-            catch (e) { host.innerHTML = `<p class="psm-muted">設定の描画に失敗: ${this.escapeHtml(e.message || String(e))}</p>`; }
+            catch (e) { host.innerHTML = `<p class="psm-muted">設定の描画に失敗: ${BookshelfEscape.escapeHtml(e.message || String(e))}</p>`; }
         } else {
             host.innerHTML = `<p class="psm-muted">このプラグイン固有の設定はありません${enabled ? '' : '（有効化すると表示される場合があります）'}。</p>`;
         }
@@ -8087,7 +8073,7 @@ class VirtualBookshelf {
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${msg}</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
         } else if (this._syncError) {
             const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
-            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${this._escapeHtml ? this._escapeHtml(msg) : msg}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
+            rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${BookshelfEscape.escapeHtml(msg)}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
         }
         if (rows.length === 0) { bar.hidden = true; bar.innerHTML = ''; return; }
         bar.innerHTML = rows.join('');
@@ -8444,7 +8430,7 @@ class VirtualBookshelf {
             : new Set();
         const candidates = bm.getBookshelves().filter(b => !b.isSpecial && !excludedIds.has(bm._keyOf(b)));
         parentSelect.innerHTML = '<option value="">（トップ階層）</option>' + candidates
-            .map(b => `<option value="${bm._keyOf(b)}">${this._escapeAttr ? this._escapeAttr(b.name) : b.name}</option>`)
+            .map(b => `<option value="${bm._keyOf(b)}">${BookshelfEscape.escapeHtml(b.name)}</option>`)
             .join('');
 
         const setIcon = (name) => {
@@ -9372,7 +9358,7 @@ class VirtualBookshelf {
     _artRenderList() {
         const ul = document.getElementById('art-list');
         if (!ul) return;
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
 
         this._artRenderStoreNotice();
 
@@ -9727,7 +9713,7 @@ class VirtualBookshelf {
             const result = await this.publishArticleGenerator.build([tempArticle], { state: this._artBuildPreviewState(), markBlocks: true });
             const file = result.files.find(f => f.path === 'preview/index.html');
             // 生成できなかった時は白紙にせず理由を出す (プレビューの失敗表示と同じ文言の型)
-            html = file ? file.content : `<p style="padding:1rem;font-family:sans-serif;color:#a33">記事を表示できませんでした。<br>${PublishArticleGenerator.esc((result.errors || []).join(' / '))}</p>`;
+            html = file ? file.content : `<p style="padding:1rem;font-family:sans-serif;color:#a33">記事を表示できませんでした。<br>${BookshelfEscape.escapeHtml((result.errors || []).join(' / '))}</p>`;
         } catch (e) {
             console.warn('[art-canvas] build failed:', e);
             return;
@@ -9851,7 +9837,7 @@ class VirtualBookshelf {
                 if (isEmptyBlock(b)) {
                     // 生成器が仮に何か出していても(例: 0冊の本棚)、編集状態では案内1つに統一して上書きする
                     sec.classList.add('art-cv-empty');
-                    sec.innerHTML = `<button type="button" class="art-cv-empty-guide" data-blk-idx="${i}">${PublishArticleGenerator.esc(EMPTY_GUIDE[b.type] || 'タップして編集')}</button>`;
+                    sec.innerHTML = `<button type="button" class="art-cv-empty-guide" data-blk-idx="${i}">${BookshelfEscape.escapeHtml(EMPTY_GUIDE[b.type] || 'タップして編集')}</button>`;
                 } else {
                     sec.classList.remove('art-cv-empty');
                 }
@@ -9862,7 +9848,7 @@ class VirtualBookshelf {
                 const ops = doc.createElement('div');
                 ops.className = 'art-cv-ui art-cv-ops';
                 const label = chipLabel(b);
-                ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="${PublishArticleGenerator.esc(label)}ブロックの操作" aria-haspopup="menu">${svg(CHIP_ICON[b.type] || 'file-text')}<span>${PublishArticleGenerator.esc(label)}</span>${svg('more-horizontal')}</button>`;
+                ops.innerHTML = `<button type="button" class="art-cv-more" data-blk-idx="${i}" aria-label="${BookshelfEscape.escapeHtml(label)}ブロックの操作" aria-haspopup="menu">${svg(CHIP_ICON[b.type] || 'file-text')}<span>${BookshelfEscape.escapeHtml(label)}</span>${svg('more-horizontal')}</button>`;
                 sec.appendChild(ops);
                 // イシュー#278: PC (900px超) だけブロック左につまみ。マウスでドラッグ・Alt+↑↓で並べ替え (スマホは⋯→上へ/下へのまま)
                 if (pcReorder) {
@@ -10357,7 +10343,7 @@ class VirtualBookshelf {
     // する(「同じ操作は同じ見た目」方針)。サイト単位で1つなので役割違いの別セクション・別保存先
     // (PublishArticleStore.saveSiteTheme→private/publish/site.json)。即時反映ではなく次の公開で反映。
     async _artRenderSiteThemeBlock() {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const list = document.getElementById('art-site-theme-list');
         const cur = document.getElementById('art-site-theme-current');
         if (!list) return;
@@ -10403,7 +10389,7 @@ class VirtualBookshelf {
     }
 
     _artRenderLookBlock() {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
         const collapsed = this._artCollapsedSet().has('look');
         const row = (kind, it) => {
@@ -10481,7 +10467,7 @@ class VirtualBookshelf {
     _artRenderTags() {
         const ul = document.getElementById('art-tags');
         if (!ul) return;
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         ul.innerHTML = (this._artDraft.tags || []).map((t, i) =>
             `<li class="art-tag" data-idx="${i}">${esc(t)}<button type="button" class="art-tag-x" title="削除">×</button></li>`
         ).join('');
@@ -10503,7 +10489,7 @@ class VirtualBookshelf {
         const existingKeys = new Set((this._artDraft.tags || []).map(t => PublishArticleStore.normalizeTagKey(t)));
         const all = this.publishArticleStore.allTags().filter(t => !existingKeys.has(t.key));
         const matched = q ? all.filter(t => PublishArticleStore.normalizeTagKey(t.label).includes(qKey)) : all;
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const items = matched.slice(0, 8).map(t =>
             `<div class="art-sugg-item" data-label="${esc(t.label)}"><span>${esc(t.label)}</span><span class="art-sugg-count">使用 ${t.count}</span></div>`
         ).join('');
@@ -10559,7 +10545,7 @@ class VirtualBookshelf {
     // 全ブロック共通の見出し行 (イシュー#230): ハンドル | ▸▾＋種別＋要約 | 付加操作 | 複製 | 削除。
     // ハンドル・複製・削除は畳んでも常に出す。fixed (見た目ブロック) は並べ替え・複製・削除できないため空セルで列だけ保つ。
     _artBlockBar({ id, kind, icon, summary = '', extra = '', fixed = false }) {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const collapsed = this._artCollapsedSet().has(id);
         const cell = '<span class="art-block-cell" aria-hidden="true"></span>';
         return `<div class="art-block-bar">
@@ -10656,7 +10642,7 @@ class VirtualBookshelf {
     _artRenderLookSheet() {
         const host = document.getElementById('art-look-sheet-body');
         if (!host) return;
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const theme = PublishArticleStore.normalizeTheme(this._artDraft.theme);
         const lay = this._artThemeItems('layout').filter(it => it.selectable).map(it => `<button type="button" class="art-lk-lay" role="radio" aria-checked="${theme.layout === it.id}" data-look-kind="layout" data-look-id="${esc(it.id)}"><span class="h-icon" data-icon="${esc(it.icon)}" data-icon-size="20"></span><span>${esc(it.label)}</span></button>`).join('');
         const col = this._artThemeItems('color').filter(it => it.selectable).map(it => {
@@ -10686,7 +10672,7 @@ class VirtualBookshelf {
     }
 
     _artRenderBlock(b, index) {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const collapsed = this._artCollapsedSet().has(b.id);
         const summary = this._artBlockSummary(b);
         if (b.type === 'text') {
@@ -10776,7 +10762,7 @@ class VirtualBookshelf {
     // イシュー#276 step3: 文章ブロックの全画面 (EasyMDE)。中身は _artOpenTextFsEditor が
     // #art-text-fs-textarea に対して生やす (非同期・遅延読込のため、ここでは空の textarea だけ置く)。
     _artRenderTextFs(b, index) {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         return `<div class="art-block art-fs-block is-fs-target" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-fs-text-editor">
                 <textarea id="art-text-fs-textarea"></textarea>
@@ -10790,7 +10776,7 @@ class VirtualBookshelf {
     // 行 = 書影サムネ・書名・著者・短文メモ入力 (その場で入力)・チップ「短文メモ/評価」、右端に ↑ ↓ ×。
     // チェックボックス一括操作と grip ドラッグは出さない (上へ・下へに一本化・②決裁)。
     _artRenderShelfFs(b, index) {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
         const ic = (name, size) => `<span class="h-icon" data-icon="${name}" data-icon-size="${size}"></span>`;
         const rows = items.map((it, i) => {
@@ -10878,7 +10864,7 @@ class VirtualBookshelf {
 
     _artRenderShelfBlock(b, index) {
         if (this._artFsBlockId === b.id) return this._artRenderShelfFs(b, index);
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const collapsed = this._artCollapsedSet().has(b.id);
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
         // #133: どの本棚から作ったブロックか判定する (イシュー#170でアイコン/テキストは撤去、
@@ -11010,7 +10996,7 @@ class VirtualBookshelf {
         const key = btn.dataset.showKey;
         const asin = btn.dataset.asin;
         const isOn = btn.classList.contains('is-on');
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         let title, body;
         // このツールチップは本棚の各行 (.art-item-show-toggle) だけが呼ぶ。本棚は長文メモを選べない
         // (イシュー#238) ため key は shortMemo/rating のみ・longMemo 分岐は持たない (本ブロックの
@@ -11511,7 +11497,7 @@ class VirtualBookshelf {
             (byParent.get(bm._keyOf(bs)) || []).forEach(c => walk(c));
         };
         (byParent.get(null) || []).forEach(r => walk(r));
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         const currentId = this._artResolveSourceShelfId();
 
         const itemHtml = (bs, isAll) => {
@@ -11593,7 +11579,7 @@ class VirtualBookshelf {
     _artRenderDrawerTargetHint() {
         const hintEl = document.getElementById('art-drawer-target-hint');
         if (!hintEl) return;
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         // イシュー#166: 本ブロックの「選ぶ/差し替え」待ちのときは、本棚ブロックの追加先より優先して対象を明示する。
         if (this._artPendingBookBlockId) {
             const pending = this._artFindBlock(this._artPendingBookBlockId);
@@ -11710,7 +11696,7 @@ class VirtualBookshelf {
         if (wrap) wrap.classList.remove('art-drawer-collapsed');
         const usedAsins = this._artUsedAsins();
         const addedToTarget = this._artDrawerAddedToTargetAsins(); // K (イシュー#276)
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         // イシュー#166: 新着バッジはシート内(art-drawer-badge)のみ維持。FAB上の予告バッジ(art-fab-badge)は
         // FAB廃止に伴い廃止 (ブロック単位の情報ではないためブロック内ボタンへの移設もしない、理由は設計レポート参照)。
         const newCount = asins.filter(a => !usedAsins.has(a)).length;
@@ -12134,7 +12120,7 @@ class VirtualBookshelf {
     }
 
     _artRenderPublishPanel() {
-        const esc = PublishArticleGenerator.esc;
+        const esc = BookshelfEscape.escapeHtml;
         // U1 (イシュー#276): 公開中・updatedAt > lastBuiltAt のときだけ見出し/ボタンを更新表記にする
         const stale = this._artRefreshPublishBadge();
         const titleText = document.getElementById('art-pub-title-text');
@@ -12534,7 +12520,7 @@ class VirtualBookshelf {
                 // ui-standards §2-11: 何が起きたか (errors 全件、無ければその事実自体) ＋ 次の一手を必ず出す。
                 // result.errors[0] || '' で理由が空欄のまま出ていた設計が原因究明を遅らせた反省 (イシュー#152)。
                 const reason = result.errors.length > 0
-                    ? result.errors.map(e => PublishArticleGenerator.esc(e)).join('<br>')
+                    ? result.errors.map(e => BookshelfEscape.escapeHtml(e)).join('<br>')
                     : '生成結果にプレビュー用のページが含まれていませんでした（原因不明）。';
                 this._artHidePreviewProgress();
                 this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューを生成できませんでした。<br>${reason}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
@@ -12544,7 +12530,7 @@ class VirtualBookshelf {
             if (!isCurrent()) return;
             this._artHidePreviewStall();
             this._artHidePreviewProgress();
-            this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューに失敗しました。<br>${PublishArticleGenerator.esc(e.message)}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
+            this._artSetPreview(`<p style="padding:1rem;font-family:sans-serif;color:#a33">プレビューに失敗しました。<br>${BookshelfEscape.escapeHtml(e.message)}<br>もう一度プレビューを開き直してください。改善しない場合は通信環境をご確認ください。</p>`);
         }
     }
 
@@ -12814,7 +12800,7 @@ class VirtualBookshelf {
             { label: '小見出し（###）', level: 3 },
             { label: '見出しを外す', level: 0 },
         ];
-        const esc = (typeof PublishArticleGenerator !== 'undefined' && PublishArticleGenerator.esc) || ((s) => s);
+        const esc = (typeof BookshelfEscape !== 'undefined' && BookshelfEscape.escapeHtml) || ((s) => s);
         const menu = document.createElement('div');
         menu.className = 'mde-heading-menu';
         menu.setAttribute('role', 'menu');
@@ -13401,7 +13387,7 @@ class VirtualBookshelf {
         }
 
         const libraryBooks = (this.userData._storage && this.userData._storage.libraryBooks) || [];
-        const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const escapeHtml = BookshelfEscape.escapeHtml;
         const items = exclusions.map(asin => {
             const book = libraryBooks.find(b => b.asin === asin) || {};
             const title = escapeHtml(book.title || asin);
@@ -13554,8 +13540,8 @@ class VirtualBookshelf {
             bookItem.innerHTML = `
                 <input type="checkbox" id="book-${index}" value="${index}" ${isBlocked ? 'disabled' : ''}>
                 <div class="book-selection-info">
-                    <div class="book-selection-title">${this.escapeHtml(book.title)} ${stateLabel}</div>
-                    <div class="book-selection-author">${this.escapeHtml(book.authors)}</div>
+                    <div class="book-selection-title">${BookshelfEscape.escapeHtml(book.title)} ${stateLabel}</div>
+                    <div class="book-selection-author">${BookshelfEscape.escapeHtml(book.authors)}</div>
                     <div class="book-selection-meta">${new Date(book.acquiredTime).toLocaleDateString('ja-JP')}</div>
                     ${this._kindleBadgesHtml(book)}
                 </div>
@@ -15140,7 +15126,7 @@ class VirtualBookshelf {
      * 評価の星ウィジェット (クリックで編集) を返す。一覧カード・本詳細で共用。
      */
     _starWidgetHtml(asin, rating, size = 18) {
-        return `<div class="star-rating" data-asin="${this.escapeHtml(asin)}" data-current-rating="${rating || 0}" data-star-size="${size}" title="クリックで評価">${this.generateStarRating(rating || 0, size)}</div>`;
+        return `<div class="star-rating" data-asin="${BookshelfEscape.escapeHtml(asin)}" data-current-rating="${rating || 0}" data-star-size="${size}" title="クリックで評価">${this.generateStarRating(rating || 0, size)}</div>`;
     }
 
     /**

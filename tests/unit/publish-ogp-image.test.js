@@ -4,6 +4,7 @@
 //  - 日本語グリフの検査は「別の漢字のビットマップが互いに違い、かつ未定義コードポイントの描画とも違う」ことを見る。
 import { describe, it, expect } from 'vitest';
 
+await import('../../js/ui/escape.js');
 await import('../../js/publish-article-store.js');
 await import('../../js/vendor/marked.umd.js');
 await import('../../js/publish-article-generator.js');

@@ -280,11 +280,12 @@ class PublishArticleGenerator {
     }
 
     // ===== 旧 PublishGenerator から複製した純粋ユーティリティ (依存切り離し・公開v2 S3) =====
-    // 旧モデル撤去後も本ファイル単体で完結させるため、esc/日付整形/favicon を自前で持つ。
+    // 旧モデル撤去後も本ファイル単体で完結させるため、日付整形/favicon を自前で持つ。
+    // esc は実装を持たない委譲 (イシュー#523 U6・js/ui/escape.js BookshelfEscape.escapeHtml が実体)。
+    // 既存テスト (publish-article-generator.test.js) が PublishArticleGenerator.esc を直接呼ぶため、
+    // 呼び出し名自体は残す。
     static esc(s) {
-        return String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        return BookshelfEscape.escapeHtml(s);
     }
 
     static get FAVICON() {

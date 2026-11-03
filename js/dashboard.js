@@ -283,12 +283,12 @@ class BookshelfDashboard {
             card.dataset.widgetIndex = String(i);
             card.innerHTML = `
                 <div class="widget-header">
-                    ${this.editMode ? `<button type="button" class="widget-grip" title="押して移動先を選ぶ・ドラッグ・↑↓で並び替え" aria-label="「${this._escape(entry.label)}」を移動" aria-pressed="${this._picking === w.uid}">${window.renderIcon('grip-vertical', { size: 14 })}</button>` : ''}
-                    <span class="widget-title">${this._escape(entry.label)}</span>
+                    ${this.editMode ? `<button type="button" class="widget-grip" title="押して移動先を選ぶ・ドラッグ・↑↓で並び替え" aria-label="「${BookshelfEscape.escapeHtml(entry.label)}」を移動" aria-pressed="${this._picking === w.uid}">${window.renderIcon('grip-vertical', { size: 14 })}</button>` : ''}
+                    <span class="widget-title">${BookshelfEscape.escapeHtml(entry.label)}</span>
                     ${this.editMode ? `
                         <span class="widget-actions">
                             ${this._sizeSelectHtml(w, entry)}
-                            <button class="widget-insert-btn" type="button" title="この後ろに追加" aria-label="「${this._escape(entry.label)}」の後ろに追加">${window.renderIcon('plus', { size: 14 })}</button>
+                            <button class="widget-insert-btn" type="button" title="この後ろに追加" aria-label="「${BookshelfEscape.escapeHtml(entry.label)}」の後ろに追加">${window.renderIcon('plus', { size: 14 })}</button>
                             <button class="widget-remove-btn" type="button" title="外す">${window.renderIcon('x', { size: 14 })}</button>
                         </span>
                     ` : ''}
@@ -301,7 +301,7 @@ class BookshelfDashboard {
                 entry.render.call(this, body, this.app, w.config || {});
             } catch (e) {
                 console.error(`[dashboard] widget "${w.id}" render error:`, e);
-                body.innerHTML = `<p style="color:#dc2626;">${this._escape(e.message)}</p>`;
+                body.innerHTML = `<p style="color:#dc2626;">${BookshelfEscape.escapeHtml(e.message)}</p>`;
             }
         }
 
@@ -798,7 +798,7 @@ class BookshelfDashboard {
                     ${candidates.map(id => `
                         <button type="button" class="widget-picker-item" data-wid="${id}">
                             <span class="wpi-icon">${ico(id)}</span>
-                            <span class="wpi-label">${this._escape(this._registry[id].label)}</span>
+                            <span class="wpi-label">${BookshelfEscape.escapeHtml(this._registry[id].label)}</span>
                         </button>`).join('')}
                 </div>
             </div>`;
@@ -857,15 +857,12 @@ class BookshelfDashboard {
 
     // ==================== ウィジェット実装 ====================
 
-    _escape(s) {
-        return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     _bigNumber(host, value, sub) {
         host.innerHTML = `
             <div class="widget-big-number">
                 <span class="bn-value">${value}</span>
-                ${sub ? `<span class="bn-sub">${this._escape(sub)}</span>` : ''}
+                ${sub ? `<span class="bn-sub">${BookshelfEscape.escapeHtml(sub)}</span>` : ''}
             </div>
         `;
     }
@@ -886,7 +883,7 @@ class BookshelfDashboard {
             // クリックで詳細遷移などを防ぐ
             input.addEventListener('click', (e) => e.stopPropagation());
         } else {
-            host.innerHTML = `<div class="widget-heading-text">${this._escape(text)}</div>`;
+            host.innerHTML = `<div class="widget-heading-text">${BookshelfEscape.escapeHtml(text)}</div>`;
         }
     }
 
@@ -940,11 +937,11 @@ class BookshelfDashboard {
         host.innerHTML = `
             <div class="widget-book-row">
                 ${sorted.map(b => `
-                    <button type="button" class="widget-book-cell" data-asin="${this._escape(b.asin)}" title="${this._escape(b.title)}">
+                    <button type="button" class="widget-book-cell" data-asin="${BookshelfEscape.escapeHtml(b.asin)}" title="${BookshelfEscape.escapeHtml(b.title)}">
                         ${app.bookManager.hasCoverImage(b)
-                            ? `<img src="${this._escape(app.bookManager.getProductImageUrl(b))}" alt="" loading="lazy" data-cover-fallback="">`
+                            ? `<img src="${BookshelfEscape.escapeHtml(app.bookManager.getProductImageUrl(b))}" alt="" loading="lazy" data-cover-fallback="">`
                             : `<div class="widget-book-cell-placeholder">${window.renderIcon('book-open', { size: 24 })}</div>`}
-                        <div class="widget-book-cell-title">${this._escape(b.title)}</div>
+                        <div class="widget-book-cell-title">${BookshelfEscape.escapeHtml(b.title)}</div>
                     </button>
                 `).join('')}
             </div>
@@ -968,12 +965,12 @@ class BookshelfDashboard {
         const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
         const pick = books[seed % books.length];
         host.innerHTML = `
-            <button type="button" class="widget-today-pick" data-asin="${this._escape(pick.asin)}">
+            <button type="button" class="widget-today-pick" data-asin="${BookshelfEscape.escapeHtml(pick.asin)}">
                 ${app.bookManager.hasCoverImage(pick)
-                    ? `<img src="${this._escape(app.bookManager.getProductImageUrl(pick))}" alt="" data-cover-fallback="${this._escape(pick.title)}">`
+                    ? `<img src="${BookshelfEscape.escapeHtml(app.bookManager.getProductImageUrl(pick))}" alt="" data-cover-fallback="${BookshelfEscape.escapeHtml(pick.title)}">`
                     : `<div class="widget-today-pick-placeholder">${window.renderIcon('book-open', { size: 32 })}</div>`}
-                <div class="widget-today-pick-title">${this._escape(pick.title)}</div>
-                <div class="widget-today-pick-author">${this._escape(pick.authors || '')}</div>
+                <div class="widget-today-pick-title">${BookshelfEscape.escapeHtml(pick.title)}</div>
+                <div class="widget-today-pick-author">${BookshelfEscape.escapeHtml(pick.authors || '')}</div>
             </button>
         `;
         const btn = host.querySelector('[data-asin]');
@@ -1040,7 +1037,7 @@ class BookshelfDashboard {
             .map(s => ({ name: s.name, count: (s.books || []).length }))
             .sort((a, b) => b.count - a.count).slice(0, 5);
 
-        const esc = (s) => this._escape(s);
+        const esc = (s) => BookshelfEscape.escapeHtml(s);
         const bar = (w, cls) => `<div class="rs-track"><div class="rs-fill ${cls}" style="width:${w}%"></div></div>`;
         host.innerHTML = `
             <div class="widget-reading-stats">
@@ -1071,7 +1068,7 @@ class BookshelfDashboard {
         const memoKey = 'bookshelf_pinnedMemo_v1';
         const current = localStorage.getItem(memoKey) || '';
         host.innerHTML = `
-            <textarea class="widget-pinned-memo" placeholder="自由メモ (localStorage に保存)...">${this._escape(current)}</textarea>
+            <textarea class="widget-pinned-memo" placeholder="自由メモ (localStorage に保存)...">${BookshelfEscape.escapeHtml(current)}</textarea>
         `;
         const ta = host.querySelector('textarea');
         let timer = null;
