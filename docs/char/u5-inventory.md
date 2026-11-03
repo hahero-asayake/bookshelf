@@ -94,3 +94,49 @@ u0-77-table.md E2/E3/E5/E6 と 499-step1-inventory.md §4 の記載に沿って�
 - plugin-loader.js:292は対象に含めてよい（依存なし確認済み）。plugin-api.jsの外部露出不変はstep4で確認する。
 - SaveStatusは3画面×最大6状態（記事が最多）。EmptyStateは代表14クラス・箇所で実装し、置き換え時に同クラス名の漏れを再確認する。
 - dialog前提テスト4ファイルのうち、plugin-seed.spec.jsは文言アサーションを含むため最も書き換えが重い。
+
+## 8. step4：完了条件の読み替え・8件の原因確定・最終結果（②差し戻し5回目対応・2026-11-03 23:03〜）
+
+### 8-1. 完了条件の読み替え（②指示5）
+
+**「`confirm(` の直呼びが0件」は、「起動時の2件（initCloudSync・initGitHubSyncの『新規データで初期化しますか』）を除いて0件」に読み替える。**
+
+- 起動の流れ（ローディング表示・同期・描画の順番）は絡み合っており、この2か所をasync化すると影響が広範囲に及び、テスト側でどう応答しても経路が変わってしまうことがf21b093/edec439の調査で判明した。
+- `js/bookshelf.js:3492`（initCloudSync）・`js/bookshelf.js:3614`（initGitHubSync）の2か所は、U5では変えない（`// U5 対象外：起動フローの同期 confirm。別イシューで起動フローごと設計する` のコメント付き）。別イシューで起動フローごと設計する。
+- 残り12か所（bookshelf.js 11件 + plugin-loader.js 1件）はconfirmDialogへ置き換え済み。grep確認：`grep -n "confirm(" js/bookshelf.js js/plugin-loader.js | grep -v "confirmDialog\|confirmMsg\|confirmMessage"` = 2件（起動時の2か所のみ）。
+
+### 8-2. 経緯（ブランチ退避・やり直し）
+
+- 今回の作業開始前、直前までの試行（f21b093・edec439、ヘルパー化で8件が0件passまで悪化していた状態）のHEADを`issue/518-attempt1`ブランチとして退避した。
+- `issue/518`ブランチを`1c65023`（5部品新設のみ、confirm置き換え前）まで`git reset --hard`。
+- `1291c4c`（confirm14件→confirmDialog・SaveStatus置き換え）を`git cherry-pick`で当て直し、#2/#3の2か所だけをネイティブ`confirm()`に戻した（commit `25485e6`）。
+
+### 8-3. 8件の原因確定・解決（二分探索不要で即解決）
+
+**#2/#3を戻しただけで、テスト側を一切変更せずに7/8件が即passした**（preview-real-adapter 4件・publish-conflict-hub 3件）。これにより、これら7件の原因は確定して#2/#3の起動時confirm化だった（②の見立てどおり）。
+
+**critical-path.spec.js（1件）は、#2/#3を戻した後も「about:blank/srcdoc sandboxed」consoleエラー9件で失敗が継続した。** これはcritical-path.spec.js自身が退会(アカウント削除,#8)確認をconfirmDialog対応させる必要があり、まずMutationObserver(document全体・subtree:true監視)で自動OKする形にしたところ、再度about:blank警告が出た。
+
+**ここで根本原因が確定した**：このシナリオでconfirmが出るのは退会(アカウント削除)の1か所だけなので、MutationObserverをやめ、クリック直後に出る`.cfm-ok`を明示的に押す方式（reimport-diff.spec.js/bookdetail.spec.jsと同じ）に変えたところ、about:blank警告が完全に消えてpassした。
+
+**→ about:blank sandboxed警告の原因は、MutationObserverがページ全体(`document`、`subtree:true`)を監視していたことが、記事プレビューのiframe（`#pp-preview-frame`、`_artSetPreview`が`cloneNode`+`replaceWith`で作り直す既存の実装）のDOM変化と干渉していたことだった。confirmDialog自体・SaveStatus・#2/#3とは無関係。** 二分探索（commit単位）は不要で、「MutationObserverの監視範囲を広げすぎない」という対処で解決した（テスト側の問題であり、プロダクションコードの修正は不要）。
+
+### 8-4. dialog前提テスト5ファイルの最終状態
+
+| ファイル | 対象confirm | 対応 |
+|---|---|---|
+| startup-background-sync.spec.js | #2（起動時ハブ空判定） | **変更不要**（ネイティブconfirm()のまま。実行して確認済み） |
+| plugin-seed.spec.js | #2（起動時ハブ空判定・文言記録あり） | **変更不要**（ネイティブconfirm()のまま。実行して確認済み） |
+| critical-path.spec.js | #8（退会・アカウント削除） | クリック後に`.cfm-overlay .cfm-ok`を明示的に押す方式に書き換え（`// CHAR→U5`） |
+| reimport-diff.spec.js | #10等（削除確認） | MutationObserver(document, subtree:true)で自動OKする方式に書き換え（`// CHAR→U5`）。プレビューiframeを使わないテストのため干渉せず問題なし |
+| tests/e2e/char/bookdetail.spec.js | #10（本棚から外す確認） | クリック後に`.cfm-overlay .cfm-ok`を明示的に押す方式に書き換え（`// CHAR→U5`、既存のまま） |
+
+### 8-5. 最終確認結果
+
+- **8件（critical-path 1・preview-real-adapter 4・publish-conflict-hub 3）が実機で全てpass**。
+- 他のdialog関連ファイル（reimport-diff 8件・bookdetail B2・startup-background-sync 2件・plugin-seed 3件）も実行し回帰なしを確認。
+- vitest: 全53ファイル833件通過（回帰なし）。
+- grep確認：`confirm(`直呼びは起動時2件のみ（§8-1）。`check:version --range=origin/main..HEAD`はOK。
+- lint:copy（extract-ui-strings）：抽出575件（前段と同数）、既存の半角括弧警告1件のみ（未編集箇所・今回の差分ではない）。
+- 保存表示の画像は、DOM/クラス不変をdiffで示したことで足りるため不要（②指示どおり）。空/失敗表示のEmptyState置き換えはX4で行う（②指示どおり、completion条件から除外）。
+- 次：e2e-diff-main.mjsをフルで実行し、新しく落ちたテストが0件であることを確認してからpush前のtpを出す（本ステップ内で継続）。
