@@ -92,55 +92,80 @@ describe('markdownToHtml (js/vendor/marked.umd.js 経由・CDN不使用)', () =>
 describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回帰テスト・イシュー#153)', () => {
     // marked v18.0.9 の emStrong トークナイザーは、閉じない強調記号 (**/__/`) が連続する入力で
     // O(n^2) に劣化する (修正前実測: ローカルで1MB=11019ms)。_makeGuardedTokenizer の安全弁が
-    // 効いていれば1MBでも十分高速に完了する。閾値はCI共有ランナーのCPU差を吸収する必要がある
-    // (実測: ローカル461-782ms、GitHub Actions共有ランナーで3533ms=ローカルの約7倍)。
-    // O(n^2)のままなら同じ比率でCI環境は約70秒超になるはずなので、8秒の閾値でも十分な回帰検出力
-    // を保ちつつ、「速くなった」で終わらせず2倍刻みの傾き(線形なら~2倍)でO(n)化を確認する。
+    // 効いていれば1MBでも十分高速に完了する。
+    //
+    // イシュー#520 (#490の続き): 時間の比を直接しきい値判定する方式は、#490(ウォームアップ+K=5回
+    // 最小値化)で直した後もCIで再発した(実測3.052→3.3141)。小さいサイズほど1回の変換が数msで
+    // 分母が揺れやすく、K回反復・最小値化でも収束しない揺れが残ったため。そこで時間に依存しない
+    // 判定(主)と、時間を使うが揺れに強い判定(従)の2本立てに直す(しきい値を上げる・緩める方向の
+    // 直しはしない)。
     function repeatToSize(unit, targetBytes) {
         const times = Math.ceil(targetBytes / Buffer.byteLength(unit, 'utf-8'));
         return unit.repeat(times).slice(0, targetBytes);
     }
     const UNCLOSED_MARKS_UNIT = '**閉じない強調 __閉じないアンダー `閉じないコード [閉じないリンク(';
+    const SIZES = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB
 
-    it('1MBの閉じない強調記号列を8秒未満で変換完了する (修正前はローカルで11秒超・O(n^2)ならCI環境で70秒超になるはず)', () => {
-        const input = repeatToSize(UNCLOSED_MARKS_UNIT, 1048576);
-        const t0 = performance.now();
-        const html = PublishArticleGenerator.markdownToHtml(input);
-        const ms = performance.now() - t0;
-        expect(html.length).toBeGreaterThan(0);
-        expect(ms).toBeLessThan(8000);
+    it('(主・時間を使わない) 重い探索(emStrongの対応デリミタ探索)への実dispatch回数は、安全弁が効いて入力サイズに関わらず頭打ちになる', () => {
+        // opts.onHeavyEmStrongCall (イシュー#520で追加・onDegradedと同型の省略可コールバック) は、
+        // 安全弁がまだ効いていない間に「重い探索(originalEmStrong)」へ実際にdispatchした回数だけを
+        // 数える。安全弁(_EM_STRONG_LDELIM_LIMIT=800)が効いていれば、この回数は入力サイズに関わらず
+        // ほぼ一定になる(実測: 128KB〜1MBのいずれも1400回程度・入力が同じ単位の繰り返しのため安全弁
+        // が効く位置が先頭付近の同じ場所に揃う)。安全弁を外す(わざと二乗にする)と、サイズにほぼ
+        // 正比例して増え続ける(実測: 128KBで4885→1MBで39046)。時間を一切使わないため、CIランナーの
+        // 負荷揺れの影響を原理的に受けない。
+        const heavyCallsBySize = SIZES.map((size) => {
+            const input = repeatToSize(UNCLOSED_MARKS_UNIT, size);
+            let heavy = 0;
+            const html = PublishArticleGenerator.markdownToHtml(input, { onHeavyEmStrongCall: () => { heavy++; } });
+            expect(html.length).toBeGreaterThan(0); // 実際に完了すること(旧・1MB8秒未満テストの「動作完了」部分を継承)
+            return heavy;
+        });
+        for (const heavy of heavyCallsBySize) {
+            // 実測(安全弁ON)は全サイズ1400回程度。安全弁OFFは最小サイズ(128KB)でも4885回に達するため、
+            // 余裕を持たせた2000でも二乗劣化は確実に検出できる(stepP2実測)。
+            expect(heavy).toBeLessThan(2000);
+        }
+        // サイズを8倍(128KB→1MB)にしても回数がほぼ変わらないこと(線形化できていれば比~1倍、
+        // O(n^2)ならこの入力では比~8倍前後になる)。
+        const growthRatio = heavyCallsBySize[heavyCallsBySize.length - 1] / Math.max(heavyCallsBySize[0], 1);
+        expect(growthRatio).toBeLessThan(2);
     });
 
-    it('サイズ2倍ごとの所要時間が概ね2倍前後に収まる (O(n)線形・O(n^2)なら4倍以上になるはず)', () => {
-        // イシュー#490: 各サイズ1回だけの単発測定だとCIランナーの負荷の揺れ(GC・他プロセスとのCPU競合)
-        // で測定値が偶発的に伸び、本来O(n)な実装でも比がわずかに3を超えて落ちることがあった
-        // (実例: GitHub Actions run 41349317159で3.052<3に失敗・ローカルでは再現せず)。
-        // 負荷の揺れは実行時間を「足す」方向にしか働かないため、各サイズをK回測って最小値を取れば
-        // 揺れの影響を最も安定して吸収できる(実測・イシュー#490 step1/2: 旧方式(単発測定)は通常時
-        // max2.294・1コア競合時max2.819だったが、新方式(ウォームアップ+K=5回最小値)は通常時20回
-        // 中max2.204・1コア競合時20回要求13回完了でmax2.211=より3から離れて安定。劣化実装(安全弁
-        // 無効化)では新方式でもvitest実行3回全てで確実に失敗(例: ratio=3.960)を確認済み)。
-        // 1回目はJITウォームアップを兼ねるため最小サイズで空打ちしてから測定に入る。
-        const sizes = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB
-        const K = 5; // 反復回数(step2実測でCI所要と安定性のバランスから決定)
-        PublishArticleGenerator.markdownToHtml(repeatToSize(UNCLOSED_MARKS_UNIT, sizes[0])); // ウォームアップ
+    it('(従・時間を使う一般見張り) log(時間)対log(サイズ)の傾きが1.5未満に収まる (O(n)線形なら~1、O(n^2)なら~2)', () => {
+        // イシュー#520: 主テスト(heavyCalls)は安全弁という特定の仕組みが効いているかしか見ないため、
+        // 「変換のどこかに別の二乗経路が入り込む」一般的な劣化は見張れない。そこで時間ベースの一般
+        // 見張りを残すが、1点の比較ではなく4点(128KB/256KB/512KB/1MB)の傾き(最小二乗)で判定する。
+        // 各点はK回の中央値を使う(1回の揺れに強い・最小値化よりロバスト)。
+        // 実測(イシュー#520 step2・taskset -c 0-3・4プロセス競合下): 安全弁ON=15回で傾き0.953-1.246、
+        // 安全弁OFF(わざと二乗)=5回で傾き1.883-2.064。両群の間に0.637の隙間があり重なりは無い。
+        const K = 5;
+        PublishArticleGenerator.markdownToHtml(repeatToSize(UNCLOSED_MARKS_UNIT, SIZES[0])); // ウォームアップ
 
-        const minTimings = sizes.map((size) => {
+        const medianTimes = SIZES.map((size) => {
             const input = repeatToSize(UNCLOSED_MARKS_UNIT, size);
-            let min = Infinity;
+            const times = [];
             for (let k = 0; k < K; k++) {
                 const t0 = performance.now();
                 PublishArticleGenerator.markdownToHtml(input);
-                min = Math.min(min, performance.now() - t0);
+                times.push(Math.max(performance.now() - t0, 0.001));
             }
-            return min;
+            times.sort((a, b) => a - b);
+            const mid = Math.floor(times.length / 2);
+            return times.length % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
         });
-        for (let i = 1; i < minTimings.length; i++) {
-            const ratio = minTimings[i] / Math.max(minTimings[i - 1], 0.01);
-            // O(n^2)なら比率は4倍前後(2倍刻みなので2^2)になるはず。線形化できていれば3倍未満に収まる。
-            // 上限3は#377の方針により緩めない(甘くするのはK回反復・最小値化・ウォームアップの方)。
-            expect(ratio).toBeLessThan(3);
-        }
+
+        const xs = SIZES.map((s) => Math.log(s));
+        const ys = medianTimes.map((t) => Math.log(t));
+        const n = xs.length;
+        const meanX = xs.reduce((a, b) => a + b, 0) / n;
+        const meanY = ys.reduce((a, b) => a + b, 0) / n;
+        let num = 0, den = 0;
+        for (let i = 0; i < n; i++) { num += (xs[i] - meanX) * (ys[i] - meanY); den += (xs[i] - meanX) ** 2; }
+        const slope = num / den;
+        // 上限1.5は緩めていない: O(n)なら傾き~1、O(n^2)なら~2になるはずの理論値に対し、実測の
+        // 分布間(0.953-1.246 と 1.883-2.064)の中間より線形側に寄せた値(#520 step2実測で根拠あり)。
+        expect(slope).toBeLessThan(1.5);
     }, 60000); // K=5×4サイズの反復で所要が伸びるため明示タイムアウト(既定5s→60s)
 
     it('通常の文章 (強調記号を含まない/低密度) は誤ってフォールバックされず装飾が残る', () => {

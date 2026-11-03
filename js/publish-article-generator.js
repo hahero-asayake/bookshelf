@@ -319,7 +319,13 @@ class PublishArticleGenerator {
     // 軽量フォールバックに切り替える。
     static _EM_STRONG_LDELIM_LIMIT = 800;
 
-    static _makeGuardedTokenizer(g) {
+    // opts.onHeavyEmStrongCall (イシュー#520・省略可): 重い探索(originalEmStrong=対応する終了
+    // デリミタを残り文字列全体から探す処理)へ実際にdispatchした回数を外部から数えるための観測口。
+    // onDegradedと同型(省略時は呼ばれない=既定の動きは1バイトも変わらない)。安全弁が効いていれば
+    // この回数は入力サイズに関わらずほぼ一定(実測: 128K〜1MBいずれも1400回程度)になる。安全弁が
+    // 外れる(劣化する)とサイズにほぼ比例して増え続ける(実測: 128Kで4885〜1MBで39046)。回帰テスト
+    // (tests/unit/publish-article-generator.test.js)が、時間を使わずこの回数で判定するために使う。
+    static _makeGuardedTokenizer(g, opts = {}) {
         const tokenizer = new g.Tokenizer();
         const originalEmStrong = tokenizer.emStrong.bind(tokenizer);
         let ldelimMatches = 0;
@@ -334,6 +340,7 @@ class PublishArticleGenerator {
                 const m = /^([*_])\1*/.exec(src);
                 return m ? { type: 'text', raw: m[0], text: m[0] } : undefined;
             }
+            if (typeof opts.onHeavyEmStrongCall === 'function') opts.onHeavyEmStrongCall();
             return originalEmStrong(src, maskedSrc, prevChar);
         };
         return { tokenizer, wasDegraded: () => degraded };
@@ -371,7 +378,7 @@ class PublishArticleGenerator {
             if (!href) return '';
             return `<img src="${esc(href)}" alt="${esc(token.text || '')}" loading="lazy">`;
         };
-        const { tokenizer, wasDegraded } = PublishArticleGenerator._makeGuardedTokenizer(g);
+        const { tokenizer, wasDegraded } = PublishArticleGenerator._makeGuardedTokenizer(g, opts);
         const html = g.parse(src, { renderer, tokenizer, gfm: true, breaks: false });
         if (wasDegraded()) {
             console.warn(`[markdownToHtml] 強調記号の解析が上限(${PublishArticleGenerator._EM_STRONG_LDELIM_LIMIT}回)を超えたため一部を装飾なしで表示しました (${src.length}文字, イシュー#153)`);
