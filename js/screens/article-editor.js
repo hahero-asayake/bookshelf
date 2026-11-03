@@ -2733,10 +2733,9 @@ class _ArticleEditorMethods {
         const usedAsins = this._artUsedAsins();
         const addedToTarget = this._artDrawerAddedToTargetAsins(); // K (イシュー#276)
         const esc = BookshelfEscape.escapeHtml;
-        // イシュー#166: 新着バッジはシート内(art-drawer-badge)のみ維持。FAB上の予告バッジ(art-fab-badge)は
-        // FAB廃止に伴い廃止 (ブロック単位の情報ではないためブロック内ボタンへの移設もしない、理由は設計レポート参照)。
-        const newCount = asins.filter(a => !usedAsins.has(a)).length;
-        if (badgeEl) { badgeEl.hidden = newCount === 0; badgeEl.textContent = `新着 ${newCount}`; }
+        // X3(イシュー#528・②判断4): 「新着N」バッジは、NEWバッジ撤去(#430)の一部として外す。
+        // #art-drawer-badge自体は常に隠す(HTML側の要素は残すが、JSからは出さない)。
+        if (badgeEl) badgeEl.hidden = true;
         const filteredAsins = this._artDrawerFilteredAsins();
         if (!filteredAsins.length) {
             listHost.innerHTML = '<div class="art-drawer-empty">条件に合う本がありません</div>';
@@ -2747,26 +2746,18 @@ class _ArticleEditorMethods {
             addAllBtn.hidden = false;
             addAllBtn.textContent = `表示中の${filteredAsins.length}冊を追加`;
         }
+        // X3(イシュー#528・U6統合): 1件の中身はBookList.drawerItemInnerHtmlへ寄せた(#430のNEWバッジ撤去を反映)。
+        // 外側のdiv・data-asin・titleとクリックハンドラの結線はここに残す。
         listHost.innerHTML = filteredAsins.map(asin => {
-            const book = this.books.find(b => b.asin === asin);
-            const title = book ? book.title : asin;
-            const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
-            // K (イシュー#276): 追加先のブロックに既に入っている本は「追加済み」を出す (NEW バッジより優先)。
+            const book = this.books.find(b => b.asin === asin) || { asin, title: asin };
+            // K (イシュー#276): 追加先のブロックに既に入っている本は「追加済み」を出す。
             // 同じ本を複数回配置する多重配置 (ADR-058 §11.1) は既存仕様のため、印を付けるだけでクリックは禁じない。
             const inTarget = addedToTarget.has(asin);
             // X3(イシュー#528・A-b): 入れ先ブロックに限らず、記事のどこかに既に入っている本すべてに印を付ける。
             const inArticle = usedAsins.has(asin);
-            const isNew = !inArticle;
-            const badge = inTarget
-                ? `<span class="art-drawer-item-added"><span class="h-icon" data-icon="check" data-icon-size="12"></span>追加済み</span>`
-                : inArticle
-                    ? `<span class="art-drawer-item-used"><span class="h-icon" data-icon="check" data-icon-size="12"></span>✓入れた</span>`
-                    : (isNew ? '<span class="art-drawer-item-badge">NEW</span>' : '<span></span>');
-            return `<div class="art-drawer-item${inTarget ? ' is-added' : ''}${inArticle && !inTarget ? ' is-used' : ''}" data-asin="${esc(asin)}" title="${inTarget ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">
-                <div class="art-cover">${cover}</div>
-                <div class="art-drawer-item-title">${esc(title)}</div>
-                ${badge}
-            </div>`;
+            const inner = window.BookList.drawerItemInnerHtml(book, { inTarget, inArticle });
+            const cls = inTarget ? ' is-added' : (inArticle ? ' is-used' : '');
+            return `<div class="art-drawer-item${cls}" data-asin="${esc(asin)}" title="${inTarget ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">${inner}</div>`;
         }).join('');
         listHost.querySelectorAll('.art-drawer-item').forEach(el => {
             el.addEventListener('click', () => this._artOnDrawerBookClick(el.dataset.asin));

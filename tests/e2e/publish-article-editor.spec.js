@@ -1774,8 +1774,8 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         const coverBox = await item.locator('.art-cover').boundingBox();
         expect(Math.round(coverBox.width)).toBe(34);
         expect(Math.round(coverBox.height)).toBe(34);
-        // fixture の全冊は未配置なので NEW バッジが出る
-        await expect(item.locator('.art-drawer-item-badge')).toHaveText('NEW');
+        // イシュー#528 X3: NEWバッジは#430の撤去をここでも反映し、出さない
+        await expect(item.locator('.art-drawer-item-badge')).toHaveCount(0);
         expect(errors).toEqual([]);
     });
 

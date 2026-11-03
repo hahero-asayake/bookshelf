@@ -169,6 +169,23 @@
         return { group: '本', icon: 'book-open', title: book.title, sub: book.authors || '' };
     }
 
+    // 記事エディタの本の引き出し(.art-drawer-item)の中身innerHTML(イシュー#528 X3 U6対象外からの統合)。
+    // 外側の<div class="art-drawer-item...">とdata-asin・titleは呼び出し側(_artRenderDrawer)が組む
+    // (クリックハンドラ結線もそちら)。#430で決めたNEWバッジの撤去をここで反映し、以後は出さない。
+    // opts: { inTarget: bool(入れ先ブロックに追加済み=緑「追加済み」), inArticle: bool(記事の他のブロックに✓入れた) }
+    function drawerItemInnerHtml(book, opts = {}) {
+        const title = book.title;
+        const cover = book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
+        const badge = opts.inTarget
+            ? `<span class="art-drawer-item-added"><span class="h-icon" data-icon="check" data-icon-size="12"></span>追加済み</span>`
+            : opts.inArticle
+                ? `<span class="art-drawer-item-used"><span class="h-icon" data-icon="check" data-icon-size="12"></span>✓入れた</span>`
+                : '<span></span>';
+        return `<div class="art-cover">${cover}</div>
+                <div class="art-drawer-item-title">${esc(title)}</div>
+                ${badge}`;
+    }
+
     window.BookList = {
         kindleBadgesHtml,
         duplicateAsinBadgeItem,
@@ -178,5 +195,6 @@
         exclusionItemHtml,
         recentCellHtml,
         cmdkEntry,
+        drawerItemInnerHtml,
     };
 })();
