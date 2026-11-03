@@ -245,6 +245,9 @@ class VirtualBookshelf {
                 isMobile: () => this._navMobile(), // イシュー#513 S6: 段を積む判定はここ(1関数)に集約
                 reopeners: (id, extra, snap) => this._navReopen(id, extra, snap),
                 onLanded: (snap, m) => this._navOnLanded(snap, m),
+                // イシュー#513 S6: boot()がreload時に開き直してよい面をSurfaceのdefine(reloadReopen)
+                // をたどって判定する(個別のif文をboot()に増やさない・1つの規則)
+                canReloadReopen: (id) => { const def = this._surface().get(id); return !!(def && def.reloadReopen); },
             });
             this.nav.isMobile = () => this._navMobile();
             // 本詳細の段の閉じ方 (戻る由来はアニメ無し=ADR-125)
@@ -13397,7 +13400,13 @@ class VirtualBookshelf {
         S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
         // 段だけ Surface 経由にする面 (overlays へは各画面が今どおり hist:false で載せる・または overlays を使わない面)。
         // 載せ替え前の _modalHistPush/_modalHistPop と同じ判定・同じ呼び順 (イシュー#509 U3 step3)
-        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'report-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
+        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
+        // イシュー#513 S6: report-modal だけ reloadReopen:true(リロードでも開き直してよい・
+        // nav-state.js boot() の o.canReloadReopen が見る)。sessionStorage の pendingReport から
+        // 明示的に開き直す既存の仕組み(_handleReportParam)が元からあり、全幅化で段を積むようになった
+        // ことでboot()のH.go(-depth)と競合していたため。他の面(長文メモ等)はD06「再読込は段を畳む」
+        // が元の決まりのままなので reloadReopen は立てない(back-nav-matrix L16/A39/X12で実測確認済み)。
+        S.define('report-modal', { overlay: false, reloadReopen: true });
         // 出口の決まり (イシュー#511 X1): ページとして開く面は exit:'page' + parent (←の行き先)。
         // ×の代わりに←を出す/PCでは←も置かない、の見た目は各画面側 (index.html・CSS)。親は1か所 (ここ) で決める
         S.define('settings-modal', { overlay: false, exit: 'page', parent: { view: 'main' } }); // 行き先の1つ (PCは←無し・§4-2)

@@ -110,11 +110,18 @@ S6実装後、この2件がそのまま様子見として残るか、`expect`で
 | `publish-article-editor.spec.js:988`「公開中記事の一括更新の案内」 | 未特定 | **未解決**（原因未特定・時間切れのため次回に持ち越し） |
 | `openPublishPagesModal().then(openArticleIfNeeded)`（8408行）・`openPublishPagesModal().then(() => openPublishSettingsModal())`（8414行） | close処理を挟まずopenのみの連続呼び出し | **対象外**（closeを挟まない単純な連続open。今回の競合パターンには当たらない） |
 
-### 6-4. 未解決の2件（原因を特定・次回に持ち越し）
+### 6-4. report-moderation.spec.js:204（②判断2026-11-03 step4差し戻し・解決済み）
 
-e2e-diff-main.mjs(フラグ新)の再実行で確認：7件→**2件に減少**(A-e 2件とusername-publish-gate 5件は解消確認済み)。残る2件は`_confirmOpenSettings`パターンとは**別の原因**。
+原因：`js/nav-state.js boot()`は、`history.state`に段(faces)が残っている(`depth>0`)時、`top.id==='book-detail'`の特殊ケース以外は無条件に`H.go(-depth)`を呼んで段を畳む設計。全幅化でreport-modalもPC幅で段を積むようになったため、`page.reload()`後の`boot()`が`H.go(-1)`を呼び、アプリ起動時に別途呼ばれる`_handleReportParam()`(sessionStorageの`bookshelf.pendingReport`から`openReportModal()`を明示的に呼び直す既存の仕組み)と競合していた。
 
-1. **`report-moderation.spec.js:204`「開いたままリロードしても開き直し」**：原因を特定した。`js/nav-state.js boot()`（512-530行）は、`history.state`に段(faces)が残っている(`depth>0`)時、`top.id==='book-detail'`の特殊ケース以外は無条件に`H.go(-depth)`を呼んで段を畳む設計。全幅化でreport-modalもPC幅(chromiumプロジェクトの既定viewport)で段を積むようになったため、`page.reload()`後の`boot()`が`report-modal`の段を見て`H.go(-1)`を呼んでしまう。これと、アプリ起動処理内で別途呼ばれる`_handleReportParam()`(sessionStorageの`bookshelf.pendingReport`から`openReportModal()`を明示的に呼び直す既存の仕組み・5146-5162行)が競合し、どちらが先に完了するかでreport-modalが開いたままにならない。**これはclose/open競合(switchTo案)とは別の構造的問題**＝`boot()`の`go(-depth)`無条件ロジックに「report-modal等、reopener表(`_navReopen`)に載っている面はgoで畳まずadoptする」という`book-detail`と同種の特殊ケースを増やす修正が必要(影響範囲の精査が要るため次回に持ち越し)。
-2. **`publish-article-editor.spec.js:988`「公開中記事の一括更新の案内」**：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。原因未特定(reload/boot絡みではなく、複数記事を連続で作成・公開する一連の流れの中の状態不整合の疑い)。
+**修正（②指示：boot()への個別特殊ケース追加ではなく、Surfaceの登録をたどる1つの規則にする）**：
+- `js/nav-state.js boot()`に「book-detail以外のtopでも、`o.canReloadReopen(top.id)`がtrueなら、reopen表(`o.reopeners`)から開き直すthunkを得て『今の段(top)の面だけ』をadopt(replace)する。それより深い段は捨てる」という規則を追加。`canReloadReopen`が無い/falseな面は旧どおり`go(-depth)`で畳む。
+- `js/ui/surface.js`の既存の`define()`にオプション追加は不要（任意keyをそのまま保持する既存実装）。`js/bookshelf.js`の`_defineSurfaces`で`report-modal`だけ個別に`S.define('report-modal', { overlay: false, reloadReopen: true })`を設定。`createNav`のoptsに`canReloadReopen: (id) => !!(this._surface().get(id)||{}).reloadReopen`を追加。
+- **なぜ全面に適用しなかったか（実測で確定）**：reopen表(`_navReopen`)には`settings-modal`・`book-memo-modal`等も載っているが、これらは既存の決まり(D06「再読込は段を畳む」)でreload時は畳むのが正しい挙動。一律に「reopen表にあるものは全部開き直す」規則にすると、back-nav-matrixの`X12`「設定を開いて再読込→戻るが空振りしない」・`A39`「編集中に再読込→段が畳まれ空振りしない」・`L16`「長文メモを開いて再読込→段が畳まれる」の3件がregressionになる(実測で確認・一度失敗させてから対象をreport-modalだけに絞った)。`reloadReopen:true`を面ごとに明示指定する形にしたことで、個別のif文(boot()の特殊ケース)ではなく「Surfaceの定義1個」で対象を絞れる。
+- 実測：report-moderation.spec.js全19件pass・back-nav-matrix X12/A39/L16含む該当箇所pass・npm test 787件pass。フラグ旧では対象の面がそもそも段を積まない(depth=0)ため分岐自体に入らず、新規追加の規則はフラグ新旧どちらでも安全(フラグ旧の挙動は無変更)。
+
+### 6-5. publish-article-editor.spec.js:988（未解決・次回に持ち越し）
+
+「公開中記事の一括更新の案内」：`#art-list-view`が`hidden`のまま(`openPublishPagesModal()`を呼んだのに一覧が表示されない)。原因未特定(reload/boot絡みではなく、複数記事を連続で作成・公開する一連の流れの中の状態不整合の疑い)。
 
 次のrunでの調査方針：`--trace`は使わず（既知の罠）、`window.__DEBUG`変数を一時的に仕込んでfaces/historyの状態を直接見る方法が有効だった（今回の`_confirmOpenSettings`調査で実証済み）。

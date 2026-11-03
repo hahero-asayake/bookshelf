@@ -525,6 +525,29 @@
                         this._write('replace');
                         return { op: 'adopt' };
                     }
+                    // イシュー#513 S6: book-detail 以外の top は、「リロードでも開き直してよい」と
+                    // 登録されている面(o.canReloadReopen(id)・Surface.define の reloadReopen:true)
+                    // に限り、reopen 表(o.reopeners)から開き直す thunk を得て「今の段(top)の面だけ」を
+                    // 開き直す。それより深い段(faces の他エントリ)は go で戻さず捨てる(1つの規則)。
+                    // これは全幅化で PC/タブレットの面も段を積むようになった結果、リロードで複数段を
+                    // go(-depth) して物理的に畳むと、アプリ起動時に別途動く明示的な reopen 処理(例:
+                    // report-modal の _handleReportParam)と非同期に競合する(実測・#513 step3)ことへの
+                    // 対処。reloadReopen が立っていない面(長文メモ等・D06で「再読込は段を畳む」が元々の
+                    // 決まり)は旧どおり go(-depth) で畳む(実測・back-nav-matrix L16で確認)。フラグ旧では
+                    // 対象の面がそもそも段を積まない(depth=0)ため、この分岐自体に入らず旧の振る舞いの
+                    // まま(フラグ新旧どちらでも、ここは「段が残っていた場合だけ」の経路)。
+                    const canReload = top && typeof o.canReloadReopen === 'function' && o.canReloadReopen(top.id);
+                    const reopen = canReload && (typeof this.reopeners === 'function'
+                        ? this.reopeners(top.id, top.extra || {}, snapIn)
+                        : this.reopeners[top.id]);
+                    if (top && top.id !== 'book-detail' && reopen) {
+                        this.state = { ...this.state, faces: [{ id: top.id, extra: top.extra || null }] };
+                        this.seq = (snapIn && snapIn.seq) | 0;
+                        this._write('replace');
+                        if (this.onFaceReopenedByHistory) { try { this.onFaceReopenedByHistory(top.id, top.extra || null); } catch (_) {} }
+                        try { reopen(top.extra || {}, snapIn); } catch (_) {}
+                        return { op: 'adopt' };
+                    }
                     try { H.go(-depth); } catch (_) {}
                     return { op: 'go', n: -depth };
                 }
