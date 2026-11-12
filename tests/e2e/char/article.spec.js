@@ -94,11 +94,12 @@ test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚
     // 編集中の通常表示(data-art-mode="edit")は、ブロック一覧(#art-blocks)ではなくキャンバス
     // (#art-canvas、公開生成器の出力そのものをiframeで描く「見たまま編集」・イシュー#268)を見せる。
     // #art-blocksはformモード(全画面・対象ブロック1つの編集)でだけ表示される(css/bookshelf.css 8157〜8159)。
-    // そのため is-single(ブロック一覧側の見た目)は、全画面編集を開いている間で確かめる。
-    // iframe側(キャンバス・公開ページ)の1冊表示をそろえるかどうかは、公開生成器
-    // (js/publish-article-generator.js _renderShelfBlock・複数テーマに影響)の変更が要るため、
-    // X3のこのステップでは対象外にし、②へ別途確認する(申し送り参照)。
-    test('本棚ブロックに1冊だけ入れると、全画面編集の中は旧「本」ブロックと同じ大きさで見える(is-single) // CHAR→X3', async ({ page }, testInfo) => {
+    // イシュー#530(1): is-single(編集画面だけ1冊を大きく見せるCSS分岐)は撤去した(②判断・案A=
+    // 編集側のis-singleをやめる。公開ページ(_renderShelfBlock)は元から1冊でも小さいタイルのままで、
+    // 編集だけ大きく見える食い違いがあったため揃えた)。「1冊を大きく・長文メモ付きで紹介したい」
+    // ニーズは、1冊の時だけ出る切替ボタンでtype:'book'ブロックへ変換することで満たす
+    // (変換後は既存の本ブロック用レイアウトで編集・公開が一致する)。
+    test('本棚ブロックに1冊だけ入れると、長文メモを付けて紹介に切り替えるボタンが出る(is-singleは撤去) // X3→#530', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
         const errors = await bootApp(page);
         await openPublishPagesModal(page);
@@ -107,12 +108,14 @@ test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚
 
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        // 全画面編集(form)の中でのみ #art-blocks が見える。1冊だけなら is-single。
-        await expect(page.locator('.art-shelf-list.is-single')).toBeVisible();
+        // 全画面編集(form)の中でのみ #art-blocks が見える。1冊だけの間は大きく見せず(is-single撤去)、
+        // 代わりに「長文メモを付けて紹介」切替ボタンが出る。
+        await expect(page.locator('.art-shelf-list.is-single')).toHaveCount(0);
+        await expect(page.locator('.art-shelf-to-book-btn')).toBeVisible();
 
         // 入れ先は固定済みなので、引き出しから選ぶだけで同じブロックに追加される(本を追加ボタン不要)。
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-        await expect(page.locator('.art-shelf-list.is-single')).toHaveCount(0); // 2冊になったら大きい表示は外れる
+        await expect(page.locator('.art-shelf-to-book-btn')).toHaveCount(0); // 2冊になったら切替ボタンは消える
         const n = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
         expect(n).toBe(1); // 2冊目も同じブロックのまま(ブロックは増えない)
         test.skip(errors.length > 0, `コンソールエラーが出た: ${errors.join(', ')}`);

@@ -38,6 +38,19 @@ async function bootApp(page) {
     });
 }
 
+// 900px以下はサイドバーがドロワー化し#sidebar-publishが画面外に出る(article-ops-count.spec.jsの
+// openPublishPagesModalと同型・#528で踏んだ罠)。モバイル幅も通すため同じ分岐を踏襲する。
+async function openPublishPagesModal(page) {
+    const btn = page.locator('#sidebar-publish');
+    const box0 = await btn.boundingBox();
+    if (!box0 || box0.x < 0) {
+        await page.locator('[data-mobile-nav="shelves"]').click();
+        await page.waitForTimeout(350);
+    }
+    await btn.click({ force: true });
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+}
+
 test('本棚ブロック(1冊)→本ブロック→本棚ブロックの往復で、短文メモ・評価の表示設定を引き継ぎ、長文メモ本文は消えない', async ({ page }) => {
     await bootApp(page);
     const asin = JSON.parse(fixtureLibrary).books[0].asin;
@@ -50,8 +63,7 @@ test('本棚ブロック(1冊)→本ブロック→本棚ブロックの往復�
     }, [asin, longMemoText]);
 
     // 記事を新規作成し、本棚ブロックに1冊入れる
-    await page.click('#sidebar-publish');
-    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await openPublishPagesModal(page);
     await page.click('#art-new');
     await page.click('#art-mode-edit');
     await page.fill('#art-title', '切替テスト');
@@ -68,6 +80,17 @@ test('本棚ブロック(1冊)→本ブロック→本棚ブロックの往復�
         block.items[0].show = { shortMemo: true, rating: true };
         window.bookshelf._artRenderBlocks();
     });
+
+    // 900px以下は引き出しがボトムシート化し、開いたままだとスクリムが切替ボタンのクリックを
+    // 奪う(#529のA-c=本棚ブロックを足すと自動で開き、完了まで閉じない設計)。閉じるボタンで畳む。
+    // #art-sheet-close自体はDOM上常駐するため isVisible() では閉状態(画面外へtransform)を区別
+    // できず、#art-drawer.is-openで判定する。
+    const sheetClose = page.locator('#art-sheet-close');
+    const closeSheetIfOpen = async () => {
+        const open = await page.locator('#art-drawer').evaluate(el => el.classList.contains('is-open'));
+        if (open) await sheetClose.click();
+    };
+    await closeSheetIfOpen();
 
     // 切替ボタン(長文メモを付けて紹介)が1冊の時だけ出ていること
     await expect(page.locator('.art-shelf-to-book-btn')).toBeVisible();
@@ -90,7 +113,8 @@ test('本棚ブロック(1冊)→本ブロック→本棚ブロックの往復�
     }, asin);
     expect(memoAfterToBook).toBe(longMemoText);
 
-    // 「本棚ブロックに戻す」ボタンで逆方向
+    // 「本棚ブロックに戻す」ボタンで逆方向(同じくシートが開いていれば先に畳む)
+    await closeSheetIfOpen();
     await expect(page.locator('.art-book-to-shelf')).toBeVisible();
     await page.click('.art-book-to-shelf');
 

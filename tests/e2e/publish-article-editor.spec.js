@@ -1980,7 +1980,9 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         await addBlock(page, 'shelf', 'first');
         const blockA = page.locator('.art-block').nth(0);
         await expect(blockA).toHaveClass(/is-add-target/);
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+        // イシュー#530(2・案i): 全画面編集中はヒントの元本棚名+「本棚ブロックN」の行を消し、
+        // 「このブロックにN冊」だけにした(絞り込み「すべての本」ボタンとの文字列重複の解消)。
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('このブロックに0冊');
 
         // 引き出しから1冊クリック→Aに入る
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
@@ -1991,7 +1993,8 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         const blockB = page.locator('.art-block').nth(1);
         await expect(blockB).toHaveClass(/is-add-target/);
         await expect(blockA).not.toHaveClass(/is-add-target/);
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック2');
+        // イシュー#530(2・案i): 同上。Bはまだ0冊
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('このブロックに0冊');
 
         // 引き出しから1冊クリック→Bに入る (Aは変化しない)
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
@@ -2003,7 +2006,8 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         await page.evaluate(() => window.bookshelf._artEditBlock(window.bookshelf._artDraft.blocks[0].id));
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(blockB).not.toHaveClass(/is-add-target/);
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+        // イシュー#530(2・案i): 同上。Aには既に1冊入っている
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('このブロックに1冊');
         await page.locator('#art-drawer-list .art-drawer-item').nth(2).click();
         await expect(blockA.locator('.art-shelf-item')).toHaveCount(2);
         await expect(blockB.locator('.art-shelf-item')).toHaveCount(1);
@@ -2731,8 +2735,9 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
 
         // X3(イシュー#529・A-c): 引き出しは自動で開くため、.art-shelf-addでの手動オープンは不要
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック');
+        // イシュー#530(2・案i): 全画面編集中は「追加先: ...（本棚ブロックN）」の行を消し、
+        // 「このブロックにN冊」だけにした
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('このブロックに0冊');
         await page.waitForTimeout(400);
 
         await page.locator('#art-drawer-add-all').click();
@@ -2782,9 +2787,9 @@ test.describe('記事エディタ: 本棚ブロックのアイコン・本棚名
 
         // 対象ブロックの明示はアイコン/テキストに依存せず機能する (.is-add-target ハイライト)
         await expect(blockA).toHaveClass(/is-add-target/);
-        // 引き出し側ヒントも同様に機能する (#133 のヒント文言)
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('追加先');
-        await expect(page.locator('#art-drawer-target-hint')).toContainText('本棚ブロック1');
+        // 引き出し側ヒントも同様に機能する (#133 のヒント文言)。イシュー#530(2・案i)で全画面編集中は
+        // 「追加先: ...」の行を消し「このブロックにN冊」だけにした
+        await expect(page.locator('#art-drawer-target-hint')).toContainText('このブロックに0冊');
 
         // 2つ目のブロックを作ってもアイコン/テキストは出ず、対象切替は引き続き機能する
         await addBlock(page, 'shelf', 'last');
