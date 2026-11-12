@@ -1501,7 +1501,7 @@
     <script defer src="js/nav-state.js?v=2026110423"></script>
     <script defer src="js/dashboard.js?v=2026110414"></script>
     <script defer src="js/ui-components.js?v=2026110413"></script>
-    <script defer src="js/bookshelf.js?v=2026111312"></script>
+    <script defer src="js/bookshelf.js?v=2026111314"></script>
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/article-editor.js?v=2026111305"></script>
@@ -1515,6 +1515,10 @@
          article-editor.js/settings.js/book-detail.js と同じ理由で VirtualBookshelf 定義後・
          インスタンス化より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/import.js?v=2026111313"></script>
+    <!-- イシュー#545 (U8d): 本棚の一覧とツリー(サイドバーツリー・本棚一覧モーダル・作成編集フォームの
+         画面部分)。article-editor.js/settings.js/book-detail.js/import.js と同じ理由で
+         VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
+    <script defer src="js/screens/bookshelf-list.js?v=2026111315"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {

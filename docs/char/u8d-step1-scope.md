@@ -40,6 +40,8 @@
 - `editBookshelf`：一覧の「編集」ボタンのハンドラ。`this.userData.bookshelves.find(...)`で対象を探して`showBookshelfForm(bookshelf)`を呼ぶだけの薄い入口（データ変更は行わない・読み取りのみ）。
 - `setupBookshelfDragAndDrop`：本棚一覧モーダル内のD&D設定（`_bindPointerReorder`呼び出し＋`_onTreeDrop`への委任）。
 
+**②確認事項（step2・実測で解消）**：`addBookshelf`/`editBookshelf`は本文を実測した結果、どちらも`BookshelfManager`の呼び出しを一切含まない。`addBookshelf`は`this.showBookshelfForm()`を呼ぶだけ（5419行）。`editBookshelf`は`this.userData.bookshelves.find(...)`という配列の読み取り（データ変更なし）で対象を探し`this.showBookshelfForm(bookshelf)`を呼ぶだけ（5590-5593行）。2件ともフォームを開くだけの画面入口＝データ操作が主ではないため、§1の移す対象のまま変更なし。
+
 ### C. 本棚の作成・編集フォームの画面部分（1件・リロード対応）
 `_reopenBookshelfForm`(6587-6592)
 
@@ -57,6 +59,15 @@
 | 本棚の親子関係の計算・適用 | `_bookshelvesInTreeOrder`(4364-4387)・`_normalizeParentKey`(4563-4572)・`_applyReparentWithConfirm`(4575-4597) | `_bookshelvesInTreeOrder`は**js/dashboard.js:980-981でHomeウィジェットから直接呼ばれている**（grep実測・ツリー専用ではない共通計算）。`_normalizeParentKey`/`_applyReparentWithConfirm`は`bm.reparent`/`bm.previewReparent`呼び出しが主体のデータ操作（呼び出し元は`_onTreeDrop`(移動)と`saveBookshelfForm`(残留)の2箇所のみだが、Plan Aでは`this.X()`はファイルを跨いでも無変更で動くため分離に問題はない） |
 | 本の一覧の描画（依頼の想定に反し共通部品と判明） | `updateDisplay`(2002-2029)・`_orderedBooksToRender`(2032-2052)・`_dedupKeysFor`(2058-2065)・`_bookCardKey`(2068-)・`_renderListDiff`・`renderStandardView`(2291-)・`createBookElement`(2377-) | **grep実測：`updateDisplay`はbookshelf.js内20箇所から呼ばれ、フィルタ変更・ソート変更・取込・除外・本棚切替等あらゆる操作後の再描画フックで、本棚一覧画面専用ではない**。さらに`js/plugin-api.js:330,335,340`が`this._app.updateDisplay()`を直接呼ぶプラグイン契約の窓口。②指示どおり「複数の画面から呼ばれている関数は移さない」＝`js/ui/book-list.js`(U6・#523)と同じ「共通部品」扱い。`createBookElement`はカードDOM生成の入口で、HTML本体のテンプレートは既に`js/ui/book-list.js`の`cardInnerHtml`へ分離済み（#523）、呼び出し元である一覧描画エンジン自体も画面専用ではないため残す |
 | 本棚カードの描画・本棚概観（依頼の想定に反し共通部品と判明） | `renderBookshelfOverview`(7236-7249)・`_bindBookshelfOverviewEvents`(7255-7279)・`_renderBookshelfCard`(7284-7352) | **grep実測：`_renderBookshelfCard`と`_bindBookshelfOverviewEvents`はjs/dashboard.js:990,996,1001-1002からHomeの「本棚ハイライト」ウィジェットが直接呼んでいる**（`_bindBookshelfOverviewEvents`のJSDoc自身が「renderBookshelfOverview / dashboard 本棚ハイライトウィジェット 共通」と明記）。`renderBookshelfOverview`自身は`renderBookshelfOverview`冒頭のコメント「ホーム=ダッシュボードに置換されたため、旧#bookshelves-gridは使わない...互換のため呼出は受け付けるが何もしない」のとおり、DOM対象(`#bookshelves-grid`)が存在せず**実質no-op**（旧Home画面の名残で、本棚の一覧画面(モーダル)とは別物）。3件とも「本棚の一覧画面」固有ではなくHome(ダッシュボード・対象外)と共有/依存するため残す |
+
+**呼び出し元一覧（②指示・U8e「ホームの概観」での共通部品の置き場所を決める材料）**：
+
+| 関数 | bookshelf.js側の呼び出し元 | dashboard.js側の呼び出し元 |
+|---|---|---|
+| `_renderBookshelfCard` | 7247行（`renderBookshelfOverview`内・实質no-op経路） | 990行（`synthAll`の合成カード）・996行（`ordered`を回すループ） |
+| `_bindBookshelfOverviewEvents` | 7248行（`renderBookshelfOverview`内・实質no-op経路） | 1002行（`gridHost`へバインド。コメント「既存の_bindBookshelfOverviewEventsを流用」） |
+
+→ 実際に生きている呼び出し元はdashboard.js側の2関数4箇所のみ（bookshelf.js側は到達しないno-op経路）。U8eで本棚カードの共通部品を切り出す際は、**現状の定義元(bookshelf.js)をどこに置くかよりも、dashboard.jsとの依存関係（dashboard.js→bookshelf.jsのthis.appへの呼び出し）をどう解消するかが論点**になる。
 | 本棚ビューのヘッダー・ナビゲーション本体 | `_bookshelfDescription`(4958-4961)・`_updateBookshelfViewTitle`(4966-5000前後)・`updateBookshelfSelector`(4014-4022)・`switchBookshelf`(4024-) | `_bookshelfDescription`は上記`_renderBookshelfCard`(残留)が使う共通ヘルパー。`_updateBookshelfViewTitle`は本棚一覧画面でも本棚ツリーでもなく「現在表示中の本棚」の見出し(メイン画面側)の更新で依頼の4分類に無い。`updateBookshelfSelector`は`_renderSidebarTree()`呼び出し後に`this.dashboard.render()`も呼ぶ横断フック。`switchBookshelf`は**`js/plugin-api.js:393`の`this._app.switchBookshelf`という正式なプラグイン契約窓口**かつコマンドパレット・空状態アクション・ツリー・ダッシュボードカード等多数の画面から呼ばれる中核ナビゲーション |
 | ソート・フィルタの計算本体（依頼で明示） | `applyFilters`等 | 依頼本文で明示 |
 
