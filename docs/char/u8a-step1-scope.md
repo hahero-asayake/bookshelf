@@ -115,6 +115,36 @@ Object.defineProperties(VirtualBookshelf.prototype, _settingsDescriptors);
 
 **「委譲」の数について（②承認済みの解釈）**：Plan Aでは委譲ラッパーを新規に書かない。brief/§5が想定する「委譲の数」は、この案では「テスト・プラグインが直接触れていて、移動後も同じ名前（`VirtualBookshelf.prototype`上）で動くことを確認した対象」の数とする＝**テスト4種（60箇所）＋プラグイン2種 = 6種**。
 
+## 8.5 static メンバーの見落としと修正（②step3差し戻しで発覚・commit 72e5236時点）
+
+**発覚の経緯**：step3のe2e-diff-main実行で、work側のみ約480件が新しく落ちた。②が`work.e2e.json`のconsoleエラーを読み、`TypeError: Cannot convert undefined or null to object at VirtualBookshelf._initHeaderTemplates (settings.js:1790) at VirtualBookshelf.init (bookshelf.js:363)`を特定。原因は`static HEADER_ITEMS_META`（元settings.js:1648）がclass本体の移動ブロックに含まれたまま一緒に移ってしまっていたこと。Plan A（`Object.getOwnPropertyDescriptors(_SettingsMethods.prototype)`）は**prototypeの記述子だけ**しかコピーせず、`static`宣言（クラス自身のプロパティ）は一切コピーしない＝`VirtualBookshelf.HEADER_ITEMS_META`がundefinedになり起動時に例外→アプリ全体が壊れて広範囲に連鎖していた。
+
+**grep -nE "^\s{4}(static\s+\S|get\s+\w|set\s+\w|#\w)" で移動対象5ブロック(3553-4847/5066-5143/6489-6535/6776-7810/8797-8820)を全数検査した結果（getter/setter/privateフィールドは0件・staticのみ7件見落とし）**：
+
+| static宣言 | 元の行(移動前bookshelf.js) | 用途 |
+|---|---|---|
+| `usageAlertLevel(used, quota, plan)` | 4648 | ハブ使用量アラートのしきい値判定(純関数) |
+| `HEADER_ITEMS_META` | 6960 | ヘッダーアイテムのメタ情報(空オブジェクト) |
+| `HEADER_LAYOUT_STORAGE_KEY` | 6961 | ヘッダーレイアウトのlocalStorageキー |
+| `PLUGIN_ORDER_STORAGE_KEY` | 7231 | プラグイン並び順のlocalStorageキー |
+| `PLUGIN_SEARCH_NAME_LIMIT` | 7233 | プラグイン検索の名前文字数上限 |
+| `PLUGIN_SEARCH_DESC_LIMIT` | 7234 | プラグイン検索の説明文字数上限 |
+| `PLUGIN_CONTRIB_CACHE_KEY` | 7469 | プラグイン分類キャッシュのlocalStorageキー |
+
+いずれも呼び出し元は全て`VirtualBookshelf.XXX`形式（既存の`HEADER_ICON_OVERRIDES_KEY`/`SETTINGS_CATEGORIES`と同じ参照スタイル）。
+
+**直し方**：7件とも、直前の説明コメント（static宣言自体の説明であって直後のメソッドの説明ではないと判断した範囲のみ）込みでsettings.jsのclass本体から削除し、bookshelf.js側のVirtualBookshelfクラス定義（既存の`SETTINGS_CATEGORIES`直後、5354行目の`];`の後）へまとめて戻した。settings.js側のコード（`VirtualBookshelf.HEADER_ITEMS_META`等の参照）は無変更（参照スタイルが元から`VirtualBookshelf.`経由だったため）。本文（static宣言の中身自体）も1文字も変えていない。
+
+一部、JSDocコメントの帰属が「直後のstatic宣言ではなく、さらに後ろのメソッドの説明」になっていた箇所（`PLUGIN_ORDER_STORAGE_KEY`直前の「プラグイン一覧セクションを描画」JSDoc＝実際は`_renderPluginListSection`の説明）はJSDoc側をsettings.jsに残し、static宣言とその直後の1行コメントだけをbookshelf.js側に戻した（コメントの指す対象を変えないための分離）。
+
+**移動後の行数再計測**：static7件分＋直前コメント計30行をsettings.jsから削除・bookshelf.jsへ追加。`js/bookshelf.js` 9124→9155行、`js/screens/settings.js` 2528→2498行（97メソッドの本体自体は無変更・static分だけの移動）。
+
+**機械的検証（②指摘2への対応・実ブラウザで実施）**：`python3 -m http.server 8137`で配信し、Playwrightで`index.html`を開いて`pageerror`/`console.error`/`requestfailed`を監視、`window.bookshelf.constructor`（`VirtualBookshelf`）の`Object.getOwnPropertyNames`を静的側・prototype側それぞれ取得した。
+
+- `pageerror`（JS実行時エラー）＝**0件**。`requestfailed`は1件のみ（`pagead2.googlesyndication.com`のAdsenseスクリプト、テスト環境にネットワークが無いための既知の無関係な事象＝static欠落由来のTypeErrorではないことを確認）
+- static側：`Object.getOwnPropertyNames(VirtualBookshelf)`（length/name/prototype除く）＝9件、`git show 41f6e3b:js/bookshelf.js`（static移動前）からgrepした9件の名前集合と完全一致（diff0）
+- prototype側：移動前(`/tmp/bs_before_move.js`)の全メソッド名394件 と、移動後の`js/bookshelf.js`+`js/screens/settings.js`の全メソッド名を合算した394件を集合としてdiff→**完全一致（exit=0）**。重複として出た`completion`/`constructor`は文字列リテラル内の埋め込みコード片とクラス構文の`constructor`キーワード自体によるgrepの誤検知で、移動前から同じ形で存在しており新規の問題ではないことを確認済み
+
 ## 9. 基準値（origin/main adc26c2、本書作成時点で実測）
 
 | 対象 | 結果 |

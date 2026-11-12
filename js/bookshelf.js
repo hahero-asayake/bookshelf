@@ -5353,6 +5353,37 @@ class VirtualBookshelf {
         { id: 'admin-section',    icon: 'shield',           label: '管理者',            desc: 'プラン手動切替・通報の審査' },
     ];
 
+    // ===== ハブ容量アラート (WP-B3/B4) =====
+    // 使用率のしきい値判定 (純関数・E2E とロジックを共有するため static)
+    //   null=非表示 / 'warn'=80%↑ / 'strong'=95%↑ / 'over'=Free で上限超過 (降格後の保存不能状態)
+    static usageAlertLevel(used, quota, plan) {
+        if (!(quota > 0)) return null;
+        if (used > quota && plan !== 'plus') return 'over';
+        const ratio = used / quota;
+        if (ratio >= 0.95) return 'strong';
+        if (ratio >= 0.8) return 'warn';
+        return null;
+    }
+    // ===== Header customization (V6: square icon buttons, linear flow, vertical drag&drop editor) =====
+    //
+    // レイアウト構造:
+    //   { items: [{ id, key }] }
+    // - id は placement 単位の一意値
+    // - 全アイテム duplicatable: false (1つのボタンに状態が紐づくため)
+    // - プラグインボタン (plugin:<id>) は duplicatable: false 扱い (1配置のみ)
+    // - needsBookshelf: メインビューでは disabled 表示 (現状 plugin: のみ運用)
+    // 組込ヘッダーアイテムは廃止 (ADR-047 P1)。本棚管理は撤去 (⌘K)、設定はフッターへ移設。
+    // #header-controls は有効プラグインの UI ボタン (plugin:<id>) 専用の受け皿になった。
+    // 旧 back-to-main / bookshelf-selector / overview-display も既に撤去済み (2026-06-07)。
+    static HEADER_ITEMS_META = {};
+    static HEADER_LAYOUT_STORAGE_KEY = 'headerLayoutV8';
+    static PLUGIN_ORDER_STORAGE_KEY = 'pluginOrderV1';
+    // 検索対象 (タイトル + 説明) の最大文字数。長すぎる説明文の中だけマッチするのを避ける。
+    static PLUGIN_SEARCH_NAME_LIMIT = 60;
+    static PLUGIN_SEARCH_DESC_LIMIT = 140;
+    // ===== プラグイン分類キャッシュ (無効でも分類バッジを出すため、ロード時の推定を保存) =====
+    static PLUGIN_CONTRIB_CACHE_KEY = 'pluginContribCacheV1';
+
     // 設定等の面を開く前に「移る前に閉じる」側の面を畳む (設計案 19 §6-4・イシュー#367)。閉じるのは一時的な面
     // (管理役の popover/menu・未移行の公開パネル=記事エディタの上の 1 段) だけで、公開記事モーダル (多段) は閉じずに
     // 設定を上に積む: 管理役の面は data-layer で未移行の .modal より上に出るので、どの入口から来ても設定が最前面になる。
