@@ -603,10 +603,22 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.evaluate(() => {
             window.bookshelf._artPreviewStallMs = 200;
             const origBuild = window.bookshelf.publishArticleGenerator.build.bind(window.bookshelf.publishArticleGenerator);
-            let calls = 0;
+            // イシュー#536回帰: 直前の fillTextBlock (本文編集を離れる操作) が _artQueueCanvas() を
+            // 起動し、80ms後に _artRenderCanvas が同じ publishArticleGenerator.build() を背景で
+            // 独立に呼ぶ (プレビューのストール/再試行の仕組みとは無関係な経路)。呼び出し回数を
+            // 1本のグローバルカウンタだけで「1回目=プレビューの最初の試行」と決め付けると、CI の
+            // CPU競合下で背景呼び出しが先着し、永久pending枠を奪ってしまい stall が一度も表示
+            // されずに落ちた(実測: run 41713163174・check-run 131376117114、いずれも#pp-preview-stall
+            // が hidden のまま toBeVisible タイムアウト)。_artRunPreviewBuild は opts.onProgress を
+            // 渡すが _artRenderCanvas は渡さないため、これで経路を区別し、プレビュー経路の呼び出し
+            // だけ数える。opts の形が将来変わって区別できなくなった場合は、末尾の expect で検知する
+            // (黙って通さない)。
+            window.__previewBuildCalls = 0;
             window.bookshelf.publishArticleGenerator.build = (...args) => {
-                calls++;
-                return calls === 1 ? new Promise(() => {}) : origBuild(...args); // 1回目だけ永久pending
+                const isPreviewPath = typeof args[1]?.onProgress === 'function';
+                if (!isPreviewPath) return origBuild(...args); // 背景キャンバス再描画は素通し
+                window.__previewBuildCalls++;
+                return window.__previewBuildCalls === 1 ? new Promise(() => {}) : origBuild(...args); // 1回目だけ永久pending
             };
         });
 
@@ -624,6 +636,10 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         expect(srcdoc).toContain('再試行テスト');
         expect(srcdoc).not.toContain('生成できませんでした');
         expect(srcdoc).not.toContain('プレビュー失敗');
+        // プレビュー経路の build が意図どおり2回(1回目=永久pending、再試行=本物)だったことを
+        // 確かめる。背景キャンバス再描画 (onProgress無し) をここに数えてしまっていないか、または
+        // opts の形が変わって経路判別自体が効かなくなっていないかを、この場で検知する。
+        expect(await page.evaluate(() => window.__previewBuildCalls)).toBe(2);
         expect(errors).toEqual([]);
     });
 
