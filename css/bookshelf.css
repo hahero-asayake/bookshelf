@@ -5026,25 +5026,6 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-list .art-shelf-item-order-btns { grid-column: 6; }
 .art-shelf-list .art-shelf-item-remove { grid-column: 7; justify-self: center; }
 
-/* イシュー#530(1): #528で入れたis-single(本棚1冊を旧「本」ブロックと同じ大きさで見せる分岐)は、
-   編集画面だけ大きく見えて公開ページ(_renderShelfBlock)は小さいタイルのままという食い違いを生んだ
-   ため、JS側でのクラス付与をやめた(②判断・案A)。以下は発火しなくなったデッドルールで、互換のため
-   削除はしていない(撤去は別イシューで検討)。 */
-.art-shelf-list.is-single .art-shelf-item {
-    grid-template-columns: 6rem 1fr;
-    grid-template-rows: auto auto auto;
-    column-gap: 1rem; row-gap: 0.4rem;
-    padding: 0.75rem var(--art-pad, 14px);
-    border-bottom: none;
-}
-.art-shelf-list.is-single .art-shelf-item .art-item-check,
-.art-shelf-list.is-single .art-shelf-item .art-shelf-item-grip,
-.art-shelf-list.is-single .art-shelf-item .art-shelf-item-order-btns { display: none; }
-.art-shelf-list.is-single .art-shelf-item .art-cover { grid-column: 1; grid-row: 1 / 4; width: 100%; height: auto; aspect-ratio: 5/7; max-height: none; }
-.art-shelf-list.is-single .art-shelf-item .art-shelf-item-title { grid-column: 2; grid-row: 1; font-size: 0.92rem; font-weight: 700; white-space: normal; }
-.art-shelf-list.is-single .art-shelf-item .art-chips { grid-column: 2; grid-row: 2; grid-template-columns: repeat(2, var(--art-chip-w)); }
-.art-shelf-list.is-single .art-shelf-item .art-shelf-item-remove { grid-column: 2; grid-row: 3; justify-self: start; }
-
 .art-shelf-selbar.art-gx { padding: 0.45rem var(--art-pad); row-gap: 0.4rem; }
 .art-shelf-selbar.art-gx .art-shelf-selbar-master { grid-column: 1 / 5; padding: 0; min-width: 0; }
 .art-shelf-selbar.art-gx .art-chips { grid-column: 5; }
@@ -8284,16 +8265,6 @@ body.select-mode .drag-handle { display: none; }
     padding: 0 9px; font-size: 13px; color: var(--fg); background: var(--panel); }
 .art-fs-body .art-chips { margin-top: 6px; }
 .art-fs-ops { display: flex; flex-direction: column; gap: 4px; }
-/* X3(イシュー#528・A-a②判断): 全画面編集で1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる。
-   行の構造(.art-fs-row)は変えず、書影を大きくして縦積みにするだけ(外す・短文メモ・並べ替えは
-   複数冊のときと同じ)。並べ替え(↑↓)は1冊だと意味が無いので隠す。
-   詳細度: 8364行目の #art-edit-view ... .art-fs-row (1 ID+3class) に勝つため同じ形にする。 */
-#art-edit-view .art-shelf-list.art-fs-list.is-single .art-shelf-item.art-fs-row { grid-template-columns: 7.5rem 1fr; gap: 1rem; padding: 14px 0; }
-.art-fs-list.is-single .art-fs-cover { width: 7.5rem; height: auto; aspect-ratio: 5/7; }
-.art-fs-list.is-single .art-fs-ttl { font-size: 17px; }
-.art-fs-list.is-single .art-fs-au { font-size: 13px; }
-.art-fs-list.is-single .art-fs-up,
-.art-fs-list.is-single .art-fs-down { display: none; }
 .art-fs-ic { width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg2);
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
 .art-fs-ic[disabled] { opacity: 0.4; cursor: default; }

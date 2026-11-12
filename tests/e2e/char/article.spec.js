@@ -7,13 +7,19 @@
 // 既存spec(publish-article-editor.spec.js)の型(bootApp・addBlockヘルパー)を使う。操作はクリック・タップ・キーだけ。
 //
 // X3(イシュー#528 step2・②判断2026-11-04): A-a〜A-cを新しい振る舞いへ書き換えた(// CHAR→X3)。
-//   A-a: 「本」単体ブロックの新規追加入口をシートから外し、本棚ブロックに統一した(案A)。1冊だけの
-//        本棚ブロックは旧「本」ブロックと同じ大きさで見せる(is-single・CSSのみ)。既存データのtype:'book'
-//        ブロックは後方互換の描画だけ残す(別テストで固定)。
+//   A-a: 入れ先ブロックの固定(_artActiveShelfBlockId)。既存データのtype:'book'ブロックは
+//        後方互換の描画だけ残す(別テストで固定)。
 //   A-b: 入れ先ブロックに限らず、記事のどこかに既に入っている本すべてに印(✓入れた)を付けた。
 //        引き出しの上に「このブロックにN冊」を出すようにした。
 //   A-c: 本棚ブロックを足すと引き出しが自動で開くようにし、「完了」を押すまで閉じないようにした
 //        (900px以下のまとめて追加の自動クローズを廃止)。
+//
+// X3→#539(2026-11-13・ハヘロ判断): #528は「本」単体ブロックを課題でもないのに本棚ブロックへ統一し
+// (シートから「本」の入口を外し、1冊だけの本棚をis-singleで大きく見せた)、#530はその副作用(1冊を
+// 長文メモ付きで紹介する手段が無くなった退行)を本棚⇄本の切替ボタンで埋め合わせていた。「本」単体
+// ブロックには元々不満が無かったため、#539でシートの「本」入口を復元し、is-single・切替ボタンは
+// 撤去した(is-singleの撤去自体は#530の改善として残す=1冊でも本棚ブロックの見た目は変えない)。
+// 下記のうち「本」関連のテスト(旧A-a)だけ#539で期待値を書き直した(タイトルに#539を付記)。
 import { test, expect } from '../helpers/test-base.js';
 import { addBlock, canvas } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
@@ -77,8 +83,8 @@ async function openPublishPanel(page) {
     else await page.click('#art-bar-publish');
 }
 
-test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚ブロックに統一する', () => {
-    test('「ブロックを追加」シートに「本」単体の選択肢は無い(本棚のみ) // CHAR→X3', async ({ page }, testInfo) => {
+test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', () => {
+    test('「ブロックを追加」シートに文章・本棚・本の3つが出る // CHAR→X3(#539で#528前の形に戻す)', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
         await bootApp(page);
         await openPublishPagesModal(page);
@@ -88,18 +94,16 @@ test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚
         await canvas(page).locator('.art-cv-ins-btn').last().click();
         await expect(page.locator('#art-add-sheet')).toBeVisible();
         const types = await page.locator('#art-add-sheet [data-block-type]').evaluateAll(els => els.map(el => el.dataset.blockType));
-        expect(types).toEqual(['text', 'shelf']);
+        expect(types).toEqual(['text', 'shelf', 'book']);
     });
 
     // 編集中の通常表示(data-art-mode="edit")は、ブロック一覧(#art-blocks)ではなくキャンバス
     // (#art-canvas、公開生成器の出力そのものをiframeで描く「見たまま編集」・イシュー#268)を見せる。
     // #art-blocksはformモード(全画面・対象ブロック1つの編集)でだけ表示される(css/bookshelf.css 8157〜8159)。
-    // イシュー#530(1): is-single(編集画面だけ1冊を大きく見せるCSS分岐)は撤去した(②判断・案A=
-    // 編集側のis-singleをやめる。公開ページ(_renderShelfBlock)は元から1冊でも小さいタイルのままで、
-    // 編集だけ大きく見える食い違いがあったため揃えた)。「1冊を大きく・長文メモ付きで紹介したい」
-    // ニーズは、1冊の時だけ出る切替ボタンでtype:'book'ブロックへ変換することで満たす
-    // (変換後は既存の本ブロック用レイアウトで編集・公開が一致する)。
-    test('本棚ブロックに1冊だけ入れると、長文メモを付けて紹介に切り替えるボタンが出る(is-singleは撤去) // X3→#530', async ({ page }, testInfo) => {
+    // イシュー#530(1)のis-single撤去(1冊だけの本棚ブロックを大きく見せない)はそのまま残す。#530で
+    // 足した切替ボタン(長文メモを付けて紹介)は#539で撤去した。1冊を長文メモ付きで紹介したい場合は
+    // 「ブロックを追加」シートの「本」(type:'book')を使う(次のdescribeブロックで確認)。
+    test('本棚ブロックは1冊だけでも大きく見せない(is-singleは撤去) // CHAR→X3', async ({ page }, testInfo) => {
         test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
         const errors = await bootApp(page);
         await openPublishPagesModal(page);
@@ -108,14 +112,10 @@ test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚
 
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        // 全画面編集(form)の中でのみ #art-blocks が見える。1冊だけの間は大きく見せず(is-single撤去)、
-        // 代わりに「長文メモを付けて紹介」切替ボタンが出る。
         await expect(page.locator('.art-shelf-list.is-single')).toHaveCount(0);
-        await expect(page.locator('.art-shelf-to-book-btn')).toBeVisible();
 
         // 入れ先は固定済みなので、引き出しから選ぶだけで同じブロックに追加される(本を追加ボタン不要)。
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-        await expect(page.locator('.art-shelf-to-book-btn')).toHaveCount(0); // 2冊になったら切替ボタンは消える
         const n = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
         expect(n).toBe(1); // 2冊目も同じブロックのまま(ブロックは増えない)
         test.skip(errors.length > 0, `コンソールエラーが出た: ${errors.join(', ')}`);
@@ -132,6 +132,33 @@ test.describe('A-a: 「本」単体ブロックの新規入口を外し、本棚
             window.bookshelf._artEditBlock('legacy-book-1'); // 全画面編集に入ってはじめて#art-blocksが見える
         });
         await expect(page.locator('.art-block[data-block-id="legacy-book-1"] .art-block-book-body')).toBeVisible();
+    });
+
+    // イシュー#539完了条件: 「ブロックを追加」シートで「本」を選ぶと1冊選択の本ブロックができ、
+    // 長文メモの表示を選べる(show.longMemoが切替可能)ところまで経路を通す。
+    test('「本」を選んで1冊選ぶと本ブロックができ、長文メモの表示を選べる // #539', async ({ page }, testInfo) => {
+        test.skip(!['char-1440', 'char-1920'].includes(testInfo.project.name), 'まずPC幅で基本形を固定する');
+        await bootApp(page);
+        await openPublishPagesModal(page);
+        await page.click('#art-new');
+        await expect(page.locator('#art-edit-view')).toBeVisible();
+
+        await addBlock(page, 'book', 'last');
+        // 本ブロックはasin未確定で追加される(_artPendingBookBlockId)ため、全画面(form)のまま
+        // 引き出しから1冊選ぶとその場でasinが確定する。
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        const type = await page.evaluate(() => (window.bookshelf._artDraft.blocks || [])[0]?.type);
+        expect(type).toBe('book');
+        await expect(page.locator('#art-blocks .art-block-book-body')).toBeVisible();
+
+        // 長文メモの表示チップ(art-book-show-toggle・data-show-key="longMemo")を切り替えられる。
+        const longMemoToggle = page.locator('#art-blocks .art-book-show-toggle[data-show-key="longMemo"]');
+        await expect(longMemoToggle).toBeVisible();
+        await expect(longMemoToggle).not.toHaveClass(/is-on/);
+        await longMemoToggle.click();
+        await expect(page.locator('#art-blocks .art-book-show-toggle[data-show-key="longMemo"]')).toHaveClass(/is-on/);
+        const show = await page.evaluate(() => (window.bookshelf._artDraft.blocks || [])[0]?.show);
+        expect(show.longMemo).toBe(true);
     });
 });
 
