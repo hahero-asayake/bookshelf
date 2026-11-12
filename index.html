@@ -1501,7 +1501,13 @@
     <script defer src="js/nav-state.js?v=2026110423"></script>
     <script defer src="js/dashboard.js?v=2026110414"></script>
     <script defer src="js/ui-components.js?v=2026110413"></script>
-    <script defer src="js/bookshelf.js?v=2026111314"></script>
+    <script defer src="js/bookshelf.js?v=2026111317"></script>
+    <!-- イシュー#546 (U8e): 本棚カード・ツリー順の共用部品(_bookshelvesInTreeOrder・
+         _bindBookshelfOverviewEvents・_renderBookshelfCard。bookshelf.js と dashboard.js の
+         両方から呼ばれる)。js/ui/ 配下だが article-editor.js 等と同じ Plan A の prototype 合成
+         (BookList 等の独立部品とは別の仕組み)のため、VirtualBookshelf 定義後・インスタンス化
+         (bookshelf.js末尾のDOMContentLoadedガード内)より前に取り付ける -->
+    <script defer src="js/ui/bookshelf-card.js?v=2026111316"></script>
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/article-editor.js?v=2026111305"></script>
