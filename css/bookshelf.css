@@ -5026,9 +5026,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-list .art-shelf-item-order-btns { grid-column: 6; }
 .art-shelf-list .art-shelf-item-remove { grid-column: 7; justify-self: center; }
 
-/* X3(イシュー#528・A-a②判断): 本棚ブロックが1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる。
-   DOM構造(.art-shelf-item)は変えず、1冊しか無いときは意味が薄い要素(複数選択チェック・ドラッグの
-   グリップ・並べ替えボタン)を隠し、書影を大きくする見た目だけのCSS分岐。 */
+/* イシュー#530(1): #528で入れたis-single(本棚1冊を旧「本」ブロックと同じ大きさで見せる分岐)は、
+   編集画面だけ大きく見えて公開ページ(_renderShelfBlock)は小さいタイルのままという食い違いを生んだ
+   ため、JS側でのクラス付与をやめた(②判断・案A)。以下は発火しなくなったデッドルールで、互換のため
+   削除はしていない(撤去は別イシューで検討)。 */
 .art-shelf-list.is-single .art-shelf-item {
     grid-template-columns: 6rem 1fr;
     grid-template-rows: auto auto auto;

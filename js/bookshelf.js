@@ -11314,9 +11314,14 @@ class VirtualBookshelf {
         if (this.sortOrder === 'custom') {
             if (this.userData.bookOrder && this.userData.bookOrder[bookshelf.id]) {
                 const customOrder = this.userData.bookOrder[bookshelf.id];
+                // イシュー#530 step2で見つけた低リスク改善: indexOf()はO(n)なのでsort比較のたびに
+                // 全走査していた(O(n^2 log n)相当)。Map化してO(1)引きにする(n=780では0.6ms→0.1msと
+                // 実測上は小さいが、蔵書数・本棚数が増えるほど効いてくるアルゴリズム的な非効率のため
+                // 直す。②指示どおり「これで#530(3)の固まりが直った」とは言えない=未確認のまま)。
+                const orderIndex = new Map(customOrder.map((asin, i) => [asin, i]));
                 previewAsins.sort((a, b) => {
-                    const ai = customOrder.indexOf(a);
-                    const bi = customOrder.indexOf(b);
+                    const ai = orderIndex.has(a) ? orderIndex.get(a) : -1;
+                    const bi = orderIndex.has(b) ? orderIndex.get(b) : -1;
                     if (ai === -1 && bi === -1) return 0;
                     if (ai === -1) return 1;
                     if (bi === -1) return -1;

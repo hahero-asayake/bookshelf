@@ -1760,7 +1760,9 @@ class _ArticleEditorMethods {
             // イシュー#166: 対象が常に明確な「本を選ぶ/差し替え」の入口をブロック内に置く (FAB廃止に伴う代替)。
             // 押したブロックへ入るよう _artPendingBookBlockId をここでセットしてからシートを開く (900px超は右パネル常時表示)。
             const pickBtn = `<button type="button" class="art-block-ic art-book-pick" title="${b.asin ? 'この本を選び直す' : 'この本を選ぶ'}"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'book-plus'}" data-icon-size="14"></span></button>`;
-            const bar = this._artBlockBar({ id: b.id, kind: '本', summary, extra: pickBtn });
+            // イシュー#530(1・案c逆方向): 本→本棚ブロックへ戻す(asin確定済みの時だけ出す)
+            const toShelfBtn = b.asin ? `<button type="button" class="art-block-ic art-book-to-shelf" title="本棚ブロックに戻す"><span class="h-icon" data-icon="library" data-icon-size="14"></span></button>` : '';
+            const bar = this._artBlockBar({ id: b.id, kind: '本', summary, extra: pickBtn + toShelfBtn });
             if (!b.asin) {
                 return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
                     ${bar}
@@ -1872,12 +1874,22 @@ class _ArticleEditorMethods {
                 </div>
             </div>`;
         }).join('');
-        // X3(イシュー#528・A-a②判断): 1冊だけのときは、旧「本」単体ブロックと同じ大きさで見せる
-        // (is-single・CSSのみの分岐)。行の構造(.art-fs-row)は変えないので、並べ替え・外す・短文メモは
-        // 複数冊のときと同じ経路のまま使える。
+        // イシュー#530(1): #528のis-single(1冊だけを旧「本」ブロックと同じ大きさで見せるCSS分岐)は
+        // 撤去した。編集画面(ここ)が大きく見せても、公開ページの_renderShelfBlockは常に小さいタイル
+        // 並びのままで食い違っていた(②指摘・案A採用=編集側のis-singleをやめる。案B(公開側も1冊は
+        // 大きく出す)は新規レイアウト実装が要り手間・リスクが大きいため不採用)。「1冊を大きく・長文
+        // メモ付きで紹介したい」ニーズは下の切替ボタンでtype:'book'ブロックへ変換することで満たす
+        // (変換後は編集・公開ともに既存の本ブロック用レイアウトで一致する)。
+        const switchBtn = items.length === 1
+            ? `<button type="button" class="art-shelf-to-book-btn" data-block-id="${esc(b.id)}">${ic('book-open', 16)}長文メモを付けて紹介に切り替え</button>`
+            : '';
+        const note = items.length === 1
+            ? '長文メモは本棚では選べません。上のボタンで「長文メモを付けて紹介」に切り替えられます（短文メモ・評価の表示設定は引き継ぎ、長文メモの本文は消えません）。'
+            : '長文メモは本棚では選べません。1冊だけにすると「長文メモを付けて紹介」に切り替えられます。';
         return `<div class="art-block art-fs-block is-fs-target is-add-target" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-fs-sec">本（${items.length}冊）</div>
-            <div class="art-shelf-list art-fs-list${items.length === 1 ? ' is-single' : ''}">${rows}</div>
+            ${switchBtn}
+            <div class="art-shelf-list art-fs-list">${rows}</div>
             <div class="art-fs-actions">
                 <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
                 <button type="button" class="art-fs-sort-btn" aria-expanded="false"${items.length < 2 ? ' disabled' : ''}>並び順を揃える</button>
@@ -1887,7 +1899,7 @@ class _ArticleEditorMethods {
                 <button type="button" class="art-fs-sort-opt" data-sort="rating">評価順</button>
                 <button type="button" class="art-fs-sort-opt" data-sort="title">タイトル順</button>
             </div>
-            <p class="art-fs-note">長文メモは本棚では選べません。1冊を詳しく紹介するときは「本」ブロックを使います。</p>
+            <p class="art-fs-note">${esc(note)}</p>
         </div>`;
     }
 
@@ -1913,6 +1925,8 @@ class _ArticleEditorMethods {
             row.querySelector('.art-fs-up')?.addEventListener('click', () => move(id, -1));
             row.querySelector('.art-fs-down')?.addEventListener('click', () => move(id, 1));
         });
+        // イシュー#530(1・案c): 本棚(1冊)→本ブロックへの切替
+        el.querySelector('.art-shelf-to-book-btn')?.addEventListener('click', () => this._artConvertShelfToBook(block.id));
         // 並び順を揃える (旧: チェックボックス一括バーのセレクト)。全画面では本棚の全冊が対象
         const sortBtn = el.querySelector('.art-fs-sort-btn');
         const sortOpts = el.querySelector('.art-fs-sort-opts');
@@ -2021,11 +2035,9 @@ class _ArticleEditorMethods {
                 <span class="art-shelf-add-tile-label">本を追加</span>
             </button>`
             : '';
-        // X3(イシュー#528・A-a②判断): 本棚ブロックが1冊だけのときは、旧「本」単体ブロックと同じ大きさで
-        // 見せる(is-single・CSSのみの分岐)。DOM構造(.art-shelf-item)は変えないので、外す・並べ替え・
-        // チップ切替は複数冊のときと同じ経路のまま使える。
+        // イシュー#530(1): is-single(#528)は撤去(1875行のコメント参照・公開ページとの食い違い解消のため案A採用)。
         const bodyHtml = items.length
-            ? `<div class="art-shelf-list${items.length === 1 ? ' is-single' : ''}">${itemsHtml}${addTileHtml}</div>`
+            ? `<div class="art-shelf-list">${itemsHtml}${addTileHtml}</div>`
             : `<button type="button" class="art-shelf-add art-shelf-add-empty pp-empty pp-empty-btn" title="このブロックに本を追加">
                 <span class="h-icon" data-icon="book-plus" data-icon-size="20"></span>
                 <span>このボタンから本を追加してください</span>
@@ -2093,6 +2105,11 @@ class _ArticleEditorMethods {
                     this._artRenderDrawer();
                     this._artOpenSheet();
                 });
+            });
+            // イシュー#530(1・案c逆方向): 本→本棚ブロックへ戻す
+            el.querySelector('.art-book-to-shelf')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._artConvertBookToShelf(blockId);
             });
             // イシュー#166: 本棚ブロックの「このブロックに追加」入口。バー内クリックは既存の
             // ブロック全体クリック (アクティブ化のみ) とバブリングするため stopPropagation で二重実行を防ぐ。
@@ -2332,6 +2349,69 @@ class _ArticleEditorMethods {
         if (type === 'shelf') this._artRenderDrawer();
         // 本ブロックは asin 確定まで保存しない (normalizeBlocks が asin 無しを捨てるため)
         if (type !== 'book') this._artScheduleSave();
+    }
+
+    // イシュー#530(1・案c): 本棚ブロックが1冊だけの時、「長文メモを付けて紹介」で既存のtype:'book'
+    // ブロックへその場で変換する。#528で「ブロックを追加」シートから本単体の新規入口を外した後、
+    // 1冊を長文メモ付きで紹介する手段が無くなっていた退行への対応(シートの選択肢は本棚のみを保持し、
+    // 公開側は既存の_renderBookBlock(長文メモ完全対応済み)をそのまま使う・変更不要)。
+    // 短文メモ/評価の表示設定(show.shortMemo/rating)は引き継ぐ。長文メモの本文はASIN単位の
+    // ファイル(books/<ASIN>__<title>.md)が正本でブロックのshowとは独立なので、変換そのものでは
+    // 一切触れない=消えない(E2Eで確認・tests/e2e/char参照)。
+    async _artConvertShelfToBook(blockId) {
+        const block = this._artFindBlock(blockId);
+        if (!block || block.type !== 'shelf') return;
+        const items = (block.items || []).slice().sort((a, b) => a.order - b.order);
+        if (items.length !== 1) return;
+        const it = items[0];
+        const show = it.show || { shortMemo: false, rating: false };
+        block.type = 'book';
+        block.asin = it.asin;
+        block.show = { shortMemo: !!show.shortMemo, rating: !!show.rating, longMemo: true };
+        delete block.items;
+        delete block.shelfId;
+        if (this._artActiveShelfBlockId === blockId) this._artActiveShelfBlockId = null;
+        this._artScheduleSave();
+        // 全画面(form)はブロックidで対象を追い続ける設計(_artRenderBlocksが_artFsBlockIdに一致する
+        // ブロックへ.is-fs-targetを付け、formモードではそれだけを表示するCSS=1102行目のコメント
+        // どおり文章/本棚/本いずれも同じ全画面の枠を共用する)。typeがbookに変わってもidは同じ
+        // なので、_artFsBlockIdは変えずそのまま全画面に留まる(editモードへ戻すと#art-blocksが
+        // 非表示になり操作できなくなる・E2E作成時に実測して気づいた)。タイトルだけ合わせる。
+        const t = document.getElementById('art-fs-title');
+        if (t) t.textContent = '本を編集';
+        const ev = document.getElementById('art-edit-view');
+        if (ev) ev.dataset.artFsType = 'book';
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        window.toast('長文メモを付けて紹介する形に切り替えました', { type: 'success' });
+    }
+
+    // イシュー#530(1・案c逆方向): 本ブロック→本棚ブロック(1冊)へ戻す。短文メモ/評価の表示設定は
+    // 引き継ぐ。長文メモの本文はASIN単位ファイルのまま(ブロックのshowが無くなるだけで本文は消えない)。
+    // shelfId(どの本棚の配置かの由来)は本ブロックに保存されていないため「未選択の本棚」として戻す
+    // (既存の shelf 不在時の警告表示パスをそのまま使う・ユーザーが後で選び直す)。
+    _artConvertBookToShelf(blockId) {
+        const block = this._artFindBlock(blockId);
+        if (!block || block.type !== 'book' || !block.asin) return;
+        const show = block.show || {};
+        const asin = block.asin;
+        block.type = 'shelf';
+        block.shelfId = null;
+        block.items = [{ id: PublishArticleStore._newId('pl'), asin, order: 0, show: { shortMemo: !!show.shortMemo, rating: !!show.rating } }];
+        delete block.asin;
+        delete block.show;
+        // _artConvertShelfToBookと同じ理由で全画面にいる場合はそのまま留まる(idは不変・typeだけ変わる)
+        if (this._artFsBlockId === blockId) {
+            const t = document.getElementById('art-fs-title');
+            if (t) t.textContent = '本棚を編集';
+            const ev = document.getElementById('art-edit-view');
+            if (ev) ev.dataset.artFsType = 'shelf';
+            this._artActiveShelfBlockId = blockId;
+        }
+        this._artRenderBlocks();
+        this._artRenderDrawer();
+        this._artScheduleSave();
+        window.toast('本棚ブロックに戻しました', { type: 'success' });
     }
 
     _artDuplicateBlock(blockId) {
@@ -2646,12 +2726,20 @@ class _ArticleEditorMethods {
             hintEl.innerHTML = '<span class="art-drawer-target-label">追加先:</span> <span class="art-drawer-target-name">新しい本棚ブロックを作成</span>';
             return;
         }
+        const count = (block.items || []).length;
+        // イシュー#530(2・案i): 全画面で1ブロックを編集している間は、元本棚名+「本棚ブロックN」の行を
+        // 消し、冊数だけにする。直上の絞り込み「すべての本」ボタン(art-drawer-shelf-btn)と文字列が
+        // 重複して紛らわしい(②指摘)件の解消。ブロック未選択時/本ブロック差し替え中は元本棚名を使わず
+        // 混同が起きないため現状維持(上の2分岐)。
+        if (this._artFsBlockId === block.id) {
+            hintEl.innerHTML = `<span class="art-drawer-target-count">このブロックに${count}冊</span>`;
+            return;
+        }
         const shelfBlocks = (this._artDraft.blocks || []).filter(b => b.type === 'shelf');
         const orderIndex = shelfBlocks.findIndex(b => b.id === block.id);
         const shelf = this.bookshelfManager.getById(block.shelfId);
         const iconName = shelf ? (shelf.iconName || 'library') : null;
         const label = shelf ? (shelf.isSpecial ? shelf.name : this.bookshelfManager.getPathLabel(block.shelfId)) : (block.shelfId ? '削除済みの本棚' : '未選択の本棚');
-        const count = (block.items || []).length;
         hintEl.innerHTML = `<span class="art-drawer-target-label">追加先:</span>
             ${iconName ? `<span class="art-drawer-target-icon" data-icon-value="${esc(iconName)}">${window.renderIcon(iconName, { size: 12 })}</span>` : ''}
             <span class="art-drawer-target-name">${esc(label)}（本棚ブロック${orderIndex + 1}）</span>
