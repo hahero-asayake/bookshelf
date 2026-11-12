@@ -31,11 +31,24 @@
 
 | 区分 | 対象 | 理由（実測・②判断） |
 |---|---|---|
-| 同期エンジンのコア | `selectObsidianFolder`(5173) `initObsidianSync`(5146) `loadFromObsidianFile`(5219) `reloadFromObsidianFile`(5422) `_applyLoadedState`(5243) `buildExportData`(5439) `syncToObsidianFolder`(5474) `autoSaveUserDataFile`(5780) `updateSyncStatus`(5744) `_handleSyncConflict`(5675) `_showConflictDialog`(5692) `_syncLabel`(5732) `exportUnifiedData` | 起動時（3369行・コンストラクタ経由の初期化）にも、設定モーダルを一度も開かずに自動的に呼ばれる（自動再接続・自動保存）。「設定タブのハンドラ」ではなく「同期機能そのもの」＝②指示の「設定値のロジックは残す」の精神を同期ロジックにも適用。GitHub/Hub側は接続（認証・repo選択）とデータ同期実行が分離しているため画面側に含めたが、ローカルファイル同期だけは接続＝即データロードが一体化しており分離できない |
+| 同期エンジンのコア（ローカル） | `selectObsidianFolder`(5173) `initObsidianSync`(5146) `loadFromObsidianFile`(5219) `reloadFromObsidianFile`(5422) `_applyLoadedState`(5243) `buildExportData`(5439) `syncToObsidianFolder`(5474) `autoSaveUserDataFile`(5780) `updateSyncStatus`(5744) `_handleSyncConflict`(5675) `_showConflictDialog`(5692) `_syncLabel`(5732) `exportUnifiedData` | 起動時（3369行・コンストラクタ経由の初期化）にも、設定モーダルを一度も開かずに自動的に呼ばれる（自動再接続・自動保存）。「設定タブのハンドラ」ではなく「同期機能そのもの」＝②指示の「設定値のロジックは残す」の精神を同期ロジックにも適用。接続＝即データロードが一体化しており分離できない |
+| 同期エンジンのコア（ディスパッチ層・GitHub/Hub共通、②指摘で追記） | `_scheduleSync`(3281) `_runPendingSync`(3294) `flushSync`(3343) `initSync`(3363) `initCloudSync`(3374) `_ensureFreshGitHubToken`(3442) `_syncWithAuthRetry`(3484) `initGitHubSync`(3499) `saveUserData`(3246) `_snapshotSyncedState`(3218) `_stampChangedKeys`(3229) `_isSyncReady`(3271) | §1のD グループ(3553〜)の**直前**にある連続ブロック(3218〜3545)。初回調査でD グループの開始行を3553としたため見落としていた（②の指摘で発覚）。`initCloudSync`/`initGitHubSync`は`this.storage.loadAll()`/`initEmpty()`/`migrateNotesSplit()`/`migrateFromLegacy()`/`_applyLoadedState()`を直接呼ぶ＝本棚データそのものの読み書きを実行するコア。`initObsidianSync`系と同じ理由でbookshelf.jsに残す。これでローカル／GitHub／Hubの3方式とも「同期の実行コアは残す・画面側のハンドラだけ移す」で揺れがない |
 | 設定値の読み書きロジック | `getDefaultSettings`(3173) `_loadDeviceSettings`(3199) `_commonSettings`(3211) `_getStarVisibility`(11384) `_getStarOverlay`(11390) `_getMemoVisibility`(11396) `_setDisplaySetting`(11401) | ②指示どおり。`_getStarVisibility`等は本棚一覧・本の詳細の描画（2090/2400-2402/2910行）からも広く呼ばれる値のgetter/setterで、画面の描画ではない |
 | 通報（レポート）モーダル | `openReportModal`(4888) `closeReportModal`(4909) `_setReportError`(4916) `_submitReport`(4923) `_loadReportReview`(4955) `_renderReportReview`(4970) `_reportReviewAct`(5008) `_adminSetPlan`(5036) `_handleReportParam`(4852) `_pendingReportSet/Get/Clear`(4873-4884) | 記事の問題を報告する別のモーダル機能で、設定画面の構成要素ではない。`_handleReportParam`は`_setupAccountUI`内から呼ばれる(4420行)が、開く先はレポートモーダル側 |
 | 汎用共有部品（既存どおり残す） | `_placeAnchoredMenu`(10875) `_openMdEditor`/`_mde*`群11件 `openOrCreateBookMemo` `openIconPicker`(6541) | §7参照 |
 | 全体初期化 | `setupEventListeners`(556) | 設定モーダル用のボタン(`obsidian-sync-btn`等)も含むが、sort-order・cover-size等、全画面のイベントバインドを1関数にまとめた巨大メソッド＝設定専用ではない。中の`this._setupSyncMethodUI()`等の呼び出し行はそのまま残る（Plan Aで無変更で動く） |
+
+## 2.5 D グループ52件の「UI か、実行か」分類（②指摘で追加調査）
+
+②指摘：「移す52件（同期・GitHub・Hub・アカウント）の中に、データ同期そのものを実行する処理（読み書き・競合解消・定期実行など）が混ざっていないか」を1件ずつ確認。
+
+**方法**：52件それぞれの本文(メソッド開始行〜次メソッド開始行)に、同期実行系の呼び出し（`storage.loadAll/initEmpty/migrate*`・`initObsidianSync/initGitHubSync/initCloudSync/initSync`・`flushSync/_runPendingSync/_scheduleSync`・`saveUserData`・`loadFromObsidianFile/syncToObsidianFolder`・`updateDisplay/updateBookshelfSelector/renderBookshelfOverview`）が含まれるかを機械的に検査（python3 -I、正規表現マッチ）。
+
+**結果**：52件中、ヒットは**1件のみ**（`_setupAccountUI`が`saveUserData()`を呼ぶ）。中身を確認すると、規約/プライバシー同意チェックボックスの change ハンドラが`this.userData.settings.ackTermsPrivacy = {...}`という**設定値**を書き込んだ直後に`saveUserData()`を呼ぶだけ（4429〜4434行）。これは「本棚データの同期を実行する」のではなく「設定値（同意フラグ）の保存をトリガーする、設定画面のチェックボックスハンドラ」であり、呼び出し先の`saveUserData`自体は§2の表でbookshelf.js残留が確定済み＝Plan Aで無変更に動く。
+
+`_setupSyncMethodUI`(3553〜3704の151行、151行は設定「同期方式」タブ全体のイベントバインド)・`_connectToGitHub`(4090〜4164、OAuth Device Flowのポーリング)・`_disconnectGitHub`(4189〜4209)を含む全件を目視でも確認：いずれも「接続の確立／解除」「選択肢の取得・反映」「設定の保存＋`location.reload()`」のみで、本棚データそのものの読み書き・競合解消・定期実行は無い。GitHub/Hubは「接続設定の保存」と「データの実読み込み」が分離構造（接続設定を保存して`reload()`すると、起動シーケンス側の`initGitHubSync`/`initCloudSync`（§2参照）が改めてデータを読み込む）。ローカルファイル同期だけが`selectObsidianFolder`内で両方を直接呼ぶ一体構造（§2既述）。
+
+**結論（②判断待ちではなく、調査結果として確定）**：52件はこの区別のとおり**全件UI（実行系は0件）**。移す件数97件に変更なし。見落としていた同期ディスパッチ層12件（§2に追記済み）は、そもそもD グループの52件には含まれていなかった（D グループの開始行3553より前のブロックのため、最初から対象外）。
 
 ## 3. 設定画面が使う、VirtualBookshelf側の状態・メソッド（(b)の一覧）
 
