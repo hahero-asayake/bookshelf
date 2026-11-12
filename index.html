@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026110422">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026111301">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -1504,10 +1504,10 @@
     <script defer src="js/nav-state.js?v=2026110423"></script>
     <script defer src="js/dashboard.js?v=2026110414"></script>
     <script defer src="js/ui-components.js?v=2026110413"></script>
-    <script defer src="js/bookshelf.js?v=2026110416"></script>
+    <script defer src="js/bookshelf.js?v=2026111302"></script>
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける -->
-    <script defer src="js/screens/article-editor.js?v=2026110424"></script>
+    <script defer src="js/screens/article-editor.js?v=2026111303"></script>
     <!-- PWA: Service Worker 登録 (ネットワーク優先 / オフラインフォールバック) -->
     <script>
         if ('serviceWorker' in navigator) {
