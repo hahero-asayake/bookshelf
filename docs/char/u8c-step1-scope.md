@@ -11,8 +11,8 @@ U8a/U8bと同じ方式：`python3 -m http.server 8143`で配信→Playwright(MCP
 - static側：**9件**（U8bと完全一致。全部5114〜5385行付近の設定領域内で、今回の移動範囲の外）。
 - prototype側：**527件**（U8bの移動後と完全一致。getter `_modalHistStack` 1件を含む。今回の移動範囲の外）。
 - 起動時のconsoleエラー：**1件**（`ERR_CONNECTION_REFUSED @ pagead2.googlesyndication.com`＝サンドボックス環境のネットワーク遮断による既定ノイズで、本変更と無関係）。pageerrorは0件。
-- テストの`bookshelf._`参照数（`grep -ron "bookshelf\._[A-Za-z]" tests/`）：**366件**（※完了条件に書かれた基準値「355以下」は U8b step1 時点(2026-11-13 04:48Z)の値で、その後の差分（未確認・②へ報告・詳細は末尾§8）で366に増えている。内訳は`_openSettingsModal`54件・`_artFlushSave`39件等で、いずれも本イシューの移動対象=取込系メソッドではない）。本イシューはテストファイルを一切編集しないため、step3の再計測でも366件（またはそれ以下）であることを確認する。
-- step2で移動した後、同じ手順で static=9・proto=527（名前集合も完全一致）・console既定ノイズ1件・`bookshelf._`参照366件以下のままであることを確認する。
+- テストの`bookshelf._`参照数：**355件**（②指摘で数え方を統一・詳細は§5末尾参照。u8b-step1-scope.md §5と同じ対象範囲=`tests/e2e/` + `tests/visual/`に揃えると355件で、完了条件の基準値と一致する。step1時点の報告366件は対象範囲に`tests/perf/*.mjs`(プロファイリング用スクリプト・spec/testファイルではない)を誤って含めていたことが原因＝実測で確認済み、参照数自体は増えていなかった）。
+- step2で移動した後、同じ手順（`grep -ron "bookshelf\._[A-Za-z]" tests/e2e/ tests/visual/ | wc -l`）で static=9・proto=527（名前集合も完全一致）・console既定ノイズ1件・`bookshelf._`参照355件以下のままであることを確認する。
 
 ## 1. 移す対象（責務で判定・行番号は現状=移す前）
 
@@ -80,7 +80,8 @@ U8a/U8bと同じ方式：`python3 -m http.server 8143`で配信→Playwright(MCP
 | Kindle区分フィルタ（本棚一覧側） | `_kindleCategoriesOf`(1654) `_updateKindleFilterUI`(1958) | 名前は似るが**取込画面ではない**。本棚一覧のツールバーで「購入/KU・Prime/利用終了」で絞り込む機能（`applyFilters`から呼ばれる）。取込モーダルとは無関係の別画面 |
 | 本の詳細保存・ASIN移行 | `saveBookChanges`(6938) `migrateUserData`(7048) | 取込直後の行範囲に隣接するが、取込ではなく本の詳細の保存・ASIN変更時のデータ移行。既存のまま |
 | 一覧カードのメモ表示ヘルパー | `updateMemoPreview`(7118) `convertMarkdownLinksToHtml`(7133) `formatMemoForDisplay`(7140) | 取込の直後に位置するが、一覧カード(`createBookElement`)のメモ表示専用。U8bで既に「一覧カードのメモ表示」として残留判定済み（本イシューでは再確認のみ・変更なし） |
-| プラグイン管理画面（別画面） | `_collectPublishablePluginIds`(7359) `showPluginsModal`(7375) `closePluginsModal`(7381) `_renderPluginsList`(7385) `_refreshPluginCardStatus`(7448) `installPluginFromInput`(7461) `togglePlugin`(7486) `uninstallPluginById`(7509) | 取込メソッド群の間に挟まっているが**取込ではない**。プラグインの一覧・インストール・有効化/無効化の別画面（設定モーダル内「プラグイン」タブから開く）。U8aの移動対象ではなく、別途の切り出し判断が必要（本イシューの範囲外） |
+| プラグイン管理画面（別画面・U8a見落とし＝②指摘で実測確認） | `showPluginsModal`(7375) `closePluginsModal`(7381) `_renderPluginsList`(7385) `_refreshPluginCardStatus`(7448) `installPluginFromInput`(7461) `togglePlugin`(7486) `uninstallPluginById`(7509) | **U8aの見落とし**。実測（grep）：`#install-plugin-btn`(index.html:645)・`#plugin-repo-url`(644)・`#plugins-list`(662)は`#settings-modal`(367開始)の内側のDOMで、`installPluginFromInput`/`_renderPluginsList`/`togglePlugin`/`uninstallPluginById`/`_refreshPluginCardStatus`はこれらを操作する＝設定モーダルの「プラグイン」タブの一部(U8aが移した`_renderPluginListSection`/`_renderMarketSection`等16件とは別の、インストール済み一覧のインストール/有効無効/削除UI)。u8a-step1-scope.mdに`showPluginsModal`/`plugins-modal`の文字列は0件(grep実測)＝U8aの棚卸しがこのサブ領域を見ていない。なお`showPluginsModal`/`closePluginsModal`自身は`this._surface().open('plugins-modal')`を呼ぶが、Surfaceキー`'plugins-modal'`に対応するDOM要素はindex.htmlに存在せず、呼び出し元も全コード0件(grep実測)＝**現状デッドコード**(呼ばれていない)。本イシューでは移動せず、設定画面側(settings.js)への切り出しを次の起票候補として残す |
+| プラグイン公開可否の収集（データ層） | `_collectPublishablePluginIds`(7359) | 画面ではない。実測（grep）：呼び出し元は`js/exporter.js:291-292`(`this.app._collectPublishablePluginIds()`)のみ＝公開処理(エクスポート)側が使うデータ取得ヘルパーで、DOM操作を一切含まない。設定画面からも呼ばれていない |
 | 手動追加モーダル（別画面） | `showAddBookModal`(7916) | 取込の直後だが、ASIN手動入力の別モーダル。取込画面ではない |
 
 ## 3. 画面をまたぐ this.*（Plan Aで無変更に動くことの確認・実測）
@@ -127,21 +128,33 @@ plugin-api.jsからの直接参照：0件（§4参照）。
 
 **「委譲」の数（②承認済みの解釈＝U8a/U8bと同じ）**：Plan Aでは委譲ラッパーを新規に書かない。「テスト・プラグインが直接触れていて、移動後も同じ名前で動くことを確認した対象」の数＝**2種（showImportModal・closeImportModal、計23箇所）**。
 
-**tests/配下の`bookshelf._`参照の総数（基準値・全体）**＝**366件**（文字列`bookshelf._`の出現数、`grep -ron "bookshelf\._[A-Za-z]"`）。移す26メソックのうち`_`接頭の9件（`_detectImportDevice`/`_importSetupFlags`/`_renderImportLanes`/`_cancelKindleImportWait`/`_buildKindleBookmarkletPanelCode`/`_buildKindleBookmarkletCode`/`_buildKindleShortcutCode`/`_startKindleRelayPoll`/`_stopKindleRelayPoll`）はいずれも、この366件の内訳に出現しない（`bookshelf._`形式でテストから直接呼ばれていない＝0件、§5冒頭の表と同じ実測）。この計測・移動作業はテストファイルを一切編集しないため、step3の再計測でも366件（またはそれ以下）であることを確認する。
+**tests/配下の`bookshelf._`参照の総数（基準値・全体・②指摘で数え方を統一）**＝**355件**。
+
+**数え方の食い違いの原因（②指摘・実測で解消）**：step1では`grep -ron "bookshelf\._[A-Za-z]" tests/`（`tests/`配下を再帰的に全部）を実行し366件と報告したが、u8b-step1-scope.md §5が実際に使っていた対象範囲は`tests/`全体ではなく**`tests/e2e/` + `tests/visual/`のみ**だった（u8b文書の「355件」という値自体から逆算して確認：`tests/e2e/`352件+`tests/visual/`3件=355件で一致）。差分11件は`tests/perf/`配下の4つの`.mjs`ファイル（`profile-analyze.mjs`・`profile-analyze2.mjs`・`home-return-perf.mjs`・`home-return-perf-real.mjs`＝パフォーマンス計測スクリプトで、`.spec.js`/`.test.js`ではない＝Playwrightテストではない）に含まれる`bookshelf._`文字列で、u8bの対象範囲には元々入っていなかった。`tests/unit/`・`tests/fixtures/`は両方とも0件で数え方に影響しない。
+U8bの後にorigin/mainは進んでいない（f3ae2d3が本worktreeのHEADと一致・`git diff --stat 199ce88 f3ae2d3 -- tests/`も差分0）ことを確認済みなので、②の推測どおり「増えたのではなく数え方が違うだけ」だった。
+
+**今後の計測コマンド（u8bと同じ対象範囲に統一・step3以降もこれを使う）**：
+```
+grep -ron "bookshelf\._[A-Za-z]" tests/e2e/ tests/visual/ | wc -l
+```
+
+移す26メソッドのうち`_`接頭の9件（`_detectImportDevice`/`_importSetupFlags`/`_renderImportLanes`/`_cancelKindleImportWait`/`_buildKindleBookmarkletPanelCode`/`_buildKindleBookmarkletCode`/`_buildKindleShortcutCode`/`_startKindleRelayPoll`/`_stopKindleRelayPoll`）はいずれも、この355件の内訳に出現しない（`bookshelf._`形式でテストから直接呼ばれていない＝0件、§5冒頭の表と同じ実測）。この計測・移動作業はテストファイルを一切編集しないため、step3の再計測でも355件（またはそれ以下）であることを確認する。
 
 ## 6. 範囲内のstatic/getter/setter/クラスフィールドの grep 全数検査（#537の落とし穴対応）
 
 移す26メソッドの行範囲（6717-6936, 7170-7356, 7536-7914の3ブロック・間の非対象メソッドも含めて包含的に検査）に対し、`^    (static |get |set )`と`^    [A-Za-z_][A-Za-z0-9_]*\s*=\s*[^(]`（bare class field）の正規表現で機械的に検査：**全範囲でヒット0件**。static群(9件・5114-5385行)とgetter`_modalHistStack`(6982行・U8bの移動範囲内で既に移動済み)は、いずれも今回の移動範囲の外側にあることを確認済み（§0のベーススナップショットとも整合）。
 
-## 7. ②への確認事項（tp）
+## 7. ②への確認事項（tp・2026-11-13 05:45 承認済み）
 
 1. §1-Cの`importSelectedBooks`（選択UIのハンドラ＋取込結果表示のオーケストレーション。実データ登録は別クラスBookManagerへの1行委任）を画面側として移す判断でよいか。
+   → **②回答**：画面側として移してよい。中身は登録の本体（BookManager）を呼んでUIを更新するだけで、画面側の処理と言えるため。
 2. §1-Fの3件（`openAmazonForBookmarklet`・`_startKindleRelayPoll`・`_stopKindleRelayPoll`）を、通信・タイマー本体と画面DOM更新が1メソッド内に混在しているため、②の承認基準（「混在時は本文無変更を優先し画面側として扱ってよい」）どおり画面側として丸ごと移す判断でよいか。
-3. §0で測った`bookshelf._`参照数366件（完了条件に書かれた基準355件から11件増加・内訳は`_openSettingsModal`等で取込系以外）について、本イシューでは原因調査・対処をせず、現状値を基準に「増やさない」ことだけを確認する方針でよいか（原因調査は別イシュー起票が必要か）。
+   → **②回答**：承認済みの基準どおり、まとめて画面側へ移してよい。本文は変えずに移すことを優先する。
+3. §0で測った`bookshelf._`参照数366件（完了条件に書かれた基準355件から11件増加）について、本イシューでは原因調査・対処をせず、現状値を基準に「増やさない」ことだけを確認する方針でよいか。
+   → **②回答**：U8bの後にorigin/mainは進んでいないため、増えたのではなく数え方が違うだけと考えられる。u8b-step1-scope.md §5の数え方（コマンドと対象範囲）で数え直し、基準を1つに揃える。
+   → **③対応（本ステップで実測・解消）**：u8bの対象範囲は`tests/`全体ではなく`tests/e2e/`+`tests/visual/`のみだった（`tests/e2e/`352件+`tests/visual/`3件=355件で一致）。差分11件は`tests/perf/`配下の計測用`.mjs`4ファイル（spec/testではない）に含まれていた。origin/mainがU8bの後に進んでいないことも`git diff --stat 199ce88 f3ae2d3 -- tests/`で確認（差分0）。②の推測どおり数え方の違いで、参照数自体は増えていなかった。以後は§5末尾のコマンド（`tests/e2e/ tests/visual/`限定）に統一する。
 4. §2のプラグイン管理画面8件・手動追加モーダル1件は、取込メソッド群の行範囲に挟まっているだけで取込画面ではないため、今回は一切移動しない（将来別イシューで切り出す）という理解でよいか。
+   → **②回答**：今回は動かさない。ただしプラグイン管理画面は、U8aでsettings.jsへ移した「プラグイン一覧/マーケット」と同じ画面の残りかもしれない。なぜU8aで残ったのかを§2に1行書くこと（見落としだったのか、意図して残したのか）。見落としだった場合は、別のイシューでsettings.jsへ移す。次の起票候補として残しておくこと。
+   → **③対応（本ステップで実測・§2に反映）**：**見落とし**と判明。`showPluginsModal`/`closePluginsModal`/`_renderPluginsList`/`_refreshPluginCardStatus`/`installPluginFromInput`/`togglePlugin`/`uninstallPluginById`の7件は`#settings-modal`内のDOM（`#install-plugin-btn`等）を操作する設定画面の一部で、u8a-step1-scope.mdには`showPluginsModal`/`plugins-modal`の文字列が0件（grep実測）＝U8aの棚卸しがこのサブ領域を見落としていた。さらに実測で、`showPluginsModal`/`closePluginsModal`自身は呼び出し元が全コード0件（現状デッドコード）という追加発見もあった。`_collectPublishablePluginIds`(1件)は別件で、画面ではなく`js/exporter.js`（公開処理）が使うデータ取得ヘルパー（§2参照）。**次の起票候補**：7件（デッドコード2件含む）をsettings.jsへ移す別イシュー（②へ報告・本イシューでは起票しない）。
 
-承認後、step2でPlan Aの移動を実施する。
-
-## 8. 未確認事項（③から②への申告）
-
-- `bookshelf._`参照数の355→366への増加の原因（どのイシュー・コミットで増えたか）は未確認。U8b完了時点(f3ae2d3・本worktreeのHEADと同じ)での実測値であるにもかかわらず差が出ており、計測方法の違いか、U8bのdocs記載後に何らかの変更が入ったかのいずれかと推測するが、原因は特定していない。
+承認後、step2でPlan Aの移動を実施した（本commit）。
