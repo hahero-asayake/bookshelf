@@ -33,6 +33,8 @@
 - `tests/`（全体）：7件いずれも参照0件（grep実測）
 - `js/plugin-api.js`：参照0件
 
+**②指摘で判明した抜け（step1は`.js`/`.html`のみをgrepしており`.mjs`が対象外だった）**：`scripts/verify/shot-367-step5.mjs:25`が`window.bookshelf.showPluginsModal()`を呼んでいる（`#367`の撮影スクリプト、`box: '#plugins-modal .modal-content'`を撮る想定）。ただし撮影対象の`#plugins-modal`（モーダルDOM本体）はindex.htmlに無い＝この行は現状でも動かない（実行すればbox要素が見つからず失敗する）。削除の判断は変えない。スクリプト自体は直さない（本イシューのスコープ外）。以後、呼び出し元を確かめるgrepは`.mjs`も対象に含める。
+
 ### static/getter/setter混入検査（#537の落とし穴対応）
 
 対象範囲 `js/bookshelf.js:6962-7104` を `^\s*(static |get |set )` と bare class field 正規表現で検査：**ヒット0件**（1件のfalse positive候補`installed = await ...`は`let installed;`に続くローカル変数代入であり、クラスフィールドではないことをコード確認済み）。
@@ -108,3 +110,14 @@ grep -ron "bookshelf\._[A-Za-z]" tests/e2e/ tests/visual/ | wc -l
 ## 6. static/getter/setterのgrep全数検査（#537の落とし穴対応）
 
 §1末尾に記載（ヒット0件）。
+
+## 7. step2実施結果（②承認・案Bで実施）
+
+②承認（2026-11-13 06:30）：案B（`showPluginsModal`・`closePluginsModal`は削除commitで消し、残り5件をPlan Aでsettings.jsへ移す）で実施した。
+
+### 残件：使われなくなったSurface定義（②指示で削除せず記録のみ）
+
+- `S.define('plugins-modal', { kind: 'modal', size: 'md', hist: 'never' })`（`js/bookshelf.js:6454`）
+- `js/ui/surface.js:8`のコメント（`hist: 'never' … plugins-modal: 今どの幅でも段なし。S6の対象外・②判断`という既存コメント）
+
+いずれも、開く側のメソッド（`showPluginsModal`/`closePluginsModal`）を削除した後も**意図して残す**（②指示・2026-11-13）。対応するモーダルDOM自体がindex.htmlに無いため実害は無いが、「メソッド削除後も残る使われないSurface定義」として次に触る人向けに残件扱いとする。

@@ -48,7 +48,8 @@
 //  - 取込メソッド群の行範囲に挟まっているが取込画面ではない(今回は動かさない・別画面/別領域):
 //    本棚一覧のKindle区分フィルタ(_kindleCategoriesOf/_updateKindleFilterUI)・本の詳細保存/ASIN移行
 //    (saveBookChanges/migrateUserData)・一覧カードのメモ表示ヘルパー(updateMemoPreview等)・
-//    プラグイン管理画面(showPluginsModal等7件、U8aの見落とし・次の起票候補)・
+//    プラグイン管理画面(showPluginsModal等7件、U8aの見落とし)は、U8a補完(イシュー#544)で
+//    settings.jsへ移動済み(show/closePluginsModalはデッドコードとして削除)・
 //    プラグイン公開可否の収集(_collectPublishablePluginIds、js/exporter.jsが使うデータ層)・
 //    手動追加モーダル(showAddBookModal)。詳細はdocs/char/u8c-step1-scope.md §2
 //  - 他画面からこの一覧の名前を直接読み書きする箇所(bookshelf.js側に残る・無変更で動く):
