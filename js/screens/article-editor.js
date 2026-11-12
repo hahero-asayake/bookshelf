@@ -3676,6 +3676,99 @@ class _ArticleEditorMethods {
             : '<span class="h-icon" data-icon="smartphone" data-icon-size="14"></span>モバイル幅';
         if (typeof window.applyIcons === 'function') window.applyIcons(btn);
     }
+
+    // ===== U7の移し残し(イシュー#291「進む」で記事側の面を開き直す10メソッド)をU8fでここへ移動 =====
+    // イシュー#547 (U8f・②指示): U7(#525)の_art*138メソッド移動の対象に入っていなかった
+    // _reopenArt*クラスタ(「進む」での記事エディタ面の開き直し)を、U8を移し残しなしで閉じるために
+    // ここへ追加した(移動のみ・本文は1行も書き換えていない・既存のメソッドは1つも変更していない)。
+    // 呼び出し元(bookshelf.js側の_navReopen。this.xxxのまま無変更)はdocs/char/u8f-step1-scope.md §2参照。
+
+    // イシュー#291: 「進む」で記事のブロック全画面(フォーム)を開き直す。記事自体(articleId)が
+    // 開いていなければ publish-pages-modal → 該当記事の順に積み直してから対象ブロックを開く。
+    async _reopenArtFs(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        const blockId = state.blockId;
+        const block = blockId && (this._artDraft.blocks || []).find((b) => b.id === blockId);
+        if (!block) return;
+        this._artEditBlock(block.id);
+    }
+
+    // イシュー#291: 記事一覧・記事閲覧/編集状態を state.articleId から積み直す共通処理。
+    // publish-pages-modal(一覧)が開いていなければ開き、_artEditingId が対象と違えば開き直す。
+    // 戻り値 false = articleId が無い、または記事が見つからない(開き直せない)。
+    async _reopenArtContext(state) {
+        const id = state && state.articleId;
+        const showEditorIfHidden = () => { if (document.getElementById('art-edit-view').hidden) this._artShowEditor(); };
+        if (id == null) {
+            // 新規記事(自動保存の600msデバウンス前)は push 時点では articleId が未確定。進むで
+            // 着地するまでの間に自動保存が完了して確定することがあるため、articleId の有無ではなく
+            // 「その下書きが(同じ _artDraft のまま)まだ開いているか」で判定する。
+            if (!(this._artDraft && document.getElementById('publish-pages-modal').classList.contains('show'))) return false;
+            showEditorIfHidden();
+            if (state.artMode === 'edit' && this._artMode !== 'edit' && this._artMode !== 'form') this._artSetMode('edit');
+            return true;
+        }
+        if (!document.getElementById('publish-pages-modal').classList.contains('show')) {
+            await this.openPublishPagesModal();
+        }
+        if (this._artEditingId !== id || !this._artDraft) {
+            const exists = this.publishArticleStore.get(id);
+            if (!exists) {
+                // イシュー#468 (②指示a): ストアに無いidで開いた(保存前の仮idで再読込・既に削除済み等)。
+                // 白画面/例外にせず #/publish へ replace して一覧を出す(一覧モーダルは既に開いている)
+                if (this.router) this.router.navigatePublish(null, { replace: true });
+                return false;
+            }
+            this._artOpenEditor(id);
+        } else {
+            // 戻るで _artShowList まで戻った後の「進む」: 同じ記事はまだ開いているが
+            // 一覧ビューに表示が切り替わっているため、編集ビューを再表示する(push し直すのは
+            // _artShowEditor 自身・_modalHistPush の二重オープン防止で安全・イシュー#291)。
+            showEditorIfHidden();
+        }
+        if (state.artMode === 'edit' && this._artMode !== 'edit' && this._artMode !== 'form') this._artSetMode('edit');
+        return true;
+    }
+
+    // イシュー#291: 記事閲覧状態(art-viewing)を開き直す。
+    async _reopenArtViewing(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'view' })); }
+    // イシュー#291: 記事編集状態(art-edit-mode)を開き直す。
+    async _reopenArtEdit(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'edit' })); }
+
+    // イシュー#291: ＋追加シート(art-add-sheet)を開き直す。
+    async _reopenArtAddSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        const idx = typeof state.menuIndex === 'number' ? state.menuIndex : (this._artDraft.blocks || []).length;
+        this._artOpenAddSheet(idx);
+    }
+    // イシュー#291: 見た目シート(art-look-sheet)を開き直す。
+    async _reopenArtLookSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenLookSheet();
+    }
+    // イシュー#291: 本棚ブロックの引き出しシート(art-sheet)を開き直す。
+    async _reopenArtSheet(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        if (state.menuBlockId) this._artActiveShelfBlockId = state.menuBlockId;
+        // イシュー#330: 「進む」で開き直す時は開くtransitionを無効化する(②決裁2026-10-23)。
+        this._histNoAnimOnce(document.getElementById('art-drawer'));
+        this._artOpenSheet();
+    }
+    // イシュー#291: 公開パネル(art-publish-modal)を開き直す。
+    async _reopenArtPublishPanel(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenPublishPanel();
+    }
+    // イシュー#291: プレビュー(pp-preview-modal)を開き直す。
+    async _reopenArtPreview(state) {
+        if (!(await this._reopenArtContext(state))) return;
+        this._artOpenPreviewModal();
+    }
+    // イシュー#291: ブロック⋯メニュー(art-blk-menu)・記事⋯メニュー(art-more-menu)・見出しメニュー
+    // (mde-heading-menu)は、開くのに iframe 内 DOM 要素(アンカー位置)が要るため、メニュー自体の
+    // 再現は見送り、親の記事編集状態まで開き直す(メニューは開かない)。D06 の history.back() は
+    // 呼ばない(呼ぶと「一瞬映って消える」が残るため・②指示)。
+    async _reopenArtContextOnly(state) { await this._reopenArtContext(Object.assign({}, state, { artMode: 'edit' })); }
 }
 
 const _artEditorDescriptors = Object.getOwnPropertyDescriptors(_ArticleEditorMethods.prototype);
