@@ -1,0 +1,27 @@
+{
+  "_comment": "U8d step1 移動前スナップショット（イシュー#545）。http.server :8145 配信・window.bookshelf.constructor の static/prototype 側メンバー名。U8c baseline（#544後にgit mergeで取得したHEAD=61f8b79・bookshelf.js 7594行）と同じ採取方法。",
+  "measuredAt": "2026-11-13T07:02:00+09:00",
+  "headRev": "61f8b79",
+  "bookshelfJsLinesBefore": 7594,
+  "staticCount": 9,
+  "staticNames": [
+    "usageAlertLevel",
+    "HEADER_ICON_OVERRIDES_KEY",
+    "SETTINGS_CATEGORIES",
+    "HEADER_ITEMS_META",
+    "HEADER_LAYOUT_STORAGE_KEY",
+    "PLUGIN_ORDER_STORAGE_KEY",
+    "PLUGIN_SEARCH_NAME_LIMIT",
+    "PLUGIN_SEARCH_DESC_LIMIT",
+    "PLUGIN_CONTRIB_CACHE_KEY"
+  ],
+  "protoCount": 525,
+  "startupPageerrorCount": 0,
+  "startupConsoleErrorCount_excludingPagead2": 0,
+  "startupConsoleErrorRaw": [
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED @ https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7058313793336590 (既定ノイズ・サンドボックス環境のネットワーク遮断)"
+  ],
+  "bookshelfUnderscoreRefCount": 355,
+  "bookshelfUnderscoreRefCommand": "grep -ron \"bookshelf\\._[A-Za-z]\" tests/e2e/ tests/visual/ | wc -l",
+  "note": "protoNamesの全525件はこのファイルには重複して載せない。移す13メソッドが525件に含まれていることのみ本文(u8d-step1-scope.md)で確認する。"
+}
