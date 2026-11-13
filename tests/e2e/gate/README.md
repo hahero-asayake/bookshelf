@@ -109,6 +109,17 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 - webkit では流さない（`gate-webkit` の `testIgnore`）。Playwright の WebKit は、電波なしの間は SW のキャッシュからも読めない（最小の SW でも再読込が失敗する）。iPhone の電波なしは人の実機 H1 で見る。
 - SW がページを制御している間は、webkit では `page.route`・`context.route` の模擬が効かない（通信が実ネットワークへ出る）。
 
+## J7・J8 の網羅（イシュー#589・2026-11-14）
+
+| 観測点 | spec | chromium | webkit |
+|---|---|---|---|
+| J7-1 | `j7-billing.spec.js` | 緑 | 緑 |
+| J7-2 | `j7-billing.spec.js` | 既知の赤（#604） | 既知の赤（#604） |
+| J7-3・J7-4 | `j7-account-delete.spec.js` | 緑 | 緑 |
+| J8-1 | `j8-offline.spec.js` | 既知の赤（#597） | 流さない（Playwright の制約） |
+| J8-2・J8-3 | `j8-offline.spec.js` | 緑 | 流さない（Playwright の制約） |
+| J8-4 | — | 未達・#588 の部品待ち | 未達・#588 の部品待ち |
+
 ## 既知の赤（`docs/gate/known-red.json`・イシュー#589）
 
 アプリの不具合で赤になっている `@gate` は、テストを緩めずに、この一覧に載せる。1件＝`{ test: テスト名, gate: 観測点ID, issue: 直すイシューの番号, reason }`。

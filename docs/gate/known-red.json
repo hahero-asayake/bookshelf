@@ -4,13 +4,13 @@
         {
             "test": "@gate J8-1 1回開いただけの端末でも、電波なしで開き直すとアプリが起動する",
             "gate": "J8-1",
-            "issue": null,
+            "issue": 597,
             "reason": "J8-OFF-1: sw.js が install で何も先読みせず、1回目のページの資産がキャッシュに入らない (sw.js:99-102・131-158)"
         },
         {
             "test": "@gate J7-2 Plus のアカウントから、「プラン変更・支払い・解約」で解約すると、解約予約済みと表示される",
             "gate": "J7-2",
-            "issue": null,
+            "issue": 604,
             "reason": "J7-PORTAL-1: 支払い管理のページから戻った後にプランを取り直さない (cf-worker/asayake-hub.js:1068・js/bookshelf.js:2981)"
         }
     ]
