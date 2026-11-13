@@ -2865,27 +2865,12 @@ class VirtualBookshelf {
         try {
             await this._ensureFreshGitHubToken();
             await this._syncWithAuthRetry();
-            // 保存成功 → 同期エラー解消
-            if (this._syncError) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
+            // 保存成功 → 失敗の表示と自動の再試行を解く (イシュー#603)
+            this._clearSyncFailure();
         } catch (e) {
             console.error('Obsidian同期エラー:', e);
-            // 保存失敗 (トークン失効・ハンドル喪失等) を上部バーに出す
-            this._syncError = true;
-            if (this.syncMethod === 'github') {
-                this._syncErrorMsg = (typeof GitHubAuthError !== 'undefined' && e instanceof GitHubAuthError)
-                    ? 'GitHub の認証が切れました。設定から再接続してください。'
-                    : 'GitHub への保存に失敗しました。再接続が必要かもしれません。';
-            } else if (this.syncMethod === 'hub') {
-                // 容量超過・認証失効はメッセージをそのまま見せる (ユーザ対処可能)
-                this._syncErrorMsg = (typeof HubQuotaError !== 'undefined' && e instanceof HubQuotaError)
-                    ? 'ハブの保存容量がいっぱいです。不要なデータを減らすか、Plus へのアップグレードをご検討ください。'
-                    : (typeof HubAuthError !== 'undefined' && e instanceof HubAuthError)
-                        ? 'Asayake ハブの認証が切れました。設定から再ログインしてください。'
-                        : 'Asayake ハブへの保存に失敗しました。通信環境や接続をご確認ください。';
-            } else {
-                this._syncErrorMsg = '保存先への書き込みに失敗しました。同期設定を確認してください。';
-            }
-            this._updateStatusBar();
+            // 保存の失敗はここ1か所で状態を立てる (イシュー#603)
+            this._onSyncFailed(e);
         } finally {
             this._syncInProgress = false;
             // 進行中に再要求されていれば再度実行
@@ -3504,7 +3489,8 @@ class VirtualBookshelf {
                 if (perm !== 'granted') {
                     this.obsidianDirHandle = null;
                     this.updateSyncStatus('disconnected');
-                    return;
+                    // 黙って戻らず、保存の失敗として扱う (状態バーに出す・イシュー#603)
+                    throw new DOMException('フォルダへの書き込みの許可がありません', 'NotAllowedError');
                 }
                 this.storage.setDirHandle(this.obsidianDirHandle);
             }
@@ -3696,16 +3682,15 @@ class VirtualBookshelf {
             if (this.pluginAPI) this.pluginAPI._emit('sync:completed', {});
         } catch (e) {
             console.error('同期エラー:', e);
-            this.updateSyncStatus('reconnect', this._syncLabel());
-            // dirHandle が dangling (フォルダ削除/リネーム) なら明示的に再選択を促す
-            const isHandleStale = e && (e.name === 'NotFoundError' || e.name === 'InvalidStateError');
-            if (isHandleStale && this.syncMethod === 'local' && !this._syncReconnectNotified) {
-                this._syncReconnectNotified = true;
-                toast('保存フォルダが見つかりません（削除または名前変更された可能性があります）。\n設定 →「同期」→「フォルダを選ぶ」から選び直してください。\nGitHub 保存に切り替える場合は、同じ画面の保存先の選択から変更できます。');
-                if (this.storage && this.storage.adapter && typeof this.storage.adapter.setDirHandle === 'function') {
-                    this.storage.adapter.setDirHandle(null);
-                }
+            const failure = window.SyncFailure.classify(e, this.syncMethod);
+            this.updateSyncStatus(failure.reconnect ? 'reconnect' : 'failed', this._syncLabel(), failure.message);
+            // dirHandle が dangling (フォルダ削除/リネーム) なら持ち続けない。知らせるのは状態バー (イシュー#603)
+            if (failure.kind === 'folder-missing' && this.storage && this.storage.adapter
+                && typeof this.storage.adapter.setDirHandle === 'function') {
+                this.storage.adapter.setDirHandle(null);
             }
+            // 握りつぶさない: 状態バー・自動の再試行・公開前の確認・GitHub 401 の再試行は呼び手が受ける (イシュー#603)
+            throw e;
         }
     }
 
@@ -3778,10 +3763,22 @@ class VirtualBookshelf {
         return this.obsidianDirHandle ? this.obsidianDirHandle.name : '';
     }
 
-    updateSyncStatus(state, folderName = '') {
+    updateSyncStatus(state, folderName = '', detail = '') {
         const pathEl = document.getElementById('obsidian-sync-path');
         const status = document.getElementById('obsidian-sync-status');
         if (!pathEl || !status) return;
+        const cloud = this.syncMethod === 'hub' || this.syncMethod === 'github';
+        // ハブ・GitHub には「フォルダを選ぶ」が無い＝フォルダ向けの案内を出さない (イシュー#603)
+        if (cloud && (state === 'synced' || state === 'reconnect' || state === 'failed')) {
+            const failed = state !== 'synced';
+            pathEl.textContent = state === 'reconnect' ? `${folderName || ''}（要再接続）` : folderName;
+            pathEl.title = folderName || '';
+            pathEl.style.color = state === 'reconnect' ? 'var(--danger)' : '';
+            status.textContent = failed ? (detail || '保存できませんでした') : `${new Date().toLocaleTimeString()} 保存済み`;
+            status.style.color = failed ? 'var(--danger)' : 'var(--success, #3aa657)';
+            return;
+        }
+        if (state === 'failed') state = 'reconnect';
         if (state === 'synced') {
             pathEl.textContent = folderName;
             pathEl.title = folderName;
@@ -4657,6 +4654,7 @@ class VirtualBookshelf {
                 if (!btn) return;
                 if (btn.dataset.statusAction === 'update') this._applyPwaUpdate();
                 else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal('sync-method-select');
+                else if (btn.dataset.statusAction === 'retry-sync') this._retrySyncNow();
             });
         }
         this._updateStatusBar();
@@ -4698,6 +4696,75 @@ class VirtualBookshelf {
         } catch (_) { /* オフライン等は無視。次回チェックに任せる */ }
     }
 
+    // ===== 保存の失敗 (イシュー#603) =====
+    // 失敗の状態はここだけで立てる。retryable な失敗は SyncFailure.retryDelays() の間隔で自動で再試行し、
+    // 1回目の再試行を待つ間は出さない (phase 'quiet')・再試行の途中は控えめな行 ('retrying')・
+    // 再試行が尽きた/直らない種類は警告の行 ('final')。
+    _onSyncFailed(e) {
+        const f = window.SyncFailure.classify(e, this.syncMethod);
+        const prev = this._syncFail;
+        const count = (prev && prev.count) || 0;
+        const delays = window.SyncFailure.retryDelays();
+        let phase = 'final';
+        if (f.retryable && count < delays.length) {
+            phase = count === 0 ? 'quiet' : 'retrying';
+            this._scheduleSyncRetry(delays[count]);
+        } else {
+            this._cancelSyncRetry();
+        }
+        this._syncFail = { ...f, count: count + 1, phase };
+        this._syncError = true;
+        this._syncErrorMsg = phase === 'quiet' ? '' : (phase === 'retrying' ? window.SyncFailure.RETRYING_MESSAGE : f.message);
+        this._watchSyncRecovery();
+        this._updateStatusBar();
+    }
+
+    _clearSyncFailure() {
+        this._cancelSyncRetry();
+        const had = this._syncError || this._syncFail;
+        this._syncFail = null;
+        if (had) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
+    }
+
+    _scheduleSyncRetry(ms) {
+        this._cancelSyncRetry();
+        this._syncRetryTimer = setTimeout(() => { this._syncRetryTimer = null; this._retrySyncNow(); }, ms);
+    }
+
+    _cancelSyncRetry() {
+        if (this._syncRetryTimer) { clearTimeout(this._syncRetryTimer); this._syncRetryTimer = null; }
+    }
+
+    // 今の状態で全部を書き直す (失敗した削除は #587 の削除待ちに残っている＝何度でも同じ結果)
+    _retrySyncNow() {
+        if (!this._syncFail) return;
+        this._cancelSyncRetry();
+        this._pendingSync = true;
+        this._runPendingSync();
+    }
+
+    // ネットにつながった時・タブに戻った時に1回試す (失敗が残っている時だけ)
+    _watchSyncRecovery() {
+        if (this._syncRecoveryWatch) return;
+        this._syncRecoveryWatch = true;
+        const kick = () => {
+            if (this._syncFail && this._syncFail.retryable && !this._syncInProgress) this._retrySyncNow();
+        };
+        if (window.OnlineWatcher) window.OnlineWatcher.onChange((online) => { if (online) kick(); });
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kick(); });
+    }
+
+    _syncFailureRow(f) {
+        const ico = (n) => `<span class="status-ico">${window.renderIcon(n, { size: 15 })}</span>`;
+        const msg = BookshelfEscape.escapeHtml(this._syncErrorMsg || f.message);
+        const retry = f.retryable || f.phase === 'retrying'
+            ? '<button class="status-btn" data-status-action="retry-sync" type="button">再試行</button>' : '';
+        const open = f.phase === 'retrying' ? ''
+            : `<button class="status-btn" data-status-action="open-sync" type="button">${BookshelfEscape.escapeHtml(f.actionLabel || '確認')}</button>`;
+        const cls = f.phase === 'retrying' ? 'status-checking' : 'status-warn';
+        return `<div class="status-row ${cls}" data-sync-failure="${f.kind}">${ico(f.phase === 'retrying' ? 'refresh-cw' : 'alert-triangle')}<span class="status-msg">${msg}</span>${retry}${open}</div>`;
+    }
+
     _updateStatusBar() {
         const bar = document.getElementById('app-status-bar');
         if (!bar) return;
@@ -4709,11 +4776,18 @@ class VirtualBookshelf {
         if (this._syncChecking) {
             rows.push(`<div class="status-row status-checking">${ico('refresh-cw')}<span class="status-msg">最新のデータを確認しています…</span></div>`);
         }
-        if (!this._isSyncReady()) {
+        const fail = this._syncError ? this._syncFail : null;
+        if (fail && fail.kind === 'permission') {
+            // フォルダの許可が切れた: 「保存先が未設定」ではなく、許可を取り直す案内を出す (イシュー#603)
+            rows.push(this._syncFailureRow(fail));
+        } else if (!this._isSyncReady()) {
             const msg = this._syncFallbackFrom === 'hub'
                 ? 'Asayake ハブにログインしていません。設定からログインしてください。'
                 : '保存先が未設定です。今はこの端末の中だけに保存されています。';
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${msg}</span><button class="status-btn" data-status-action="open-sync" type="button">保存先を選ぶ</button></div>`);
+        } else if (this._syncError && fail) {
+            // 保存の失敗 (イシュー#603): 1回目の自動の再試行を待つ間は出さない
+            if (fail.phase !== 'quiet') rows.push(this._syncFailureRow(fail));
         } else if (this._syncError) {
             const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${BookshelfEscape.escapeHtml(msg)}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
@@ -5364,7 +5438,7 @@ class VirtualBookshelf {
             await this.flushSync();
             // flush で同期が失敗した場合、保存先には古い内容しか無い → 古い内容での公開を防ぐ
             if (hadPending && this._syncError) {
-                toast('未保存の変更を保存先に書き込めませんでした。同期エラーを解消してから公開してください。', { type: 'warn' });
+                toast('保存できていない変更があるため、公開を止めました。保存できてから、もう一度公開してください。', { type: 'warn' });
                 return { ok: false, reason: 'flush' };
             }
             const result = await this.exporter.export();

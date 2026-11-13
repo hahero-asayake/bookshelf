@@ -442,3 +442,40 @@ export async function installFakeLocalFolder(page, { dirName = 'bookshelf-sync-t
         list: async (dir) => (await read(dir, 'list')) || []
     };
 }
+
+/**
+ * ローカルフォルダへの書き込み失敗の注入 (イシュー#603)。installFakeLocalFolder の既定の動きは変えず、
+ * 別に取り付ける。LocalFSAdapter が書く2つの口 (FileSystemFileHandle.createWritable と
+ * FileSystemDirectoryHandle.removeEntry) を、failNextWrites(n) の後 n 回だけ失敗させる。
+ * カウンタはページ側 (window) に置く＝再読込すると 0 に戻る。
+ * @param {import('@playwright/test').Page} page
+ * @param {{ error?: string }} [opts] error = 投げる DOMException の名前 (既定 'NoModificationAllowedError')
+ */
+export async function installLocalWriteFailures(page, { error = 'NoModificationAllowedError' } = {}) {
+    await page.addInitScript((errName) => {
+        window.__e2eLocalFailWrites = 0;
+        const shouldFail = () => {
+            if (!(window.__e2eLocalFailWrites > 0)) return false;
+            window.__e2eLocalFailWrites--;
+            return true;
+        };
+        const wrap = (proto, name) => {
+            const orig = proto[name];
+            proto[name] = function (...args) {
+                if (shouldFail()) return Promise.reject(new DOMException('injected write failure', window.__e2eLocalFailName || errName));
+                return orig.apply(this, args);
+            };
+        };
+        wrap(FileSystemFileHandle.prototype, 'createWritable');
+        wrap(FileSystemDirectoryHandle.prototype, 'removeEntry');
+    }, error);
+    return {
+        // opts.error = この回だけ投げる DOMException の名前 (例 'NotFoundError' = フォルダが見つからない)
+        failNextWrites: (n = 1, { error: name } = {}) => page.evaluate(([k, e]) => {
+            window.__e2eLocalFailWrites = k;
+            window.__e2eLocalFailName = e;
+        }, [n, name || null]),
+        // 注入した失敗のうち、まだ起きていない回数 (0 になったら失敗が起きた)
+        failuresLeft: () => page.evaluate(() => window.__e2eLocalFailWrites)
+    };
+}

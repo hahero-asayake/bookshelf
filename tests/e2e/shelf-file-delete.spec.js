@@ -203,18 +203,9 @@ for (const { name, boot } of BACKENDS.filter((b) => b.name !== 'ローカルフ�
             await expect.poll(() => remote.failuresLeft(), { message: '削除後の保存が失敗する' }).toBe(0);
             await page.waitForTimeout(1500); // 失敗の後始末 (表示の更新) を待つ
             expect(remote.has(shelfFile(slug)), '失敗した保存では消えない').toBe(true);
-            // 失敗した時に画面へ何が出ているかを記録する (②指示: 実測して 587-results.md に書く)
-            const bar = page.locator('#app-status-bar');
-            await test.info().attach('保存が失敗した直後の画面', {
-                body: JSON.stringify({
-                    statusBarHidden: await bar.isHidden(),
-                    statusBarText: (await bar.textContent() || '').trim(),
-                    syncPath: (await page.locator('#obsidian-sync-path').textContent() || '').trim(),
-                    syncStatus: (await page.locator('#obsidian-sync-status').textContent() || '').trim(),
-                    toasts: await page.locator('.toast').allTextContents()
-                }, null, 2),
-                contentType: 'application/json'
-            });
+            // 失敗の直後は、自動の再試行 (1回目は5秒後) を待つ間なので状態バーには出さない (イシュー#603 案B)。
+            // 再試行が尽きた時に出ることは tests/e2e/save-failure-visible.spec.js で確かめる
+            await expect(page.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
 
             // 次の保存 (別の操作＝残す本棚の名前を変える) で消える。新しく本棚を作ると、空いた slug が
             // 再利用されて「作り直し」になるので、ここでは使わない
