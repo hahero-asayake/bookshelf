@@ -114,3 +114,29 @@ GATE_WEBKIT=1 PORT=8198 PLAYWRIGHT_BASE_URL=http://localhost:8198 npx playwright
 
 - #602（tp_review）: worktree で storage-fakes.js の末尾に `installReloadPermissionPrompt`（ローカル）を足している（+37行・commit 前）。A のハブの部分とは離れているので、rebase では自動で合わさる見込み。
 - #603（running）: worktree に今は重なる変更が無い。ただし running なので、A の呼び出し元（save-failure-visible・shelf-file-delete）や storage-fakes.js を、また変える可能性がある。
+
+## step2 寄せ先 gate-hub.js に足りない機能を足す（2026-11-14・土台 origin/main a245035）
+
+- 始める前に origin/main（54363ab → a245035・6 commit。#590 の J1〜J4 の投入と a245035 の billing-portal-return の修正）へ rebase した。gate-hub.js は main で変わっていない。B の呼び出し元も step1 と同じ（gate spec 7本・gate-device.js・billing-portal-return）。
+- 足したもの（commit da25bcd・今の呼び出し方は変えていない）:
+  - (a) 一覧 `?list=1` が `entries:[{name, etag, size}]` と `truncated:false` を返す。size はバイト数（本物の R2 の size に合わせた。A は文字数だった）。本物が返す `uploaded` は、アプリが読まないので入れていない。
+  - (b) 単発の PUT とまとめ書きの If-Match を、`normEtag`（本物の normalizeEtag と同じ）で比べる。あわせて、単発 PUT の 412 の本文を本物と同じ `{error:'etag mismatch'}` にし、まとめ書きの conflicts の etag を本物と同じ引用符なしにした（どちらも A と同じ形）。
+  - (c) state に `failNextWrites`（残りの回数）を足した。`failHubWritesForTest(state)` は今までどおり失敗させ続ける。`failHubWritesForTest(state, n)` の時だけ次の n 回を 500 にする。両方が立っている時は、失敗させ続ける方が優先する（残りの回数は減らない）。数える対象は、今の B の「書き込み」（単発の PUT・DELETE、まとめ書き、公開）。
+  - (d) state に `writes`（中身が変わった書き込み `{op, path, via}`）と `deleteRequests`（届いた削除の要求 `{path, via, existed}`）を足した。まとめ書きの中身も1件ずつ残す。`resetHubStateForTest` でも空に戻る。
+  - (e) `hubStoreForTest(state)` を足した。返すのは `{ has, readJSON, list, writes, deleteRequests, failNextWrites, failuresLeft }`。writes と deleteRequests は getter で、`resetHubStateForTest` で作り直した後の配列も追う。
+  - 冒頭のコメントに、経緯の行（#598 で足したもの）と hubStoreForTest の使い方を足し、mockHubForTest の「今ある道」に entries・If-Match の比べ方・失敗と記録を書いた。
+
+### 確認
+
+| 何を | 結果 |
+|---|---|
+| `npm run lint:e2e-gate` | OK（@gate 30本・違反0）。観測点の未達8点の警告は、spec と jobs.json を変えていないので main と同じ |
+| `npm test`（vitest） | 72ファイル・1063 passed・2 todo |
+| B を使う8 spec（gate 7本と billing-portal-return）を chromium と gate-webkit で（1回目） | 28本中 27 passed・1 failed |
+| 落ちた1本だけを gate-webkit で `--repeat-each=3` | 12本（4本×3回）すべて passed |
+| B を使う8 spec をもう1回 chromium と gate-webkit で | 28本すべて passed |
+
+- 1回目に落ちたのは billing-portal-return の WebKit の「Webhook が遅れても、支払い管理から戻った後に取り直して解約予約済みと表示される (保存先 local)」。支払い管理のページから index.html へ戻った後、「フィクスチャの本 1」が5秒以内に見えなかった。
+  - この1本は保存先がローカルで、ハブの /data（一覧・PUT・まとめ書き）を通らない。今回変えた道を通らず、失敗の判定も既定（0回・false）のままなので、変更とは関係のない揺れと判断した。単独で3回流すとすべて通り、全部を流し直しても通った。
+  - billing-portal-return.spec.js は、step1 の後に main で a245035 が変えている（ハブの起動待ちの書き方）。step1 の表の数字は変わる前の版のもの。
+- (a) で、ハブから読む gate spec（j5-4・j5-5・j5-6・j6-3）のアプリは、hub-adapter の readJSON → `_tryReadFromEtagCache` → `_ensureRemoteEtagMap` で一覧の entries を ETag 表に使うようになる。通信の回数は測っていないが、合否は step1 と同じ（chromium と gate-webkit で全部通る）。
