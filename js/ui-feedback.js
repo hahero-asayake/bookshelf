@@ -182,6 +182,148 @@
         lastGlobalErrorToastAt = now;
         window.toast(GLOBAL_ERROR_MESSAGE, { type: 'error' });
     }
+    // ===== グローバル例外 → 匿名のエラー報告 (イシュー#584・門(e) 見張り) =====
+    //
+    // 予期しないエラーを運営が知るための最小の報告。送るのは 版・画面名・エラーの先頭行 の3つだけで、
+    // 蔵書・メモ・記事の内容、アカウント、端末を見分ける番号は送らない (legal/privacy.html「エラー情報」)。
+    // 同じエラーは端末ごとに1日1回 (localStorage)。送信に失敗しても再送せず、画面の動きは変えない。
+    // 受け口は cf-worker/client-errors.js (POST /client-error)。集計と通知はサーバ側で行う。
+    const ERR_REPORT_URL = 'https://hub.asayake.org/client-error';     // js/hub-auth.js の HUB_API_BASE と同じホスト
+    const ERR_REPORT_ORIGINS = ['https://asayake.org', 'https://hahero-asayake.github.io'];   // 本番の配信元だけ
+    const ERR_REPORT_FLAG = 'bookshelf.flag.errReport';                // '0'=送らない / '1'=本番以外でも送る (E2E 用)
+    const ERR_REPORT_STORE = 'bookshelf_errReport_v1';                 // { day, sent:[指紋…] }
+    const ERR_REPORT_MAX_PER_DAY = 20;                                 // 1端末が1日に送る種類の上限 (暴走止め)
+    const ERR_REPORT_HIDDEN = '(内容は伏せた)';
+
+    // 送ってよいかの条件はここ1か所にまとめる (保存先や設定で条件を変える時はここだけを直す)。
+    function errorReportEnabled() {
+        let flag = null;
+        try { flag = localStorage.getItem(ERR_REPORT_FLAG); } catch (_) { /* localStorage 不可なら既定へ */ }
+        if (flag === '0') return false;
+        if (flag === '1') return true;
+        return ERR_REPORT_ORIGINS.includes(location.origin);
+    }
+
+    // 版 = index.html が読み込むファイルの ?v= のうち一番新しい値 (ファイルごとに値が違うため)。
+    function appVersion() {
+        let max = 0;
+        document.querySelectorAll('script[src*="?v="], link[href*="?v="]').forEach((el) => {
+            const m = /[?&]v=(\d{6,12})\b/.exec(el.getAttribute('src') || el.getAttribute('href') || '');
+            if (m && Number(m[1]) > max) max = Number(m[1]);
+        });
+        return max ? String(max) : 'unknown';
+    }
+
+    // 画面名 = 最前面の面 (Surface に登録済みの id) 、無ければ URL ハッシュの先頭の語 (route の種類)。
+    // どちらも固定の英字名で、本・本棚・記事の ID (ハッシュの2語目以降) は含めない。
+    function screenName() {
+        const ok = (s) => typeof s === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(s);
+        try {
+            const top = window.overlays && typeof window.overlays.top === 'function' ? window.overlays.top() : null;
+            const S = window.Surface;
+            if (top && ok(top.id) && S && typeof S.get === 'function' && S.get(top.id)) return top.id;
+            if (top && ok(top.kind)) return top.kind;
+        } catch (_) { /* 取れなければハッシュへ */ }
+        const m = /^#\/([a-z][a-z0-9-]{0,30})/.exec(location.hash || '');
+        return m ? m[1] : 'main';
+    }
+
+    // エラーの出どころがアプリ同梱の js/ かどうか (プラグイン・拡張機能・外部スクリプトのエラーは送らない)。
+    const ERR_REPORT_OWN_PREFIX = (() => { try { return new URL('js/', document.baseURI).href; } catch (_) { return null; } })();
+    function fromOwnScript(filename, err) {
+        if (!ERR_REPORT_OWN_PREFIX) return false;
+        if (filename) return String(filename).startsWith(ERR_REPORT_OWN_PREFIX);
+        const m = /((?:https?|blob|file):[^\s)]+?):\d+:\d+/.exec((err && err.stack) || '');
+        return !!m && m[1].startsWith(ERR_REPORT_OWN_PREFIX);
+    }
+
+    // アプリが投げる Error のうち、書き出しをそのまま送ってよいもの (固定の文言だけを並べる)。
+    // アプリの Error は題名・パス・URL・サーバの応答を文中のどこにでも差し込みうるので、ここに無い文面は
+    // 種類名だけを送る。足す時は「差し込みより前の固定の書き出し」だけを書くこと。
+    const ERR_REPORT_OWN_KEEP = [
+        /^GitHub API (?:error|forbidden)/, /^GitHub rate limit exceeded/, /^GitHub \/user failed/, /^Repository not found/,
+        /^Device code (?:request failed|error)/, /^Device flow error/, /^Access token request failed/, /^OAuth App 設定エラー/,
+        /^Hub API error/, /^hub batch write failed on server/, /^HubStorageAdapter/,
+        /^ハブ認証に失敗しました/, /^使用量の取得に失敗しました/, /^ユーザー名の設定に失敗しました/,
+        /^通信がタイムアウトしました/, /^公開できる記事がありません/, /^公開記事に個人情報が混入している可能性があります/,
+        /^manifest\.json 取得失敗/, /^HTTP(?= \d{3}\b)/
+    ];
+
+    // 送る1行を作る。返り値 null = 送らない。
+    //  - Error でないもの (文字列やオブジェクトの reject) は型だけ
+    //  - SyntaxError は名前だけ (JSON の中身の断片が文面に入るため)
+    //  - 組み込みの例外 (TypeError 等・DOMException) は文面がエンジン由来なので残す。引用符の中は
+    //    コード上の名前 (英数と _ $ .) の時だけ残し、URL・パス・長い数字は伏せる
+    //  - それ以外 (アプリや同梱ライブラリが投げた Error) は ERR_REPORT_OWN_KEEP の書き出しと、
+    //    直後の3桁の状態コードだけ
+    function errorLine(err) {
+        if (err === null || err === undefined) return null;
+        const isDom = typeof DOMException !== 'undefined' && err instanceof DOMException;
+        if (!(err instanceof Error) && !isDom) return `NonError: ${typeof err}`;
+        const name = String(err.name || 'Error').replace(/[^A-Za-z]/g, '').slice(0, 40) || 'Error';
+        if (err instanceof SyntaxError) return 'SyntaxError';
+        const first = String(err.message || '').split('\n')[0];
+        const builtin = isDom || [TypeError, ReferenceError, RangeError, URIError, EvalError].some((C) => err instanceof C);
+        let line;
+        if (builtin) {
+            line = first
+                .replace(/"[^"]*"|'[^']*'|`[^`]*`/g, (q) => (/^[A-Za-z_$][\w$.]{0,39}$/.test(q.slice(1, -1)) ? q : `${q[0]}…${q[0]}`))
+                .replace(/\b(?:https?|blob|file|data):\S+/g, '<url>')
+                .replace(/\S*[/\\]\S*/g, '<path>')
+                .replace(/\bB0[0-9A-Z]{8}\b/g, '<id>')
+                .replace(/\d{5,}/g, '<n>')
+                .trim();
+        } else {
+            const hit = ERR_REPORT_OWN_KEEP.map((re) => re.exec(first)).find(Boolean);
+            if (hit) {
+                const code = /^[^A-Za-z0-9]{0,3}([1-5]\d{2})(?!\d)/.exec(first.slice(hit[0].length));
+                line = hit[0] + (code ? ` ${code[1]}` : '');
+            }
+        }
+        return `${name}: ${line || ERR_REPORT_HIDDEN}`.slice(0, 120);
+    }
+
+    function errorFingerprint(s) {
+        let h = 5381;
+        for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+        return (h >>> 0).toString(36);
+    }
+
+    // 同じエラー (画面名＋先頭行) を今日すでに送っていれば false。送ってよければ記録して true。
+    function markErrorReported(fp) {
+        try {
+            const d = new Date();
+            const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            let st = null;
+            try { st = JSON.parse(localStorage.getItem(ERR_REPORT_STORE) || 'null'); } catch (_) { st = null; }
+            if (!st || st.day !== day || !Array.isArray(st.sent)) st = { day, sent: [] };
+            if (st.sent.includes(fp) || st.sent.length >= ERR_REPORT_MAX_PER_DAY) return false;
+            st.sent.push(fp);
+            localStorage.setItem(ERR_REPORT_STORE, JSON.stringify(st));
+            return true;
+        } catch (_) { return false; }   // 記録できない環境では送らない (1日1回を守れないため)
+    }
+
+    function reportUnexpectedError(err, filename) {
+        try {
+            if (!errorReportEnabled()) return;
+            if (!fromOwnScript(filename, err)) return;
+            const msg = errorLine(err);
+            if (!msg) return;
+            const screen = screenName();
+            if (!markErrorReported(errorFingerprint(`${screen}|${msg}`))) return;
+            fetch(ERR_REPORT_URL, {
+                method: 'POST',
+                // text/plain = preflight の要らない単純リクエスト (受け口は本文を JSON として読む)
+                headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                body: JSON.stringify({ v: appVersion(), screen, msg }),
+                credentials: 'omit',
+                keepalive: true,
+                referrerPolicy: 'no-referrer'
+            }).catch(() => { /* 再送しない */ });
+        } catch (_) { /* 報告の失敗でアプリを止めない */ }
+    }
+
     window.addEventListener('error', (e) => {
         if (!(e instanceof ErrorEvent) || e.target !== window) return;
         // ResizeObserver のループ通知 (新文言 "...undelivered notifications."・旧文言
@@ -192,8 +334,10 @@
         // フレーク原因として実測)。toast は出さず、調査用に1行だけ残す。
         if (/^ResizeObserver loop/.test(e.message)) { console.debug('[ui-feedback] ResizeObserver loop通知を抑制:', e.message); return; }
         notifyUnexpectedError();
+        reportUnexpectedError(e.error, e.filename);
     });
-    window.addEventListener('unhandledrejection', () => {
+    window.addEventListener('unhandledrejection', (e) => {
         notifyUnexpectedError();
+        reportUnexpectedError(e && e.reason, null);
     });
 })();
