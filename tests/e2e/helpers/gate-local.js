@@ -83,3 +83,19 @@ export async function clearLocalCacheForTest(page) {
         localStorage.removeItem('virtualBookshelf_library');
     });
 }
+
+// ---- イシュー#590 (門のE2E J1〜J4) で足した分 ----
+
+/** 保存先を「この端末のフォルダ」にして、つないだ状態にする (中身は空のフォルダ)。
+ * stubFolderPickerForTest → bootAppForTest の後に呼ぶ。つなぐ処理はアプリの本物のコード (フォルダを選ぶ) を
+ * 呼ぶので、そのあとの保存・再読込での読み直しも本物のコードがこのフォルダに対して行う。
+ * 保存先の設定 (bookshelf_sync) も「この端末のフォルダ」にしておく (取込・整理・メモの観測点で、初回の保存先の選び方に左右されないため)。
+ * @param {import('@playwright/test').Page} page */
+export async function connectLocalFolderForTest(page) {
+    await page.evaluate(async () => {
+        const cfg = JSON.parse(localStorage.getItem('bookshelf_sync') || '{}');
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ ...cfg, method: 'local' }));
+        await window.bookshelf.selectObsidianFolder();
+    });
+    await page.waitForFunction(() => !!(window.bookshelf && window.bookshelf.obsidianDirHandle));
+}

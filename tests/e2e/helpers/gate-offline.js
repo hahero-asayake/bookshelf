@@ -14,18 +14,9 @@ import { fileURLToPath } from 'node:url';
 
 const fixture = (name) => readFileSync(fileURLToPath(new URL(`../../fixtures/${name}`, import.meta.url)), 'utf-8');
 
-/** 蔵書と利用者データの見本 (「フィクスチャの本 1」ほか) を、そのページ (タブ) で最初の1回だけ入れる。保存先はローカル。
- * アプリを開く前に呼ぶ。
- * @param {import('@playwright/test').Page} page */
-export async function seedLibraryOnceForTest(page) {
-    await page.addInitScript(([userData, library]) => {
-        if (sessionStorage.getItem('gateLibrarySeeded')) return;
-        sessionStorage.setItem('gateLibrarySeeded', '1');
-        localStorage.setItem('virtualBookshelf_userData', userData);
-        localStorage.setItem('virtualBookshelf_library', library);
-        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
-    }, [fixture('fixture-userdata.json'), fixture('fixture-library.json')]);
-}
+// 蔵書を最初の1回だけ入れる前提は gate-setup.js の seedLibraryOnceForTest を正とする (②・2026-11-14 #590 の rebase で1つに寄せた)。
+// J8 の spec はこれまでどおりこのファイルから import できるよう、ここから出し直す。
+export { seedLibraryOnceForTest } from './gate-setup.js';
 
 /** アプリを開き、蔵書の読み込みと、SW の登録 (有効になるまで) を待つ = 「1回開いただけの端末」。
  * @param {import('@playwright/test').Page} page */

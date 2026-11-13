@@ -128,3 +128,18 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 - CI の e2e・webkit レグは、`E2E_SKIP_KNOWN_RED=1` で一覧のテストだけを外す（`helpers/test-base.js` の `skipKnownRed`）。門の判定（`gate:report`）に渡す実行では付けない＝赤のまま数える。外した結果を渡しても、`gate-report` は「未実行」として合格に数えない。
 - `npm run lint:known-red`（CI の e2e レグ）が、各件のイシュー番号・観測点ID・テスト名の実在を確かめる。
 - 直すイシューが入ったら、そのイシューの側で一覧から消す。
+
+## 網羅（イシュー#590 の J1〜J4 の分・2026-11-14）
+
+| 観測点 | テスト | 状態 |
+|---|---|---|
+| J1-1 | `j1-1-first-run-guide.spec.js` | 投入済み・緑 |
+| J1-2 | `j1-2-storage-choice-pc`・`j1-2-storage-choice-phone` | 投入済み・緑（PC と iPhone 相当） |
+| J1-3 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-github`（Device Flow） | 投入済み・緑。ハブの分は未達（ハブのログインの模擬がまだ無い） |
+| J1-4 | `j1-3-connect-local`（フォルダ） | 投入済み・緑。GitHub の分は**未達・GitHub の状態を持つ模擬が要る**。ハブの分は未達 |
+| J2-1〜J2-6 | `j2-1-import-entry`〜`j2-5-import-no-duplicate` | 投入済み |
+| J3-1〜J3-4 | `j3-1-shelf-to-detail`〜`j3-4-back-forward-esc-pc`・`-phone` | 投入済み・緑 |
+| J3-5 | `j3-5-many-books.spec.js` | テストあり・測り方の仕上げ待ちのため未投入（ページの中で測る形＝案A を仕上げてから入れる） |
+| J4-1〜J4-3 | `j4-memo.spec.js` | テストあり・不具合のため未投入（長文メモを「完了」で保存してもボタンが「長文メモを書く」のまま） |
+
+webkit（gate-webkit）で流さない分と理由は、playwright.config.js の GATE_WEBKIT_IGNORE に1行ずつ書いてある。

@@ -167,3 +167,52 @@ async function routeGitHub(route, state) {
 export async function mockGitHubForTest(page, state) {
     await page.context().route('https://api.github.com/**', (route) => routeGitHub(route, state));
 }
+
+// ---- イシュー#590 (門のE2E J1-3 の GitHub の分) で足した分：接続 (OAuth Device Flow) の模擬 ----
+// 接続とリポジトリ一覧までを返す (状態は持たない)。リポジトリの中身の読み書きは上の mockGitHubForTest (#588) が受け持つ。
+// 1つのテストでは、この関数と mockGitHubForTest のどちらか片方だけを使う (api.github.com に route を2本重ねない)。
+
+const DEVICE_FLOW_CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+};
+
+function fulfillDeviceFlowJson(route, status, body) {
+    return route.fulfill({ status, headers: DEVICE_FLOW_CORS, contentType: 'application/json', body: JSON.stringify(body) });
+}
+
+/** 「GitHub に接続」を押すと、コード (userCode) が出て、すぐ承認された扱いになり、login のアカウントで
+ * つながるようにする。GitHub App は1つのリポジトリ login/repo にだけ入っている扱い。
+ * アプリを開く前に呼ぶ (再読込の後も同じ模擬が効く)。
+ * @param {import('@playwright/test').Page} page
+ * @param {{ login?: string, repo?: string, userCode?: string }} [opts] */
+export async function mockGitHubDeviceFlowForTest(page, { login = 'gate-user', repo = 'bookshelf-data', userCode = 'GATE-0001' } = {}) {
+    const fullName = `${login}/${repo}`;
+    const oauth = async (route) => {
+        const req = route.request();
+        if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: DEVICE_FLOW_CORS });
+        const path = new URL(req.url()).pathname;
+        if (path.endsWith('/login/device/code')) {
+            return fulfillDeviceFlowJson(route, 200, { device_code: 'gate-device-code', user_code: userCode, verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 });
+        }
+        if (path.endsWith('/login/oauth/access_token')) {
+            return fulfillDeviceFlowJson(route, 200, { access_token: 'gho_gate_test_token', token_type: 'bearer', scope: '' });
+        }
+        return fulfillDeviceFlowJson(route, 404, { error: 'not_found' });
+    };
+    await page.route('https://bookshelf-oauth-proxy.asayake-hahero.workers.dev/**', oauth);
+    await page.route('https://github.com/login/**', oauth);
+    await page.route('https://api.github.com/**', async (route) => {
+        const req = route.request();
+        if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: DEVICE_FLOW_CORS });
+        const path = new URL(req.url()).pathname;
+        const repoJson = { id: 1, name: repo, full_name: fullName, owner: { login }, private: true, default_branch: 'main', updated_at: '2026-11-01T00:00:00Z', permissions: { admin: true, push: true, pull: true } };
+        if (path === '/user') return fulfillDeviceFlowJson(route, 200, { login, id: 1 });
+        if (path === '/user/installations') return fulfillDeviceFlowJson(route, 200, { total_count: 1, installations: [{ id: 1, account: { login } }] });
+        if (path === '/user/installations/1/repositories') return fulfillDeviceFlowJson(route, 200, { total_count: 1, repositories: [repoJson] });
+        if (path === `/repos/${fullName}`) return fulfillDeviceFlowJson(route, 200, repoJson);
+        if (path === `/repos/${fullName}/branches`) return fulfillDeviceFlowJson(route, 200, [{ name: 'main', protected: false }]);
+        return fulfillDeviceFlowJson(route, 404, { message: 'Not Found' });
+    });
+}

@@ -1,0 +1,5 @@
+[
+    { "title": "門の取込の本 1", "authors": "取込 一郎", "acquiredTime": 1700000003000, "readStatus": "READ", "asin": "B0GATEIMP1", "productImage": "" },
+    { "title": "門の取込の本 2", "authors": "取込 二郎", "acquiredTime": 1700000002000, "readStatus": "UNKNOWN", "asin": "B0GATEIMP2", "productImage": "" },
+    { "title": "門の取込の本 3", "authors": "取込 三郎", "acquiredTime": 1700000001000, "readStatus": "UNKNOWN", "asin": "B0GATEIMP3", "productImage": "" }
+]
