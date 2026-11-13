@@ -57,6 +57,11 @@
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
     <link rel="stylesheet" href="css/bookshelf.css?v=2026111323">
+    <!-- 起動に必須で、js が fetch で読むファイル。sw.js の install はこの index.html から先読みの一覧を作るため、
+         ここに載せておくと1回開いただけの端末でも電波なしで起動できる (イシュー#597)。
+         rel="bookshelf-precache" はブラウザが取得しない印 (sw.js だけが読む)。rel="preload" にすると WebKit は
+         fetch() で使い回さず「preloaded but not used」の警告を出して二重に取得するため、印にしている。 -->
+    <link rel="bookshelf-precache" href="data/config.json">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は

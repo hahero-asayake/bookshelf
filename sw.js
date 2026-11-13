@@ -1,11 +1,14 @@
 // bookshelf Service Worker
 // 方針: ?v= 付き資産はキャッシュ優先 (URL がバージョンを持つ=不変)、それ以外はネットワーク優先。
+//   - install で殻 (index.html と、そこから参照される同一オリジンの script/css/manifest/アイコン) を先読みする
+//     → 1回開いただけの端末でも電波なしで起動できる (イシュー#597・一覧は index.html から作る。下記)
 //   - HTML は常に最新を取得 → 新しい ?v= 参照は即座に届き、資産はキャッシュから瞬時に出る
 //   - 成功した同一オリジン GET は実行時キャッシュに保存 → オフラインでも前回取得分が動く
 //   - CDN 等のクロスオリジンは原則素通し (SW は介在しない)。例外=表紙画像ホストのみ cache-first (下記)
 //   - ナビゲーション時のオフラインは index.html にフォールバック
+//   - 世代は CACHE の名前で持つ (先読み分と実行時分は同じ CACHE)。名前を上げると activate で古い世代を捨てる
 
-const CACHE = 'bookshelf-runtime-v3';
+const CACHE = 'bookshelf-runtime-v4';
 
 // ===== 表紙画像キャッシュ (イシュー#391) =====
 // なぜ: ブラウザの HTTP キャッシュ任せだと iOS PWA (standalone) ではディスクキャッシュの保持期間・容量が
@@ -96,9 +99,105 @@ async function _handleCoverFetch(req) {
     }
 }
 
-self.addEventListener('install', () => {
+// ===== 殻の先読み (イシュー#597) =====
+// なぜ: 初回の訪問では、ページの資源は SW の登録 (index.html の load 後) より前に読み終わっていて SW を通らない。
+// 下の fetch の実行時キャッシュだけだと、1回開いただけの端末には何も残らず、電波なしで開き直すと起動しない
+// (#589 の門のE2E J8-1 で実測)。install の間に、起動に要る殻を CACHE へ入れておく。
+//
+// 一覧は手で持たない: install のたびに index.html を取り直し、そこから参照されている同一オリジンの
+// <script src>・<link href> (rel が下の一覧のもの)・<img src> を抜き出す。index.html の ?v= は check:version で
+// 機械的に保証されている (ADR-082 と同じ理由) ので、抜き出した URL がそのまま版つきのキャッシュの鍵になる。
+// SW では DOMParser が使えないため、属性は正規表現で読む。manifest からはアイコンも拾う。
+//
+// index.html・script・stylesheet (と modulepreload/preload/bookshelf-precache) は、1件でも取れなければ何も保存せずに
+// install を失敗させる (中途半端な殻は残さない。次にページを開いた時の register/update で登録をやり直す)。
+// manifest・アイコン・img は起動に要らないので、取れた分だけ入れる。
+// bookshelf-precache = 起動に必須だが index.html からは参照されない (js が fetch で読む) ファイルを、index.html に
+// 載せるための印 (ブラウザは取得しない)。例: data/config.json。一覧の正本を index.html の1つに保つため (ADR-155)。
+const SHELL_REQUIRED_RELS = ['stylesheet', 'modulepreload', 'preload', 'bookshelf-precache'];
+const SHELL_OPTIONAL_RELS = ['icon', 'apple-touch-icon'];
+
+function _sameOriginUrl(raw, base) {
+    if (!raw) return null;
+    let u;
+    try { u = new URL(raw, base); } catch (_) { return null; }
+    if (u.origin !== self.location.origin) return null;
+    u.hash = '';
+    return u.href;
+}
+
+// index.html の文字列から、先読みする URL を「必須」「任意」「manifest」に分けて返す
+function _shellUrlsFromHtml(html, base) {
+    const attr = (tag, name) => {
+        const m = tag.match(new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, 'i'));
+        return m ? (m[1] ?? m[2] ?? m[3]) : null;
+    };
+    const required = new Set();
+    const optional = new Set();
+    const manifests = new Set();
+    const add = (set, raw) => { const u = _sameOriginUrl(raw, base); if (u) set.add(u); };
+    // コメントの中と、インラインの script の本文の中 (文字列のタグ) は読まない
+    const text = html.replace(/<!--[\s\S]*?-->/g, '').replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/gi, '$1');
+    for (const [tag] of text.matchAll(/<script\b[^>]*>/gi)) add(required, attr(tag, 'src'));
+    for (const [tag] of text.matchAll(/<link\b[^>]*>/gi)) {
+        const rels = (attr(tag, 'rel') || '').toLowerCase().split(/\s+/);
+        if (rels.includes('manifest')) add(manifests, attr(tag, 'href'));
+        else if (rels.some((r) => SHELL_REQUIRED_RELS.includes(r))) add(required, attr(tag, 'href'));
+        else if (rels.some((r) => SHELL_OPTIONAL_RELS.includes(r))) add(optional, attr(tag, 'href'));
+    }
+    for (const [tag] of text.matchAll(/<img\b[^>]*>/gi)) add(optional, attr(tag, 'src'));
+    return { required: [...required], optional: [...optional], manifests: [...manifests] };
+}
+
+// 先読みの1件を取る。ok かつ同一オリジン (basic) の応答だけを、本文を読み切って作り直した形で返す (それ以外は例外)。
+// 本文をすぐ読み切るのは、必須分を全部そろえてから保存するため: 読まないまま次々に取ると、本文待ちの応答が
+// HTTP/1.1 の同時接続 (1ホスト6本) を占有して残りの取得が始まらず、install が止まる (イシュー#597 step3 で実測)。
+// 作り直した応答はリダイレクトの印も持たない (リダイレクトを経た応答はナビゲーションに返すとブラウザが拒否する)。
+async function _fetchShellResponse(url, init) {
+    const res = await fetch(url, init);
+    if (!res.ok || res.type !== 'basic') throw new Error(`${url} (HTTP ${res.status} ${res.type})`);
+    return new Response(await res.blob(), { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
+async function _precacheShell() {
+    const indexUrl = new URL('./index.html', self.location).href;
+    // HTML は再検証して最新を取る。?v= 付き資源は版が URL に乗っているので、既定のキャッシュモードで取る
+    // (ページが読んだ直後の HTTP キャッシュから出る = 二重にダウンロードしない)
+    const indexRes = await _fetchShellResponse(indexUrl, { cache: 'no-cache' });
+    const { required, optional, manifests } = _shellUrlsFromHtml(await indexRes.clone().text(), indexUrl);
+    // 必須分は全部取れてから保存する (1件でも失敗したらここで例外になり、何も保存しない)
+    const requiredRes = await Promise.all(required.map((u) => _fetchShellResponse(u)));
+    const cache = await caches.open(CACHE);
+    await Promise.all(requiredRes.map((res, i) => cache.put(required[i], res)));
+    await cache.put(indexUrl, indexRes);
+    // 任意分 (アイコン・img・manifest とそのアイコン) は取れた分だけ
+    const putOptional = async (u) => {
+        try {
+            const res = await _fetchShellResponse(u);
+            await cache.put(u, res.clone());
+            return res;
+        } catch (_) { return null; }
+    };
+    const manifestIcons = await Promise.all(manifests.map(async (m) => {
+        const res = await putOptional(m);
+        if (!res) return [];
+        try {
+            const icons = (await res.json()).icons;
+            return Array.isArray(icons) ? icons.map((ic) => _sameOriginUrl(ic && ic.src, m)).filter(Boolean) : [];
+        } catch (_) { return []; }
+    }));
+    const rest = new Set([...optional, ...manifestIcons.flat()].filter((u) => !required.includes(u)));
+    await Promise.all([...rest].map(putOptional));
+}
+
+self.addEventListener('install', (event) => {
     // skipWaiting は呼ばない。新 SW は待機させ、UI の「更新」ボタン (skipWaiting メッセージ) で適用する。
     // (初回インストール時は待機中の旧 SW が無いので、そのまま activate される)
+    // 殻の先読みが終わるまで install を終えない = 有効になった時点で、電波なしでも起動できる状態になっている
+    event.waitUntil(_precacheShell().catch((err) => {
+        console.warn('[sw] 殻の先読みに失敗したため install を中止します (次に開いた時にやり直す):', err);
+        throw err;
+    }));
 });
 
 self.addEventListener('message', (event) => {
