@@ -114,6 +114,30 @@ MAX見込み：216 → **約157**（lintの実測値で確定、step2で定数�
 5. **分類表でapp._を数え落とすパターン**：本ドキュメント§2で2名（`_artRenderBlocks`・`_artBuildPreviewState`）を新たに発見・対象に追加済み。
 6. **G3-1の教訓（1回のevaluate内連結を保つ・裸の内部参照を先に値取得してから渡す）**：§4の`setArtBlocks`（代入+再描画を1回のevaluateで保持）、`publish-article-editor.spec.js:2019`（先にブロックidを取得してから`_artEditBlock`へ渡す既存idiomを維持）で適用済み。
 
-## 7. 変異検査・e2e-diff-main.mjs --visual・G3-3への申し送り
+## 7. 変異検査（step3実測）
 
-step3/step4で実施・記録する（本ドキュメントに追記）。
+対象選びは「無害化されない行」を先にgrepで確認した（#551落とし穴4）。`js/screens/article-editor.js`内で`.markdown = `代入は2箇所のみ（1170行目=全画面MDE(`_artTextFsEditor`)の`onChange`内、2081行目=インラインキャンバスtextareaの`input`イベント内）で、互いに別の編集モード（`textMode: 'form'`/`'inline'`）専用であり、どちらかを壊しても他方が無害化することはない。本イシューの置換対象（`setArtTextFsEditorValue`経由）が通る1170行目を選んだ。
+
+`js/screens/article-editor.js:1170`の`blocks[idx].markdown = md;`をコメントアウトし、`PORT=8152 PLAYWRIGHT_BASE_URL=http://localhost:8152 node scripts/... playwright test tests/e2e/standard-ops.spec.js --project=chromium -g "イシュー#276"`を実行 → **1件失敗**（`記事エディタ: 文章ブロックの全画面 (EasyMDE) も戻る/ESCで「完了」扱いになり、エディタは残る (イシュー#276)`、standard-ops.spec.js:391。`setArtTextFsEditorValue`/`getArtBlocks`を使う置換後のテスト）。エラーは`expect((await getArtBlocks(page))[0].markdown).toBe('ESCテスト本文')`が`""`を受け取り失敗＝置き換えたテストが「全画面MDEへの入力が下書きのmarkdownへ反映される」という元の挙動を正しく検知できていることを確認した。`git diff js/screens/article-editor.js`で差分が無いこと（完全に元へ戻ったこと）を確認済み。
+
+## 8. e2e-diff-main.mjs --visual フル実行（step3実測）
+
+`PORT=8152 PLAYWRIGHT_BASE_URL=http://localhost:8152 node scripts/verify/e2e-diff-main.mjs --visual` をフル実行（約7分、base=origin/main@7174c87770f60d4c59d62789dbcc63dfb54d21fe、work=作業ツリーHEAD 38e6b86d760243f23b4065b0ab854e044fad9c06・未コミット差分含む）。
+
+- E2E(playwright)：新しく落ちた0件／新しく通った0件／両方で落ちた0件。判定不能0件。work側統計：expected 788・skipped 589・unexpected(fail) 0・flaky 0。
+- Unit(vitest)：新しく落ちた0件／新しく通った0件／両方で落ちた0件。
+- 画像の差分(visual)：0件/54件。
+- 結果一式：`/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261113-122857-1420282`（生成2026-11-13T03:36:00.977Z）。
+
+完了条件（新しく落ちたテスト0件・画像差分0件）を満たした。新しく落ちたテストが無いため、flake再確認（`--grep`括弧なし）は不要だった。
+
+## 9. 件数の減少（最終集計）
+
+- 対象68件（`_artDraft`36・`_artTextFsEditor`29・`_artRenderBlocks`2・`_artBuildPreviewState`1）→ヘルパー内に12件残存。
+- **(a)由来の純減：0件**（本イシューは(a)化を一切行っていない。根拠はDOM側に型/内容/順序を1:1で示す属性が無いこと・既存`addBlock()`自身も内部状態読みを選んでいたこと＝§3）。
+- **(c)由来の純減：56件**（68-12=56、`tests/e2e/helpers/art-editor.js`の9関数へ集約）。
+- lint実測：216→160（bookshelf._152+app._8）。MAX定数を160に書き換え済み。
+
+## 10. G3-3への申し送り
+
+残り`_artOpenSheet`以下16名54件（`_artOpenSheet`13・`_artCloseSheet`10・`_artPreview`6・`_artPreviewStallMs`5・`_artRenderList`3・`_artPublishCalled`3・`_artUnpublish`2・`_artPublish`2・`_artOpenPublishPanel`2・`_artEditBlock`2・`_artDelete`2・`_artShowList`1・`_artRenderPublishPanel`1・`_artPreviewHardDeadlineMs`1・`_artOpenEditor`1）はG3-3へ回す。分類表(`u9-classification.md`)§1記載どおり大半が(a)（実クリック導線が確認済み）。§5の要確認フラグ（`_setBodyView`・`_openPluginSettings`・`_runPublishExport`・`_artOpenEditor`）はG3-3着手前に再確認が必要（本イシューでは未確認）。本イシューで判明した「分類表はapp._経由・同一evaluate同居の名前を数え落とす」パターン（G2・本イシューと2件連続）を踏まえ、G3-3着手時もlint実測の名前別集計を先に取り、分類表の件数と必ず照合すること。
