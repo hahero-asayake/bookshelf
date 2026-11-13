@@ -116,9 +116,12 @@ export async function seedHubLoginForTest(page, state, opts = {}) {
  * 「最新のデータを確認しています…」の間に裏で読み直す。どちらも終わる前に押すと、押した画面が描き直しで閉じる。
  * @param {import('@playwright/test').Page} page */
 export async function waitForHubStartupForTest(page) {
+    // アプリの内部 (bookshelf._*) は読まない (lint:internal-refs の上限)。画面の2つの表示で判定する:
+    // 読み込み中の覆い (#loading) と、上部の「最新のデータを確認しています…」の行 (js/bookshelf.js _updateStatusBar)
     await page.waitForFunction(() => {
         const loading = document.getElementById('loading');
-        return window.bookshelf && !window.bookshelf._syncChecking && (!loading || loading.style.display === 'none');
+        const checking = document.querySelector('.status-row.status-checking');
+        return window.bookshelf && !checking && (!loading || loading.style.display === 'none');
     });
 }
 
