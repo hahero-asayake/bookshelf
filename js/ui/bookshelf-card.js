@@ -90,7 +90,7 @@ class _BookshelfCardMethods {
     /**
      * 本棚プレビューカード 1 枚を生成 (all / ユーザ作成本棚 統一)
      */
-    _renderBookshelfCard(bookshelf, textOnlyClass) {
+    _renderBookshelfCard(bookshelf, textOnlyClass, bookByAsin) {
         const isSpecial = !!bookshelf.isSpecial;
         const cardEffectiveIcon = bookshelf.iconName || 'library';
         const iconSvg = window.renderIcon(cardEffectiveIcon, { size: 18 });
@@ -139,7 +139,10 @@ class _BookshelfCardMethods {
 
         const previewBooks = previewAsins.slice(0, 8);
         const previewHtml = previewBooks.map(asin => {
-            const book = (this.books || []).find(b => b.asin === asin);
+            // イシュー#575: 呼び出し側が asin→本 の Map を渡したらそれを引く (ホームのハイライトは
+            // 本棚数×8回の全蔵書走査が 9000冊・61本棚で約70ms(CPU6倍)になっていた)。Map は find と
+            // 同じく最初に一致した本を持つ。渡さない呼び出し(本棚一覧)は従来どおり find。
+            const book = bookByAsin ? bookByAsin.get(asin) : (this.books || []).find(b => b.asin === asin);
             // data-asin: 表紙が読み込み失敗/1x1(_setupCoverFallback)で<img>がプレースホルダdivに
             // 差し替わっても、並び順をasinで検証できるように外側のラッパーに持たせる(イシュー#398)。
             if (book && this.bookManager.hasCoverImage(book)) {

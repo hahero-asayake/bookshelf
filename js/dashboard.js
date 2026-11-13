@@ -983,17 +983,21 @@ class BookshelfDashboard {
         const hasAll = ordered.some(b => b.isSpecial);
         const showImages = !!app.showImagesInOverview;
         const textOnlyClass = showImages ? '' : 'text-only';
+        // イシュー#575: 表紙の本引き用 asin→本 の Map を描画1回につき1回だけ作る (キャッシュしない=
+        // 古い値が残らない)。asin 重複時は find と同じく最初の本を残す。
+        const bookByAsin = new Map();
+        for (const b of (app.books || [])) if (!bookByAsin.has(b.asin)) bookByAsin.set(b.asin, b);
         const cards = [];
         // 実データに特殊本棚(ALL)が無い場合は擬似 ALL を先頭に合成 (本棚ヘッダーと表示を揃える)
         if (!hasAll) {
             const synthAll = { id: 'all', name: '全ての本', isSpecial: true, iconName: 'library', description: '', books: [] };
-            cards.push(app._renderBookshelfCard(synthAll, textOnlyClass));
+            cards.push(app._renderBookshelfCard(synthAll, textOnlyClass, bookByAsin));
         }
         if (ordered.length === 0 && cards.length === 0) {
             host.innerHTML = '<p style="color:var(--muted);">本棚がありません。本棚管理から作成してください。</p>';
             return;
         }
-        for (const bs of ordered) cards.push(app._renderBookshelfCard(bs, textOnlyClass));
+        for (const bs of ordered) cards.push(app._renderBookshelfCard(bs, textOnlyClass, bookByAsin));
         host.innerHTML = `<div class="widget-bookshelves-grid" id="widget-bookshelves-grid-host"></div>`;
         const gridHost = host.querySelector('#widget-bookshelves-grid-host');
         gridHost.innerHTML = cards.join('');

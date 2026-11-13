@@ -154,13 +154,20 @@ async function measureOnce(page) {
             fn: window.__fn,
             hlCards: document.querySelectorAll('#dashboard .bookshelf-card, #widget-bookshelves-grid-host > *').length,
             hlImgs: document.querySelectorAll('#widget-bookshelves-grid-host img').length,
+            // #575: _renderBookshelfHighlights 冒頭の asin→本 Map 構築と同じループの所要時間 (同じスロットル下)
+            mapBuildMs: (() => {
+                const t = performance.now();
+                const m = new Map();
+                for (const b of (window.bookshelf.books || [])) if (!m.has(b.asin)) m.set(b.asin, b);
+                return performance.now() - t;
+            })(),
         };
     }, [navStart, clickSent]);
     const fn = {};
     for (const [k, v] of Object.entries(res.fn || {})) fn[k] = { calls: v.calls, ms: r1(v.ms) };
     return {
         navMs: r1(doneAt - navStart), rafMaxGap: r1(res.rafMaxGap), clickDelay: res.clickDelay == null ? null : r1(res.clickDelay),
-        ltCount: res.ltCount, ltMax: r1(res.ltMax), ltSum: r1(res.ltSum), hlCards: res.hlCards, hlImgs: res.hlImgs, fn,
+        ltCount: res.ltCount, ltMax: r1(res.ltMax), ltSum: r1(res.ltSum), hlCards: res.hlCards, hlImgs: res.hlImgs, mapBuildMs: r1(res.mapBuildMs), fn,
     };
 }
 
@@ -184,7 +191,7 @@ async function main() {
         try {
             const r = await measureOnce(page);
             results.push({ ...cond, run: i + 1, ...r });
-            console.log(`[${BROWSER}][${VARIANT}][${SHELVES}x${PER_SHELF}][${SORT}][run${i + 1}] navMs=${r.navMs} ltCount=${r.ltCount} ltMax=${r.ltMax} ltSum=${r.ltSum} rafMaxGap=${r.rafMaxGap} clickDelay=${r.clickDelay} hlCards=${r.hlCards} hlImgs=${r.hlImgs} fn=${JSON.stringify(r.fn)}`);
+            console.log(`[${BROWSER}][${VARIANT}][${SHELVES}x${PER_SHELF}][${SORT}][run${i + 1}] navMs=${r.navMs} ltCount=${r.ltCount} ltMax=${r.ltMax} ltSum=${r.ltSum} rafMaxGap=${r.rafMaxGap} clickDelay=${r.clickDelay} hlCards=${r.hlCards} hlImgs=${r.hlImgs} mapBuildMs=${r.mapBuildMs} fn=${JSON.stringify(r.fn)}`);
         } catch (e) {
             console.error(`[run${i + 1}] FAILED: ${e.message}`);
             results.push({ ...cond, run: i + 1, error: String(e.message) });
