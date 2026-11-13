@@ -77,6 +77,8 @@ export const OPENERS_ARTICLE = {
         open: async (page) => {
             await page.locator('#art-add-sheet [data-block-type="text"]').click();
             await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+            // 書式つきエディタの準備が済むと、元の textarea は隠れる。済む前に測ると、検出が実行ごとに揺れる
+            await expect(page.locator('#art-text-fs-textarea')).toBeHidden({ timeout: 10000 });
         },
     },
     'art-blk-menu': {

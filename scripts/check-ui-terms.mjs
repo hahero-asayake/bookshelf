@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeGateChecks } from './audit-gate.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const argv = process.argv.slice(2);
@@ -127,6 +128,11 @@ if (UPDATE) {
         for (const id of added) console.log(`  + ${id}`);
         for (const id of left) console.log(`  - ${id}`);
     }
+}
+
+// 門の集計へ渡す (既定の入力を読んだ時だけ・docs/audit/machine-checks.md §10)
+if (!argv.some((a) => a.startsWith('--input='))) {
+    writeGateChecks(ROOT, [{ name: '用語表', detected: counts.table + counts.jargon, detail: `table ${counts.table}・jargon ${counts.jargon} (legal の ${reference.length} 件は別・合否に入れない)` }]);
 }
 
 // --- 4. 判定 ---

@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "kind": "clip",
+    "selector": "#current-bookshelf-title",
+    "screens": ["shelf-empty"],
+    "reason": "検出が実行ごとに揺れるため外した (768 で出る回と 1024 で出る回があった・1件)。空の本棚へ切り替えた直後の題の幅が定まらない。題には省略表示 (ellipsis) の指定がある。揺れの原因を潰せたら、この行を消す"
+  }
+]

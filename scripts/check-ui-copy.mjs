@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { writeGateChecks } from './audit-gate.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const argv = process.argv.slice(2);
@@ -46,6 +47,11 @@ const legal = runTextlint(LEGAL);
 if (legal.length) {
     console.log(`\n-- 参考 (legal・合否に入れない): ${legal.length} 件 --`);
     for (const m of legal) console.log(show(m));
+}
+
+// 門の集計へ渡す (既定の入力を読んだ時だけ・docs/audit/machine-checks.md §10)
+if (!argv.some((a) => a.startsWith('--input='))) {
+    writeGateChecks(ROOT, [{ name: 'lint:copy', detected: messages.length, detail: `textlint の指摘 (legal の ${legal.length} 件は別・合否に入れない)` }]);
 }
 
 if (!existsSync(BASELINE)) {

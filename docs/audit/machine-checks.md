@@ -232,6 +232,7 @@
 - 入力が `placeholder` しか持たない時は、別の種類（`inputPlaceholderOnly`）で検出する。
 - axe は、名前に関するルールだけを流す：`button-name`・`link-name`・`image-alt`・`input-image-alt`・`input-button-name`・`label`・`select-name`・`aria-command-name`・`aria-input-field-name`・`aria-toggle-field-name`・`role-img-alt`・`svg-img-alt`・`summary-name`・`frame-title`。
 - 種類は、自前が `button`・`link`・`image`・`input`・`inputPlaceholderOnly`・`select`・`other`、axe が `axe`（ルールID × 要素の識別子）。
+- axe は、新しいページを開かない形（`setLegacyMode`）で流す。既定の形は白紙のページを開いて iframe の結果をまとめるが、公開プレビューを開いた状態ではそのページが開けず時間切れになるため。同じオリジンの iframe は見る。
 
 ### 5-6. 表示崩れ（`audit:layout`）
 
@@ -261,11 +262,14 @@
 ```
 
 - 載せてよいのは、設計として意図した省略・重ねだけ。`reason` は必須。検出を減らす目的で足さない。迷うものは載せずに一覧へ残す。
+- 検出が実行ごとに揺れる要素は、原因を潰せない時に限り、揺れの中身を `reason` に書いて載せる。原因を潰せたら行を消す。
 - `clip` の除外は、その要素に `text-overflow: ellipsis` か行数の制限（line-clamp）が実際に付いている時だけ効く。付いていない要素は、除外リストにあっても検出する。
 - どの要素にも当たらなかった除外の行は、警告に出す（落とさない）。
 
 ## 6. 基準値
 
+- 巡回の spec は、検出の一覧を `test-results-audit/<検査>/raw/` に書き出す。`scripts/check-audit.mjs <検査>` がそれを数え、基準値と比べる。巡回の結果が無い時は、0件の合格にせず止める。
+- 同じ画面が複数の列に出る時（本棚の一覧など）は、最初の列でだけ検出器を流す。
 - 置き場は `tests/audit/baseline.json`。検査 × 種類ごとの件数の上限を持つ。
 
 ```json
@@ -323,6 +327,7 @@
 
 - 見本ページ（`tests/fixtures/audit/`）：誤りを入れた見本で、入れた数と同じ件数を検出すること。誤りの無い見本で0件であること。検出器ごとに `tests/audit/selftest/` に置き、毎回流す。
 - 実画面：実行時に誤りを1つ入れる切替（環境変数 `AUDIT_PLANT`。ソースは書き換えない）で、対応する npm script が基準値の超過で exit 1 になること。入れる誤りは、aria-label を1つ外す・ボタン名を1つ変える・見出しを狭めて切る、の3つ。
+- ボタン名を変える誤りは、同じ操作キー・同じ名前のボタンがほかの画面にもある所に入れる（`AUDIT_PLANT=button` は本の手動追加の閉じるボタン）。1つしか無い名前を変えると、名前が入れ替わるだけで件数は増えない。その場合は、落ちずに「前回の一覧との差」にだけ出る。
 - 文言：見本の文言に「インポート」を入れると `lint:terms` が exit 1 になること。
 
 ## 10. 実行の場所

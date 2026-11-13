@@ -75,7 +75,9 @@ function ownCheck() {
 export async function detectA11yNames(page, { axe = true } = {}) {
     const findings = await evaluateInFrames(page, ownCheck);
     if (axe) {
-        const results = await new AxeBuilder({ page }).withRules(A11Y_AXE_RULES).analyze();
+        // setLegacyMode: axe は既定で、iframe の結果をまとめるために白紙のページを新しく開く。公開プレビューを
+        // 開いた状態ではそのページが開けず時間切れになるので、新しいページを開かない形で流す (同じオリジンの iframe は見る)
+        const results = await new AxeBuilder({ page }).withRules(A11Y_AXE_RULES).setLegacyMode(true).analyze();
         for (const violation of results.violations) {
             for (const node of violation.nodes) {
                 const target = node.target.map(String);
