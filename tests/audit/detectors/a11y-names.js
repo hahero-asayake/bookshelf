@@ -11,8 +11,10 @@ export const A11Y_AXE_RULES = [
 ];
 
 // ページの中で実行される
-function ownCheck() {
+function ownCheck(arg) {
     const H = window.__auditH;
+    const base = arg && arg.scope ? document.querySelector(arg.scope) : document;
+    if (!base) throw new Error(`測る範囲が見つからない: ${arg.scope}`);
     const byIds = (el, attr) => H.text((el.getAttribute(attr) || '').split(/\s+/).filter(Boolean)
         .map((id) => (document.getElementById(id) || {}).textContent || '').join(' '));
     // 中の文字 (中の画像の alt・svg の title・aria-label を含む。aria-hidden の中は数えない)
@@ -36,7 +38,7 @@ function ownCheck() {
     const title = (el) => H.text(el.getAttribute('title'));
     const findings = [];
     const add = (kind, el) => findings.push({ kind, ident: H.ident(el), html: el.outerHTML.replace(/\s+/g, ' ').slice(0, 140) });
-    const targets = document.querySelectorAll('button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, img, [role="img"], summary, iframe');
+    const targets = base.querySelectorAll('button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, img, [role="img"], summary, iframe');
     for (const el of targets) {
         if (!H.visible(el) || el.closest('[aria-hidden="true"]')) continue;
         const tag = el.tagName;
@@ -72,12 +74,14 @@ function ownCheck() {
  * ページを受け取り、名前の無い部品の一覧を返す。
  * 種類 (kind): 自前 = button・link・image・input・inputPlaceholderOnly・select・other / axe = axe
  */
-export async function detectA11yNames(page, { axe = true } = {}) {
-    const findings = await evaluateInFrames(page, ownCheck);
+export async function detectA11yNames(page, { axe = true, scope = null } = {}) {
+    const findings = await evaluateInFrames(page, ownCheck, { scope });
     if (axe) {
         // setLegacyMode: axe は既定で、iframe の結果をまとめるために白紙のページを新しく開く。公開プレビューを
         // 開いた状態ではそのページが開けず時間切れになるので、新しいページを開かない形で流す (同じオリジンの iframe は見る)
-        const results = await new AxeBuilder({ page }).withRules(A11Y_AXE_RULES).setLegacyMode(true).analyze();
+        let builder = new AxeBuilder({ page }).withRules(A11Y_AXE_RULES).setLegacyMode(true);
+        if (scope) builder = builder.include(scope);   // その面の中だけを測る
+        const results = await builder.analyze();
         for (const violation of results.violations) {
             for (const node of violation.nodes) {
                 const target = node.target.map(String);

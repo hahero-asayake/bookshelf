@@ -1,24 +1,26 @@
 // 監査で巡回する全画面の一覧 (docs/audit/machine-checks.md §1)。データだけを持つ (開き方は open.js)。
 //   surfaces  対応する S.define の ID (js/bookshelf.js _defineSurfaces)
 //   std1      対応する docs/ui-standards.md §1 の表の行 (「面」の列の先頭の文字)
+//   scope     その面の中だけを測る (ポップオーバー・メニュー・バナー・シート・本の詳細の欄など、背後に元の画面が残る面)。
+//             背後の画面の崩れは、背後の画面の行で数える (同じ崩れを面の数だけ数えない)
 // S.define の全 ID と §1 の表の全行が、ここか EXCLUDED のどちらかに載っていることを
 // tests/unit/audit-screens-coverage.test.js が確かめる。
 export const SCREENS = [
     { id: 'home', title: 'ホーム', group: 'main' },
     { id: 'home-empty', title: '蔵書0のホーム（初回の案内）', group: 'empty' },
     { id: 'home-edit', title: 'ホームの編集', group: 'main', surfaces: ['dashboard-edit'] },
-    { id: 'widget-picker', title: 'ウィジェットピッカー', group: 'main', std1: ['ウィジェットピッカー'] },
+    { id: 'widget-picker', scope: true, title: 'ウィジェットピッカー', group: 'main', std1: ['ウィジェットピッカー'] },
     { id: 'shelf', title: '本棚の一覧', group: 'main' },
     { id: 'shelf-empty', title: '空の本棚', group: 'empty' },
-    { id: 'shelf-tree-menu', title: '本棚ツリーの「…」メニュー', group: 'main', std1: ['本棚ツリーの「…」メニュー'] },
-    { id: 'popover-filter', title: 'フィルターのポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
-    { id: 'popover-display', title: '表示のポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
-    { id: 'popover-search', title: '検索のポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
-    { id: 'bulk-shelf-popover', title: 'まとめて本棚に入れるポップオーバー', group: 'main' },
-    { id: 'book-detail', title: '本の詳細（PCは右ペイン・スマホはシート）', group: 'main', std1: ['本詳細シート'] },
+    { id: 'shelf-tree-menu', scope: true, title: '本棚ツリーの「…」メニュー', group: 'main', std1: ['本棚ツリーの「…」メニュー'] },
+    { id: 'popover-filter', scope: true, title: 'フィルターのポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
+    { id: 'popover-display', scope: true, title: '表示のポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
+    { id: 'popover-search', scope: true, title: '検索のポップオーバー', group: 'main', std1: ['ヘッダーのポップオーバー'] },
+    { id: 'bulk-shelf-popover', scope: true, title: 'まとめて本棚に入れるポップオーバー', group: 'main' },
+    { id: 'book-detail', scope: true, title: '本の詳細（PCは右ペイン・スマホはシート）', group: 'main', std1: ['本詳細シート'] },
     { id: 'book-memo', title: '長文メモエディタ', group: 'memo', surfaces: ['book-memo-modal'], std1: ['長文メモエディタ'] },
-    { id: 'mde-heading-menu', title: '見出しボタンの3択メニュー', group: 'memo', surfaces: ['mde-heading-menu'], std1: ['書式ツールバーの見出しボタンの3択メニュー'] },
-    { id: 'drawer', title: '左ナビのドロワー', group: 'main', surfaces: ['drawer'], std1: ['ドロワー'] },
+    { id: 'mde-heading-menu', scope: true, title: '見出しボタンの3択メニュー', group: 'memo', surfaces: ['mde-heading-menu'], std1: ['書式ツールバーの見出しボタンの3択メニュー'] },
+    { id: 'drawer', scope: true, title: '左ナビのドロワー', group: 'main', surfaces: ['drawer'], std1: ['ドロワー'] },
     { id: 'command-palette', title: 'コマンドパレット', group: 'main', surfaces: ['command-palette'], std1: ['コマンドパレット'] },
     { id: 'settings', title: '設定の一覧', group: 'settings', surfaces: ['settings-modal'], std1: ['設定モーダル'] },
     { id: 'settings-cat', title: '設定の各節', group: 'settings', surfaces: ['settings-cat'], std1: ['設定モーダル'] },
@@ -34,20 +36,20 @@ export const SCREENS = [
     { id: 'art-viewing', title: '記事の閲覧状態', group: 'publish', surfaces: ['art-viewing'], std1: ['記事エディタの多段'] },
     { id: 'art-edit', title: '記事の編集状態', group: 'publish', surfaces: ['art-edit-mode'], std1: ['記事エディタの多段'] },
     { id: 'art-fs', title: 'ブロックの全画面・PCの文章ブロック右ペイン', group: 'publish', surfaces: ['art-fs'], std1: ['記事エディタのブロック全画面'] },
-    { id: 'art-add-sheet', title: 'ブロックを足すシート', group: 'publish', surfaces: ['art-add-sheet'], std1: ['記事エディタの多段'] },
-    { id: 'art-blk-menu', title: 'ブロックのメニュー', group: 'publish', surfaces: ['art-blk-menu'], std1: ['記事エディタの多段'] },
-    { id: 'art-look-sheet', title: '見た目のシート', group: 'publish', surfaces: ['art-look-sheet'], std1: ['記事エディタの多段'] },
-    { id: 'art-drawer', title: '引き出し', group: 'publish', surfaces: ['art-sheet'], std1: ['記事エディタの多段'] },
-    { id: 'art-drawer-shelf-popover', title: '引き出しの本棚えらび', group: 'publish' },
-    { id: 'art-more-menu', title: '記事の ⋯ メニュー', group: 'publish', surfaces: ['art-more-menu'], std1: ['記事エディタの ⋯ メニュー'] },
+    { id: 'art-add-sheet', scope: true, title: 'ブロックを足すシート', group: 'publish', surfaces: ['art-add-sheet'], std1: ['記事エディタの多段'] },
+    { id: 'art-blk-menu', scope: true, title: 'ブロックのメニュー', group: 'publish', surfaces: ['art-blk-menu'], std1: ['記事エディタの多段'] },
+    { id: 'art-look-sheet', scope: true, title: '見た目のシート', group: 'publish', surfaces: ['art-look-sheet'], std1: ['記事エディタの多段'] },
+    { id: 'art-drawer', scope: true, title: '引き出し', group: 'publish', surfaces: ['art-sheet'], std1: ['記事エディタの多段'] },
+    { id: 'art-drawer-shelf-popover', scope: true, title: '引き出しの本棚えらび', group: 'publish' },
+    { id: 'art-more-menu', scope: true, title: '記事の ⋯ メニュー', group: 'publish', surfaces: ['art-more-menu'], std1: ['記事エディタの ⋯ メニュー'] },
     { id: 'art-publish', title: '公開パネル', group: 'publish', surfaces: ['art-publish-modal'], std1: ['公開パネル'] },
     { id: 'art-preview', title: '公開プレビュー（中の公開記事ページを含む）', group: 'publish', surfaces: ['pp-preview-modal'], std1: ['公開プレビューモーダル'] },
     { id: 'publish-settings', title: '公開の設定', group: 'publish', surfaces: ['publish-settings-modal'] },
     { id: 'report', title: '記事の通報', group: 'dialogs', surfaces: ['report-modal'], std1: ['記事の通報ダイアログ'] },
     { id: 'confirm', title: '確認ダイアログ（2択）', group: 'dialogs', std1: ['confirmDialog'] },
     { id: 'sync-conflict', title: '同期衝突ダイアログ（3択）', group: 'dialogs', std1: ['同期衝突ダイアログ'] },
-    { id: 'usage-alert', title: '容量アラートバナー', group: 'dialogs', std1: ['容量アラートバナー'] },
-    { id: 'mobile-setup-banner', title: 'スマホの設定案内バナー', group: 'dialogs' },
+    { id: 'usage-alert', scope: true, title: '容量アラートバナー', group: 'dialogs', std1: ['容量アラートバナー'] },
+    { id: 'mobile-setup-banner', scope: true, title: 'スマホの設定案内バナー', group: 'dialogs' },
 ];
 
 // 巡回の対象外 (理由つき)

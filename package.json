@@ -10,6 +10,7 @@
     "check:version": "node scripts/check-version-bump.mjs",
     "lint:copy": "node scripts/extract-ui-strings.mjs && node scripts/check-ui-copy.mjs",
     "lint:terms": "node scripts/extract-ui-strings.mjs && node scripts/check-ui-terms.mjs",
+    "audit": "node scripts/run-audit.mjs",
     "audit:a11y-names": "playwright test -c playwright.audit.config.js --output=test-results-audit/a11y tests/audit/a11y-names.spec.js && node scripts/check-audit.mjs a11y",
     "audit:buttons": "node scripts/extract-ui-strings.mjs && playwright test -c playwright.audit.config.js --output=test-results-audit/buttons tests/audit/button-names.spec.js && node scripts/check-audit.mjs buttons",
     "audit:layout": "playwright test -c playwright.audit.config.js --output=test-results-audit/layout tests/audit/layout.spec.js && node scripts/check-audit.mjs layout",

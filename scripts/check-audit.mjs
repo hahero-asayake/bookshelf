@@ -25,7 +25,9 @@ if (!KINDS[check]) {
 }
 const given = (name) => argv.find((a) => a.startsWith(`--${name}=`));
 const arg = (name, def) => resolve(given(name) ? given(name).slice(name.length + 3) : def);
-const RAW = arg('raw', join(ROOT, 'test-results-audit', check, 'raw'));
+// --from = 巡回の出力先 (playwright の --output)。検出の一覧は <from>/raw/<検査>/ にある (npm run audit は test-results-audit/all)
+const FROM = arg('from', join(ROOT, 'test-results-audit', check));
+const RAW = arg('raw', join(FROM, 'raw', check));
 const BASELINE = arg('baseline', join(ROOT, 'tests/audit/baseline.json'));
 const FINDINGS = arg('findings', join(ROOT, 'tests/audit/findings', `${check}.json`));
 const STRINGS = arg('strings', join(ROOT, '_local/ui-strings.json'));
@@ -98,6 +100,12 @@ if (UPDATE) {
     mkdirSync(dirname(FINDINGS), { recursive: true });
     writeFileSync(FINDINGS, JSON.stringify(current, null, 1) + '\n');
     console.log(`\n検出の一覧を書いた: ${FINDINGS} (${current.length} 件)`);
+    // 基準値もこの件数に書き直す (検査ごとに1行の形を保つ)
+    const base = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf-8')) : {};
+    base[check] = counts;
+    const line = ([k, v]) => `  ${JSON.stringify(k)}: { ${Object.entries(v).map(([a, b]) => `${JSON.stringify(a)}: ${b}`).join(', ')} }`;
+    writeFileSync(BASELINE, `{\n${Object.entries(base).map(line).join(',\n')}\n}\n`);
+    console.log(`基準値を書いた: ${BASELINE} (${check})`);
 } else if (existsSync(FINDINGS)) {
     const before = new Set(JSON.parse(readFileSync(FINDINGS, 'utf-8')));
     const added = current.filter((id) => !before.has(id));
@@ -110,7 +118,8 @@ if (UPDATE) {
 }
 
 // --- 門の集計へ渡す (既定の場所を読んだ時だけ) ---
-if (!given('raw')) {
+// 変異検査の回 (AUDIT_PLANT) と、--raw で別の結果を読んだ回は書かない
+if (!given('raw') && !process.env.AUDIT_PLANT) {
     const IMAGE_RULES = ['image-alt', 'input-image-alt', 'role-img-alt', 'svg-img-alt'];
     if (check === 'a11y') {
         const axeAlt = current.filter((id) => id.startsWith('axe|') && IMAGE_RULES.some((rule) => id.split('|')[2].startsWith(`${rule}:`))).length;

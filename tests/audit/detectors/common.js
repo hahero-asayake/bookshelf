@@ -29,16 +29,18 @@ export function auditHelpers() {
 const INSTALL = `window.__auditH = (${auditHelpers.toString()})()`;
 
 /** ページと、同じオリジンの iframe の全部で fn を実行し、結果 (配列) をつなげて返す */
-export async function evaluateInFrames(page, fn, arg) {
+// arg.scope (ページの中のセレクタ) がある時は、その面の中だけを測る: ページではその要素の中、iframe はその中にあるものだけ
+export async function evaluateInFrames(page, fn, arg = {}) {
     const out = [];
     for (const frame of page.frames()) {
         const isMain = frame === page.mainFrame();
         try {
+            const owner = isMain ? null : await frame.frameElement();
+            if (owner && arg.scope && !(await owner.evaluate((el, s) => !!el.closest(s), arg.scope))) continue;
             await frame.evaluate(INSTALL);
-            const part = await frame.evaluate(fn, arg);
+            const part = await frame.evaluate(fn, { ...arg, scope: isMain ? arg.scope || null : null });
             if (isMain) { out.push(...part); continue; }
             if (!part.length) continue;
-            const owner = await frame.frameElement();
             const id = await owner.getAttribute('id');
             const prefix = `iframe${id ? '#' + id : ''} >> `;
             for (const x of part) out.push({ ...x, ident: prefix + x.ident });

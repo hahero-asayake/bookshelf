@@ -4,5 +4,11 @@
     "selector": "#current-bookshelf-title",
     "screens": ["shelf-empty"],
     "reason": "検出が実行ごとに揺れるため外した (768 で出る回と 1024 で出る回があった・1件)。空の本棚へ切り替えた直後の題の幅が定まらない。題には省略表示 (ellipsis) の指定がある。揺れの原因を潰せたら、この行を消す"
-  }
+  },
+  { "kind": "clip", "selector": ".book-title", "reason": "本のカードの題。全部の画面で同じ形の省略 (行数の制限・css/bookshelf.css の .book-title)" },
+  { "kind": "clip", "selector": ".book-author", "reason": "本のカードの著者。全部の画面で同じ形の省略 (行数の制限・.book-author)" },
+  { "kind": "clip", "selector": ".book-memo", "reason": "本のカードの短文メモ。全部の画面で同じ形の省略 (行数の制限・.book-memo)" },
+  { "kind": "clip", "selector": ".widget-title", "reason": "ホームのウィジェットの題。編集の時に1行で省略する (.dashboard-grid.is-edit-mode .widget-title)" },
+  { "kind": "clip", "selector": ".widget-book-cell-title", "reason": "ホームのウィジェットに並ぶ本の題。全部のウィジェットで同じ形の省略 (行数の制限・.widget-book-cell-title)" },
+  { "kind": "clip", "selector": ".widget-today-pick-title", "reason": "ホームの「今日の1冊」の本の題。ウィジェットの本の題と同じ形の省略 (行数の制限・.widget-today-pick-title)" }
 ]

@@ -6,7 +6,7 @@
 import { evaluateInFrames, uniqueFindings } from './common.js';
 
 // ページの中で実行される
-function detect({ allow, tolerance }) {
+function detect({ allow, tolerance, scope }) {
     const H = window.__auditH;
     const findings = [];
     const used = new Set();
@@ -25,7 +25,10 @@ function detect({ allow, tolerance }) {
     const boxless = (cs) => cs.display === 'inline' || cs.display === 'contents';
     const cuts = (v) => v === 'hidden' || v === 'clip';
     const scrolls = (v) => v === 'auto' || v === 'scroll';
-    const els = [...document.body.querySelectorAll('*')]
+    // scope がある時は、その面の中だけを測る (面そのものと、その中の要素)
+    const scopeRoot = scope ? document.querySelector(scope) : null;
+    if (scope && !scopeRoot) throw new Error(`測る範囲が見つからない: ${scope}`);
+    const els = (scopeRoot ? [scopeRoot, ...scopeRoot.querySelectorAll('*')] : [...document.body.querySelectorAll('*')])
         .filter((el) => !el.ownerSVGElement && !SKIP_TAGS.includes(el.tagName) && H.visible(el));
     const seen = new Set(els);
     const styles = new Map();
@@ -71,8 +74,9 @@ function detect({ allow, tolerance }) {
     }
 
     // 横スクロール
+    // 横スクロール (文書の性質なので、面の中だけを測る時は見ない)
     const de = document.documentElement;
-    if (de.scrollWidth - de.clientWidth > tolerance) {
+    if (!scopeRoot && de.scrollWidth - de.clientWidth > tolerance) {
         findings.push({ kind: 'pageX', ident: 'document', detail: `文書の幅 ${de.scrollWidth} / 画面の幅 ${de.clientWidth}` });
     }
 
@@ -101,9 +105,9 @@ function detect({ allow, tolerance }) {
  * allowlist = [{ kind, selector, screens?, reason }] (tests/audit/layout-allowlist.json)。
  * 戻り値の usedAllow は、今回どれかの要素に当たった除外 (当たらなかった除外を警告に出すため)。
  */
-export async function detectLayout(page, { allowlist = [], screen = null, tolerance = 1 } = {}) {
+export async function detectLayout(page, { allowlist = [], screen = null, tolerance = 1, scope = null } = {}) {
     const allow = allowlist.filter((a) => !a.screens || !screen || a.screens.includes('*') || a.screens.includes(screen));
-    const raw = await evaluateInFrames(page, detect, { allow, tolerance });
+    const raw = await evaluateInFrames(page, detect, { allow, tolerance, scope });
     const usedIdx = new Set();
     const findings = [];
     for (const f of raw) {

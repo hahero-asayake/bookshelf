@@ -3,10 +3,12 @@
 import { evaluateInFrames } from './common.js';
 
 // ページの中で実行される
-function collect() {
+function collect(arg) {
     const H = window.__auditH;
+    const base = arg && arg.scope ? document.querySelector(arg.scope) : document;
+    if (!base) throw new Error(`測る範囲が見つからない: ${arg.scope}`);
     const out = [];
-    for (const el of document.querySelectorAll('button, [role="button"], a.btn, input[type="button"], input[type="submit"]')) {
+    for (const el of base.querySelectorAll('button, [role="button"], a.btn, input[type="button"], input[type="submit"]')) {
         if (!H.visible(el) || el.closest('[aria-hidden="true"]')) continue;
         // 名前は、aria-label、中の文字、title の順で最初にあるもの
         const name = H.text(el.getAttribute('aria-label'))
@@ -31,8 +33,8 @@ function collect() {
 }
 
 /** ページを受け取り、見えているボタンの一覧 { screen, opKey, name, ident } を返す */
-export async function collectButtons(page, screen) {
-    return (await evaluateInFrames(page, collect)).map((b) => ({ ...b, screen }));
+export async function collectButtons(page, screen, { scope = null } = {}) {
+    return (await evaluateInFrames(page, collect, { scope })).map((b) => ({ ...b, screen }));
 }
 
 // 確認ダイアログの実行ボタンは、操作ごとに名前が違うのが正しいので、揺れの判定に入れない
