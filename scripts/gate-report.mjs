@@ -91,15 +91,16 @@ function judgeGate(gateLint, reports) {
     const bad = unreadable(gateLint, 'lint:e2e-gate の結果(gate-lint.json)');
     if (bad) return bad;
     const runs = reports.filter((r) => !r.error).flatMap(flattenPlaywright).filter((r) => r.status !== 'skipped');
-    const stateOf = (t) => {
-        const mine = runs.filter((r) => r.title === t.title && typeof r.file === 'string' && (t.file === r.file || t.file.endsWith(`/${r.file}`)));
+    // 結果の中から、その @gate の分だけを拾う(E2E 全件の結果を一緒に渡されても、ほかのテストは数えない)
+    const runsOf = (t) => runs.filter((r) => r.title === t.title && typeof r.file === 'string' && (t.file === r.file || t.file.endsWith(`/${r.file}`)));
+    const stateOf = (mine) => {
         if (mine.length === 0) return '未実行';
         if (mine.some((r) => r.status !== 'expected')) return '失敗・揺れ';
         const perProject = new Map();
         for (const r of mine) perProject.set(r.project, (perProject.get(r.project) ?? 0) + 1);
         return [...perProject.values()].every((n) => n >= REQUIRED_RUNS) ? '緑' : '回数不足';
     };
-    const tests = gateLint.tests.map((t) => ({ ...t, state: stateOf(t) }));
+    const tests = gateLint.tests.map((t) => { const mine = runsOf(t); return { ...t, runs: mine.length, state: stateOf(mine) }; });
     const order = ['緑', '失敗・揺れ', '回数不足', '未実行'];
     const groups = { 緑: [], '失敗・揺れ': [], 回数不足: [], 未実行: [], なし: [] };
     for (const id of Object.keys(gateLint.coverage)) {
@@ -117,7 +118,7 @@ function judgeGate(gateLint, reports) {
     const failed = groups.なし.length > 0 || flaky.length > 0 || violations > 0;
     return {
         verdict: failed ? FAIL : gaps.length > 0 ? NONE : PASS,
-        evidence: `緑 ${groups.緑.length}/${gateLint.jobsTotal}点（@gate ${tests.length}本・書き方の違反 ${violations}件・結果 ${runs.length}回分）`,
+        evidence: `緑 ${groups.緑.length}/${gateLint.jobsTotal}点（@gate ${tests.length}本・書き方の違反 ${violations}件・結果 ${tests.reduce((n, t) => n + t.runs, 0)}回分）`,
         gaps
     };
 }

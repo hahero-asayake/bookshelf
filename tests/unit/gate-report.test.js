@@ -94,7 +94,8 @@ describe('条件2: 観測点が緑の @gate でそろい、3回流して揺れ0'
     it('37点のうち1点だけ緑 → 不合格で、未達の36点を列挙する', () => {
         const c = cond({ ...passing(), gateLint: lintJson(['J5-2']), gateE2e: [gateRuns(['J5-2'])] }, 2);
         expect(c.verdict).toBe(FAIL);
-        expect(c.evidence).toContain('緑 1/37点');
+        // 「結果○回分」は @gate の分だけを数える(一緒に渡した E2E 全件の結果 = passing() の smoke 1回は数えない)
+        expect(c.evidence).toBe('緑 1/37点（@gate 1本・書き方の違反 0件・結果 3回分）');
         expect(c.gaps).toHaveLength(1);
         expect(c.gaps[0]).toContain('@gate が無い 36点');
         expect(c.gaps[0].match(/J\d+-\d+/g)).toHaveLength(36);
