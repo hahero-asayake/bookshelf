@@ -77,6 +77,12 @@
 // 全 tests/e2e/*.spec.js はこのファイルから test/expect を import すること
 // (@playwright/test を直接 import すると遮断が効かない)。
 import { test as base, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+// 既知の赤 (イシュー#589): アプリの不具合で赤になっている門のE2E の一覧。直すイシューの番号つき (docs/gate/known-red.json)。
+// E2E_SKIP_KNOWN_RED=1 の時だけ、この一覧のテストを外す (CI の e2e・webkit レグ)。門の判定 (gate-report) に渡す実行では
+// 付けない = 赤のまま数える (外した結果を渡しても、gate-report は「未実行」として合格に数えない)。
+const KNOWN_RED = JSON.parse(readFileSync(new URL('../../../docs/gate/known-red.json', import.meta.url), 'utf-8')).tests || [];
 
 // 1x1 透明 PNG (書影スタブ用)
 const TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -142,6 +148,14 @@ export async function blockExternalForTest(context) {
 }
 
 export const test = base.extend({
+    // 既知の赤を外す (上の KNOWN_RED の説明)。既定 (E2E_SKIP_KNOWN_RED 未設定) は何もしない
+    skipKnownRed: [async ({}, use, testInfo) => {
+        if (process.env.E2E_SKIP_KNOWN_RED === '1') {
+            const hit = KNOWN_RED.find((k) => k.test === testInfo.title);
+            if (hit) testInfo.skip(true, `既知の赤 (docs/gate/known-red.json・直すイシュー #${hit.issue})`);
+        }
+        await use();
+    }, { auto: true }],
     context: async ({ context }, use, testInfo) => {
         await blockExternalForTest(context);
         await use(context);

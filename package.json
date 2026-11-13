@@ -21,6 +21,7 @@
     "lint:js-color": "node scripts/check-js-color-literal.mjs",
     "lint:internal-refs": "node scripts/check-test-internal-refs.mjs",
     "lint:e2e-gate": "node scripts/check-e2e-gate.mjs",
+    "lint:known-red": "node scripts/check-known-red.mjs",
     "gate:report": "node scripts/gate-report.mjs"
   },
   "devDependencies": {

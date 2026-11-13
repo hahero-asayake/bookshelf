@@ -86,3 +86,33 @@ npm run gate:report -- --collect
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
 | J6-4 | `j6-4-sync-conflict.spec.js` | テストあり・不具合のため未投入（2台の本当の衝突で3択も知らせも出ない） |
 | J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |
+
+## webkit（iPhone 相当）で流す（イシュー#589）
+
+`GATE_WEBKIT=1` の時だけ、project `gate-webkit`（`devices['iPhone 13']`＝幅390・タッチ）が足される。対象は `tests/e2e/gate/` の spec と `art-canvas-tap-edit.spec.js`。CI では「test (webkit)」のレグがこれを流す。
+
+```bash
+GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
+  npx playwright test --project=gate-webkit --workers=1 --repeat-each=3
+```
+
+- **workers を絞る**（`--workers=1`）。並列の負荷の下では、起動や画面の切り替えが既定の待ち（5秒）に収まらず揺れる（#589 step4 で実測）。待ち時間を伸ばして通さない。
+- spec で viewport を決めていないと、chromium は PC 幅・webkit はスマホ幅で流れる。入口が幅で変わる操作（設定は PC が `#sidebar-settings`、スマホが `[data-mobile-nav="settings"]`）は、spec で幅を決める。
+- 下のナビは起動の前から見えている。起動が済む前に押しても何も起きないので、再読込や画面の移動の後は、起動が済んだ印（ホームに書名が出る等）を待ってから押す。
+- 外部の模擬は `helpers/gate-hub.js`（ハブ・決済・Google のログイン）。Service Worker を止めた実行（既定）なら、webkit でも `page.route` の模擬が効く。
+
+## Service Worker を動かす（J8 オフライン・イシュー#589）
+
+- spec の先頭で `test.use({ serviceWorkers: 'allow' })` にする（config の既定は `'block'`）。前提は `helpers/gate-offline.js`（`seedLibraryOnceForTest` → `openAppForTest` →（2回開いた端末にするなら）`reopenAppForTest`）。
+- 電波なしは、操作の区間で `context.setOffline(true)`。
+- `gate-setup.js` の `seedLibraryForTest` は再読込のたびに見本を入れ直すので、再読込をまたいで「残る」を確かめる時は使わない。
+- webkit では流さない（`gate-webkit` の `testIgnore`）。Playwright の WebKit は、電波なしの間は SW のキャッシュからも読めない（最小の SW でも再読込が失敗する）。iPhone の電波なしは人の実機 H1 で見る。
+- SW がページを制御している間は、webkit では `page.route`・`context.route` の模擬が効かない（通信が実ネットワークへ出る）。
+
+## 既知の赤（`docs/gate/known-red.json`・イシュー#589）
+
+アプリの不具合で赤になっている `@gate` は、テストを緩めずに、この一覧に載せる。1件＝`{ test: テスト名, gate: 観測点ID, issue: 直すイシューの番号, reason }`。
+
+- CI の e2e・webkit レグは、`E2E_SKIP_KNOWN_RED=1` で一覧のテストだけを外す（`helpers/test-base.js` の `skipKnownRed`）。門の判定（`gate:report`）に渡す実行では付けない＝赤のまま数える。外した結果を渡しても、`gate-report` は「未実行」として合格に数えない。
+- `npm run lint:known-red`（CI の e2e レグ）が、各件のイシュー番号・観測点ID・テスト名の実在を確かめる。
+- 直すイシューが入ったら、そのイシューの側で一覧から消す。
