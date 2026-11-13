@@ -1,0 +1,51 @@
+{
+  "comment": "用語表の正本 (docs/audit/machine-checks.md §5-2)。docs/ui-standards.md §3 の表は人が読む写しで、table の2列がこのファイルと食い違うと npm run lint:terms が落ちる。",
+  "terms": [
+    {
+      "id": "import",
+      "table": { "preferred": "取り込む（動詞）/ 取込（複合名詞: 取込データ・取込モーダル）", "avoid": "インポート" },
+      "preferred": ["取り込む", "取込"],
+      "avoid": [{ "pattern": "インポート" }]
+    },
+    {
+      "id": "hub",
+      "table": { "preferred": "Asayake ハブ / ハブ", "avoid": "Hub, hub" },
+      "preferred": ["Asayake ハブ", "ハブ"],
+      "avoid": [
+        { "pattern": "Hub", "notInside": ["GitHub"] },
+        { "pattern": "hub", "notInside": ["GitHub", "github"] }
+      ]
+    },
+    {
+      "id": "export",
+      "table": { "preferred": "全データを書き出す", "avoid": "エクスポート" },
+      "preferred": ["全データを書き出す"],
+      "avoid": [{ "pattern": "エクスポート" }]
+    },
+    {
+      "id": "plugin",
+      "table": { "preferred": "プラグイン", "avoid": "拡張（※ブラウザ拡張機能と衝突するため）" },
+      "preferred": ["プラグイン"],
+      "avoid": [{ "pattern": "拡張", "notInside": ["拡張子"] }]
+    },
+    {
+      "id": "import-bookmark",
+      "table": { "preferred": "取込ブックマーク", "avoid": "取込用ブックマーク・ブックマークレット" },
+      "preferred": ["取込ブックマーク"],
+      "avoid": [{ "pattern": "取込用ブックマーク" }, { "pattern": "ブックマークレット" }]
+    },
+    {
+      "id": "login",
+      "table": { "preferred": "ログイン/ログアウト", "avoid": "サインイン/サインアウト" },
+      "preferred": ["ログイン", "ログアウト"],
+      "avoid": [{ "pattern": "サインイン" }, { "pattern": "サインアウト" }]
+    }
+  ],
+  "jargon": [
+    { "id": "bookmarklet", "avoid": ["ブックマークレット"], "allowTexts": [], "note": "用語表の行 (取込ブックマーク) で数える" },
+    { "id": "relay", "avoid": ["リレー"], "allowTexts": [], "note": "「自動で届く」等に言い換える" },
+    { "id": "json", "avoid": ["JSON"], "allowTexts": ["JSONで書き出す"], "note": "ファイル形式の明示が要る場面は可" },
+    { "id": "csrf", "avoid": ["CSRF"], "allowTexts": [], "note": "" },
+    { "id": "etag", "avoid": ["ETag"], "allowTexts": [], "note": "" }
+  ]
+}

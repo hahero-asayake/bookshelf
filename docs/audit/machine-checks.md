@@ -273,7 +273,7 @@
 - 実測が上限を超えた種類が1つでもあれば exit 1。超えた種類・件数・増えた識別子を表示する。
 - 実測が上限以下なら exit 0。下回った時は「上限を下げられる」と表示するだけで、落とさない（`scripts/check-test-internal-refs.mjs` の `MAX` と同じ動き）。
 - 上限を上げる commit は、本文に理由と前後の件数を書く。
-- 検出の一覧は `tests/audit/findings/<検査>.json` に commit して残す（識別子を並べ替えて保存）。実行のたびに、今回の一覧との差（増えた識別子・消えた識別子）を表示する。この差では落とさない。件数が同じまま中身が入れ替わったことを、報告で見えるようにするためのもの。
+- 検出の一覧は `tests/audit/findings/<検査>.json` に commit して残す（識別子を並べ替えて保存。行番号は入れない＝関係の無い編集で行がずれても差に出さない）。書き直すのは基準値を動かす時で、検査に `--update` を付ける。実行のたびに、今回の一覧との差（増えた識別子・消えた識別子）を表示する。この差では落とさない。件数が同じまま中身が入れ替わったことを、報告で見えるようにするためのもの。
 - 記録する前に同じ検査を3回流し、一覧が3回とも同じであることを確かめる。
 
 ## 7. 文言の抽出（`scripts/extract-ui-strings.mjs`）
@@ -281,17 +281,20 @@
 | kind | ソース | 拾うもの |
 |---|---|---|
 | app | `index.html` の body | 表示される文字と、placeholder・title・aria-label・alt |
-| app | `js/*.js`・`js/screens/*.js`・`js/ui/*.js`（`js/vendor` は除く） | toast・confirm・alert の文字列。title・message・okLabel・cancelLabel の値。画面の HTML を組み立てる文字列の中の文字と、上の4属性 |
-| error | 上と同じ JS と `cf-worker/*.js` | `new Error(…)` の文字列、応答の `error`・`message` の値、`js/ui-feedback.js` の既定の文言 |
+| app | `js/` の下の JS（`js/vendor` は除く） | 日本語を含む文字列リテラルの全部（toast・confirm・alert の文字列、title・message・okLabel・cancelLabel の値を含む）。HTML を組み立てる文字列は、上の4属性とタグの間の文字に分ける |
+| error | 上と同じ JS と `cf-worker/*.js` | `…Error(…)` の文字列と、キー `error` の値。`cf-worker` の JS（公開ページの生成元を除く）の文字列は全部 |
 | public | `js/publish-article-generator.js`、`cf-worker/top-page.js`・`report-page.js`・`suspended-page.js` | 公開ページに出る固定の文言 |
 | ogp | `index.html` の head、上の公開ページの生成元、`manifest.webmanifest` | title・description・`og:*`・`twitter:*`・name・short_name |
-| legal | `legal/*.html` | 本文 |
+| legal | `legal/*.html` | 本文と title |
 
-- 日本語を含む文字列だけを拾う。コメントは拾わない。`${…}` は〈値〉に置き換える。
-- `cf-worker/seo.js`（robots.txt・sitemap）は、機械が読む出力なので対象外。
+- 日本語を含む文字列だけを拾う。`${…}` は〈値〉に置き換える。
+- 拾わないもの：コメント、`console.*` の引数（開発者向けのログ）、キー `keywords` の値（⌘K の検索用の語で、画面に出ない）、文字列の中の CSS・JS のコメント。
+- 文字列の中身が JS のプログラムの時（取込ブックマークの本体・通報ページのスクリプト）は、その中の文字列だけを拾う。
+- 対象外のファイル：`cf-worker/seo.js`（robots.txt・sitemap は機械が読む出力）、`cf-worker/username-blocklist-data.js`・`reserved-usernames.js`（ユーザー名の禁止語の一覧）。
 - 出力は2つ。
   - `_local/ui-strings.md`：textlint 用。今の形（`- 文言<!-- 場所 -->`）のまま。同じ文言は1行にまとめる。legal は `_local/ui-strings-legal.md` に分ける。
-  - `_local/ui-strings.json`：場所つきの全件。重複もまとめない。1件は `{ "text", "src": "ファイル:行", "kind", "via" }`。`via` は拾い方（toast・okLabel・cancelLabel・attr:aria-label・text など）。
+  - `_local/ui-strings.json`：場所つきの全件。重複もまとめない。1件は `{ "text", "src": "ファイル:行", "kind", "via" }`。`via` は拾い方（toast・okLabel・cancelLabel・error・literal・html・text・attr:aria-label・meta:og:title など）。
+- 検査は `--root`（読むリポジトリ）と `--out`（出力先）を受け取る。見本のリポジトリ `tests/fixtures/audit/extract/` に対して流し、出力を単体テストで確かめる。
 - 巡回で実際に画面へ出た文字のうち、抽出に無いものの数を「抽出もれ」として結果に出す（データ由来の文字は除く。合否に入れない）。
 
 ## 8. 直す範囲（明らかな誤字と表記）
