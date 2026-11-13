@@ -35,7 +35,7 @@ npm run lint:terms
 | 検査 | 件数 | 中身 |
 |---|---|---|
 | 抽出 | 1894 | app 1540・error 113・public 68・ogp 7・legal 166 |
-| lint:copy（textlint） | 117 | 半角かっこ 99・句読点 11・その他 7。legal は別に4件 |
+| lint:copy（textlint） | 119 | 半角かっこ 101・句読点 11・その他 7。legal は別に4件。push 前の rebase で入った #584 の `js/ui-feedback.js:197`「(内容は伏せた)」の2件（開き・閉じ）を含む。下の全件の一覧は、その前の117件 |
 | 用語表 | 1 | `js/screens/settings.js:1983`「公開エクスポート対象」。legal は別に4件 |
 
 ## ボタン名の揺れ（全画面×6幅・標準データ）
