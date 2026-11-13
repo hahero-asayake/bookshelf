@@ -23,6 +23,14 @@ async function openPublishPanel(page) {
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
 // openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 
+// js/screens/import.js _detectImportDevice() の UA 規則の写し (取込画面は幅でなく UA で PC/スマホを分ける・イシュー#593)
+async function isPhoneUA(page) {
+    return page.evaluate(() => {
+        const ua = navigator.userAgent || '';
+        return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) || /Android/.test(ua);
+    });
+}
+
 const HUB = 'https://mockhub.test';
 const MB = 1024 * 1024;
 
@@ -85,6 +93,17 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
     await test.step('取込: 貼り付け→全選択→確定を二度押ししても重複しない', async () => {
         await page.evaluate(() => window.bookshelf.showImportModal());
         await expect(page.locator('#import-modal')).toHaveClass(/show/);
+        if (await isPhoneUA(page)) {
+            // スマホ (C-248・取込は PC 専用): PC レーンは出さず案内を出し、直接貼付は畳んで残す。
+            // 畳まれた「取込データを直接渡す」を利用者操作で開いて貼る (ADR-050 の注記どおりの経路)
+            await expect(page.locator('#import-mobile-note')).toBeVisible();
+            await expect(page.locator('#import-lane-pc')).toBeHidden();
+            await expect(page.locator('#import-method-data')).toHaveJSProperty('open', false);
+            await page.locator('#import-method-data > summary').click();
+        } else {
+            await expect(page.locator('#import-lane-pc')).toBeVisible();
+            await expect(page.locator('#import-mobile-note')).toBeHidden();
+        }
         await page.locator('#kindle-paste-input').fill(PASTE_JSON);
         await page.locator('#import-from-paste').click();
         await expect(page.locator('#book-selection')).toBeVisible();
