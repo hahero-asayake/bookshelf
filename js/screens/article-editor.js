@@ -946,6 +946,8 @@ class _ArticleEditorMethods {
                     this._artMoveBlock(from, e.key === 'ArrowUp' ? from - 1 : from + 1, { undo: true, announce: true, focusGrip: true });
                 });
                 // イシュー#278: つまみのドラッグ。挿入位置＝ブロック間の「ここに追加」行の縦中央 (ブロック間の中央) に線を出す
+                // イシュー#580: ドラッグ終わりの pointerup に続く click (共通祖先= section 等に届く) でブロック編集が開かないよう、終わった時刻を控える
+                let dragEndAt = 0;
                 doc.addEventListener('pointerdown', (e) => {
                     const g = e.target.closest && e.target.closest('.art-cv-grip');
                     if (!g || e.button !== 0) return;
@@ -981,6 +983,7 @@ class _ArticleEditorMethods {
                         }
                     };
                     const onUp = () => {
+                        dragEndAt = Date.now();
                         doc.removeEventListener('pointermove', onMove);
                         doc.removeEventListener('pointerup', onUp);
                         line.remove();
@@ -1001,10 +1004,14 @@ class _ArticleEditorMethods {
                     // イシュー#288: 空ブロックの案内 (文章/本/本棚いずれも) をタップしたら、そのブロックの編集を開く
                     const guide = e.target.closest('.art-cv-empty-guide');
                     if (guide) { e.preventDefault(); this._artCloseBlkMenu(); const gb = (this._artDraft.blocks || [])[Number(guide.dataset.blkIdx)]; if (gb) this._artEditBlock(gb.id); return; }
-                    // 編集状態で文章ブロックの本文をタップしたら全画面 (EasyMDE) を開く (イシュー#276 step3: その場入力は廃止)
-                    const sec = this._artMode === 'edit' ? e.target.closest('section.art-cv-blk') : null;
+                    // 編集状態でブロックの本文をタップしたら、そのブロックの編集 (文章=全画面EasyMDE・本棚/本=全画面フォーム) を開く。
+                    // イシュー#580: 以前は文章だけだった (#276 step3) ため、本の入った本棚/本ブロックはタップしても何も起きず、
+                    // 空の案内 (.art-cv-empty-guide) が消えた途端に本を足す入口が「⋯→編集」だけになっていた。種類に依らず同じ規則にする。
+                    // ブロック内の操作部品 (つまみ・⋯ピル等の .art-cv-ui。仮枠の section 自身は除く) はそれぞれの操作を優先し、ドラッグ直後の click は捨てる。
+                    // 書影・書名リンクは編集中は外へ出さない (下の preventDefault) だけで操作が無かったため、ブロックの編集を開く側に含める
+                    const sec = this._artMode === 'edit' && !e.target.closest('.art-cv-ui:not(section)') && Date.now() - dragEndAt > 400 ? e.target.closest('section.art-cv-blk') : null;
                     const tb = sec ? (this._artDraft.blocks || [])[Number(sec.dataset.artIdx)] : null;
-                    if (tb && tb.type === 'text') { e.preventDefault(); this._artCloseBlkMenu(); this._artEditBlock(tb.id); return; }
+                    if (tb) { e.preventDefault(); this._artCloseBlkMenu(); this._artEditBlock(tb.id); return; }
                     if (this._artMode === 'edit' && e.target.closest('a')) e.preventDefault(); // 編集中は書影・書名のリンクで外へ出ない
                     this._artCloseBlkMenu();
                 });
