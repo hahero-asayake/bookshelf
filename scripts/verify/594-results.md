@@ -163,13 +163,54 @@
   - 保存前に開いても本文が出ること
 - 触る予定のファイル: `js/storage.js`、`js/bookshelf.js`（deleteBook・saveBookChanges・syncToObsidianFolder）、`index.html`（?v=）、テスト、594-results.md、設計書（03・06・08）。`js/screens/book-detail.js` と `js/publish-article-generator.js` は変えない見込み（5 を storage の中で解決するため）。
 
-## step3: 実装と単体テスト・E2E（途中・2026-11-14 04:42 時点）
+## step3: 実装と単体テスト・E2E
 
-- 実装: `js/storage.js`（#587 の記録に種類つきの長文メモの記録を足した。本棚の slug の読み書きは他の種類を残す）、`js/bookshelf.js`（deleteBook で削除を積む・saveBookChanges で移動を積む・syncToObsidianFolder で #587 の削除の直後に載せ、成功後に片づける）。
-- 単体: `tests/unit/book-memo-file-ops.test.js` 18本が緑。#587 の `tests/unit/shelf-file-delete.test.js` 11本も緑のまま。
-- E2E（chromium・workers=1）:
-  - 題名・ASIN の変更の6本は、3本が緑（GitHub の題名・ASIN、ローカルの題名）。
-  - 残り3本は落ちた。ハブの題名・ASIN は画面のクリックが10秒で終わらない。ローカルの ASIN は、前提づくりで本が保存先に届かない。
-  - 本の削除の3本は落ちた。ハブは `deleteBook` を呼ぶ `page.evaluate` が60秒戻らない（修正前の step1 でも同じ）。GitHub は前提づくりで本が届かない。ローカルは `NotReadableError`。
-  - workers=3 では、壊れた検証サーバ（8194番）が残って全体が止まった。止めてから workers=1 で流した。
-- 未着手: 未接続→繋ぎ直し、すぐ再読込、#484 型の2冊、使えない文字の題名の各 E2E。(f) の保存先ごとの単体テスト（今は中身を Map に持つ模擬の adapter で確かめただけ）。
+### 毎回の手順（E2E を流す前後）
+
+1. 流す前: `ss -ltnp | grep ':8194 '` で検証サーバ（8194番）が残っていないか見る。残っていれば、その pid（`python3 -m http.server 8194`）を止める。
+2. `PORT=8194 PLAYWRIGHT_BASE_URL=http://localhost:8194 npx playwright test <spec> --project=chromium --retries=0 --workers=1`
+3. 流した後: もう一度 8194番を見て、残っていれば止める。
+- 途中で止まった（timeout で切った）実行の結果は数えない。1回目の step3 で workers=3 の実行が2回止まったのは、切った実行が 8194番に壊れたサーバを残し、次の実行が ERR_EMPTY_RESPONSE になったため。
+
+### 実装
+
+- `js/storage.js`: #587 の記録（`virtualBookshelf_pendingShelfDeletes`）に、種類つきの長文メモの記録を足した。
+  - 記録は2種類。`{kind:'memo-delete',path}` と `{kind:'memo-move',from,to}`。
+  - 本棚の slug（文字列）の読み書きは、他の種類の記録を残したまま行う。
+  - 保存時の処理は `takeBookMemoOps`、成功後の片づけは `clearBookMemoOps`。
+  - 読む・有無・パスを返す関数は、移動待ちの to を from に読み替える。
+- `js/bookshelf.js`:
+  - deleteBook でメモの削除を積む。
+  - saveBookChanges で、更新の前に移動を積む。
+  - syncToObsidianFolder で、#587 の削除のすぐ後に載せる。
+
+### 分かったこと（E2E の切り分け）
+
+- **deleteBook が60秒戻らなかった件は、テストの作りが原因だった**。`deleteBook` の確認は native の confirm ではなく、アプリ独自の確認画面（`.cfm-overlay`「書籍「…」を完全削除しますか？」）。実測では dialog イベントが0件で、確認画面が出たまま `deleteBook` が待っていた。#587 の E2E と同じ `confirmOk`（`.cfm-ok` を押す）にしたら、3保存先とも通った。
+- **前提づくり（本の追加が保存先に届かない）とハブの click が10秒で終わらない件**: 1回目の step3 で自分で足した待ち方（`flushSyncNow`・「保存中でないこと」の確認）をやめ、#587 の E2E と同じ「操作 → 保存先を `expect.poll` で見る」にした。前の止まった実行が 8194番に壊れたサーバを残す件も、毎回の手順で除いた。この2つの後は、9本とも前提づくりで落ちていない（届かなかった回は0回。落ちた時の記録＝アプリの保存の状態・出ている画面・console・保存先の library.json を残す処理は spec に入れてある）。
+
+### 結果（2026-11-14 04:55〜04:57・chromium・workers=1・実行の前後とも 8194番は空き）
+
+`tests/e2e/book-memo-file-lifecycle.spec.js` と #587 の `tests/e2e/shelf-file-delete.spec.js` を一緒に流した: **36 passed・3 skipped（fixme）・0 failed**。
+
+| 項目 | ハブ | GitHub | ローカル |
+|---|---|---|---|
+| ① 本の削除（ふつうの題名） | 緑 | 緑 | 緑 |
+| ② 題名の変更（ふつうの題名） | 緑 | 緑 | 緑 |
+| ③ ASIN の変更（ふつうの題名） | 緑 | 緑 | 緑 |
+| ①②③ 使えない文字と空白を含む題名（`メモ: 本/特殊?"<>\|*\\ 題` → `題名 を/変えた:本?`） | 緑×3 | 緑×3 | 緑×3 |
+| 書けない間に題名を変える → 次の保存で移る（模擬の `failNextWrites` で保存を1回失敗させる＝#587 と同じ手段） | 緑 | 緑 | 未着手（下表） |
+| 題名を変えてすぐ再読込 | fixme（下表） | fixme | fixme |
+| #484 型（同じ ASIN・題名違いの2冊） | E2E は作れない（下表）・単体で確認 | 同左 | 同左 |
+| #587 の E2E（shelf-file-delete・16本） | 緑のまま | | |
+
+単体: `book-memo-file-ops.test.js` 18本、`shelf-file-delete.test.js` 11本、`github-adapter.test.js` 21本、`hub-batch.test.js` 13本がすべて緑。
+
+### 通らない・作れない・未着手のもの
+
+| 名前 | 状態 | 原因 | アプリ側か模擬側か |
+|---|---|---|---|
+| 題名を変えてすぐ再読込（3保存先） | fixme | 題名を変えてすぐ再読込すると、**題名の変更そのものが古い題名に戻る**。「未保存あり」の印（`virtualBookshelf_pendingSync`）が立っている間に読み直しても同じだった（実測: 再読込後のアプリの題名は古いまま・印は無し・保存先も古い題名）。長文メモではなく、本の編集の保存の既存の動き。この時、移す記録は「移す先がどの本のものでもない」として捨てられ、メモは古い題名のまま読める（食い違わない） | アプリ側（既存・範囲外。別に起票が要る） |
+| #484 型の2冊の E2E | 作れない | syncToObsidianFolder が library.json を作る時に、本を ASIN をキーにした Map にまとめる（`currentBooksByAsin`）。同じ ASIN の2冊は保存先に1冊しか届かない。そのため保存先を見る E2E では2冊を作れない。保存先の記録の規則は単体テスト（同じ ASIN・同じ題名＝コピー、題名違い＝もう一方に触らない）で確かめた | アプリ側（既存・#484 の「データ構造は変えない」の範囲） |
+| ローカルの「未接続の間の変更 → 繋ぎ直し」 | 未着手 | 時間切れ。ハブ・GitHub は「書けない間の変更 → 次の保存」で確かめた。ローカルは #587 の E2E の「queryPermission を prompt にして再読込 → 設定から繋ぎ直す」形で書く予定 | — |
+| (f) 移す先が既にある時の、保存先ごとの単体テスト（GitHubAdapter・HubAdapter・LocalFSAdapter） | 未着手 | 時間切れ。今は中身を Map に持つ模擬の adapter での単体テストだけ | — |

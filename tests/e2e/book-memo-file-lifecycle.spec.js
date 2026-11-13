@@ -18,11 +18,17 @@ test.use({ actionTimeout: 10_000 });
 
 const ASIN = 'B0MEMO5941';
 const NEW_ASIN = 'B0MEMO5942';
-const TITLE = 'メモの本';
-const NEW_TITLE = '題名を変えた本';
 const BODY = 'MEMO-BODY-594 長文メモの本文';
 
-const memoPath = (asin, title) => `private/books/${asin}__${title}.md`;
+// 長文メモのファイル名の作り方 (js/storage.js sanitizeFileName と同じ: 使えない文字と空白を _ にし、50字で切る)
+const fileTitle = (t) => (t ? t.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 50) : '') || 'untitled';
+const memoPath = (asin, title) => `private/books/${asin}__${fileTitle(title)}.md`;
+
+// 題名の2通り: ふつうの題名と、ファイル名に使えない文字・空白を含む題名
+const TITLE_CASES = [
+    { label: '', title: 'メモの本', newTitle: '題名を変えた本' },
+    { label: '・使えない文字と空白を含む題名', title: 'メモ: 本/特殊?"<>|*\\ 題', newTitle: '題名 を/変えた:本?' }
+];
 
 const confirmOk = async (page) => {
     const cfm = page.locator('.cfm-overlay');
@@ -185,8 +191,8 @@ async function attachRemoteState(remote) {
     });
 }
 
-for (const { name, boot } of BACKENDS) {
-    test.describe(`長文メモのファイルが取り残されない: ${name} (イシュー#594)`, () => {
+for (const { name, boot } of BACKENDS) for (const { label, title: TITLE, newTitle: NEW_TITLE } of TITLE_CASES) {
+    test.describe(`長文メモのファイルが取り残されない: ${name}${label} (イシュー#594)`, () => {
         test('本を削除すると、保存先からその本の長文メモのファイルが消える', async ({ page }) => {
             const remote = await boot(page);
             await addBook(page, remote, ASIN, TITLE);
@@ -250,6 +256,73 @@ for (const { name, boot } of BACKENDS) {
                 expect.soft(await settle(() => remote.has(memoPath(ASIN, TITLE)), false), `古い名前 ${memoPath(ASIN, TITLE)} が保存先に残っていない`).toBe(false);
                 const shown = await openMemoFromDetail(page, NEW_ASIN);
                 expect.soft(shown, 'ASIN を変えた後に詳細から長文メモを開くと、書いた本文が出る').toContain(BODY);
+            } finally {
+                await attachRemoteState(remote);
+            }
+        });
+    });
+}
+
+const FAILABLE = BACKENDS.filter((b) => b.name !== 'ローカルフォルダ');
+const TITLE = 'メモの本';
+const NEW_TITLE = '題名を変えた本';
+
+for (const { name, boot } of BACKENDS) {
+    test.describe(`長文メモ: 変更してすぐ再読込 ${name} (イシュー#594)`, () => {
+        // fixme (step3 の実測・594-results.md): 題名を変えてすぐ再読込すると、題名の変更そのものが古い題名に戻る
+        // (「未保存あり」の印が立っている間に再読込しても同じ)。長文メモではなく本の編集の保存の既存の動き。
+        // その時、移す記録は「移す先がどの本のものでもない」として捨てられ、メモは古い題名のまま読める (食い違わない)。
+        test.fixme('題名を変えてすぐ再読込しても、新しい名前で読め、次の保存で古いファイルが消える', async ({ page }) => {
+            const remote = await boot(page);
+            await addBook(page, remote, ASIN, TITLE);
+            await writeMemo(page, remote, ASIN, TITLE);
+
+            await editBook(page, ASIN, { title: NEW_TITLE });
+            // アプリに新しい題名が入り、移す記録が端末に残った所で、保存先への保存が終わるのを待たずに再読込する
+            await expect.poll(() => page.evaluate((a) => (window.bookshelf.books.find((b) => b.asin === a) || {}).title, ASIN), { message: 'アプリに新しい題名が入る' }).toBe(NEW_TITLE);
+            await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingShelfDeletes') || ''), { message: '移す記録が端末に残る' }).toContain('memo-move');
+            // 端末に「未保存あり」の印 (_scheduleSync が立て、保存の成功で外す) が立っている間に再読込する。
+            // 印が立つ前に再読込すると、題名の変更そのものが保存先の古い内容で戻る (アプリ側の既存の動き・594-results.md)
+            await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync')), { message: '未保存ありの印が立つ' }).toBe('1');
+            await page.reload();
+
+            try {
+                await expect.poll(async () => (await remoteBooks(remote))[ASIN], { message: '再読込の後の保存で新しい題名が届く' }).toBe(NEW_TITLE);
+            } catch (e) {
+                await attachDiag(page, remote, '再読込の後に新しい題名が届かない');
+                console.log(`DIAG pending ${await page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingShelfDeletes'))} pendingSync=${await page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'))} appTitle=${await page.evaluate((a) => (window.bookshelf.books.find((b) => b.asin === a) || {}).title, ASIN)}`);
+                throw e;
+            }
+            try {
+                expect.soft(await settle(() => remote.has(memoPath(ASIN, NEW_TITLE)), true), '新しい名前が保存先にある').toBe(true);
+                expect.soft(await settle(() => remote.has(memoPath(ASIN, TITLE)), false), '古い名前が保存先に残っていない').toBe(false);
+                expect.soft(await openMemoFromDetail(page, ASIN), '再読込の後も新しい題名で本文が出る').toContain(BODY);
+            } finally {
+                await attachRemoteState(remote);
+            }
+        });
+    });
+}
+
+for (const { name, boot } of FAILABLE) {
+    test.describe(`長文メモ: 保存先に書けない間の変更 ${name} (イシュー#594)`, () => {
+        test('書けない間に題名を変えても、記録が残り、次の保存で新しい名前へ移って古いファイルが消える', async ({ page }) => {
+            const remote = await boot(page);
+            await addBook(page, remote, ASIN, TITLE);
+            await writeMemo(page, remote, ASIN, TITLE);
+
+            remote.failNextWrites(1); // 次の保存を失敗させる (#587 の E2E と同じ模擬の手段)
+            await editBook(page, ASIN, { title: NEW_TITLE });
+            await expect.poll(() => remote.failuresLeft(), { message: '題名を変えた後の保存が失敗する' }).toBe(0);
+            expect(await page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingShelfDeletes') || ''), '移す記録が残っている').toContain('memo-move');
+            expect(await remote.has(memoPath(ASIN, TITLE)), '失敗した時点では古い名前のまま').toBe(true);
+
+            // 次の保存 (別の本を足す) で移る
+            await addBook(page, remote, NEW_ASIN, '2冊目の本');
+            try {
+                expect.soft(await settle(() => remote.has(memoPath(ASIN, NEW_TITLE)), true), '新しい名前が保存先にある').toBe(true);
+                expect.soft(await settle(() => remote.has(memoPath(ASIN, TITLE)), false), '古い名前が保存先に残っていない').toBe(false);
+                expect.soft(await openMemoFromDetail(page, ASIN), '新しい題名で本文が出る').toContain(BODY);
             } finally {
                 await attachRemoteState(remote);
             }
