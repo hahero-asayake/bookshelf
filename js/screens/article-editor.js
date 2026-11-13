@@ -3016,7 +3016,7 @@ class _ArticleEditorMethods {
             // 専用文言にする (イシュー#142。下のConflictError分岐=L5427と同じくGitHub/ハブ両対応・
             // イシュー#381で判定漏れを修正=以前はHub経由だとこの分岐に入らず汎用の接続エラー文言になっていた)。
             const isAuthErr = e && e.name === 'HubAuthError';
-            const isRemoteChanged = e && (e.name === 'GitHubRemoteChangedError' || e.name === 'HubRemoteChangedError');
+            const isRemoteChanged = StorageAdapter.isRemoteChanged(e); // 判定は1か所 (イシュー#616)
             const message = isRemoteChanged
                 ? 'この記事は他の場所で更新されています。内容を確認してから、もう一度保存してください。'
                 : isAuthErr

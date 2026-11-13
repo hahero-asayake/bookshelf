@@ -22,6 +22,8 @@
 //   const storage = new BookshelfStorage(adapter);
 
 const SYNC_CONFIG_KEY = 'bookshelf_sync';
+// 保存先との衝突中の印 (3択でまだ「再読込」を選んでいない。イシュー#616)
+const SYNC_CONFLICT_KEY = 'virtualBookshelf_syncConflict';
 
 class SyncConfigManager {
     static load() {
@@ -37,11 +39,41 @@ class SyncConfigManager {
     }
 
     static save(config) {
+        const before = SyncConfigManager.isConfigured() ? SyncConfigManager.destinationKey(SyncConfigManager.load()) : null;
         localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+        // 保存先を切り替えたら、前の保存先との衝突中の印は外す (端末内の編集と pendingSync はそのまま新しい保存先へ送る・イシュー#616)
+        if (before !== SyncConfigManager.destinationKey(config)) SyncConfigManager.clearConflict();
     }
 
     static clear() {
         localStorage.removeItem(SYNC_CONFIG_KEY);
+        SyncConfigManager.clearConflict();
+    }
+
+    /** 保存先を見分ける鍵 (方式＋つなぎ先)。トークンの更新などでは変わらない (イシュー#616) */
+    static destinationKey(config) {
+        const c = config || {};
+        if (c.method === 'github') { const g = c.github || {}; return ['github', g.owner, g.repo, g.branch, g.basePath].join('|'); }
+        if (c.method === 'hub') { const h = c.hub || {}; return ['hub', h.apiBase, h.uid].join('|'); }
+        return String(c.method || 'local');
+    }
+
+    /** 保存先との衝突中の印を残す。3択で「再読込」を選ぶまで (または保存先を切り替えるまで) 送らない (イシュー#616) */
+    static markConflict() {
+        try { localStorage.setItem(SYNC_CONFLICT_KEY, JSON.stringify({ dest: SyncConfigManager.destinationKey(SyncConfigManager.load()), at: Date.now() })); } catch (e) {}
+    }
+
+    /** いまの保存先との衝突中の印 ({dest, at})。無い・別の保存先 (切り替えた・退会して作り直した) なら null */
+    static conflict() {
+        let mark = null;
+        try { mark = JSON.parse(localStorage.getItem(SYNC_CONFLICT_KEY) || 'null'); } catch (e) { mark = null; }
+        if (!mark) return null;
+        if (mark.dest !== SyncConfigManager.destinationKey(SyncConfigManager.load())) { SyncConfigManager.clearConflict(); return null; }
+        return mark;
+    }
+
+    static clearConflict() {
+        try { localStorage.removeItem(SYNC_CONFLICT_KEY); } catch (e) {}
     }
 
     /** 保存先を一度でも自分で決めた (保存した) ことがあるか。未設定なら UI はハブ推し表示にする (ADR-056)。

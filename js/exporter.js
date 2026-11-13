@@ -189,7 +189,8 @@ class BookshelfExporter {
         try {
             await publishAdapter.commitBatch(`chore(bookshelf): publish ${result.articles.length} article(s)`);
         } catch (err) {
-            if (err && err.name === 'GitHubConflictError') {
+            // 衝突の判定は StorageAdapter.isRemoteConflict 1つに寄せる (イシュー#616)。公開は生成物なので3択にはしない
+            if (window.StorageAdapter ? StorageAdapter.isRemoteConflict(err) : (err && err.name === 'GitHubConflictError')) {
                 throw new Error('公開中に公開 repo が更新されました。リロードしてやり直してください。');
             }
             // 初期コミットの無い空 repo: branch ref が 404 → 分かりやすい案内に変換

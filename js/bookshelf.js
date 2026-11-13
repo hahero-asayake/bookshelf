@@ -2962,6 +2962,7 @@ class VirtualBookshelf {
                 this.updateStats();
                 this.updateBookshelfSelector();
                 this.renderBookshelfOverview();
+                this._refreshOpenDetailMemo();
             }
             this.updateSyncStatus('synced', label);
             // ハブは保存のたびに usedBytes が変わる → 読込後に使用量バーを更新
@@ -3078,6 +3079,7 @@ class VirtualBookshelf {
                 this.updateStats();
                 this.updateBookshelfSelector();
                 this.renderBookshelfOverview();
+                this._refreshOpenDetailMemo();
             }
             this.updateSyncStatus('synced', label);
         } catch (e) {
@@ -3416,7 +3418,8 @@ class VirtualBookshelf {
         this._snapshotSyncedState();
         // 未同期ローカル編集・手元の方が新しい項目を採用した場合は、読込後に同期先へ再 push して確定させる
         // (GitHub は閉じる時に送り切れないため、次に開いた時のこの再送で保証する)
-        if ((_hasPendingLocal || _localWon) && this._isSyncReady()) {
+        // 衝突中の印があれば、送らずに3択を出し直す (syncToObsidianFolder の入口で止まる・イシュー#616)
+        if ((_hasPendingLocal || _localWon || SyncConfigManager.conflict()) && this._isSyncReady()) {
             this._scheduleSync();
         }
 
@@ -3481,6 +3484,12 @@ class VirtualBookshelf {
         if (!this._isSyncReady()) return;
         await this._ensureFreshGitHubToken();
         this._lastSyncOk = false;
+        // 衝突中 (3択でまだ「再読込」を選んでいない) は送らない。読み直した後の新しい版で送ると相手の変更を上書きする (イシュー#616)
+        if (SyncConfigManager.conflict()) {
+            this.updateSyncStatus('reconnect', this._syncLabel());
+            this._handleSyncConflict(this._syncConflictSource());
+            return;
+        }
         try {
             // LocalFS 時のみ FS permission を確認 (GitHub Adapter は token ベースなので不要)
             if (this.syncMethod !== 'github' && this.obsidianDirHandle) {
@@ -3668,10 +3677,13 @@ class VirtualBookshelf {
                     message: `chore(bookshelf): sync ${entries.length} file(s)`
                 });
             } catch (err) {
-                // GitHub (Trees API) と Asayake ハブ (412/HubConflictError) の衝突を同じダイアログに合流させる (WP-B2)
-                if (err && (err.name === 'GitHubConflictError' || err.name === 'HubConflictError')) {
+                // GitHub と Asayake ハブの衝突 (楽観ロック・中身が他で変わっていた) を同じ3択に合流させる (WP-B2・イシュー#616)。
+                // 外側の catch には落とさない (再試行しても同じ衝突になる)。衝突中の印を残し、選ぶまで送らない
+                if (StorageAdapter.isRemoteConflict(err)) {
+                    console.warn('同期の衝突:', err);
+                    SyncConfigManager.markConflict();
                     this.updateSyncStatus('reconnect', this._syncLabel());
-                    this._handleSyncConflict(err.name === 'HubConflictError' ? 'Asayake ハブ' : 'GitHub');
+                    this._handleSyncConflict(this._syncConflictSource());
                     return;
                 }
                 throw err;
@@ -3707,9 +3719,33 @@ class VirtualBookshelf {
             this._conflictNotified = false;
             return this._handleSyncConflict(source);
         }
-        if (choice === 'reload') { location.reload(); return; }
-        // 何もしない: 一定時間後にもう一度知らせる余地を残す
+        if (choice === 'reload') {
+            // 保存先の最新版を採る (端末内の編集は書き出しで先に退避できる)。印と未同期の記録を消してから読み直す
+            // = 起動時に端末内を優先して送り直し、相手の変更を上書きしない (イシュー#616)
+            SyncConfigManager.clearConflict();
+            try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
+            location.reload();
+            return;
+        }
+        // 何もしない: 印と未同期の記録は残す (開き直しても送らずに3択を出し直す)。一定時間後にもう一度知らせる余地を残す
         setTimeout(() => { this._conflictNotified = false; }, 60000);
+    }
+
+    /** 3択に出す保存先の名前 (イシュー#616) */
+    _syncConflictSource() {
+        return this.syncMethod === 'hub' ? 'Asayake ハブ' : 'GitHub';
+    }
+
+    /** 読み直した短文メモを、開いたままの本の詳細の欄へ反映する (入力中の欄は触らない・イシュー#616)。
+     *  起動の1段目で端末内の版のまま開いた詳細は、showBookDetail が同じ本だと何もしない (#330) ため古いまま残り、
+     *  そこで書くと保存先の新しい短文メモ (別の端末の変更) を上書きしてしまう */
+    _refreshOpenDetailMemo() {
+        if (!this.bookshelfManager) return;
+        document.querySelectorAll('.note-textarea[data-scope="all"][data-asin]').forEach((ta) => {
+            if (ta === document.activeElement) return;
+            const memo = this.bookshelfManager.resolveMemo(ta.dataset.asin);
+            if (ta.value !== memo) ta.value = memo;
+        });
     }
 
     // 衝突時の3択ダイアログ (confirmDialog は2択専用のため cfm-* スタイルを流用して自前構築)

@@ -211,6 +211,23 @@ class StorageAdapter {
      * @param {function(latestContent:string|null):Error} ctx.makeRemoteChangedError 不一致時に投げるエラーを作る
      * @returns {Promise<*>} retryPut の戻り値
      */
+    /**
+     * 保存先の衝突 (他の端末・タブが先に書いていた) を表すエラーか。同期の3択・公開・記事の保存はこれ1つで判定する (イシュー#616)。
+     *   *ConflictError      … 楽観ロック (sha/ETag) が再送後も合わない
+     *   *RemoteChangedError … 取り直した最新の中身が、自分の知っている中身とも書きたい中身とも違う (上書きすると相手の変更が消える)
+     * @param {*} err @returns {boolean}
+     */
+    static isRemoteConflict(err) {
+        const name = err && err.name;
+        return name === 'GitHubConflictError' || name === 'HubConflictError' || StorageAdapter.isRemoteChanged(err);
+    }
+
+    /** isRemoteConflict のうち「中身が他で変わっていた」方だけ (記事の保存の専用の文言に使う) */
+    static isRemoteChanged(err) {
+        const name = err && err.name;
+        return name === 'GitHubRemoteChangedError' || name === 'HubRemoteChangedError';
+    }
+
     static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError }) {
         const latest = await getLatest();
         const latestContent = latest ? latest.content : null;

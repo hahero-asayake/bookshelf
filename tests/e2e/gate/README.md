@@ -77,7 +77,7 @@ npm run gate:report -- --collect
 
 ### J5・J6 の網羅（イシュー#588 時点）
 
-赤の3本（J5-1・J6-4・J6-5）は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない（J6-1 も赤だったが、原因はアプリではなくテストの待ちのヘルパーだったので、直して緑で入れた・#607）。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
+赤の3本（J5-1・J6-4・J6-5）は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない（J6-1 も赤だったが、原因はアプリではなくテストの待ちのヘルパーだったので、直して緑で入れた・#607。J6-4 は不具合を直して緑で入れた・#616）。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
 
 | 観測点 | テスト | 状態 |
 |---|---|---|
@@ -85,7 +85,7 @@ npm run gate:report -- --collect
 | J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
 | J6-1 | `j6-1-local-restart.spec.js` | 投入済み・緑（赤はアプリの不具合ではなく、フォルダへの書き込みを待たずに通るヘルパーのせいだった・#607）。webkit では流さない（ローカルのフォルダ保存は PC の Chrome/Edge 専用・`gate-webkit` の `testIgnore`） |
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
-| J6-4 | `j6-4-sync-conflict.spec.js` | テストあり・不具合のため未投入（2台の本当の衝突で3択も知らせも出ない） |
+| J6-4 | `j6-4-sync-conflict.spec.js` | 投入済み・緑（2台の本当の衝突で3択も知らせも出なかった不具合を直して入れた・#616）。ハブの分。GitHub の分は #616 で足す |
 | J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |
 
 ## webkit（iPhone 相当）で流す（イシュー#589）
