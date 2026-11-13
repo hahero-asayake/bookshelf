@@ -1,10 +1,10 @@
 #!/bin/sh
-# bookshelf push前ゲート（イシュー#375・#390でcheck:version検査を追加）。
+# bookshelf push前ゲート（イシュー#375・#390でcheck:version検査を追加・#619でlintを追加）。
 #
 # 有効化するには: git config core.hooksPath .githooks
 # （未設定の間はgitから呼ばれない＝このファイルを置くだけでは何も変わらない）
 #
-# origin/main への push だけを検査する。各pushごとに2段で検査する:
+# origin/main への push だけを検査する。各pushごとに3段で検査する:
 #   1. scripts/git/push-gate.mjs : 各commitのIssue trailerを判定し、他イシューの
 #      commitが混ざっていれば止める。
 #   2. scripts/check-version-bump.mjs --range=<remote_sha>..<local_sha> : push対象の
@@ -12,6 +12,12 @@
 #      起点は push-gate に渡されるのと同じ remote_sha をそのまま使う（merge-baseでは
 #      代用しない＝push直後/fetch直後にmerge-baseを使うと起点がHEADと一致してdiffが
 #      消え見逃す弱点が実際に#389で起きたため）。
+#   3. scripts/run-lint.mjs (npm run lint) : push する中身 (local_sha) で lint:* を全部流し、
+#      1本でも落ちたら止める（イシュー#619＝#588 が lint を流さずに push し main が赤になった）。
+#      作業ツリーは HEAD の後ろに他イシューの commit が積まれていたり未 commit の差分が
+#      あったりするので、HEAD が local_sha と一致し追跡ファイルに差分が無い時だけその場で流し、
+#      それ以外は local_sha の中身を一時ディレクトリへ git archive で出して流す
+#      （node_modules は作業ツリーのものを symlink で借りる・一時ディレクトリは終了時に消す）。
 #
 # remote_sha が zero（当該refがリモートにまだ存在しない新規ブランチpush）の場合は、
 # 比較対象の「push前の状態」が無く版バンプ漏れという概念自体が成立しないため、
@@ -32,6 +38,36 @@ fi
 zero="0000000000000000000000000000000000000000"
 blocked=0
 
+lint_tmp=""
+trap 'if [ -n "$lint_tmp" ]; then rm -rf "$lint_tmp"; fi' EXIT
+trap 'exit 1' INT TERM
+
+# 3段目 (イシュー#619): 引数の sha の中身で scripts/run-lint.mjs を流す。落ちたら 1 を返す。
+run_lint() {
+  if [ "$(git rev-parse HEAD)" = "$1" ] && [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+    lint_dir="."
+  elif git cat-file -e "$1:scripts/run-lint.mjs" 2>/dev/null; then
+    echo "[pre-push] lint: HEAD と push する中身が違う、または未 commit の差分があるため、$1 を一時ディレクトリへ出して流す。"
+    lint_tmp=$(mktemp -d "${TMPDIR:-/tmp}/bookshelf-pre-push-lint.XXXXXX") || return 1
+    git archive "$1" | tar -x -C "$lint_tmp" || return 1
+    if [ -e node_modules ]; then
+      ln -s "$(readlink -f node_modules)" "$lint_tmp/node_modules"
+    fi
+    lint_dir="$lint_tmp"
+  else
+    lint_dir=""
+  fi
+  if [ -z "$lint_dir" ] || [ ! -f "$lint_dir/scripts/run-lint.mjs" ]; then
+    echo "[pre-push] lint: push する中身に scripts/run-lint.mjs が無い (#619 より前の commit) ため lint を飛ばす。"
+    return 0
+  fi
+  if (cd "$lint_dir" && "$NODE_BIN" scripts/run-lint.mjs); then
+    return 0
+  fi
+  echo "[pre-push] npm run lint が落ちたため push を止めた ($1)。直してから push する（--no-verify で素通ししてよいのは、人間が手で push する時だけ）。"
+  return 1
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -z "$local_sha" ] && continue
   [ "$local_sha" = "$zero" ] && continue  # ブランチ削除push（検査対象外）
@@ -51,6 +87,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     if ! "$NODE_BIN" scripts/check-version-bump.mjs "--range=${remote_sha}..${local_sha}"; then
       blocked=1
     fi
+  fi
+
+  if ! run_lint "$local_sha"; then
+    blocked=1
   fi
 done
 
