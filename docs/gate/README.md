@@ -37,6 +37,34 @@
 - `status`：`未判断`（ハヘロがまだ見ていない）・`直す`（直すと決めたがまだ）・`直した`・`承認`（ハヘロが「そのまま」と決めた）。
 - 合格は、全件が `直した` か `承認`。
 
+## 結果ファイルの形（`_local/gate/`）
+
+検査を作る側（監査の機械検査 #585・本番URL の検査・門のE2E）は、次の名前と形で結果を書く。`gate-report` はこの形だけを読む。**必須の名前が1つでも無いと、その条件は「未実施」になる**（合格に数えない）。名前の正本は `scripts/gate-report.mjs` の定数（`REQUIRED_PROD`・`REQUIRED_AUDIT`・`AUTO_CHECKS`）。変える時は定数とこの表を一緒に直す。
+
+| 条件 | ファイル | 形 | 誰が書くか |
+|---|---|---|---|
+| 2 | `gate-lint.json` | `npm run lint:e2e-gate -- --json=<path>` の出力 | `--collect` |
+| 2 | `gate-e2e*.json` | Playwright の JSON（`--reporter=json`）。`--repeat-each=3` の1本でも、1回ずつの3本でもよい | 門のE2E を流した人 |
+| 3 | `e2e*.json` | Playwright の JSON（E2E 全件。CI の `e2e-parallel.json` 等） | E2E を流した人 |
+| 3 | `visual*.json` | Playwright の JSON（`playwright.visual.config.js`） | 画像比較を流した人 |
+| 3 | `vitest.json` | vitest の JSON（`--reporter=json`） | `--collect` |
+| 3・7 | `checks.json` | `{ "checks": [{ "name", "group": "auto"｜"audit", "exitCode" }] }` | `--collect` |
+| 4 | `prod-url.json` | `{ "checks": [{ "name", "ok": true｜false, "detail" }] }` | 本番URL の検査 |
+| 7 | `audit.json` | `{ "checks": [{ "name", "detected": 件数, "detail" }] }` | 監査の機械検査（#585） |
+
+**`prod-url.json` の必須の名前**（設計書 §4 の表と §6 の4）：`CSP`・`OGP`・`PWA`・`SEO`・`301`・`Lighthouse性能`・`Lighthouse a11y`・`axe`。
+
+- 閾値の判定は検査の側で済ませ、`ok` に結果だけを入れる（性能はスマホ・温まった状態で90以上、a11y はスマホ100、axe は serious 以上0）。`detail` には測った値を書く。
+- `ok` が `false` のものが1つでもあれば不合格。
+
+**`audit.json` の必須の名前**（設計書 §5 の表と §6 の7）：`lint:copy`・`用語表`・`aria・alt`・`表示崩れ`。
+
+- `detected` は検出の件数。0 で合格、1以上で不合格。
+- `lint:copy` は `--collect` が流して `checks.json`（`group: "audit"`）に書くので、`audit.json` に無くてもよい。両方にある時は `audit.json` を使う。
+- 必須の名前のほかに検査を足してよい（例：`ボタン名の揺れ`）。足した検査も、`detected` が1以上なら不合格になる。
+
+**条件5（人の実機）**は結果ファイルではなく、`--human=<md>` で手順書（obsidian の「公開前最終テスト_人の手順書.md」）を直接読む。`## H1`〜`## H4` の表の「記録」欄を、`OK` で始まれば OK、`NG` で始まれば NG、空なら未記入として数える。
+
 ## 集計の流し方
 
 ```bash
