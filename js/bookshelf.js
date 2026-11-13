@@ -1548,6 +1548,7 @@ class VirtualBookshelf {
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
+        this._onLibraryChanged();
         toast(`${asins.length} 冊を除外しました`);
     }
 
@@ -2702,8 +2703,7 @@ class VirtualBookshelf {
 
 
     updateStats() {
-        const el = document.getElementById('total-books');
-        if (el) el.textContent = this.books.length.toLocaleString();
+        // 冊数の表示 (左ツリー・ホームの蔵書数) の描き直しは _onLibraryChanged() が担う (旧 #total-books は index.html に無い・イシュー#605)。
     }
 
 
@@ -3859,6 +3859,19 @@ class VirtualBookshelf {
         if (this.dashboard && document.body.classList.contains('app-view-main')) {
             this.dashboard.render();
         }
+    }
+
+    // 蔵書の中身 (冊数) が変わった後に呼ぶ共通の描き直し (イシュー#605)。取込・手で追加・除外・除外の取り消し・
+    // 一括除外・削除の最後から呼ぶ。並べ替え・絞り込みの経路 (updateStats) には入れない。
+    // (1) all 本棚の books を bookOrder.all と同じ配列に揃え直す。除外・削除は bookOrder.all を filter で別の配列に
+    //     置き換えるため、揃えないと左ツリーの「すべての本」が除外・削除した本まで数えたまま残る
+    //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚が無い時 (保存先なし) は飛ばす。
+    // (2) 左ツリーと、ホーム表示中ならダッシュボード (蔵書 N 冊・蔵書数・蔵書0の案内) を描き直す。
+    _onLibraryChanged() {
+        const order = this.userData && this.userData.bookOrder && this.userData.bookOrder.all;
+        const allShelf = ((this.userData && this.userData.bookshelves) || []).find(b => b.isSpecial);
+        if (allShelf && Array.isArray(order)) allShelf.books = order;
+        this.updateBookshelfSelector();
     }
 
     switchBookshelf(bookshelfId) {
@@ -5249,6 +5262,7 @@ class VirtualBookshelf {
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
+        this._onLibraryChanged();
         this.closeModal();
         toast(`「${book.title}」を除外しました`);
     }
@@ -5284,6 +5298,7 @@ class VirtualBookshelf {
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
+        this._onLibraryChanged();
         this.renderExclusionsList();
     }
 
@@ -6012,6 +6027,7 @@ class VirtualBookshelf {
             this.books = this.bookManager.getAllBooks();
             this.applyFilters();
             this.updateStats();
+            this._onLibraryChanged();
             this.renderBookshelfOverview();
 
             // モーダルを閉じる
@@ -6491,11 +6507,9 @@ class VirtualBookshelf {
             if (this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...newBook } });
             this.applyFilters();
             this.updateStats();
-            // updateStats() は #total-books (蔵書一覧ヘッダ) だけを更新し、ホームの「蔵書数」ウィジェット
-            // (BookshelfDashboard._renderCounterTotal) は再描画しない。手動追加直後にホームへ戻っても
-            // 統計が0冊のまま(再読込すれば直る=描画漏れ)だった。他の更新経路(本棚切替等)と同じく
-            // updateBookshelfSelector() 経由でダッシュボードも再描画する (#225 P4・イシュー#232 step3)。
-            this.updateBookshelfSelector();
+            // 手動追加直後にホームの統計が0冊のままだった (#225 P4・イシュー#232 step3)。左ツリーの冊数と
+            // ダッシュボードの描き直しは、ほかの冊数が変わる経路と同じ共通メソッドで行う (イシュー#605)。
+            this._onLibraryChanged();
 
         } catch (error) {
             console.error('追加エラー:', error);

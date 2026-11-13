@@ -248,6 +248,8 @@ class _ImportMethods {
             await this.saveUserData();
             this.applyFilters();
             this.updateStats();
+            // 左ツリーの冊数・ホームの蔵書数を描き直す (新規分も再取込のマージも・イシュー#605)
+            this._onLibraryChanged();
 
             // 実取込の成功 = 初回準備 (PC 拡張) が済んでいる証拠として自動フラグ (PC 専用化 C-248)
             if (this.importSource === 'bookmarklet' || this.importSource === 'relay') {
