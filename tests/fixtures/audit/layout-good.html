@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表示崩れの見本（崩れの無い形）</title>
+<style>
+body { margin: 8px; }
+.row { margin-bottom: 12px; }
+.ell { width: 80px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div class="row"><div id="wrap" style="width:80px">折り返して全部見える文字です</div></div>
+<div class="row"><div id="ell-listed" class="ell">除外リストに載せた省略表示の長い文字です</div></div>
+<div class="row"><div id="box" style="width:200px;height:40px"><div id="fit" style="width:150px;height:20px"></div></div></div>
+<div class="row"><div id="sibs"><div id="sib-a" style="height:40px"></div><div id="sib-b" style="height:40px"></div></div></div>
+<div class="row" style="position:relative;height:30px"><span id="badge" style="position:absolute;left:-4px;top:-4px">印</span></div>
+</body>
+</html>

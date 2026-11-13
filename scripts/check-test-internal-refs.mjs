@@ -15,7 +15,9 @@ import { join, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
+// tests/audit (監査の機械検査・イシュー#585) も対象に含める。監査の spec と画面の一覧は内部参照を
+// 直接書かない決まり (docs/audit/machine-checks.md §1-1) なので、足しても件数は変わらない (0件)。
+const TARGET_DIRS = ['tests/e2e', 'tests/visual', 'tests/audit'];
 
 // U9 G3-1(article-editor前半、イシュー#551)置き換え後の実測値 = 216
 // (204(bookshelf._) + 12(app._)。216 = 298 - 82。G3-1対象は`_artFlushSave`(39)・

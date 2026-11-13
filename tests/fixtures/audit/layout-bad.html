@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表示崩れの見本（誤り入り）</title>
+<style>
+body { margin: 8px; }
+.row { margin-bottom: 12px; }
+.ell, .ell-other { width: 80px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<!-- 誤り: 文字の切れ 2つ (#clip-plain は省略表示の指定が無い。#ell-unlisted は除外リストに無い省略表示) -->
+<div class="row"><div id="clip-plain" style="width:80px;overflow:hidden;white-space:nowrap">とても長い文字がここで切れてしまいます</div></div>
+<div class="row"><div id="ell-unlisted" class="ell-other">除外リストに無い省略表示の長い文字です</div></div>
+<!-- 検出しない: 除外リストに載せた省略表示 -->
+<div class="row"><div id="ell-listed" class="ell">除外リストに載せた省略表示の長い文字です</div></div>
+<!-- 誤り: はみ出し 1つ -->
+<div class="row"><div id="box" style="width:200px;height:40px"><div id="wide" style="width:300px;height:20px"></div></div></div>
+<!-- 誤り: 重なり 1組 -->
+<div class="row"><div id="sibs"><div id="sib-a" style="height:40px"></div><div id="sib-b" style="height:40px;margin-top:-20px"></div></div></div>
+<!-- 誤り: 横スクロール 1つ -->
+<div id="huge" style="width:3000px;height:10px"></div>
+<!-- 検出しない: 位置を指定した子・スクロールできる親・非表示・背後の面 (inert) -->
+<div class="row" style="position:relative;height:30px"><span id="badge" style="position:absolute;left:-4px;top:-4px">印</span></div>
+<div class="row" id="scroller" style="width:100px;overflow:auto"><div id="scrolled" style="width:300px;height:10px"></div></div>
+<div hidden><div style="width:80px;overflow:hidden;white-space:nowrap">非表示の中の長い文字は検出しないはずです</div></div>
+<div inert><div style="height:40px"></div><div style="height:40px;margin-top:-20px"></div></div>
+</body>
+</html>

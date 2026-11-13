@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名前の無い部品の見本（誤り入り）</title>
+</head>
+<body>
+<main>
+<h1>名前の無い部品の見本</h1>
+<!-- 誤り 6つ: 名前の無いボタン・alt の無い画像・label の無い入力・placeholder だけの入力・名前の無いリンク・label の無い選択 -->
+<p><button id="bad-icon-button" type="button"><svg aria-hidden="true" width="16" height="16"><rect width="16" height="16"/></svg></button></p>
+<p><img id="bad-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="20" height="20"></p>
+<p><input id="bad-input" type="text"></p>
+<p><input id="bad-placeholder" type="text" placeholder="検索"></p>
+<p><a id="bad-link" href="#x"><svg aria-hidden="true" width="16" height="16"><rect width="16" height="16"/></svg></a></p>
+<p><select id="bad-select"><option>一</option></select></p>
+<!-- 検出しないもの: 飾りの画像・非表示・背後の面 (inert)・aria-hidden の中 -->
+<p><img id="ok-decorative" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="20" height="20"></p>
+<p><img id="ok-presentation" role="presentation" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="20" height="20"></p>
+<p><button id="ok-hidden" type="button" hidden></button></p>
+<div inert><button id="ok-inert" type="button"></button></div>
+<div aria-hidden="true"><button id="ok-aria-hidden" type="button" tabindex="-1"></button></div>
+</main>
+</body>
+</html>
