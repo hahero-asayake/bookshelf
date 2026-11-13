@@ -104,7 +104,14 @@ class _ArticleEditorMethods {
         // 「未接続」の専用通知に任せる。§#art-store-notice)。接続済みでの読込失敗は
         // 「0件」と区別するため _artLoadError に保持し、一覧側でエラー行として出す。
         this._artLoadError = null;
-        if (this._isSyncReady()) {
+        // イシュー#595: 閉じてすぐ開き直した時、まだ送っていない記事があれば読み直す前に送る。
+        // 送れなければ読み直さない(読み直すとメモリにある未送信の記事を捨ててしまう)
+        await this._artSettlePendingSave();
+        let unsent = false;
+        if (this._isSyncReady() && this.publishArticleStore.hasUnsavedChanges()) {
+            unsent = !(await this._artFlushRemoteNow({ silent: true })).ok;
+        }
+        if (this._isSyncReady() && !unsent) {
             try {
                 await this.publishArticleStore.load();
             } catch (e) {
@@ -130,6 +137,9 @@ class _ArticleEditorMethods {
             this._artExitEditToList();
             return;
         }
+        // イシュー#595: 閲覧状態で題名などを打ってすぐ閉じた時も、保留中の保存を確定してすぐ送る
+        // (閉じるのはawaitしない=行き先は変えない。送れなかった時の知らせは_artFlushRemoteが出す)
+        if (this._artSaveTimer) this._artSettlePendingSave().then(() => this._artFlushRemoteNow()).catch(() => {});
         // イシュー#279: ×ボタンは閲覧状態からでも押せるため、残っている履歴段を先に畳む
         // (段を残したまま閉じると、次に開いた時や次回の戻る操作で不整合になる・②指示「段を残さない」)。
         this._artMode = 'view';
@@ -180,6 +190,12 @@ class _ArticleEditorMethods {
         on('publish-settings-close', 'click', () => this.closePublishSettingsModal()); // イシュー#442
         on('art-new', 'click', () => this._artOpenEditor(null));
         on('art-back', 'click', () => this._artExitEditToList());
+        // イシュー#595: タブを閉じる・裏に回る時も保留中の保存を確定する(js/bookshelf.js の記事のリモート flush と重なっても、
+        // 予約が無ければ何もしない・送信中は publishArticleStore 側で1本にまとまる)
+        const settleOnLeave = () => this._artSettleOnLeave();
+        window.addEventListener('pagehide', settleOnLeave);
+        window.addEventListener('beforeunload', settleOnLeave);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') settleOnLeave(); });
         this._artSetupDrawerShelfPicker();
         this._artBindViewportScroll(); // K-B (イシュー#276)
         // capture フェーズ + stopImmediatePropagation: 全モーダル共通の Esc ハンドラ (502行, bubbling
@@ -336,17 +352,12 @@ class _ArticleEditorMethods {
     // 公開の一覧へ(_artShowListが編集/閲覧の段を畳む)。失敗した時はその場にとどまる(状態表示は
     // _artFlushSave/_artFlushRemoteが既に出す。ブラウザの戻るはここを通らない=行き先は変えない)
     async _artExitEditToList() {
-        if (this._artMode === 'edit' || this._artMode === 'form') {
-            // イシュー#511 X1 A-d(e2eで検出・修正): 保留中のローカル保存(_artSaveTimer=
-            // _artScheduleSave済みでまだ_artFlushSaveが走っていない状態)がある時だけflushする。
-            // 無変更でも無条件にupdate()を呼ぶとupdatedAtが進み、公開直後の記事が
-            // 「公開中・未反映の変更あり」に化けて一覧の公開済み表示が消える(#384と同種の罠。
-            // A7@タッチ3端末のe2eでregression検出・publish-article-store.js updateの
-            // touchesUserField判定を参照)
-            if (this._artSaveTimer) await this._artFlushSave();
-            const r = await this._artFlushRemoteNow();
-            if (!r || !r.ok) return false; // 保存できなかった=その場にとどまる
-        }
+        // イシュー#595: 閲覧状態でも同じにする(新規作成は閲覧状態で開き、題名はそのまま打てる。
+        // 旧実装は編集/フォーム状態の時だけ確定したため、題名を入れて600ms以内に←で戻ると、
+        // 記事がまだ作られていない一覧を描いていた)。失敗した時にとどまるのも編集状態と同じ。
+        await this._artSettlePendingSave();
+        const r = await this._artFlushRemoteNow();
+        if (!r || !r.ok) return false; // 保存できなかった=その場にとどまる
         this._artShowList({ skipSave: true });
         return true;
     }
@@ -358,7 +369,14 @@ class _ArticleEditorMethods {
     // skipSave: 削除直後 (_artEditingId が既に削除済みの記事を指す) は保存するとエラーになるため呼び出し元が true を渡す。
     _artShowList({ skipSave = false } = {}) {
         this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
-        if (!skipSave && (this._artMode === 'edit' || this._artMode === 'form')) this._artFlushSave().catch(() => {});
+        // イシュー#595: 戻る操作など await できない経路でも、保留中の保存を確定してから一覧を描き直す
+        // (確定はawaitできないので、下の同期の描画のあとで、確定が済んだら一覧をもう一度描く)
+        if (!skipSave && (this._artSaveTimer || this._artMode === 'edit' || this._artMode === 'form')) {
+            this._artFlushSave().then(() => {
+                const lv = document.getElementById('art-list-view');
+                if (lv && !lv.hidden) this._artRenderList();
+            }).catch(() => {});
+        }
         // イシュー#513 S6: 記事のサブ状態(art-viewing/art-edit-mode/art-publish-modal、将来増える
         // ものも含む)は1回のunwind操作でまとめて畳む(「一覧を出す=これらの段は残さない」という
         // 1つの決まりをSurface/NavState側に置く)。全幅化でPCでもこれらの面が段を積むように
@@ -1266,6 +1284,9 @@ class _ArticleEditorMethods {
     }
 
     _artOpenEditor(id) {
+        // イシュー#595: 前の記事の保存予約が残っていれば、下書きを差し替える前に確定する
+        // (残したままだと、予約が次に開いた記事の下書きで発火し、前の記事の入力が消える)
+        this._artSettlePendingSave().catch(() => {});
         this._artCloseSheet(); // 前回の編集セッションのシート開閉状態を持ち越さない (開いていなければ no-op)
         // 900px超の畳み状態だけは記憶を復元する (900px以下は上の _artCloseSheet() で毎回閉じた状態から
         // 始まる・イシュー#168)。_artRenderDrawer() が wrap へクラス適用する。
@@ -2883,33 +2904,58 @@ class _ArticleEditorMethods {
         this._artSaveTimer = setTimeout(() => this._artFlushSave(), 600);
     }
 
+    // イシュー#595: 保留中の保存予約(_artSaveTimer)を今すぐ確定する。画面を離れる経路(←・×/Esc・戻る・
+    // 別の記事を開く・タブを閉じる)はここを通す。予約が無い時は何もしない=無変更で update() を呼ばない
+    // (呼ぶと updatedAt が進み、公開済みの記事が「公開中・未反映の変更あり」に化ける。#384/#511 A-d の罠)
+    async _artSettlePendingSave() {
+        if (!this._artSaveTimer) return;
+        await this._artFlushSave();
+    }
+
+    // イシュー#595: タブを閉じる・裏に回る時(pagehide/beforeunload/visibilitychange=hidden)。await できないので、
+    // 先に localStorage へ下書きを同期で書いてから、メモリ反映とリモート送信を走らせる(届けば下書きは消える)
+    _artSettleOnLeave() {
+        if (this._artSaveTimer) {
+            this._artSaveDraftToLocalStorage();
+            this._artSettlePendingSave().then(() => this._artFlushRemoteNow()).catch(() => {});
+        } else if (this._artRemoteFlushTimer) {
+            this._artFlushRemoteNow();
+        }
+    }
+
     // メモリへの反映のみ (persist:false)。GitHub への実書込は _artScheduleRemoteFlush() が
     // ART_REMOTE_FLUSH_DEBOUNCE_MS だけデバウンスして行う (編集のたび即コミットしていたのを解消、
     // イシュー#142)。データを失わないよう、反映のたび localStorage にも下書きを同期保存する。
     async _artFlushSave() {
         if (this._artSaveTimer) { clearTimeout(this._artSaveTimer); this._artSaveTimer = null; }
+        // イシュー#595: 確定の途中で別の記事が開かれても、この下書きだけを確定する(開いた記事の状態を書き換えない)
+        const draft = this._artDraft;
+        const editingId = this._artEditingId;
+        const pendingId = this._artPendingId;
         const patch = {
-            title: this._artDraft.title || '無題の記事',
-            tags: this._artDraft.tags || [],
-            blocks: this._artDraft.blocks || [],
-            theme: this._artDraft.theme,
-            sourceShelfId: this._artDraft.sourceShelfId,
-            adTag: this._artDraft.adTag || null
+            title: draft.title || '無題の記事',
+            tags: draft.tags || [],
+            blocks: draft.blocks || [],
+            theme: draft.theme,
+            sourceShelfId: draft.sourceShelfId,
+            adTag: draft.adTag || null
         };
         try {
-            if (this._artEditingId && !this._artPendingId) {
-                await this.publishArticleStore.update(this._artEditingId, patch, { persist: false });
+            if (editingId && !pendingId) {
+                await this.publishArticleStore.update(editingId, patch, { persist: false });
             } else {
                 // イシュー#468: _artPendingId(仮id)があればそのidのまま create する。URLの#/publish/<id>と
                 // ストアの実idが一致する(採番し直さない)。無ければ従来どおりストア側で新規発行する。
-                const created = await this.publishArticleStore.create(patch, { persist: false, id: this._artPendingId || undefined });
-                this._artEditingId = created.id;
-                this._artPendingId = null; // 確定した
-                this._artDraft.id = created.id;
-                this._artDraft.slug = created.slug;
-                const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
+                const created = await this.publishArticleStore.create(patch, { persist: false, id: pendingId || undefined });
+                draft.id = created.id;
+                draft.slug = created.slug;
+                if (this._artDraft === draft) {
+                    this._artEditingId = created.id;
+                    this._artPendingId = null; // 確定した
+                    const ops = document.getElementById('art-page-ops'); if (ops) ops.hidden = false;
+                }
             }
-            this._artSaveDraftToLocalStorage();
+            if (this._artDraft === draft) this._artSaveDraftToLocalStorage();
             this._artScheduleRemoteFlush();
         } catch (e) {
             // メモリ反映自体の失敗 (未読込状態での書込等、稀)。リモートエラーと同じ表示にする。
