@@ -273,3 +273,7 @@
   - 疑い: 完了（保存して閉じる）の処理で、保存の後の閉じる・表示の更新が抜ける時がある。#611（長文メモを「完了」で保存しても、詳細のボタンが「長文メモを書く」のまま）に近い可能性がある。
 - origin/main 5c41dac の上に載せ直してから、`book-memo-file-lifecycle.spec.js` を workers=3 で3回続けて流した（毎回、前後とも 8194番は空き）: **3回とも 20 passed・4 skipped（fixme）・0 failed**（05:33〜05:36）。
 - 載せ直した後に main の `?v=` の最大値が 2026111496 になっていたので、`js/storage.js?v=2026111498`・`js/bookshelf.js?v=2026111499` に上げた（check:version OK）。
+- push の直前に main がまた進んでいた（#600 のハブのまとめ保存の並列化など5本）。載せ直した後、同じ spec を workers=3 で1回流して 20 passed・4 skipped を確かめた。ハブの `hub-adapter.js?v=2026111498` が自分の storage.js と同じ値になったので、`js/storage.js?v=2026111499` に上げた（check:version OK）。
+- **push**: `BOOKSHELF_ISSUE=594 git push origin 7b25265:main`（`e585d57..7b25265`）。origin/main..HEAD は自分の15本だけで、どれも `Issue: #594`。#587 の cherry-pick は入っていない。
+- CI: Actions の Run 332（`7b25265`）。GitHub API は未認証の回数上限に達していたので、Actions の画面の HTML で状態を見た（結果は下の行に書く）。
+- CI の状態（Actions の画面の HTML・50秒おきに5回・05:38:58〜05:42:21）: Run 332（https://github.com/hahero-asayake/bookshelf/actions/runs/43503432391）は5回とも「currently running」だった。push から5分の上限で打ち切った。test (e2e)・test (char) それぞれの結果は、API が回数上限で読めず、run の画面の HTML にも出ていないので未確認。CI の結果の確認は②に任せる（「テストが緑」は、ローカルの npm test・E2E・e2e-diff-main で判定済み）。
