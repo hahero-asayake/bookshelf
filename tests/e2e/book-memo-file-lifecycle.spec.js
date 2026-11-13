@@ -5,7 +5,7 @@
 //
 // 保存先の模擬は tests/e2e/helpers/storage-fakes.js (イシュー#587)。状態は Node 側にあり、
 // ページを再読込しても残る。題名・ASIN の変更とメモの読み書きは画面の操作で行う。
-// 例外: 本の追加 (前提づくり) と本の削除は、アプリの処理 (addBookManually / deleteBook) を呼ぶ。
+// 本の追加 (前提づくり) も画面の操作 (設定の「蔵書」→ 手動で追加)。例外は本の削除で、アプリの処理 (deleteBook) を呼ぶ。
 // 本の削除は、origin/main (66d9ac4) の画面に押せるボタンが無いため (js/screens/book-detail.js:393 の
 // .delete-btn を描く箇所が無い)。deleteBook 自身の確認ダイアログ (confirm) は画面と同じく通す。
 import { test, expect } from './helpers/test-base.js';
@@ -96,38 +96,24 @@ const BACKENDS = [
     { name: 'ローカルフォルダ', boot: bootWithLocalFolder }
 ];
 
-/** 前提づくり: 手動追加の処理で本を1冊足し、保存先の library.json に届くまで待つ */
-// 落ちた時に原因を見るための記録 (本の一覧・未保存ありの印・画面に出ている確認や画面・console・保存先の library.json)
-let consoleLines = [];
-test.beforeEach(({ page }) => {
-    consoleLines = [];
-    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleLines.push(`${m.type()}: ${m.text().slice(0, 300)}`); });
-    page.on('pageerror', (e) => consoleLines.push(`pageerror: ${e.message.slice(0, 300)}`));
-});
-
-async function attachDiag(page, remote, label) {
-    const app = await page.evaluate(() => ({
-        books: (window.bookshelf.books || []).map((b) => b.asin),
-        pendingSync: localStorage.getItem('virtualBookshelf_pendingSync'),
-        shown: Array.from(document.querySelectorAll('.cfm-overlay, .modal.show, [role="dialog"], [role="alertdialog"]'))
-            .filter((el) => el.offsetParent !== null || getComputedStyle(el).position === 'fixed')
-            .map((el) => `${el.id || el.className}: ${(el.innerText || '').replace(/\s+/g, ' ').slice(0, 160)}`),
-        status: (document.getElementById('app-status-bar') || {}).innerText || ''
-    })).catch((e) => ({ evaluateError: e.message }));
-    const remoteLibrary = await remote.readJSON('private/library.json');
-    const body = JSON.stringify({ label, app, remoteLibrary, console: consoleLines }, null, 2);
-    console.log(`DIAG ${body}`);
-    await test.info().attach(label, { body, contentType: 'application/json' });
-}
-
-/** 前提づくり: 手動追加の処理で本を1冊足し、保存先の library.json に届くまで待つ (#587 の E2E と同じく、操作の後は保存先を見て待つ) */
+/** 前提づくり: 画面の操作 (設定の「蔵書」→ 手動で追加) で本を1冊足し、保存先の library.json に届くまで待つ
+ *  (#587 の E2E と同じく「画面の操作 → 保存先を poll」。手順は dashboard-stats-after-manual-add.spec.js と同じ)。
+ *  addBookManually を直接呼ぶと、起動時の読み込みが終わる前に足した本が読み込みで上書きされて消えることがあった
+ *  (step4 の e2e-diff の全体並列実行で1回・594-results.md) */
 async function addBook(page, remote, asin, title) {
-    await page.evaluate(async ({ asin, title }) => {
-        document.getElementById('manual-asin').value = asin;
-        document.getElementById('manual-title').value = title;
-        document.getElementById('manual-authors').value = 'テスト著者';
-        await window.bookshelf.addBookManually();
-    }, { asin, title });
+    await openSettingsByClick(page, 'library-section');
+    await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+    await page.locator('#add-book-manually').click();
+    await page.locator('#manual-asin').fill(asin);
+    await page.locator('#manual-title').fill(title);
+    await page.locator('#add-manually').click();
+    await expect(page.locator('#add-book-results')).toContainText('書籍を追加しました');
+    await page.locator('#add-book-modal-close').click();
+    await expect(page.locator('#add-book-modal')).not.toHaveClass(/show/);
+    if (await page.locator('#settings-modal').isVisible()) {
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#settings-modal')).toBeHidden();
+    }
     try {
         await expect.poll(async () => (await remoteBooks(remote))[asin], { message: `本 ${asin} が保存先に届く` }).toBe(title);
     } catch (e) {
