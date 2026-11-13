@@ -162,6 +162,61 @@ lint実測 128→98（純減30、全て(c)）。対象：`_isSyncReady`(27件中
 - `tests/e2e/username-publish-gate.spec.js:261`の`_isSyncReady`：同じevaluate内で`_runPublishExport`
   （step3対象のモック上書き）と連結しているため、同様にstep3へ回す。
 
+## 7-3. step3 実施結果
+
+lint実測（widenedパターン `_+[A-Za-z]`）：130（step1広げた後の基準）→100（step2完了時点）→**82**（step3完了）。
+narrowパターン（`_[A-Za-z]`）では98→80→**74+8=82**。spec側（`tests/e2e/helpers`の外）の生の内部参照は**0件**（`git grep`確認済み）。
+
+**(a)化 12件**（`tests/e2e/helpers/nav.js`新設）：
+- `_openDrawer`(9件) → `openDrawer(page)`。`[data-mobile-nav="shelves"]`クリック、既に`drawer-open`なら何もしない。
+- `_openPalette`(2件) → `openCommandPalette(page)`。`Ctrl+K`、既に開いていれば何もしない。
+- `_setBodyView`(1件・ux-p1-nav.spec.js) → `navigateHome(page)`。`[data-mobile-nav="home"]`クリックで
+  `_closeDrawer→_navigateFromUi('main')→router.navigateMain()→(非同期hashchange)→_applyRoute→_setBodyView('main')`
+  の実経路を通す。
+- `_applyRatingEverywhere`(1件・ux-quickwins.spec.js) → `clickStarRating(page, asin, rating)`。
+  実クリック経路(`saveRating`+`_applyRatingEverywhere`のセット呼び出し、js/bookshelf.js:2437-2446)が
+  既に存在することを確認した上で置換。
+
+**(c)化 36件**（`tests/e2e/helpers/app-misc.js`新設）：
+- `_checkAppVersion`/`_applyPwaUpdate`/`_pwaUpdateReg`/`_onPwaUpdateReady`(計8件) →
+  `triggerAppVersionCheck`/`spyOnAppVersionCheck`/`mockPwaUpdateReloadFallback`。
+  いずれも「メソッド自体を呼ぶ/上書きする」モック・スパイパターンで、クリックでは代替できない。
+- `_listTail`/`_orderedBooksToRender`(計3件) → `waitForListStaged`/`getOrderedBooksToRender`。
+  段階描画の内部状態、DOM側に型/内容を1:1で示す属性が無い。
+- `_runPublishExport`(1件) → `mockRunPublishExport`。
+- `__releaseRead`(2件) → `stallLongMemoRead`/`releaseLongMemoRead`。
+- `_navigateFromUi`/`_setBodyView`の残り3件(bookshelf-clip-373.spec.js 1件・bookshelf-clip-385.spec.js 2件)
+  → `navigateToMainInternal`。**(a)化を見送った理由**：いずれも
+  `test.skip(({browserName}) => browserName !== 'webkit', ...)`でwebkit限定の回帰テスト
+  （高速連打のストレステスト・WebKit実機再現）であり、`BACKNAV_WEBKIT=1`環境変数が無い
+  本runでは実行自体がskipされ、実クリックへの置換が正しく動くかをこの場で検証できない。
+  「検証できない変更はリスクが高い」という#550/#553の教訓に沿って(c)のまま残した。
+- `touch-reorder.spec.js`のbootApp専用連結ブロック(`_isSyncReady`/`_applyRoute`/`_openDrawer`/
+  `_applyHeaderLayout`の4件) → `mockSyncRouteAndMobileCompat`1関数に集約。元の1回の`evaluate`を
+  分割せず保った。このファイルも`viewport:{width:1280,height:900}`固定（デスクトップ幅）で実行され、
+  `[data-mobile-nav]`は非表示のため、ここの`_openDrawer`は他の8件と異なり(a)化できない
+  （モバイル幅限定の防御的コードのため）。
+- `_updateCoverSizeOptionLabels`(1件・bookshelf-clip-385.spec.js) → **削除**。`setView('covers')`
+  自身が`js/bookshelf.js:1114`で同じ呼び出しを既に行っており（`switchBookshelf`は`cover-size`の
+  選択肢に触れないため後段で再度呼ぶ必要もない）、本体コードが別経路で自動的に呼んでいることを
+  確認した上で冗長な直接呼び出しを無くした（#553の「(a)化前に自動発火を確認する」教訓の応用。
+  クリックでもモックでもなく「既存の公開APIが既に行っている」ケース）。
+- `_modalHistPush`存在確認ガード(1件・back-nav-matrix.spec.js) → **撤去**（存在確認のみ削除、
+  実際に呼ばれる`openBookshelfModal()`は残す）。`_modalHistPush`は常に`window.bookshelf`上に
+  定義済みのメソッドのため、このガードは常にtrueで無意味だった。
+
+**検証**：対象spec全件実行（PORT=8154）で339件passed（back-nav-matrix/checklist-timing/
+forward-reopen-idempotent/standard-ops 172・touch-reorder/bookshelf-clip-373/385/
+app-version-check/list-staged-render 31（+13 webkit-skip）・username-publish-gate/ux-quickwins/
+ux-p1-nav/book-detail-entries 24・publish-article-editor 109）。vitest 852 passed。
+
+**変異検査**：
+- (a) `openDrawer`を無効化 → `standard-ops.spec.js`の「ドロワー: 戻るで閉じてアプリに留まる」が
+  `body.drawer-open`クラス不在でタイムアウト失敗することを確認（復元後pass）。
+- (c) 1回目は`waitForListStaged`を無効化したが、後続の`page.waitForTimeout(300)`で無害化され
+  失敗しなかった（#552点4の教訓と同種：無害化チェックの重要性）。2回目に`triggerAppVersionCheck`
+  を無効化し、`app-version-check.spec.js`が更新バー非表示で失敗することを確認（復元後pass）。
+
 ## 8. 置き換え方針のまとめ（step2・step3への申し送り）
 
 - **step2（同期・競合系）**：`_isSyncReady`(27)・`_scheduleSync`(4)・`_runPendingSync`(2)・`_handleSyncConflict`(5)・`_conflictNotified`(3)・`_showConflictDialog`(1) → 新設`tests/e2e/helpers/sync.js`に集約。全て(c)。`_isSyncReady`は上記5-1の訂正（モック系ヘルパー名）で実装する。
