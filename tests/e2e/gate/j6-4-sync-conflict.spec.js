@@ -84,7 +84,10 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
         await reloaded;
         await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
         await expect(other.getByText('最新のデータを確認しています…')).toHaveCount(0, { timeout: 15000 });
-        await bookButton(other).click();
+        // 再読込の前に開いていた本の詳細は、読み込み後もそのまま開いている (PC は右の欄・iPhone は全面で一覧を覆う)。
+        // 開いていない時だけ一覧から本を開く (イシュー#616 で webkit を流して分かった)
+        await expect(memoBox(other).or(bookButton(other)).first()).toBeVisible();
+        if (!(await memoBox(other).isVisible())) await bookButton(other).click();
     });
 
     await test.step('確認: 端末Bに、端末Aの短文メモが見える', async () => {

@@ -3722,6 +3722,9 @@ class VirtualBookshelf {
         if (choice === 'reload') {
             // 保存先の最新版を採る (端末内の編集は書き出しで先に退避できる)。印と未同期の記録を消してから読み直す
             // = 起動時に端末内を優先して送り直し、相手の変更を上書きしない (イシュー#616)
+            // 離脱時の送り出し (flushOnLeave・visibilitychange) で古い版を送らないよう、予約も止める
+            if (this._syncDebounceTimer) { clearTimeout(this._syncDebounceTimer); this._syncDebounceTimer = null; }
+            this._pendingSync = false;
             SyncConfigManager.clearConflict();
             try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
             location.reload();
