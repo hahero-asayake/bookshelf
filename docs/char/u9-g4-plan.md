@@ -118,7 +118,51 @@ spec側合計＝76（24ファイル・22名）。52+76=128＝lint実測値と一
 
 **見込み差分：約200〜260行**（ヘルパー新設+各specの書き換え+lintコメント更新+本ドキュメント更新）。500行目安を超える見込みは無いため、**分割せず1イシュー（本イシュー）で完結**させる。
 
-## 7. 置き換え方針のまとめ（step2・step3への申し送り）
+## 7-1. step2 実施結果（②回答の反映）
+
+②の2026-11-13 step2承認時の3点回答を反映した。
+
+1. **命名方針**：モック上書き系(c)ヘルパーは`mockSyncReady`/`stubScheduleSync`/`stubRunPendingSync`のように
+   「待つ」ではなく「差し替える」と分かる名前にした（`tests/e2e/helpers/sync.js`）。
+   **将来、正式なテスト用差し替え口にするかどうかの判断材料（U9まとめへ転記予定）**：
+   `_isSyncReady`・`_checkAppVersion`・`_runPublishExport`・`_applyRoute`の4名は、いずれもテストが
+   「メソッド自体を上書きして本来の処理を迂回する」という同一パターン（モック注入点）。plugin-api.js側の
+   契約は`_isSyncReady`のみだが、残り3名も本体コード側に恒久的なテスト注入点として扱われている
+   兆候がある（`_isSyncReady`はplugin-api.js:769、`_artPreviewStallMs`/`_artPreviewHardDeadlineMs`は
+   bookshelf.jsのコメントで「テストから注入できるよう」と既に明記済み＝前例あり）。次段で、これら
+   モック上書き系をまとめて「正式なテスト用フック」として`window.bookshelf.__test__`のような専用の
+   窓口に昇格させるかどうかを検討する価値がある（今回はヘルパー集約のみで、本体側の変更はしない）。
+2. **`_modalHistPush`/`_modalHistPop`の定義撤去**：本イシューの範囲外として持ち越す。今回はテスト参照側の
+   ヘルパー化のみ行う（step3で対応）。
+3. **`_navigateFromUi`のelse枝の到達性確認（実施済み）**：
+   `index.html:1500`で`js/router.js`は条件無しで常に読み込まれる（`<script defer src="js/router.js?v=...">`、
+   他のオプション機能のような`if (window.XxxYyy)`ガード無し）。`js/bookshelf.js:234-237`の
+   `if (window.BookshelfRouter) { this.router = new BookshelfRouter(); ... }`は、`BookshelfRouter`クラスが
+   常にグローバルに存在するため実質的に常にtrueで、`this.router`は常にインスタンス化される。
+   よって`bookshelf-clip-373.spec.js:139`/`bookshelf-clip-385.spec.js:172`の
+   `if (window.bookshelf.router) window.bookshelf._navigateFromUi('main'); else window.bookshelf._setBodyView('main');`
+   の`else`枝（`_setBodyView`呼び出し）は、現行コードでは到達しない死に経路と確認した。
+   ②指示のとおり、**今回はこの`else`枝を消さない**（到達しないことの記録のみ・コード変更はstep3で
+   `_setBodyView`/`_navigateFromUi`をまとめて扱う時に判断する）。
+
+## 7-2. step2 実測結果
+
+lint実測 128→98（純減30、全て(c)）。対象：`_isSyncReady`(27件中25件・2件は下記の理由で延期)・
+`_scheduleSync`(4)・`_runPendingSync`(2)・`_handleSyncConflict`(5)・`_conflictNotified`(3)・
+`_showConflictDialog`(1)。ヘルパー新設`tests/e2e/helpers/sync.js`（10件のraw参照を内部に持つ）。
+
+**意図的に未変更にした2件**（1回のevaluateで別群(step3)の名前と連結しているため、分割しない方針
+＝#552/#553の教訓の踏襲）：
+- `tests/e2e/touch-reorder.spec.js:55`の`app._isSyncReady`：同じ`page.evaluate`内で`_applyRoute`の
+  上書き・`_openDrawer()`呼び出し・`_applyHeaderLayout()`呼び出し（いずれもstep3対象）と連結している。
+  このファイルのコメント自体が「ルーター(hashchange)の非同期な再適用」のタイミング問題に言及しており、
+  実際に`js/bookshelf.js`の`finishStartup()`（起動時に`_isSyncReady()`を非同期で参照する処理）が存在する
+  ことを確認した（コンストラクタ内`startRouter()`/`finishStartup()`、`js/bookshelf.js:409-470`）。
+  この評価ブロックを分割するリスクを避け、step3でまとめて1つのヘルパーへ置き換える。
+- `tests/e2e/username-publish-gate.spec.js:261`の`_isSyncReady`：同じevaluate内で`_runPublishExport`
+  （step3対象のモック上書き）と連結しているため、同様にstep3へ回す。
+
+## 8. 置き換え方針のまとめ（step2・step3への申し送り）
 
 - **step2（同期・競合系）**：`_isSyncReady`(27)・`_scheduleSync`(4)・`_runPendingSync`(2)・`_handleSyncConflict`(5)・`_conflictNotified`(3)・`_showConflictDialog`(1) → 新設`tests/e2e/helpers/sync.js`に集約。全て(c)。`_isSyncReady`は上記5-1の訂正（モック系ヘルパー名）で実装する。
 - **step3（残り）**：`_openDrawer`(9,(a))・`_openPalette`(2,(a))・`_applyRatingEverywhere`(1,(a))・`_navigateFromUi`(2,要確認)・`_setBodyView`(4,要確認)・PWA/version系(`_checkAppVersion`/`_applyPwaUpdate`/`_pwaUpdateReg`/`_onPwaUpdateReady`、計8)・`_listTail`(2)・`_conflictNotified`は2に含めた・`_updateCoverSizeOptionLabels`(1)・`_orderedBooksToRender`(1)・`_modalHistPush`(1,ガード)・`_runPublishExport`(1)・`_applyRoute`(1)・`_applyHeaderLayout`(1,要確認)・`__releaseRead`(2) → 新設`tests/e2e/helpers/app-misc.js`に集約。
