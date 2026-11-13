@@ -2,7 +2,7 @@
 // 記事ストアはメモリ差し替え (publish-article-editor.spec.js の bootApp と同じ型)。公開先・プラン・GitHub 連携は
 // localStorage の bookshelf_sync、自分のタグは userData.settings.affiliateId で与え、画面の実操作で確かめる。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSave } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSave, getArtDraft } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -128,7 +128,7 @@ test('広告: ハブ×Plus (タグ登録済み) は 自分のタグ/付けない
     await expect(page.locator('#art-pub-ad')).not.toContainText('運営のタグ');
     await page.locator('#art-pub-ad input[value="none"]').check();
     await expect(page.locator('#art-pub-ad')).toContainText('「広告」ラベルは出ません');
-    expect(await page.evaluate(() => window.bookshelf._artDraft.adTag)).toBe('none');
+    expect((await getArtDraft(page)).adTag).toBe('none');
     expect(errors).toEqual([]);
 });
 

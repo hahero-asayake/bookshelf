@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { setBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
+import { getArtDraft, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -319,8 +320,8 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const frame = page.frameLocator('#art-canvas-frame');
         await frame.locator('.art-cv-ins-btn').last().tap();
         await tap(page, '#art-add-sheet [data-block-type="text"]');
-        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('変更あり'));
+        await waitForArtTextFsEditor(page);
+        await setArtTextFsEditorValue(page, '変更あり');
         await tap(page, '#art-fs-cancel');
         await expect(page.locator('.cfm-overlay')).toBeVisible();
         await r.step(page, 'confirm-open');
@@ -929,9 +930,13 @@ async function newArticleView(page) {
 async function insText(page) {
     await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').last().tap();
     await tap(page, '#art-add-sheet [data-block-type="text"]');
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+    await waitForArtTextFsEditor(page);
 }
-const draftHas = (page, t) => page.evaluate((x) => JSON.stringify(window.bookshelf._artDraft || {}).includes(x) || JSON.stringify(window.bookshelf.publishArticleStore).includes(x), t);
+async function draftHas(page, t) {
+    const inDraft = JSON.stringify((await getArtDraft(page)) || {}).includes(t);
+    if (inDraft) return true;
+    return page.evaluate((x) => JSON.stringify(window.bookshelf.publishArticleStore).includes(x), t);
+}
 async function lookBtn(page) { const h = page.locator('#art-look-btn'); if (await h.isVisible()) await h.tap(); else await tap(page, '#art-bar-look'); await settle(page); }
 async function pubBtn(page) { const h = page.locator('#art-publish-header'); if (await h.isVisible()) await h.tap(); else await tap(page, '#art-bar-publish'); await settle(page); }
 
@@ -972,7 +977,7 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
         await tap(page, '#art-mode-edit');
         for (const how of ['back', 'done', 'esc']) {
             await insText(page);
-            await page.evaluate((t) => window.bookshelf._artTextFsEditor.value(t), `本文${how}`);
+            await setArtTextFsEditorValue(page, `本文${how}`);
             if (how === 'back') await back(page);
             else if (how === 'done') { await tap(page, '#art-fs-done'); await settle(page); }
             else { await page.keyboard.press('Escape'); await settle(page); }
@@ -986,7 +991,7 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
         await newArticleView(page);
         await tap(page, '#art-mode-edit');
         await insText(page);
-        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('破棄される本文'));
+        await setArtTextFsEditorValue(page, '破棄される本文');
         await tap(page, '#art-fs-cancel');
         await tap(page, '.cfm-overlay .cfm-ok');
         await settle(page, 600);
@@ -1089,7 +1094,7 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
         await tap(page, '#art-mode-edit');
         // プレビューはブロックが1つ以上ないと開かない (トーストのみ) ため、文章ブロックを1つ置く
         await insText(page);
-        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('本文'));
+        await setArtTextFsEditorValue(page, '本文');
         await back(page);
         for (const how of ['back', 'esc']) {
             await tap(page, '#art-more-btn');
@@ -1116,7 +1121,7 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
     test('A38 閲覧で下へスクロール→編集→戻る＝閲覧の同じ位置 (D07)', async ({ page }, ti) => caseRun(page, ti, 'A38', async (r) => {
         await newArticleView(page);
         await tap(page, '#art-mode-edit');
-        for (let i = 0; i < 3; i++) { await insText(page); await page.evaluate(() => window.bookshelf._artTextFsEditor.value('段落\n\n'.repeat(30))); await back(page); }
+        for (let i = 0; i < 3; i++) { await insText(page); await setArtTextFsEditorValue(page, '段落\n\n'.repeat(30)); await back(page); }
         await back(page); // 閲覧へ
         const col = '#art-edit-view .art-col';
         await page.evaluate((c) => { const el = document.querySelector(c); el.scrollTop = 400; }, col);
@@ -1685,7 +1690,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
             async (p) => {
                 await newArticleView(p); await tap(p, '#art-mode-edit');
                 await insText(p);
-                await p.evaluate(() => window.bookshelf._artTextFsEditor.value('本文291'));
+                await setArtTextFsEditorValue(p, '本文291');
                 await back(p);
                 await tap(p, '#art-more-btn');
                 await tap(p, '#art-width-preview');

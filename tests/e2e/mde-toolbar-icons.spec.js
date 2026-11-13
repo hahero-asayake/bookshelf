@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, getBookMemoBoldToolbarHtml } from './helpers/book-memo.js';
+import { waitForArtTextFsEditor, setArtTextFsEditorValue, getArtTextFsEditorBoldToolbarHtml } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -58,8 +59,8 @@ async function newArticleWithTextBlock(page) {
     await canvas(page).locator('.art-cv-ins-btn').first().click();
     await page.locator('#art-add-sheet [data-block-type="text"]').click();
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-    await page.evaluate((m) => window.bookshelf._artTextFsEditor.value(m), LONG);
+    await waitForArtTextFsEditor(page);
+    await setArtTextFsEditorValue(page, LONG);
     await page.waitForSelector('.editor-toolbar.mde-iconized', { timeout: 8000 });
 }
 
@@ -151,7 +152,7 @@ test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び・機
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
 
         await newArticleWithTextBlock(page);
-        const blockBtnHtml = await page.evaluate(() => window.bookshelf._artTextFsEditor.toolbarElements.bold.innerHTML);
+        const blockBtnHtml = await getArtTextFsEditorBoldToolbarHtml(page);
         expect(blockBtnHtml).toBe(memoBtnHtml);
         expect(errors).toEqual([]);
     });

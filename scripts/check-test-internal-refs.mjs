@@ -26,7 +26,16 @@ const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
 // `_artDraft`(36)・`_artTextFsEditor`(29)は複雑度が高く次イシュー(G3-2)へ回した
 // (詳細はdocs/char/u9-g3-plan.md)。前回(G2・#550)は298だった。単位が進むごとに、
 // この定数を実測値まで下げる。
-const MAX = 216;
+//
+// U9 G3-2(article-editor・_artDraft/_artTextFsEditor中心、イシュー#552)置き換え後の
+// 実測値 = 160(152(bookshelf._)+8(app._)。216-160=56)。対象は`_artDraft`(36)・
+// `_artTextFsEditor`(29)・分類表に無かった`_artRenderBlocks`(2・app._経由)・
+// `_artBuildPreviewState`(1・app._経由、`_artDraft`と同一evaluate内で発見)の計68件
+// (全て(c)。DOM側に型/内容を1:1で示す属性が無いことを確認した上で判断。詳細は
+// docs/char/u9-g3-2-plan.md)。tests/e2e/helpers/art-editor.jsへ集約し12件に減った
+// (68-12=56)。純減は56件(0(a)+56(c))。残り`_artOpenSheet`以下16名54件は次イシュー
+// (G3-3)へ回した。
+const MAX = 160;
 
 const PATTERNS = [
     { name: 'bookshelf._', re: /\bbookshelf\._[A-Za-z]/g },

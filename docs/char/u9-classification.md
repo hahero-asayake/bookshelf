@@ -2,6 +2,8 @@
 
 **(c)「テスト用ヘルパーに集約」についての前提（②決裁2026-11-13）**：この作業は内部参照そのものを無くすわけではなく、散らばった内部参照を1か所（テスト用ヘルパー）に集めることで、依存を無くさずに「内部の名前を変えたときに直す箇所を1か所に減らす」ことを狙っている。したがって`bookshelf._`/`app._`の生の参照数が0件になっても、ヘルパーの内部には内部参照が残る。その残りをさらに画面モジュールの公開窓口（(b)）へ移すかどうかは、U9の次の段階で判断する（本イシューの範囲では判断しない）。
 
+**art系(`_art*`)が(c)に偏る理由（②決裁2026-11-13・イシュー#552 step2）**：`_art*`系は下書き(`_artDraft`)のフィールドや全画面MDEエディタのインスタンス(`_artTextFsEditor`)など、画面(DOM)側に型・内容・順序を1:1で示す属性が元から無いものが中心で、(a)化できる箇所がほとんど無い。U9全体の実態としては、この系列は「内部参照をヘルパー1か所に集める」ことが主な効果になる。
+
 ## 0. 範囲と数え方
 
 - 対象：`grep -ron "bookshelf\._[A-Za-z]" tests/e2e/ tests/visual/ | wc -l` = **355**（origin/main 61c1790、本worktreeで再実測して一致）。45ファイル・50種類の名前。
@@ -18,8 +20,8 @@
 | `_openSettingsModal` | 54 | (c) | 操作集約 | settings.js:923に実クリック導線はあるが、54件は設定モーダルを開く前提構築が主目的。1箇所のヘルパー（実クリックで開き、必要ならセクションへ移動）に集約する。settings.js:18のコメントは旧挙動保持の注記であり公開APIではない |
 | `_artFlushSave` | 39→1(G3-1完了・イシュー#551) | (c) | 決定性 | ②指示：即時確定の保存呼び出しは(a)化禁止（#536の揺れ教訓）。article-editor.js:263で`art-save-retry`クリックから呼ばれる私的メソッド。tests/e2e/helpers/art-editor.js(既存ファイル拡張)の`flushArtSave`/`flushArtSaveAndRemote`へ集約 |
 | `_artFlushRemoteNow` | 34→1(G3-1完了・イシュー#551) | (c) | 決定性 | 同上。article-editor.js:263,347。`flushArtRemoteNow`/`flushArtSaveAndRemote`へ集約（`flushArtSaveAndRemote`は元の`.then()`連結を1回のevaluateのまま保持＝2回の呼び出しに分けてタイミングを変えない） |
-| `_artDraft` | 32 | (c) | 状態検査 | article-editor.js:291ほか、下書き状態を直接読むためのフィールド。公開getterが無い（pubdef探索でヒット無し） |
-| `_artTextFsEditor` | 29 | (c) | 状態検査 | article-editor.js:1157,1164。全画面MDEエディタのインスタンス参照。テストは開閉状態の確認に使っている |
+| `_artDraft` | 32+app._4=36→7(G3-2完了・イシュー#552) | (c) | 状態検査 | article-editor.js:291ほか、下書き状態を直接読むためのフィールド。公開getterが無い（pubdef探索でヒット無し）。DOM側に型/内容を1:1で示す属性が無いことを確認した上で全件(c)判断（詳細はdocs/char/u9-g3-2-plan.md §3）。`getArtDraft`/`waitForArtDraft`/`getArtBlocks`/`setArtBlocks`/`setArtDraftField`/`buildArtPublicPreviewHtml`へ集約 |
+| `_artTextFsEditor` | 29→3(G3-2完了・イシュー#552) | (c) | 状態検査 | article-editor.js:1157,1164。全画面MDEエディタのインスタンス参照。テストは開閉状態の確認に使っている。呼び出し形が`waitForFunction`/`.value()`/`.toolbarElements`の3パターンのみで均一。`waitForArtTextFsEditor`/`setArtTextFsEditorValue`/`getArtTextFsEditorBoldToolbarHtml`へ集約 |
 | `_isSyncReady` | 26 | (d)/一部(c) | 契約 | plugin-api.js:769で`this._app._isSyncReady`を呼ぶ正式窓口（d）。ただしテスト26件はいずれも「同期準備済みを待つ足場」としての**内部状態の読み取り**であり、プラグイン契約としての呼び出しではない（plugin-api.js側の呼び出しは355に含まれない別物）。テスト側はヘルパー（c）`waitForSyncReady(page)`に集約し、メソッド名自体は(d)としてplugin-api.jsのために変更しない |
 | `_bookMemoEditor` | 17→6(G2完了・イシュー#550) | (c) | 状態検査 | book-detail.js:571。短文メモのインラインエディタ参照。17件の散在した呼び出しをtests/e2e/helpers/book-memo.js(新設)の6関数(setBookMemoValue/getBookMemoValue/hasBookMemoEditor/waitForBookMemoEditor/getBookMemoBoldToolbarHtml)へ集約し、呼び出し元5ファイルは0件に |
 | `_artEditingId` | 14→1(G3-1完了・イシュー#551) | (c) | 状態検査 | bookshelf.js:4804,5561。現在編集中の記事ID。DOM等価が無い（`data-article-id`等は存在しない）ためtests/e2e/helpers/art-editor.jsの`getArtEditingId`へ集約 |
@@ -48,6 +50,8 @@
 | `_artOpenPublishPanel` | 2 | (a) | 操作再現 | article-editor.js:229,276に`art-publish-header`/`art-bar-publish`クリック導線あり |
 | `_artEditBlock` | 2 | (a) | 操作再現 | article-editor.js:1105。ブロック編集アイコンのクリック相当 |
 | `_artDelete` | 2 | (a) | 操作再現 | article-editor.js:316に`art-del`クリック導線あり |
+| `_artRenderBlocks`（G3-2完了・イシュー#552で追記） | 2→0 | (c) | 決定性 | article-editor.js:1649。ブロック配列の変更を即時キャンバスへ反映する内部再描画。`_artDraft`の直接代入セットと同一evaluate内で呼ばれるため棚卸し時(355件)は見落としていた（app._経由のみで出現・#550と同系統の数え落とし）。`setArtBlocks`へ集約 |
+| `_artBuildPreviewState`（G3-2完了・イシュー#552で追記） | 1→0 | (c) | 決定性 | article-editor.js:3409。公開プレビュー生成用の内部状態オブジェクトを組み立てる。`_artDraft`と同一evaluate内（article-pc-pane.spec.js）でのみ出現し同様に見落としていた。`buildArtPublicPreviewHtml`へ集約 |
 | `_applyPwaUpdate` | 2 | (c) | 決定性 | bookshelf.js:4680。PWA更新通知の即時適用 |
 | `_usageAlertLevel` | 1 | (c) | 状態検査 | settings.js:1146,1168 |
 | `_updateCoverSizeOptionLabels` | 1 | (c) | 決定性 | bookshelf.js:1929 |
@@ -97,7 +101,7 @@ U8の89件は「テスト参照83件（U8a 62件＋U8b 21件）＋dashboard.js�
 
 **G3は500行目安を超える見込みのため、さらに分割した**（イシュー#551 step1実測）。当初提案（G3-1=保存/下書き系5名148件、G3-2=シート/プレビュー/公開操作系55件）は名前単位の粗い見積りで、実測すると`_artDraft`(オブジェクトの多様なフィールド読み書き)が複雑度・見積り誤差とも大きく、5名まとめては500行への安全マージンが乏しいと判断。実際には3群に分割した：
 - **G3-1（完了・イシュー#551）**：`_artFlushSave`(39)/`_artFlushRemoteNow`(34)/`_artEditingId`(14)＝87件。全て(c)（保存確定系は決定性のため(a)化しない#536の教訓、`_artEditingId`はDOM等価なし）。実測差分は呼び出し形がほぼ均一だったため少なく済んだ（詳細はdocs/char/u9-g3-plan.md）。lint 298→216。
-- **G3-2（次イシュー）**：`_artDraft`(36)/`_artTextFsEditor`(29)＝65件。`_artDraft`はオブジェクトの多様なフィールド読み書き(`.blocks`配列操作・`.theme`・`.adTag`・`.sourceShelfId`等、直接代入によるテスト用セットアップも含む)で複数の専用ヘルパーが必要になる見込み。
+- **G3-2（完了・イシュー#552）**：`_artDraft`(36)/`_artTextFsEditor`(29)＝65件。`_artDraft`はオブジェクトの多様なフィールド読み書き(`.blocks`配列操作・`.theme`・`.adTag`・`.sourceShelfId`等、直接代入によるテスト用セットアップも含む)で複数の専用ヘルパーが必要になる見込みだったが、実装時に`_artDraft`と同一evaluate内に同居していた未棚卸しの2名（`_artRenderBlocks`2件・`_artBuildPreviewState`1件、いずれもapp._経由）を発見し合わせて対象に含めた＝実測対象68件。全て(c)（詳細はdocs/char/u9-g3-2-plan.md）。lint 216→160。
 - **G3-3（さらに次）**：シート/プレビュー/公開操作系`_artOpenSheet`以下16名＝約57件（当初G3-2提案と同じ対象、実測57で当初55と近似差）。
 
 G3-1+G3-2+G3-3＝87+65+57=209（lint実測の`_art*`合計と一致）。G1・G2・G4はそれぞれ500行以内に収まる見込みなので1イシュー1群で良い。
@@ -122,3 +126,8 @@ G3-1+G3-2+G3-3＝87+65+57=209（lint実測の`_art*`合計と一致）。G1・G2
   - (c)集約：22件（`_bookMemoEditor`17・`_openBookMemoInAppEditor`4・`_bookMemoEditorContext`1）。新設`tests/e2e/helpers/book-memo.js`の7関数へ集約し、呼び出し元5ファイル（back-nav-matrix/checklist-timing/mde-toolbar-icons/publish-article-editor/standard-ops）は0件、ヘルパー内に8件残存（22→8、純減14件）。
   - 元の分類表§1で`_openBookMemoInAppEditor`を(a)としていたが、実装時に(c)へ訂正した：実クリック経路(`.memo-file-btn`)は本の詳細ペインが開いている時だけ存在し、`showBookDetail()`の履歴副作用が、戻る/進むの段数を検証する3ファイルのテスト前提を壊すため（G1の`_confirmOpenSettings`と同種の判断）。
   - 件数：313→298(bookshelf._ 286+app._ 12、純減15件＝1(a)+14(c))。lintのMAXも313→298に変更。
+- **G3-2（article-editor・_artDraft/_artTextFsEditor中心、イシュー#552）完了**：68件（`_artDraft`36・`_artTextFsEditor`29・分類表に無かった`_artRenderBlocks`2・`_artBuildPreviewState`1。後2名は`_artDraft`と同一のevaluateブロック内に同居していたため実装時に発見し追加・②承認2026-11-13）を置き換えた。
+  - (a)化：0件。DOM側に型/内容/順序を1:1で示す属性が無いこと（article-editor.jsのキャンバス描画を確認）、既存ヘルパー`addBlock()`自身(#372・U9以前)も内部状態読みを選んでいることを根拠に全て(c)（②承認・詳細はdocs/char/u9-g3-2-plan.md §3）。
+  - (c)集約：68件。`tests/e2e/helpers/art-editor.js`に9関数（`getArtDraft`/`waitForArtDraft`/`getArtBlocks`/`setArtBlocks`/`setArtDraftField`/`waitForArtTextFsEditor`/`setArtTextFsEditorValue`/`getArtTextFsEditorBoldToolbarHtml`/`buildArtPublicPreviewHtml`）を追加して集約し、呼び出し元8ファイル（article-pc-pane/back-nav-matrix/char/article/preview-real-adapter/publish-panel/standard-ops/publish-article-editor/mde-toolbar-icons/username-publish-gate/publish-conflict-hub）は0件、ヘルパー内に12件残存（68→12、純減56件）。
+  - 件数：216→160(bookshelf._ 152+app._ 8、純減56件＝0(a)+56(c))。lintのMAXも216→160に変更。
+  - 残り`_artOpenSheet`以下16名54件はG3-3へ回した。

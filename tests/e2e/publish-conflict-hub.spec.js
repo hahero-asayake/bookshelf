@@ -7,7 +7,7 @@
 //  - 公開/公開取消/削除の記事単位 in-flight ガード (_artRunExclusive) と、一覧の公開ボタンの
 //    disabled 制御 (いずれも js/bookshelf.js・イシュー#374案D) を連打で固定する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -19,8 +19,8 @@ const HUB = 'https://mockhub.test';
 
 // イシュー#268: 見たまま編集UI (username-publish-gate.spec.js の addBlock/fillTextBlock/leaveForm と同型)
 async function fillTextBlock(page, markdown) {
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-    await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);
+    await waitForArtTextFsEditor(page);
+    await setArtTextFsEditorValue(page, markdown);
     await leaveForm(page);
 }
 async function leaveForm(page) {

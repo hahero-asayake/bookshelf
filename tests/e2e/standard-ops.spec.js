@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
-import { flushArtSave } from './helpers/art-editor.js';
+import { flushArtSave, getArtBlocks, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -155,7 +155,7 @@ test('ESC/枠外クリック: ブロックの⋯メニューは自分だけ閉�
     await page.keyboard.press('Escape'); // 全画面の ESC = 完了 (ブロックは残る)
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
     await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
-    expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1);
+    expect((await getArtBlocks(page)).length).toBe(1);
     await frame.locator('.art-cv-more').first().click();
     await expect(page.locator('#art-blk-menu')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -342,7 +342,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.goBack();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
-        expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1);
+        expect((await getArtBlocks(page)).length).toBe(1);
         // ⋯→編集 で開き直し、戻るで閉じる。公開記事モーダルはまだ残る (段飛ばししない・イシュー#279)
         await frame.locator('.art-cv-more').first().click();
         await page.click('#art-blk-menu [data-blk-act="edit"]');
@@ -371,7 +371,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'view');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
         await expect(page.locator('#art-list-view')).toBeHidden();
-        expect(await page.evaluate(() => window.bookshelf._artDraft.blocks.length)).toBe(1); // 保存済み
+        expect((await getArtBlocks(page)).length).toBe(1); // 保存済み
 
         // 2段目: view→一覧 (エディタは残る)
         await page.goBack();
@@ -396,16 +396,16 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.click('#art-add-sheet [data-block-type="text"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         await expect(page.locator('#art-fs-title')).toHaveText('文章を編集');
-        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-        await page.evaluate(() => { window.bookshelf._artTextFsEditor.value('ESCテスト本文'); });
+        await waitForArtTextFsEditor(page);
+        await setArtTextFsEditorValue(page, 'ESCテスト本文');
         await page.keyboard.press('Escape');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-        expect(await page.evaluate(() => window.bookshelf._artDraft.blocks[0].markdown)).toBe('ESCテスト本文');
+        expect((await getArtBlocks(page))[0].markdown).toBe('ESCテスト本文');
         // もう一度開いて今度は戻る (物理バック) で確認
         await frame.locator('.art-cv-more').first().click();
         await page.click('#art-blk-menu [data-blk-act="edit"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+        await waitForArtTextFsEditor(page);
         await page.goBack();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
         await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);

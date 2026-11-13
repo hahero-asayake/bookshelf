@@ -1,6 +1,6 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,8 +44,8 @@ async function leaveForm(page) {
 // 文章ブロックの全画面 (EasyMDE) へ markdown を書き込み、完了で編集状態へ戻す
 // (イシュー#276 step3: canvas内 .art-cv-ta のその場入力を置き換え)。
 async function fillTextBlock(page, markdown) {
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-    await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);
+    await waitForArtTextFsEditor(page);
+    await setArtTextFsEditorValue(page, markdown);
     await leaveForm(page);
 }
 // 編集状態を「完了」で閉じ閲覧状態に戻す。
@@ -272,7 +272,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await expect(page.locator('.art-fs-text-editor .CodeMirror')).toBeVisible();
         await fillTextBlock(page, '## はじめに\n\n本文。');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit'); // 完了で戻る
-        const markdown = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].markdown);
+        const markdown = (await getArtBlocks(page))[0].markdown;
         expect(markdown).toBe('## はじめに\n\n本文。');
         await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
@@ -716,7 +716,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.locator('#art-look-sheet [data-look-kind="layout"][data-look-id="book-c-shelf-d"]').click();
         if (!(await page.locator('#art-look-sheet [data-look-kind="color"][data-look-id="gold-dark"]').isVisible())) await page.click('#art-look-btn');
         await page.locator('#art-look-sheet [data-look-kind="color"][data-look-id="gold-dark"]').click();
-        await expect.poll(() => page.evaluate(() => [window.bookshelf._artDraft.theme?.layout, window.bookshelf._artDraft.theme?.color].join('|'))).toContain('gold-dark');
+        await expect.poll(async () => { const d = await getArtDraft(page); return [d.theme?.layout, d.theme?.color].join('|'); }).toContain('gold-dark');
         if (await page.locator('#art-look-sheet').isVisible()) await page.keyboard.press('Escape');
         await openPreview(page);
         // イシュー#160: _renderBlocks がブロック境界でマクロタスクへ yield するようになった
@@ -2016,7 +2016,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
 
         // イシュー#268: ブロックAを全画面編集で開き直す→Aが再びアクティブになる (画面と実際の追加先が一致する)
         await leaveForm(page);
-        await page.evaluate(() => window.bookshelf._artEditBlock(window.bookshelf._artDraft.blocks[0].id));
+        await page.evaluate((id) => window.bookshelf._artEditBlock(id), (await getArtBlocks(page))[0].id);
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(blockB).not.toHaveClass(/is-add-target/);
         // イシュー#530(2・案i): 同上。Aには既に1冊入っている
@@ -2485,7 +2485,7 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await expect(shelfItem).toHaveAttribute('title', /本棚がまだ1つもありません/);
         // 無効化されたボタンはクリックしても _artInsertBlock に届かずブロックは増えない
         await shelfItem.click({ force: true });
-        expect(await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length)).toBe(0);
+        expect((await getArtBlocks(page)).length).toBe(0);
         expect(errors).toEqual([]);
     });
 
@@ -2508,9 +2508,9 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         // 存在しない本棚IDを sourceShelfId に注入 (削除済み本棚を指していた状況を模す)
-        await page.evaluate(() => { window.bookshelf._artDraft.sourceShelfId = 'deleted-shelf-xyz'; });
+        await setArtDraftField(page, 'sourceShelfId', 'deleted-shelf-xyz');
         await addBlock(page, 'shelf', 'first');
-        const shelfId = await page.evaluate(() => window.bookshelf._artDraft.blocks.find(b => b.type === 'shelf').shelfId);
+        const shelfId = (await getArtBlocks(page)).find(b => b.type === 'shelf').shelfId;
         expect(shelfId).toBe('fixall001'); // fixtureのisSpecial本棚(すべての本)へ補正される
         expect(errors).toEqual([]);
     });
@@ -2581,7 +2581,7 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         expect(openBox.y).toBeGreaterThanOrEqual(0);
         expect(openBox.y).toBeLessThan(844);
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        const blockCount = await page.evaluate(() => window.bookshelf._artDraft.blocks.length);
+        const blockCount = (await getArtBlocks(page)).length;
         expect(blockCount).toBe(1);
 
         // 本棚への個別追加は複数冊を続けて選べる設計のため、選択後もシートは自動で閉じない。この状態のまま
@@ -2732,7 +2732,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         // イシュー#165の自動クローズ挙動を維持: 1冊選べば操作完結なので自動で閉じる
         await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
-        const asin = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].asin);
+        const asin = (await getArtBlocks(page))[0].asin;
         expect(asin).toBeTruthy();
         expect(errors).toEqual([]);
     });
@@ -2754,7 +2754,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         // X3(イシュー#529・A-c): 完了を押すまで閉じないため、「まとめて追加」後も開いたまま
         // (旧イシュー#165の自動クローズは#529で廃止した)
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
-        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        const itemCount = ((await getArtBlocks(page))[0].items || []).length;
         expect(itemCount).toBeGreaterThan(0);
         expect(errors).toEqual([]);
     });
@@ -2772,7 +2772,7 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
         // 意図的に開いたまま (複数冊を続けて選ぶ用途)
         await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
-        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        const itemCount = ((await getArtBlocks(page))[0].items || []).length;
         expect(itemCount).toBe(1);
         expect(errors).toEqual([]);
     });
@@ -2830,7 +2830,7 @@ test.describe('記事エディタ: 見たまま編集の並び替え・削除 (�
         await fillTextBlock(page, '最初の文章');
         await addBlock(page, 'shelf', 'last');
         await leaveForm(page);
-        const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));
+        const types = async () => (await getArtBlocks(page)).map(b => b.type).join(',');
         await expect.poll(types).toBe('text,shelf');
         await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();
         await page.locator('#art-blk-menu [data-blk-act="down"]').click();
@@ -2980,7 +2980,7 @@ test.describe('記事エディタ: ブロック削除のUndoトースト (D・�
         await fillTextBlock(page, '最初の文章');
         await addBlock(page, 'shelf', 'last');
         await leaveForm(page);
-        const types = () => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.type).join(','));
+        const types = async () => (await getArtBlocks(page)).map(b => b.type).join(',');
         await expect.poll(types).toBe('text,shelf');
 
         // 先頭 (text) を削除
@@ -3079,7 +3079,7 @@ test.describe('記事エディタ: 本棚・本の全画面キャンセルの確
         await page.click('.cfm-ok');
         await expect(page.locator('.cfm-overlay')).toHaveCount(0);
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-        const itemCount = await page.evaluate(() => (window.bookshelf._artDraft.blocks[0].items || []).length);
+        const itemCount = ((await getArtBlocks(page))[0].items || []).length;
         expect(itemCount).toBe(0);
         expect(errors).toEqual([]);
     });
@@ -3104,9 +3104,9 @@ test.describe('記事エディタ: 本の追加ピッカーで追加済みに印
         const otherRow = page.locator('#art-drawer-list .art-drawer-item').nth(1);
         await expect(otherRow).not.toHaveClass(/is-added/);
         // 印が付いていてもクリックは禁じない=同じ本の多重配置 (既存仕様) を壊さない
-        const beforeCount = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.length);
+        const beforeCount = (await getArtBlocks(page))[0].items.length;
         await addedRow.click();
-        const afterCount = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].items.length);
+        const afterCount = (await getArtBlocks(page))[0].items.length;
         expect(afterCount).toBe(beforeCount + 1);
         expect(errors).toEqual([]);
     });

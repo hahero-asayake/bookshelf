@@ -21,7 +21,7 @@
 // 撤去した(is-singleの撤去自体は#530の改善として残す=1冊でも本棚ブロックの見た目は変えない)。
 // 下記のうち「本」関連のテスト(旧A-a)だけ#539で期待値を書き直した(タイトルに#539を付記)。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock, canvas } from '../helpers/art-editor.js';
+import { addBlock, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -116,7 +116,7 @@ test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', 
 
         // 入れ先は固定済みなので、引き出しから選ぶだけで同じブロックに追加される(本を追加ボタン不要)。
         await page.locator('#art-drawer-list .art-drawer-item').nth(1).click();
-        const n = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+        const n = (await getArtBlocks(page)).length;
         expect(n).toBe(1); // 2冊目も同じブロックのまま(ブロックは増えない)
         test.skip(errors.length > 0, `コンソールエラーが出た: ${errors.join(', ')}`);
     });
@@ -127,10 +127,8 @@ test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', 
         await openPublishPagesModal(page);
         await page.click('#art-new');
         await expect(page.locator('#art-edit-view')).toBeVisible();
-        await page.evaluate(() => {
-            window.bookshelf._artDraft.blocks = [{ id: 'legacy-book-1', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }];
-            window.bookshelf._artEditBlock('legacy-book-1'); // 全画面編集に入ってはじめて#art-blocksが見える
-        });
+        await setArtDraftField(page, 'blocks', [{ id: 'legacy-book-1', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }]);
+        await page.evaluate(() => window.bookshelf._artEditBlock('legacy-book-1')); // 全画面編集に入ってはじめて#art-blocksが見える
         await expect(page.locator('.art-block[data-block-id="legacy-book-1"] .art-block-book-body')).toBeVisible();
     });
 
@@ -147,7 +145,7 @@ test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', 
         // 本ブロックはasin未確定で追加される(_artPendingBookBlockId)ため、全画面(form)のまま
         // 引き出しから1冊選ぶとその場でasinが確定する。
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        const type = await page.evaluate(() => (window.bookshelf._artDraft.blocks || [])[0]?.type);
+        const type = (await getArtBlocks(page))[0]?.type;
         expect(type).toBe('book');
         await expect(page.locator('#art-blocks .art-block-book-body')).toBeVisible();
 
@@ -157,7 +155,7 @@ test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', 
         await expect(longMemoToggle).not.toHaveClass(/is-on/);
         await longMemoToggle.click();
         await expect(page.locator('#art-blocks .art-book-show-toggle[data-show-key="longMemo"]')).toHaveClass(/is-on/);
-        const show = await page.evaluate(() => (window.bookshelf._artDraft.blocks || [])[0]?.show);
+        const show = (await getArtBlocks(page))[0]?.show;
         expect(show.longMemo).toBe(true);
     });
 });
@@ -291,14 +289,14 @@ test.describe('ブロックの全面編集: Escは完了(保存)になる(決ま
         await openPublishPagesModal(page);
         await page.click('#art-new');
         await addBlock(page, 'text', 'last');
-        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor);
-        await page.evaluate(() => { window.bookshelf._artTextFsEditor.value('未保存のテキスト'); });
+        await waitForArtTextFsEditor(page);
+        await setArtTextFsEditorValue(page, '未保存のテキスト');
         await page.keyboard.press('Escape');
         await page.waitForTimeout(200);
         // 決まりどおり: Esc=完了(保存)。破棄の確認(.cfm-overlay)は出ない。エディタは残る(記事全体を出ない)
         await expect(page.locator('.cfm-overlay')).toHaveCount(0);
         await expect(page.locator('#art-edit-view')).toBeVisible();
-        const saved = await page.evaluate(() => window.bookshelf._artDraft.blocks.some(b => b.markdown === '未保存のテキスト'));
+        const saved = (await getArtBlocks(page)).some(b => b.markdown === '未保存のテキスト');
         expect(saved).toBe(true);
     });
 });

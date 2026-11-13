@@ -3,6 +3,7 @@
 // 文章ブロックは 900px 超で右ペイン (引き出しの列を置き換え・左に記事を出したまま入力に追従)、
 // 390 では従来どおり全画面。閉じ方の規則 (ESC=完了・キャンセル=変更ありなら確認・枠外クリックで閉じない) は共通。
 import { test, expect } from './helpers/test-base.js';
+import { getArtBlocks, setArtBlocks, buildArtPublicPreviewHtml, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -52,8 +53,8 @@ async function newArticleWithText(page, md = LONG) {
     await canvas(page).locator('.art-cv-ins-btn').first().click();
     await page.locator('#art-add-sheet [data-block-type="text"]').click();
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-    await page.evaluate((m) => window.bookshelf._artTextFsEditor.value(m), md);
+    await waitForArtTextFsEditor(page);
+    await setArtTextFsEditorValue(page, md);
     await page.click('#art-fs-done');
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
 }
@@ -66,7 +67,7 @@ async function openTextBlock(page) {
         await canvas(page).locator('section[data-art-idx="0"]').click();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form', { timeout: 2000 });
     }).toPass({ timeout: 15000 });
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+    await waitForArtTextFsEditor(page);
 }
 
 const box = async (loc) => { const b = await loc.boundingBox(); expect(b).not.toBeNull(); return b; };
@@ -100,12 +101,7 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             const inCanvas = await page.evaluate(`(${rects.toString()})(document.getElementById('art-canvas-frame').contentDocument)`);
 
             // 公開ページ: 公開生成器 (markBlocks なし) の出力を、キャンバスと同じ幅のビューポートで開く
-            const html = await page.evaluate(async () => {
-                const app = window.bookshelf;
-                const a = { ...app._artDraft, id: app._artDraft.id || '_p', slug: 'p', publicId: 'p' };
-                const r = await app.publishArticleGenerator.build([a], { state: app._artBuildPreviewState() });
-                return r.files.find(f => f.path.endsWith('index.html') && f.content.includes('class="article"')).content;
-            });
+            const html = await buildArtPublicPreviewHtml(page);
             const pub = await context.newPage();
             await pub.setViewportSize({ width: frameW, height: vp.height });
             await pub.setContent(html);
@@ -132,7 +128,7 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             // 対象ブロックを左の記事で枠表示
             await expect(canvas(page).locator('section[data-art-idx="0"].art-cv-fs-target')).toHaveCount(1);
             // 入力に追従
-            await page.evaluate(() => window.bookshelf._artTextFsEditor.value('## 追従テスト見出し\n\n本文'));
+            await setArtTextFsEditorValue(page, '## 追従テスト見出し\n\n本文');
             await expect(canvas(page).locator('h2', { hasText: '追従テスト見出し' })).toHaveCount(1);
             // 枠外 (左の記事) をクリックしても閉じない
             await canvas(page).locator('h2', { hasText: '追従テスト見出し' }).click();
@@ -149,7 +145,7 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             await expect(page.locator('.art-side')).toBeVisible();
             // ESC = 完了 (確定)
             await openTextBlock(page);
-            await page.evaluate(() => window.bookshelf._artTextFsEditor.value('## ESCで確定\n\n本文'));
+            await setArtTextFsEditorValue(page, '## ESCで確定\n\n本文');
             await canvas(page).locator('h2', { hasText: 'ESCで確定' }).click(); // フォーカスを iframe 内へ
             await page.keyboard.press('Escape');
             await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
@@ -174,7 +170,7 @@ test.describe('記事エディタ 390幅は従来どおり全画面 (イシュ�
             await expect(page.locator('#art-add-sheet')).toBeVisible({ timeout: 2000 });
         }).toPass({ timeout: 15000 });
         await page.locator('#art-add-sheet [data-block-type="text"]').click();
-        await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+        await waitForArtTextFsEditor(page);
         await expect(page.locator('#art-canvas')).toBeHidden();
         const ed = await box(page.locator('#art-blocks .EasyMDEContainer'));
         expect(ed.x).toBeLessThanOrEqual(12);
@@ -189,14 +185,10 @@ async function setupThreeBlocks(page) {
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
     await enterEdit(page);
-    await page.evaluate(() => {
-        const app = window.bookshelf;
-        app._artDraft.blocks = ['A', 'B', 'C'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}\n\n本文${t}` }));
-        app._artRenderBlocks();
-    });
+    await setArtBlocks(page, ['A', 'B', 'C'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}\n\n本文${t}` })));
     await expect(canvas(page).locator('.art-cv-grip')).toHaveCount(3);
 }
-const order = (page) => page.evaluate(() => window.bookshelf._artDraft.blocks.map(b => b.id.replace('blk_', '')).join(''));
+const order = async (page) => (await getArtBlocks(page)).map(b => b.id.replace('blk_', '')).join('');
 // iframe 内要素の rect をページ座標へ (frame の位置を足す)
 async function rectIn(page, sel, i = 0) {
     const f = await page.locator('#art-canvas-frame').boundingBox();
@@ -274,11 +266,7 @@ test.describe('記事エディタ 390幅: つまみは出ない (イシュー#27
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await enterEdit(page);
-        await page.evaluate(() => {
-            const app = window.bookshelf;
-            app._artDraft.blocks = ['A', 'B'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}` }));
-            app._artRenderBlocks();
-        });
+        await setArtBlocks(page, ['A', 'B'].map(t => ({ id: 'blk_' + t, type: 'text', markdown: `## 見出し${t}` })));
         await expect(canvas(page).locator('.art-cv-more')).toHaveCount(2);
         await expect(canvas(page).locator('.art-cv-grip')).toHaveCount(0);
         await canvas(page).locator('.art-cv-more[data-blk-idx="0"]').click();

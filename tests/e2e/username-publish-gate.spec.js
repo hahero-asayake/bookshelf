@@ -4,7 +4,7 @@
 //  - username 表示・設定フォーム自体の単体的な検証は tests/e2e/account-username.spec.js が持つ。
 //    ここでは「公開ボタン→ブロック→設定→再公開が通る」までの一連の導線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -12,8 +12,8 @@ import { dirname, join } from 'node:path';
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
 // 文章ブロックの全画面(EasyMDE)へmarkdownを書き込み、完了で編集状態へ戻す (イシュー#276 step3)
 async function fillTextBlock(page, markdown) {
-    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
-    await page.evaluate((md) => { window.bookshelf._artTextFsEditor.value(md); }, markdown);
+    await waitForArtTextFsEditor(page);
+    await setArtTextFsEditorValue(page, markdown);
     await leaveForm(page);
 }
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す

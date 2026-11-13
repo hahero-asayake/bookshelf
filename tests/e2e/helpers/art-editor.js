@@ -21,6 +21,26 @@
 //   連結して確定させる(2回のevaluateに分けない=ブラウザ側のPromiseチェーンのタイミングを保つ)。
 //   戻り値なし。
 // - getArtEditingId(page): 現在編集中の記事id(_artEditingId)を返す。
+//
+// 以下9関数はU9 G3-2(イシュー#552)で追加。`_artDraft`/`_artTextFsEditor`ほか
+// (docs/char/u9-g3-2-plan.md)への直接参照をテスト側から無くすための(c)集約先。
+// `_artDraft`は下書き中身の検証・ブロック状態の読み取り・テスト前の状態設定を全て含む
+// ため、DOM側に型/内容を1:1で示す属性が無いことを確認した上で全件(c)にした(同plan.md §3)。
+// - getArtDraft(page): 下書きオブジェクト(_artDraft)全体を返す。
+// - waitForArtDraft(page): 下書きオブジェクトが生成されるまで待つ(expect.poll)。
+// - getArtBlocks(page): 下書きのブロック配列(_artDraft.blocks)を返す(無ければ[])。
+//   map/find/length等の加工は呼び出し元のJSのまま(期待値・アサーションは変えない)。
+// - setArtBlocks(page, blocks): ブロック配列を直接セットし、同じevaluate内で
+//   _artRenderBlocks()を呼んで即時反映する(2回のevaluateに分けない=セット+再描画の
+//   タイミングを保つ)。
+// - setArtDraftField(page, key, value): 下書きの単一フィールドに直接代入する
+//   (テスト前の状態設定用。②指示により(a)化しない)。
+// - waitForArtTextFsEditor(page): 全画面MDEエディタのインスタンスが生成されるまで待つ。
+// - setArtTextFsEditorValue(page, markdown): 全画面MDEエディタへ本文を直接セットする。
+// - getArtTextFsEditorBoldToolbarHtml(page): 全画面MDEエディタの太字ツールバーのHTMLを返す。
+// - buildArtPublicPreviewHtml(page): 現在の下書き(_artDraft)から公開ページ相当のHTMLを
+//   生成する(article-pc-pane.spec.jsの本文幅一致検証専用。元のブロックを1つの関数に封じた
+//   だけで、_artDraft/_artBuildPreviewStateへの参照箇所自体は変えていない)。
 import { expect } from './test-base.js';
 
 export function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
@@ -38,7 +58,7 @@ export async function addBlock(page, type, pos = 'last', { textMode = 'form' } =
     const edit = page.locator('#art-mode-edit');
     if (await edit.isVisible()) await edit.click();
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-    const before = await page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length);
+    const before = (await getArtBlocks(page)).length;
     const btns = canvas(page).locator('.art-cv-ins-btn');
     await expect(btns).toHaveCount(before + 1);
     // シートを開く: ins-btnのclickがCI実機でまれに届かない窓がある(#372)。開くまでだけリトライし、
@@ -49,12 +69,12 @@ export async function addBlock(page, type, pos = 'last', { textMode = 'form' } =
     }).toPass({ timeout: 15000 });
     await page.locator('#art-add-sheet [data-block-type="' + type + '"]').click();
     // ブロック数が+1であること(2つ増えたら失敗=期待値は変えていない、+1固定)を確認する
-    await expect.poll(() => page.evaluate(() => (window.bookshelf._artDraft.blocks || []).length)).toBe(before + 1);
+    await expect.poll(async () => (await getArtBlocks(page)).length).toBe(before + 1);
     if (type === 'text' && textMode === 'inline') {
         await expect(canvas(page).locator('.art-cv-ta')).toBeVisible();
     } else {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
-        if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+        if (type === 'text') await waitForArtTextFsEditor(page);
     }
 }
 
@@ -76,4 +96,67 @@ export async function flushArtSaveAndRemote(page) {
 /** @param {import('@playwright/test').Page} page */
 export async function getArtEditingId(page) {
     return page.evaluate(() => window.bookshelf._artEditingId);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export function getArtDraft(page) {
+    return page.evaluate(() => window.bookshelf._artDraft);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function waitForArtDraft(page) {
+    await expect.poll(() => page.evaluate(() => !!window.bookshelf._artDraft)).toBe(true);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export function getArtBlocks(page) {
+    return page.evaluate(() => window.bookshelf._artDraft.blocks || []);
+}
+
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {any[]} blocks
+ */
+export function setArtBlocks(page, blocks) {
+    return page.evaluate((bs) => {
+        window.bookshelf._artDraft.blocks = bs;
+        window.bookshelf._artRenderBlocks();
+    }, blocks);
+}
+
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {string} key
+ * @param {*} value
+ */
+export function setArtDraftField(page, key, value) {
+    return page.evaluate(([k, v]) => { window.bookshelf._artDraft[k] = v; }, [key, value]);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function waitForArtTextFsEditor(page) {
+    await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
+}
+
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {string} markdown
+ */
+export function setArtTextFsEditorValue(page, markdown) {
+    return page.evaluate((md) => window.bookshelf._artTextFsEditor.value(md), markdown);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export function getArtTextFsEditorBoldToolbarHtml(page) {
+    return page.evaluate(() => window.bookshelf._artTextFsEditor.toolbarElements.bold.innerHTML);
+}
+
+/** @param {import('@playwright/test').Page} page */
+export function buildArtPublicPreviewHtml(page) {
+    return page.evaluate(async () => {
+        const app = window.bookshelf;
+        const a = { ...app._artDraft, id: app._artDraft.id || '_p', slug: 'p', publicId: 'p' };
+        const r = await app.publishArticleGenerator.build([a], { state: app._artBuildPreviewState() });
+        return r.files.find(f => f.path.endsWith('index.html') && f.content.includes('class="article"')).content;
+    });
 }

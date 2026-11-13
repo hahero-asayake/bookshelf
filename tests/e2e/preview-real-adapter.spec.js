@@ -18,7 +18,7 @@
 //   タイムアウト機構が実アダプタ+実ブラウザ fetch 経由でも機能するかを検証する。
 // - 蔵書規模による描画遅延(容疑者③)・ブラウザ環境固有(容疑者④) は対象外 (このイシューのスコープ外)。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, waitForArtDraft, setArtDraftField } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -210,15 +210,13 @@ test('(d) 多数ブロックの記事は、tickTimer(1秒)を待たずにブロ�
     const errors = await bootAppGitHub(page, {});
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
-    await expect.poll(() => page.evaluate(() => !!window.bookshelf._artDraft)).toBe(true);
+    await waitForArtDraft(page);
     // UIから1個ずつブロック追加すると待ち時間が長すぎるため、既に開いている _artDraft へ直接
     // 大量のtextブロックを注入する (経路自体は #art-preview クリック→本物のbuild()/onProgress)。
-    await page.evaluate(() => {
-        const bigMd = '# 見出し\n\n' + '本文です。'.repeat(3000);
-        window.bookshelf._artDraft.blocks = Array.from({ length: 24 }, (_, i) => ({
-            id: `b${i}`, type: 'text', markdown: bigMd
-        }));
-    });
+    const bigMd = '# 見出し\n\n' + '本文です。'.repeat(3000);
+    await setArtDraftField(page, 'blocks', Array.from({ length: 24 }, (_, i) => ({
+        id: `b${i}`, type: 'text', markdown: bigMd
+    })));
     await openPreview(page);
     let seenBlockProgress = false;
     for (let i = 0; i < 50; i++) {
