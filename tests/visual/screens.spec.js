@@ -45,7 +45,8 @@ async function bootApp(page) {
     await page.addInitScript(([userData, library]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);
-        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        // 保存先を「この端末のフォルダ」に決めた人 (決めた印つき・イシュー#596。印の無い local は設定がハブを見せる)
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', methodChosen: true }));
     }, [fixtureUserData, fixtureLibrary]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
