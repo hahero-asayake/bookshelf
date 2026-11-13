@@ -5809,6 +5809,13 @@ class VirtualBookshelf {
             ov._histBound = true;
             ov.hooks.onOpen = (id, { closeFn, route }) => this._modalHistPush(id, closeFn, { route }); // route: イシュー#468
             ov.hooks.onClose = (id, { fromHistory, route }) => this._modalHistPop(id, { fromHistory: !!fromHistory, route });
+            // イシュー#568: 背後の inert の例外。PC で「行き先」の面 (Surface exit:'page' = 設定・公開の設定) はサイドバーから
+            // 出る設計 (ui-standards §4-2) なので、サイドバーは操作できるまま残す。狭幅は全画面の面なので残さない
+            ov.hooks.inertKeep = (id) => {
+                const d = this._surface().get(id);
+                if (!d || d.exit !== 'page' || !(window.viewport && window.viewport.isWide())) return [];
+                return [document.getElementById('app-sidebar')];
+            };
         }
         return ov;
     }

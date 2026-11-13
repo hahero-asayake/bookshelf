@@ -86,6 +86,9 @@
                 showClass: s.showClass === undefined ? 'show' : s.showClass,
                 // layer:false = data-layer/--layer を書かない (自前の z-index を持つ面をスタックに載せるだけ・イシュー#509 U3 で記事の面の重なり順を変えないため)
                 layer: s.layer !== false,
+                // イシュー#568: 開いている間、背後を inert にする面か (Tab が背後へ漏れない)。既定 = modal/dialog。
+                // sheet (引き出し・記事エディタの引き出し/メニュー) と popover/menu は対象外 = 背後のスクリムのタップで閉じる今の操作を変えない
+                trap: typeof s.trap === 'boolean' ? s.trap : (kind === 'modal' || kind === 'dialog'),
                 content: null, handle: null,
                 // イシュー#565: 開いた元 (フォーカスの戻し先)。閉じた時にここへ戻す
                 opener: (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null,
@@ -217,6 +220,41 @@
                 f.el.style.setProperty('--layer', String(n));
                 n++;
             });
+            this._applyInert();
+        }
+
+        // 背後の inert (イシュー#568・#556 報告の4)。全部の面がここを通るので、面ごとに書かない:
+        //   最前面の trap 面の外側 (body から面までの道筋の兄弟) に inert を付ける。面より上の popover/menu・toast・
+        //   hooks.inertKeep(id) が返す要素 (PC の「行き先」の面ではサイドバー) は残す。
+        //   自分が付けた inert だけを外す = 元から inert の要素 (ホーム表示中の本棚 #bookshelf-view 等) は触らない
+        _applyInert() {
+            if (typeof document === 'undefined' || !document.body) return;
+            const prev = this._inerted || [];
+            prev.forEach((el) => { if (el.isConnected) el.inert = false; });
+            this._inerted = [];
+            let ti = -1;
+            for (let i = this.stack.length - 1; i >= 0; i--) { if (this.stack[i].trap) { ti = i; break; } }
+            if (ti === -1) return;
+            const top = this.stack[ti];
+            if (!top.el || !top.el.isConnected) return;
+            const keep = [top.el, document.getElementById('toast-container')];
+            this.stack.slice(ti + 1).forEach((f) => keep.push(f.el));
+            if (typeof this.hooks.inertKeep === 'function') {
+                try { (this.hooks.inertKeep(top.id) || []).forEach((el) => keep.push(el)); } catch (e) { console.error('[overlays] hooks.inertKeep', e); }
+            }
+            const keepSet = new Set(keep.filter((el) => el && el.isConnected));
+            const path = new Set();
+            keepSet.forEach((el) => { for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) path.add(p); });
+            const walk = (parent) => {
+                Array.from(parent.children).forEach((c) => {
+                    if (keepSet.has(c)) return;
+                    if (path.has(c)) { walk(c); return; }
+                    if (/^(SCRIPT|STYLE|TEMPLATE|LINK|META)$/.test(c.tagName) || c.inert) return;
+                    c.inert = true;
+                    this._inerted.push(c);
+                });
+            };
+            walk(document.body);
         }
 
         // 移行期の橋渡し (イシュー#367 step3〜5): まだ管理役経由に書き換えていない .modal が .show を付け外ししたら、

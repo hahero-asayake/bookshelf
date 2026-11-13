@@ -32,8 +32,10 @@ test.describe('⌘K パレットの Esc (PC)', () => {
         await bootApp(page);
         await page.keyboard.press('Control+k');
         await expect(palette(page)).toBeVisible();
+        // 検索欄の外へフォーカスを出す (旧: ここで Esc を誰も拾わなかった)。イシュー#568 で背後が inert になり、
+        // パレットに検索欄の他の操作要素が無い時は Tab がページの外へ抜けるだけになったので、blur で検索欄から外す
         await page.keyboard.press('Tab');
-        // フォーカスが検索欄の外へ出ている (旧: ここで Esc を誰も拾わなかった)
+        await page.evaluate(() => { const i = document.getElementById('cmdk-input'); if (document.activeElement === i) i.blur(); });
         expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).not.toBe('cmdk-input');
         await page.keyboard.press('Escape');
         await expect(palette(page)).toBeHidden();

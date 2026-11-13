@@ -41,6 +41,7 @@
 import { test, expect } from './helpers/test-base.js';
 import { execSync, spawn } from 'node:child_process';
 import path from 'node:path';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 // イシュー#492 step4(案A・ADR-149): 基準commit(固定タグ)と今のcommitを同じjob内で交互に測り、
@@ -55,8 +56,18 @@ const IS_CI = !!process.env.CI;
 const BASE_TAG = process.env.SORT_PERF_BASE_TAG || 'perf-base';
 const RATIO_LIMIT = Number(process.env.SORT_PERF_RATIO_LIMIT || 1.3);
 const NOW_PORT = Number(process.env.PORT || 8192);
-const BASE_PORT = Number(process.env.SORT_PERF_BASE_PORT || NOW_PORT + 1);
-const BASE_WORKTREE_DIR = process.env.SORT_PERF_BASE_WORKTREE_DIR || path.join(REPO_ROOT, '.sort-perf-base-worktree');
+// イシュー#568: 基準worktreeとportは実行ごとに分ける (固定の場所・PORT+1 だと3回流し・並列で互いを壊していた・#556)。
+// 環境変数で明示した時だけ固定値を使う。port は beforeAll で空きportを OS に選ばせる
+let BASE_PORT = Number(process.env.SORT_PERF_BASE_PORT || 0);
+const BASE_WORKTREE_DIR = process.env.SORT_PERF_BASE_WORKTREE_DIR || path.join(REPO_ROOT, `.sort-perf-base-worktree-${process.pid}-${Date.now().toString(36)}`);
+function freePort() {
+    return new Promise((resolve, reject) => {
+        const srv = net.createServer();
+        srv.unref();
+        srv.on('error', reject);
+        srv.listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => resolve(p)); });
+    });
+}
 let baseServerProc = null;
 
 function ensureBaseWorktree() {
@@ -363,12 +374,17 @@ test.describe('#397 並び替えの時間上限(913冊・390px・chromium CPUx6)
 
     // イシュー#492 step4(ADR-149): 基準commit(固定タグ)をworktreeで展開し別portで配信する。
     test.beforeAll(async () => {
+        if (!BASE_PORT) BASE_PORT = await freePort();
         ensureBaseWorktree();
         baseServerProc = startBaseServer();
         await waitForServer(`http://localhost:${BASE_PORT}/index.html`);
     });
     test.afterAll(() => {
         if (baseServerProc) baseServerProc.kill();
+        // 実行ごとの worktree なので後片付けする (環境変数で場所を固定した時は残す=従来どおり)
+        if (!process.env.SORT_PERF_BASE_WORKTREE_DIR) {
+            try { execSync(`git worktree remove --force "${BASE_WORKTREE_DIR}"`, { cwd: REPO_ROOT, stdio: 'ignore' }); } catch (_) { /* ignore */ }
+        }
     });
 
     test('並び順メニューの切り替え・昇順降順・ドラッグが、いずれも許容幅を超えない', async ({ page, context }) => {
