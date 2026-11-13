@@ -333,8 +333,12 @@ class GitHubAdapter extends StorageAdapter {
             if (entries.length === 0) return null;
         }
 
+        // 2''. 古い版のまま上書きしない (イシュー#616)。土台は最新の head なので、そのまま書くと他の端末の変更を黙って消す
+        await this._assertBatchNotStale(baseTreeSha, entries);
+
         // 3. Tree entries 構築 (put = blob 作成, delete = sha:null)
         const treeEntries = [];
+        const written = []; // 書いた後に sha と中身で覚え直す分 (イシュー#616)
         for (const e of entries) {
             const fullPath = this._fullPath(e.path);
             if (e.op === 'delete') {
@@ -350,6 +354,7 @@ class GitHubAdapter extends StorageAdapter {
                 });
                 if (!blobRes.ok) throw this._batchError(blobRes, `create blob ${e.path}`);
                 treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: blobRes.json.sha });
+                if (e.encoding !== 'base64') written.push({ path: e.path, sha: blobRes.json.sha, content: e.content });
             }
         }
 
@@ -388,9 +393,42 @@ class GitHubAdapter extends StorageAdapter {
         }
         if (!updateRefRes.ok) throw this._batchError(updateRefRes, `update ref ${this.branch}`);
 
-        // 書き込み後はキャッシュした sha を全部破棄 (Tree 経由で更新したので個別 sha は古い)
-        this._shaCache.clear();
+        // 書いたパスは、作った blob の sha と中身で覚え直す (全部捨てると、次のまとめ保存で古い版を見分けられない・
+        // イシュー#616)。消したパスは忘れる。書いていないパスの sha はこの commit で変わらないので、そのまま残す
+        for (const w of written) { this._shaCache.set(w.path, w.sha); this._lastKnownContent.set(w.path, w.content); }
+        for (const e of entries) {
+            if (e.op === 'delete') { this._shaCache.delete(e.path); this._lastKnownContent.delete(e.path); }
+            else if (e.encoding === 'base64') { this._shaCache.delete(e.path); this._lastKnownContent.delete(e.path); }
+        }
         return newCommitRes.json.sha;
+    }
+
+    /**
+     * まとめ保存の土台 (最新の head の tree) が、自分が最後に読んだ/書いた版から変わっていないかを確かめる (イシュー#616)。
+     * 対象は put するパスのうち sha を覚えているもの (読んだことも書いたこともないパスは見分けられないので見ない)。
+     * sha が違えば最新の中身を取り、ハブのまとめ保存 (hub-adapter.js の batch 412) と同じ3通りで決める:
+     *   望む中身と同じ → 書いても同じなのでそのまま / 自分の知っている中身と同じ → sha の覚え違いだけなのでそのまま /
+     *   どちらでもない (他の端末が中身を変えた・消した) → 上書きせず GitHubRemoteChangedError
+     */
+    async _assertBatchNotStale(baseTreeSha, entries) {
+        const known = entries.filter(e => e.op === 'put' && e.encoding !== 'base64' && this._shaCache.has(e.path));
+        if (known.length === 0) return;
+        const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${baseTreeSha}?recursive=1`;
+        const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers(), cache: 'no-store' });
+        if (!treeRes.ok) throw this._batchError(treeRes, `get tree ${baseTreeSha}`); // 401 は GitHubAuthError (イシュー#603 と同じ)
+        // 一覧が切れた (truncated) 時は sha で決めず、全部中身で確かめる
+        const shas = treeRes.json.truncated ? null
+            : new Map(treeRes.json.tree.filter(t => t.type === 'blob').map(t => [t.path, t.sha]));
+        for (const e of known) {
+            if (shas && shas.get(this._fullPath(e.path)) === this._shaCache.get(e.path)) continue;
+            const content = await this._getContent(e.path);
+            const latest = content && content.type === 'file' ? this._decodeBase64(content.content) : null;
+            if (latest === e.content) continue;
+            const knownContent = this._lastKnownContent.get(e.path);
+            if (latest !== null && knownContent !== undefined && latest === knownContent) continue;
+            console.error(`[GitHubAdapter] ${e.path} はリモートで内容が変わっている。上書きせず中断します`);
+            throw new GitHubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
+        }
     }
 
     // 土台の tree (treeSha) にある、targets のうち存在するパス (fullPath) の集合。一覧が大きすぎて

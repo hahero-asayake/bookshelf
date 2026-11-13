@@ -440,3 +440,74 @@ describe('commitBatch の 401 は GitHubAuthError (イシュー#603)', () => {
         expect(err.message).toContain('update ref');
     });
 });
+
+// イシュー#616: まとめ保存 (commitBatch) が最新の head を土台にして古い版のまま書き、他の端末の変更を黙って消していた。
+// put するパスのうち sha を覚えているものは土台の tree と照らし合わせ、ハブと同じ3通りで決める。書いた後は blob の sha で覚え直す。
+describe('commitBatch: 古い版のまま上書きしない (イシュー#616)', () => {
+    const P = 'private/notes.json';
+    // URL と method で振り分ける GitHub の模擬。tree の中の P の sha と、Contents API が返す P の中身を差し替えられる
+    function routeGitHub(state) {
+        const calls = [];
+        globalThis.fetch = vi.fn(async (url, init = {}) => {
+            const method = (init.method || 'GET').toUpperCase();
+            calls.push({ url, method });
+            const json = (o, status = 200) => new Response(JSON.stringify(o), { status });
+            if (url.includes('/git/refs/heads/') && method === 'GET') return json({ object: { sha: 'c1' } });
+            if (url.includes('/git/refs/heads/') && method === 'PATCH') return json({ object: { sha: 'c2' } });
+            if (url.includes('/git/commits/') && method === 'GET') return json({ tree: { sha: 't1' } });
+            if (url.endsWith('/git/commits') && method === 'POST') return json({ sha: 'c2' });
+            if (url.includes('/git/trees/') && method === 'GET') return json({ truncated: false, tree: [{ path: adapter._fullPath(P), type: 'blob', sha: state.remoteSha }] });
+            if (url.endsWith('/git/trees') && method === 'POST') return json({ sha: 't2' });
+            if (url.endsWith('/git/blobs') && method === 'POST') return json({ sha: state.newBlobSha || 'b-new' });
+            if (url.includes('/contents/') && method === 'GET') return contentRes(state.remoteContent, state.remoteSha);
+            throw new Error(`unrouted ${method} ${url}`);
+        });
+        return calls;
+    }
+    const wrote = (calls) => calls.some(c => c.method === 'PATCH' || (c.method === 'POST' && c.url.endsWith('/git/blobs')));
+
+    it('他の端末が中身を変えていたら GitHubRemoteChangedError で止め、何も書かない', async () => {
+        adapter._shaCache.set(P, 's-old');
+        adapter._lastKnownContent.set(P, '{"memo":"元"}');
+        const calls = routeGitHub({ remoteSha: 's-A', remoteContent: '{"memo":"A"}' });
+        adapter.beginBatch();
+        adapter.addBatchEntry(P, '{"memo":"B"}');
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(GitHubRemoteChangedError);
+        expect(wrote(calls)).toBe(false);
+        expect(adapter._shaCache.get(P)).toBe('s-old'); // 覚えている版は変えない (次も同じように止まる)
+    });
+
+    it('sha が違っても中身が自分の知っている版のままなら (覚え違いだけ) そのまま書く', async () => {
+        adapter._shaCache.set(P, 's-old');
+        adapter._lastKnownContent.set(P, '{"memo":"元"}');
+        const calls = routeGitHub({ remoteSha: 's-drift', remoteContent: '{"memo":"元"}', newBlobSha: 'b-B' });
+        adapter.beginBatch();
+        adapter.addBatchEntry(P, '{"memo":"B"}');
+        await adapter.commitBatch();
+        expect(wrote(calls)).toBe(true);
+    });
+
+    it('sha が同じなら中身を取りに行かずに書き、書いた後は作った blob の sha と中身で覚え直す', async () => {
+        adapter._shaCache.set(P, 's-old');
+        adapter._lastKnownContent.set(P, '{"memo":"元"}');
+        const calls = routeGitHub({ remoteSha: 's-old', remoteContent: 'unused', newBlobSha: 'b-B' });
+        adapter.beginBatch();
+        adapter.addBatchEntry(P, '{"memo":"B"}');
+        await adapter.commitBatch();
+        expect(calls.some(c => c.url.includes('/contents/'))).toBe(false);
+        expect(adapter._shaCache.get(P)).toBe('b-B');
+        expect(adapter._lastKnownContent.get(P)).toBe('{"memo":"B"}');
+    });
+
+    it('書いた後に他の端末が書き換えたら、次のまとめ保存で止まる (覚え直した sha で見分ける)', async () => {
+        routeGitHub({ remoteSha: 'x', remoteContent: 'unused', newBlobSha: 'b-B' });
+        adapter.beginBatch();
+        adapter.addBatchEntry(P, '{"memo":"B"}');
+        await adapter.commitBatch(); // 初めて書く (sha を覚えていない) → 照らし合わせずに書く
+        const calls = routeGitHub({ remoteSha: 's-A2', remoteContent: '{"memo":"A2"}' });
+        adapter.beginBatch();
+        adapter.addBatchEntry(P, '{"memo":"B2"}');
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(GitHubRemoteChangedError);
+        expect(wrote(calls)).toBe(false);
+    });
+});

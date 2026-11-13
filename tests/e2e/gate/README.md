@@ -85,7 +85,7 @@ npm run gate:report -- --collect
 | J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
 | J6-1 | `j6-1-local-restart.spec.js` | 投入済み・緑（赤はアプリの不具合ではなく、フォルダへの書き込みを待たずに通るヘルパーのせいだった・#607）。webkit では流さない（ローカルのフォルダ保存は PC の Chrome/Edge 専用・`gate-webkit` の `testIgnore`） |
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
-| J6-4 | `j6-4-sync-conflict.spec.js` | 投入済み・緑（2台の本当の衝突で3択も知らせも出なかった不具合を直して入れた・#616）。ハブの分。GitHub の分は #616 で足す |
+| J6-4 | `j6-4-sync-conflict.spec.js` | 投入済み・緑（2台の本当の衝突で3択も知らせも出なかった不具合を直して入れた・#616）。ハブと GitHub の2本。GitHub はリポジトリからAの短文メモが消えないことも見る（まとめ保存が古い版で上書きしていた・#616） |
 | J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |
 
 ## webkit（iPhone 相当）で流す（イシュー#589）

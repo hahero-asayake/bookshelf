@@ -3741,7 +3741,8 @@ class VirtualBookshelf {
 
     /** 読み直した短文メモを、開いたままの本の詳細の欄へ反映する (入力中の欄は触らない・イシュー#616)。
      *  起動の1段目で端末内の版のまま開いた詳細は、showBookDetail が同じ本だと何もしない (#330) ため古いまま残り、
-     *  そこで書くと保存先の新しい短文メモ (別の端末の変更) を上書きしてしまう */
+     *  そこで書くと保存先の新しい短文メモ (別の端末の変更) を上書きしてしまう。
+     *  #611 の案A と同じ型 (_applyDetailMemoEverywhere): ガードは外さず、描画と同じ値 (notes[asin].memo) で部品だけを書き換える */
     _refreshOpenDetailMemo() {
         if (!this.bookshelfManager) return;
         document.querySelectorAll('.note-textarea[data-scope="all"][data-asin]').forEach((ta) => {

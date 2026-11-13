@@ -96,3 +96,20 @@ GitHub では衝突にかかわる console は1行も出なかった（404 の�
 - node は PATH に無い。`env PATH=/home/sei/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:/bin` を付けて `node_modules/.bin/playwright` を呼ぶ。
 - 実測用の spec は `/home/kuroko/worktrees/bookshelf/_artifacts/616/zz-probe-616.spec.js`（tests/ からは外した）。GitHub の門のE2E の下書きに使える。
 - 赤の spec `tests/e2e/gate/j6-4-sync-conflict.spec.js` は worktree に stage 済み（未 commit）。
+
+## step3 の実測: 2台が別々の本の短文メモを交互に保存した時（②の依頼・2026-11-14）
+
+実測用の spec `/home/kuroko/worktrees/bookshelf/_artifacts/616/zz-probe-616c.spec.js` を chromium で流した（ログは同じ場所の `probe-c.log`）。
+手順は3つ。端末Bを先に開いておき、Aが本1に書いて保存先に届ける。Bは読み直さずに本2に書く。そのあとAがもう一度本1に書く。
+
+| 保存先 | Bが本2に書いた時（Aが先に保存していた） | Aがもう一度本1に書いた時 |
+|---|---|---|
+| ハブ | 3択が出た。Bの短文メモは保存先に入らず、Aの短文メモは残った | 3択は出ず、保存された |
+| GitHub | 3択が出た。Bの短文メモは保存先に入らず、Aの短文メモは残った | 3択は出ず、保存された |
+
+- 結論: **別々の本でも、相手が先に保存していれば、読み直していない側が次に保存した時に必ず3択が出る**。notes.json などを1ファイルまるごと送っているため、ファイルの中の別の項目の変更でも衝突になる。step1 で見た library.json での衝突も同じ理由。
+- 直す前は、ハブでは知らせが出ないまま保存されず、GitHub では知らせが出ないまま相手の変更を消していた。3択が出るのは、消えることへの正しい防波堤ではある。ただし2台を交互に使う人には出すぎる。
+- このイシューでは直さない（②の決定どおり）。対策は #612 の範囲になる。考えられるのは次の2つ。
+  - 変わっていないファイルを送らない。
+  - 項目ごとに合わせる（notes.json を本ごとに、相手の版と自分の版を合わせて書く）。
+

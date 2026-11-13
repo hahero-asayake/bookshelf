@@ -3,11 +3,14 @@
 // 書くと、Bに「同期の衝突」の3択が出ること、「編集内容をJSONで書き出す」で書き出したファイルにBの短文メモが入って
 // いること、「再読込して最新版を取得」のあとAの短文メモが見えることを、利用者の操作だけで確かめる (②判断 (d))。
 // 衝突はハブの模擬 (tests/e2e/helpers/gate-hub.js) の ETag 照合が 412 を返して起きる。内部からの注入はしない。
+// GitHub (tests/e2e/helpers/gate-github.js の模擬) でも同じ4点を確かめ、加えてリポジトリからAの短文メモが消えないことを見る
+// (まとめ保存が最新の head を土台にして古い版で上書きし、Aの短文メモが消えていた・イシュー#616)。
 // 書き方の決まりは tests/e2e/gate/README.md。npm run lint:e2e-gate が確かめる。
 import { readFileSync } from 'node:fs';
 import { test, expect } from '../helpers/test-base.js';
 import { bootAppForTest } from '../helpers/gate-setup.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, waitForHubFileContainsForTest } from '../helpers/gate-hub.js';
+import { createMockGitHubForTest, seedGitHubDataForTest, seedGitHubLoginForTest, mockGitHubForTest, waitForGitHubFileContainsForTest } from '../helpers/gate-github.js';
 import { prepareOtherDeviceForTest, closeOtherDeviceForTest } from '../helpers/gate-device.js';
 
 const BOOK = 'フィクスチャの本 1';
@@ -86,6 +89,89 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
         await expect(other.getByText('最新のデータを確認しています…')).toHaveCount(0, { timeout: 15000 });
         // 再読込の前に開いていた本の詳細は、読み込み後もそのまま開いている (PC は右の欄・iPhone は全面で一覧を覆う)。
         // 開いていない時だけ一覧から本を開く (イシュー#616 で webkit を流して分かった)
+        await expect(memoBox(other).or(bookButton(other)).first()).toBeVisible();
+        if (!(await memoBox(other).isVisible())) await bookButton(other).click();
+    });
+
+    await test.step('確認: 端末Bに、端末Aの短文メモが見える', async () => {
+        await expect(memoBox(other)).toHaveValue(MEMO_A);
+    });
+
+    await test.step('前提: 別の端末を閉じる', async () => {
+        await closeOtherDeviceForTest(other);
+    });
+});
+
+test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突すると、3択が出て、書き出しとやり直しで失われず、リポジトリからAの短文メモも消えない', async ({ page }) => {
+    let gh = null;
+    let other = null;
+    let exported = null;
+
+    await test.step('前提: リポジトリに蔵書を置き、端末Aを GitHub に接続した (保存先 = そのリポジトリ) 状態でアプリを開く', async () => {
+        gh = createMockGitHubForTest();
+        seedGitHubDataForTest(gh);
+        await seedGitHubLoginForTest(page, gh);
+        await mockGitHubForTest(page, gh);
+        await bootAppForTest(page);
+        await waitForHubStartupForTest(page);
+    });
+
+    await test.step('前提: 別の端末Bを用意する (同じリポジトリに接続済み・端末内の蔵書は空)', async () => {
+        other = await prepareOtherDeviceForTest(page, gh);
+    });
+
+    await test.step('操作: 端末Bでアプリを開いておく (この時点のリポジトリの中身を読む)', async () => {
+        await other.goto('index.html');
+        await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
+        await expect(bookButton(other)).toBeVisible();
+    });
+
+    await test.step('操作: 端末Aで本を開き、短文メモを書いて「保存しました」を待つ', async () => {
+        await bookButton(page).click();
+        await memoBox(page).fill(MEMO_A);
+        await expect(savedNote(page)).toContainText('保存しました');
+    });
+
+    await test.step('前提: 端末Aの短文メモがリポジトリに届くのを待つ', async () => {
+        await waitForGitHubFileContainsForTest(gh, 'private/notes.json', MEMO_A);
+    });
+
+    await test.step('操作: 端末Bで (古い版のまま) 同じ本を開き、別の短文メモを書く', async () => {
+        await bookButton(other).click();
+        await memoBox(other).fill(MEMO_B);
+        await expect(savedNote(other)).toContainText('保存しました');
+    });
+
+    await test.step('確認: 端末Bに「同期の衝突」が出て、3つの選び方が見える', async () => {
+        await expect(conflictDialog(other)).toBeVisible({ timeout: 20000 });
+        await expect(conflictDialog(other)).toContainText('同期の衝突');
+        await expect(conflictDialog(other).getByRole('button', { name: '何もしない' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' })).toBeVisible();
+    });
+
+    await test.step('確認: リポジトリの短文メモは端末Aのまま (端末Bの古い版で上書きされていない)', async () => {
+        await expect(waitForGitHubFileContainsForTest(gh, 'private/notes.json', MEMO_A)).resolves.toBeUndefined();
+    });
+
+    await test.step('操作: 「編集内容をJSONで書き出す」を押し、書き出されたファイルを受け取る', async () => {
+        const download = other.waitForEvent('download');
+        await conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' }).click();
+        exported = await download;
+    });
+
+    await test.step('確認: 書き出したファイルに、端末Bの短文メモが入っている', async () => {
+        expect(readFileSync(await exported.path(), 'utf-8')).toContain(MEMO_B);
+    });
+
+    await test.step('操作: もう一度出た「同期の衝突」で「再読込して最新版を取得」を押し、読み込みが終わってから本を開く', async () => {
+        await expect(conflictDialog(other)).toBeVisible();
+        const reloaded = other.waitForEvent('load');
+        await conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' }).click();
+        await reloaded;
+        await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
+        await expect(other.getByText('最新のデータを確認しています…')).toHaveCount(0, { timeout: 15000 });
+        // 再読込の前に開いていた本の詳細は、読み込み後もそのまま開いている。開いていない時だけ一覧から本を開く
         await expect(memoBox(other).or(bookButton(other)).first()).toBeVisible();
         if (!(await memoBox(other).isVisible())) await bookButton(other).click();
     });
