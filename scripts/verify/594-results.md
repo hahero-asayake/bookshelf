@@ -204,7 +204,7 @@
 | #484 型（同じ ASIN・題名違いの2冊） | E2E は作れない（下表）・単体で確認 | 同左 | 同左 |
 | #587 の E2E（shelf-file-delete・16本） | 緑のまま | | |
 
-単体: `book-memo-file-ops.test.js` 18本、`shelf-file-delete.test.js` 11本、`github-adapter.test.js` 21本、`hub-batch.test.js` 13本がすべて緑。
+単体: `book-memo-file-ops.test.js` 18本、`book-memo-move-target-exists.test.js` 6本（(f) を GitHubAdapter・HubStorageAdapter・LocalFSAdapter の本物の fileExists / readText で確かめる。通信・フォルダの一番下だけ差し替え）、`shelf-file-delete.test.js` 11本、`github-adapter.test.js` 21本、`hub-batch.test.js` 13本がすべて緑。
 
 ### 通らない・作れない・未着手のもの
 
@@ -213,4 +213,3 @@
 | 題名を変えてすぐ再読込（3保存先） | fixme | 題名を変えてすぐ再読込すると、**題名の変更そのものが古い題名に戻る**。「未保存あり」の印（`virtualBookshelf_pendingSync`）が立っている間に読み直しても同じだった（実測: 再読込後のアプリの題名は古いまま・印は無し・保存先も古い題名）。長文メモではなく、本の編集の保存の既存の動き。この時、移す記録は「移す先がどの本のものでもない」として捨てられ、メモは古い題名のまま読める（食い違わない） | アプリ側（既存・範囲外。別に起票が要る） |
 | #484 型の2冊の E2E | 作れない | syncToObsidianFolder が library.json を作る時に、本を ASIN をキーにした Map にまとめる（`currentBooksByAsin`）。同じ ASIN の2冊は保存先に1冊しか届かない。そのため保存先を見る E2E では2冊を作れない。保存先の記録の規則は単体テスト（同じ ASIN・同じ題名＝コピー、題名違い＝もう一方に触らない）で確かめた | アプリ側（既存・#484 の「データ構造は変えない」の範囲） |
 | ローカルの「未接続の間の変更 → 繋ぎ直し」 | 未着手 | 時間切れ。ハブ・GitHub は「書けない間の変更 → 次の保存」で確かめた。ローカルは #587 の E2E の「queryPermission を prompt にして再読込 → 設定から繋ぎ直す」形で書く予定 | — |
-| (f) 移す先が既にある時の、保存先ごとの単体テスト（GitHubAdapter・HubAdapter・LocalFSAdapter） | 未着手 | 時間切れ。今は中身を Map に持つ模擬の adapter での単体テストだけ | — |
