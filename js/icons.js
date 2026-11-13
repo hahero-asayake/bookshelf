@@ -3,7 +3,8 @@
 // Lucide アイコン (inline 化版)
 // https://lucide.dev/icons/ から path のみ抽出
 // 取得元の版: lucide-static v1.72.0 に固定 (npm pack lucide-static@1.72.0 の icons/*.svg・イシュー#565)。
-//   既存分は過去に lucide.dev から写したもの。追加時も同じ版から写す (latest を実行時取得しない)
+//   既存分は過去に lucide.dev から写したもの。追加時も同じ版から写す (latest を実行時取得しない)。
+//   全セット (2356個) は同じ版を js/vendor/lucide/<name>.svg に同梱し、未 inline の名前だけそこから遅れて読む
 // 追加時は同サイトの SVG → <svg> タグ内の inner だけここに入れる
 //
 // 分類タグ (data-category 検索用):
@@ -327,31 +328,110 @@ const BOOKSHELF_PICKER_DEFAULTS = [
     'tag', 'folder', 'archive', 'box', 'home', 'zap', 'rocket'
 ];
 
-// ====== 同梱のみで解決 (外部通信なし・イシュー#565) ======
+// ====== Lucide 全セット (同じオリジンの固定版・イシュー#565) ======
 //
-// 以前は未同梱の名前を unpkg.com/lucide-static@latest から実行時に fetch していたが、
-// 外部CDNへの依存と版が勝手に変わる危険を無くすため撤去した。アプリが使う名前は
-// すべて LUCIDE_ICONS に同梱する (不足は tests/unit/icons-bundled.test.js が検出する)。
-// 未知名は icon() が空文字、renderIcon() がテキスト描画にフォールバックする。
+// 設計:
+//   - 第一優先: LUCIDE_ICONS (inline、高速。アプリ本体が使う名前は全部ここ = tests/unit/icons-bundled.test.js)
+//   - 第二優先: CDN_ICONS_CACHE (Map<name, inner-svg>) — js/vendor/lucide/<name>.svg (lucide-static v1.72.0 の全2356個・
+//     リポジトリ同梱) から fetch したものをメモリ + localStorage にキャッシュ。プラグインの manifest.icon / addUIButton・
+//     利用者の本棚アイコン (IconPicker) が任意の Lucide 名を指定できるため、全セットを同じオリジンに置く
+//   - 外部 CDN (旧 unpkg.com/lucide-static@latest) へは取りに行かない (外部依存と版が勝手に変わる危険を無くす)
+//   - icon(name) は同期 API、未キャッシュなら空を返す → resolveIcon(name) で事前に await ロード
+//   - data-icon 属性はマウント時に同期 inline → 非同期で解決して後から差し替え
+
+const CDN_ICONS_CACHE = new Map();
+const CDN_PENDING = new Map(); // name -> Promise
+const CDN_CACHE_STORAGE_KEY = 'bookshelf_iconCacheV2_lucide1720'; // 版を変えたらキーも変える (旧 unpkg 由来の V1 は読まない)
+const CDN_BASE = 'js/vendor/lucide'; // 同じオリジン・lucide-static v1.72.0 固定 (外部通信なし)
+const CDN_BAD_NAMES = new Set(); // 404 が返ったものは再 fetch しない
+
+(function loadCacheFromStorage() {
+    try {
+        const raw = localStorage.getItem(CDN_CACHE_STORAGE_KEY);
+        if (raw) {
+            const obj = JSON.parse(raw);
+            for (const [k, v] of Object.entries(obj)) {
+                if (typeof v === 'string') CDN_ICONS_CACHE.set(k, v);
+            }
+        }
+    } catch (e) { /* ignore */ }
+})();
+
+function _persistCache() {
+    try {
+        const obj = Object.fromEntries(CDN_ICONS_CACHE);
+        localStorage.setItem(CDN_CACHE_STORAGE_KEY, JSON.stringify(obj));
+    } catch (e) { /* quota 超えなどは無視 */ }
+}
+
+function _extractInner(svgText) {
+    // <svg ...>(中身)</svg> から中身を抽出
+    const m = svgText.match(/<svg\b[^>]*>([\s\S]*?)<\/svg>\s*$/i);
+    return m ? m[1].trim() : null;
+}
 
 function _isValidLucideName(name) {
     return typeof name === 'string' && /^[a-z0-9-]+$/.test(name) && name.length <= 80;
 }
 
 /**
- * アイコンを解決する (同梱のみ・外部通信なし)。呼び出し側互換のため Promise を返す。
+ * アイコンを非同期で解決して inline キャッシュに入れる。
+ * inline にあれば即 resolve、CDN にあれば fetch、404 なら null。
  * @returns {Promise<string|null>} inner SVG 文字列 or null
  */
 async function resolveIcon(name) {
     if (!_isValidLucideName(name)) return null;
-    return LUCIDE_ICONS[name] || null;
+    if (LUCIDE_ICONS[name]) return LUCIDE_ICONS[name];
+    if (CDN_ICONS_CACHE.has(name)) return CDN_ICONS_CACHE.get(name);
+    if (CDN_BAD_NAMES.has(name)) return null;
+    if (CDN_PENDING.has(name)) return CDN_PENDING.get(name);
+
+    const p = (async () => {
+        try {
+            const res = await fetch(`${CDN_BASE}/${name}.svg`);
+            if (!res.ok) {
+                CDN_BAD_NAMES.add(name);
+                return null;
+            }
+            const text = await res.text();
+            const inner = _extractInner(text);
+            if (!inner) {
+                CDN_BAD_NAMES.add(name);
+                return null;
+            }
+            CDN_ICONS_CACHE.set(name, inner);
+            _persistCache();
+            return inner;
+        } catch (e) {
+            console.warn(`[icons] アイコン取得失敗 "${name}":`, e);
+            return null;
+        } finally {
+            CDN_PENDING.delete(name);
+        }
+    })();
+    CDN_PENDING.set(name, p);
+    return p;
 }
 
-// icon(name, { size, class }) → <svg> 文字列 (同期、未同梱なら空)
+// icon(name, { size, class }) → <svg> 文字列 (同期、CDN 未解決なら空)
 function icon(name, opts) {
     if (!name) return '';
-    const inner = LUCIDE_ICONS[name];
-    if (!inner) return '';
+    let inner = LUCIDE_ICONS[name];
+    if (!inner) inner = CDN_ICONS_CACHE.get(name);
+    if (!inner) {
+        // 未解決: 非同期でロードを開始 (戻り値は空文字)
+        resolveIcon(name).then(loaded => {
+            if (loaded) {
+                // ロード完了後、data-icon 属性で待ってる要素を再描画
+                document.querySelectorAll(`[data-icon="${name}"]`).forEach(el => {
+                    const size = el.dataset.iconSize ? Number(el.dataset.iconSize) : undefined;
+                    const klass = el.dataset.iconClass;
+                    el.innerHTML = icon(name, { size, class: klass });
+                });
+            }
+        });
+        return '';
+    }
     const size = (opts && opts.size) || 20;
     const cls = opts && opts.class ? ` class="${opts.class}"` : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${cls}>${inner}</svg>`;
@@ -407,8 +487,8 @@ function renderTextIcon(text, opts) {
 
 /**
  * 汎用アイコン描画: Lucide 名 / 任意文字 を統一的に SVG として返す。
- *   - Lucide 名で同梱 (LUCIDE_ICONS) にある → Lucide SVG
- *   - Lucide 名で未同梱 → テキスト描画 (外部取得しない)
+ *   - Lucide 名で inline / cache 解決可 → Lucide SVG
+ *   - Lucide 名で未解決 → js/vendor/lucide から非同期取得を発火しつつ、暫定でテキスト描画 (後から差し替え)
  *   - Lucide 名でないパターン → テキスト描画
  */
 function renderIcon(value, opts) {
@@ -417,8 +497,22 @@ function renderIcon(value, opts) {
     if (!v) return '';
     const isLucide = _isLucideShape(v);
     if (isLucide) {
-        if (LUCIDE_ICONS[v]) return icon(v, opts);
-        // 未同梱: 控えめなテキスト表示で代替 (外部取得はしない)
+        // inline / cache にあれば即時 SVG
+        if (LUCIDE_ICONS[v] || CDN_ICONS_CACHE.has(v)) {
+            return icon(v, opts);
+        }
+        // 未解決: async fetch を発火しつつ、テキストでフォールバック
+        if (!CDN_BAD_NAMES.has(v)) {
+            resolveIcon(v).then(loaded => {
+                if (!loaded) return;
+                // [data-icon-value="<v>"] 要素の innerHTML を後追いで差し替え
+                document.querySelectorAll(`[data-icon-value="${CSS.escape(v)}"]`).forEach(el => {
+                    const size = el.dataset.iconSize ? Number(el.dataset.iconSize) : (opts && opts.size);
+                    el.innerHTML = icon(v, { size, class: opts && opts.class });
+                });
+            });
+        }
+        // 未解決時は控えめなテキスト表示で繋ぐ (同じオリジンから取得後に上で差し替わる)
         return renderTextIcon(v.split('-')[0].slice(0, 2), opts);
     }
     // 任意文字 (絵文字 / 漢字 / 英大文字 / 記号など)

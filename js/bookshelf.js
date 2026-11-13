@@ -4349,7 +4349,7 @@ class VirtualBookshelf {
                         lucideUseBtn.disabled = false;
                         lucideUseBtn.dataset.pendingValue = raw;
                     } else {
-                        lucidePreview.innerHTML = `<span style="color:var(--danger);font-size:0.75rem;">"${raw}" は同梱のアイコンに見つかりません</span>`;
+                        lucidePreview.innerHTML = `<span style="color:var(--danger);font-size:0.75rem;">"${raw}" は Lucide に見つかりません</span>`;
                         lucideUseBtn.disabled = true;
                         lucideUseBtn.dataset.pendingValue = '';
                     }
