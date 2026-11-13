@@ -4325,14 +4325,14 @@ class VirtualBookshelf {
                 }
                 // 検索フィルタはリアルタイム
                 renderLucideGrid(raw);
-                // Lucide 名パターンで CDN チェック
+                // Lucide 名パターンで同梱一覧をチェック
                 if (!/^[a-z][a-z0-9-]*$/.test(raw)) {
                     lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">英小文字/数字/ハイフンのみ。文字アイコンタブへ →</span>`;
                     lucideUseBtn.disabled = true;
                     lucideUseBtn.dataset.pendingValue = '';
                     return;
                 }
-                lucidePreview.innerHTML = '<span style="color:#9ca3af;font-size:0.75rem;">CDN 確認中…</span>';
+                lucidePreview.innerHTML = '<span style="color:#9ca3af;font-size:0.75rem;">確認中…</span>';
                 lucideUseBtn.disabled = true;
                 const mySeq = ++lucideSeq;
                 lucideTimer = setTimeout(async () => {
@@ -4343,7 +4343,7 @@ class VirtualBookshelf {
                         lucideUseBtn.disabled = false;
                         lucideUseBtn.dataset.pendingValue = raw;
                     } else {
-                        lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">"${raw}" は Lucide に見つかりません</span>`;
+                        lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">"${raw}" は同梱のアイコンに見つかりません</span>`;
                         lucideUseBtn.disabled = true;
                         lucideUseBtn.dataset.pendingValue = '';
                     }

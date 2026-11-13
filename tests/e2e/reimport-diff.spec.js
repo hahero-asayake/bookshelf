@@ -47,7 +47,6 @@ async function setup(page) {
         }).observe(document, { childList: true, subtree: true });
     });
     await page.route('https://pagead2.googlesyndication.com/**', (r) => r.fulfill({ status: 200, contentType: 'application/javascript', body: '// stub' }));
-    await page.route('https://unpkg.com/lucide-static@*/icons/**', (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(([u, l]) => {
         localStorage.setItem('virtualBookshelf_userData', u);

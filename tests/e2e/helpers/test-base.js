@@ -56,7 +56,7 @@
 // 3つの実外部通信が残っていた:
 //   (1) index.html に直書きの EasyMDE (cdn.jsdelivr.net) — <link>/<script> が静的に
 //       全ページで読み込まれ、<head> 内 <link rel=stylesheet> はレンダーブロッキング
-//   (2) js/icons.js の Lucide アイコン CDN フォールバック (unpkg.com) — ローカルの
+//   (2) js/icons.js の Lucide アイコン CDN フォールバック (unpkg.com。#565で撤去・同梱化) — ローカルの
 //       LUCIDE_ICONS に無いアイコン名は icon() が同期で空文字を返しつつ裏で fetch する
 //       設計のため、1 ページ内で十数件の個別リクエストが飛ぶ
 //   (3) js/book-manager.js の書影フォールバック URL (images-na.ssl-images-amazon.com)
@@ -69,7 +69,7 @@
 // EasyMDE 本体 (cdn.jsdelivr.net) は route で潰さず js/vendor/easymde.min.js へ vendor 化した
 // (marked.umd.js と同じ方針)。空スタブにすると `typeof EasyMDE === 'undefined'` の早期 return に
 // 落ちて _bookMemoEditor が生成されず、standard-ops.spec.js の長文メモテストが壊れるため。
-// 残る unpkg.com (Lucide) と images-na.ssl-images-amazon.com (書影) は E2E の見た目にしか
+// 残る images-na.ssl-images-amazon.com (書影) は E2E の見た目にしか
 // 影響しない (アイコン SVG の中身・書影の画素を検証しているテストは無い) ため、ここで
 // route.fulfill する。route.abort() は使わない (#53 の教訓: net::ERR_FAILED が新しい
 // console error を生む)。
@@ -128,19 +128,8 @@ export const test = base.extend({
             contentType: 'application/javascript',
             body: '// adsbygoogle.js stubbed out for E2E (issue #53)'
         }));
-        // Lucide アイコン CDN フォールバック (未収録アイコンの svg 個別取得。イシュー#57)
-        // 中身が空の <svg></svg> を返すと js/icons.js の _extractInner() が空文字列を
-        // 返し、resolveIcon() の !inner チェックに引っかかって「取得失敗」扱いになる。
-        // すると icon() は該当アイコンをずっと空文字列で返し続け、.h-icon が中身ゼロ→
-        // 高さゼロになり、それを含むボタン (.art-block-ic 等、高さをアイコンに委ねている
-        // 要素) ごと Playwright の toBeVisible() から hidden 判定される新規リグレッションを
-        // 実測した (publish-article-editor.spec.js の A-2回帰テストが軒並み失敗)。
-        // 中身に最小限の shape を1つ入れて「取得成功」扱いにする。
-        await context.route('https://unpkg.com/lucide-static@*/icons/**', (route) => route.fulfill({
-            status: 200,
-            contentType: 'image/svg+xml',
-            body: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" fill="none"/></svg>'
-        }));
+        // Lucide アイコンの unpkg.com 取得はイシュー#565で撤去済み (全部 js/icons.js に同梱)。
+        // ここで route しないことで、万一復活したら tests/e2e/no-external-icons.spec.js が検出する。
         // Amazon 書影フォールバック URL (イシュー#57)
         await context.route('https://images-na.ssl-images-amazon.com/**', (route) => route.fulfill({
             status: 200,

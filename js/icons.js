@@ -2,6 +2,8 @@
 
 // Lucide アイコン (inline 化版)
 // https://lucide.dev/icons/ から path のみ抽出
+// 取得元の版: lucide-static v1.72.0 に固定 (npm pack lucide-static@1.72.0 の icons/*.svg・イシュー#565)。
+//   既存分は過去に lucide.dev から写したもの。追加時も同じ版から写す (latest を実行時取得しない)
 // 追加時は同サイトの SVG → <svg> タグ内の inner だけここに入れる
 //
 // 分類タグ (data-category 検索用):
@@ -270,7 +272,48 @@ const LUCIDE_ICONS = {
     'maximize':
         '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
     'circle-help':
-        '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+        '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    // ===== 同梱追加 (lucide-static v1.72.0 固定・イシュー#565でCDN取得を撤去) =====
+    'book-plus':
+        '<path d="M12 7v6"/><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M9 10h6"/>',
+    'user-circle':
+        '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>',
+    'funnel':
+        '<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
+    'rotate-ccw':
+        '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    'arrow-up-to-line':
+        '<path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/>',
+    'folder-minus':
+        '<path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    'credit-card':
+        '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/><path d="M6 14h2"/>',
+    'log-out':
+        '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
+    'help-circle':
+        '<circle cx="12" cy="12" r="10"/><path d="M9 9.5a3 2.5 0 016 0c0 2-2 2-3 3.5"/><path d="M12 17h.01"/>',
+    'mail':
+        '<path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/>',
+    'shield':
+        '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+    'copy':
+        '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    'cloud-off':
+        '<path d="M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057"/><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78"/><path d="m2 2 20 20"/>',
+    'user':
+        '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    'smartphone':
+        '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+    'images':
+        '<path d="m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16"/><path d="M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2"/><circle cx="13" cy="7" r="1" fill="currentColor"/><rect x="8" y="2" width="14" height="14" rx="2"/>',
+    'monitor':
+        '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+    'layout-grid':
+        '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+    'mouse-pointer-click':
+        '<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
+    'filter':
+        '<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/>',
 };
 
 // 本棚編集の IconPicker で「おすすめ」として並べる順
@@ -284,107 +327,31 @@ const BOOKSHELF_PICKER_DEFAULTS = [
     'tag', 'folder', 'archive', 'box', 'home', 'zap', 'rocket'
 ];
 
-// ====== Lucide CDN 拡張 (inline 化していない 1500+ アイコンも使えるように) ======
+// ====== 同梱のみで解決 (外部通信なし・イシュー#565) ======
 //
-// 設計:
-//   - 第一優先: LUCIDE_ICONS (inline、高速)
-//   - 第二優先: CDN_ICONS_CACHE (Map<name, inner-svg>) — lucide-static CDN から fetch したものをメモリ + localStorage にキャッシュ
-//   - icon(name) は同期 API、CDN 未キャッシュなら空を返す → resolveIcon(name) で事前に await ロード
-//   - data-icon 属性はマウント時に同期 inline → 非同期で CDN 解決して後から差し替え
-
-const CDN_ICONS_CACHE = new Map();
-const CDN_PENDING = new Map(); // name -> Promise
-const CDN_CACHE_STORAGE_KEY = 'bookshelf_iconCacheV1';
-const CDN_BASE = 'https://unpkg.com/lucide-static@latest/icons';
-const CDN_BAD_NAMES = new Set(); // 404 が返ったものは再 fetch しない
-
-(function loadCacheFromStorage() {
-    try {
-        const raw = localStorage.getItem(CDN_CACHE_STORAGE_KEY);
-        if (raw) {
-            const obj = JSON.parse(raw);
-            for (const [k, v] of Object.entries(obj)) {
-                if (typeof v === 'string') CDN_ICONS_CACHE.set(k, v);
-            }
-        }
-    } catch (e) { /* ignore */ }
-})();
-
-function _persistCache() {
-    try {
-        const obj = Object.fromEntries(CDN_ICONS_CACHE);
-        localStorage.setItem(CDN_CACHE_STORAGE_KEY, JSON.stringify(obj));
-    } catch (e) { /* quota 超えなどは無視 */ }
-}
-
-function _extractInner(svgText) {
-    // <svg ...>(中身)</svg> から中身を抽出
-    const m = svgText.match(/<svg\b[^>]*>([\s\S]*?)<\/svg>\s*$/i);
-    return m ? m[1].trim() : null;
-}
+// 以前は未同梱の名前を unpkg.com/lucide-static@latest から実行時に fetch していたが、
+// 外部CDNへの依存と版が勝手に変わる危険を無くすため撤去した。アプリが使う名前は
+// すべて LUCIDE_ICONS に同梱する (不足は tests/unit/icons-bundled.test.js が検出する)。
+// 未知名は icon() が空文字、renderIcon() がテキスト描画にフォールバックする。
 
 function _isValidLucideName(name) {
     return typeof name === 'string' && /^[a-z0-9-]+$/.test(name) && name.length <= 80;
 }
 
 /**
- * アイコンを非同期で解決して inline キャッシュに入れる。
- * inline にあれば即 resolve、CDN にあれば fetch、404 なら null。
+ * アイコンを解決する (同梱のみ・外部通信なし)。呼び出し側互換のため Promise を返す。
  * @returns {Promise<string|null>} inner SVG 文字列 or null
  */
 async function resolveIcon(name) {
     if (!_isValidLucideName(name)) return null;
-    if (LUCIDE_ICONS[name]) return LUCIDE_ICONS[name];
-    if (CDN_ICONS_CACHE.has(name)) return CDN_ICONS_CACHE.get(name);
-    if (CDN_BAD_NAMES.has(name)) return null;
-    if (CDN_PENDING.has(name)) return CDN_PENDING.get(name);
-
-    const p = (async () => {
-        try {
-            const res = await fetch(`${CDN_BASE}/${name}.svg`);
-            if (!res.ok) {
-                CDN_BAD_NAMES.add(name);
-                return null;
-            }
-            const text = await res.text();
-            const inner = _extractInner(text);
-            if (!inner) {
-                CDN_BAD_NAMES.add(name);
-                return null;
-            }
-            CDN_ICONS_CACHE.set(name, inner);
-            _persistCache();
-            return inner;
-        } catch (e) {
-            console.warn(`[icons] CDN fetch 失敗 "${name}":`, e);
-            return null;
-        } finally {
-            CDN_PENDING.delete(name);
-        }
-    })();
-    CDN_PENDING.set(name, p);
-    return p;
+    return LUCIDE_ICONS[name] || null;
 }
 
-// icon(name, { size, class }) → <svg> 文字列 (同期、CDN 未解決なら空)
+// icon(name, { size, class }) → <svg> 文字列 (同期、未同梱なら空)
 function icon(name, opts) {
     if (!name) return '';
-    let inner = LUCIDE_ICONS[name];
-    if (!inner) inner = CDN_ICONS_CACHE.get(name);
-    if (!inner) {
-        // 未解決: 非同期でロードを開始 (戻り値は空文字)
-        resolveIcon(name).then(loaded => {
-            if (loaded) {
-                // ロード完了後、data-icon 属性で待ってる要素を再描画
-                document.querySelectorAll(`[data-icon="${name}"]`).forEach(el => {
-                    const size = el.dataset.iconSize ? Number(el.dataset.iconSize) : undefined;
-                    const klass = el.dataset.iconClass;
-                    el.innerHTML = icon(name, { size, class: klass });
-                });
-            }
-        });
-        return '';
-    }
+    const inner = LUCIDE_ICONS[name];
+    if (!inner) return '';
     const size = (opts && opts.size) || 20;
     const cls = opts && opts.class ? ` class="${opts.class}"` : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"${cls}>${inner}</svg>`;
@@ -440,8 +407,8 @@ function renderTextIcon(text, opts) {
 
 /**
  * 汎用アイコン描画: Lucide 名 / 任意文字 を統一的に SVG として返す。
- *   - Lucide 名で inline / cache 解決可 → Lucide SVG
- *   - Lucide 名で未解決 → async fetch を発火しつつ、暫定でテキスト描画 (後から差し替え)
+ *   - Lucide 名で同梱 (LUCIDE_ICONS) にある → Lucide SVG
+ *   - Lucide 名で未同梱 → テキスト描画 (外部取得しない)
  *   - Lucide 名でないパターン → テキスト描画
  */
 function renderIcon(value, opts) {
@@ -450,22 +417,8 @@ function renderIcon(value, opts) {
     if (!v) return '';
     const isLucide = _isLucideShape(v);
     if (isLucide) {
-        // inline / cache にあれば即時 SVG
-        if (LUCIDE_ICONS[v] || CDN_ICONS_CACHE.has(v)) {
-            return icon(v, opts);
-        }
-        // 未解決: async fetch を発火しつつ、テキストでフォールバック
-        if (!CDN_BAD_NAMES.has(v)) {
-            resolveIcon(v).then(loaded => {
-                if (!loaded) return;
-                // [data-icon-value="<v>"] 要素の innerHTML を後追いで差し替え
-                document.querySelectorAll(`[data-icon-value="${CSS.escape(v)}"]`).forEach(el => {
-                    const size = el.dataset.iconSize ? Number(el.dataset.iconSize) : (opts && opts.size);
-                    el.innerHTML = icon(v, { size, class: opts && opts.class });
-                });
-            });
-        }
-        // 未解決時は控えめなテキスト表示で繋ぐ (CDN 取得後に上で差し替わる)
+        if (LUCIDE_ICONS[v]) return icon(v, opts);
+        // 未同梱: 控えめなテキスト表示で代替 (外部取得はしない)
         return renderTextIcon(v.split('-')[0].slice(0, 2), opts);
     }
     // 任意文字 (絵文字 / 漢字 / 英大文字 / 記号など)
