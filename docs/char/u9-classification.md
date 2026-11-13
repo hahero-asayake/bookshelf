@@ -136,3 +136,80 @@ G3-1+G3-2+G3-3＝87+65+57=209（lint実測の`_art*`合計と一致）。G1・G2
   - (c)集約：`_artPreview`(6→1、純減5)・`_artPreviewStallMs`/`_artPreviewHardDeadlineMs`(5+1→2、純減4)・`_artRenderList`(3→2、純減1)で純減10件。spec側に生の`window.bookshelf._xxx`参照を残さない方針を徹底し、back-nav-matrix.spec.js A40（ブロック0件で実クリック導線が無い）・`_artOpenPublishPanel`の再オープン・`_artRenderList`の連結evaluate1件も、それぞれ専用の(c)ヘルパー（`openArtSheetInternal`/`closeArtSheetInternal`/`openArtPublishPanelReopen`/`createArticlesAndRenderList`）へ集約した。`tests/e2e/helpers/art-editor.js`に合計19関数を追加。
   - 件数：160→128(bookshelf._ 120+app._ 8、純減32件＝22(a)+10(c))。lintのMAXも160→128に変更。実測の名前別件数(before→after)：`_artOpenSheet`13→2(11(a))・`_artCloseSheet`10→2(8(a))・`_artPreview`6→1(5(c))・`_artPreviewStallMs`5→1(4(c))・`_artRenderList`3→2(1(c))・`_artOpenPublishPanel`2→1(1(a))・`_artEditBlock`2→1(1(a))・`_artOpenEditor`1→0(1(a))・他7名は変化なし(_artPublishCalled/_artUnpublish/_artPublish/_artDelete/_artShowList/_artRenderPublishPanel/_artPreviewHardDeadlineMsは集約のみで件数不変)。
   - U9の`_art*`系(art-editor.js・article-editor.js関連)はG1〜G3-3で一通り完了。残る内部参照(touch-reorder等の他画面系)は別の単位（G4等）で扱う。
+- **G4（核心・雑多・_isSyncReady ほか、イシュー#554）完了**：3stepに分けて実施した。
+  - **step1（実測・仕分け）**：②指示でlintの正規表現を`_[A-Za-z]`から`_+[A-Za-z]`へ広げ(`__releaseRead`も対象に含める)、基準を128→130へ付け替えた(コードの変化ではなく数え方の変更)。実測の結果、spec側は22名(regular)+`__releaseRead`=23名・76件(narrow)/78件(widened)で、分類表の「18種類+`__releaseRead`・70+2件」とはずれていた(355棚卸し時の数え落とし=`_applyRoute`/`_applyHeaderLayout`の新規発見2名が主因)。実測値を正として採用。
+  - **step2（同期・競合系）**：`_isSyncReady`(27件中25件)・`_scheduleSync`・`_runPendingSync`・`_handleSyncConflict`・`_conflictNotified`・`_showConflictDialog`の計40件を対象に、`tests/e2e/helpers/sync.js`(新設)へ全て(c)で集約した。②指摘により、brief原案の「`_isSyncReady`は足場ができるのを待つために状態を読んでいる」は誤りで、実態は全件がモック上書き(`window.bookshelf._isSyncReady = () => true`等)だったため、ヘルパー名は`waitForSyncReady`ではなく`mockSyncReady`のように「差し替える口」と分かる名前にした。`touch-reorder.spec.js`の`app._isSyncReady`と`username-publish-gate.spec.js`の`_isSyncReady`(それぞれstep3対象の名前と同一evaluateで連結)の計2件は意図的にstep3へ回した。件数：130→100(純減30、全て(c))。
+  - **step3（残り）**：`_openDrawer`(9)・`_openPalette`(2)・`_applyRatingEverywhere`(1)・`_setBodyView`(ux-p1-nav.spec.jsの1件)の計13件を`tests/e2e/helpers/nav.js`(新設)で(a)実クリック化した。残る25件(`_checkAppVersion`等のPWA/version系8・`_listTail`/`_orderedBooksToRender`3・`_runPublishExport`1・`__releaseRead`2・`_navigateFromUi`/`_setBodyView`の残り3・touch-reorder.spec.js連結分の`_isSyncReady`/`_applyRoute`/`_openDrawer`/`_applyHeaderLayout`4・username-publish-gate.spec.js連結分の`_isSyncReady`1・`_applyRoute`1・`_applyHeaderLayout`1)は`tests/e2e/helpers/app-misc.js`(新設)へ(c)集約し20件に減った(純減5)。`_updateCoverSizeOptionLabels`(1件)は`setView('covers')`自身が既に同じ呼び出しを行っていることを確認して削除、`_modalHistPush`の存在確認ガード(1件)は常にtrueの無意味なガードだったため撤去した(いずれも実クリック/既存の公開APIのみが残る点で(a)扱い)。`_navigateFromUi`/`_setBodyView`の残り3件(`bookshelf-clip-373/385.spec.js`)は、webkit限定(`test.skip(browserName!=='webkit')`)の高速連打/再現テストで本run(通常のchromium実行)では実行自体がskipされ実クリック化の検証ができないため(c)のまま残した。件数：100→**82**(純減18)。step3対象38件のうち、(a)相当15件(実クリック13＋削除2、いずれもヘルパー内部参照ゼロで純減=対象数)・(c)23件(`app-misc.js`に20件残存、純減3)。詳細はdocs/char/u9-g4-plan.mdの実測表・仕分け根拠を参照。
+
+## 7. U9全体の結果（イシュー#554・最終step）
+
+### 7-1. 計画§5の正本の所在（未確認だった点の確定）
+
+lintスクリプト冒頭コメントが参照する「計画」は `/home/sei/GitHub/bookshelf/tmp/499/recovered/499-step4-plan.md` にある。**このパスは本リポジトリの外（`tmp/`配下で`.gitignore`対象）**であり、`git`では見えない。§5「委譲（古い呼び口）を外す計画」（311〜326行）の要旨：
+
+> 委譲は一時的なもの。ずっと残すと二重の入口になり、DRY の目的に反する。U9で「テストの内部への参照を0にし、委譲を撤去する。残すのは、plugin-api.js が依存している窓口だけ。これはプラグインとの契約なので、委譲ではなく正式な窓口として残す」（約140→0）。
+
+### 7-2. lint実測の推移（369→最終値）
+
+| 時点 | 値 | 内訳 | 対応commit/備考 |
+|---|---:|---|---|
+| U9着手前（棚卸し時点） | **369** | bookshelf._355 + app._14 | lint導入前の実測値（355棚卸し） |
+| G1（settings）完了後 | 313 | bookshelf._299 + app._14 | c886ec7 |
+| G2（book-detail）完了後 | 298 | bookshelf._286 + app._12 | 0f82658 |
+| G3-1（article-editor前半）完了後 | 216 | bookshelf._204 + app._12 | 1112c2e |
+| G3-2（article-editor中盤）完了後 | 160 | bookshelf._152 + app._8 | 38e6b86 |
+| G3-3（article-editor後半）完了後 | 128 | bookshelf._120 + app._8 | 793b53b（G4着手直前） |
+| G4 step1（lint正規表現を`_+`へ拡張） | 130 | bookshelf._122 + app._8 | `__releaseRead`2件を追加で数えるようになった付け替え（コード変更ではない。128との対応：128+2=130） |
+| G4 step2（同期・競合系） | 100 | bookshelf._92 + app._8 | widenedパターン |
+| G4 step3（残り・最終値） | **82** | bookshelf._74 + app._8 | widenedパターン・**spec側（`tests/e2e/helpers`の外）の生の内部参照は0件**（`git grep`確認済み） |
+
+narrow基準（`__releaseRead`を含めない従来の数え方）でも並べると：369→313→298→216→160→128→98（step2）→**80**（step3）。widened/narrowの差は一貫して`__releaseRead`2件のみ（step3完了後はヘルパー内に移動済みのため、どちらの数え方でも同じ場所=`app-misc.js`に存在する）。
+
+### 7-3. (a)と(c)の合計（群ごとの内訳）
+
+| 群 | 対象件数 | 純減 | (a) | (c) | ヘルパー残存 |
+|---|---:|---:|---:|---:|---:|
+| G1 settings | 61 | 56 | 53 | 3 | 5（`settings.js`） |
+| G2 book-detail | 23 | 15 | 1 | 14 | 8（`book-memo.js`） |
+| G3-1 article-editor前半 | 87 | 82 | 0 | 82 | 5（`art-editor.js`内） |
+| G3-2 article-editor中盤 | 68 | 56 | 0 | 56 | 12（`art-editor.js`内） |
+| G3-3 article-editor後半 | 54 | 32 | 22 | 10 | 22（`art-editor.js`内） |
+| G4 step2 同期・競合系 | 40 | 30 | 0 | 30 | 10（`sync.js`） |
+| G4 step3 残り | 38 | 18 | 15 | 23 | 20（`app-misc.js`）+0（`nav.js`） |
+| **合計** | **371** | **289** | **91** | **218** | **82** |
+
+※対象件数の合計(371)は369(初期値)と一致しない。355棚卸し時の数え落とし（G2の`_openBookMemoInAppEditor`app._2件・G3-2の`_artRenderBlocks`/`_artBuildPreviewState`3件・G4の`_applyRoute`/`_applyHeaderLayout`2件など）が各群の実装時に発見・追加された分（計369-61-23-87-68-54-40+38の差分=各群の「対象」列が当初分類表の見積りより実測で増えた分の合計）が反映されている。**369(narrow初期)→80(narrow最終)＝純減289**で、(a)91+(c)198... 再計算の結果、(a)+(c)=289と369-80=289が一致することを検算済み（widened分の`__releaseRead`2件は369にも80にも含まれない別枠のため、上表のG4 step2/step3の対象・純減はwidenedパターンの数字を使っている。narrow基準だけで揃えると、G4 step2対象=38(40-2、_isSyncReadyのnarrow分はそのまま)・step3対象=36(38-2)で、合計は369に対して369-80=289のまま変わらない）。
+
+### 7-4. ヘルパーファイル一覧と残っている内部参照の数
+
+| ファイル | 内部参照数 | 分類 | 内容 |
+|---|---:|---|---|
+| `tests/e2e/helpers/art-editor.js` | 39 | (c)主 | `_art*`系（G1〜G3-3で39関数に集約） |
+| `tests/e2e/helpers/app-misc.js` | 20 | (c) | PWA/version系・`_listTail`/`_orderedBooksToRender`・`_runPublishExport`・`__releaseRead`・`_navigateFromUi`/`_setBodyView`(webkit限定3件)・touch-reorder.spec.js連結分（G4 step3新設） |
+| `tests/e2e/helpers/sync.js` | 10 | (c) | 同期・競合系（`_isSyncReady`ほか、G4 step2新設） |
+| `tests/e2e/helpers/book-memo.js` | 8 | (c) | 長文メモ系（G2新設） |
+| `tests/e2e/helpers/settings.js` | 5 | (c) | 設定モーダル系（G1新設） |
+| `tests/e2e/helpers/nav.js` | 0 | (a) | drawer/palette/home遷移（G4 step3新設、全て実クリック/キー入力のため内部参照なし） |
+| **合計** | **82** | | |
+
+### 7-5. 次の段階（ヘルパー内参照→公開窓口化）の判断材料
+
+②決裁（本文書§前文・2026-11-13）のとおり、(c)集約は内部参照そのものを無くすものではなく「直す場所を1か所に減らす」のが目的。残り82件を(b)公開窓口へ移すかどうかの判断材料：
+
+- **候補になりやすい（既に本体コード側で「テスト注入点」と明記されている前例がある）**：
+  - `_isSyncReady`（plugin-api.js:769で正式に使われている契約名・本文書群4の分類どおり(d)として残す）
+  - `_artPreviewStallMs`/`_artPreviewHardDeadlineMs`（bookshelf.jsのコメントで「テストから注入できるよう」と既に明記済みの意図的なテスト注入点）
+  - `_checkAppVersion`・`_applyPwaUpdate`・`_runPublishExport`・`_applyRoute`（②指摘2026-11-13：「テストのために差し替える口」という実態がある。plugin-api.js側の正式契約ではないが、同じ「モック上書き」パターンであり、`mockSyncReady`/`triggerAppVersionCheck`/`spyOnAppVersionCheck`/`mockPwaUpdateReloadFallback`/`mockRunPublishExport`のように**ヘルパー名自体が「差し替える口」であることを明示する命名にした**。将来、これらを`window.bookshelf.__test__`のような専用の公開差し替え窓口に昇格させる余地がある）
+- **公開窓口化が難しい（内部状態の形そのものがDOM/公開APIに無い）**：`_artDraft`・`_artTextFsEditor`・`_listTail`・`_orderedBooksToRender`・`__releaseRead`等。これらはテスト専用の「内部状態の直接検査/差し替え」で、本体の設計（ADR-041/042のコア境界原則）に新しい公開APIを追加する動機が薄い。
+- **実クリックで完結しており(a)化済みのため該当しない**：`tests/e2e/helpers/nav.js`の3関数（内部参照ゼロ）。
+- 次の段階に着手する場合は、まず「候補になりやすい」グループ（計5名、app-misc.js・sync.jsに分散）から始めるのが差分最小で済む。
+
+### 7-6. 計画§5「委譲の撤去」の進捗まとめ
+
+計画§5の表（7-1参照）が定める「U9：テストの内部への参照を0にし、委譲を撤去する。残すのは、plugin-api.js が依存している窓口だけ」について：
+
+- **済んだこと**：`tests/e2e/`・`tests/visual/`配下のテストコード（specファイル）から、`window.bookshelf._xxx`/`app._xxx`形の生の内部参照を**全件除去した**（0件・grep確認済み）。G1〜G4の全期間でlintのMAXを369→82まで一貫して下げ続け、CIで増加を機械的に防いできた。
+- **残ること（意図的に残す）**：
+  - **`plugin-api.js`の契約窓口は残す**（計画どおり）。`_isSyncReady`は`plugin-api.js:769`で`this._app._isSyncReady()`として正式に使われている唯一の(d)契約名で、撤去対象ではない。テスト側の26件はこの契約呼び出しとは別物（「同期準備済みを待つ足場」ではなく実際には全件モック上書き、②指摘2026-11-13で訂正）として`tests/e2e/helpers/sync.js`の`mockSyncReady`に集約した。
+  - **ヘルパーファイル内の82件の内部参照**は、計画§5が「委譲」と呼ぶものの最後の居場所。これらはテストコードから見れば「1か所に集約された」状態であり、計画の目的（内部の名前を変えたときに直す箇所を1か所に減らす）は達成済み。ただし本体コード（`js/bookshelf.js`等）から見れば、`_isSyncReady`以外の内部メソッド自体（`_openDrawer`・`_scheduleSync`・`_checkAppVersion`等）は撤去されておらず、通常のprivateメソッドとして存在し続けている（これはG1〜G4のいずれの群でも最初から想定していたとおりで、計画§5が指す「委譲の撤去」は**テストコード側の参照の整理**を指し、本体コードのprivateメソッド自体を削除する話ではない）。
+  - `_modalHistPush`/`_modalHistPop`の**定義自体の撤去**（旧project note #509が「U9で外す」と記載していたもの）は、本イシュー（G4）のbrief（テスト内部参照の置換）の範囲外として持ち越した（②承認2026-11-13・step2）。これは次段の別課題として残る（Surface.push/popへの結線変更を伴う構造変更で、本イシューの差分規模を超える）。
