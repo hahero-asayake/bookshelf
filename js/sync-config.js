@@ -44,9 +44,16 @@ class SyncConfigManager {
         localStorage.removeItem(SYNC_CONFIG_KEY);
     }
 
-    /** 保存先を一度でも自分で決めた (保存した) ことがあるか。未設定なら UI はハブ推し表示にする (ADR-056) */
+    /** 保存先を一度でも自分で決めた (保存した) ことがあるか。未設定なら UI はハブ推し表示にする (ADR-056)。
+     *  3方式とも、つないだ時に method を保存して記録する (ローカルはフォルダを選んだ時・起動時に保存済みのフォルダが見つかった時。イシュー#592) */
     static isConfigured() {
         return !!localStorage.getItem(SYNC_CONFIG_KEY);
+    }
+
+    /** 保存先の方式 (method) だけを書き換えて保存する。接続情報など他のフィールドはそのまま残す。
+     * @param {'local'|'github'|'hub'} method */
+    static setMethod(method) {
+        SyncConfigManager.save({ ...SyncConfigManager.load(), method });
     }
 
     static defaults() {

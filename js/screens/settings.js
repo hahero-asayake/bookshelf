@@ -47,6 +47,35 @@
 //    一覧は docs/char/u8a-step1-scope.md §4 参照
 
 class _SettingsMethods {
+    // 保存先セレクトで選んだ方式のパネルだけを出す
+    _showSyncPanel(method) {
+        const localPanel = document.getElementById('sync-config-local');
+        const githubPanel = document.getElementById('sync-config-github');
+        const hubPanel = document.getElementById('sync-config-hub');
+        if (localPanel) localPanel.hidden = (method !== 'local');
+        if (githubPanel) githubPanel.hidden = (method !== 'github');
+        if (hubPanel) hubPanel.hidden = (method !== 'hub');
+        // ハブパネルを開いた時は状態を再描画 (未ログインなら節内 GIS ボタンを遅延描画)
+        if (method === 'hub') this._renderHubAuthState();
+    }
+
+    // 保存先セレクトの表示を、保存してある設定に合わせる。起動時と、ローカルのフォルダを
+    // 保存先の設定に記録した時 (_recordLocalSyncChoice) に呼ぶ (イシュー#592)。
+    _applySyncMethodView() {
+        const selector = document.getElementById('sync-method-select');
+        if (!selector) return;
+        const localUnsupported = !('showDirectoryPicker' in window);
+        const config = this.syncConfig || SyncConfigManager.load();
+        let viewMethod = config.method || 'local';
+        // まだ保存先を決めていない人には、いちばん簡単なハブを最初に見せる (ADR-056 ハブ推し。
+        // GitHub は上級者向け)。実 method (この端末だけのキャッシュ動作) は据え置き。
+        // local 非対応環境 (モバイル等) で local 表示になる場合も同様にハブへ寄せる。
+        if (!SyncConfigManager.isConfigured()) viewMethod = 'hub';
+        else if (localUnsupported && viewMethod === 'local') viewMethod = 'hub';
+        selector.value = viewMethod;
+        this._showSyncPanel(viewMethod);
+    }
+
     _setupSyncMethodUI() {
         const selector = document.getElementById('sync-method-select');
         const localPanel = document.getElementById('sync-config-local');
@@ -62,24 +91,8 @@ class _SettingsMethods {
             if (localOpt) localOpt.disabled = true;
         }
 
-        const hubPanel = document.getElementById('sync-config-hub');
-        const showPanel = (method) => {
-            localPanel.hidden = (method !== 'local');
-            githubPanel.hidden = (method !== 'github');
-            if (hubPanel) hubPanel.hidden = (method !== 'hub');
-            // ハブパネルを開いた時は状態を再描画 (未ログインなら節内 GIS ボタンを遅延描画)
-            if (method === 'hub') this._renderHubAuthState();
-        };
-
-        const config = this.syncConfig || SyncConfigManager.load();
-        let viewMethod = config.method || 'local';
-        // まだ保存先を決めていない人には、いちばん簡単なハブを最初に見せる (ADR-056 ハブ推し。
-        // GitHub は上級者向け)。実 method (この端末だけのキャッシュ動作) は据え置き。
-        // local 非対応環境 (モバイル等) で local 表示になる場合も同様にハブへ寄せる。
-        if (!SyncConfigManager.isConfigured()) viewMethod = 'hub';
-        else if (localUnsupported && viewMethod === 'local') viewMethod = 'hub';
-        selector.value = viewMethod;
-        showPanel(viewMethod);
+        const showPanel = (method) => this._showSyncPanel(method);
+        this._applySyncMethodView();
 
         this._renderGitHubAuthState();
         this._renderHubAuthState();
@@ -96,8 +109,7 @@ class _SettingsMethods {
                 const ok = await window.confirmDialog({ message: '保存先を「この端末のフォルダ」に切り替えますか？\nGitHub の接続情報はそのまま残ります。\nOK を押すとページを再読み込みします。' });
                 selector.disabled = false;
                 if (ok) {
-                    const merged = { ...SyncConfigManager.load(), method: 'local' };
-                    SyncConfigManager.save(merged);
+                    SyncConfigManager.setMethod('local');
                     location.reload();
                 } else {
                     selector.value = current;
@@ -1348,9 +1360,7 @@ class _SettingsMethods {
             toast('先に Asayake ハブにログインしてください。', { type: 'warn' });
             return;
         }
-        const merged = SyncConfigManager.load();
-        merged.method = 'hub';
-        SyncConfigManager.save(merged);
+        SyncConfigManager.setMethod('hub');
         location.reload();
     }
 

@@ -3146,12 +3146,27 @@ class VirtualBookshelf {
 
     // --- Obsidian Folder Sync methods ---
 
+    // ローカルのフォルダが決まった (フォルダを選んだ・起動時に保存済みのフォルダが見つかった) ことを、
+    // 保存先の設定 (bookshelf_sync) に記録する。ハブ・GitHub はつないだ時に method を保存しているが、
+    // ローカルはここを通るまで記録されず、案内と設定の表示が「未設定」のままになっていた (イシュー#592)。
+    // 保存先の設定がまだ無い時だけ書く = 保存済みの method (ハブ・GitHub を選んだがログインが切れて
+    // ローカルへ一時的に寄せている人を含む) は決して上書きしない。案内の手順1は直後の再描画で計算し直される。
+    _recordLocalSyncChoice() {
+        if (this.syncMethod !== 'local' || SyncConfigManager.isConfigured()) return;
+        SyncConfigManager.setMethod('local');
+        this.syncConfig = SyncConfigManager.load();
+        // 設定の保存先セレクトは起動時に一度だけ決まるので、記録した後に表示を合わせ直す
+        this._applySyncMethodView();
+    }
+
     async initObsidianSync() {
         this.obsidianDirHandle = null;
         if (!('showDirectoryPicker' in window)) return;
         try {
             const handle = await getStoredDirHandle();
             if (!handle) return;
+            // 修正前にフォルダをつないだ人 (フォルダはあるが保存先の設定が無い) もここで記録する (イシュー#592)
+            this._recordLocalSyncChoice();
             const perm = await handle.queryPermission({ mode: 'readwrite' });
             if (perm === 'granted') {
                 this.obsidianDirHandle = handle;
@@ -3181,6 +3196,7 @@ class VirtualBookshelf {
         try {
             const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
             await storeDirHandle(handle);
+            this._recordLocalSyncChoice();
             this.obsidianDirHandle = handle;
             this.storage.setDirHandle(handle);
             this.updateSyncStatus('loading', handle.name);
