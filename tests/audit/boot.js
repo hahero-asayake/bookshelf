@@ -17,7 +17,14 @@ const PIN_CSS = `
 export async function pinEnvironment(page) {
     for (const frame of page.frames()) {
         try {
-            await frame.addStyleTag({ content: PIN_CSS });
+            // 画面を開くたびに呼ぶので、同じ文書には1回だけ入れる
+            await frame.evaluate((css) => {
+                if (document.getElementById('audit-pin-style')) return;
+                const style = document.createElement('style');
+                style.id = 'audit-pin-style';
+                style.textContent = css;
+                (document.head || document.documentElement).appendChild(style);
+            }, PIN_CSS);
         } catch (e) {
             if (frame === page.mainFrame()) throw e;   // 別オリジン・読み込み前の iframe は飛ばす
         }
