@@ -13,7 +13,9 @@ const extraProjects = process.env.BACKNAV_WEBKIT === '1'
 const gateWebkitProjects = process.env.GATE_WEBKIT === '1'
     // j8-offline は外す: Playwright の WebKit は電波なしの間 SW のキャッシュからも読めない (イシュー#589 step2 で実測。
     // 最小の SW でも再読込が失敗する = アプリではなく Playwright の制約)。iPhone の電波なしは人の実機 H1 で見る。
-    ? [{ name: 'gate-webkit', testMatch: /tests[\\/]e2e[\\/]gate[\\/].*\.spec\.js$|art-canvas-tap-edit\.spec\.js$/, testIgnore: /j8-offline\.spec\.js$/, use: { ...devices['iPhone 13'] } }]
+    // j6-1-local-restart も外す: ローカルのフォルダ保存は PC の Chrome/Edge 専用の機能 (ADR-046・iPhone では選べない)。
+    // Playwright の WebKit には OPFS (navigator.storage.getDirectory) も無い (イシュー#607 で実測)。他の j6 系は外さない。
+    ? [{ name: 'gate-webkit', testMatch: /tests[\\/]e2e[\\/]gate[\\/].*\.spec\.js$|art-canvas-tap-edit\.spec\.js$/, testIgnore: /j8-offline\.spec\.js$|[\\/]j6-1-local-restart\.spec\.js$/, use: { ...devices['iPhone 13'] } }]
     : [];
 
 // worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
