@@ -1,5 +1,7 @@
 // 門のE2E (テスト名に `@gate` と観測点ID) の「前提」で使う、ハブ (Asayake ハブの Worker と公開ページの配信) の模擬
-// (イシュー#589 が作り、#588 で保存のまとめ書き・一覧・公開・公開ページの配信・書き込み失敗を足した)。
+// (イシュー#589 が作り、#588 で保存のまとめ書き・一覧・公開・公開ページの配信・書き込み失敗を足した。#598 で、
+// tests/e2e/helpers/storage-fakes.js の installFakeHub にしか無かった一覧の entries・If-Match の正規化・回数を決めた
+// 書き込みの失敗・書き込みと削除要求の記録・読み口 (hubStoreForTest) を足した)。
 // 書き方の決まりは tests/e2e/gate/README.md。外部 (ハブ・公開ページの配信) への通信だけを差し替え、アプリ自身の
 // ファイル (index.html・js/・css/・sw.js) は差し替えない = 本物のコードを通す。
 //
@@ -12,6 +14,8 @@
 //       await mockHubForTest(page, hub);                   // ハブと公開ページへの通信を模擬に向ける
 //       await bootAppForTest(page);
 //   });
+// 保存先3つ (ハブ・GitHub・ローカル) を同じ形で回す spec は、hubStoreForTest(hub) でハブの中身を読む
+// (has・readJSON・list・writes・deleteRequests・failNextWrites・failuresLeft。storage-fakes.js の GitHub・ローカルの模擬と同じ名前)。
 // 模擬はホストごとに route を1本だけ、ページではなくコンテキスト (= その端末) に掛ける (振り分け役)。公開URLを新しい
 // タブで開いても同じ模擬が答える。2つ目のコンテキスト (= 別の端末) のページにも同じ hub を渡すと、同じハブの中身を
 // 読み書きする。同じコンテキストに2回掛けない (同じホストに route が重なると取り合いになる)。
@@ -51,7 +55,10 @@ function initialHubState(overrides) {
         site: new Map(),       // 公開サイト sites/<siteId>/ の中身 (path → { body, contentType })
         seq: 0,                // ETag の連番
         failWrites: false,     // true の間は書き込み (PUT・DELETE・まとめ書き・公開) を 500 で失敗させる
+        failNextWrites: 0,     // 1以上の間は書き込みを 500 で失敗させ、1回ごとに1減らす (failWrites が true ならそちらが優先)
         requests: [],          // 届いた通信の記録 ({ method, path })。模擬に無い道を見つける時に読む
+        writes: [],            // 中身が実際に変わった書き込み ({ op: 'put'|'delete', path, via: 'single'|'batch' })
+        deleteRequests: [],    // 届いた削除の要求 ({ path, via, existed })。ハブに無いファイルへの要求も残す
         ...overrides
     };
 }
@@ -172,14 +179,64 @@ export async function waitForHubFileContainsForTest(state, path, text, timeoutMs
     throw new Error(`gate-hub.js: ${path} に「${text}」が ${timeoutMs}ms 以内に届かなかった`);
 }
 
-/** これ以降のハブへの書き込み (PUT・DELETE・まとめ書き・公開) を 500 で失敗させる (読み込みは通す)。
+/** ハブへの書き込み (PUT・DELETE・まとめ書き・公開) を 500 で失敗させる (読み込みは通す)。
+ * n を渡さなければ、これ以降ずっと失敗させる (state.failWrites)。n を渡すと、次の n 回だけ失敗させる
+ * (state.failNextWrites。残りの回数は hubStoreForTest の failuresLeft で読める)。
+ * 両方が立っている時は、ずっと失敗させる方が優先する (残りの回数は減らない)。
+ * @param {ReturnType<typeof createHubStateForTest>} state @param {number} [n] */
+export function failHubWritesForTest(state, n) {
+    if (n === undefined) state.failWrites = true;
+    else state.failNextWrites = n;
+}
+
+// 書き込みを失敗させるか (failHubWritesForTest の決まり)。回数を決めた失敗は、失敗させた時に1減らす
+function shouldFailWrite(state) {
+    if (state.failWrites) return true;
+    if (state.failNextWrites > 0) { state.failNextWrites -= 1; return true; }
+    return false;
+}
+
+/** ハブの中身を、保存先の模擬の共通の読み口で読む。名前は tests/e2e/helpers/storage-fakes.js の installFakeGitHub・
+ * installFakeLocalFolder と同じ (保存先3つを同じ形で回す spec 用)。route は掛けない = mockHubForTest と一緒に使う。
+ * writes・deleteRequests は state の今の配列を返す (resetHubStateForTest で作り直した後も追う)。
  * @param {ReturnType<typeof createHubStateForTest>} state */
-export function failHubWritesForTest(state) {
-    state.failWrites = true;
+export function hubStoreForTest(state) {
+    return {
+        has: (path) => state.files.has(path),
+        readJSON: (path) => (state.files.has(path) ? JSON.parse(state.files.get(path).content) : null),
+        // dir 直下のファイル名 (並びは名前順)
+        list: (dir) => [...listDir(state, dir).files].sort(),
+        get writes() { return state.writes; },
+        get deleteRequests() { return state.deleteRequests; },
+        failNextWrites: (n = 1) => failHubWritesForTest(state, n),
+        // 回数を決めた失敗のうち、まだ起きていない回数 (0 になったら失敗が起きた)
+        failuresLeft: () => state.failNextWrites
+    };
 }
 
 const etagHeaders = (etag) => ({ ETag: etag, 'Access-Control-Expose-Headers': 'ETag' });
 const writeFailure = (route) => route.fulfill({ status: 500, json: { error: 'gate-hub.js の模擬: 書き込みの失敗' } });
+
+// If-Match・ifMatch の比べ方は本物 (cf-worker/asayake-hub.js の normalizeEtag) と同じ: 弱い ETag の W/ と引用符を外して比べる
+const normEtag = (v) => (v ? String(v).replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null);
+
+// 削除を1件適用する (無いファイルへの要求も deleteRequests に残す・本物と同じく無くても成功)
+function deleteFile(state, path, via) {
+    const existed = state.files.has(path);
+    state.deleteRequests.push({ path, via, existed });
+    if (!existed) return;
+    state.files.delete(path);
+    state.writes.push({ op: 'delete', path, via });
+}
+
+// 書き込みを1件適用する (ETag は連番の "v<n>")
+function putFile(state, path, content, via) {
+    state.seq += 1;
+    const etag = `"v${state.seq}"`;
+    state.files.set(path, { content, etag });
+    state.writes.push({ op: 'put', path, via });
+    return etag;
+}
 
 function readJson(req) {
     try { return JSON.parse(req.postData() || '{}') || {}; } catch (_) { return {}; }
@@ -299,50 +356,60 @@ function fulfillData(route, state, method, path) {
         if (!entry) return route.fulfill({ status: 404 });
         return route.fulfill({ status: 200, headers: etagHeaders(entry.etag), body: method === 'HEAD' ? '' : entry.content, contentType: 'text/plain' });
     }
-    if (state.failWrites) return writeFailure(route);
+    if (shouldFailWrite(state)) return writeFailure(route);
     if (method === 'PUT') {
-        const ifMatch = req.headers()['if-match'];
+        // 本物 (putObject) と同じく、If-Match が今の ETag と合わなければ 412 {error:'etag mismatch'} で書かない
+        const want = normEtag(req.headers()['if-match']);
         const entry = state.files.get(path);
-        if (ifMatch && (!entry || entry.etag !== ifMatch)) return route.fulfill({ status: 412, body: 'conflict' });
-        state.seq += 1;
-        const etag = `"v${state.seq}"`;
-        state.files.set(path, { content: req.postData() || '', etag });
+        if (want && (!entry || normEtag(entry.etag) !== want)) return route.fulfill({ status: 412, json: { error: 'etag mismatch' } });
+        const etag = putFile(state, path, req.postData() || '', 'single');
         return route.fulfill({ status: 200, headers: etagHeaders(etag) });
     }
-    if (method === 'DELETE') { state.files.delete(path); return route.fulfill({ status: 204 }); }
+    if (method === 'DELETE') { deleteFile(state, path, 'single'); return route.fulfill({ status: 204 }); }
     return route.fulfill({ status: 405 });
 }
 
 // POST /data/batch (cf-worker/asayake-hub.js handleBatch の段階1検証を近似。tests/e2e/publish-conflict-hub.spec.js と同じ):
-// 条件付きの entry を先に全部調べ、1件でも違えば全体を 412 {conflicts} にして何も書かない
+// 条件付きの entry を先に全部調べ、1件でも違えば全体を 412 {conflicts} にして何も書かない。
+// conflicts の etag は本物と同じく引用符なし (R2 の etag)
 function runBatch(state, entries) {
     if (!Array.isArray(entries)) return { status: 400 };
     const conflicts = [];
     for (const e of entries) {
         const entry = state.files.get(e.path);
-        if (e.ifNoneMatch === '*') { if (entry) conflicts.push({ path: e.path, etag: entry.etag }); }
-        else if (e.ifMatch) { if (!entry || entry.etag !== e.ifMatch) conflicts.push({ path: e.path, etag: entry ? entry.etag : null }); }
+        const cur = entry ? normEtag(entry.etag) : null;
+        const want = normEtag(e.ifMatch);
+        if (e.ifNoneMatch === '*') { if (entry) conflicts.push({ path: e.path, etag: cur }); }
+        else if (want) { if (!entry || cur !== want) conflicts.push({ path: e.path, etag: cur }); }
     }
     if (conflicts.length) return { status: 412, body: { error: 'etag mismatch', conflicts } };
     for (const e of entries) {
-        if (e.op === 'delete') state.files.delete(e.path);
-        else { state.seq += 1; state.files.set(e.path, { content: e.content || '', etag: `"v${state.seq}"` }); }
+        if (e.op === 'delete') deleteFile(state, e.path, 'batch');
+        else putFile(state, e.path, e.content || '', 'batch');
     }
     return { status: 200 };
 }
 
-// GET /data/<dir>?list=1 (dir の直下のファイルとフォルダ)
+// GET /data/<dir>?list=1 (dir の直下のファイルとフォルダ)。本物 (cf-worker/asayake-hub.js の listDir) と同じく
+// entries (名前・ETag・バイト数) と truncated も返す = アプリ (js/hub-adapter.js の _fetchRemoteEtagMap) が一覧の
+// ETag 表を使う経路を通る (entries が無いと、1件ずつ読む経路に回る)
 function listDir(state, dir) {
     const prefix = dir ? `${dir.replace(/\/+$/, '')}/` : '';
-    const files = new Set();
+    const files = [];
     const dirs = new Set();
-    for (const path of state.files.keys()) {
+    const entries = [];
+    for (const [path, entry] of state.files) {
         if (!path.startsWith(prefix)) continue;
         const rest = path.slice(prefix.length);
         const i = rest.indexOf('/');
-        if (i < 0) files.add(rest); else dirs.add(rest.slice(0, i));
+        if (i < 0) {
+            files.push(rest);
+            entries.push({ name: rest, etag: entry.etag, size: Buffer.byteLength(String(entry.content), 'utf-8') });
+        } else {
+            dirs.add(rest.slice(0, i));
+        }
     }
-    return { files: [...files], dirs: [...dirs] };
+    return { files, dirs: [...dirs], entries, truncated: false };
 }
 
 function contentTypeOf(path) {
@@ -382,8 +449,10 @@ function fulfillSite(route, state, sub) {
 /** ハブへの通信 (HUB_BASE 以下) と公開ページの配信 (PUBLIC_SITE_BASE 以下) を模擬に向ける。アプリを開く前に呼ぶ。
  * route はそのページのコンテキストに1本ずつ掛ける (新しいタブにも効く)。
  * 今ある道: GET /usage・POST /billing/checkout・POST /billing/portal・DELETE /account・/data/<path> の GET/HEAD/PUT/DELETE・
- * POST /data/batch・GET /data/<dir>?list=1・POST /publish・GET /public/<siteId>/<path> (旧URL)・
+ * POST /data/batch・GET /data/<dir>?list=1 (entries・truncated つき)・POST /publish・GET /public/<siteId>/<path> (旧URL)・
  * GET https://bookshelf.asayake.org/<username>/<path>。
+ * If-Match (単発の PUT・まとめ書き) は本物と同じく W/ と引用符を外して比べる。書き込みの失敗は failHubWritesForTest で注入し、
+ * 中身が変わった書き込みと届いた削除の要求は state.writes・state.deleteRequests に残る (読むのは hubStoreForTest)。
  * /billing/checkout・/billing/portal は決済の模擬のページ (BILLING_BASE) の URL を返す = 押した後まで通すなら
  * mockBillingPagesForTest も一緒に呼ぶ。
  * まだ無い道 (ログイン等) は 501 を返す = 使うテストを書く時に、本物 (cf-worker/asayake-hub.js) の約束を確かめてここへ足す。
@@ -424,11 +493,11 @@ export async function mockHubForTest(page, state) {
             return route.fulfill({ json: { ok: true, deleted: true } });
         }
         if (path === '/publish' && method === 'POST') {
-            if (state.failWrites) return writeFailure(route);
+            if (shouldFailWrite(state)) return writeFailure(route);
             return route.fulfill({ json: runPublish(state, JSON.parse(req.postData() || '{}')) });
         }
         if (path === '/data/batch' && method === 'POST') {
-            if (state.failWrites) return writeFailure(route);
+            if (shouldFailWrite(state)) return writeFailure(route);
             const r = runBatch(state, JSON.parse(req.postData() || '{}').entries);
             return r.body ? route.fulfill({ status: r.status, json: r.body }) : route.fulfill({ status: r.status });
         }
