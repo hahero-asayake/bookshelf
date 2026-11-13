@@ -7,6 +7,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -42,7 +43,7 @@ async function inViewport(page, locator) {
 
 // 設定画面を開く。一覧(master)はスマホ幅だけにある(PCは常に左の項目一覧+右の中身)
 async function openSettings(page, view) {
-    await page.evaluate((v) => window.bookshelf._openSettingsModal(v === 'detail' ? 'sync-section' : undefined), view);
+    await openSettingsByClick(page, view === 'detail' ? 'sync-section' : undefined);
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     // 注: PC幅では重なる面を履歴に積まない仕様(_modalHistPush の `if (!mobile) return`)のため #/settings が付かない。
     // スマホ幅では #/settings になる。ここでは閉じた後に #/settings でないことだけ見る(作法の統一は#497の設計で扱う)

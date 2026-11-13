@@ -6,6 +6,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -94,7 +95,8 @@ test.describe('スマホ表示', () => {
 
 test('about: 問い合わせ導線 (メール) がある', async ({ page }) => {
     await bootApp(page);
-    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('about-section'); });
+    await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+    await openSettingsByClick(page, 'about-section');
     const mail = page.locator('#about-section a[href^="mailto:asayake.hahero@gmail.com"]');
     await expect(mail).toBeVisible();
     await expect(mail).toContainText('お問い合わせ');

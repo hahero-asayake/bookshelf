@@ -14,6 +14,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { confirmOpenSettingsForTest } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = JSON.parse(readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8'));
@@ -164,7 +165,7 @@ for (const vp of [{ name: 'PC1280', width: 1280, height: 800 }, { name: 'SP390',
             await boot(page);
             await page.evaluate(() => window.bookshelf.openPublishPagesModal());
             await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
-            await page.evaluate(() => { window.bookshelf._confirmOpenSettings('対照テスト', 'account-section'); });
+            await confirmOpenSettingsForTest(page, '対照テスト', 'account-section');
             await page.locator('.cfm-box .cfm-ok').click();
             await expect(page.locator('#settings-modal')).toHaveClass(/show/);
             const last = await waitSettingsFront(page, `confirm-path ${vp.name}`);

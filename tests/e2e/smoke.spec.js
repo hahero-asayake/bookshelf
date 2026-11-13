@@ -6,6 +6,7 @@ import { canvas, addBlock } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
@@ -104,7 +105,7 @@ test('設定→同期: ハブ方式を選ぶとハブパネルが出る (ADR-033
     const errors = await bootApp(page);
     // GIS の外部読込を避けるためサインインボタン描画をスタブ化
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     // 設定セクションは既定折りたたみ → targetId で同期セクションを開く。同期方式に hub オプションがある
     await expect(page.locator('#sync-method-select option[value="hub"]')).toHaveCount(1);
     // hub を選択 → ハブパネルが表示
@@ -150,7 +151,7 @@ test('設定→アカウント: 同期方式と独立してログイン面が出
     await page.evaluate(() => { window.HubAuth.renderSignInButton = (el) => { if (el) el.dataset.stub = '1'; }; });
     // サイドバーのアカウントチップは未接続時「ログイン」
     await expect(page.locator('#sidebar-account-label')).toHaveText('ログイン');
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     // 同期=hub を選ばずに、アカウントセクションでログインできる
     await expect(page.locator('#account-section')).toBeVisible();
     await expect(page.locator('#account-disconnected')).toBeVisible();

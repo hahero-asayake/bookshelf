@@ -18,6 +18,7 @@ import { observe, judge, snapState } from './helpers/checklist-timing-core.mjs';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -287,7 +288,7 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         let before;
         const v = await runCase(page, ti, 'CHK8', { ms: 3000, expectFinal: { openModals: (m) => !m.includes('settings-modal') } }, async (p) => {
             before = await snapState(p);
-            await p.evaluate(() => window.bookshelf._openSettingsModal());
+            await openSettingsByClick(p);
             await tap(p, '#settings-master .settings-cat[data-cat="display-section"]');
             await back(p);
             expect.soft(await p.locator('.settings-modal-content').getAttribute('data-settings-view'), '戻る1回目=一覧').toBe('master');

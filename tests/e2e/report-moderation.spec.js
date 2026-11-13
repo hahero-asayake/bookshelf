@@ -4,6 +4,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick, openSettingsForTest } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -283,11 +284,11 @@ test.describe('通報ダイアログ × リロード (イシュー#221)', () => 
 test.describe('通報の審査パネル (管理者のみ)', () => {
     test('非管理者には出ない', async ({ page }) => {
         const { errors } = await boot(page, { isAdmin: false });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         await expect(page.locator('#settings-modal')).toHaveClass(/show/);
         // 設定→管理者カテゴリ自体が非管理者には出ない (#409)。カテゴリへ直接遷移を試みても中身は見えない
         await expect(page.locator('#settings-master .settings-cat[data-cat="admin-section"]')).toBeHidden();
-        await page.evaluate(() => window.bookshelf._openSettingsModal('admin-section'));
+        await openSettingsForTest(page, 'admin-section');
         await expect(page.locator('#admin-section')).toBeHidden();
         await expect(page.locator('#account-admin-reports')).toBeHidden();
         expect(errors).toEqual([]);
@@ -295,7 +296,7 @@ test.describe('通報の審査パネル (管理者のみ)', () => {
 
     test('管理者: 未対応の通報が出て、「一覧から外す」→外し中に移り、「一覧に戻す」で戻る。「却下」は通報ごとに送る', async ({ page }) => {
         const { errors, captured, state } = await boot(page, { isAdmin: true });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('admin-section'));
+        await openSettingsByClick(page, 'admin-section');
         const panel = page.locator('#account-admin-reports');
         await expect(panel).toBeVisible();
         const item = page.locator('#report-review-list .report-item');
@@ -333,7 +334,7 @@ for (const [w, h] of [[1280, 800], [800, 900], [390, 844]]) {
             { articleId: 'sB', url: ARTICLE + 'b/', title: 'ボブの記事', articleStatus: 'active', count: 1, categories: { other: 1 }, latestReason: '', latestAt: 1, reportIds: ['r4'] }
         ];
         state.hidden = [{ articleId: 'sC', url: ARTICLE + 'c/', title: '外し中の記事', reportCount: 2 }];
-        await page.evaluate(() => window.bookshelf._openSettingsModal('admin-section'));
+        await openSettingsByClick(page, 'admin-section');
         const panel = page.locator('#account-admin-reports');
         await expect(panel).toBeVisible();
         await expect(page.locator('#report-review-list .report-item')).toHaveCount(3);

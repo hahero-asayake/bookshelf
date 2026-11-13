@@ -14,6 +14,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -54,7 +55,7 @@ function getDisplay(page, id) {
 test.describe('アカウント画面: プラン変更・支払い・解約ボタンの表示 (イシュー#227/#231)', () => {
     test('Free では非表示・comp説明もstale説明もpast_due警告も出ない', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'free' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
         expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
@@ -64,7 +65,7 @@ test.describe('アカウント画面: プラン変更・支払い・解約ボタ
 
     test('comp (管理者付与 Plus, planSource:comp) では非表示・代わりに説明行が見える', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'plus', billingManaged: false, planSource: 'comp' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).not.toBe('none');
         await expect(page.locator('#account-comp-notice')).toContainText('管理者付与');
@@ -75,7 +76,7 @@ test.describe('アカウント画面: プラン変更・支払い・解約ボタ
 
     test('stale (Stripe リンク残骸, planSource:stale・s6-plus-stale-link) では管理ボタンとcomp説明が隠れ、stale説明が見える', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'plus', billingManaged: false, planSource: 'stale', interval: 'month', subStatus: 'active' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
         expect(await getDisplay(page, 'account-stale-notice')).not.toBe('none');
@@ -86,7 +87,7 @@ test.describe('アカウント画面: プラン変更・支払い・解約ボタ
 
     test('旧 hub (planSource 未指定, billingManaged=false) では今まで通り comp 説明を表示する (回帰防止)', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'plus', billingManaged: false });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).not.toBe('none');
         expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
@@ -95,7 +96,7 @@ test.describe('アカウント画面: プラン変更・支払い・解約ボタ
 
     test('active (Stripe サブスクあり, billingManaged=true) では表示される', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'plus', billingManaged: true, planSource: 'stripe', subStatus: 'active' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).not.toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
         expect(await getDisplay(page, 'account-stale-notice')).toBe('none');
@@ -105,7 +106,7 @@ test.describe('アカウント画面: プラン変更・支払い・解約ボタ
 
     test('past_due (支払い遅延) ではボタンは表示のまま警告も出る', async ({ page }) => {
         const errors = await bootApp(page, { plan: 'plus', billingManaged: true, planSource: 'stripe', subStatus: 'past_due' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+        await openSettingsByClick(page, 'account-section');
         expect(await getDisplay(page, 'account-manage-billing')).not.toBe('none');
         expect(await getDisplay(page, 'account-past-due-notice')).not.toBe('none');
         expect(await getDisplay(page, 'account-comp-notice')).toBe('none');
@@ -120,7 +121,7 @@ test.describe('ハブ未接続の誘導ボタン (hub-goto-account): B案の副�
     // 未同意/同意済みの両方で意図通り出し分けられるかを固定する。
     test('規約未同意なら表示される', async ({ page }) => {
         const errors = await bootApp(page, { key: '', apiBase: '' });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+        await openSettingsByClick(page, 'sync-method-select');
         await page.locator('#sync-method-select').selectOption('hub');
         expect(await getDisplay(page, 'hub-goto-account')).not.toBe('none');
         expect(errors).toEqual([]);
@@ -128,7 +129,7 @@ test.describe('ハブ未接続の誘導ボタン (hub-goto-account): B案の副�
 
     test('規約同意済みなら非表示になる', async ({ page }) => {
         const errors = await bootApp(page, { key: '', apiBase: '' }, { ackTermsPrivacy: { at: '2026-01-01T00:00:00.000Z', v: 'v1.0' } });
-        await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+        await openSettingsByClick(page, 'sync-method-select');
         await page.locator('#sync-method-select').selectOption('hub');
         expect(await getDisplay(page, 'hub-goto-account')).toBe('none');
         expect(errors).toEqual([]);

@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, expect } from '../e2e/helpers/test-base.js';
 import { addBlock } from '../e2e/helpers/art-editor.js';
+import { openSettingsByClick } from '../e2e/helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -106,7 +107,7 @@ test('本の詳細', async ({ page }) => {
 
 test('設定の一覧', async ({ page }) => {
     await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     await expect(page.locator('#settings-modal')).toBeVisible();
     await shot(page, '05-settings-list');
     await shotHeader(page, '05-settings-list-header');
@@ -114,7 +115,7 @@ test('設定の一覧', async ({ page }) => {
 
 test('設定の1節', async ({ page }) => {
     await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await expect(page.locator('#sync-method-select')).toBeVisible();
     await shot(page, '06-settings-section');
     await shotHeader(page, '06-settings-section-header');

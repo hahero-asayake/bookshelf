@@ -4,6 +4,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { renderUsageAlertForTest } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -78,9 +79,9 @@ test('閉じると消え、同レベルでは再表示されない', async ({ pa
     await page.locator('#usage-alert-close').click();
     await expect(page.locator('#usage-alert-banner')).toBeHidden();
     // 同じレベルで再描画 → 出ない / 深刻化 (超過) → 再表示
-    await page.evaluate(() => window.bookshelf._renderUsageAlert({ key: 'hk_test', apiBase: 'https://hub.example', usedBytes: 82 * 1024 * 1024, quotaBytes: 100 * 1024 * 1024, plan: 'free' }));
+    await renderUsageAlertForTest(page, { key: 'hk_test', apiBase: 'https://hub.example', usedBytes: 82 * 1024 * 1024, quotaBytes: 100 * 1024 * 1024, plan: 'free' });
     await expect(page.locator('#usage-alert-banner')).toBeHidden();
-    await page.evaluate(() => window.bookshelf._renderUsageAlert({ key: 'hk_test', apiBase: 'https://hub.example', usedBytes: 150 * 1024 * 1024, quotaBytes: 100 * 1024 * 1024, plan: 'free' }));
+    await renderUsageAlertForTest(page, { key: 'hk_test', apiBase: 'https://hub.example', usedBytes: 150 * 1024 * 1024, quotaBytes: 100 * 1024 * 1024, plan: 'free' });
     await expect(page.locator('#usage-alert-banner')).toBeVisible();
     expect(errors).toEqual([]);
 });

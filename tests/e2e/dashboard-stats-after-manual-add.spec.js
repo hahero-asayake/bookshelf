@@ -8,6 +8,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = JSON.parse(readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8'));
@@ -50,7 +51,7 @@ test('実UI操作: 手動で本を追加した直後にホームの蔵書数ウ�
     await expect(counterCard.locator('.bn-value')).toHaveText('0');
 
     // 実UI操作で手動追加 (#add-book-manually は設定モーダル「蔵書」セクション内)
-    await page.evaluate(() => window.bookshelf._openSettingsModal('library-section'));
+    await openSettingsByClick(page, 'library-section');
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await page.locator('#add-book-manually').click();
     await page.locator('#manual-asin').fill('B0STATSTEST');

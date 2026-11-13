@@ -4,6 +4,7 @@
 //  ローンチ判定: この1本が緑 = 主要導線が通しで壊れていない。
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock } from './helpers/art-editor.js';
+import { openSettingsByClick } from './helpers/settings.js';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
@@ -172,7 +173,8 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
     });
 
     await test.step('課金: アップグレード→決済戻り→Plus 反映 (指数バックオフ)', async () => {
-        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('account-section'); });
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+        await openSettingsByClick(page, 'account-section');
         const yearly = page.locator('#account-upgrade-yearly');
         await expect(yearly).toBeVisible();
         await Promise.all([
@@ -185,7 +187,8 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
     });
 
     await test.step('退会: アカウント削除→接続情報が消えてログイン表示に戻る', async () => {
-        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; window.bookshelf._openSettingsModal('account-section'); });
+        await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
+        await openSettingsByClick(page, 'account-section');
         await page.locator('#account-delete-btn').click();
         await page.locator('.cfm-overlay .cfm-ok').click();
         // DELETE 成功 → HubAuth.disconnect() が接続情報を消して reload する

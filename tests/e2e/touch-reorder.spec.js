@@ -10,6 +10,7 @@
 // 「関数を直接呼ぶのではなく pointer イベントの経路を通す」という要件は満たす
 // (ブラウザ内蔵のタッチ→ポインタ変換レイヤーだけを迂回する)。
 import { test, expect } from './helpers/test-base.js';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const BOOKS = [['B0FIX00001', '三体', '劉慈欣']];
 const library = {
@@ -163,7 +164,7 @@ test.describe('touch-reorder (イシュー#337)', () => {
 
     test('プラグインカード: 長押しで並べ替え、pluginOrderV1 に保存される', async ({ page, browserName }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('plugins-section'));
+        await openSettingsByClick(page, 'plugins-section');
         await page.waitForSelector('#plugin-list-section .plugin-card-v2');
         const before = await page.evaluate(() => [...document.querySelectorAll('#plugin-list-section .plugin-card-v2')].map(c => c.dataset.pluginId));
         expect(before.length).toBe(2);

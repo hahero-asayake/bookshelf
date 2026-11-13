@@ -5,6 +5,7 @@ import { test, expect } from '../helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { getUsageAlertLevel } from '../helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../../fixtures/fixture-userdata.json'), 'utf-8');
@@ -95,7 +96,7 @@ test.describe('E5: 容量の超過', () => {
         await page.goto('index.html');
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
         const banner = page.locator('#usage-alert-banner');
-        await expect.poll(() => page.evaluate(() => window.bookshelf._usageAlertLevel)).toBe('strong');
+        await expect.poll(() => getUsageAlertLevel(page)).toBe('strong');
         await expect(banner).toBeVisible();
         await expect(page.locator('#usage-alert-upgrade')).toBeVisible();
     });

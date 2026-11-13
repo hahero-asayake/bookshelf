@@ -8,6 +8,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -25,7 +26,7 @@ async function bootApp(page) {
 
 test('設定「このアプリについて」のアフィリエイト開示文に「控えめ」が無い (イシュー#410)', async ({ page }) => {
     await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal('about-section'));
+    await openSettingsByClick(page, 'about-section');
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     const affiliateText = await page.locator('.about-affiliate').innerText();
     expect(affiliateText).toContain('アフィリエイト開示');

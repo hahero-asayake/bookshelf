@@ -8,6 +8,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -424,7 +425,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'X04');
         const before = await snap(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await openSettingsByClick(page);
         await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
         await r.step(page, 'detail');
         await back(page);
@@ -443,7 +444,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'X06');
         const before = await snap(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await openSettingsByClick(page);
         await tap(page, '#settings-master .settings-cat[data-cat="display-section"]');
         await r.step(page, 'detail');
         await tap(page, '#settings-back'); // 詳細は← 設定のみ・戻るで一覧へ
@@ -462,7 +463,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
     test('X12 設定を開いて再読込→戻るが空振りしない (D06)', async ({ page }, ti) => {
         await bootApp(page);
         const r = recorder(ti, 'X12');
-        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await openSettingsByClick(page);
         await r.step(page, 'settings');
         await page.reload();
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
@@ -828,7 +829,7 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         // イシュー#442(③差し戻し2026-11-02 02:01): publish-section は撤去済み(「公開の設定」へ統合)の
         // ため、ジャンプ先カテゴリを存置カテゴリ(sync-section)に変更。D11の検証意図(項目へジャンプ→
         // 戻る1回目で一覧、2回目で閉じる)自体は対象カテゴリに依らないため影響なし。
-        await page.evaluate(() => window.bookshelf._openSettingsModal('sync-section'));
+        await openSettingsByClick(page, 'sync-section');
         await settle(page);
         await back(page);
         expect.soft(await settingsView(page)).toBe('master');
@@ -841,7 +842,7 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
         await openSettingsTap(page);
         await tap(page, '#settings-master .settings-cat[data-cat="plugins-section"]');
         for (const how of ['back', 'esc']) {
-            await page.evaluate(() => window.bookshelf._openPluginSettings('fixture-plugin'));
+            await openPluginSettingsByClick(page, 'fixture-plugin');
             await settle(page);
             const opened = await page.locator('#plugin-settings-modal').isVisible().catch(() => false);
             r.rec[how] = { opened };
@@ -903,7 +904,7 @@ test.describe('戻る網羅マトリクス 幅820 (K6)', () => {
         expect.soft(s.openModals).toContain('publish-pages-modal');
     }));
     test('K6 幅820: 設定→戻る＝閉じる (768〜900 でも積まれる)', async ({ page }, ti) => caseRun(page, ti, 'K6-settings', async (r, before) => {
-        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await openSettingsByClick(page);
         await settle(page);
         const s0 = await snap(page); await r.step(page, 'open');
         expect.soft(s0.stack).toEqual(['settings-modal']);
@@ -1367,7 +1368,7 @@ const openReport = (page) => page.evaluate(() => {
     }));
     for (const [cid, how] of [['G34', 'back'], ['G35', 'close']]) {
         test(`${cid} プラグイン設定(単独) ${how}＝閉じる`, async ({ page }, ti) => caseRun(page, ti, cid, async (r, before) => {
-            await page.evaluate(() => window.bookshelf._openPluginSettings('fixture-plugin')); await settle(page);
+            await openPluginSettingsByClick(page, 'fixture-plugin'); await settle(page);
             if (how === 'back') await back(page); else { await tap(page, '#plugin-settings-modal .psm-close'); await settle(page); }
             const s = await snap(page); await r.step(page, how);
             expect.soft(await page.locator('#plugin-settings-modal').isVisible()).toBe(false);
@@ -1565,7 +1566,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
 
     test('X16f 設定モーダル: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'X16f',
-            async (p) => p.evaluate(() => window.bookshelf._openSettingsModal()),
+            async (p) => openSettingsByClick(p),
             (s) => expect.soft(s.openModals).not.toContain('settings-modal'),
             (s) => expect.soft(s.openModals, '進むと開く').toContain('settings-modal'));
     });

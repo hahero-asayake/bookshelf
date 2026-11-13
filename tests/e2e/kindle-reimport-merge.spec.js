@@ -29,6 +29,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = JSON.parse(readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8'));
@@ -215,7 +216,7 @@ test('回帰: 手動追加由来の readStatus は再取込で Amazon 値に黙�
     // 実UI操作で手動追加 (読了日あり = readStatus:'READ')。
     // #add-book-manually は設定モーダル「蔵書」セクション内にあるため先に開く
     // (standard-ops.spec.js と同じ _openSettingsModal ショートカットを使用)。
-    await page.evaluate(() => window.bookshelf._openSettingsModal('library-section'));
+    await openSettingsByClick(page, 'library-section');
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await page.locator('#add-book-manually').click();
     await page.locator('#manual-asin').fill('B0MANUALRD');

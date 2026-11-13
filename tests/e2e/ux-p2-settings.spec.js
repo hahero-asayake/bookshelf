@@ -8,6 +8,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -32,7 +33,7 @@ test('P2: スマホは一覧→詳細、戻るで一覧→閉じる (history 2�
     await page.setViewportSize({ width: 390, height: 800 });
     const errors = await bootApp(page);
     const content = page.locator('.settings-modal-content');
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     // 一覧 (master)
     await expect(content).toHaveAttribute('data-settings-view', 'master');
     await expect(page.locator('#settings-back')).toBeHidden();
@@ -61,7 +62,7 @@ test('P2: 戻るボタンで一覧へ戻る (スマホ)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await bootApp(page);
     const content = page.locator('.settings-modal-content');
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await expect(content).toHaveAttribute('data-settings-view', 'detail');
     await expect(page.locator('#sync-section')).toHaveClass(/pane-active/);
     await page.locator('#settings-back').click();
@@ -70,7 +71,7 @@ test('P2: 戻るボタンで一覧へ戻る (スマホ)', async ({ page }) => {
 
 test('P2: フッターの「閉じる」は廃止。PC(行き先の1つ)は←も×も出ない(イシュー#511 X1)。ESCでも閉じる', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await expect(page.locator('#settings-modal-done')).toHaveCount(0);
     // イシュー#511 X1 §4-2: PC(901px以上)は設定が「行き先」の1つなので、既定(デスクトップ)viewportでは
@@ -84,7 +85,7 @@ test('P2: フッターの「閉じる」は廃止。PC(行き先の1つ)は←�
 
 test('P2: PC は左レール+ペイン。既定アカウント、レールで切替', async ({ page }) => {
     const errors = await bootApp(page); // 既定 = デスクトップ
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     await expect(page.locator('#account-section')).toBeVisible();
     await expect(page.locator('#settings-master .settings-cat[data-cat="account-section"]')).toHaveClass(/cat-active/);
     // レールで同期へ切替 → ペインが入れ替わる
@@ -97,7 +98,7 @@ test('P2: PC は左レール+ペイン。既定アカウント、レールで切
 
 test('P2: ターゲット直開きで該当カテゴリが開きフォーカス対象が見える', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await expect(page.locator('#sync-section')).toHaveClass(/pane-active/);
     await expect(page.locator('#sync-method-select')).toBeVisible();
     expect(errors).toEqual([]);
@@ -125,8 +126,8 @@ test.describe('スマホ 設定スクロール', () => {
         const errors = await bootApp(page);
         await page.evaluate(() => {
             window.HubAuth.renderSignInButton = () => {};
-            window.bookshelf._openSettingsModal('account-section');
         });
+        await openSettingsByClick(page, 'account-section');
         await expect(page.locator('#settings-modal')).toHaveClass(/show/);
         await page.waitForTimeout(500);
         const diag = await page.evaluate(() => {
@@ -144,7 +145,7 @@ test.describe('スマホ 設定スクロール', () => {
 test('P2 (イシュー#435): PC は「アプリのページ」として開く。左サイドバーが見え、backdropに覆われずクリックできる (#430と同じ統一方針)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     const sidebar = page.locator('#app-sidebar');
     await expect(sidebar).toBeVisible();
@@ -163,7 +164,7 @@ test('P2 (イシュー#435): PC は「アプリのページ」として開く。
 test('P2 (イシュー#435): 390でカードの左右余白が過大でない(目安32px=片側16px前後)', async ({ page }) => {
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     const sectionBox = await page.locator('#account-section').boundingBox();
     const sidePadding = sectionBox.x;
@@ -175,7 +176,7 @@ test('P2 (イシュー#511 X1): 390の一覧(master)は「← ホーム」で閉
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const content = page.locator('.settings-modal-content');
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     await expect(content).toHaveAttribute('data-settings-view', 'master');
     // 一覧では「← 設定」(詳細へ戻る方)は出ない。「← ホーム」(親へ)が出る(イシュー#511 X1 §4-2)
     await expect(page.locator('#settings-back')).toBeHidden();
@@ -189,7 +190,7 @@ test('P2 (イシュー#511 X1): 390の節(detail)は「← 設定」で一覧に
     const errors = await bootApp(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const content = page.locator('.settings-modal-content');
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(content).toHaveAttribute('data-settings-view', 'detail');
     await expect(page.locator('#settings-back')).toBeVisible();
     // 詳細では「← ホーム」(一覧でだけ出す方)は出ない(イシュー#511 X1 §4-2。一段ずつ戻る)

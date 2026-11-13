@@ -5,6 +5,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -46,7 +47,7 @@ async function bootApp(page) {
 // ===== PC: ESC で閉じる =====
 test('ESC: 設定・取込モーダルが閉じる (PC)', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => window.bookshelf._openSettingsModal());
+    await openSettingsByClick(page);
     await expect(page.locator('#settings-modal')).toHaveClass(/show/);
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
@@ -200,7 +201,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     test('設定モーダル: 戻るで閉じてアプリに留まる', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal());
+        await openSettingsByClick(page);
         await expect(page.locator('#settings-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
@@ -242,7 +243,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     test('設定→除外一覧: 戻るは除外一覧だけ閉じ、設定は残る (C-281)', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openSettingsModal('library-section'));
+        await openSettingsByClick(page, 'library-section');
         await expect(page.locator('#settings-modal')).toHaveClass(/show/);
         await page.evaluate(() => window.bookshelf.showExclusionsModal());
         await expect(page.locator('#exclusions-modal')).toHaveClass(/show/);
@@ -511,7 +512,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     test('プラグイン設定モーダル: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openPluginSettings('dark-theme'));
+        await openPluginSettingsByClick(page, 'dark-theme');
         await expect(page.locator('#plugin-settings-modal')).toHaveClass(/show/);
         await page.goBack();
         await expect(page.locator('#plugin-settings-modal')).not.toHaveClass(/show/);

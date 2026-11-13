@@ -6,6 +6,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -45,7 +46,7 @@ test('未設定時は「未設定」表示、フォームから設定すると�
             body: JSON.stringify({ username: body.username, bookshelfBase: `https://bookshelf.asayake.org/${body.username}/` })
         });
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(page.locator('#account-username-current')).toContainText('未設定');
     await expect(page.locator('#account-username-current')).toHaveClass(/is-unset/);
 
@@ -66,7 +67,7 @@ test('Worker のバリデーションエラー (409 使用中) はフォーム�
     await page.route('**/username', async (route) => {
         await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'username taken' }) });
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await page.locator('#account-username-input').fill('taken-name');
     await page.locator('#account-username-save').click();
 
@@ -83,7 +84,7 @@ test('Worker のバリデーションエラー (400 形式不正/予約語) も�
     await page.route('**/username', async (route) => {
         await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'invalid or reserved username' }) });
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await page.locator('#account-username-input').fill('TOP');
     await page.locator('#account-username-save').click();
 
@@ -95,7 +96,7 @@ test('Worker のバリデーションエラー (400 形式不正/予約語) も�
 
 test('設定済みなら現在値と bookshelfBase を表示する', async ({ page }) => {
     const errors = await bootApp(page, { username: 'hahero', bookshelfBase: 'https://bookshelf.asayake.org/hahero/' });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(page.locator('#account-username-current')).toContainText('hahero');
     await expect(page.locator('#account-username-current')).toContainText('bookshelf.asayake.org/hahero/');
     await expect(page.locator('#account-username-current')).not.toHaveClass(/is-unset/);
@@ -109,7 +110,7 @@ test('ハブ未接続時は username フォームごと非表示 (account-connec
         cfg.hub = { apiBase: '', key: '' };
         SyncConfigManager.save(cfg);
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('account-section'));
+    await openSettingsByClick(page, 'account-section');
     await expect(page.locator('#account-connected')).toBeHidden();
     await expect(page.locator('#account-username')).toBeHidden(); // account-connected の子なので追従して隠れる
     expect(errors).toEqual([]);

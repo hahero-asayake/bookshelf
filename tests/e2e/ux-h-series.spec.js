@@ -5,6 +5,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openSettingsByClick } from './helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -58,7 +59,7 @@ test('H-1: iOS・未同期では保存先設定へ誘導するバナーが出る
 
 test('ローカルは PC 限定: showDirectoryPicker 非対応環境では同期セレクトの local が無効', async ({ page }) => {
     await bootApp(page, { initScript: asMobile(IOS_UA) });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     // モバイル等ではローカル保存は選べない (GitHub / ハブの 2 択に一本化)
     await expect(page.locator('#sync-method-select option[value="local"]')).toBeDisabled();
     await expect(page.locator('#sync-method-select option[value="github"]')).toBeEnabled();
@@ -88,7 +89,7 @@ async function openHubPanel(page, { method }) {
         window.bookshelf.syncConfig = cfg;
     }, method);
     // 同期セクション (details) を開いてセレクトを可視化してから切替える
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await page.selectOption('#sync-method-select', 'hub');
 }
 
@@ -124,7 +125,7 @@ test('H-3: 未ログイン・規約同意済みならハブ節内に直接ログ
         if (!window.bookshelf.userData.settings) window.bookshelf.userData.settings = {};
         window.bookshelf.userData.settings.ackTermsPrivacy = { at: '2026-06-26T00:00:00Z', v: 'v1.0' };
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await page.selectOption('#sync-method-select', 'hub');
     await expect(page.locator('#hub-gsi-button')).toBeVisible();
     await expect(page.locator('#hub-goto-account')).toBeHidden();
@@ -156,7 +157,7 @@ test('H-3: 規約同意済み・未ログインでもブート時に Google GIS 
     // ブート直後は GIS を実体化していない (遅延読込方針)
     expect(await page.evaluate(() => window.__gisRenderCount)).toBe(0);
     // ハブパネルを開いて初めて実体化される
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await page.selectOption('#sync-method-select', 'hub');
     await expect.poll(() => page.evaluate(() => window.__gisRenderCount)).toBe(1);
 });
@@ -166,7 +167,7 @@ test('H-3: 未ログイン・規約未同意ならアカウント節への誘導
     await page.evaluate(() => {
         if (window.bookshelf.userData.settings) delete window.bookshelf.userData.settings.ackTermsPrivacy;
     });
-    await page.evaluate(() => window.bookshelf._openSettingsModal('sync-method-select'));
+    await openSettingsByClick(page, 'sync-method-select');
     await page.selectOption('#sync-method-select', 'hub');
     await expect(page.locator('#hub-goto-account')).toBeVisible();
     await expect(page.locator('#hub-gsi-button')).toBeHidden();
