@@ -335,3 +335,45 @@ test.describe('POST /data/batch の楽観ロック (イシュー#376)', () => {
         expect(errors.filter((e) => !e.includes('はリモートで内容が変わっている'))).toEqual([]);
     });
 });
+
+// イシュー#603: 保存 (まとめ保存) が失敗していて、保存できていない変更がある間は公開を止める
+// (js/bookshelf.js _runPublishExport の公開前の確認)。保存が直った後は公開できる。
+test.describe('保存できていない変更があると公開を止める (イシュー#603)', () => {
+    test('保存の失敗中に「公開」を押すと公開が止まり、公開の書き込みは0件。保存が直った後は公開できる', async ({ page }) => {
+        // 自動の再試行 (60秒後) が途中で走らないようにする
+        await page.addInitScript(() => localStorage.setItem('bookshelf.flag.syncRetryDelaysMs', '[60000,60000,60000]'));
+        const { getPublishCount } = await bootApp(page);
+
+        // ここから保存先へのまとめ保存 (POST /data/batch) を失敗させる。後に登録した route が先に当たる
+        let failBatch = true;
+        let batchFails = 0;
+        await page.route(`${HUB}/data/batch`, (route) => {
+            if (failBatch && route.request().method() === 'POST') {
+                batchFails += 1;
+                return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"injected write failure"}' });
+            }
+            return route.fallback();
+        });
+        // 保存が要る変更を画面から作る (本棚を1つ足す) → まとめ保存が失敗する
+        await page.locator('#sidebar-add-bookshelf').click();
+        await expect(page.locator('#bookshelf-form-modal')).toHaveClass(/show/);
+        await page.locator('#bookshelf-name').fill('保存できない本棚');
+        await page.locator('#save-bookshelf-form').click();
+        await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
+        await expect.poll(() => batchFails, { timeout: 15_000, message: 'まとめ保存が失敗する' }).toBeGreaterThan(0);
+
+        const id = await createArticleWithBook(page, '公開前の確認の記事');
+        await page.locator(`#art-list [data-id="${id}"] [data-act="publish"]`).click();
+        await expect(page.locator('.toast', { hasText: '保存できていない変更があるため、公開を止めました。保存できてから、もう一度公開してください。' })).toBeVisible({ timeout: 10_000 });
+        expect(getPublishCount(), '公開の書き込みは0件').toBe(0);
+
+        // 保存先が直り、ネットにつながった時の再試行で保存が届いた後は、公開できる
+        failBatch = false;
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+        await expect(page.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
+        await page.waitForTimeout(1000);
+        await page.locator(`#art-list [data-id="${id}"] [data-act="publish"]`).click();
+        await expect(page.locator('.toast-success', { hasText: '公開しました' })).toBeVisible({ timeout: 10_000 });
+        expect(getPublishCount(), '直った後は公開が1回だけ届く').toBe(1);
+    });
+});

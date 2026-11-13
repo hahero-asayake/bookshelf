@@ -6,6 +6,7 @@
 //   - ネットにつながった時に再試行する
 // 失敗は保存先の模擬 (tests/e2e/helpers/storage-fakes.js) で注入し、操作は画面からだけ行う。
 // 再試行の間隔は E2E 用のフラグ (bookshelf.flag.syncRetryDelaysMs) で短くする。
+import fs from 'node:fs';
 import { test, expect } from './helpers/test-base.js';
 import {
     installFakeHub, FAKE_HUB_BASE, installFakeGitHub, FAKE_GITHUB,
@@ -206,4 +207,98 @@ test('自動の再試行を待つ間にネットにつながったら、すぐ�
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await expect.poll(() => remoteName(remote, keep), { timeout: 10_000, message: 'つながった時の再試行で届く' }).toBe('改名1');
     await expect(failureRow(page)).toHaveCount(0);
+});
+
+// ===== GitHub の 401 (トークン失効): トークンを更新して1回だけ保存し直す (イシュー#603) =====
+const OAUTH_PROXY = 'https://bookshelf-oauth-proxy.asayake-hahero.workers.dev';
+
+async function bootWithRefreshableGitHub(page) {
+    const gh = await installFakeGitHub(page);
+    const refreshCalls = [];
+    await page.route(`${OAUTH_PROXY}/**`, async (route) => {
+        const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+        if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+        refreshCalls.push(route.request().url());
+        return route.fulfill({
+            status: 200, headers: cors, contentType: 'application/json',
+            body: JSON.stringify({ access_token: 'ght_new', refresh_token: 'ghr_new', expires_in: 28800, refresh_token_expires_in: 15811200 })
+        });
+    });
+    await page.addInitScript((cfg) => {
+        localStorage.setItem('bookshelf_sync', JSON.stringify({
+            method: 'github',
+            github: {
+                owner: cfg.owner, repo: cfg.repo, branch: cfg.branch, basePath: '',
+                token: 'ght_test', refreshToken: 'ghr_test', tokenExpiresAt: Date.now() + 8 * 3600 * 1000
+            }
+        }));
+    }, FAKE_GITHUB);
+    await page.goto('index.html');
+    await confirmOk(page);
+    await expect.poll(() => gh.has(shelfFile('all'))).toBe(true);
+    return { remote: gh, refreshCalls };
+}
+
+test('GitHub: 保存で 401 が返ったら、トークンを更新して1回だけ保存し直し、何も出さずに保存される (イシュー#603)', async ({ page }) => {
+    // 自動の再試行 (60秒後) ではなく、401 の保存し直しで届くことを見る
+    await retryDelays(page, [60_000, 60_000, 60_000]);
+    const { remote, refreshCalls } = await bootWithRefreshableGitHub(page);
+    const keep = await createShelf(page, remote, '残す本棚');
+
+    remote.failNextWrites(1, { status: 401 });
+    await renameShelf(page, keep, '改名1');
+    await expect.poll(() => remoteName(remote, keep), { timeout: 15_000, message: '更新したトークンで保存し直して届く' }).toBe('改名1');
+    expect(refreshCalls.length, 'トークンの更新が1回呼ばれる').toBe(1);
+    await expect(failureRow(page)).toHaveCount(0);
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('bookshelf_sync')).github.token);
+    expect(saved, '更新したトークンが保存先の設定に残る').toBe('ght_new');
+});
+
+test('GitHub: トークンを更新しても 401 なら、再試行を待たずに「接続し直す」の案内がすぐ出る (イシュー#603)', async ({ page }) => {
+    await retryDelays(page, [60_000, 60_000, 60_000]);
+    const { remote, refreshCalls } = await bootWithRefreshableGitHub(page);
+    const keep = await createShelf(page, remote, '残す本棚');
+
+    remote.failNextWrites(2, { status: 401 });
+    await renameShelf(page, keep, '改名1');
+    await expect(warnRow(page)).toBeVisible({ timeout: 10_000 });
+    await expect(warnRow(page)).toHaveAttribute('data-sync-failure', 'auth');
+    await expect(warnRow(page)).toContainText('GitHub の接続が切れたため、保存できませんでした。設定から接続し直してください。');
+    await expect(warnRow(page).locator('[data-status-action="open-sync"]')).toHaveText('接続し直す');
+    await expect(warnRow(page).locator('[data-status-action="retry-sync"]'), 'ログイン切れに「再試行」は出さない').toHaveCount(0);
+    expect(refreshCalls.length, 'トークンの更新は1回だけ').toBe(1);
+    expect(await remoteName(remote, keep)).toBe('残す本棚');
+});
+
+// ===== 日本語のブラウザでの表記 (②指示: ja-JP で1本) =====
+test.describe('日本語のブラウザでの表示 (イシュー#603)', () => {
+    test.use({ locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
+
+    test('同期欄の時刻と状態バーの文言が日本語の表記で出て、状態バーの行がはみ出さない', async ({ page }) => {
+        await retryDelays(page, [100, 100, 100]);
+        const { remote, inject } = await bootWithHub(page);
+        const keep = await createShelf(page, remote, '残す本棚');
+        const status = page.locator('#obsidian-sync-status');
+        await expect(status).toContainText('保存済み');
+        const okText = ((await status.textContent()) || '').trim();
+
+        await inject.failNextWrites(4);
+        await renameShelf(page, keep, '改名1');
+        await expect(warnRow(page)).toBeVisible({ timeout: 15_000 });
+        const barText = ((await warnRow(page).textContent()) || '').trim();
+        const box = await warnRow(page).evaluate((el) => {
+            const msg = el.querySelector('.status-msg');
+            return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, height: Math.round(el.getBoundingClientRect().height),
+                msgScroll: msg ? msg.scrollWidth : 0, msgClient: msg ? msg.clientWidth : 0 };
+        });
+        const ngText = ((await status.textContent()) || '').trim();
+        const body = JSON.stringify({ okText, barText, ngText, box }, null, 2);
+        fs.writeFileSync('/tmp/603-ja.json', body);
+        await test.info().attach('ja-JP の表示', { body, contentType: 'application/json' });
+
+        expect(okText, '時刻は日本語の表記 (24時間・AM/PM なし)').toMatch(/^\d{1,2}:\d{2}:\d{2} 保存済み$/);
+        expect(barText).toContain('Asayake ハブに保存できませんでした。通信が戻ったら「再試行」を押してください。');
+        expect(ngText).toBe('Asayake ハブに保存できませんでした。通信が戻ったら「再試行」を押してください。');
+        expect(box.scrollWidth, '状態バーの行が横にはみ出さない').toBeLessThanOrEqual(box.clientWidth + 1);
+    });
 });

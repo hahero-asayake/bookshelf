@@ -404,3 +404,39 @@ describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・
         expect(other._versionCache.ns).toBe('virtualBookshelf_ghShaCache_o2/r2/dev');
     });
 });
+
+describe('commitBatch の 401 は GitHubAuthError (イシュー#603)', () => {
+    // まとめ保存 (Trees API) で 401 が返ったら、呼び手 (js/bookshelf.js _syncWithAuthRetry) がトークンを
+    // 更新して1回だけ保存し直せるよう GitHubAuthError にする。401 以外は今までどおりの Error。
+    const okSteps = [
+        () => new Response(JSON.stringify({ object: { sha: 'refsha1' } }), { status: 200 }),
+        () => new Response(JSON.stringify({ tree: { sha: 'treesha1' } }), { status: 200 }),
+        () => new Response(JSON.stringify({ sha: 'blobsha1' }), { status: 200 }),
+        () => new Response(JSON.stringify({ sha: 'newtreesha1' }), { status: 200 }),
+        () => new Response(JSON.stringify({ sha: 'newcommitsha1' }), { status: 200 })
+    ];
+    const unauthorized = () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 });
+
+    it('ref 更新 (最後の段) の 401 は GitHubAuthError', async () => {
+        mockFetch([...okSteps, unauthorized], { treeFails: false });
+        adapter.beginBatch();
+        adapter.addBatchEntry('p.json', 'B');
+        await expect(adapter.commitBatch()).rejects.toMatchObject({ name: 'GitHubAuthError' });
+    });
+
+    it('ref 取得 (最初の段) の 401 も GitHubAuthError', async () => {
+        mockFetch([unauthorized], { treeFails: false });
+        adapter.beginBatch();
+        adapter.addBatchEntry('p.json', 'B');
+        await expect(adapter.commitBatch()).rejects.toMatchObject({ name: 'GitHubAuthError' });
+    });
+
+    it('401 以外 (500) は今までどおりの Error で、GitHubAuthError ではない', async () => {
+        mockFetch([...okSteps, () => new Response('{"message":"boom"}', { status: 500 })], { treeFails: false });
+        adapter.beginBatch();
+        adapter.addBatchEntry('p.json', 'B');
+        const err = await adapter.commitBatch().catch((e) => e);
+        expect(err.name).toBe('Error');
+        expect(err.message).toContain('update ref');
+    });
+});

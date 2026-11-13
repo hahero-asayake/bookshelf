@@ -200,7 +200,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
     const commits = new Map();   // commit sha → { tree, parents }
     const writes = [];
     const deleteRequests = [];
-    const state = { seq: 0, failWrites: 0, head: null, commitCount: 0 };
+    const state = { seq: 0, failWrites: 0, failStatus: 500, head: null, commitCount: 0 };
 
     const newSha = (kind) => `${kind}${String(++state.seq).padStart(7, '0')}`.padEnd(40, '0');
     const snapshot = () => new Map([...files].map(([p, f]) => [p, f.sha]));
@@ -244,7 +244,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
         if (rel === `git/refs/heads/${branch}`) {
             if (method === 'GET') return json(200, { ref: `refs/heads/${branch}`, object: { type: 'commit', sha: state.head } });
             if (method === 'PATCH') {
-                if (shouldFailWrite()) return json(500, { message: 'injected write failure' });
+                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
                 const { sha } = body();
                 const commit = commits.get(sha);
                 if (!commit) return json(422, { message: 'Object does not exist' });
@@ -341,7 +341,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
                 return json(200, [...seen.values()]);
             }
             if (method === 'PUT') {
-                if (shouldFailWrite()) return json(500, { message: 'injected write failure' });
+                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
                 const b = body();
                 const cur = files.get(path);
                 if (cur && !b.sha) return json(422, { message: `Invalid request.\n\n"sha" wasn't supplied.` });
@@ -356,7 +356,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
                 return json(cur ? 200 : 201, { content: { name: path.split('/').pop(), path, sha }, commit: { sha: state.head } });
             }
             if (method === 'DELETE') {
-                if (shouldFailWrite()) return json(500, { message: 'injected write failure' });
+                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
                 const b = body();
                 const cur = files.get(path);
                 deleteRequests.push({ path, via: 'single', existed: !!cur });
@@ -386,7 +386,8 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
                 .sort();
         },
         commitCount: () => state.commitCount,
-        failNextWrites: (n = 1) => { state.failWrites = n; },
+        // opts.status = 失敗で返す状態コード (既定 500。401 = トークン失効・イシュー#603)
+        failNextWrites: (n = 1, { status = 500 } = {}) => { state.failWrites = n; state.failStatus = status; },
         // 注入した失敗のうち、まだ起きていない回数 (0 になったら失敗が起きた)
         failuresLeft: () => state.failWrites
     };

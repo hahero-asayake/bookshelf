@@ -313,13 +313,13 @@ class GitHubAdapter extends StorageAdapter {
         // 気づかれにくい形で失敗しうる。no-store で必ず最新を取る。
         const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
         const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers(), cache: 'no-store' });
-        if (!refRes.ok) throw new Error(this._ghErr(refRes, `get ref ${this.branch}`));
+        if (!refRes.ok) throw this._batchError(refRes, `get ref ${this.branch}`);
         const latestCommitSha = refRes.json.object.sha;
 
         // 2. 既存 commit の base tree sha
         const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${latestCommitSha}`;
         const commitRes = await StorageAdapter.fetchJSON(commitUrl, { headers: this._headers() });
-        if (!commitRes.ok) throw new Error(this._ghErr(commitRes, `get commit ${latestCommitSha}`));
+        if (!commitRes.ok) throw this._batchError(commitRes, `get commit ${latestCommitSha}`);
         const baseTreeSha = commitRes.json.tree.sha;
 
         // 2'. 削除は土台の tree にあるパスだけに絞る (イシュー#587)。Trees API は無いパスの削除をエラーにする
@@ -348,7 +348,7 @@ class GitHubAdapter extends StorageAdapter {
                         encoding: 'base64'
                     })
                 });
-                if (!blobRes.ok) throw new Error(this._ghErr(blobRes, `create blob ${e.path}`));
+                if (!blobRes.ok) throw this._batchError(blobRes, `create blob ${e.path}`);
                 treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: blobRes.json.sha });
             }
         }
@@ -362,7 +362,7 @@ class GitHubAdapter extends StorageAdapter {
                 tree: treeEntries
             })
         });
-        if (!treeRes.ok) throw new Error(this._ghErr(treeRes, 'create tree'));
+        if (!treeRes.ok) throw this._batchError(treeRes, 'create tree');
 
         // 5. Commit を作成
         const msg = message || `chore(bookshelf): batch update ${entries.length} file(s)`;
@@ -375,7 +375,7 @@ class GitHubAdapter extends StorageAdapter {
                 parents: [latestCommitSha]
             })
         });
-        if (!newCommitRes.ok) throw new Error(this._ghErr(newCommitRes, 'create commit'));
+        if (!newCommitRes.ok) throw this._batchError(newCommitRes, 'create commit');
 
         // 6. Ref を更新 (force: false = 楽観ロック)
         const updateRefRes = await StorageAdapter.fetchJSON(refUrl, {
@@ -386,7 +386,7 @@ class GitHubAdapter extends StorageAdapter {
         if (updateRefRes.status === 422) {
             throw new GitHubConflictError(`Branch ${this.branch} was updated since batch start`, this.branch);
         }
-        if (!updateRefRes.ok) throw new Error(this._ghErr(updateRefRes, `update ref ${this.branch}`));
+        if (!updateRefRes.ok) throw this._batchError(updateRefRes, `update ref ${this.branch}`);
 
         // 書き込み後はキャッシュした sha を全部破棄 (Tree 経由で更新したので個別 sha は古い)
         this._shaCache.clear();
@@ -408,6 +408,13 @@ class GitHubAdapter extends StorageAdapter {
             if (content && content.type === 'file') found.add(this._fullPath(e.path));
         }
         return found;
+    }
+
+    // まとめ保存 (Trees API) の失敗。401 はトークン失効＝GitHubAuthError にして、呼び手の
+    // 「トークンを更新して1回だけ保存し直す」(js/bookshelf.js _syncWithAuthRetry) に渡す (イシュー#603)
+    _batchError(fetchResult, ctx) {
+        if (fetchResult.status === 401) return new GitHubAuthError(`GitHub authentication failed (${ctx})`);
+        return new Error(this._ghErr(fetchResult, ctx));
     }
 
     _ghErr(fetchResult, ctx) {
