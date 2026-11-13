@@ -4,6 +4,7 @@
 // 「.cancel-edit-btn 共有により未保存入力が無言で消える」旧実装の欠陥が解消したことと、
 // topbar の ✓ を position:sticky にしたことで 390 のキーボード近似下でも見えることを確かめる。
 import { test, expect } from './helpers/test-base.js';
+import { openCommandPalette } from './helpers/nav.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -39,7 +40,7 @@ async function openFromShelf(page) {
     await page.locator(`.book-item[data-asin="${ASIN}"]`).first().click();
 }
 async function openFromPalette(page) {
-    await page.evaluate(() => window.bookshelf._openPalette());
+    await openCommandPalette(page);
     await page.waitForTimeout(200);
     await page.fill('#command-palette input', 'フィクスチャの本 1');
     await page.waitForTimeout(300);

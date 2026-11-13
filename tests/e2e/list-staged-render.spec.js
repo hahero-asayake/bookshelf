@@ -4,6 +4,7 @@
 //   2. ui:books-rendered は全件を置き終えてから1回だけ出る（途中の段階では出ない）
 //   3. 途中の状態で並べ替え・1冊移動・クリックが来ても壊れない（重複・欠け・順序ずれ・例外が無い）
 import { test, expect } from './helpers/test-base.js';
+import { waitForListStaged, getOrderedBooksToRender } from './helpers/app-misc.js';
 
 const N = 913;
 const books = Array.from({ length: N }, (_, i) => {
@@ -56,15 +57,15 @@ async function setup(page) {
 
 // DOM の並び（asin）が、アプリが描くべき並び順と完全に一致するか
 async function expectDomMatchesOrder(page) {
+    const want = await getOrderedBooksToRender(page);
     const r = await page.evaluate(() => {
         const dom = Array.from(document.querySelectorAll('#bookshelf > .book-item')).map((el) => el.dataset.asin);
-        const want = window.bookshelf._orderedBooksToRender().map((b) => b.asin);
-        return { dom, want, uniq: new Set(dom).size, others: document.querySelectorAll('#bookshelf > :not(.book-item)').length };
+        return { dom, uniq: new Set(dom).size, others: document.querySelectorAll('#bookshelf > :not(.book-item)').length };
     });
     expect(r.dom.length).toBe(N);
     expect(r.uniq).toBe(N);
     expect(r.others).toBe(0);
-    expect(r.dom).toEqual(r.want);
+    expect(r.dom).toEqual(want);
 }
 
 test.describe('#401 並べ替えの段階描画（913冊）', () => {
@@ -97,7 +98,7 @@ test.describe('#401 並べ替えの段階描画（913冊）', () => {
             sel.value = 'title';
             sel.dispatchEvent(new Event('change', { bubbles: true }));
         });
-        await page.waitForFunction(() => !window.bookshelf._listTail);
+        await waitForListStaged(page);
         await page.waitForTimeout(300);
         await expectDomMatchesOrder(page);
         const emits = await page.evaluate(() => window.__rendered);
@@ -137,7 +138,7 @@ test.describe('#401 並べ替えの段階描画（913冊）', () => {
             const first = document.querySelector('#bookshelf > .book-item');
             first.click();
         });
-        await page.waitForFunction(() => !window.bookshelf._listTail);
+        await waitForListStaged(page);
         await page.waitForTimeout(300);
         await expectDomMatchesOrder(page);
         expect(errors).toEqual([]);

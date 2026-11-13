@@ -46,11 +46,39 @@ const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
 // 専用の(c)ヘルパー(openArtPublishPanelReopen/createArticlesAndRenderList/
 // openArtSheetInternal)へ集約し、spec側に生の内部参照を残さない形にした。
 // 詳細はdocs/char/u9-g3-3-plan.md参照。
-const MAX = 128;
+//
+// U9 G4 step1(イシュー#554・②承認2026-11-13): 正規表現を`_[A-Za-z]`から`_+[A-Za-z]`へ広げ、
+// `__releaseRead`(二重アンダースコア始まり・publish-article-editor.spec.js)も対象に含めた。
+// 広げる前(128)と広げた後(130=128+__releaseRead 2件)の対応は下記step2/3のコメントに残す。
+// 他に新しく引っかかる名前は無かった(確認済み)。
+//
+// U9 G4 step2(同期・競合系、イシュー#554)置き換え後の実測値 = widenedパターンで100
+// (narrowでは98=90(bookshelf._)+8(app._)。130-100=30。__releaseRead 2件は未着手のためwidened
+// のみ-2ではなく130→100で変わらず含んだまま)。対象42件のうち純減30件、全て(c)。
+// `_isSyncReady`(27件)・`_scheduleSync`・_runPendingSync`・`_handleSyncConflict`・
+// `_conflictNotified`・`_showConflictDialog`をtests/e2e/helpers/sync.jsへ集約した。
+// touch-reorder.spec.jsのapp._isSyncReadyとusername-publish-gate.spec.jsの_isSyncReady
+// (_runPublishExportと同一evaluate)の計2件は、別群(step3)の名前と連結しているため意図的に
+// 未変更(次のstep3で一緒に処理)。詳細はdocs/char/u9-g4-plan.md参照。
+//
+// U9 G4 step3(drawer・body view・palette・PWA/version・route等・__releaseRead、イシュー#554)
+// 置き換え後の実測値 = 82(widened。narrowでは80=72(bookshelf._)+8(app._)。
+// widened基準130(step1広げた後)から82への純減48。spec側(helpersの外)は0件
+// (narrow/widenedとも全てhelpers内：art-editor.js 39・app-misc.js 20・sync.js 10・
+// book-memo.js 8・settings.js 5)。(a)化：_openDrawer9・_openPalette2・_applyRatingEverywhere1
+// の12件(tests/e2e/helpers/nav.js新設)。(c)化：_setBodyView4・_navigateFromUi2・_applyRoute1・
+// _checkAppVersion3・_applyPwaUpdate2・_pwaUpdateReg2・_onPwaUpdateReady1・_listTail2・
+// _orderedBooksToRender1・_runPublishExport1・_updateCoverSizeOptionLabels1(削除・setView側の
+// 自動呼び出しで代替・js/bookshelf.js:1114)・_modalHistPush1(常にtrueの存在確認ガードを撤去)・
+// _applyHeaderLayout1・__releaseRead2・touch-reorder.spec.js連結分の_isSyncReady/_applyRoute/
+// _openDrawer/_applyHeaderLayout4件(mockSyncRouteAndMobileCompatへ集約)・
+// username-publish-gate.spec.js連結分の_isSyncReady1件(tests/e2e/helpers/app-misc.js新設)。
+// 詳細はdocs/char/u9-g4-plan.md参照。
+const MAX = 82;
 
 const PATTERNS = [
-    { name: 'bookshelf._', re: /\bbookshelf\._[A-Za-z]/g },
-    { name: 'app._', re: /\bapp\._[A-Za-z]/g },
+    { name: 'bookshelf._', re: /\bbookshelf\._+[A-Za-z]/g },
+    { name: 'app._', re: /\bapp\._+[A-Za-z]/g },
 ];
 
 function walk(dir, exts, files = []) {

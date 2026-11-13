@@ -6,6 +6,7 @@
 import { test, expect } from './helpers/test-base.js';
 import { addBlock, openArtSheet } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
+import { openDrawer } from './helpers/nav.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -97,7 +98,7 @@ const FACES = [
     },
     {
         id: 'drawer', sel: '#app-sidebar', openFn: '_openDrawer',
-        openByButton: async (p) => { await p.evaluate(() => window.bookshelf._openDrawer()); await settle(p, 600); },
+        openByButton: async (p) => { await openDrawer(p); await settle(p, 600); },
     },
     {
         id: 'art-sheet', sel: '#art-drawer', openFn: '_artOpenSheet',

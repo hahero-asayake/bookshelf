@@ -6,6 +6,7 @@
 // 修正前のアーカイブ(content-visibility:hidden のまま)を配信したサーバーを BASE_URL に渡すと落ち、
 // 修正後(working tree / 本テスト対象コミット)では通ることを tmp/373/e2e-before.log・e2e-after.log に残す。
 import { test, expect } from './helpers/test-base.js';
+import { navigateToMainInternal } from './helpers/app-misc.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
@@ -136,7 +137,7 @@ test.describe('#373 案D: ホーム表示中は一覧に Tab フォーカスが�
         // 「一度は表示された状態から隠した」経路で確認する・初回からホームのままだと検証にならない)
         await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
         await page.waitForTimeout(200);
-        await page.evaluate(() => { if (window.bookshelf.router) window.bookshelf._navigateFromUi('main'); else window.bookshelf._setBodyView('main'); });
+        await navigateToMainInternal(page);
         await page.waitForTimeout(200);
 
         const shelfState = await page.evaluate(() => {

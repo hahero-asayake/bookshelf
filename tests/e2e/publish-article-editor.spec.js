@@ -3,6 +3,7 @@ import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, setArtPreviewStallMs, setArtPreviewHardDeadlineMs, runArtRenderList, runArtRenderPublishPanel, spyOnArtPublish, wasArtPublishCalled, openArtEditor, editArtBlockViaMenu, openArtSheet, closeArtSheet, openArtPublishPanelReopen, createArticlesAndRenderList } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { mockSyncReady, stubScheduleSync } from './helpers/sync.js';
+import { stallLongMemoRead, releaseLongMemoRead } from './helpers/app-misc.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -658,13 +659,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
 
-        await page.evaluate(() => {
-            let release;
-            window.bookshelf.__releaseRead = () => release && release();
-            window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => {
-                release = () => resolve('# 長文メモ本文');
-            });
-        });
+        await stallLongMemoRead(page);
 
         openPreview(page); // await しない (進捗中の途中状態を見るため)
         // イシュー#161: 進捗文言の出力先をiframe srcdoc非依存(親DOM #pp-preview-progress-msg)へ
@@ -677,7 +672,7 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             return text;
         }, { timeout: 5000 }).toContain('長文メモ 0/1 読込中');
 
-        await page.evaluate(() => window.bookshelf.__releaseRead());
+        await releaseLongMemoRead(page);
         // イシュー#405 step3: CI(03a64d5)でここが5000msでタイムアウトした。#405 step1の切り分けと
         // #384の再現条件(CPU0専有burner4本+CDP CPUスロットリング10倍)での反復(単独10回・ファイル全体
         // 95テスト1パス、いずれも0件失敗)で、アプリ側(生成処理・pp-preview-progressの開閉ロジック)に

@@ -11,6 +11,7 @@
 // (ブラウザ内蔵のタッチ→ポインタ変換レイヤーだけを迂回する)。
 import { test, expect } from './helpers/test-base.js';
 import { openSettingsByClick } from './helpers/settings.js';
+import { mockSyncRouteAndMobileCompat } from './helpers/app-misc.js';
 
 const BOOKS = [['B0FIX00001', '三体', '劉慈欣']];
 const library = {
@@ -49,31 +50,7 @@ async function bootApp(page) {
     }, [JSON.stringify(userData), JSON.stringify(library)]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
-    await page.evaluate(() => {
-        const app = window.bookshelf;
-        app.saveUserData = async () => {};
-        app._isSyncReady = () => true;
-        // ルーター(hashchange)の非同期な再適用が showBookDetail(book, true) を showBookDetail(book, false)
-        // で上書きしてしまう現象を実測した(bd-sectionテスト用、直接関数呼び出しとURLハッシュが不整合なため)。
-        // E2E専用の割り切りとして _applyRoute を無効化する。
-        app._applyRoute = () => {};
-        // モバイル幅(webkit=iPhone 13)ではサイドバーがドロワーで畳まれており、ツリー/ヘッダーの
-        // 要素は DOM 上に存在しても画面外にある(elementFromPointがnullを返す)。開いておく。
-        if (typeof app._openDrawer === 'function') app._openDrawer();
-        app.pluginLoader = app.pluginLoader || {};
-        app.pluginLoader.listInstalledPlugins = async () => ([
-            { id: 'reading-goal', manifest: { name: '読書目標', version: '1.0', description: 'd1', icon: 'target' } },
-            { id: 'pinned-memo', manifest: { name: 'ピン留めメモ', version: '1.0', description: 'd2', icon: 'pin' } },
-        ]);
-        app.pluginLoader.loaded = new Map([['reading-goal', {}], ['pinned-memo', {}]]);
-        if (app.pluginAPI) {
-            app.pluginAPI._uiButtons = [
-                { id: 'btn-a', pluginId: 'reading-goal', title: 'A', label: 'A', emoji: '🎯', active: false, onClick: () => {} },
-                { id: 'btn-b', pluginId: 'pinned-memo', title: 'B', label: 'B', emoji: '📌', active: false, onClick: () => {} },
-            ];
-        }
-        app._applyHeaderLayout();
-    });
+    await mockSyncRouteAndMobileCompat(page);
     return errors;
 }
 

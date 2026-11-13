@@ -9,6 +9,7 @@
 // chromium(既定project)とwebkit(BACKNAV_WEBKIT=1)の両方で実行する。list表示は列数の対象外なので
 // 従来どおりWebKit限定の見切れ回帰確認に残す。
 import { test, expect } from './helpers/test-base.js';
+import { navigateToMainInternal } from './helpers/app-misc.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 
 // モバイル列数表 (css/bookshelf.css の @media(max-width:900px) 内 .bookshelf.size-* の
@@ -169,7 +170,7 @@ test.describe('#385 本棚の見切れ (WebKit実機再現・390/430: 連打/ス
                     for (let i = 0; i < 4; i++) {
                         await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
                         if (delay) await page.waitForTimeout(delay);
-                        await page.evaluate(() => { if (window.bookshelf.router) window.bookshelf._navigateFromUi('main'); else window.bookshelf._setBodyView('main'); });
+                        await navigateToMainInternal(page);
                         if (delay) await page.waitForTimeout(delay);
                     }
                 }
@@ -185,7 +186,7 @@ test.describe('#385 本棚の見切れ (WebKit実機再現・390/430: 連打/ス
                 await page.waitForTimeout(100);
                 await page.evaluate(() => { document.getElementById('view-bookshelf').scrollTop += 500; });
                 await page.waitForTimeout(100);
-                await page.evaluate(() => window.bookshelf._setBodyView('main'));
+                await navigateToMainInternal(page);
                 await page.waitForTimeout(100);
                 await page.evaluate(() => window.bookshelf.switchBookshelf('all'));
                 await page.waitForTimeout(150);
@@ -273,10 +274,12 @@ test.describe('#389 モバイル列数(大きさ=列数)・はみ出し・縦横
 test.describe('#389 「大きさ」選択肢の列数表示とCSSの実際の境界が一致する', () => {
     async function setupAndCheck(page, context) {
         await setupFixture(page, context, 10);
+        // setView('covers')自身が_updateCoverSizeOptionLabels()を呼ぶ(js/bookshelf.js:1114)ため、
+        // 内部メソッドを別途呼び直す必要はない(イシュー#554 step3確認・switchBookshelfは
+        // cover-sizeの選択肢に触れないため後段で再度呼ぶ必要もない)。
         await page.evaluate(() => { window.bookshelf.setView('covers'); window.bookshelf.switchBookshelf('all'); });
         await page.waitForTimeout(100);
         return page.evaluate(() => {
-            window.bookshelf._updateCoverSizeOptionLabels();
             return Array.from(document.getElementById('cover-size').options).map((o) => o.textContent);
         });
     }

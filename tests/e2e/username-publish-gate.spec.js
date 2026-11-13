@@ -6,6 +6,7 @@
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 import { mockSyncReady, stubRunPendingSync } from './helpers/sync.js';
+import { mockRunPublishExport } from './helpers/app-misc.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -258,10 +259,10 @@ test('公開先が GitHub (自前 repo) のときは username ゲートを適用
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         window.bookshelf.flushSync = async () => {};
-        window.bookshelf._isSyncReady = () => true;
-        // GitHubAdapter の実 API 呼び出しは踏ませない (このテストの関心はゲートの有無だけ)
-        window.bookshelf._runPublishExport = async () => ({ ok: true, result: { siteUrl: 'https://hahero-asayake.github.io/bookshelf-public/', errors: [] } });
     }, JSON.parse(fixtureLibrary));
+    await mockSyncReady(page, true);
+    // GitHubAdapter の実 API 呼び出しは踏ませない (このテストの関心はゲートの有無だけ)
+    await mockRunPublishExport(page);
 
     await createArticle(page, 'GitHub公開はゲート対象外');
     await publishViaPanel(page);

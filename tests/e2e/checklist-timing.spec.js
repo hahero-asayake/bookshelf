@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { openSettingsByClick } from './helpers/settings.js';
 import { setBookMemoValue, getBookMemoValue } from './helpers/book-memo.js';
 import { mockSyncReady } from './helpers/sync.js';
+import { openDrawer } from './helpers/nav.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -153,7 +154,7 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         const errors = await bootApp(page);
         const before = await snapState(page);
         const v = await runCase(page, ti, 'CHK1', { ms: 3000, expectFinal: { hash: before.hash, drawer: false }, forbidden: (r) => r.drawer || r.openModals.length > 0 }, async (p) => {
-            await p.evaluate(() => window.bookshelf._openDrawer());
+            await openDrawer(p);
             await settle(p);
             // back-nav-matrix.spec.js の R01 と同じ型: ドロワー内の本棚リスト項目を直接タップする。
             // toShelf(p)(下部ナビのタップ)で代用すると、ドロワーが開いている間に下部ナビの座標を

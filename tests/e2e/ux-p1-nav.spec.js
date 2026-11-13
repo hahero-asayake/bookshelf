@@ -5,6 +5,7 @@
 //  - 下部ナビ (モバイル) の現在地ハイライト (.is-active) を配線
 //  - 「プラグイン」ボタンは設定のプラグイン節を開く (P3 で専用ページへ)
 import { test, expect } from './helpers/test-base.js';
+import { navigateHome } from './helpers/nav.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -116,7 +117,7 @@ test('P5: モバイル下部ナビの現在地ハイライト (.is-active) が�
     await bootApp(page);
     const homeItem = page.locator('#mobile-bottom-nav [data-mobile-nav="home"]');
     // ホーム表示時は home が is-active
-    await page.evaluate(() => window.bookshelf._setBodyView('main'));
+    await navigateHome(page);
     await expect(homeItem).toHaveClass(/is-active/);
     // 本棚を開くと home の is-active が外れる
     await page.evaluate(() => window.bookshelf.switchBookshelf('all'));

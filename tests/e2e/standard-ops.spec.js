@@ -9,6 +9,7 @@ import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settin
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 import { flushArtSave, getArtBlocks, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 import { mockSyncReady, triggerSyncConflict } from './helpers/sync.js';
+import { openDrawer, openCommandPalette } from './helpers/nav.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -495,7 +496,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     test('コマンドパレット: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openPalette());
+        await openCommandPalette(page);
         await expect(page.locator('#command-palette')).toBeVisible();
         await page.goBack();
         await expect(page.locator('#command-palette')).toBeHidden();
@@ -505,7 +506,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     test('ドロワー: 戻るで閉じてアプリに留まる (C-281)', async ({ page }) => {
         const errors = await bootApp(page);
-        await page.evaluate(() => window.bookshelf._openDrawer());
+        await openDrawer(page);
         await expect(page.locator('body')).toHaveClass(/drawer-open/);
         await page.goBack();
         await expect(page.locator('body')).not.toHaveClass(/drawer-open/);

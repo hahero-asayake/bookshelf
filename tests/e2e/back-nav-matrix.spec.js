@@ -12,6 +12,7 @@ import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settin
 import { setBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 import { getArtDraft, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheetInternal } from './helpers/art-editor.js';
 import { mockSyncReady, showConflictDialogForTest } from './helpers/sync.js';
+import { openDrawer } from './helpers/nav.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -549,7 +550,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'R01');
         const before = await snap(page);
-        await page.evaluate(() => window.bookshelf._openDrawer());
+        await openDrawer(page);
         await settle(page);
         const item = page.locator('#sidebar [data-bookshelf-id], .sidebar [data-bookshelf-id], [data-shelf-id]').first();
         if (await item.count()) await item.tap();
@@ -570,13 +571,13 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'R14');
         const before = await snap(page);
-        await page.evaluate(() => window.bookshelf._openDrawer());
+        await openDrawer(page);
         await back(page);
         await r.step(page, 'R14-back');
         let s = await snap(page);
         expect.soft(s.drawer).toBe(false);
         expectSameHistory(before, s);
-        await page.evaluate(() => window.bookshelf._openDrawer());
+        await openDrawer(page);
         await page.keyboard.press('Escape');
         await settle(page);
         await r.step(page, 'R17-esc');
@@ -594,7 +595,9 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const before = await snap(page);
         await page.evaluate(() => window.bookshelf.showBookshelfManager ? window.bookshelf.showBookshelfManager() : null);
         if (!(await page.locator('#bookshelf-modal').evaluate((m) => m.classList.contains('show')).catch(() => false))) {
-            await page.evaluate(() => document.getElementById('bookshelf-modal') && window.bookshelf._modalHistPush && window.bookshelf.openBookshelfModal && window.bookshelf.openBookshelfModal());
+            // _modalHistPushは常にwindow.bookshelf上に定義済みのメソッドで、存在確認は常にtrueだった
+            // (イシュー#554 step3確認)。実際に呼ばれる公開APIのみ残す。
+            await page.evaluate(() => document.getElementById('bookshelf-modal') && window.bookshelf.openBookshelfModal && window.bookshelf.openBookshelfModal());
         }
         const mgrOpen = await page.locator('#bookshelf-modal.show').count();
         await page.evaluate(() => window.bookshelf.showBookshelfForm());
@@ -1580,7 +1583,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
 
     test('R24f ドロワー: 戻った後に進むと開き直る (#291・開き直す方針)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'R24f',
-            async (p) => p.evaluate(() => window.bookshelf._openDrawer()),
+            async (p) => openDrawer(p),
             (s) => expect.soft(s.drawer).toBe(false),
             (s) => expect.soft(s.drawer, '進むと開く').toBe(true));
     });

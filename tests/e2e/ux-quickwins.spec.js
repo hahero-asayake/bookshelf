@@ -1,6 +1,7 @@
 // UX 監査 (2026-06-25) の Quick Wins の回帰テスト
 //  QW2 評価フィルタ中の星変更で再フィルタ / QW3 ⌘K 起動ボタン / QW4 空状態・welcome の取込直行
 import { test, expect } from './helpers/test-base.js';
+import { clickStarRating } from './helpers/app-misc.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -31,9 +32,9 @@ test('QW2: 評価フィルタ中に星を下げると一覧から即座に外れ
     await page.locator('#toggle-filter').click();
     await page.locator('#rating-seg .rseg[data-rating="5"]').click();
     await expect(page.locator('#bookshelf .book-item')).toHaveCount(2);
-    // 表示中の1冊の評価を 0 に変更 (一覧カードの星クリックと同じ経路: saveRating + _applyRatingEverywhere)
+    // 表示中の1冊の評価を★5相当のクリックで0に変更 (同じ星の再クリックで解除・js/bookshelf.js:2437-2446)
     const asin = await page.locator('#bookshelf .book-item').first().getAttribute('data-asin');
-    await page.evaluate((a) => { window.bookshelf.saveRating(a, 0); window.bookshelf._applyRatingEverywhere(a, 0); }, asin);
+    await clickStarRating(page, asin, 5);
     // ★5 条件に合わなくなった本が即座に外れる (修正前は居残っていた)
     await expect(page.locator('#bookshelf .book-item')).toHaveCount(1);
     expect(errors).toEqual([]);

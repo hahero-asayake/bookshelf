@@ -4,6 +4,7 @@
 // 既存の更新バー (_onPwaUpdateReady → _updateStatusBar → _applyPwaUpdate) にそのまま乗ることを
 // 検証する (表示は自作しない)。抽出ロジック自体は tests/unit/app-version-check.test.js で検証済み。
 import { test, expect } from './helpers/test-base.js';
+import { triggerAppVersionCheck, spyOnAppVersionCheck, mockPwaUpdateReloadFallback } from './helpers/app-misc.js';
 
 test('index.html の ?v= が変わっていれば、既存の更新バーに「更新」が表示される', async ({ page }) => {
     await page.goto('index.html');
@@ -29,7 +30,7 @@ test('index.html の ?v= が変わっていれば、既存の更新バーに「�
     });
 
     // 検知は公開メソッド経由 (内部状態を直接書き換えない)
-    await page.evaluate(() => window.bookshelf._checkAppVersion());
+    await triggerAppVersionCheck(page);
 
     await expect(page.locator('#app-status-bar')).toBeVisible();
     await expect(page.locator('#app-status-bar .status-update .status-msg')).toHaveText('新しいバージョンがあります');
@@ -41,14 +42,7 @@ test('visibilitychange (タブ復帰) でも新バージョン検知が走る (l
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
-    await page.evaluate(() => {
-        window.__versionCheckCalls = 0;
-        const orig = window.bookshelf._checkAppVersion.bind(window.bookshelf);
-        window.bookshelf._checkAppVersion = (...args) => {
-            window.__versionCheckCalls++;
-            return orig(...args);
-        };
-    });
+    await spyOnAppVersionCheck(page);
 
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => page.evaluate(() => window.__versionCheckCalls)).toBeGreaterThan(0);
@@ -58,21 +52,8 @@ test('新バージョン検知後の「更新」クリックで location.reload(
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
 
-    await page.evaluate(() => {
-        window.__reloaded = false;
-        window.bookshelf._applyPwaUpdate = (() => {
-            const orig = window.bookshelf._applyPwaUpdate.bind(window.bookshelf);
-            return function patched() {
-                if (!(window.bookshelf._pwaUpdateReg && window.bookshelf._pwaUpdateReg.waiting)) {
-                    window.__reloaded = true;
-                    return; // 実際の reload はテストを止めてしまうので発火だけ確認する
-                }
-                return orig();
-            };
-        })();
-        // reg=null で通知 (_checkAppVersion と同じ経路)
-        window.bookshelf._onPwaUpdateReady(null);
-    });
+    // 実際の reload はテストを止めてしまうので発火だけ確認する (reg=null で通知、_checkAppVersion と同じ経路)
+    await mockPwaUpdateReloadFallback(page);
 
     await expect(page.locator('#app-status-bar [data-status-action="update"]')).toBeVisible();
     await page.locator('#app-status-bar [data-status-action="update"]').click();
