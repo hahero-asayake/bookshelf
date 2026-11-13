@@ -12,6 +12,7 @@ import { test, expect } from './helpers/test-base.js';
 import { installFakeHub, FAKE_HUB_BASE, installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
 import { waitForBookMemoEditor, setBookMemoValue, getBookMemoValue } from './helpers/book-memo.js';
+import { flushSyncNow } from './helpers/sync.js';
 
 // 画面の操作が詰まった時に、テスト全体の制限時間 (60秒) まで待たずに落とす
 test.use({ actionTimeout: 10_000 });
@@ -92,13 +93,19 @@ const BACKENDS = [
 
 /** 前提づくり: 手動追加の処理で本を1冊足し、保存先の library.json に届くまで待つ */
 async function addBook(page, remote, asin, title) {
+    // 保存の途中で足さない (保存中に足した本が保存先に届かないことがあった)
+    await expect.poll(() => page.evaluate(() => !window.bookshelf._syncInProgress && !window.bookshelf._pendingSync),
+        { message: '起動後の保存が終わっている' }).toBe(true);
     await page.evaluate(async ({ asin, title }) => {
         document.getElementById('manual-asin').value = asin;
         document.getElementById('manual-title').value = title;
         document.getElementById('manual-authors').value = 'テスト著者';
         await window.bookshelf.addBookManually();
     }, { asin, title });
-    await expect.poll(async () => (await remoteBooks(remote))[asin], { timeout: 20000, message: `本 ${asin} が保存先に届く` }).toBe(title);
+    await expect.poll(() => page.evaluate((a) => window.bookshelf.books.some((b) => b.asin === a), asin), { message: `本 ${asin} がアプリに入る` }).toBe(true);
+    // 追加後の保存は予約されるだけなので、保存をその場で走らせてから、保存先に届いたことを確かめて進む
+    await flushSyncNow(page);
+    await expect.poll(async () => (await remoteBooks(remote))[asin], { message: `本 ${asin} が保存先に届く` }).toBe(title);
 }
 
 /** 「すべての本」の一覧から本をクリックして、右の詳細を開く */
@@ -121,7 +128,7 @@ async function writeMemo(page, remote, asin, title) {
     await openMemoFromDetail(page, asin);
     await setBookMemoValue(page, BODY);
     await page.keyboard.press('Escape');
-    await expect.poll(() => remote.has(memoPath(asin, title)), { timeout: 20000, message: `${memoPath(asin, title)} が保存先に書かれる` }).toBe(true);
+    await expect.poll(() => remote.has(memoPath(asin, title)), { message: `${memoPath(asin, title)} が保存先に書かれる` }).toBe(true);
 }
 
 /** 詳細の編集モードで題名・ASIN を書き換え、「編集を終える」(＝保存) を押す */
@@ -159,12 +166,16 @@ for (const { name, boot } of BACKENDS) {
             await addBook(page, remote, ASIN, TITLE);
             await writeMemo(page, remote, ASIN, TITLE);
 
-            page.once('dialog', (d) => d.accept());
-            // deleteBook の完了は待たない (前回の実行で page.evaluate が60秒戻らなかった)。結果は保存先で見る
-            await page.evaluate((asin) => { window.bookshelf.deleteBook(asin); }, ASIN);
+            // deleteBook は確認に native の confirm を使う (画面に削除ボタンは無い＝js/screens/book-detail.js:393)
+            const dialogs = [];
+            page.on('dialog', async (d) => { dialogs.push(d.message()); await d.accept(); });
+            await page.evaluate((asin) => window.bookshelf.deleteBook(asin), ASIN);
+            expect(dialogs.length, '削除の確認が1回出る').toBe(1);
+            await expect.poll(() => page.evaluate((asin) => window.bookshelf.books.some((b) => b.asin === asin), ASIN), { message: 'アプリから本が消える' }).toBe(false);
 
-            // 削除後の保存が保存先まで届いた (library.json から消えた) のを先に待つ
-            await expect.poll(async () => Object.keys(await remoteBooks(remote)), { timeout: 20000, message: '削除後の library.json が保存先に届く' }).not.toContain(ASIN);
+            // 削除後の保存を走らせ、保存先まで届いた (library.json から消えた) のを先に確かめる
+            await flushSyncNow(page);
+            await expect.poll(async () => Object.keys(await remoteBooks(remote)), { message: '削除後の library.json が保存先に届く' }).not.toContain(ASIN);
             try {
                 await expect.poll(() => remote.has(memoPath(ASIN, TITLE)), {
                     timeout: 8000,

@@ -162,3 +162,14 @@
   - (f) ハブで to が既にある場合（衝突ダイアログに入るか、上書きしないか）
   - 保存前に開いても本文が出ること
 - 触る予定のファイル: `js/storage.js`、`js/bookshelf.js`（deleteBook・saveBookChanges・syncToObsidianFolder）、`index.html`（?v=）、テスト、594-results.md、設計書（03・06・08）。`js/screens/book-detail.js` と `js/publish-article-generator.js` は変えない見込み（5 を storage の中で解決するため）。
+
+## step3: 実装と単体テスト・E2E（途中・2026-11-14 04:42 時点）
+
+- 実装: `js/storage.js`（#587 の記録に種類つきの長文メモの記録を足した。本棚の slug の読み書きは他の種類を残す）、`js/bookshelf.js`（deleteBook で削除を積む・saveBookChanges で移動を積む・syncToObsidianFolder で #587 の削除の直後に載せ、成功後に片づける）。
+- 単体: `tests/unit/book-memo-file-ops.test.js` 18本が緑。#587 の `tests/unit/shelf-file-delete.test.js` 11本も緑のまま。
+- E2E（chromium・workers=1）:
+  - 題名・ASIN の変更の6本は、3本が緑（GitHub の題名・ASIN、ローカルの題名）。
+  - 残り3本は落ちた。ハブの題名・ASIN は画面のクリックが10秒で終わらない。ローカルの ASIN は、前提づくりで本が保存先に届かない。
+  - 本の削除の3本は落ちた。ハブは `deleteBook` を呼ぶ `page.evaluate` が60秒戻らない（修正前の step1 でも同じ）。GitHub は前提づくりで本が届かない。ローカルは `NotReadableError`。
+  - workers=3 では、壊れた検証サーバ（8194番）が残って全体が止まった。止めてから workers=1 で流した。
+- 未着手: 未接続→繋ぎ直し、すぐ再読込、#484 型の2冊、使えない文字の題名の各 E2E。(f) の保存先ごとの単体テスト（今は中身を Map に持つ模擬の adapter で確かめただけ）。

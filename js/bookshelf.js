@@ -3662,6 +3662,18 @@ class VirtualBookshelf {
             const shelfDeletes = this.storage.takeBookshelfFileDeletes(bookshelvesMetaEntries.map(b => b.slug));
             entries.push(...shelfDeletes.entries);
 
+            // 本の削除・題名や ASIN の変更で要らなくなった・名前が変わった長文メモ (イシュー#594)。
+            // 一覧にある本 (除外中の本を含む) の今のメモは消さない。エディタで開いているメモの移動は次の保存へ回す
+            const memoCtx = this._bookMemoEditorContext;
+            const memoOps = await this.storage.takeBookMemoOps(
+                libraryBooks.map(b => this.storage.bookMemoPath(b.asin, b.title)),
+                {
+                    openPath: memoCtx ? this.storage.bookMemoPath(memoCtx.asin, memoCtx.title) : null,
+                    caseInsensitiveDeletes: this.syncMethod !== 'github' && this.syncMethod !== 'hub'
+                }
+            );
+            entries.push(...memoOps.entries);
+
             // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
             try {
                 await this.storage.syncBatch(entries, {
@@ -3677,6 +3689,7 @@ class VirtualBookshelf {
                 throw err;
             }
             this.storage.clearBookshelfFileDeletes(shelfDeletes.slugs);
+            this.storage.clearBookMemoOps(memoOps.records);
 
             this._lastSyncOk = true;
             this.updateSyncStatus('synced', this._syncLabel());
@@ -5991,6 +6004,8 @@ class VirtualBookshelf {
 
         try {
             // BookManager で完全削除
+            // 長文メモのファイルは次の保存で消す (保存先を問わない・イシュー#594)
+            this.storage.queueBookMemoDelete(this.storage.bookMemoPath(book.asin, book.title));
             await this.bookManager.deleteBook(asin, true);
 
             // ユーザーデータからも削除
@@ -6113,6 +6128,14 @@ class VirtualBookshelf {
                 }
             }
 
+            // 題名・ASIN でファイル名が変わる長文メモは、次の保存で新しい名前へ移す (イシュー#594)。
+            // 更新が失敗しても、移す先がどの本のものでもなければ保存時に捨てられる
+            if (currentBook.asin) {
+                this.storage.queueBookMemoMove(
+                    this.storage.bookMemoPath(currentBook.asin, currentBook.title),
+                    this.storage.bookMemoPath(newOriginalAsin, newTitle)
+                );
+            }
             const success = await this.bookManager.updateBook(asin, updateData);
 
             if (success) {

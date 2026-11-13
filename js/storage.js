@@ -39,21 +39,60 @@ async function runLimited(tasks, limit = 4) {
 
 const PENDING_SHELF_DELETES_KEY = 'virtualBookshelf_pendingShelfDeletes';
 
-function readPendingShelfDeletes() {
+// 記録は1つの配列。文字列＝本棚の slug (イシュー#587 の形のまま)、オブジェクト＝長文メモの記録 (イシュー#594):
+//   { kind: 'memo-delete', path }      本の削除で要らなくなったメモのファイル
+//   { kind: 'memo-move', from, to }    題名・ASIN の変更でファイル名が変わったメモ (保存時に中身を移す)
+// キー名は本棚の時のまま (中身に長文メモの記録も入る)。
+function isPendingRecord(r) {
+    if (typeof r === 'string') return !!r;
+    if (!r || typeof r !== 'object') return false;
+    if (r.kind === 'memo-delete') return typeof r.path === 'string' && !!r.path;
+    if (r.kind === 'memo-move') return typeof r.from === 'string' && !!r.from && typeof r.to === 'string' && !!r.to;
+    return false;
+}
+
+function readPendingRecords() {
     try {
         const v = JSON.parse(localStorage.getItem(PENDING_SHELF_DELETES_KEY) || '[]');
-        return Array.isArray(v) ? v.filter(s => typeof s === 'string' && s) : [];
+        return Array.isArray(v) ? v.filter(isPendingRecord) : [];
     } catch (_) {
         return [];
     }
 }
 
-function writePendingShelfDeletes(slugs) {
+function writePendingRecords(records) {
     try {
-        if (slugs.length) localStorage.setItem(PENDING_SHELF_DELETES_KEY, JSON.stringify(slugs));
+        if (records.length) localStorage.setItem(PENDING_SHELF_DELETES_KEY, JSON.stringify(records));
         else localStorage.removeItem(PENDING_SHELF_DELETES_KEY);
     } catch (_) { /* 書けなくても保存そのものは止めない */ }
 }
+
+function readPendingShelfDeletes() {
+    return readPendingRecords().filter(r => typeof r === 'string');
+}
+
+// 本棚の分だけを書き換える (長文メモの記録は残す)
+function writePendingShelfDeletes(slugs) {
+    writePendingRecords([...slugs, ...readPendingRecords().filter(r => typeof r !== 'string')]);
+}
+
+function readPendingMemoRecords() {
+    return readPendingRecords().filter(r => typeof r !== 'string');
+}
+
+// 長文メモの分だけを書き換える (本棚の slug は残す)。同じ記録は1つにまとめる
+function writePendingMemoRecords(records) {
+    const seen = new Set();
+    const uniq = records.filter(r => {
+        const k = JSON.stringify(r);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+    });
+    writePendingRecords([...readPendingShelfDeletes(), ...uniq]);
+}
+
+const memoRecordKey = (r) => JSON.stringify(r);
 
 class BookshelfStorage {
     constructor(adapter) {
@@ -464,22 +503,110 @@ class BookshelfStorage {
         return `${asin}__${this.sanitizeFileName(title)}.md`;
     }
 
+    // 本の (asin, 題名) から作る長文メモのパス (移動待ちを読み替えない素のパス)
+    bookMemoPath(asin, title) {
+        return `private/books/${this.bookMemoFileName(asin, title)}`;
+    }
+
+    // まだ済んでいない移動 (memo-move) の to なら from を返す＝題名・ASIN を変えた直後、次の保存で
+    // ファイルが移るまでの間も、新しい題名のまま元のメモを読める (イシュー#594)
+    _resolveBookMemoPath(path) {
+        const mv = readPendingMemoRecords().find(r => r.kind === 'memo-move' && r.to === path);
+        return mv ? mv.from : path;
+    }
+
     readBookMemo(asin, title, hooks) {
-        return this.adapter.readText(`private/books/${this.bookMemoFileName(asin, title)}`, hooks);
+        return this.adapter.readText(this._resolveBookMemoPath(this.bookMemoPath(asin, title)), hooks);
     }
 
     async writeBookMemo(asin, title, content) {
         const fileName = this.bookMemoFileName(asin, title);
-        await this.adapter.writeText(`private/books/${fileName}`, content);
+        const path = `private/books/${fileName}`;
+        await this.adapter.writeText(path, content);
+        // 移動待ちの to に書いた＝書いた中身が新しい正。その移動は from を消すだけに変える
+        const recs = readPendingMemoRecords();
+        if (recs.some(r => r.kind === 'memo-move' && r.to === path)) {
+            writePendingMemoRecords(recs.map(r => (r.kind === 'memo-move' && r.to === path) ? { kind: 'memo-delete', path: r.from } : r));
+        }
         return fileName;
     }
 
     bookMemoExists(asin, title) {
-        return this.adapter.fileExists(`private/books/${this.bookMemoFileName(asin, title)}`);
+        return this.adapter.fileExists(this._resolveBookMemoPath(this.bookMemoPath(asin, title)));
     }
 
     bookMemoFullPath(asin, title) {
-        return `private/books/${this.bookMemoFileName(asin, title)}`;
+        return this._resolveBookMemoPath(this.bookMemoPath(asin, title));
+    }
+
+    // ===== 長文メモのファイルの削除・移動待ち (イシュー#594) =====
+    // 本棚ファイルの削除待ち (イシュー#587) と同じ記録に積み、次の保存のまとめ保存に載せる。
+    // 保存が成功するまで残るので、未接続・通信失敗・再読込をまたいでも次の保存で再試行される。
+
+    // 本の削除: そのメモのファイルを消す。移動待ちの to を消すなら、元の from を消す
+    queueBookMemoDelete(path) {
+        if (!path) return;
+        const out = readPendingMemoRecords().map(r => (r.kind === 'memo-move' && r.to === path) ? { kind: 'memo-delete', path: r.from } : r);
+        out.push({ kind: 'memo-delete', path });
+        writePendingMemoRecords(out);
+    }
+
+    // 題名・ASIN の変更: from のメモを to へ移す。続けて変えた分はまとめる (A→B→C は A→C、A→B→A は取り消し)
+    queueBookMemoMove(from, to) {
+        if (!from || !to || from === to) return;
+        let src = from;
+        const out = [];
+        for (const r of readPendingMemoRecords()) {
+            if (r.kind === 'memo-move' && r.to === from) { src = r.from; continue; }
+            if (r.kind === 'memo-delete' && r.path === to) continue; // これから to へ書くので、to を消す記録は外す
+            out.push(r);
+        }
+        if (src !== to) out.push({ kind: 'memo-move', from: src, to });
+        writePendingMemoRecords(out);
+    }
+
+    // 次の保存で載せる長文メモの書き込み・削除を作る。
+    //   keepPaths: 保存の時点で一覧にある本の今のメモのパス。ここにあるファイルは消さない (同じ ASIN・同じ題名の
+    //              別の本 (#484)・題名を元に戻した本のメモを守る)。移動の to がここに無い移動は捨てる
+    //              (変更が取り消された・読み込み直しで戻った＝どの本のものでもないファイルを作らない)
+    //   openPath:  アプリ内エディタで開いているメモのパス。その移動は次の保存へ回す (エディタの直接の書き込みと上書きし合わない)
+    //   caseInsensitiveDeletes: true (ローカル) の時、大文字・小文字だけ違う移動では from を消さない
+    //              (大文字小文字を区別しないファイルシステムでは同じファイルを指すため)
+    // 移す先が既にある時は、上書きも元の削除もしない (他の端末で書いた内容を失わない)。
+    async takeBookMemoOps(keepPaths = [], { openPath = null, caseInsensitiveDeletes = false } = {}) {
+        const keep = new Set(keepPaths);
+        const entries = [];
+        const records = [];
+        const dropped = [];
+        for (const r of readPendingMemoRecords()) {
+            if (r.kind === 'memo-delete') {
+                if (keep.has(r.path)) { dropped.push(r); continue; }
+                entries.push({ op: 'delete', path: r.path });
+                records.push(r);
+                continue;
+            }
+            if (!keep.has(r.to)) { dropped.push(r); continue; }
+            if (openPath && r.to === openPath) continue;
+            const content = await this.adapter.readText(r.from);
+            if (content == null) { dropped.push(r); continue; }
+            if (await this.adapter.fileExists(r.to)) {
+                console.warn(`長文メモの移動先 ${r.to} が既にあるため、${r.from} から移さずに残します`);
+                dropped.push(r);
+                continue;
+            }
+            entries.push({ op: 'put', kind: 'text', path: r.to, data: content });
+            const caseOnly = r.from.toLowerCase() === r.to.toLowerCase();
+            if (!keep.has(r.from) && !(caseInsensitiveDeletes && caseOnly)) entries.push({ op: 'delete', path: r.from });
+            records.push(r);
+        }
+        if (dropped.length) this.clearBookMemoOps(dropped);
+        return { entries, records };
+    }
+
+    // 保存が成功した分を外す (保存中に新しく積まれた分は残る)
+    clearBookMemoOps(records) {
+        const done = new Set(records.map(memoRecordKey));
+        writePendingMemoRecords(readPendingMemoRecords().filter(r => !done.has(memoRecordKey(r))));
     }
 
     buildBookMemoTemplate(book) {
