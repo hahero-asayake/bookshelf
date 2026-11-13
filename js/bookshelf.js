@@ -1522,6 +1522,7 @@ class VirtualBookshelf {
             added++;
         }
         await this.saveUserData();
+        this._applyDetailShelvesEverywhere(asins); // 開いている詳細の本棚のチップ (イシュー#620)
         const pop = document.getElementById('bulk-shelf-popover');
         if (pop) pop.hidden = true;
         if (typeof this.renderBookshelfList === 'function') this.renderBookshelfList();
@@ -1601,6 +1602,7 @@ class VirtualBookshelf {
             this.bookshelfManager.removeBookFromBookshelf(curShelf.internalId, asin);
         }
         await this.saveUserData();
+        this._applyDetailShelvesEverywhere(asins); // 開いている詳細の本棚のチップ (イシュー#620)
         this._clearSelection();
         this.applyFilters();
         this.updateDisplay();
@@ -5167,10 +5169,9 @@ class VirtualBookshelf {
         await this.saveUserData();
         this.renderBookshelfList();
 
-        const book = this.books.find(b => b.asin === asin);
-        if (book) {
-            this.showBookDetail(book, true);
-        }
+        // 開いている詳細の本棚のチップと選択肢だけを書き換える (イシュー#620)。以前の showBookDetail(book, true) は
+        // 同じ本・同じモードだと #330 のガードで止まって描き直さず、保存を待つ間に閉じた・別の本へ移った時は元の本を開き直していた
+        this._applyDetailShelvesEverywhere([asin]);
 
         const ancestorMsg = ancestorsToAdd.length > 0
             ? `\n（祖先にも自動追加: ${ancestorsToAdd.map(a => a.name).join('、')}）`

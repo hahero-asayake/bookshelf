@@ -120,6 +120,89 @@ class _BookDetailMethods {
         return bs.internalId || bs.id;
     }
 
+    // 本棚セクションの本体 (所属のチップの行と、編集モードの「本棚を追加...」の欄) の HTML (イシュー#620)。
+    // 詳細を描く時 (showBookDetail) と、所属が変わった時の書き換え (_applyDetailShelvesEverywhere) の両方がここを通る。
+    _detailShelvesBodyHtml(book, isEditMode) {
+        const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        const esc = BookshelfEscape.escapeHtml;
+        const contextInternalId = this._currentBookshelfInternalId();
+        const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
+
+        // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
+        const contextSlug = contextBookshelf ? contextBookshelf.id : null;
+        const memberBookshelves = (this.userData.bookshelves || [])
+            .filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(book.asin));
+        const candidateBookshelves = (this.userData.bookshelves || [])
+            .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
+
+        const chipsHtml = memberBookshelves.map(bs => {
+            const isCtx = contextSlug && bs.id === contextSlug;
+            return `
+            <span class="bd-chip${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bs.id)}"${isCtx ? ' title="いま開いている本棚"' : ''}>
+                <span class="bd-chip-icon" data-icon-value="${(bs.iconName || 'library').replace(/"/g,'&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 12 })}</span>
+                <span>${esc(bs.name)}</span>
+                ${isEditMode ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bs.id)}" title="この本棚から外す">×</button>` : ''}
+            </span>`;
+        }).join('');
+
+        const addBookshelfHtml = (isEditMode && candidateBookshelves.length > 0) ? `
+            <div class="bd-add-bookshelf">
+                <select class="bookshelf-select" data-asin="${esc(book.asin)}">
+                    <option value="">本棚を追加...</option>
+                    ${candidateBookshelves.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
+                </select>
+                <button class="btn btn-secondary btn-small add-to-bookshelf" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
+            </div>
+        ` : '';
+
+        return `
+            <div class="bd-chips-row" id="current-bookshelves-${esc(book.asin)}">
+                ${chipsHtml || '<span class="bd-empty-note">どの本棚にも追加されていません</span>'}
+            </div>
+            ${addBookshelfHtml}
+        `;
+    }
+
+    // 本棚セクションの「追加」と × のつなぎ込み (イシュー#620)。詳細を描いた時と、本棚セクションを書き換えた後の両方から呼ぶ。
+    _bindDetailShelvesEvents(root) {
+        const addToBookshelfBtn = root.querySelector('.add-to-bookshelf');
+        if (addToBookshelfBtn) {
+            addToBookshelfBtn.addEventListener('click', (e) => {
+                // currentTarget = ボタン本体。e.target だとボタン内アイコン(SVG)クリックで asin が undefined になる
+                this.addBookToBookshelf(e.currentTarget.dataset.asin);
+            });
+        }
+
+        // Remove from bookshelf buttons
+        root.querySelectorAll('.remove-from-bookshelf').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const asin = e.target.dataset.asin;
+                const bookshelfId = e.target.dataset.bookshelfId;
+                this.removeFromBookshelf(asin, bookshelfId);
+            });
+        });
+    }
+
+    // 本の所属本棚 (bookshelves[].books) の変化を、開いている本の詳細の本棚セクションへ即時反映する (イシュー#620)。
+    // showBookDetail は同じ本・同じモードなら描き直さない (#330 の冪等化ガード) ため、_applyRatingEverywhere と
+    // 同じ型で本棚セクションの本体だけを描画と同じ関数で書き換える (詳細全体を描き直すと、編集モードの未保存の入力が
+    // 消える・#611 step1 の実測)。開いている詳細の本が asins に無い時・詳細を閉じている時は何もしない (保存を待つ間に
+    // 閉じた・別の本へ移った時に、元の本を開き直さない・#620 step1 の実測)。
+    _applyDetailShelvesEverywhere(asins) {
+        const book = this._lastDetailBook;
+        if (!book || !document.body.classList.contains('book-detail-pinned')) return;
+        if (!(asins || []).includes(book.asin)) return;
+        const body = document.querySelector('#book-detail-pane .bd-section[data-section="bookshelves"] .bd-section-body');
+        if (!body) return;
+        const hadFocus = body.contains(document.activeElement);
+        body.innerHTML = this._detailShelvesBodyHtml(book, this._lastDetailEditMode);
+        this._bindDetailShelvesEvents(body);
+        if (hadFocus) {
+            const select = body.querySelector('.bookshelf-select');
+            if (select) select.focus();
+        }
+    }
+
     showBookDetail(book, isEditMode = false) {
         // イシュー#330: 冪等化(安全策)。既に同じ本が同じモードで開いていれば何もしない
         // (「進む」で開く処理が2回走っても、2回目はここで止まり二重アニメーションにならない)。
@@ -177,46 +260,14 @@ class _BookDetailMethods {
             ? `<div class="bd-read"><a class="kindle-link" href="${esc(this.bookManager.getKindleReadUrl(book, kindleMethod))}"${kindleMethod === 'web' ? ' target="_blank" rel="noopener"' : ''} title="${kindleMethod === 'app' ? 'Kindle アプリで開く（PC/Mac はその本が開く／スマホはアプリ起動のみ）' : 'Kindle Cloud Reader で開く（所有していればその本が開きます）'}">${ico('book-open')}Kindleで読む</a></div>`
             : '';
 
-        // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
-        const contextSlug = contextBookshelf ? contextBookshelf.id : null;
-        const memberBookshelves = (this.userData.bookshelves || [])
-            .filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(book.asin));
-        const candidateBookshelves = (this.userData.bookshelves || [])
-            .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
-
-        const chipsHtml = memberBookshelves.map(bs => {
-            const isCtx = contextSlug && bs.id === contextSlug;
-            return `
-            <span class="bd-chip${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bs.id)}"${isCtx ? ' title="いま開いている本棚"' : ''}>
-                <span class="bd-chip-icon" data-icon-value="${(bs.iconName || 'library').replace(/"/g,'&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 12 })}</span>
-                <span>${esc(bs.name)}</span>
-                ${isEditMode ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bs.id)}" title="この本棚から外す">×</button>` : ''}
-            </span>`;
-        }).join('');
-
-        const addBookshelfHtml = (isEditMode && candidateBookshelves.length > 0) ? `
-            <div class="bd-add-bookshelf">
-                <select class="bookshelf-select" data-asin="${esc(book.asin)}">
-                    <option value="">本棚を追加...</option>
-                    ${candidateBookshelves.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
-                </select>
-                <button class="btn btn-secondary btn-small add-to-bookshelf" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
-            </div>
-        ` : '';
-
         // 短文メモ section (2026-06-20: 本棚 override 廃止 → ALL 1段のみ。閲覧/編集どちらでも直接編集可)
         const allMemoValue = (allRecord && allRecord.memo) || '';
 
         // ===== セクション本体 (順序は設定で並び替え可、デフォルト: 本棚→短文→長文→基本情報) =====
         const grip = window.renderIcon('grip-vertical', { size: 12 });
 
-        // 本棚セクション body
-        const bookshelvesBody = `
-            <div class="bd-chips-row" id="current-bookshelves-${esc(book.asin)}">
-                ${chipsHtml || '<span class="bd-empty-note">どの本棚にも追加されていません</span>'}
-            </div>
-            ${addBookshelfHtml}
-        `;
+        // 本棚セクション body (所属が変わった時の書き換えと同じ関数・イシュー#620)
+        const bookshelvesBody = this._detailShelvesBodyHtml(book, isEditMode);
 
         // 短文メモセクション body (ALL 1段。閲覧/編集どちらでも直接編集できる textarea。星と対称)
         const shortMemoBody = `
@@ -373,23 +424,9 @@ class _BookDetailMethods {
         }
         // 旧「💾 メモを保存」ボタンは廃止。自動保存に切り替わったため不要。
         
-        const addToBookshelfBtn = modalBody.querySelector('.add-to-bookshelf');
-        if (addToBookshelfBtn) {
-            addToBookshelfBtn.addEventListener('click', (e) => {
-                // currentTarget = ボタン本体。e.target だとボタン内アイコン(SVG)クリックで asin が undefined になる
-                this.addBookToBookshelf(e.currentTarget.dataset.asin);
-            });
-        }
-        
-        // Remove from bookshelf buttons
-        modalBody.querySelectorAll('.remove-from-bookshelf').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const asin = e.target.dataset.asin;
-                const bookshelfId = e.target.dataset.bookshelfId;
-                this.removeFromBookshelf(asin, bookshelfId);
-            });
-        });
-        
+        // 本棚セクションの「追加」と × (書き換えた後も同じ関数でつなぎ直す・イシュー#620)
+        this._bindDetailShelvesEvents(modalBody);
+
         const deleteBtn = modalBody.querySelector('.delete-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
