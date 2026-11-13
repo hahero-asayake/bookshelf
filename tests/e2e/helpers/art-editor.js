@@ -102,6 +102,44 @@ import { expect } from './test-base.js';
 export function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
 
 /**
+ * キャンバスのブロック (section.art-cv-blk) の余白を押す位置を、描き直しが落ち着いてから返す (イシュー#610)。
+ * キャンバスは同じ iframe へ doc.open/write/close で描き直すため、boundingBox の最中に書き込みが来ると要素が外れて null になる。
+ * 「完了」直後は form の描画のまま書名が見えるので、まず edit の描画にだけ付く⋯ピル (.art-cv-more) を待つ。ただしピルだけでは
+ * 足りない: 描き直しを連打すると、ピルが 20/20 見えていても null が 11〜35/150 回出た (#610 step1 T2)。そこで null でない同じ値が
+ * 2回続くまで読み直す。押す点に a/img/button (書影・書名リンク・⋯ピル等) が掛からないことも同じ poll の中で確かめる (#580)。
+ * evaluate を使わない (門のE2E の操作・確認から呼べる形)。押すのは呼び出し側で1回だけ。
+ * @param {import('@playwright/test').Locator} block キャンバスの section.art-cv-blk
+ * @param {{ side?: 'left'|'right' }} [opts] left=左端から6px / right=右端から24px。縦はどちらも中央
+ * @returns {Promise<{x:number, y:number}>} block の左上からの位置 (locator.tap/click の position にそのまま渡す)
+ */
+export async function canvasBlockBlankPosition(block, { side = 'left' } = {}) {
+    await expect(block).toBeVisible();
+    await expect(block.locator('.art-cv-more')).toBeVisible();
+    let prev = null;
+    let pos = null;
+    await expect.poll(async () => {
+        const box = await block.boundingBox();
+        const settled = !!(box && prev && box.x === prev.x && box.y === prev.y && box.width === prev.width && box.height === prev.height);
+        prev = box;
+        if (!settled) return 'not-settled';
+        const p = { x: side === 'right' ? Math.round(box.width - 24) : 6, y: Math.round(box.height / 2) };
+        const clickables = block.locator('a, img, button');
+        for (let i = 0, n = await clickables.count(); i < n; i++) {
+            if (!(await clickables.nth(i).isVisible())) continue;
+            const c = await clickables.nth(i).boundingBox();
+            if (!c) return 'not-settled'; // 読む間に描き直された (描き直しても配置は同じなので prev は残す)
+            if (box.x + p.x >= c.x && box.x + p.x <= c.x + c.width && box.y + p.y >= c.y && box.y + p.y <= c.y + c.height) return 'clickable';
+        }
+        pos = p;
+        return 'ok';
+    }, {
+        message: 'キャンバスのブロックの余白の位置が決まらない (描き直しが続いている、または押す点に a/img/button が掛かる)',
+        intervals: [100], // 既定の間隔 (100→250→500→1000ms) だと、描き直しが続く間に試せる回数が減る (#610 step2 で webkit が時間切れ)
+    }).toBe('ok');
+    return pos;
+}
+
+/**
  * @param {import('@playwright/test').Page} page
  * @param {'text'|'book'|'shelf'} type
  * @param {'first'|'last'} pos

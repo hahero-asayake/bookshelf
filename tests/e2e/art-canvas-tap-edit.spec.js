@@ -5,7 +5,7 @@
 // 操作は locator.tap()/click() とマウスのみ。結果はキャンバスの DOM (ブロックの中の書名) で確かめる。
 // 委譲の優先順位: ⋯ピル・つまみのドラッグはそれぞれの操作になり、ブロックの編集は開かない。
 import { test, expect } from './helpers/test-base.js';
-import { addBlock, canvas, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { addBlock, canvas, canvasBlockBlankPosition, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -46,13 +46,11 @@ const section = (page, i) => canvas(page).locator('section.art-cv-blk').nth(i);
 
 async function press(page, loc, touch, opts = {}) { if (touch) await loc.tap(opts); else await loc.click(opts); }
 // ブロックの余白 (左端・縦の中央) を押す。書影・書名リンク等の「クリックできる要素」を避ける = iOS WebKit で
-// document の委譲だけだと click が合成されない場所 (イシュー#580 step6)。押す点に a/img/button が無いことも確かめる
+// document の委譲だけだと click が合成されない場所 (イシュー#580 step6)。位置と「押す点に a/img/button が無いこと」は、
+// キャンバスの描き直しが落ち着いてから共通ヘルパーで確かめる (描き直しの最中に読むと boundingBox が null になる・イシュー#610)
 async function pressBlank(page, sec, touch, side = 'left') {
-    const box = await sec.boundingBox();
-    const pos = { x: side === 'right' ? Math.round(box.width - 24) : 6, y: Math.round(box.height / 2) };
-    const hitTag = await sec.evaluate((el, p) => { const r = el.getBoundingClientRect(); const h = el.ownerDocument.elementFromPoint(r.x + p.x, r.y + p.y); return h ? (h.closest('a, img, button') ? 'clickable:' + h.tagName : h.tagName) : null; }, pos);
-    expect(hitTag).not.toMatch(/^clickable/);
-    await press(page, sec, touch, { position: pos });
+    const position = await canvasBlockBlankPosition(sec, { side });
+    await press(page, sec, touch, { position });
 }
 
 async function newArticle(page, touch) {
