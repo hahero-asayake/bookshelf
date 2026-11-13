@@ -78,6 +78,27 @@ test('H4 すぐ戻ってすぐ次の記事を作っても、前の記事の題�
     await expect(articleRow(page, '無題の記事')).toHaveCount(0);
 });
 
+test('H4\' 既存の記事を直してすぐ別の記事を開いても、直した分が残り、開いた記事は書き換わらない', async ({ page }) => {
+    await bootWithStorage(page);
+    await openArticleList(page);
+    for (const title of ['H4d 記事A', 'H4d 記事B']) {
+        await newArticleWithTitle(page, title);
+        await page.locator('#art-back').tap();
+        await expect(articleRow(page, title)).toHaveCount(1);
+    }
+    const updatedAtOfB = () => page.evaluate(() => window.bookshelf.publishArticleStore.articles().find((a) => a.title === 'H4d 記事B').updatedAt);
+    const before = await updatedAtOfB();
+    await articleRow(page, 'H4d 記事A').locator('[data-act="edit"]').tap();
+    await page.locator('#art-title').fill('H4d 記事A 直した');
+    await page.locator('#art-back').tap();
+    await articleRow(page, 'H4d 記事B').locator('[data-act="edit"]').tap();
+    await expect(page.locator('#art-edit-view')).toBeVisible();
+    await page.locator('#art-back').tap();
+    await expect(articleRow(page, 'H4d 記事A 直した')).toHaveCount(1);
+    // 開いただけの記事Bは、無変更のまま (updatedAt が進むと公開済みの記事が「未反映の変更あり」に化ける)
+    expect(await updatedAtOfB()).toBe(before);
+});
+
 test('H5 題名を入れてすぐタブが裏に回っても、その時点で下書きが端末に残る', async ({ page }) => {
     await bootWithStorage(page);
     await openArticleList(page);
