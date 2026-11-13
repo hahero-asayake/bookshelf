@@ -133,7 +133,12 @@ export default {
         const obj = await env.BUCKET.get(`sites/${siteId}/${sub}`);
         if (!obj) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });
 
-        const res = new Response(obj.body, { headers: serveHeaders(contentType(sub), obj.httpEtag) });
+        const headers = serveHeaders(contentType(sub), obj.httpEtag);
+        // 一覧に出さない印 (uname:<username>.unlisted === true。運営のテスト専用アカウント用に運営が KV を直接書く) の
+        // アカウントは、配信は続けたまま検索に出さない (sitemap から外す seo.js・ハブの索引に載せない handlePublish と同じ印)。
+        // ヘッダはキャッシュにも一緒に入る。印を付け外しした直後はキャッシュの max-age (60秒) だけ反映が遅れる。
+        if (rec.unlisted === true) headers['X-Robots-Tag'] = 'noindex';
+        const res = new Response(obj.body, { headers });
         if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(cache.put(cacheKey, res.clone()));
         return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
     }

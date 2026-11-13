@@ -218,3 +218,70 @@ describe('自前 URL の登録口を閉じる / 一覧は active のみ', () => 
         expect((await (await call('/community/sites', 'GET')).json()).sites).toEqual([]);
     });
 });
+
+// 一覧に出さない印 (運営のテスト専用アカウント用): 印の正本は KV uname:<username>.unlisted の1か所。運営が KV を直接書く。
+// 公開 (R2・公開 URL) はそのまま行い、索引 (D1 sites = /top・/community/sites の元) にだけ載せない。
+describe('一覧に出さない印 (uname:<username>.unlisted) → 索引に載せない', () => {
+    const markUnlisted = () => env.KV.store.set('uname:alice', JSON.stringify({ uid: 'ualice', siteId: 'sa', unlisted: true }));
+
+    it('index 付きで公開しても sites に行が増えない。公開した HTML は R2 に書かれ、公開自体は成功する', async () => {
+        markUnlisted();
+        const res = await publish([{ path: 'index.html', content: 'top' }, html(A), html(B)], [meta(A), meta(B)]);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toMatchObject({ ok: true, siteUrl: 'https://bookshelf.asayake.org/alice/', indexed: false, indexSkipped: 'unlisted' });
+        expect(DB.rows('SELECT * FROM sites')).toHaveLength(0);
+        expect(DB.rows('SELECT * FROM site_tags')).toHaveLength(0);
+        expect(env.BUCKET.store.get(`sites/sa/${A}/index.html`)).toBe(`<html>${A}</html>`);
+        expect(env.BUCKET.store.get('sites/sa/index.html')).toBe('top');
+    });
+
+    it('印を付ける前に載っていた行 (public_id 無しの旧行・紐づくスター/集計/タグも) は、次の公開で消える (deleteMissing=false でも)', async () => {
+        await publish([html(A), html(B)], [meta(A), meta(B)]);
+        expect(rows()).toHaveLength(2);
+        const idA = rows()[0].id;
+        DB._db.exec(`INSERT INTO sites (id, uid, url, title, created_at, updated_at) VALUES ('legacy', 'ualice', 'https://example.com/', '旧行', 1, 1)`);
+        DB._db.exec(`INSERT INTO stars (target_type,target_id,uid,created_at) VALUES ('site','${idA}','ubob',1)`);
+        DB._db.exec(`INSERT INTO stats (target_type,target_id,star_count) VALUES ('site','${idA}',1)`);
+        markUnlisted();
+        const res = await publish([html(A), html(B)], [meta(A), meta(B)], { deleteMissing: false });
+        expect(await res.json()).toMatchObject({ ok: true, indexed: false, indexSkipped: 'unlisted' });
+        expect(rows()).toHaveLength(0);
+        expect(DB.rows('SELECT * FROM site_tags')).toHaveLength(0);
+        for (const t of ['stars', 'stats']) expect(DB.rows(`SELECT * FROM ${t} WHERE target_id = ?`, idA), t).toHaveLength(0);
+        expect(env.BUCKET.store.has(`sites/sa/${A}/index.html`)).toBe(true);   // 公開 (R2) はそのまま
+    });
+
+    it('印の無いアカウントの索引は今までどおり (印のあるアカウントと並んでいても影響しない)', async () => {
+        markUnlisted();
+        await publish([html(A)], [meta(A)]);
+        const res = await publish([html(B)], [meta(B, { coverUrl: '' })], {}, 'hk_bbbbbb');
+        expect((await res.json()).indexed).toBe(true);
+        expect(rows('ualice')).toHaveLength(0);
+        expect(rows('ubob').map(x => x.public_id)).toEqual([B]);
+    });
+
+    it('公開時の affiliateTag 更新 (uid レコードの書き直し) で印は消えない', async () => {
+        markUnlisted();
+        await publish([html(A)], [meta(A)], { affiliateTag: 'tag-22' });
+        expect(JSON.parse(env.KV.store.get('uid:ualice')).affiliateTag).toBe('tag-22');
+        expect(JSON.parse(env.KV.store.get('uname:alice')).unlisted).toBe(true);
+        await publish([html(A)], [meta(A)]);
+        expect(rows()).toHaveLength(0);
+    });
+
+    it('改名・旧名の取り直しでも印が新しい uname: レコードへ引き継がれ、改名後の公開も索引に載らない', async () => {
+        markUnlisted();
+        expect((await call('/username', 'POST', { username: 'alice2' }, 'hk_aaaaaa')).status).toBe(200);
+        expect(JSON.parse(env.KV.store.get('uname:alice2'))).toEqual({ uid: 'ualice', siteId: 'sa', unlisted: true });
+        await publish([html(A)], [meta(A)]);
+        expect(rows()).toHaveLength(0);
+        expect((await call('/username', 'POST', { username: 'alice' }, 'hk_aaaaaa')).status).toBe(200);   // 旧名 (movedTo) の取り直し
+        expect(JSON.parse(env.KV.store.get('uname:alice'))).toEqual({ uid: 'ualice', siteId: 'sa', unlisted: true });
+    });
+
+    it('印の無いアカウントの改名では印は付かない', async () => {
+        env.KV.store.set('uname:alice', JSON.stringify({ uid: 'ualice', siteId: 'sa' }));
+        expect((await call('/username', 'POST', { username: 'alice2' }, 'hk_aaaaaa')).status).toBe(200);
+        expect(JSON.parse(env.KV.store.get('uname:alice2'))).toEqual({ uid: 'ualice', siteId: 'sa' });
+    });
+});

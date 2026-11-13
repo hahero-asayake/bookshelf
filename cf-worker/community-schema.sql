@@ -92,3 +92,18 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at);
 -- 重複通報の防止 (同一 uid が同一対象を再通報できない)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_uniq ON reports(target_type, target_id, uid, comment_id);
+
+-- 端末エラーの匿名受け口 (POST /client-error・client-errors.js・イシュー#584)。(JST の日, 指紋) ごとに件数を数える。
+-- IP・User-Agent・Cookie・Bearer は持たない (列を作らない)。30 日より古い日の行は scheduled が消す。
+CREATE TABLE IF NOT EXISTS client_errors (
+  day      TEXT NOT NULL,               -- JST の 'YYYY-MM-DD'
+  fp       TEXT NOT NULL,               -- sha256("v|screen|msg") の先頭 16 桁 hex
+  v        TEXT NOT NULL,               -- アプリの版
+  screen   TEXT NOT NULL,               -- 画面名 (英数と - _)
+  msg      TEXT NOT NULL,               -- エラーの先頭行 (200 字まで)
+  count    INTEGER NOT NULL DEFAULT 1,
+  first_at INTEGER NOT NULL,            -- epoch ms
+  last_at  INTEGER NOT NULL,
+  notified INTEGER NOT NULL DEFAULT 0,  -- 10 件超えの通知を送ったら 1 (一度きり)
+  PRIMARY KEY (day, fp)
+);

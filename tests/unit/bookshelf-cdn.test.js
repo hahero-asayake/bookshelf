@@ -279,3 +279,73 @@ describe('/top (全ユーザー横断の公開記事一覧・S7・イシュー#2
         expect(body).toContain(`mailto:${OPERATOR_EMAIL}`);
     });
 });
+
+// 一覧に出さない印 (uname:<username>.unlisted・運営のテスト専用アカウント用に運営が KV を直接書く):
+// 配信は続けたまま、sitemap から外し (seo.js)、応答に X-Robots-Tag: noindex を付ける。
+describe('一覧に出さない印 (uname:<username>.unlisted)', () => {
+    const PID_A = 'aaaaaaaaaa', PID_B = 'bbbbbbbbbb';
+    const files = {
+        'sites/site1/index.html': '<html>top</html>', [`sites/site1/${PID_A}/index.html`]: '<html>article</html>',
+        'sites/site9/index.html': '<html>top</html>', [`sites/site9/${PID_B}/index.html`]: '<html>article</html>'
+    };
+    const KVrecs = () => makeKV({
+        'uname:listed-user': { uid: 'u1', siteId: 'site1' },
+        'uname:test-account': { uid: 'u9', siteId: 'site9', unlisted: true }
+    });
+    // sitemap の記事 URL 列挙 (seo.js の listArticlePublicIds) 用に delimiter 付き list を足した bucket
+    function makeListingBucket() {
+        const b = makeBucket(files);
+        b.list = async ({ prefix, delimiter }) => {
+            const subs = new Set();
+            for (const k of Object.keys(files)) {
+                if (!k.startsWith(prefix)) continue;
+                const i = k.slice(prefix.length).indexOf(delimiter);
+                if (i >= 0) subs.add(k.slice(0, prefix.length + i + 1));
+            }
+            return { objects: [], delimitedPrefixes: [...subs] };
+        };
+        return b;
+    }
+    const get = (path, init, KV = KVrecs(), c = ctx) => worker.fetch(new Request(`https://bookshelf.asayake.org${path}`, init), env(KV, makeBucket(files)), c);
+    const headerMap = (res) => Object.fromEntries([...res.headers].filter(([k]) => k !== 'x-robots-tag'));
+
+    it('印のあるアカウントのトップ・記事 (GET/HEAD) に X-Robots-Tag: noindex が付く。配信自体は 200 のまま', async () => {
+        for (const path of ['/test-account/', `/test-account/${PID_B}/`]) {
+            const res = await get(path);
+            expect(res.status).toBe(200);
+            expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+            expect(await res.text()).toMatch(/^<html>/);
+        }
+        const head = await get('/test-account/', { method: 'HEAD' });
+        expect(head.headers.get('X-Robots-Tag')).toBe('noindex');
+    });
+
+    it('印の無いアカウントの応答には付かず、それ以外のヘッダは印のあるアカウントと同じ (今までどおり)', async () => {
+        const listed = await get(`/listed-user/${PID_A}/`);
+        const unlisted = await get(`/test-account/${PID_B}/`);
+        expect(listed.status).toBe(200);
+        expect(listed.headers.get('X-Robots-Tag')).toBeNull();
+        expect(listed.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+        expect(headerMap(listed)).toEqual(headerMap(unlisted));
+    });
+
+    it('キャッシュから返す 2 回目も noindex が付いたまま', async () => {
+        globalThis.caches = makeCacheStore();
+        const awaitingCtx = makeAwaitingCtx();
+        const KV = KVrecs();
+        await get('/test-account/', undefined, KV, awaitingCtx);
+        await awaitingCtx.flush();
+        KV.get = async () => { throw new Error('KV should not be read on cache hit'); };
+        const res2 = await get('/test-account/', undefined, KV, awaitingCtx);
+        expect(res2.headers.get('X-Robots-Tag')).toBe('noindex');
+    });
+
+    it('sitemap.xml に、印のあるアカウントのトップも記事も出ない。印の無いアカウントは両方出る', async () => {
+        const res = await worker.fetch(new Request('https://bookshelf.asayake.org/sitemap.xml'), env(KVrecs(), makeListingBucket()), ctx);
+        const body = await res.text();
+        expect(body).toContain('<loc>https://bookshelf.asayake.org/listed-user/</loc>');
+        expect(body).toContain(`<loc>https://bookshelf.asayake.org/listed-user/${PID_A}/</loc>`);
+        expect(body).not.toContain('test-account');
+        expect(body).not.toContain(PID_B);
+    });
+});

@@ -11,9 +11,11 @@ export function buildRobotsTxt(origin) {
 // 1件のuname:レコードを、Sitemapに載せてよいか判定する。
 // 除外: 退会(tombstone)・改名済み(movedTo、新username側だけ載せる)・停止(report:suspended)・
 //       siteId未設定・R2にindex.htmlが無い(=公開記事が1件も無い「非公開」相当、ADR-104前提の
-//       article.published単位の公開判定と整合: 何も公開していなければsites/配下に何も出力されない)。
+//       article.published単位の公開判定と整合: 何も公開していなければsites/配下に何も出力されない)・
+//       一覧に出さない印 (unlisted: true。運営のテスト専用アカウント用に運営が KV を直接書く。公開URLでの
+//       配信は続けるが、トップも記事も載せない。ハブの索引登録・bookshelf-cdn の noindex と同じ印)。
 async function isSitemapEligible(env, rec) {
-    if (!rec || rec.tombstone || rec.movedTo || !rec.siteId) return false;
+    if (!rec || rec.tombstone || rec.movedTo || !rec.siteId || rec.unlisted === true) return false;
     const reportRec = await env.KV.get(`report:${rec.siteId}`, 'json');
     if (reportRec && reportRec.status === 'suspended') return false;
     const obj = await env.BUCKET.head(`sites/${rec.siteId}/index.html`);

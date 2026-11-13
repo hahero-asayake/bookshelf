@@ -58,6 +58,7 @@
 import { serveHeaders, contentType, noindexHeaders } from './serve-headers.js';
 import { isValidUsername, isReservedTopLevel } from './reserved-usernames.js';
 import { scheduledBackup } from './backup.js';
+import { handleClientError, pruneClientErrors } from './client-errors.js';
 import { suspendedResponse } from './suspended-page.js';
 import { queryActiveSitesPage, clampLimit, decodeSitesCursor, encodeSitesCursor } from './community-sites-query.js';
 
@@ -68,6 +69,8 @@ export default {
     // Cron Trigger (wrangler.hub.toml の [triggers])。日次バックアップ (イシュー#235・backup.js)。fetch の経路には触れない。
     // 今の Cron はバックアップだけ (初回の手動実行で一時的な cron を足しても動く)。別の Cron を足す時は controller.cron でここを振り分ける。
     async scheduled(controller, env, ctx) {
+        // 端末エラーの古い行の掃除 (イシュー#584)。失敗してもバックアップの成否・戻り値に影響させない
+        try { await pruneClientErrors(env); } catch (e) { console.error('[client-error] prune 失敗:', e && e.message); }
         await scheduledBackup(env);
     },
 
@@ -124,6 +127,8 @@ export default {
             let mm;
             if (request.method === 'POST' && (mm = path.match(/^\/admin\/articles\/([^/]+)\/(hide|restore)$/))) return cors(await handleAdminArticleModerate(request, env, decodeURIComponent(mm[1]), mm[2]), env, request);
             if (request.method === 'POST' && (mm = path.match(/^\/admin\/reports\/([^/]+)\/dismiss$/))) return cors(await handleAdminReportDismiss(request, env, decodeURIComponent(mm[1])), env, request);
+            // 端末エラーの匿名受け口 (認証なし・イシュー#584・client-errors.js)
+            if (path === '/client-error' && request.method === 'POST') return cors(await handleClientError(request, env, ctx), env, request);
             if (path.startsWith('/data/')) return cors(await handleData(request, env, url), env, request);
             return cors(json({ error: 'not found' }, 404), env, request);
         } catch (e) {
@@ -296,11 +301,15 @@ async function handleUsername(request, env) {
         throw httpError(409, 'username taken');
     }
 
+    // 一覧に出さない印 (unlisted・運営が KV を直接書く) は名前でなくアカウントに付く印なので、現用名 (または取り直す
+    // 自分の名前) のレコードから新しいレコードへ引き継ぐ。ここで落とすと改名後の公開で索引・sitemap に載ってしまう。
+    const prevRec = uidRec.username && uidRec.username !== username ? await env.KV.get(`uname:${uidRec.username}`, 'json') : null;
+    const unlisted = [prevRec, existing].some(r => r && r.uid === sess.uid && r.unlisted === true);
     // 改名: 旧 username は削除せず movedTo で残す (解放しない・なりすまし防止。退会時は墓標化)
     if (uidRec.username && uidRec.username !== username) {
         await env.KV.put(`uname:${uidRec.username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId, movedTo: username }));
     }
-    await env.KV.put(`uname:${username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId }));
+    await env.KV.put(`uname:${username}`, JSON.stringify({ uid: sess.uid, siteId: uidRec.siteId, ...(unlisted ? { unlisted: true } : {}) }));
     await env.KV.put(`unames:${sess.uid}:${username}`, '1');   // uid→予約名索引 (退会時に現用名+旧名を全て解放するため)
     const renamed = !!uidRec.username && uidRec.username !== username;
     uidRec.username = username;
@@ -783,8 +792,13 @@ async function handlePublish(request, env) {
     const siteUrl = rec && rec.username
         ? `https://bookshelf.asayake.org/${rec.username}/`
         : `https://${env.HUB_DOMAIN}/public/${sess.siteId}/`;
+    // 一覧に出さない印 (unlisted: true・運営のテスト専用アカウント用に運営が KV を直接書く)。印の正本は uname:<username>
+    // の1か所 (bookshelf-cdn の noindex・seo.js の sitemap 除外が既に読むレコード)。uid → username は uid レコードから引ける。
+    // username 未設定のアカウントは uname: レコードが無い＝印を持てない (印を付けるには先に username を設定する)。
+    const unameRec = rec && rec.username ? await env.KV.get(`uname:${rec.username}`, 'json') : null;
+    const unlisted = !!(unameRec && unameRec.uid === sess.uid && unameRec.unlisted === true);
     // 索引 (ADR-099): ハブ公開の記事だけを D1 に載せる。R2 反映が済んだ後に行い、失敗しても公開自体は成功させる。
-    const idx = await syncArticleIndex(env, sess.uid, { files, index, deleteMissing: !!deleteMissing, siteUrl });
+    const idx = await syncArticleIndex(env, sess.uid, { files, index, deleteMissing: !!deleteMissing, siteUrl, unlisted });
     return json({ ok: true, siteId: sess.siteId, siteUrl, published: files.length, indexed: idx.indexed, ...(idx.reason ? { indexSkipped: idx.reason } : {}) });
 }
 
@@ -840,9 +854,18 @@ async function syncSiteTagsForUid(env, uid, pids) {
     await d1Batch(env, stmts);
 }
 
-async function syncArticleIndex(env, uid, { files, index, deleteMissing, siteUrl }) {
+async function syncArticleIndex(env, uid, { files, index, deleteMissing, siteUrl, unlisted }) {
     if (!hasD1(env)) return { indexed: false, reason: 'no-d1' };
     try {
+        if (unlisted) {
+            // 一覧に出さない印のあるアカウント: index を送ってきても1件も登録しない。印を付ける前に載っていた行は
+            // deleteMissing に関係なく公開のたびに全て消す (/top・/community/sites は sites 表から作るのでそこから消える)。
+            // public_id='' の旧行も /top の対象なので uid の全行を消す。紐づく通報・スター・コメント・集計も同じ扱い。
+            const cur = await env.DB.prepare(`SELECT id FROM sites WHERE uid = ?1`).bind(uid).all();
+            const ids = (cur.results || []).map(r => r.id);
+            await d1Batch(env, siteCascadeStmts(env, ids));
+            return { indexed: false, reason: 'unlisted', removed: ids.length };
+        }
         const present = new Set();
         for (const f of files) { const m = PUBLIC_ID_PATH.exec(safeRel(f.path)); if (m) present.add(m[1]); }
         const base = String(siteUrl || '').replace(/\/+$/, '') + '/';
