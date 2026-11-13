@@ -12,6 +12,7 @@
     "lint:css": "stylelint \"css/**/*.css\"",
     "lint:e2e-goto": "node scripts/check-e2e-goto.mjs",
     "lint:breakpoint": "node scripts/check-breakpoint-literal.mjs",
+    "lint:esc": "node scripts/check-esc-literal.mjs",
     "lint:internal-refs": "node scripts/check-test-internal-refs.mjs"
   },
   "devDependencies": {

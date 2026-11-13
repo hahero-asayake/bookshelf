@@ -28,6 +28,8 @@
     const KINDS = ['modal', 'sheet', 'popover', 'menu', 'dialog'];
     // 一時的な面 (別の面を開く前に自動で閉じる側・§6-4)
     const TRANSIENT = ['popover', 'menu'];
+    // 操作要素 (フォーカスの移し先・イシュー#565)
+    const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
     class OverlayManager {
         constructor() {
@@ -85,6 +87,8 @@
                 // layer:false = data-layer/--layer を書かない (自前の z-index を持つ面をスタックに載せるだけ・イシュー#509 U3 で記事の面の重なり順を変えないため)
                 layer: s.layer !== false,
                 content: null, handle: null,
+                // イシュー#565: 開いた元 (フォーカスの戻し先)。閉じた時にここへ戻す
+                opener: (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null,
             };
             const target = typeof s.sizeTarget === 'string' ? el.querySelector(s.sizeTarget)
                 : (s.sizeTarget || el.querySelector('.modal-content, .cfm-box') || el);
@@ -99,6 +103,7 @@
 
             this.stack.push(face);
             this._applyLayers();
+            this._focusInto(face);
 
             face.handle = {
                 id, el,
@@ -132,6 +137,7 @@
             face.el.style.removeProperty('--layer');
             this._applyLayers();
             if (face.onClose) { try { face.onClose(reason); } catch (e) { console.error('[overlays] onClose', e); } }
+            this._restoreFocus(face);
             if (face.hist && typeof this.hooks.onClose === 'function') {
                 try { this.hooks.onClose(id, { reason, fromHistory: !!o.fromHistory || reason === 'history', route: face.route ? (face.returnRoute || { view: 'main' }) : null }); }
                 catch (e) { console.error('[overlays] hooks.onClose', e); }
@@ -139,7 +145,33 @@
             return true;
         }
 
-        /** 閉じる要求 (ESC・×・戻る)。面の onRequestClose が false を返せば閉じない (false を返す) */
+// フォーカスの戻し先 (イシュー#565)。全部の面がここを通るので、面ごとに書かない:
+        //   開いた時: 面の中にフォーカスが無ければ、中の最初の操作要素へ移す (面が自前で入れる場合は邪魔しない=次のtickで確認)
+        //   閉じた時: フォーカスが面の中か body に落ちていれば、開いた元へ戻す (元が消えていれば下の面の中・無ければ何もしない)
+        _focusInto(face) {
+            if (TRANSIENT.includes(face.kind)) return;
+            setTimeout(() => {
+                if (!this.stack.includes(face)) return;
+                const ae = document.activeElement;
+                if (ae && ae !== document.body && face.el.contains(ae)) return;
+                if (ae && ae !== document.body && ae !== face.opener) return; // 面が別の場所へ入れた
+                const t = face.el.querySelector(FOCUSABLE);
+                if (t && t.offsetParent !== null) { try { t.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+            }, 0);
+        }
+
+        _restoreFocus(face) {
+            const ae = document.activeElement;
+            if (ae && ae !== document.body && !face.el.contains(ae)) return; // 既に別の場所へ移っている
+            let t = face.opener && face.opener.isConnected && face.opener.offsetParent !== null ? face.opener : null;
+            if (!t) {
+                const under = this.stack[this.stack.length - 1];
+                t = under ? under.el.querySelector(FOCUSABLE) : null;
+            }
+            if (t) { try { t.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+        }
+
+                /** 閉じる要求 (ESC・×・戻る)。面の onRequestClose が false を返せば閉じない (false を返す) */
         async requestClose(id, reason) {
             const face = this.stack.find((f) => f.id === id);
             if (!face) return false;

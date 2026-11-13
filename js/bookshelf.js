@@ -700,8 +700,13 @@ class VirtualBookshelf {
                 const topFace = ovStack.length ? ovStack[ovStack.length - 1] : null;
                 if (topFace && topFace.kind !== 'dialog') {
                     const btn = topFace.el.querySelector('.modal-close');
+                    const def = this._surface() && this._surface().get(topFace.id);
                     if (btn) btn.click();
-                    else {
+                    else if (def && typeof def.close === 'function') {
+                        // イシュー#565: Surface に閉じ方 (close) を登録した面 (⌘K パレット・引き出し) はその1つを呼ぶ
+                        // (管理役だけ閉じると hidden/body クラスが戻らず閉じない・段の外しも close が1回だけ行う)
+                        def.close({ reason: 'esc' });
+                    } else {
                         // .modal-close を持たない面 (プレビュー等): 管理役で閉じ、履歴を自前で積む面 (hist:false) は段も外す
                         // (旧 fallback「remove('show') + _modalHistPop」と同じ・履歴を残留させない)
                         this._overlays().requestClose(topFace.id, 'esc');
@@ -4064,7 +4069,8 @@ class VirtualBookshelf {
         if (!this._mobileEscBound) {
             this._mobileEscBound = true;
             document.addEventListener('keydown', (e) => {
-                if (window.Surface.isEsc(e) && body.classList.contains('drawer-open')) {
+                // イシュー#565: 共通 Esc が既に最前面を閉じた (defaultPrevented) 時は二重に戻らない
+                if (window.Surface.isEsc(e) && !e.defaultPrevented && body.classList.contains('drawer-open')) {
                     this._closeDrawer();
                 }
             });
@@ -5831,13 +5837,17 @@ class VirtualBookshelf {
         S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
         // 段だけ Surface 経由にする面 (overlays へは各画面が今どおり hist:false で載せる・または overlays を使わない面)。
         // 載せ替え前の _modalHistPush/_modalHistPop と同じ判定・同じ呼び順 (イシュー#509 U3 step3)
-        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'command-palette', 'descendants-pick-modal', 'drawer', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
+        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'descendants-pick-modal', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
         // イシュー#513 S6: report-modal だけ reloadReopen:true(リロードでも開き直してよい・
         // nav-state.js boot() の o.canReloadReopen が見る)。sessionStorage の pendingReport から
         // 明示的に開き直す既存の仕組み(_handleReportParam)が元からあり、全幅化で段を積むようになった
         // ことでboot()のH.go(-depth)と競合していたため。他の面(長文メモ等)はD06「再読込は段を畳む」
         // が元の決まりのままなので reloadReopen は立てない(back-nav-matrix L16/A39/X12で実測確認済み)。
         S.define('report-modal', { overlay: false, reloadReopen: true });
+        // イシュー#565: ⌘K パレットと引き出しは閉じ方 (close) も登録する = 共通 Esc が最前面のこの面1枚だけを
+        // この close で閉じる (段の外しも close の中の1回だけ・二重に戻らない)
+        S.define('command-palette', { overlay: false, close: (o) => this._closePalette(o || {}) });
+        S.define('drawer', { overlay: false, close: (o) => this._closeDrawer(o || {}) });
         // 出口の決まり (イシュー#511 X1): ページとして開く面は exit:'page' + parent (←の行き先)。
         // ×の代わりに←を出す/PCでは←も置かない、の見た目は各画面側 (index.html・CSS)。親は1か所 (ここ) で決める
         S.define('settings-modal', { overlay: false, exit: 'page', parent: { view: 'main' } }); // 行き先の1つ (PCは←無し・§4-2)
