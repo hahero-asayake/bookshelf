@@ -42,7 +42,7 @@
 //    'book-memo-modal': () => this._reopenBookMemo(st.asin) のように、移動後の名前を呼ぶ行があるが、
 //    Plan Aではthis.経由なのでファイルを移しても無変更で動く
 //  - 本棚・本のドメイン操作(bookshelf.js側に残る・showBookDetailのボタンから呼ぶ):
-//    addBookToBookshelf/removeFromBookshelf/deleteBook/excludeBook
+//    addBookToBookshelf/removeFromBookshelf/excludeBook
 //  - VirtualBookshelf 側の状態・入れ物(thisのまま読む): this.userData(notes/bookshelves/settings/
 //    hiddenBooks) / this.bookshelfManager(resolveMemo/resolveRating/getById/getBySlug/setMemo) /
 //    this.bookManager(getAmazonUrl/isKindleBook/getKindleReadUrl/hasCoverImage/getProductImageUrl) /
@@ -426,13 +426,6 @@ class _BookDetailMethods {
         
         // 本棚セクションの「追加」と × (書き換えた後も同じ関数でつなぎ直す・イシュー#620)
         this._bindDetailShelvesEvents(modalBody);
-
-        const deleteBtn = modalBody.querySelector('.delete-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', (e) => {
-                this.deleteBook(e.target.dataset.asin);
-            });
-        }
 
         const excludeBtn = modalBody.querySelector('.exclude-btn');
         if (excludeBtn) {

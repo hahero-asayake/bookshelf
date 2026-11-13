@@ -22,7 +22,7 @@
 | 9 | bookshelf.js:7861 プラグイン一覧の `uninstall` クリック（`host.addEventListener('click', ...)`内） | 同期ハンドラ（内部で別途async IIFEを使用）。confirm後に `uninstallPluginById(id)` を呼ぶ | 中。確認待ち中に同じボタンを連打すると二重アンインストールの恐れ。**既存バグ的経路を発見**：ここでconfirm通過後に呼ぶ `uninstallPluginById`（#13）の内部にも別のconfirmがあり、このパスでは**2回確認が出る**（既存の挙動・本イシューでは直さない） | ハンドラをasync化。uninstallボタンをdisabled化 |
 | 10 | bookshelf.js:8773 本棚から本を除外（カスケード削除確認） | 既にasync関数内（saveUserDataをawait） | 低 | ― |
 | 11 | bookshelf.js:12699 長文メモ保存後、Obsidianで開く確認（破壊的操作ではない） | 同期フロー内、OKならwindow.location.hrefで外部プロトコル遷移 | 低 | ― |
-| 12 | bookshelf.js:13434 `deleteBook`（書籍完全削除・取り消せない） | 既にasync関数 | 低〜中 | 呼び出し元ボタンのdisable推奨（必須ではない） |
+| 12 | bookshelf.js:13434 `deleteBook`（書籍完全削除・取り消せない） | 既にasync関数 | 低〜中 | ―（呼び出し元の削除ボタンは無い＝本の詳細の「本を削除」は2026-06-01 B-8で撤去・04_画面設計書:197／#601。残っていたクリック処理は#608で削除） |
 | 13 | bookshelf.js:14290 `uninstallPluginById`（プラグイン削除・設定画面直接） | 既にasyncメソッド。呼び出し元は7864（#9経由）と14217（ボタン直接）の2か所 | 中。#9と同じ二重確認経路の内側。14217直接クリックの経路では確認待ち中の連打で二重アンインストールの恐れ | メソッド冒頭でconfirm待ち中の再入防止（簡易フラグ）か、呼び出し元(14217)のボタンdisable |
 | 14 | plugin-loader.js:292 `installFromGitHub`（プラグイン導入確認） | 既にasyncメソッド。**呼び出し元は2か所、両方既にawait**（bookshelf.js:7508は`skipConfirm:true`でconfirm行自体通らない／bookshelf.js:14253はawaitで待つ） | 中。confirm待ち中に別のプラグイン導入操作や設定モーダルを閉じる余地がある | 呼び出し元(14253)のボタン/モーダルで二重起動を防ぐ。詳細は次節 |
 

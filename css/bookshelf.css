@@ -6639,17 +6639,6 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     color: var(--fg);
 }
 
-/* Delete Button Specific Styles */
-.delete-btn {
-    background-color: #e74c3c !important;
-    border-color: #c0392b !important;
-}
-
-.delete-btn:hover {
-    background-color: #c0392b !important;
-    border-color: #a93226 !important;
-}
-
 /* Responsive Modal Improvements */
 @media (max-width: 900px) {
     .import-options {
