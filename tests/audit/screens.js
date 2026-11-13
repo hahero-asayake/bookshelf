@@ -22,7 +22,6 @@ export const SCREENS = [
     { id: 'command-palette', title: 'コマンドパレット', group: 'main', surfaces: ['command-palette'], std1: ['コマンドパレット'] },
     { id: 'settings', title: '設定の一覧', group: 'settings', surfaces: ['settings-modal'], std1: ['設定モーダル'] },
     { id: 'settings-cat', title: '設定の各節', group: 'settings', surfaces: ['settings-cat'], std1: ['設定モーダル'] },
-    { id: 'plugins', title: 'プラグインの一覧', group: 'settings', surfaces: ['plugins-modal'] },
     { id: 'plugin-settings', title: 'プラグイン設定', group: 'settings', surfaces: ['plugin-settings-modal'], std1: ['プラグイン設定モーダル'] },
     { id: 'import', title: '取込', group: 'manage', surfaces: ['import-modal'], std1: ['取込モーダル'] },
     { id: 'add-book', title: '本の手動追加', group: 'manage', surfaces: ['add-book-modal'], std1: ['手動追加モーダル'] },
@@ -55,4 +54,9 @@ export const SCREENS = [
 export const EXCLUDED = [
     { name: 'プラグインの面', std1: ['プラグインの面'], reason: '中身はプラグインごとに違う。標準プラグインがこの面を使う場合は SCREENS へ移す' },
     { name: 'トースト', reason: '数秒で消える表示。文言は抽出 (scripts/extract-ui-strings.mjs) で見る' },
+    {
+        name: 'プラグインの一覧 (plugins-modal)',
+        surfaces: ['plugins-modal'],
+        reason: 'S.define の登録だけが残っていて、開く対象が無い。index.html に要素が無く、開く処理も js に無い (js/screens/settings.js の「プラグイン管理 UI」のコメント: showPluginsModal・closePluginsModal は削除済み)',
+    },
 ];

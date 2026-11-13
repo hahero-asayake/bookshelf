@@ -16,8 +16,9 @@
   1. `js/bookshelf.js` の `_defineSurfaces` にある `S.define` の全ID（今は29）
   2. `docs/ui-standards.md` §1 の表の全行（今は28。「面」の列の文字で突き合わせる）
 - `index.html` にあるのに上の2つのどちらにも無い面は、一覧に手で載せる（今は `bulk-shelf-popover`・`mobile-setup-banner`・`art-drawer-shelf-popover`）。
-- 片方にしか無い面（今は `plugins-modal`・`publish-settings-modal`・`dashboard-edit` が `S.define` にだけある）は、検査の結果に名前を出す。落とさない。
-- 開き方は、次の順で最初に使えるもので書く。①利用者の操作（クリック・タップ・キー）②`tests/e2e/helpers/` の関数 ③公開の窓口（`window.bookshelf.` の、先頭に `_` の無いメソッド）。
+- 片方にしか無い面（今は `publish-settings-modal`・`dashboard-edit` が `S.define` にだけある）は、検査の結果に名前を出す。落とさない。
+- 開き方の正本は `tests/audit/open.js` と `open-*.js`。次の順で最初に使えるもので書く。①利用者の操作（クリック・タップ・キー）②`tests/e2e/helpers/` の関数 ③公開の窓口（`window.bookshelf.` の、先頭に `_` の無いメソッド）。
+- 起動した時の環境でしか出ない画面（スマホの設定案内バナー）は、その環境で起動する（スマホの UA）。
 - spec と一覧に `bookshelf._`・`app._` を直接書かない（`lint:internal-refs` の対象に `tests/audit` を足し、上限82のまま保つ）。
 
 ### 1-2. 画面（初版）
@@ -39,10 +40,9 @@
 | drawer | 左ナビのドロワー | drawer | ドロワー (SP 左ナビ) | 出る幅だけ |
 | command-palette | コマンドパレット | command-palette | コマンドパレット (⌘K) | 全部 |
 | settings | 設定の一覧 | settings-modal | 設定モーダル | 全部 |
-| settings-cat-* | 設定の各節（画面にある節を全部） | settings-cat | 設定モーダル | 全部 |
-| plugins | プラグインの一覧 | plugins-modal | — | 全部 |
+| settings-cat | 設定の各節（画面に出ている節を全部） | settings-cat | 設定モーダル | 全部 |
 | plugin-settings | プラグイン設定 | plugin-settings-modal | プラグイン設定モーダル | 全部 |
-| import-* | 取込（取込の方法ごと） | import-modal | 取込モーダル | 全部 |
+| import | 取込（最初の表示と、折りたたみを全部開いた状態） | import-modal | 取込モーダル | 全部 |
 | add-book | 本の手動追加 | add-book-modal | 手動追加モーダル | 全部 |
 | exclusions | 除外一覧 | exclusions-modal | 除外一覧モーダル | 全部 |
 | shelves-manage | 本棚管理 | bookshelf-modal | 本棚管理モーダル | 全部 |
@@ -66,7 +66,7 @@
 | confirm | 確認ダイアログ（2択） | — | confirmDialog (2択) | 全部 |
 | sync-conflict | 同期衝突ダイアログ（3択） | — | 同期衝突ダイアログ (3択) | 全部 |
 | usage-alert | 容量アラートバナー | — | 容量アラートバナー | 全部 |
-| mobile-setup-banner | スマホの設定案内バナー | — | — | 出る幅だけ |
+| mobile-setup-banner | スマホの設定案内バナー | — | — | タッチの端末（スマホの UA で起動） |
 
 対象外（理由つき）
 
@@ -74,6 +74,7 @@
 |---|---|
 | プラグインの面（`api.ui.openOverlay`・ui-standards §1 の行「プラグインの面」） | 中身はプラグインごとに違う。標準プラグインがこの面を使う場合は一覧へ移す |
 | トースト | 数秒で消える表示。文言は抽出（§7）で見る |
+| プラグインの一覧（`plugins-modal`） | `S.define` の登録だけが残っていて、開く対象が無い。`index.html` に要素が無く、開く処理も js に無い |
 
 開き方（既存の spec が使っている入口。表に無い画面は①利用者の操作で書く）
 
@@ -110,7 +111,7 @@
 | usage-alert | `renderUsageAlertForTest`（helpers/settings.js） |
 
 - 幅で出ない画面（例：ドロワー）は、その幅では飛ばす。どの幅で出るかは `screens.js` に書く。飛ばした組合せは結果に件数を出す。
-- 同じ起動のまま、同じ群の画面を順に開いて検査する（群の単位は `screens.js` で決める）。1画面の失敗が次の画面に残らないよう、群ごとに起動し直す。
+- 続けて開く画面は、開き方の `after`（前の画面ID）でつなぐ。末端の画面ごとに先頭からの列を作り、1つの列を1回の起動で順に開いて検査する。1つの列の失敗は、別の列に残らない。
 
 ## 2. データ3種
 
@@ -118,8 +119,11 @@
 |---|---|---|
 | 標準 | 本5冊・本棚1つ | `tests/fixtures/fixture-userdata.json`・`fixture-library.json`（visual と同じ） |
 | 多数 | 本780冊・本棚12 | `tests/perf/fixtures/gen-scale.mjs` の `genScale({ shelves: 12, perShelf: 130 })` |
-| 長い名前 | 本5冊・本棚3つ（2段の入れ子）。本の題は全角120字、著者は10人、本棚名は全角40字、記事の題は全角80字、短文メモは全角300字、ユーザー名は入力欄の上限いっぱい。題の1つは空白の無い英数40字を含む | `tests/fixtures/audit/` に新しく置く |
+| 長い名前 | 本5冊・本棚3つ（2段の入れ子）。本の題は全角120字、著者は10人、本棚名は全角40字、短文メモは全角300字。題の1つは空白の無い英数40字を含む | `tests/audit/app.js` が標準のデータから作る（本と本棚の ID は標準と同じ） |
 
+- 本が0冊のデータも持つ。初回の案内と空の本棚の画面だけで使う。
+- 開き方は、本と本棚の ID を直に書かず、データが渡す ID（`ctx.anchors`）を使う。どのデータでも同じ開き方で開けるようにするため。
+- 記事の題（全角80字）とユーザー名（入力欄の上限いっぱい）は、その入力がある画面の開き方で入れる。
 - 外部への通信は全部止める（`tests/e2e/helpers/test-base.js` の経路。表紙は固定の画像に差し替える）。
 - 絵文字はデータに入れない（絵文字のフォントは環境で違う）。
 - 多数のデータで1画面の検査が10秒を超える時は、本を300冊へ減らし、実測値と理由を結果に書く。
@@ -135,6 +139,8 @@
 - 6幅は `tests/char-devices.js` の `CHAR_DEVICES`（390・768・820・1024・1440・1920）を import して使う。390〜1024 はタッチ、1440・1920 はマウス。
 - ダークは標準プラグイン `dark-theme` を有効にした状態（`body.plugin-dark`）。
 - 同じ訪問で複数の検出器を流してよい（結果は同じ）。
+- 上の表を満たす起動の組合せは4つ：標準/ライト・標準/ダーク・多数/ライト・長い名前/ライト。試す時は環境変数 `AUDIT_RUNS` で絞れる（例 `AUDIT_RUNS=standard/light`）。
+- 中に段がある画面（設定の節・取込の折りたたみ）は、段を1つ開くたびに検査する。設定の節は、画面に出ている節を全部回す（運営者だけに出る節は、出ていなければ回さない）。
 - 設定は `playwright.audit.config.js`（`playwright.config.js` は変えない）。実行には `PORT` と `PLAYWRIGHT_BASE_URL` を必ず付ける。
 
 ## 4. 環境をそろえる手当て
@@ -234,6 +240,9 @@
 - 対象：見えている要素（`checkVisibility` が真、幅と高さが0より大きい、`inert` の祖先が無い）。スクロールしないと見えない位置の要素も対象。
 - `content-visibility` で描画を省かれた要素は対象外。
 - 同一オリジンの iframe の中（公開プレビュー・記事のキャンバス）も同じ決まりで見る。
+- 箱を持たない要素は対象外：`svg` の中の要素（アイコンの線）、`option`・`optgroup`・`br`・`wbr`・`template`、display が inline・contents の要素。
+- 「親の枠」は、親の外枠（border box。`getBoundingClientRect` の矩形）で比べる。
+- 親が `body` の要素は、はみ出しの対象外（横方向は `pageX` で見る）。
 - 許容は1px。差が1px以下なら検出しない。
 
 | 種類 | 検出する条件 | 対象外 |
@@ -328,3 +337,17 @@
 
 - audit レグは3つの検査を最後まで流し、件数を `::notice::` で出す。
 - audit レグの所要は5分以内を目安にする。
+
+門の集計（`gate-report`・イシュー#583）へ渡す形
+
+- 検査の結果を `_local/gate/audit.json` に書く。形は `{ "checks": [{ "name", "detected", "detail" }] }`。
+- `name` は次の6つ。`aria` と `alt` は別々に出す。
+
+| name | 中身 |
+|---|---|
+| `lint:copy` | 文言の表記（textlint の指摘の件数） |
+| `用語表` | 用語表の照合（table と jargon の合計） |
+| `aria` | 名前の無い部品のうち、画像以外（`button`・`link`・`input`・`inputPlaceholderOnly`・`select`・`other` と、axe の画像以外のルール） |
+| `alt` | 名前の無い部品のうち、画像（`image` と、axe の `image-alt`・`input-image-alt`・`role-img-alt`・`svg-img-alt`） |
+| `表示崩れ` | `clip`・`overflow`・`pageX`・`overlap` の合計 |
+| `ボタン名` | ボタン名の揺れの件数 |
