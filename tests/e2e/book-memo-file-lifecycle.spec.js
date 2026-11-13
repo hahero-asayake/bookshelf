@@ -137,11 +137,13 @@ async function openMemoFromDetail(page, asin) {
     return getBookMemoValue(page);
 }
 
-/** 詳細から長文メモを書き、完了 (Esc＝保存して閉じる) で保存して、保存先にファイルが届くまで待つ */
+/** 詳細から長文メモを書き、「完了」(保存して閉じる) で保存して、画面が閉じ保存先にファイルが届くまで待つ */
 async function writeMemo(page, remote, asin, title) {
     await openMemoFromDetail(page, asin);
     await setBookMemoValue(page, BODY);
-    await page.keyboard.press('Escape');
+    // 利用者の操作に合わせて「完了」(保存して閉じる) を押す (スマホでは Esc を押せない)。画面が閉じたのを確かめてから進む
+    await page.locator('#book-memo-fs-done').click();
+    await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
     await expect.poll(() => remote.has(memoPath(asin, title)), { message: `${memoPath(asin, title)} が保存先に書かれる` }).toBe(true);
 }
 
