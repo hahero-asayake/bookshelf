@@ -66,7 +66,8 @@ async function bootWithLocalFolder(page) {
     const inject = await installLocalWriteFailures(page);
     const local = await installFakeLocalFolder(page);
     await page.addInitScript(() => {
-        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
+        // 保存先を「この端末のフォルダ」に決めた人 (決めた印つき・イシュー#596。印の無い local は設定がハブを見せる)
+        localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', methodChosen: true }));
     });
     await page.goto('index.html');
     await openSettingsByClick(page, 'sync-section');
