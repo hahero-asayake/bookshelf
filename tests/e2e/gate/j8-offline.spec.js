@@ -13,8 +13,12 @@ const bookItem = (page) => page.locator(`#bookshelf .book-item[data-asin="${BOOK
 const memoBox = (page) => page.locator('#bd-sections .note-textarea').first();
 
 // 下のナビの「本棚」→「すべての本」→ 本をタップして、本の詳細を開く (利用者の操作だけ)
+// 先にアプリの起動が済む (ホームに書名が出る) のを待つ。下のナビ自体は起動前から見えていて、起動前に押すと何も起きない
+// (門のE2E を並列で流した時に1回実測・step4)
 async function tapToBookDetail(page) {
+    await expect(page.getByText('フィクスチャの本 1').first()).toBeVisible();
     await page.locator('[data-mobile-nav="shelves"]').tap();
+    await expect(page.locator('body')).toHaveClass(/drawer-open/);
     await page.locator('#sidebar-bookshelf-tree .tree-node', { hasText: 'すべての本' }).first().tap();
     await bookItem(page).tap();
     await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();

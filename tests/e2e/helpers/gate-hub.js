@@ -68,7 +68,11 @@ export function createHubStateForTest(overrides = {}) {
  * @param {object} [overrides] createHubStateForTest と同じ */
 export function resetHubStateForTest(state, overrides = {}) {
     for (const k of Object.keys(state)) delete state[k];
-    Object.assign(state, initialHubState(overrides));
+    const { files, ...rest } = overrides;
+    Object.assign(state, initialHubState(rest));
+    // files は [path, 中身の文字列] の配列でも渡せる (spec の先頭に値として置ける形)。毎回新しい Map に入れ直す
+    if (Array.isArray(files)) state.files = new Map(files.map(([p, content]) => [p, { content, etag: '"v1"' }]));
+    else if (files instanceof Map) state.files = new Map(files);
 }
 
 /** 課金の Plus の状態 (本物では Stripe の Webhook が書く・cf-worker/asayake-hub.js の subMeta と setPlan)。
@@ -225,6 +229,67 @@ export async function mockBillingPagesForTest(page, state) {
     });
 }
 
+/** アプリがログインで送る先 (js/hub-auth.js の HUB_API_BASE)。本物のハブ。ログインの通信だけここへ来る。 */
+export const HUB_LOGIN_BASE = 'https://hub.asayake.org';
+
+/** Google のログインボタンの模擬 (外部の Google Identity Services の代わり)。押すと、ログインの資格情報をアプリへ返す。
+ * tests/e2e/helpers/test-base.js も GIS を模擬しているが、そちらは押しても何も起きない。こちらで上書きする
+ * (どちらの初期化が先に走っても、こちらが残るようにしてある)。アプリを開く前に呼ぶ。
+ * @param {import('@playwright/test').Page} page */
+export async function mockGoogleSignInForTest(page) {
+    await page.addInitScript(() => {
+        let callback = null;
+        const id = {
+            initialize(opts) { callback = opts && opts.callback; },
+            prompt() {},
+            renderButton(container) {
+                if (!container) return;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'gis-mock-button';
+                btn.textContent = 'Google でログイン（模擬）';
+                btn.addEventListener('click', () => { if (callback) callback({ credential: 'gate-mock-google-credential' }); });
+                container.appendChild(btn);
+            },
+            disableAutoSelect() {}, cancel() {}, revoke(_hint, cb) { if (cb) cb({}); }
+        };
+        window.google = window.google || {};
+        const accounts = window.google.accounts || {};
+        Object.defineProperty(accounts, 'id', { configurable: true, get: () => id, set: () => {} });
+        window.google.accounts = accounts;
+    });
+}
+
+/** ログイン (POST /session) の模擬。本物 (cf-worker/asayake-hub.js の handleSession・224-270 行) と同じく、uid は Google の
+ * sub で決まり、uid の記録が無ければ (退会した後を含む) 新しい siteId・無料プラン・使用量0の利用者として作る。
+ * 応答の apiBase は模擬のハブ (HUB_BASE) を返す = 以後の通信は mockHubForTest に来る。アプリを開く前に呼ぶ。
+ * @param {import('@playwright/test').Page} page
+ * @param {ReturnType<typeof createHubStateForTest>} state */
+export async function mockHubSessionForTest(page, state) {
+    await page.route(`${HUB_LOGIN_BASE}/session`, async (route) => {
+        state.requests.push({ method: route.request().method(), path: 'login:/session' });
+        if (route.request().method() !== 'POST') return route.fulfill({ status: 405 });
+        if (state.deleted) {
+            // 退会した利用者が同じ Google アカウントで登録し直した = 空の利用者として作り直す
+            Object.assign(state, {
+                deleted: false, siteId: `s-${Date.now()}`, key: `hk_new${Date.now()}`,
+                plan: 'free', billingManaged: false, planSource: null, subStatus: null,
+                interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, usedBytes: 0
+            });
+        }
+        return route.fulfill({
+            json: {
+                key: state.key, uid: state.uid, siteId: state.siteId, email: state.email,
+                plan: state.plan, quotaBytes: quotaOf(state), usedBytes: state.usedBytes,
+                interval: state.interval, currentPeriodEnd: state.currentPeriodEnd, cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+                subStatus: state.subStatus, billingManaged: state.billingManaged, planSource: state.planSource,
+                isAdmin: false, apiBase: HUB_BASE, publicBase: `${HUB_BASE}/public/${state.siteId}/`,
+                username: null, bookshelfBase: null
+            }
+        });
+    });
+}
+
 // /data/<path> の読み書き。応答の形は tests/e2e/publish-conflict-hub.spec.js の模擬と同じ
 // (ETag は Access-Control-Expose-Headers を付けて返す = 付けないとアプリから読めない)
 function fulfillData(route, state, method, path) {
@@ -349,7 +414,11 @@ export async function mockHubForTest(page, state) {
             const ret = returnUrlOf(readJson(req).returnUrl, page);
             return route.fulfill({ json: { url: `${BILLING_BASE}/portal?${new URLSearchParams({ return: ret })}` } });
         }
+        // 退会した後は、古い接続キーは使えない (本物は uid:<uid> を先に消すので、キーの解決が失敗する・handleAccountDelete 947-950 行)
+        if (state.deleted) return route.fulfill({ status: 401, json: { error: 'invalid key' } });
         if (path === '/account' && method === 'DELETE') {
+            // 本物 (cf-worker/asayake-hub.js の handleAccountDelete・919-975 行) は、保存データ (data/<uid>/)・公開サイト
+            // (sites/<siteId>/)・プラン (plan:<uid>)・使用量 (usage:<uid>)・キーを消す
             state.deleted = true;
             state.files.clear();
             return route.fulfill({ json: { ok: true, deleted: true } });
