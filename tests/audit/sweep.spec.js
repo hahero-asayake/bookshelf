@@ -21,6 +21,10 @@ for (const chain of chains()) {
     test(`開けて、見えている: ${chain.join(' → ')}`, async ({ page }) => {
         await bootApp(page);
         for (const id of chain) {
+            if (OPENERS[id].applies && !(await OPENERS[id].applies(page))) {
+                test.info().annotations.push({ type: 'この幅では出ない', description: id });
+                break;   // 続きの画面は、この画面が開いている前提なので回さない
+            }
             await test.step(id, async () => {
                 await OPENERS[id].open(page);
                 await pinEnvironment(page);   // 画面を開いた時にできた iframe にも入れる
