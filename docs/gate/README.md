@@ -52,6 +52,8 @@
 | 4 | `prod-url.json` | `{ "checks": [{ "name", "ok": true｜false, "detail" }] }` | 本番URL の検査 |
 | 7 | `audit.json` | `{ "checks": [{ "name", "detected": 件数, "detail" }] }` | 監査の機械検査（#585） |
 
+**条件3の E2E は、流した結果を全部渡す**。`gate-report` は渡された結果だけで判定するので、渡していない分は確かめないまま「合格」と出る。CI は E2E を3つに分けて流している：`e2e-results/e2e-parallel.json`（sort-perf-budget 以外の全件）・`test-results/e2e.json`（sort-perf-budget の単独実行）・char レグの `test-results/e2e.json`（char 6端末）。最終の門では、この全部を `e2e*.json` の名前で置く（`scripts/verify/e2e-diff-main.mjs` の `work.e2e.json` も sort-perf-budget を除いているので、それだけでは足りない）。
+
 **`prod-url.json` の必須の名前**（設計書 §4 の表と §6 の4）：`CSP`・`OGP`・`PWA`・`SEO`・`301`・`Lighthouse性能`・`Lighthouse a11y`・`axe`。
 
 - 閾値の判定は検査の側で済ませ、`ok` に結果だけを入れる（性能はスマホ・温まった状態で90以上、a11y はスマホ100、axe は serious 以上0）。`detail` には測った値を書く。
