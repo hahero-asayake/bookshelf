@@ -7,6 +7,13 @@ const extraProjects = process.env.BACKNAV_WEBKIT === '1'
     ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js|checklist-timing\.spec\.js|forward-reopen-idempotent\.spec\.js|touch-reorder\.spec\.js|overlay-front\.spec\.js|bookshelf-clip-373\.spec\.js|bookshelf-clip-385\.spec\.js|focus-trap-deeplink\.spec\.js|art-canvas-tap-edit\.spec\.js/, use: { ...devices['iPhone 13'] } }]
     : [];
 
+// 門のE2E (@gate・tests/e2e/gate/) を webkit (iPhone相当・390タッチ) でも流す project (イシュー#589・G-6)。
+// GATE_WEBKIT=1 の時だけ足す = project 指定なしの既定実行・e2e-diff-main・char・visual の件数を変えない。
+// #580 のタップの回帰 (art-canvas-tap-edit) もここで流す。CI の webkit レグがこの project を流す。
+const gateWebkitProjects = process.env.GATE_WEBKIT === '1'
+    ? [{ name: 'gate-webkit', testMatch: /tests[\\/]e2e[\\/]gate[\\/].*\.spec\.js$|art-canvas-tap-edit\.spec\.js$/, use: { ...devices['iPhone 13'] } }]
+    : [];
+
 // worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
 // portを使い、どちらも無ければ既定の8000(従来どおり)。webServer.command/portとuse.baseURLの両方に使う
 // ＝PLAYWRIGHT_BASE_URLだけ指定してもwebServerが別portで素通り/起動してしまう不整合を防ぐ。
@@ -57,6 +64,7 @@ export default defineConfig({
     projects: [
         { name: 'chromium', use: { browserName: 'chromium' }, testIgnore: CHAR_TEST_MATCH },
         ...extraProjects,
+        ...gateWebkitProjects,
         ...charProjects
     ]
 });
