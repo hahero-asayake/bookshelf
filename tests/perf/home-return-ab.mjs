@@ -89,7 +89,22 @@ async function setupPage(context) {
         };
         const entry = dash._registry['bookshelf-highlights'];
         if (entry) entry.render = wrap('_renderBookshelfHighlights(dashboard.js:977)', entry.render);
-        app._renderBookshelfCard = wrap('_renderBookshelfCard(bookshelf-card.js:93)', app._renderBookshelfCard);
+        // _renderBookshelfCard の内訳 (カード描画中だけ数える):
+        //   books.find = bookshelf-card.js:144 の表紙ごとの全蔵書走査
+        //   Array.sort = :122(custom) / :137(既定) の本棚全冊ソート
+        //   _getLibrarySortedAsins = :134/:136 の全蔵書の並び(キャッシュ有無)
+        //   _bindBookshelfOverviewEvents = dashboard.js:1000 のバインド
+        let inCard = 0;
+        if (Array.isArray(app.books)) {
+            const origFind = Array.prototype.find;
+            Object.defineProperty(app.books, 'find', { configurable: true, value: function (...a) { return inCard ? wrap('  books.find(bookshelf-card.js:144)', origFind).apply(this, a) : origFind.apply(this, a); } });
+        }
+        const origSort = Array.prototype.sort;
+        Array.prototype.sort = function (...a) { return inCard ? wrap('  Array.sort(bookshelf-card.js:122/137)', origSort).apply(this, a) : origSort.apply(this, a); };
+        if (typeof app._getLibrarySortedAsins === 'function') app._getLibrarySortedAsins = wrap('  _getLibrarySortedAsins(bookshelf-card.js:134/136)', app._getLibrarySortedAsins);
+        if (typeof app._bindBookshelfOverviewEvents === 'function') app._bindBookshelfOverviewEvents = wrap('_bindBookshelfOverviewEvents(dashboard.js:1000)', app._bindBookshelfOverviewEvents);
+        const cardFn = wrap('_renderBookshelfCard(bookshelf-card.js:93)', app._renderBookshelfCard);
+        app._renderBookshelfCard = function (...a) { inCard++; try { return cardFn.apply(this, a); } finally { inCard--; } };
         const origRender = dash.render;
         dash.render = wrap('dashboard.render(dashboard.js:191)', function (...a) {
             const r = origRender.apply(this, a);
