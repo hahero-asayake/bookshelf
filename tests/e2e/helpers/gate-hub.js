@@ -36,9 +36,10 @@ export const HUB_BASE = 'https://mockhub.test';
 /** 公開ページの配信の置き場。本番と同じ形 https://bookshelf.asayake.org/<username>/<publicId>/ (cf-worker/bookshelf-cdn.js)。 */
 export const PUBLIC_SITE_BASE = 'https://bookshelf.asayake.org';
 
-/** 模擬のハブの状態を作る。テストの中で1つ作り、seedHubLoginForTest と mockHubForTest に同じ物を渡す。
- * @param {object} [overrides] plan ('free'|'plus')・billingManaged・planSource・email・username (null で公開名義なし) 等を上書きする */
-export function createHubStateForTest(overrides = {}) {
+/** 決済 (Stripe の Checkout・Billing Portal) の模擬のページの置き場 (実在しないホスト)。mockBillingPagesForTest が配る。 */
+export const BILLING_BASE = 'https://billing.mock.test';
+
+function initialHubState(overrides) {
     return {
         email: 'taro@example.com', uid: 'u1', siteId: 's1', key: 'hk_test',
         plan: 'free', billingManaged: false, planSource: null, subStatus: null,
@@ -52,6 +53,33 @@ export function createHubStateForTest(overrides = {}) {
         failWrites: false,     // true の間は書き込み (PUT・DELETE・まとめ書き・公開) を 500 で失敗させる
         requests: [],          // 届いた通信の記録 ({ method, path })。模擬に無い道を見つける時に読む
         ...overrides
+    };
+}
+
+/** 模擬のハブの状態を作る。テストの中で1つ作り、seedHubLoginForTest と mockHubForTest に同じ物を渡す。
+ * @param {object} [overrides] plan ('free'|'plus')・billingManaged・planSource・email・username (null で公開名義なし) 等を上書きする */
+export function createHubStateForTest(overrides = {}) {
+    return initialHubState(overrides);
+}
+
+/** 模擬のハブの状態を、作り直した時と同じ中身に戻す (同じ物を使い回す)。@gate の本文の区間の外では値を置く宣言しか
+ * 書けないので、状態は spec の先頭 (モジュール) で1つ作り、前提の区間でこれを呼んでテストごとに戻す。
+ * @param {ReturnType<typeof createHubStateForTest>} state
+ * @param {object} [overrides] createHubStateForTest と同じ */
+export function resetHubStateForTest(state, overrides = {}) {
+    for (const k of Object.keys(state)) delete state[k];
+    Object.assign(state, initialHubState(overrides));
+}
+
+/** 課金の Plus の状態 (本物では Stripe の Webhook が書く・cf-worker/asayake-hub.js の subMeta と setPlan)。
+ * @param {'monthly'|'yearly'} plan */
+export function plusStateForTest(plan = 'monthly') {
+    const days = plan === 'yearly' ? 365 : 30;
+    return {
+        plan: 'plus', billingManaged: true, planSource: 'stripe', subStatus: 'active',
+        interval: plan === 'yearly' ? 'year' : 'month',
+        currentPeriodEnd: Math.floor(Date.now() / 1000) + days * 24 * 3600,   // unix 秒 (Stripe の current_period_end)
+        cancelAtPeriodEnd: false
     };
 }
 
@@ -96,9 +124,11 @@ export function seedHubDataForTest(state) {
  * @param {{ method?: 'local'|'hub', library?: boolean }} [opts] method: データの保存先 (既定はローカル)。library: 端末内の蔵書の見本も入れるか (既定 true) */
 export async function seedHubLoginForTest(page, state, opts = {}) {
     const { method = 'local', library = true } = opts;
+    // ログインした時にアプリが端末へ保存する項目と同じにする (js/hub-auth.js のログインの応答の保存・課金の周期と次回更新日と解約予約も入る)
     const hub = {
         apiBase: HUB_BASE, key: state.key, uid: state.uid, siteId: state.siteId, email: state.email,
         plan: state.plan, quotaBytes: quotaOf(state), usedBytes: state.usedBytes,
+        interval: state.interval, currentPeriodEnd: state.currentPeriodEnd, cancelAtPeriodEnd: !!state.cancelAtPeriodEnd,
         billingManaged: state.billingManaged, planSource: state.planSource, subStatus: state.subStatus,
         publicBase: `${HUB_BASE}/public/${state.siteId}/`, username: state.username || null, bookshelfBase: publicBaseOf(state)
     };
@@ -146,6 +176,54 @@ export function failHubWritesForTest(state) {
 
 const etagHeaders = (etag) => ({ ETag: etag, 'Access-Control-Expose-Headers': 'ETag' });
 const writeFailure = (route) => route.fulfill({ status: 500, json: { error: 'gate-hub.js の模擬: 書き込みの失敗' } });
+
+function readJson(req) {
+    try { return JSON.parse(req.postData() || '{}') || {}; } catch (_) { return {}; }
+}
+
+// 本物の safeReturnUrl (cf-worker/asayake-hub.js) と同じく、戻り先はクエリとハッシュを落とした origin+pathname
+function returnUrlOf(url, page) {
+    try { const u = new URL(url); return `${u.origin}${u.pathname}`; } catch (_) { return `${new URL(page.url()).origin}/index.html`; }
+}
+
+// スマホ表示 (viewport) とタップしやすいリンクの形にしておく。viewport が無いと webkit (iPhone 13) でリンクのタップが
+// html に吸われて届かない (2026-11-14・イシュー#589 step3 で実測)。本物の Stripe のページもスマホ表示に対応している
+const htmlPage = (title, body) => `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>a{display:block;padding:14px 16px;margin:8px 0;font-size:18px;border:1px solid #888}</style></head><body><h1>${title}</h1>${body}</body></html>`;
+
+/** 決済 (Stripe の代わり) の模擬のページを配る。mockHubForTest の /billing/checkout・/billing/portal が返す URL の先。
+ * 実際の決済は人の実機の手順 H4 で確かめる。ここでは外部の応答だけを模擬する。
+ *  - /checkout: 「支払う」と「戻る」。「支払う」で Plus にして (Webhook の代わり) success_url へ戻す
+ *  - /portal:   「解約する」と「戻る」。「解約する」で解約予約 (cancel_at_period_end) にし、確認の画面から return_url へ戻す
+ * @param {import('@playwright/test').Page} page
+ * @param {ReturnType<typeof createHubStateForTest>} state */
+export async function mockBillingPagesForTest(page, state) {
+    await page.route(`${BILLING_BASE}/**`, async (route) => {
+        const url = new URL(route.request().url());
+        const q = url.searchParams;
+        const link = (id, href, text) => `<p><a id="${id}" href="${href.replace(/"/g, '&quot;')}">${text}</a></p>`;
+        state.requests.push({ method: route.request().method(), path: `billing:${url.pathname}` });
+        if (url.pathname === '/checkout') {
+            const pay = `${BILLING_BASE}/pay?${new URLSearchParams({ plan: q.get('plan') || 'monthly', success: q.get('success') || '' })}`;
+            return route.fulfill({ contentType: 'text/html', body: htmlPage('お支払い（模擬）', link('pay', pay, '支払う') + link('back', q.get('cancel') || '', '戻る')) });
+        }
+        if (url.pathname === '/pay') {
+            // 本物では checkout.session.completed / customer.subscription.created の Webhook が Plus にする
+            Object.assign(state, plusStateForTest(q.get('plan') === 'yearly' ? 'yearly' : 'monthly'));
+            const success = q.get('success') || '';
+            return route.fulfill({ contentType: 'text/html', body: htmlPage('お支払いが完了しました（模擬）', `<meta http-equiv="refresh" content="0;url=${success.replace(/"/g, '&quot;')}">` + link('back', success, 'アプリへ戻る')) });
+        }
+        if (url.pathname === '/portal') {
+            const cancel = `${BILLING_BASE}/portal/cancel?${new URLSearchParams({ return: q.get('return') || '' })}`;
+            return route.fulfill({ contentType: 'text/html', body: htmlPage('プランの管理（模擬）', link('cancel', cancel, '解約する') + link('back', q.get('return') || '', '戻る')) });
+        }
+        if (url.pathname === '/portal/cancel') {
+            // 本物では customer.subscription.updated (cancel_at_period_end: true) の Webhook が解約予約にする (Plus は期間末まで続く)
+            state.cancelAtPeriodEnd = true;
+            return route.fulfill({ contentType: 'text/html', body: htmlPage('解約を予約しました（模擬）', link('back', q.get('return') || '', 'アプリへ戻る')) });
+        }
+        return route.fulfill({ status: 404, contentType: 'text/html', body: htmlPage('模擬に無いページ', '') });
+    });
+}
 
 // /data/<path> の読み書き。応答の形は tests/e2e/publish-conflict-hub.spec.js の模擬と同じ
 // (ETag は Access-Control-Expose-Headers を付けて返す = 付けないとアプリから読めない)
@@ -241,6 +319,8 @@ function fulfillSite(route, state, sub) {
  * 今ある道: GET /usage・POST /billing/checkout・POST /billing/portal・DELETE /account・/data/<path> の GET/HEAD/PUT/DELETE・
  * POST /data/batch・GET /data/<dir>?list=1・POST /publish・GET /public/<siteId>/<path> (旧URL)・
  * GET https://bookshelf.asayake.org/<username>/<path>。
+ * /billing/checkout・/billing/portal は決済の模擬のページ (BILLING_BASE) の URL を返す = 押した後まで通すなら
+ * mockBillingPagesForTest も一緒に呼ぶ。
  * まだ無い道 (ログイン等) は 501 を返す = 使うテストを書く時に、本物 (cf-worker/asayake-hub.js) の約束を確かめてここへ足す。
  * @param {import('@playwright/test').Page} page
  * @param {ReturnType<typeof createHubStateForTest>} state */
@@ -254,16 +334,20 @@ export async function mockHubForTest(page, state) {
         state.requests.push({ method, path: path + url.search });
         if (path === '/usage' && method === 'GET') return route.fulfill({ json: usageOf(state) });
         if (path === '/billing/checkout' && method === 'POST') {
-            // 決済が済んだものとして Plus にし、アプリへ戻る URL を返す (本物は Stripe の決済ページの URL を返す)。
-            // 戻り先はアプリが送ってきた returnUrl (js/screens/settings.js の _startCheckout) から組む
-            let returnUrl = '';
-            try { returnUrl = (JSON.parse(req.postData() || '{}').returnUrl) || ''; } catch (_) { /* 本文が JSON でなければ下の既定へ */ }
-            if (!returnUrl) returnUrl = `${new URL(page.url()).origin}/index.html`;
-            Object.assign(state, { plan: 'plus', billingManaged: true, planSource: 'stripe' });
-            return route.fulfill({ json: { url: `${returnUrl}?billing=success` } });
+            // 本物 (cf-worker/asayake-hub.js の handleCheckout) は Stripe Checkout のページの URL を返し、支払いが済むと
+            // Stripe が success_url = `${戻り先}?billing=success` へ戻す (戻らない時は cancel_url = `?billing=cancel`)。
+            // プランは Webhook が後から Plus にする = ここでは変えない (変えるのは決済の模擬のページで「支払う」を押した時)。
+            const body = readJson(req);
+            const ret = returnUrlOf(body.returnUrl, page);
+            const q = new URLSearchParams({ plan: body.plan === 'yearly' ? 'yearly' : 'monthly', success: `${ret}?billing=success`, cancel: `${ret}?billing=cancel` });
+            return route.fulfill({ json: { url: `${BILLING_BASE}/checkout?${q}` } });
         }
         if (path === '/billing/portal' && method === 'POST') {
-            return route.fulfill({ json: { url: `${new URL(page.url()).origin}/index.html` } });
+            // 本物 (handleBillingPortal) は Stripe 顧客が無ければ 400 'no subscription'。あれば Billing Portal の URL を返し、
+            // 戻り先 (return_url) にはクエリを付けない
+            if (!state.billingManaged) return route.fulfill({ status: 400, json: { error: 'no subscription' } });
+            const ret = returnUrlOf(readJson(req).returnUrl, page);
+            return route.fulfill({ json: { url: `${BILLING_BASE}/portal?${new URLSearchParams({ return: ret })}` } });
         }
         if (path === '/account' && method === 'DELETE') {
             state.deleted = true;
