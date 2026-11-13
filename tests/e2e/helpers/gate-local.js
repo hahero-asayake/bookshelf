@@ -99,3 +99,23 @@ export async function connectLocalFolderForTest(page) {
     });
     await page.waitForFunction(() => !!(window.bookshelf && window.bookshelf.obsidianDirHandle));
 }
+
+/** つないだフォルダに、取込データ (JSON の文字列) の本を入れて、再読込しておく (J4 の前提)。
+ * connectLocalFolderForTest の後に呼ぶ。入れ方は利用者と同じ取込の画面。保存がフォルダに届いてから再読込し、
+ * 再読込のあとフォルダから本を読み直すまで待つ (並列で流しても時間切れにならないよう、expect.poll で待つ・#607)。
+ * @param {import('@playwright/test').Page} page
+ * @param {string} exportJson
+ * @param {string} [dirName] stubFolderPickerForTest に渡したフォルダの名前 */
+export async function fillFolderWithBooksForTest(page, exportJson, dirName = 'gate-local') {
+    await page.locator('#dashboard-welcome button[data-dw="import"]').click();
+    await page.locator('[data-import-action="open-paste"]').click();
+    await page.locator('#kindle-paste-input').fill(exportJson);
+    await page.locator('#import-from-paste').click();
+    await page.locator('#select-all-books').click();
+    await page.locator('#import-selected-books').click();
+    await page.locator('#book-selection').waitFor({ state: 'hidden' });
+    const firstAsin = JSON.parse(exportJson)[0].asin;
+    await waitForLocalFileContainsForTest(page, dirName, 'private/library.json', firstAsin, 30000);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => (window.bookshelf && window.bookshelf.books ? window.bookshelf.books.length : 0)), { timeout: 30000 }).toBeGreaterThan(0);
+}
