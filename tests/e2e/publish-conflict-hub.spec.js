@@ -7,7 +7,7 @@
 //  - 公開/公開取消/削除の記事単位 in-flight ガード (_artRunExclusive) と、一覧の公開ボタンの
 //    disabled 制御 (いずれも js/bookshelf.js・イシュー#374案D) を連打で固定する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue, showArtList, unpublishArticleTwice, deleteArticleTwice, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -165,15 +165,14 @@ async function createArticleWithBook(page, title) {
     await addBlock(page, 'text', 'first');
     await fillTextBlock(page, '本文サンプル。');
     await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
-    const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
-    if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+    await openArtSheet(page);
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
-    if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+    await closeArtSheet(page);
     await leaveForm(page);
     await flushArtSaveAndRemote(page);
     await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
     const id = await getArtEditingId(page);
-    await page.evaluate(() => window.bookshelf._artShowList());
+    await showArtList(page);
     return id;
 }
 
@@ -235,10 +234,7 @@ test.describe('ハブ経由の保存衝突・連打防止 (イシュー#374案D 
 
         // 公開取消を2回同時に呼ぶ: 1回目が confirmDialog 表示で止まっている間に2回目が来るが
         // _artRunExclusive が記事単位でガードしているため2回目は何もしない (confirmDialog も出ない)。
-        const unpubEval = page.evaluate((id) => Promise.all([
-            window.bookshelf._artUnpublish(id),
-            window.bookshelf._artUnpublish(id)
-        ]), id);
+        const unpubEval = unpublishArticleTwice(page, id);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok'); // 公開を取り消す
         await unpubEval;
@@ -249,10 +245,7 @@ test.describe('ハブ経由の保存衝突・連打防止 (イシュー#374案D 
         expect(getPublishCount()).toBe(2); // 取消で1回だけ export (連打の2回目は走っていない)
 
         // 削除も同様に2回同時に呼ぶ (非公開記事なので export は走らず remove() のみ)
-        const delEval = page.evaluate((id) => Promise.all([
-            window.bookshelf._artDelete(id),
-            window.bookshelf._artDelete(id)
-        ]), id);
+        const delEval = deleteArticleTwice(page, id);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok'); // 削除
         const delResults = await delEval;

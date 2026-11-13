@@ -18,7 +18,7 @@
 //   タイムアウト機構が実アダプタ+実ブラウザ fetch 経由でも機能するかを検証する。
 // - 蔵書規模による描画遅延(容疑者③)・ブラウザ環境固有(容疑者④) は対象外 (このイシューのスコープ外)。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, waitForArtDraft, setArtDraftField } from './helpers/art-editor.js';
+import { canvas, addBlock, waitForArtDraft, setArtDraftField, openArtPreview as openPreview, setArtPreviewStallMs } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -37,12 +37,7 @@ async function openPublishPanel(page) {
     await page.click('#art-publish-header');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
-async function openPreview(page) {
-    await leaveForm(page);
-    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
-    await page.click('#art-more-btn');
-    await page.click('#art-width-preview');
-}
+// openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -191,9 +186,7 @@ test('(c) fetchが最後まで応答しない場合、実GitHubAdapter+実fetch�
     const errors = await bootAppGitHub(page, {
         onContentsGet: () => new Promise(() => {}) // 恒久的にpending (route.fulfillを一切呼ばない)
     });
-    await page.evaluate(() => {
-        window.bookshelf._artPreviewStallMs = 1000; // 実時間20秒を待たないよう短く注入 (既存パターン踏襲)
-    });
+    await setArtPreviewStallMs(page, 1000); // 実時間20秒を待たないよう短く注入 (既存パターン踏襲)
     await createArticleWithLongMemoShelf(page, { bookCount: 1 });
 
     await openPreview(page);

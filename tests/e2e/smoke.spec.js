@@ -2,7 +2,7 @@
 // フィクスチャを localStorage に注入して起動する (同期フォルダ不要の localStorage フォールバック経路)。
 // ⚠️ 大量冊数の描画テストは書かない (ヘッドレス + content-visibility の制約、COMMON 参照)
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, openArtPreview as openPreview } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -22,12 +22,7 @@ async function openPublishPanel(page) {
     await page.click('#art-publish-header');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
-async function openPreview(page) {
-    await leaveForm(page);
-    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
-    await page.click('#art-more-btn');
-    await page.click('#art-width-preview');
-}
+// openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');

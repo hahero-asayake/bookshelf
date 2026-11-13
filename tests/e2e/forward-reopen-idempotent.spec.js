@@ -4,6 +4,7 @@
 // 対象のDOM/CSSは②決裁2026-10-23: .app-detail / .app-sidebar+.mobile-scrim / .art-side に
 // .hist-no-anim を付けてtransitionを一時無効化する実装(js/bookshelf.js _histNoAnimOnce)。
 import { test, expect } from './helpers/test-base.js';
+import { addBlock, openArtSheet } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -99,7 +100,7 @@ const FACES = [
     },
     {
         id: 'art-sheet', sel: '#art-drawer', openFn: '_artOpenSheet',
-        openByButton: async (p) => { await openNewArticleEdit(p); await p.evaluate(() => window.bookshelf._artOpenSheet()); await settle(p, 600); },
+        openByButton: async (p) => { await openNewArticleEdit(p); await addBlock(p, 'shelf', 'last'); await openArtSheet(p); await settle(p, 600); },
     },
 ];
 

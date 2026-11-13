@@ -93,7 +93,8 @@ function assertSettingsFront(last) {
     expect(last.topModal, '公開側 (#publish-pages-modal / #art-publish-modal) が設定より手前にある').toBe('settings-modal');
 }
 
-// 記事エディタ → 公開パネル。SP では #art-publish-header が隠れる場合があるので、その時は同じ入口関数を直接呼ぶ
+// 記事エディタ → 公開パネル。SP では #art-publish-header が隠れ、代わりに #art-bar-publish が出る
+// (構成A・イシュー#276、publish-article-editor.spec.jsのopenPublishPanelと同じ型)。
 async function openNewArticleAndPanel(page) {
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
@@ -105,7 +106,7 @@ async function openNewArticleAndPanel(page) {
     if (await edit.isVisible()) await edit.click();
     const hd = page.locator('#art-publish-header');
     if (await hd.isVisible()) await hd.click();
-    else await page.evaluate(() => window.bookshelf._artOpenPublishPanel());
+    else await page.click('#art-bar-publish');
     await expect(page.locator('#art-publish-modal')).toHaveClass(/show/);
 }
 

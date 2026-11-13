@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { setBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
-import { getArtDraft, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { getArtDraft, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheetInternal } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -886,7 +886,7 @@ test.describe('戻る網羅マトリクス 幅820 (K6)', () => {
     test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true });
     test('A40 幅820: 記事の引き出しシート→戻る＝シートだけ閉じる', async ({ page }, ti) => caseRun(page, ti, 'A40', async (r) => {
         await openNewArticleEdit(page);
-        await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await openArtSheetInternal(page); // ブロック0件のため実クリック導線が無い(c)
         await settle(page);
         const s0 = await snap(page); await r.step(page, 'sheet');
         await back(page);

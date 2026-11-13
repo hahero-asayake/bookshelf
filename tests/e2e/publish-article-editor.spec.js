@@ -1,6 +1,6 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, setArtPreviewStallMs, setArtPreviewHardDeadlineMs, runArtRenderList, runArtRenderPublishPanel, spyOnArtPublish, wasArtPublishCalled, openArtEditor, editArtBlockViaMenu, openArtSheet, closeArtSheet, openArtPublishPanelReopen, createArticlesAndRenderList } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,10 +21,9 @@ async function publishViaPanel(page) {
         await page.click('#art-pub-close');
         // X3(イシュー#528・②判断「案A」): 「本」単体ブロックの新規追加入口は無くなった。1冊入れるだけなら本棚ブロックで足りる。
         await addBlock(page, 'shelf', 'last');
-        const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await openArtSheet(page);
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await closeArtSheet(page);
         await openPublishPanel(page);
         await expect(page.locator('#art-pub-go')).toBeEnabled();
     }
@@ -66,12 +65,7 @@ async function openPublishPanel(page) {
     else await page.click('#art-bar-publish');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」
-async function openPreview(page) {
-    await leaveForm(page);
-    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
-    await page.click('#art-more-btn');
-    await page.click('#art-width-preview');
-}
+// openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 async function goBack(page) {
     await leaveForm(page);
     await page.click('#art-back');
@@ -499,8 +493,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
 
+        await setArtPreviewStallMs(page, 200); // 実時間20秒を待たないよう短く注入
         await page.evaluate(() => {
-            window.bookshelf._artPreviewStallMs = 200; // 実時間20秒を待たないよう短く注入
             window.bookshelf.publishArticleGenerator.build = () => new Promise(() => {}); // 永久pending
         });
 
@@ -542,9 +536,9 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
             bs._artScheduleSave();
         });
 
+        await setArtPreviewStallMs(page, 5000); // 個別検知は発火させない値 (5冊分の合計1500ms未満にはならない設計)
+        await setArtPreviewHardDeadlineMs(page, 1000); // 全体上限だけ短縮 (本番はstallMsの5倍=100000)
         await page.evaluate(() => {
-            window.bookshelf._artPreviewStallMs = 5000; // 個別検知は発火させない値 (5冊分の合計1500ms未満にはならない設計)
-            window.bookshelf._artPreviewHardDeadlineMs = 1000; // 全体上限だけ短縮 (本番はstallMsの5倍=100000)
             // 個々の読込は300ms (stallMs=5000ms未満) で返るが、5冊分で合計1500ms > hardDeadlineMs(1000ms)
             window.bookshelf.storage.readBookMemo = () => new Promise((resolve) => setTimeout(() => resolve('# メモ'), 300));
         });
@@ -578,8 +572,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         const longToggle = page.locator('.art-book-show-toggle[data-show-key="longMemo"]').first();
         if (!(await longToggle.getAttribute('aria-pressed')).includes('true')) await longToggle.click();
 
+        await setArtPreviewStallMs(page, 300);
         await page.evaluate(() => {
-            window.bookshelf._artPreviewStallMs = 300;
             window.bookshelf.storage.readBookMemo = () => new Promise(() => {}); // 永久pending
         });
 
@@ -598,8 +592,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
 
+        await setArtPreviewStallMs(page, 200);
         await page.evaluate(() => {
-            window.bookshelf._artPreviewStallMs = 200;
             const origBuild = window.bookshelf.publishArticleGenerator.build.bind(window.bookshelf.publishArticleGenerator);
             // イシュー#536回帰: 直前の fillTextBlock (本文編集を離れる操作) が _artQueueCanvas() を
             // 起動し、80ms後に _artRenderCanvas が同じ publishArticleGenerator.build() を背景で
@@ -1311,7 +1305,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await expect.poll(() => hubCaptured.files).not.toBeNull();
 
         // 公開パネルを開き直す(公開直後の描画と同じ状態) → art-pub-target内に「ハブで見る」行
-        await page.evaluate(() => window.bookshelf._artOpenPublishPanel());
+        // (publishViaPanel後、パネルは開いたまま=#art-publish-headerがモーダルに覆われてクリック
+        // できない。再描画のみの内部呼び出しに留める。(c))
+        await openArtPublishPanelReopen(page);
         const hubLink = page.locator('#art-pub-target .art-pub-hub-link');
         await expect(hubLink).toHaveAttribute('href', 'https://bookshelf.asayake.org/hahero/');
         // リンクの文字は「ハブで見る」のみ (②指摘 2026-10-29: 狭幅でURLが途中で切れて見えていた)。
@@ -1351,9 +1347,9 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.evaluate(async (id) => {
             await window.bookshelf.publishArticleStore.update(id, { published: true, publicId: 'ghpub1' });
         }, await getArtEditingId(page));
-        await page.evaluate(() => window.bookshelf._artRenderPublishPanel());
+        await runArtRenderPublishPanel(page);
         await expect(page.locator('#art-pub-target .art-pub-hub-link')).toHaveCount(0);
-        await page.evaluate(() => window.bookshelf._artRenderList());
+        await runArtRenderList(page);
         await closePublishPanelIfOpen(page);
         await goBack(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
@@ -1434,7 +1430,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             const store = window.bookshelf.publishArticleStore;
             await store.create({ title: '移行済み記事', published: true, blocks: [{ id: 'b1', type: 'text', markdown: '本文' }] });
         });
-        await page.evaluate(() => window.bookshelf._artRenderList());
+        await runArtRenderList(page);
         await expect(page.locator('#art-list-view')).toBeVisible();
 
         const row = page.locator('.pp-row', { hasText: '移行済み記事' });
@@ -1563,13 +1559,11 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // openPublishPagesModal() は内部で publishArticleStore.load() を呼び、メモリ上の
         // articles を読み直す(ストレージ優先)。先にモーダルを開いてから作成+再描画する。
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.evaluate(async () => {
-            const store = window.bookshelf.publishArticleStore;
-            await store.create({ title: '記事A', published: true, blocks: [] }, { persist: false });
-            await store.create({ title: '記事B', published: true, blocks: [] }, { persist: false });
-            await store.create({ title: '記事C', published: false, blocks: [] }, { persist: false });
-            window.bookshelf._artRenderList();
-        });
+        await createArticlesAndRenderList(page, [
+            { title: '記事A', published: true, blocks: [] },
+            { title: '記事B', published: true, blocks: [] },
+            { title: '記事C', published: false, blocks: [] }
+        ]);
         const row = await rectOf(page, '#art-list .pp-row');
         expect(row.top).toBeGreaterThanOrEqual(0);
         expect(row.bottom).toBeLessThanOrEqual(1080);
@@ -2016,7 +2010,7 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
 
         // イシュー#268: ブロックAを全画面編集で開き直す→Aが再びアクティブになる (画面と実際の追加先が一致する)
         await leaveForm(page);
-        await page.evaluate((id) => window.bookshelf._artEditBlock(id), (await getArtBlocks(page))[0].id);
+        await editArtBlockViaMenu(page, 0); // blockA(ブロック0番)を⋯メニューの「編集」で開き直す
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(blockB).not.toHaveClass(/is-add-target/);
         // イシュー#530(2・案i): 同上。Aには既に1冊入っている
@@ -2596,13 +2590,9 @@ test.describe('記事エディタ: ボトムシート・本棚ブロックの追
         // 構成A (イシュー#276・390px): 公開ボタンはヘッダーでなく下部バー (#art-bar-publish) に出る
         await leaveForm(page);
         await expect(page.locator('#art-bar-publish')).toBeVisible();
-        await page.evaluate(() => {
-            const orig = window.bookshelf._artPublish.bind(window.bookshelf);
-            window.bookshelf._artPublishCalled = false;
-            window.bookshelf._artPublish = async (...args) => { window.bookshelf._artPublishCalled = true; return orig(...args); };
-        });
+        await spyOnArtPublish(page);
         await publishViaPanel(page);
-        await expect.poll(() => page.evaluate(() => window.bookshelf._artPublishCalled)).toBe(true);
+        await expect.poll(() => wasArtPublishCalled(page)).toBe(true);
         expect(errors).toEqual([]);
     });
 });
@@ -3164,7 +3154,7 @@ test.describe('#/publish/<id> にストアに無いidで着地した時の挙動
         // (保存前の再読込・閉じた後の進むボタンの前提条件を確認: 仮idはURLに乗るがストアには登録されない)
         const errors = await bootApp(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.evaluate(() => window.bookshelf._artOpenEditor(null));
+        await openArtEditor(page, null);
         const pendingHash = await page.evaluate(() => location.hash);
         expect(pendingHash).toMatch(/^#\/publish\//);
         expect(pendingHash).not.toBe('#/publish');

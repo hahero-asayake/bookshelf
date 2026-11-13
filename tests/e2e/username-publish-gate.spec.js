@@ -4,7 +4,7 @@
 //  - username 表示・設定フォーム自体の単体的な検証は tests/e2e/account-username.spec.js が持つ。
 //    ここでは「公開ボタン→ブロック→設定→再公開が通る」までの一連の導線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -29,12 +29,7 @@ async function openPublishPanel(page) {
     await page.click('#art-publish-header');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
-async function openPreview(page) {
-    await leaveForm(page);
-    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
-    await page.click('#art-more-btn');
-    await page.click('#art-width-preview');
-}
+// openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 
 // イシュー#230: 「公開する」は公開パネルを開くだけになった。公開はパネルの「公開する」(#art-pub-go) で実行する。
 // 公開前チェックの必須 (本1冊以上) を満たさない記事は、パネルを閉じて本ブロックを1つ実操作で置いてから公開する。
@@ -45,10 +40,9 @@ async function publishViaPanel(page) {
     if (await page.locator('#art-pub-go').isDisabled()) {
         await page.click('#art-pub-close');
         await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
-        const sheetOpen = await page.evaluate(() => window.innerWidth <= 900);
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await openArtSheet(page);
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await closeArtSheet(page);
         await openPublishPanel(page);
         await expect(page.locator('#art-pub-go')).toBeEnabled();
     }

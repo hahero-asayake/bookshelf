@@ -35,7 +35,18 @@ const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
 // docs/char/u9-g3-2-plan.md)。tests/e2e/helpers/art-editor.jsへ集約し12件に減った
 // (68-12=56)。純減は56件(0(a)+56(c))。残り`_artOpenSheet`以下16名54件は次イシュー
 // (G3-3)へ回した。
-const MAX = 160;
+//
+// U9 G3-3(article-editor・_artOpenSheet以下15名、イシュー#553)置き換え後の実測値 =
+// 128(120(bookshelf._)+8(app._)。160-128=32)。対象54件のうち純減したのは32件。
+// `_artOpenSheet`/`_artCloseSheet`(23件)は一度(a)化を撤回したが、②指摘(2026-11-13差し戻し)で
+// 原因(イシュー#529・本棚ブロック追加直後は「完了」まで引き出しが開いたままで、実クリックが
+// スクリムに覆われタイムアウトしていた)を特定し、`#art-drawer.is-open`を先に確認するガードを
+// 追加して再実装・全件(a)化できた。`_artOpenPublishPanel`の再オープン1件・`_artRenderList`の
+// 連結evaluate1件・back-nav-matrix.spec.js A40(ブロック0件で実クリック導線が無い)1件は、
+// 専用の(c)ヘルパー(openArtPublishPanelReopen/createArticlesAndRenderList/
+// openArtSheetInternal)へ集約し、spec側に生の内部参照を残さない形にした。
+// 詳細はdocs/char/u9-g3-3-plan.md参照。
+const MAX = 128;
 
 const PATTERNS = [
     { name: 'bookshelf._', re: /\bbookshelf\._[A-Za-z]/g },

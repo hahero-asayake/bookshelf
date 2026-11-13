@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
-import { flushArtSave, getArtBlocks, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { flushArtSave, getArtBlocks, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -422,9 +422,9 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await page.click('#art-add-sheet [data-block-type="shelf"]');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         // 本を1冊追加 (変更あり状態を作る)
-        await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await openArtSheet(page);
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+        await closeArtSheet(page);
         await page.click('#art-fs-cancel');
         await expect(page.locator('.cfm-overlay')).toBeVisible();
         await page.keyboard.press('Escape');

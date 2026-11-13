@@ -7,7 +7,7 @@
 // この違いはstep1実測(#506)で確認した「オフキャンバスの引き出しをisVisible()で見分けられない」
 // 問題(#502)の根本原因そのもので、addBlockヘルパー本体は変えずcharテスト側でこの分岐を吸収する。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock, flushArtSave } from '../helpers/art-editor.js';
+import { addBlock, flushArtSave, openArtSheet, closeArtSheet } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -109,7 +109,7 @@ async function openPublishPanel(page) {
 async function ensureDrawerPickable(page) {
     const isNarrow = await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches);
     if (isNarrow) {
-        await page.evaluate(() => window.bookshelf._artOpenSheet && window.bookshelf._artOpenSheet());
+        await openArtSheet(page);
         await expect.poll(() => page.evaluate(() => document.getElementById('art-drawer')?.classList.contains('is-open'))).toBe(true);
     } else {
         await expect.poll(() => page.evaluate(() => {
@@ -121,7 +121,7 @@ async function ensureDrawerPickable(page) {
 }
 
 async function closeDrawerIfNarrow(page, isNarrow) {
-    if (isNarrow) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
+    if (isNarrow) await closeArtSheet(page);
 }
 
 // A1本体: 新規作成→タイトル→本棚ブロック→本を3冊選ぶ→公開パネルで送信→URLが出るまで。

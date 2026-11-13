@@ -3,7 +3,7 @@
 //  ハブ API (usage / billing / account) は route モック。意地悪ステップ (二度押し・リロード) を混ぜる。
 //  ローンチ判定: この1本が緑 = 主要導線が通しで壊れていない。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, openArtPreview as openPreview } from './helpers/art-editor.js';
 import { openSettingsByClick } from './helpers/settings.js';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
@@ -20,12 +20,7 @@ async function openPublishPanel(page) {
     await page.click('#art-publish-header');
 }
 // プレビューは記事メニュー ⋯ →「表示幅を切り替えて見る」(保存前の新規記事は⋯が出ないので直接呼ぶ)
-async function openPreview(page) {
-    await leaveForm(page);
-    if (!(await page.locator('#art-more-btn').isVisible())) { await page.evaluate(() => { window.bookshelf._artPreview(); }); return; }
-    await page.click('#art-more-btn');
-    await page.click('#art-width-preview');
-}
+// openPreview本体はU9 G3-3(イシュー#553)でtests/e2e/helpers/art-editor.jsのopenArtPreviewへ集約した(ロジック不変)。
 
 const HUB = 'https://mockhub.test';
 const MB = 1024 * 1024;

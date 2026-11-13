@@ -21,7 +21,7 @@
 // 撤去した(is-singleの撤去自体は#530の改善として残す=1冊でも本棚ブロックの見た目は変えない)。
 // 下記のうち「本」関連のテスト(旧A-a)だけ#539で期待値を書き直した(タイトルに#539を付記)。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue } from '../helpers/art-editor.js';
+import { addBlock, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, editArtBlockForSetup } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -128,7 +128,7 @@ test.describe('A-a: 「本」単体ブロックの入口・入れ先の固定', 
         await page.click('#art-new');
         await expect(page.locator('#art-edit-view')).toBeVisible();
         await setArtDraftField(page, 'blocks', [{ id: 'legacy-book-1', type: 'book', asin: 'B000000001', show: { shortMemo: false, longMemo: false, rating: false } }]);
-        await page.evaluate(() => window.bookshelf._artEditBlock('legacy-book-1')); // 全画面編集に入ってはじめて#art-blocksが見える
+        await editArtBlockForSetup(page, 'legacy-book-1'); // 全画面編集に入ってはじめて#art-blocksが見える
         await expect(page.locator('.art-block[data-block-id="legacy-book-1"] .art-block-book-body')).toBeVisible();
     });
 
