@@ -5,7 +5,7 @@
 // 操作は locator.tap()/click() とマウスのみ。結果はキャンバスの DOM (ブロックの中の書名) で確かめる。
 // 委譲の優先順位: ⋯ピル・つまみのドラッグはそれぞれの操作になり、ブロックの編集は開かない。
 import { test, expect } from './helpers/test-base.js';
-import { addBlock, canvas } from './helpers/art-editor.js';
+import { addBlock, canvas, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +44,16 @@ async function bootApp(page) {
 const editView = (page) => page.locator('#art-edit-view');
 const section = (page, i) => canvas(page).locator('section.art-cv-blk').nth(i);
 
-async function press(page, loc, touch) { if (touch) await loc.tap(); else await loc.click(); }
+async function press(page, loc, touch, opts = {}) { if (touch) await loc.tap(opts); else await loc.click(opts); }
+// ブロックの余白 (左端・縦の中央) を押す。書影・書名リンク等の「クリックできる要素」を避ける = iOS WebKit で
+// document の委譲だけだと click が合成されない場所 (イシュー#580 step6)。押す点に a/img/button が無いことも確かめる
+async function pressBlank(page, sec, touch, side = 'left') {
+    const box = await sec.boundingBox();
+    const pos = { x: side === 'right' ? Math.round(box.width - 24) : 6, y: Math.round(box.height / 2) };
+    const hitTag = await sec.evaluate((el, p) => { const r = el.getBoundingClientRect(); const h = el.ownerDocument.elementFromPoint(r.x + p.x, r.y + p.y); return h ? (h.closest('a, img, button') ? 'clickable:' + h.tagName : h.tagName) : null; }, pos);
+    expect(hitTag).not.toMatch(/^clickable/);
+    await press(page, sec, touch, { position: pos });
+}
 
 async function newArticle(page, touch) {
     await press(page, page.locator('#art-new'), touch);
@@ -70,6 +79,8 @@ async function pickAndDone(page, touch, title, opener) {
 for (const v of [{ name: 'タッチ390', viewport: { width: 390, height: 844 }, touch: true }, { name: 'PC1440', viewport: { width: 1440, height: 900 }, touch: false }]) {
     test.describe(`イシュー#580 キャンバスで中身のあるブロックを押すと編集が開き本を足せる (${v.name})`, () => {
         test.use({ viewport: v.viewport, hasTouch: v.touch });
+        // webkit project (BACKNAV_WEBKIT=1・iPhone 13) ではタッチ390だけを流す (PC幅はchromiumで見る)
+        test.skip(({ browserName }) => browserName === 'webkit' && !v.touch, 'webkitはタッチ390のみ');
 
         test('本の入った本棚ブロックを押す→引き出しから本を足す→そのブロックに入る', async ({ page }) => {
             const errors = await bootApp(page);
@@ -79,7 +90,7 @@ for (const v of [{ name: 'タッチ390', viewport: { width: 390, height: 844 }, 
             await expect(section(page, 0)).toContainText('フィクスチャの本 1');
             await expect(canvas(page).locator('.art-cv-empty-guide')).toHaveCount(0); // 空の案内は無い=本文を押すしかない状態
 
-            await press(page, section(page, 0).locator('a, img').first(), v.touch); // 書影 (ブロックの面積の大半)
+            await pressBlank(page, section(page, 0), v.touch, 'right'); // 書影を避けた余白 (1冊の本棚は右側が空き)
             await expect(editView(page)).toHaveAttribute('data-art-mode', 'form');
             await pickAndDone(page, v.touch, 'フィクスチャの本 2', '.art-shelf-add');
             await expect(section(page, 0)).toContainText('フィクスチャの本 1');
@@ -94,11 +105,26 @@ for (const v of [{ name: 'タッチ390', viewport: { width: 390, height: 844 }, 
             await pickAndDone(page, v.touch, 'フィクスチャの本 1', '.art-book-pick');
             await expect(section(page, 0)).toContainText('フィクスチャの本 1');
 
-            await press(page, section(page, 0), v.touch);
+            await pressBlank(page, section(page, 0), v.touch);
             await expect(editView(page)).toHaveAttribute('data-art-mode', 'form');
             await pickAndDone(page, v.touch, 'フィクスチャの本 3', '.art-book-pick');
             await expect(section(page, 0)).toContainText('フィクスチャの本 3');
             await expect(section(page, 0)).not.toContainText('フィクスチャの本 1');
+            expect(errors).toEqual([]);
+        });
+
+        test('本文の入った文章ブロックの本文を押す→全画面の文章編集が開く', async ({ page }) => {
+            const errors = await bootApp(page);
+            await newArticle(page, v.touch);
+            await addBlock(page, 'text', 'last');
+            await waitForArtTextFsEditor(page);
+            await setArtTextFsEditorValue(page, '本文580'); // 前提づくり (本文の入力自体は検証対象外)
+            await press(page, page.locator('#art-fs-done'), v.touch);
+            await expect(editView(page)).toHaveAttribute('data-art-mode', 'edit');
+            await expect(section(page, 0)).toContainText('本文580');
+            await press(page, section(page, 0).locator('p').first(), v.touch);
+            await expect(editView(page)).toHaveAttribute('data-art-mode', 'form');
+            await expect(page.locator('#art-edit-view .CodeMirror').first()).toBeVisible();
             expect(errors).toEqual([]);
         });
 
@@ -116,6 +142,7 @@ for (const v of [{ name: 'タッチ390', viewport: { width: 390, height: 844 }, 
 
 test.describe('イシュー#580 つまみのドラッグの後に編集が開かない (PC1440)', () => {
     test.use({ viewport: { width: 1440, height: 900 } });
+    test.skip(({ browserName }) => browserName === 'webkit', 'マウスのドラッグはchromiumで見る');
 
     async function rectIn(page, sel, i = 0) {
         const f = await page.locator('#art-canvas-frame').boundingBox();

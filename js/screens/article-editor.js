@@ -897,6 +897,10 @@ class _ArticleEditorMethods {
                     sec.classList.remove('art-cv-empty');
                 }
                 sec.classList.add('art-cv-blk');
+                // イシュー#580: iOS WebKit は要素自身か祖先に click リスナーが無いとタップから click を合成しない
+                // (document の委譲だけでは数えられず、ブロックの余白タップが無反応になる)。空の受け口を付けて
+                // 「クリックできる要素」にする。処理の本体は下の doc の click 委譲のまま (ここでは何もしない)
+                if (!sec._artTapBound) { sec.addEventListener('click', () => {}); sec._artTapBound = true; }
                 sec.before(mkInserter(i));
                 // イシュー#288: 種別アイコン+文言+⋯を1つのピルボタンに統合(ハヘロ2026-10-19決裁「右で3点メニューと統合」)。
                 // 押すと従来どおりブロック操作メニュー(編集/上へ/下へ/削除)を開く(.art-cv-more のクリック委譲をそのまま使う)。
