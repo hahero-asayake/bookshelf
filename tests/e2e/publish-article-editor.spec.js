@@ -1,6 +1,7 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock } from './helpers/art-editor.js';
+import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -2328,16 +2329,13 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
         await page.evaluate(() => {
             window.bookshelf.storage.adapter.readText = async () => { throw new Error('read failed'); };
         });
-        await page.evaluate(() => {
-            const b = window.bookshelf.books[0];
-            return window.bookshelf._openBookMemoInAppEditor(b.asin, b);
-        });
+        await openBookMemoInAppEditor(page);
 
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
         await expect(page.locator('#book-memo-status')).toContainText('読み込めませんでした');
         // エディタは作られず、保存導線 (_bookMemoEditorContext) も張られていない (保存を止める)
-        expect(await page.evaluate(() => !!window.bookshelf._bookMemoEditor)).toBe(false);
-        expect(await page.evaluate(() => window.bookshelf._bookMemoEditorContext)).toBeNull();
+        expect(await hasBookMemoEditor(page)).toBe(false);
+        expect(await getBookMemoEditorContext(page)).toBeNull();
     });
 });
 

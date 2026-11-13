@@ -21,7 +21,7 @@
 | `_artDraft` | 32 | (c) | 状態検査 | article-editor.js:291ほか、下書き状態を直接読むためのフィールド。公開getterが無い（pubdef探索でヒット無し） |
 | `_artTextFsEditor` | 29 | (c) | 状態検査 | article-editor.js:1157,1164。全画面MDEエディタのインスタンス参照。テストは開閉状態の確認に使っている |
 | `_isSyncReady` | 26 | (d)/一部(c) | 契約 | plugin-api.js:769で`this._app._isSyncReady`を呼ぶ正式窓口（d）。ただしテスト26件はいずれも「同期準備済みを待つ足場」としての**内部状態の読み取り**であり、プラグイン契約としての呼び出しではない（plugin-api.js側の呼び出しは355に含まれない別物）。テスト側はヘルパー（c）`waitForSyncReady(page)`に集約し、メソッド名自体は(d)としてplugin-api.jsのために変更しない |
-| `_bookMemoEditor` | 17 | (c) | 状態検査 | book-detail.js:571。短文メモのインラインエディタ参照 |
+| `_bookMemoEditor` | 17→6(G2完了・イシュー#550) | (c) | 状態検査 | book-detail.js:571。短文メモのインラインエディタ参照。17件の散在した呼び出しをtests/e2e/helpers/book-memo.js(新設)の6関数(setBookMemoValue/getBookMemoValue/hasBookMemoEditor/waitForBookMemoEditor/getBookMemoBoldToolbarHtml)へ集約し、呼び出し元5ファイルは0件に |
 | `_artEditingId` | 14 | (c) | 状態検査 | bookshelf.js:4804,5561。現在編集中の記事ID |
 | `_artOpenSheet` | 13 | (a) | 操作再現 | article-editor.js:301で実際のUI操作（本の追加等）から呼ばれる。クリック相当の操作に置換可能 |
 | `_artCloseSheet` | 10 | (a) | 操作再現 | article-editor.js:225-226に実クリック（`art-sheet-scrim`/`art-sheet-close`）が既にある |
@@ -40,7 +40,7 @@
 | `_renderUsageAlert` | 2 | (c) | 決定性 | settings.js:1159。使用量アラートの即時再描画 |
 | `_pwaUpdateReg` | 2 | (c) | 状態検査 | bookshelf.js:4675,4681 |
 | `_openPalette` | 2 | (a) | 操作再現 | bookshelf.js:1233。⌘K相当のキー入力で代替 |
-| `_openBookMemoInAppEditor` | 2 | (a) | 操作再現 | book-detail.js:553。メモ編集ボタンクリックで到達する経路 |
+| `_openBookMemoInAppEditor` | 4→1(G2完了・イシュー#550) | (a)※→(c) | 操作再現→自己完結(訂正) | book-detail.js:553。元の分類(a)は実装時に(c)へ変更した(G1の`_confirmOpenSettings`と同種)：実クリック経路(`.memo-file-btn`)は本の詳細ペインが開いている時だけ存在し、`showBookDetail()`はnav履歴に段を積む副作用を持つ。呼び出し元4件中3ファイル(back-nav-matrix/checklist-timing/standard-ops)は戻る/進むの履歴段数を検証するテストで、本の詳細を開く前段を追加すると前提が壊れる。既存スイートに実クリック経路の前例も無いため、tests/e2e/helpers/book-memo.jsのopenBookMemoInAppEditorへ集約した(ヘルパー内に1件残存) |
 | `_navigateFromUi` | 2 | (a) | 操作再現 | bookshelf.js:4830。UI操作のディスパッチャ、実クリック/キー操作に置換 |
 | `_listTail` | 2 | (c) | 状態検査 | bookshelf.js:2256,2258。list-tail差分レンダリングの内部状態 |
 | `_artUnpublish` | 2 | (a) | 操作再現 | article-editor.js:315に`art-unpublish`クリック導線あり |
@@ -56,9 +56,9 @@
 | `_orderedBooksToRender` | 1 | (c) | 状態検査 | bookshelf.js:2032 |
 | `_onPwaUpdateReady` | 1 | (c) | 決定性 | bookshelf.js:4674 |
 | `_modalHistPush` | 1 | (c) | 状態設定 | bookshelf.js:5813。戻る行列テストの前提状態構築 |
-| `_lastDetailEditMode` | 1 | (c) | 状態検査 | book-detail.js:127 |
+| `_lastDetailEditMode` | 1→0(G2完了・イシュー#550) | (a) | DOM代替 | book-detail.js:127。②指示(2026-11-13)により、back-nav-matrix.spec.js:1521の内部状態読み取りを`!!document.querySelector('.bd.editing')`(book-detail.js:318、isEditModeと1:1で付くクラス)へ置換。テストの意図(戻った後に編集モードが復元すること)はDOMで確認できるため(a)化した |
 | `_confirmOpenSettings` | 1 | (c)※ | 対照保持 | report.js:72等に実クリック導線はあるが、overlay-front.spec.jsの対照テストは「確認→設定を開く経路そのもの」の重なり順を検証するのが目的。実際の呼び手(通報/公開フロー)経由にすると無関係な未ログイン状態等が増えて検証対象が変わるため、step3実装時に(a)から(c)へ変更した(settings.js helperのconfirmOpenSettingsForTestに集約) |
-| `_bookMemoEditorContext` | 1 | (c) | 状態検査 | book-detail.js:585 |
+| `_bookMemoEditorContext` | 1(G2完了・イシュー#550、件数不変) | (c) | 状態検査 | book-detail.js:585。tests/e2e/helpers/book-memo.jsのgetBookMemoEditorContextへ集約(元から1件・集約先も1件) |
 | `_artShowList` | 1 | (a) | 操作再現 | article-editor.js:316の削除後遷移と同じ、戻る操作で到達可能 |
 | `_artRenderPublishPanel` | 1 | (c) | 決定性 | article-editor.js:3177 |
 | `_artPreviewHardDeadlineMs` | 1 | (c) | 契約済み | bookshelf.js:78のコメントで明記済みのテスト注入点 |
@@ -76,11 +76,13 @@ U8の89件は「テスト参照83件（U8a 62件＋U8b 21件）＋dashboard.js�
 | U8区分 | 対応する名前（355内） | 355内の件数 |
 |---|---|---:|
 | U8a（settings.js） | `_openSettingsModal`,`_openPluginSettings`,`_renderUsageAlert`,`_usageAlertLevel`,`_confirmOpenSettings` | 61 |
-| U8b（book-detail.js） | `_bookMemoEditor`,`_openBookMemoInAppEditor`,`_lastDetailEditMode`,`_bookMemoEditorContext` | 21 |
+| U8b（book-detail.js） | `_bookMemoEditor`,`_openBookMemoInAppEditor`,`_lastDetailEditMode`,`_bookMemoEditorContext` | 23※ |
 | U8e（bookshelf-card.js） | dashboard.js経由のみ（`_bindBookshelfOverviewEvents`等3種6件）、テスト参照0件 | 0（355に現れない） |
 | U7/X3残（article-editor.js） | `_art*`系21種類 | 203 |
 | 対象外（plugin-api.js契約・355外） | `showBookDetail`,`_currentBookshelfInternalId` | 0 |
 | 上記以外の核心/雑多（bookshelf.js本体） | `_isSyncReady`ほか18種類 | 70 |
+
+※ 当初21と記載していたが、`app._`経由2件(`_openBookMemoInAppEditor`、mde-toolbar-icons.spec.js:46/231)を数え落としていた。本表は元々`grep -ron "bookshelf\._<name>\b"`で数えており、`app._`パターンは対象外だった。lintの実数(`bookshelf._`+`app._`合算、§0参照)に合わせ23に訂正（イシュー#550 step1・②指示2026-11-13）。
 
 ## 3. ファイル群・分割案（1イシュー500行目安）
 
@@ -89,7 +91,7 @@ U8の89件は「テスト参照83件（U8a 62件＋U8b 21件）＋dashboard.js�
 | 群 | 名前（件数） | 対象ファイル数 | 件数合計 | 見込み差分行数 | 主な分類 |
 |---|---|---:|---:|---:|---|
 | G1 settings | `_openSettingsModal`ほか5種 | 20 | 61 | 約150〜200行（1ファイルあたり1〜2箇所の置換が主） | (c)主・一部(a) |
-| G2 book-detail | `_bookMemoEditor`ほか4種 | 5 | 21 | 約60〜90行 | (c)主・一部(a) |
+| G2 book-detail | `_bookMemoEditor`ほか4種 | 5 | 23 | 約60〜90行 | (c)主・一部(a) |
 | G3 article-editor（art*） | `_artFlushSave`ほか21種 | 約15（publish-article-editor.spec.js中心） | 203 | 約500〜700行（500行目安を超える見込み） | (c)多数・(a)一部 |
 | G4 核心/雑多（bookshelf.js本体） | `_isSyncReady`ほか18種＋`__releaseRead` | 約10 | 70+2 | 約150〜200行 | (c)主・(a)一部 |
 
@@ -106,3 +108,12 @@ U8の89件は「テスト参照83件（U8a 62件＋U8b 21件）＋dashboard.js�
 
 - `_setBodyView`・`_openPluginSettings`・`_runPublishExport`・`_artOpenEditor`：クリック等価の導線が未確認（上表に個別記載）。
 - `app._`経由の別名参照14件の具体的な中身（どの名前か）は未調査（lintの対象に含める決定はしたが、重複カウント防止の実装詳細はstep2で検討）。
+
+## 6. 完了記録
+
+- **G1（settings、イシュー#548・c886ec7）完了**：61件→299(bookshelf._)+14(app._)=313に減算（詳細はlint冒頭コメント参照）。
+- **G2（book-detail、イシュー#550）完了**：23件（§2訂正後の実測値・当初の21は`app._`経由2件の数え落とし）を置き換えた。
+  - (a)化：1件（`_lastDetailEditMode`）。back-nav-matrix.spec.js:1521の内部状態読み取りを`!!document.querySelector('.bd.editing')`（book-detail.js:318）へ置換。②指示（2026-11-13）に従い、DOM上で確認できる項目を優先した。
+  - (c)集約：22件（`_bookMemoEditor`17・`_openBookMemoInAppEditor`4・`_bookMemoEditorContext`1）。新設`tests/e2e/helpers/book-memo.js`の7関数へ集約し、呼び出し元5ファイル（back-nav-matrix/checklist-timing/mde-toolbar-icons/publish-article-editor/standard-ops）は0件、ヘルパー内に8件残存（22→8、純減14件）。
+  - 元の分類表§1で`_openBookMemoInAppEditor`を(a)としていたが、実装時に(c)へ訂正した：実クリック経路(`.memo-file-btn`)は本の詳細ペインが開いている時だけ存在し、`showBookDetail()`の履歴副作用が、戻る/進むの段数を検証する3ファイルのテスト前提を壊すため（G1の`_confirmOpenSettings`と同種の判断）。
+  - 件数：313→298(bookshelf._ 286+app._ 12、純減15件＝1(a)+14(c))。lintのMAXも313→298に変更。

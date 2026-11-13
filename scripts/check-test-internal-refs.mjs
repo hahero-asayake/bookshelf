@@ -17,13 +17,13 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
 
-// U9 step4 (#548) 時点の上限。G1(settings)置き換え後の実測値 = 313
-// (299(bookshelf._) + 14(app._)。299 = 355 - 56。(a)利用者操作化で54件(_openSettingsModal)が0に
-// なった一方、e2e-diff-main.mjs --visualの実測で(a)化が不成立と判明した3件(_openPluginSettings全3件
-// ・1種類)と、対照テスト用の_openSettingsModal直呼び1件を(c)へ戻したため、純減は56件
-// (前回step3時点の58件より2件少ない)。前回(step2)は369だった)。単位が進むごとに、この定数を
-// 実測値まで下げる。
-const MAX = 313;
+// U9 G2(book-detail、イシュー#550)置き換え後の実測値 = 298
+// (286(bookshelf._) + 12(app._)。298 = 313 - 15。G2対象23件(_bookMemoEditor17・
+// _openBookMemoInAppEditor4・_bookMemoEditorContext1・_lastDetailEditMode1)のうち、
+// _lastDetailEditModeはDOM(.bd.editing)化で(a)に0件、残り22件は(c)
+// tests/e2e/helpers/book-memo.jsへ集約し8件に減った(22-8=14)。純減は15件(1(a)+14(c))。
+// 前回(G1・#548)は313だった。単位が進むごとに、この定数を実測値まで下げる。
+const MAX = 298;
 
 const PATTERNS = [
     { name: 'bookshelf._', re: /\bbookshelf\._[A-Za-z]/g },

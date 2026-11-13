@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
+import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -528,12 +529,9 @@ test.describe('スマホ戻る (履歴統合)', () => {
     // 再オープンして確かめる。
     test('長文メモ: 戻る/Escは完了扱い(保存して閉じる・確認なし)、キャンセルのみ破棄確認 (イシュー#282・旧C-281置き換え)', async ({ page }) => {
         const errors = await bootApp(page);
-        const openMemo = () => page.evaluate(() => {
-            const b = window.bookshelf.books[0];
-            return window.bookshelf._openBookMemoInAppEditor(b.asin, b);
-        });
-        const waitEditor = () => page.waitForFunction(() => !!window.bookshelf._bookMemoEditor);
-        const memoValue = () => page.evaluate(() => window.bookshelf._bookMemoEditor.value());
+        const openMemo = () => openBookMemoInAppEditor(page);
+        const waitEditor = () => waitForBookMemoEditor(page);
+        const memoValue = () => getBookMemoValue(page);
 
         await openMemo();
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
@@ -545,7 +543,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         // 変更あり → 戻る → 確認は出ず、保存して閉じる (新規則)
         await openMemo();
         await waitEditor();
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('戻るテスト本文'));
+        await setBookMemoValue(page, '戻るテスト本文');
         await page.goBack();
         await expect(page.locator('.cfm-box')).toHaveCount(0);
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
@@ -555,7 +553,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(await memoValue()).toBe('戻るテスト本文');
 
         // 変更あり → Esc → 同じく確認は出ず、保存して閉じる
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('Escテスト本文'));
+        await setBookMemoValue(page, 'Escテスト本文');
         await page.keyboard.press('Escape');
         await expect(page.locator('.cfm-box')).toHaveCount(0);
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
@@ -564,7 +562,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         expect(await memoValue()).toBe('Escテスト本文');
 
         // キャンセル(ボタン)は変更があれば確認。「編集を続ける」なら閉じず変更も残る
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('キャンセルテスト本文'));
+        await setBookMemoValue(page, 'キャンセルテスト本文');
         await page.click('#book-memo-fs-cancel');
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.locator('.cfm-cancel').click(); // 編集を続ける

@@ -9,6 +9,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
+import { setBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -494,7 +495,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const r = recorder(ti, 'L04');
         const before = await snap(page);
         await openMemo(page);
-        await page.evaluate(() => { const ed = window.bookshelf._bookMemoEditor || window.bookshelf.bookMemoEditor; if (ed) ed.value('戻る保存284'); });
+        await setBookMemoValue(page, '戻る保存284');
         await r.step(page, 'memo');
         await burst(page, ti, 'L04', () => back(page));
         await settle(page, 600);
@@ -528,7 +529,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
         const errors = await bootApp(page);
         const r = recorder(ti, 'L10');
         await openMemo(page);
-        await page.evaluate(() => { const ed = window.bookshelf._bookMemoEditor || window.bookshelf.bookMemoEditor; if (ed) ed.value('確認284'); });
+        await setBookMemoValue(page, '確認284');
         await tap(page, '#book-memo-fs-cancel');
         await expect(page.locator('.cfm-overlay')).toBeVisible();
         await r.step(page, 'confirm');
@@ -1143,10 +1144,10 @@ test.describe('戻る網羅マトリクス 残り2 長文メモ (イシュー#28
     async function openMemo2(page) {
         await page.evaluate(async () => { const bs = window.bookshelf; const b = bs.bookManager.getAllBooks()[0]; await bs._openBookMemoInAppEditor(b.asin, b); });
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
-        await page.waitForFunction(() => !!window.bookshelf._bookMemoEditor, null, { timeout: 10000 }).catch(() => {});
+        await waitForBookMemoEditor(page, { timeout: 10000 }).catch(() => {});
     }
     const memoSaved = (page, t) => page.evaluate((x) => JSON.stringify(Array.from(window.__mem.values())).includes(x), t);
-    const setMemo = (page, t) => page.evaluate((x) => window.bookshelf._bookMemoEditor.value(x), t);
+    const setMemo = (page, t) => setBookMemoValue(page, t);
     test('L01/L03 変更なし→戻る(goBack/history.back)＝閉じる・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'L01', async (r, before) => {
         for (const how of ['goBack', 'history']) {
             await openMemo2(page);
@@ -1517,7 +1518,7 @@ test.describe('本詳細シート: 開き方・閉じ方の残り (イシュー#
         // hashchange(非同期)が落ち着くのを待つ(段差があった場合はここで false に戻っていた)
         await settle(page, 500);
         const after = await page.evaluate(() => ({
-            isEditMode: window.bookshelf._lastDetailEditMode,
+            isEditMode: !!document.querySelector('.bd.editing'), // (a) 内部状態の代わりにisEditModeで付くDOMクラスを見る(イシュー#550・②指示)
             grips: document.querySelectorAll('.bd-grip').length,
             hash: location.hash,
         }));

@@ -19,6 +19,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick } from './helpers/settings.js';
+import { setBookMemoValue, getBookMemoValue } from './helpers/book-memo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -188,13 +189,13 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
         const errors = await bootApp(page);
         const v = await runCase(page, ti, 'CHK3', { ms: 3000, expectFinal: { openModals: (m) => !m.includes('book-memo-modal') }, forbidden: (r) => r.openModals.includes('book-memo-modal') }, async (p) => {
             await openMemo(p);
-            await p.evaluate(() => { const ed = window.bookshelf._bookMemoEditor || window.bookshelf.bookMemoEditor; if (ed) ed.value('戻る295保存'); });
+            await setBookMemoValue(p, '戻る295保存');
             await back(p);
         });
         expect.soft(v.ok, `CHK3 戻る直後3秒: ${v.reasons.join(' / ')}`).toBe(true);
         // 時間差本番: 一度閉じたあと、もう一度開いて文字が残っているか (600msデバウンス保存後の確認)
         await openMemo(page);
-        const persisted = await page.evaluate(() => { const ed = window.bookshelf._bookMemoEditor || window.bookshelf.bookMemoEditor; return ed ? ed.value() : null; });
+        const persisted = await getBookMemoValue(page);
         expect.soft(persisted, '再度開くと書いた文字が残っている').toBe('戻る295保存');
         expect(errors).toEqual([]);
     });

@@ -7,6 +7,7 @@ import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, getBookMemoBoldToolbarHtml } from './helpers/book-memo.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -40,11 +41,7 @@ async function bootApp(page) {
 // 長文メモをアプリ内エディタで開く (既存の standard-ops.spec.js と同じ経路: _openBookMemoInAppEditor
 // 自体が実装の本体で、UIの「長文メモ」ボタンもこの関数を呼ぶだけ)
 async function openMemo(page, asin = 'B000000001') {
-    await page.evaluate(async (a) => {
-        const app = window.bookshelf;
-        const book = app.books.find(b => b.asin === a);
-        await app._openBookMemoInAppEditor(a, book);
-    }, asin);
+    await openBookMemoInAppEditor(page, asin);
     await page.waitForSelector('#book-memo-modal.show .editor-toolbar.mde-iconized', { timeout: 8000 });
 }
 
@@ -149,7 +146,7 @@ test.describe('EasyMDEツールバー「アイコン+ラベル」縦並び・機
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        const memoBtnHtml = await page.evaluate(() => window.bookshelf._bookMemoEditor.toolbarElements.bold.innerHTML);
+        const memoBtnHtml = await getBookMemoBoldToolbarHtml(page);
         await page.click('#book-memo-fs-done'); // 未変更なので確認なしで保存して閉じる (イシュー#282・_bookMemoFsDone)
         await expect(page.locator('#book-memo-modal')).not.toHaveClass(/show/);
 
@@ -167,7 +164,7 @@ test.describe('見出しボタンの3択メニュー (イシュー#282)', () => 
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('本文行'));
+        await setBookMemoValue(page, '本文行');
         await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]');
         const menu = page.locator('.mde-heading-menu');
         await expect(menu).toBeVisible();
@@ -180,7 +177,7 @@ test.describe('見出しボタンの3択メニュー (イシュー#282)', () => 
         expect(box.y + box.height).toBeLessThanOrEqual(844);
 
         await page.locator('.mde-heading-item', { hasText: '大見出し' }).click();
-        expect(await page.evaluate(() => window.bookshelf._bookMemoEditor.value())).toBe('## 本文行');
+        expect(await getBookMemoValue(page)).toBe('## 本文行');
         await expect(menu).toHaveCount(0);
         await expect(page.locator('#book-memo-modal')).toHaveClass(/show/); // エディタは残る
         expect(errors).toEqual([]);
@@ -190,11 +187,11 @@ test.describe('見出しボタンの3択メニュー (イシュー#282)', () => 
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         await openMemo(page);
-        await page.evaluate(() => window.bookshelf._bookMemoEditor.value('## 本文行'));
+        await setBookMemoValue(page, '## 本文行');
         await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]');
         await expect(page.locator('.mde-heading-item.is-current')).toHaveText(/大見出し/);
         await page.locator('.mde-heading-item', { hasText: '大見出し' }).click();
-        expect(await page.evaluate(() => window.bookshelf._bookMemoEditor.value())).toBe('本文行');
+        expect(await getBookMemoValue(page)).toBe('本文行');
         expect(errors).toEqual([]);
     });
 
@@ -226,10 +223,7 @@ test.describe('ヘッダーのタイトル1行省略 (イシュー#282)', () => 
         await page.setViewportSize({ width: 390, height: 844 });
         const errors = await bootApp(page);
         const LONG_TITLE = 'ハリー・ポッターと賢者の石　ハリー・ポッターシリーズ第一巻　完全版（静山社ペガサス文庫・携書サイズ・新装版・限定カバー）';
-        await page.evaluate(async (title) => {
-            const app = window.bookshelf;
-            await app._openBookMemoInAppEditor('B000000001', { title });
-        }, LONG_TITLE);
+        await openBookMemoInAppEditor(page, 'B000000001', { title: LONG_TITLE });
         await page.waitForSelector('#book-memo-modal.show .editor-toolbar', { timeout: 8000 });
         const r = await page.evaluate(() => {
             const title = document.getElementById('book-memo-fs-title');
