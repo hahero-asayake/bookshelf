@@ -96,3 +96,12 @@
 
 ### 気づいたこと (範囲外・未実測)
 - `_disconnectGitHub` は、method が hub の人 (公開のためだけに GitHub をつないだ人) が GitHub を切断しても、保存先を local に戻す (修正前からの動き)。#596 では method の書き換えは変えず、切断なので印も外す (=決めていない扱い)。ハブを使っている人の保存先が GitHub の切断で local に変わること自体が意図どおりかは別に確かめる価値がある。
+
+## step3 テストと回帰 (2026-11-14 05:55〜06:14)
+
+- 新しい E2E `tests/e2e/sync-chosen-mark.spec.js` (7件・緑): (a) ハブのログインだけ・(b) 公開先の選択だけ → isConfigured=false・再読込後のセレクト hub。(c) 印の無い local・期限切れトークン・公開先 GitHub で公開の書き出し → `同期先が未接続です` で止まりトークン更新は起きない (exporter.js の `_isSyncReady` が local にはフォルダを要求・bookshelf.js:2837)・印は立たない・セレクト hub。(d) 印の無い hub / github → method そのまま・isConfigured=true。印の無い local+フォルダ → 起動時に印が立つ・method は local のまま。(e) ハブの「この設定で使う」→ 印が立つ・method hub。
+- (c) について: 決めていない人 (印の無い local) はフォルダが無いので公開の書き出しがトークン更新の前で止まる。フォルダがあれば起動時に印が立つ。だから「決めていない人のトークン更新」は新しい設計では起きない。更新の保存が印を立てないこと自体は単体テスト (決めない書き込みで印が立たない) で確かめた。
+- 単体 `tests/unit/sync-config.test.js` に 12件追加 (isConfigured の規則の表・壊れた JSON・決めない書き込み・resetMethod)。`npm test` 1053 passed。
+- #592 の `tests/e2e/sync-first-connect.spec.js` 5件: 緑。
+- e2e-diff (`_artifacts/596-e2e-diff/report.md`・base=origin/main 01a8bf0): 1回目は「リグレ 11件」+ 画像差分 6件 (設定の1節)。原因は全部同じで、テストの前提が `bookshelf_sync={method:'local'}` (印なし・フォルダ無し) を置いて設定の同期でローカルのパネルの「フォルダを選ぶ」を押す形だったこと。#596 (M1) ではこの形は「決めていない」=ハブのパネルが出る。前提を `{method:'local', methodChosen:true}` (この端末のフォルダに決めた人) に直した (shelf-file-delete・book-memo-file-lifecycle・helpers/gate-local.js・tests/visual/screens.spec.js・commit 920e32e)。直した後: 3ファイル 37 passed (4 skipped は元から)・画像比較「設定の1節」6件 passed (基準画像は更新していない)。残り2件は reimport-diff の flake 1件 (流し直しで通過) と、sync-chosen-mark (c) の判定不能 1件 (e2e-diff の実行中に spec を書き換えたため・単独で緑)。
+- `{method:'local'}` を置いている他の E2E (active-filter 等十数件) は、ローカルのパネルを使わないので e2e-diff で落ちていない (前提は変えていない)。
