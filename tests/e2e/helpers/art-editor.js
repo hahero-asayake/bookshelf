@@ -102,19 +102,30 @@ import { expect } from './test-base.js';
 export function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
 
 /**
+ * キャンバスのブロック (section.art-cv-blk) を押す前の共通の待ち (イシュー#610)。キャンバスは同じ iframe へ
+ * doc.open/write/close で描き直す。「完了」直後は form の描画のまま書名・本文が見えるので、edit の描画にだけ付く
+ * ⋯ピル (.art-cv-more) が見えるまで待つ＝「完了」後の描き直しが済んでから押す。描き直しの最中に押すと、タップが
+ * click になる前に文書が置き換わり、押した操作が消えることがある (#610 step3: webkit で文章ブロックの本文タップが24回中2件)。
+ * evaluate を使わない (門のE2E の操作・確認から呼べる形)。
+ * @param {import('@playwright/test').Locator} block キャンバスの section.art-cv-blk
+ */
+export async function waitForCanvasBlockEditReady(block) {
+    await expect(block).toBeVisible();
+    await expect(block.locator('.art-cv-more')).toBeVisible();
+}
+
+/**
  * キャンバスのブロック (section.art-cv-blk) の余白を押す位置を、描き直しが落ち着いてから返す (イシュー#610)。
- * キャンバスは同じ iframe へ doc.open/write/close で描き直すため、boundingBox の最中に書き込みが来ると要素が外れて null になる。
- * 「完了」直後は form の描画のまま書名が見えるので、まず edit の描画にだけ付く⋯ピル (.art-cv-more) を待つ。ただしピルだけでは
- * 足りない: 描き直しを連打すると、ピルが 20/20 見えていても null が 11〜35/150 回出た (#610 step1 T2)。そこで null でない同じ値が
- * 2回続くまで読み直す。押す点に a/img/button (書影・書名リンク・⋯ピル等) が掛からないことも同じ poll の中で確かめる (#580)。
- * evaluate を使わない (門のE2E の操作・確認から呼べる形)。押すのは呼び出し側で1回だけ。
+ * 描き直しの最中に boundingBox を読むと、取った要素が外れて null になる。まず waitForCanvasBlockEditReady で⋯ピルを待つ。
+ * ただしピルだけでは足りない: 描き直しを連打すると、ピルが 20/20 見えていても null が 11〜35/150 回出た (#610 step1 T2)。
+ * そこで null でない同じ値が2回続くまで読み直す。押す点に a/img/button (書影・書名リンク・⋯ピル等) が掛からないことも
+ * 同じ poll の中で確かめる (#580)。evaluate を使わない。押すのは呼び出し側で1回だけ。
  * @param {import('@playwright/test').Locator} block キャンバスの section.art-cv-blk
  * @param {{ side?: 'left'|'right' }} [opts] left=左端から6px / right=右端から24px。縦はどちらも中央
  * @returns {Promise<{x:number, y:number}>} block の左上からの位置 (locator.tap/click の position にそのまま渡す)
  */
 export async function canvasBlockBlankPosition(block, { side = 'left' } = {}) {
-    await expect(block).toBeVisible();
-    await expect(block.locator('.art-cv-more')).toBeVisible();
+    await waitForCanvasBlockEditReady(block);
     let prev = null;
     let pos = null;
     await expect.poll(async () => {

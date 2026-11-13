@@ -5,7 +5,7 @@
 // 操作は locator.tap()/click() とマウスのみ。結果はキャンバスの DOM (ブロックの中の書名) で確かめる。
 // 委譲の優先順位: ⋯ピル・つまみのドラッグはそれぞれの操作になり、ブロックの編集は開かない。
 import { test, expect } from './helpers/test-base.js';
-import { addBlock, canvas, canvasBlockBlankPosition, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { addBlock, canvas, canvasBlockBlankPosition, waitForCanvasBlockEditReady, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -120,6 +120,7 @@ for (const v of [{ name: 'タッチ390', viewport: { width: 390, height: 844 }, 
             await press(page, page.locator('#art-fs-done'), v.touch);
             await expect(editView(page)).toHaveAttribute('data-art-mode', 'edit');
             await expect(section(page, 0)).toContainText('本文580');
+            await waitForCanvasBlockEditReady(section(page, 0)); // 「完了」後の描き直しが済んでから押す (イシュー#610)
             await press(page, section(page, 0).locator('p').first(), v.touch);
             await expect(editView(page)).toHaveAttribute('data-art-mode', 'form');
             await expect(page.locator('#art-edit-view .CodeMirror').first()).toBeVisible();
