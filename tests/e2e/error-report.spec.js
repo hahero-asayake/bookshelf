@@ -10,7 +10,9 @@
 //   window.toast('x', null)          → js/ui-feedback.js の中で TypeError (同期・window error)
 //   StorageAdapter.withTimeout(...)  → js/storage-adapter.js の中で Error を作って reject (unhandledrejection)
 //   StorageAdapter.fetchText(...)    → 同上 (「通信がタイムアウトしました」= 書き出しを送ってよい文面)
+//  - 設定「エラー情報を送らない」をオンにすると送らない (開発用フラグ '1' より優先・再読み込み後も残る)
 import { test, expect } from './helpers/test-base.js';
+import { openSettingsByClick } from './helpers/settings.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -151,4 +153,38 @@ test('本番以外の配信元では送らない・アプリの外で起きた�
     await throwInApp(page);
     await page.waitForTimeout(400);
     expect(requests.length).toBe(0);
+});
+
+test('設定「エラー情報を送らない」をオンにすると送らず、再読み込み後も残り、オフに戻すと送る', async ({ page }) => {
+    const requests = await mockEndpoint(page);
+    await bootApp(page);   // 開発用フラグ '1' (送る) のままでも、利用者のスイッチが優先されることを見る
+    const sw = page.getByRole('checkbox', { name: 'エラー情報を送らない' });
+
+    // 利用者と同じ操作で設定 → このアプリについて → スイッチをオン (既定はオフ = 送る)
+    await openSettingsByClick(page, 'about-section');
+    await expect(sw).not.toBeChecked();
+    await sw.check();
+    expect(await page.evaluate(() => localStorage.getItem('bookshelf_errReportOff'))).toBe('1');
+
+    await throwInApp(page);
+    await expect(page.locator('.toast-error', { hasText: TOAST })).toBeVisible();
+    await page.waitForTimeout(400);
+    expect(requests.length).toBe(0);
+
+    // 再読み込みしてもオンのまま・送らないまま
+    await page.reload();
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
+    await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    await openSettingsByClick(page, 'about-section');
+    await expect(sw).toBeChecked();
+    await throwInApp(page);
+    await expect(page.locator('.toast-error', { hasText: TOAST })).toBeVisible();
+    await page.waitForTimeout(400);
+    expect(requests.length).toBe(0);
+
+    // オフに戻す → キーが消え、送る
+    await sw.uncheck();
+    expect(await page.evaluate(() => localStorage.getItem('bookshelf_errReportOff'))).toBeNull();
+    await throwInApp(page);
+    await expect.poll(() => requests.length).toBe(1);
 });

@@ -746,6 +746,15 @@
                         </label>
                         <p class="memo-config-hint">外すと、以前の動き（PC・タブレットでは戻るでアプリの外へ出る／1024幅の手動追加で未保存の確認が出ない）に戻ります。イシュー#513・2026-11-17に確認のうえ撤去予定の切り替えです。</p>
                     </div>
+                    <!-- イシュー#584: 匿名のエラー報告を止める。端末ごと (localStorage bookshelf_errReportOff='1')・押したらすぐ効く。
+                         送ってよいかの判定は js/ui-feedback.js errorReportEnabled()、切り替えは js/screens/settings.js _setupErrReportSwitch()。 -->
+                    <div class="memo-config-row" id="err-report-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-err-report-off">
+                            <span>エラー情報を送らない</span>
+                        </label>
+                        <p class="memo-config-hint">予期しないエラーが起きたとき、アプリの版・画面の種類・エラーの1行目だけを運営へ送ります。蔵書やメモの内容は送りません。</p>
+                    </div>
                     </div>
                 </details>
 
@@ -1470,7 +1479,7 @@
     <script defer src="js/ui/reorder.js?v=2026110300"></script>
     <!-- イシュー#521 X2: ホームの格子の穴の計算 (「＋ここに追加」枠)。dashboard.jsより前に読む -->
     <script defer src="js/ui/widget-holes.js?v=2026110400"></script>
-    <script defer src="js/ui-feedback.js?v=2026111401"></script>
+    <script defer src="js/ui-feedback.js?v=2026111402"></script>
     <!-- イシュー#518: 保存の表示・確認・元に戻す・空/失敗・オフラインの部品 (U5)。
          足すだけの段ではまだどの画面からも呼ばない。confirm-guard/undo-toast は
          ui-feedback.js (confirmDialog/toast) より後に読む。 -->
@@ -1514,7 +1523,7 @@
     <script defer src="js/screens/article-editor.js?v=2026111495"></script>
     <!-- イシュー#537 (U8a): 設定画面(設定モーダルとその各タブ)。article-editor.js と同じ理由で
          VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
-    <script defer src="js/screens/settings.js?v=2026111492"></script>
+    <script defer src="js/screens/settings.js?v=2026111493"></script>
     <!-- イシュー#542 (U8b): 本の詳細画面(右ペイン・モバイルの本モーダル)。article-editor.js/
          settings.js と同じ理由で VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/book-detail.js?v=2026111308"></script>

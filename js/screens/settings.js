@@ -1535,6 +1535,7 @@ class _SettingsMethods {
         // プラグインカテゴリを開いた時だけ描画する (毎回全再描画をやめる, ADR-047 P2)。
         this._reflectAffiliateField();
         this._reflectPublicNameField();
+        this._setupErrReportSwitch();
         this._setupAccountUI();
         this._renderAccountSection();
         this._renderPluginCategoryLegend();
@@ -1548,6 +1549,24 @@ class _SettingsMethods {
         } else {
             this._activateSettingsCategory('account-section', { push: false });
         }
+    }
+
+    // イシュー#584: 「エラー情報を送らない」(このアプリについて節)。端末ごとの設定で、押したらすぐ効く。
+    // エラーは起動の途中でも起きるので userData (同期) には乗せず localStorage 直書き ('1'=送らない・戻したらキーを消す)。
+    // 送ってよいかの判定は js/ui-feedback.js errorReportEnabled() の1か所 (このキーが '1' なら必ず送らない)。
+    _setupErrReportSwitch() {
+        const cb = document.getElementById('setting-err-report-off');
+        if (!cb) return;
+        const KEY = 'bookshelf_errReportOff';
+        try { cb.checked = localStorage.getItem(KEY) === '1'; } catch (_) { cb.checked = false; }
+        if (cb.dataset.bound) return;
+        cb.dataset.bound = '1';
+        cb.addEventListener('change', () => {
+            try {
+                if (cb.checked) localStorage.setItem(KEY, '1');
+                else localStorage.removeItem(KEY);
+            } catch (_) { /* localStorage 不可の端末はそもそも送らない (ui-feedback.js markErrorReported) */ }
+        });
     }
 
     // 開いたカテゴリだけ重い描画 (毎回のプラグイン一覧の再描画を回避)。

@@ -190,15 +190,23 @@
     // 受け口は cf-worker/client-errors.js (POST /client-error)。集計と通知はサーバ側で行う。
     const ERR_REPORT_URL = 'https://hub.asayake.org/client-error';     // js/hub-auth.js の HUB_API_BASE と同じホスト
     const ERR_REPORT_ORIGINS = ['https://asayake.org', 'https://hahero-asayake.github.io'];   // 本番の配信元だけ
+    const ERR_REPORT_OFF = 'bookshelf_errReportOff';                   // '1'=利用者が設定で「エラー情報を送らない」をオン (js/screens/settings.js)
     const ERR_REPORT_FLAG = 'bookshelf.flag.errReport';                // '0'=送らない / '1'=本番以外でも送る (E2E 用)
     const ERR_REPORT_STORE = 'bookshelf_errReport_v1';                 // { day, sent:[指紋…] }
     const ERR_REPORT_MAX_PER_DAY = 20;                                 // 1端末が1日に送る種類の上限 (暴走止め)
     const ERR_REPORT_HIDDEN = '(内容は伏せた)';
 
     // 送ってよいかの条件はここ1か所にまとめる (保存先や設定で条件を変える時はここだけを直す)。
+    // 優先順: ①利用者の「エラー情報を送らない」(端末ごと・同期を待たずに読める localStorage) → 必ず送らない
+    //         ②開発用フラグ '0'/'1' → ③本番の配信元だけ送る。
     function errorReportEnabled() {
+        let off = null;
         let flag = null;
-        try { flag = localStorage.getItem(ERR_REPORT_FLAG); } catch (_) { /* localStorage 不可なら既定へ */ }
+        try {
+            off = localStorage.getItem(ERR_REPORT_OFF);
+            flag = localStorage.getItem(ERR_REPORT_FLAG);
+        } catch (_) { /* localStorage 不可なら既定へ */ }
+        if (off === '1') return false;
         if (flag === '0') return false;
         if (flag === '1') return true;
         return ERR_REPORT_ORIGINS.includes(location.origin);
