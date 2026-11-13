@@ -1,6 +1,6 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -229,7 +229,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.click('#art-pub-close');
 
         // debounce (600ms) 経過を待って保存完了を確認
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await closePublishPanelIfOpen(page);
@@ -257,7 +257,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await firstDrawerBook.click();
         await expect(page.locator('.art-shelf-item')).toHaveCount(2);
 
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         expect(errors).toEqual([]);
     });
@@ -274,7 +274,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit'); // 完了で戻る
         const markdown = await page.evaluate(() => window.bookshelf._artDraft.blocks[0].markdown);
         expect(markdown).toBe('## はじめに\n\n本文。');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         expect(errors).toEqual([]);
     });
@@ -284,7 +284,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await page.fill('#art-title', '削除するテスト記事');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
         await page.click('#art-more-btn'); // イシュー#230: 削除・公開の取消は ⋯ メニューの中
@@ -328,16 +328,13 @@ test.describe('記事下書きの localStorage バックアップと復元 (イ�
         await page.click('#art-new');
         await page.fill('#art-title', '下書き保存対象');
         // メモリ反映 (_artFlushSave) 直後、リモートフラッシュ前でも下書きは既に保存されている
-        await page.evaluate(() => window.bookshelf._artFlushSave());
-        const draftDuringEdit = await page.evaluate(() => {
-            const id = window.bookshelf._artEditingId;
-            return JSON.parse(localStorage.getItem(`bookshelf_art_draft_${id}`)).draft.title;
-        });
+        await flushArtSave(page);
+        const draftDuringEdit = await page.evaluate((id) => JSON.parse(localStorage.getItem(`bookshelf_art_draft_${id}`)).draft.title, await getArtEditingId(page));
         expect(draftDuringEdit).toBe('下書き保存対象');
 
-        await page.evaluate(() => window.bookshelf._artFlushRemoteNow());
+        await flushArtRemoteNow(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-        const draftAfterSave = await page.evaluate((id) => localStorage.getItem(`bookshelf_art_draft_${id}`), await page.evaluate(() => window.bookshelf._artEditingId));
+        const draftAfterSave = await page.evaluate((id) => localStorage.getItem(`bookshelf_art_draft_${id}`), await getArtEditingId(page));
         expect(draftAfterSave).toBeNull();
         expect(errors).toEqual([]);
     });
@@ -845,7 +842,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'lastBuiltAt失敗テスト');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -876,7 +873,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -895,7 +892,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(hubCaptured.deleteMissing).toBe(true);
 
         // published 状態・lastBuiltAt・「公開を取り消す」ボタンが反映される
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         const readArticle = () => page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         // lastBuiltAt 更新はエラーを握り潰す実装 (js/exporter.js) のため、失敗時は errors 側に
         // console.error が残る (イシュー#104)。ここで一緒に出して真因を一発で追えるようにする。
@@ -932,7 +929,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'わたしを構成する10冊');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -958,7 +955,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         expect(errors).toEqual([]);
 
         // 公開後に ogHash が記事に保存される (同じ入力の再公開で GitHub 公開の再アップロードを省くため)
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         await expect.poll(async () => (await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id)).ogHash).toBeTruthy();
     });
 
@@ -990,7 +987,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'URL案内テスト');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -998,7 +995,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('.cfm-ok');
 
         await expect.poll(() => hubCaptured.files).not.toBeNull();
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.publicId).toBeTruthy();
 
@@ -1028,13 +1025,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '一括更新テスト1');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文1');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
-        const id1 = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id1 = await getArtEditingId(page);
         const article1 = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id1);
 
         // 一覧に戻り、公開中1件のみで一括更新 → その記事の個別URLを案内する
@@ -1058,7 +1055,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '一括更新テスト2');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文2');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
         await publishViaPanel(page);
@@ -1094,7 +1091,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '515回帰テスト1');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文1');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1109,7 +1106,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '515回帰テスト2');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文2');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         hubCaptured.files = null;
         await publishViaPanel(page);
@@ -1151,7 +1148,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -1172,7 +1169,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '取り消しテスト');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -1188,7 +1185,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // published=false の記事は build に渡らないため、index.html だけが再 push される
         expect(hubCaptured.files.map(f => f.path)).toEqual(['index.html']);
 
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.published).toBe(false);
         await expect(page.locator('#art-unpublish')).toHaveAttribute('hidden', '');
@@ -1202,7 +1199,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '索引テスト記事');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await page.click('.cfm-ok');
@@ -1222,7 +1219,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '削除連動テスト');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await page.click('.cfm-ok');
@@ -1250,7 +1247,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '一覧から公開');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await closePublishPanelIfOpen(page);
@@ -1274,7 +1271,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '無題の記事');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -1282,7 +1279,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
 
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
         expect(article.publicId).toBeTruthy();
 
@@ -1305,7 +1302,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'ハブ導線確認');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         await publishViaPanel(page);
@@ -1347,14 +1344,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'GitHub公開確認');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         // GitHub 公開は adapter 差し替え無しでは実ネットワークに出てしまうため、ストアへ直接
         // published:true + publicId を与えて一覧再描画だけで検証する (他の GitHub 公開テストと同じ型)。
-        await page.evaluate(async () => {
-            const id = window.bookshelf._artEditingId;
+        await page.evaluate(async (id) => {
             await window.bookshelf.publishArticleStore.update(id, { published: true, publicId: 'ghpub1' });
-        });
+        }, await getArtEditingId(page));
         await page.evaluate(() => window.bookshelf._artRenderPublishPanel());
         await expect(page.locator('#art-pub-target .art-pub-hub-link')).toHaveCount(0);
         await page.evaluate(() => window.bookshelf._artRenderList());
@@ -1376,13 +1372,13 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'フォールバック確認');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
-        const id = await page.evaluate(() => window.bookshelf._artEditingId);
+        const id = await getArtEditingId(page);
         const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
 
         // bookshelfBase を失った状態を模し、一覧を再描画させる
@@ -1480,8 +1476,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
 
         // タイトルを変更して保存 (リモートへも反映) → updatedAt が lastBuiltAt を追い越す
         await page.fill('#art-title', '更新後のタイトル');
-        await page.evaluate(() => window.bookshelf._artFlushSave());
-        await page.evaluate(() => window.bookshelf._artFlushRemoteNow());
+        await flushArtSave(page);
+        await flushArtRemoteNow(page);
         await expect(page.locator('#art-save-status')).toHaveText('● 公開中・未反映の変更あり');
         await expect(page.locator('#art-save-status')).toHaveClass(/is-stale/);
         await expect(page.locator('#art-publish-header .art-hd-lbl')).toHaveText('更新');
@@ -1527,7 +1523,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '配色反映テスト');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1610,7 +1606,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', 'リンク1本化確認用');
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
         await goBack(page);
@@ -1653,7 +1649,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             await page.fill('#art-title', longTitle);
             await addBlock(page, 'text', 'first');
             await fillTextBlock(page, '本文');
-            await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+            await flushArtSaveAndRemote(page);
             await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
             await closePublishPanelIfOpen(page);
             await goBack(page);
@@ -1891,7 +1887,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         await expect(page.locator('.art-shelf-item')).toHaveCount(1);
         await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
 
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         expect(errors).toEqual([]);
     });
@@ -2212,7 +2208,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         await expect(ratingToggle).not.toHaveClass(/is-on/);
         await ratingToggle.click();
         await expect(ratingToggle).toHaveClass(/is-on/);
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
         // articles.json 相当の書込結果を退避し、reload 後の新しい adapter へ再注入する
@@ -2272,7 +2268,7 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
         });
         await page.fill('#art-title', '保存できるはずのタイトル');
         // メモリ反映(600ms)は成功するので、リモートPUTを明示フラッシュしてから失敗を確認する (イシュー#142)
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveClass(/is-error/, { timeout: 3000 });
         await expect(page.locator('#art-save-status')).toContainText('保存できませんでした');
         await expect(page.locator('#art-save-retry')).toBeVisible();
@@ -2437,14 +2433,14 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
         // 記事を2件作る (依頼に沿って「記事が既に存在する状態」を再現する)
         await page.click('#art-new');
         await page.fill('#art-title', '記事1');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
         await goBack(page);
 
         await page.click('#art-new');
         await page.fill('#art-title', '記事2');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+        await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
         await closePublishPanelIfOpen(page);
         await goBack(page);
@@ -2498,11 +2494,11 @@ test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシ�
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
-        await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
-        const shelfId = await page.evaluate(() => {
-            const article = window.bookshelf.publishArticleStore.get(window.bookshelf._artEditingId);
+        await flushArtSaveAndRemote(page);
+        const shelfId = await page.evaluate((id) => {
+            const article = window.bookshelf.publishArticleStore.get(id);
             return article.blocks.find(b => b.type === 'shelf').shelfId;
-        });
+        }, await getArtEditingId(page));
         expect(shelfId).not.toBeNull();
         expect(errors).toEqual([]);
     });
@@ -2930,7 +2926,7 @@ test.describe('記事エディタ: ヘッダー1行の崩れ検出 (イシュー
             await page.evaluate(() => window.bookshelf.openPublishPagesModal());
             await page.click('#art-new');
             await page.fill('#art-title', 'ヘッダー確認');
-            await page.evaluate(() => window.bookshelf._artFlushSave());
+            await flushArtSave(page);
             await expect(page.locator('#art-page-ops')).toBeVisible();
             await expect(page.locator('.pp-edit-actions')).toHaveCount(0);
             // イシュー#268: 閲覧状態 (戻る/編集/⋯) は常に1行。

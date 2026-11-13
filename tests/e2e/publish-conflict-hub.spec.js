@@ -7,7 +7,7 @@
 //  - 公開/公開取消/削除の記事単位 in-flight ガード (_artRunExclusive) と、一覧の公開ボタンの
 //    disabled 制御 (いずれも js/bookshelf.js・イシュー#374案D) を連打で固定する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -170,9 +170,9 @@ async function createArticleWithBook(page, title) {
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
     if (sheetOpen) await page.evaluate(() => window.bookshelf._artCloseSheet && window.bookshelf._artCloseSheet());
     await leaveForm(page);
-    await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+    await flushArtSaveAndRemote(page);
     await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
-    const id = await page.evaluate(() => window.bookshelf._artEditingId);
+    const id = await getArtEditingId(page);
     await page.evaluate(() => window.bookshelf._artShowList());
     return id;
 }

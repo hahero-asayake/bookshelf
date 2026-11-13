@@ -4,7 +4,7 @@
 //  - username 表示・設定フォーム自体の単体的な検証は tests/e2e/account-username.spec.js が持つ。
 //    ここでは「公開ボタン→ブロック→設定→再公開が通る」までの一連の導線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -127,7 +127,7 @@ async function createArticle(page, title) {
     await page.fill('#art-title', title);
     await addBlock(page, 'text', 'first');
     await fillTextBlock(page, '本文サンプル。');
-    await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+    await flushArtSaveAndRemote(page);
     await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 }
 
@@ -151,7 +151,7 @@ test('(1) username 未設定でハブ公開しようとするとブロックさ�
     await expect(page.locator('#account-username-current')).toContainText('未設定');
 
     // 公開は実行されていない (published のまま false・push もされていない)
-    const id = await page.evaluate(() => window.bookshelf._artEditingId);
+    const id = await getArtEditingId(page);
     const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
     expect(article.published).toBe(false);
     expect(hubCaptured.files).toBeNull();
@@ -272,7 +272,7 @@ test('公開先が GitHub (自前 repo) のときは username ゲートを適用
     await publishViaPanel(page);
     // username 未設定でもブロックされず、そのまま公開成功トーストが出る (同意ダイアログも出ない=target=github)
     await expect(page.locator('.toast-success')).toBeVisible();
-    const id = await page.evaluate(() => window.bookshelf._artEditingId);
+    const id = await getArtEditingId(page);
     const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), id);
     expect(article.published).toBe(true);
     expect(errors).toEqual([]);

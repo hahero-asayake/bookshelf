@@ -11,6 +11,16 @@
 // (②差し戻し指示)。そのため再試行は「シートを開く→項目が見えるまで」だけに限定し、
 // 項目(data-block-type)のクリックは1回だけ行う。その後「ブロック数が+1(2つ増えたら失敗)」
 // を数えて確認する。
+//
+// 以下4関数はU9 G3-1(イシュー#551)で追加。`_artFlushSave`/`_artFlushRemoteNow`/
+// `_artEditingId`への直接参照をテスト側から無くすための(c)集約先(#536の教訓=保存を即時
+// 確定させる呼び出しは実クリック等へ置き換えず、決定性のためテスト用ヘルパーに留める)。
+// - flushArtSave(page): 記事のメモリ保存(_artFlushSave)を確定させる。戻り値なし。
+// - flushArtRemoteNow(page): 記事のリモート保存(_artFlushRemoteNow)を確定させる。戻り値なし。
+// - flushArtSaveAndRemote(page): メモリ保存→リモート保存を元の呼び方どおり1回のevaluate内で
+//   連結して確定させる(2回のevaluateに分けない=ブラウザ側のPromiseチェーンのタイミングを保つ)。
+//   戻り値なし。
+// - getArtEditingId(page): 現在編集中の記事id(_artEditingId)を返す。
 import { expect } from './test-base.js';
 
 export function canvas(page) { return page.frameLocator('#art-canvas-frame'); }
@@ -46,4 +56,24 @@ export async function addBlock(page, type, pos = 'last', { textMode = 'form' } =
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         if (type === 'text') await page.waitForFunction(() => !!window.bookshelf._artTextFsEditor, null, { timeout: 10000 });
     }
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function flushArtSave(page) {
+    await page.evaluate(() => window.bookshelf._artFlushSave());
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function flushArtRemoteNow(page) {
+    await page.evaluate(() => window.bookshelf._artFlushRemoteNow());
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function flushArtSaveAndRemote(page) {
+    await page.evaluate(() => window.bookshelf._artFlushSave().then(() => window.bookshelf._artFlushRemoteNow()));
+}
+
+/** @param {import('@playwright/test').Page} page */
+export async function getArtEditingId(page) {
+    return page.evaluate(() => window.bookshelf._artEditingId);
 }

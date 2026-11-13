@@ -7,7 +7,7 @@
 // この違いはstep1実測(#506)で確認した「オフキャンバスの引き出しをisVisible()で見分けられない」
 // 問題(#502)の根本原因そのもので、addBlockヘルパー本体は変えずcharテスト側でこの分岐を吸収する。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock } from '../helpers/art-editor.js';
+import { addBlock, flushArtSave } from '../helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -209,7 +209,7 @@ test.describe('A7: 公開記事の一覧で開く・削除・非公開にする(
             // 反映前の一覧が描画されてしまうため、保存完了を明示的に待つ(1回読み禁止・状態確認の型)。
             await page.click('#art-new');
             await page.fill('#art-title', `A7@${name}記事2(削除用)`);
-            await page.evaluate(() => window.bookshelf._artFlushSave());
+            await flushArtSave(page);
             await leaveForm(page);
             await page.click('#art-back');
             await expect(page.locator('#art-list-view')).toBeVisible();

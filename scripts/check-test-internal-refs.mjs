@@ -17,13 +17,16 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const TARGET_DIRS = ['tests/e2e', 'tests/visual'];
 
-// U9 G2(book-detail、イシュー#550)置き換え後の実測値 = 298
-// (286(bookshelf._) + 12(app._)。298 = 313 - 15。G2対象23件(_bookMemoEditor17・
-// _openBookMemoInAppEditor4・_bookMemoEditorContext1・_lastDetailEditMode1)のうち、
-// _lastDetailEditModeはDOM(.bd.editing)化で(a)に0件、残り22件は(c)
-// tests/e2e/helpers/book-memo.jsへ集約し8件に減った(22-8=14)。純減は15件(1(a)+14(c))。
-// 前回(G1・#548)は313だった。単位が進むごとに、この定数を実測値まで下げる。
-const MAX = 298;
+// U9 G3-1(article-editor前半、イシュー#551)置き換え後の実測値 = 216
+// (204(bookshelf._) + 12(app._)。216 = 298 - 82。G3-1対象は`_artFlushSave`(39)・
+// `_artFlushRemoteNow`(34)・`_artEditingId`(14)の3名87件(全て(c)。保存確定系は決定性の
+// ため(a)化しない#536の教訓、_artEditingIdはDOM等価が無いため(c))。
+// tests/e2e/helpers/art-editor.jsへ集約し5件(flushArtSave1・flushArtRemoteNow1・
+// flushArtSaveAndRemote2・getArtEditingId1)に減った(87-5=82)。純減は82件(0(a)+82(c))。
+// `_artDraft`(36)・`_artTextFsEditor`(29)は複雑度が高く次イシュー(G3-2)へ回した
+// (詳細はdocs/char/u9-g3-plan.md)。前回(G2・#550)は298だった。単位が進むごとに、
+// この定数を実測値まで下げる。
+const MAX = 216;
 
 const PATTERNS = [
     { name: 'bookshelf._', re: /\bbookshelf\._[A-Za-z]/g },

@@ -2,7 +2,7 @@
 // 記事ストアはメモリ差し替え (publish-article-editor.spec.js の bootApp と同じ型)。公開先・プラン・GitHub 連携は
 // localStorage の bookshelf_sync、自分のタグは userData.settings.affiliateId で与え、画面の実操作で確かめる。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock } from './helpers/art-editor.js';
+import { canvas, addBlock, flushArtSave } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -196,7 +196,7 @@ test('公開パネル: ×・ESC・枠外クリックでパネルだけ閉じ、�
 test('ヘッダー1行: フッターは無く、⋯メニューに複製・削除。ESC と枠外クリックはメニューだけ閉じる', async ({ page }) => {
     const errors = await boot(page);
     await newArticleWithBook(page, '操作メニュー');
-    await page.evaluate(() => window.bookshelf._artFlushSave());
+    await flushArtSave(page);
     await expect(page.locator('.pp-edit-actions')).toHaveCount(0);
     await expect(page.locator('#art-page-ops')).toBeVisible();
     await page.click('#art-more-btn');

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
+import { flushArtSave } from './helpers/art-editor.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -174,7 +175,7 @@ test('ESC/枠外クリック: 記事エディタの ⋯ メニューと公開パ
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
     await page.fill('#art-title', '標準操作');
-    await page.evaluate(() => window.bookshelf._artFlushSave());
+    await flushArtSave(page);
     await page.click('#art-more-btn');
     await expect(page.locator('#art-more-menu')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -466,7 +467,7 @@ test.describe('スマホ戻る (履歴統合)', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
         await page.click('#art-fs-done');
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
-        await page.evaluate(() => window.bookshelf._artFlushSave());
+        await flushArtSave(page);
         await page.click('#art-more-btn');
         await page.click('#art-width-preview');
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);

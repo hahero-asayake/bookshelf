@@ -16,13 +16,13 @@
 | 名前 | 件数 | 分類 | 理由 | 出典・根拠 |
 |---|---:|---|---|---|
 | `_openSettingsModal` | 54 | (c) | 操作集約 | settings.js:923に実クリック導線はあるが、54件は設定モーダルを開く前提構築が主目的。1箇所のヘルパー（実クリックで開き、必要ならセクションへ移動）に集約する。settings.js:18のコメントは旧挙動保持の注記であり公開APIではない |
-| `_artFlushSave` | 39 | (c) | 決定性 | ②指示：即時確定の保存呼び出しは(a)化禁止（#536の揺れ教訓）。article-editor.js:263で`art-save-retry`クリックから呼ばれる私的メソッド。テスト用ヘルパーに集約し、待ち時間を発生させない |
-| `_artFlushRemoteNow` | 34 | (c) | 決定性 | 同上。article-editor.js:263,347 |
+| `_artFlushSave` | 39→1(G3-1完了・イシュー#551) | (c) | 決定性 | ②指示：即時確定の保存呼び出しは(a)化禁止（#536の揺れ教訓）。article-editor.js:263で`art-save-retry`クリックから呼ばれる私的メソッド。tests/e2e/helpers/art-editor.js(既存ファイル拡張)の`flushArtSave`/`flushArtSaveAndRemote`へ集約 |
+| `_artFlushRemoteNow` | 34→1(G3-1完了・イシュー#551) | (c) | 決定性 | 同上。article-editor.js:263,347。`flushArtRemoteNow`/`flushArtSaveAndRemote`へ集約（`flushArtSaveAndRemote`は元の`.then()`連結を1回のevaluateのまま保持＝2回の呼び出しに分けてタイミングを変えない） |
 | `_artDraft` | 32 | (c) | 状態検査 | article-editor.js:291ほか、下書き状態を直接読むためのフィールド。公開getterが無い（pubdef探索でヒット無し） |
 | `_artTextFsEditor` | 29 | (c) | 状態検査 | article-editor.js:1157,1164。全画面MDEエディタのインスタンス参照。テストは開閉状態の確認に使っている |
 | `_isSyncReady` | 26 | (d)/一部(c) | 契約 | plugin-api.js:769で`this._app._isSyncReady`を呼ぶ正式窓口（d）。ただしテスト26件はいずれも「同期準備済みを待つ足場」としての**内部状態の読み取り**であり、プラグイン契約としての呼び出しではない（plugin-api.js側の呼び出しは355に含まれない別物）。テスト側はヘルパー（c）`waitForSyncReady(page)`に集約し、メソッド名自体は(d)としてplugin-api.jsのために変更しない |
 | `_bookMemoEditor` | 17→6(G2完了・イシュー#550) | (c) | 状態検査 | book-detail.js:571。短文メモのインラインエディタ参照。17件の散在した呼び出しをtests/e2e/helpers/book-memo.js(新設)の6関数(setBookMemoValue/getBookMemoValue/hasBookMemoEditor/waitForBookMemoEditor/getBookMemoBoldToolbarHtml)へ集約し、呼び出し元5ファイルは0件に |
-| `_artEditingId` | 14 | (c) | 状態検査 | bookshelf.js:4804,5561。現在編集中の記事ID |
+| `_artEditingId` | 14→1(G3-1完了・イシュー#551) | (c) | 状態検査 | bookshelf.js:4804,5561。現在編集中の記事ID。DOM等価が無い（`data-article-id`等は存在しない）ためtests/e2e/helpers/art-editor.jsの`getArtEditingId`へ集約 |
 | `_artOpenSheet` | 13 | (a) | 操作再現 | article-editor.js:301で実際のUI操作（本の追加等）から呼ばれる。クリック相当の操作に置換可能 |
 | `_artCloseSheet` | 10 | (a) | 操作再現 | article-editor.js:225-226に実クリック（`art-sheet-scrim`/`art-sheet-close`）が既にある |
 | `_openDrawer` | 7 | (a) | 操作再現 | bookshelf.js:4033にトグルクリック、5756にハンバーガー相当の導線あり |
@@ -92,10 +92,15 @@ U8の89件は「テスト参照83件（U8a 62件＋U8b 21件）＋dashboard.js�
 |---|---|---:|---:|---:|---|
 | G1 settings | `_openSettingsModal`ほか5種 | 20 | 61 | 約150〜200行（1ファイルあたり1〜2箇所の置換が主） | (c)主・一部(a) |
 | G2 book-detail | `_bookMemoEditor`ほか4種 | 5 | 23 | 約60〜90行 | (c)主・一部(a) |
-| G3 article-editor（art*） | `_artFlushSave`ほか21種 | 約15（publish-article-editor.spec.js中心） | 203 | 約500〜700行（500行目安を超える見込み） | (c)多数・(a)一部 |
+| G3 article-editor（art*） | `_artFlushSave`ほか21種 | 約15（publish-article-editor.spec.js中心） | 209（lint実測・イシュー#551 step1。当初203はapp._経由7件の数え落とし） | 約500〜700行（500行目安を超える見込み） | (c)多数・(a)一部 |
 | G4 核心/雑多（bookshelf.js本体） | `_isSyncReady`ほか18種＋`__releaseRead` | 約10 | 70+2 | 約150〜200行 | (c)主・(a)一部 |
 
-**G3は500行目安を超える見込みのため、さらに分割する**（提案：G3-1 保存/下書き系`_artFlushSave`/`_artFlushRemoteNow`/`_artDraft`/`_artTextFsEditor`/`_artEditingId`＝148件、G3-2 シート/プレビュー/公開操作系`_artOpenSheet`以下＝55件、のように件数の重いものを独立イシューに）。G1・G2・G4はそれぞれ500行以内に収まる見込みなので1イシュー1群で良い。
+**G3は500行目安を超える見込みのため、さらに分割した**（イシュー#551 step1実測）。当初提案（G3-1=保存/下書き系5名148件、G3-2=シート/プレビュー/公開操作系55件）は名前単位の粗い見積りで、実測すると`_artDraft`(オブジェクトの多様なフィールド読み書き)が複雑度・見積り誤差とも大きく、5名まとめては500行への安全マージンが乏しいと判断。実際には3群に分割した：
+- **G3-1（完了・イシュー#551）**：`_artFlushSave`(39)/`_artFlushRemoteNow`(34)/`_artEditingId`(14)＝87件。全て(c)（保存確定系は決定性のため(a)化しない#536の教訓、`_artEditingId`はDOM等価なし）。実測差分は呼び出し形がほぼ均一だったため少なく済んだ（詳細はdocs/char/u9-g3-plan.md）。lint 298→216。
+- **G3-2（次イシュー）**：`_artDraft`(36)/`_artTextFsEditor`(29)＝65件。`_artDraft`はオブジェクトの多様なフィールド読み書き(`.blocks`配列操作・`.theme`・`.adTag`・`.sourceShelfId`等、直接代入によるテスト用セットアップも含む)で複数の専用ヘルパーが必要になる見込み。
+- **G3-3（さらに次）**：シート/プレビュー/公開操作系`_artOpenSheet`以下16名＝約57件（当初G3-2提案と同じ対象、実測57で当初55と近似差）。
+
+G3-1+G3-2+G3-3＝87+65+57=209（lint実測の`_art*`合計と一致）。G1・G2・G4はそれぞれ500行以内に収まる見込みなので1イシュー1群で良い。
 
 ## 4. 本イシューで置き換える最初の1群の推奨
 
