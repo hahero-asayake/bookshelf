@@ -13,6 +13,7 @@
 // 合わせてここでは1クリック/1入力=1手で統一して数え直す)。
 import { test, expect } from '../helpers/test-base.js';
 import { addBlock } from '../helpers/art-editor.js';
+import { mockSyncReady, stubScheduleSync } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -71,9 +72,9 @@ async function bootApp(page) {
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         window.bookshelf.flushSync = async () => {};
-        window.bookshelf._isSyncReady = () => true;
-        window.bookshelf._scheduleSync = () => {};
     }, [JSON.parse(fixtureLibrary), JSON.parse(fixtureUserData).notes]);
+    await mockSyncReady(page, true);
+    await stubScheduleSync(page);
     return { errors, hubCaptured };
 }
 

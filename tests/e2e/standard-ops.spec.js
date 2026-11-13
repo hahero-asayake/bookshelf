@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 import { flushArtSave, getArtBlocks, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
+import { mockSyncReady, triggerSyncConflict } from './helpers/sync.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -41,8 +42,8 @@ async function bootApp(page) {
         // readText/writeText もメモリ上のマップへ差し替える。
         adapter.readText = async (path) => (mem.has(path) ? mem.get(path) : null);
         adapter.writeText = async (path, text) => { mem.set(path, text); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 
@@ -62,12 +63,12 @@ test('ESC: 設定・取込モーダルが閉じる (PC)', async ({ page }) => {
 
 test('ESC/枠外クリック: 衝突ダイアログは「何もしない」で閉じる (破壊選択を既定にしない)', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => { window.bookshelf._conflictNotified = false; window.bookshelf._handleSyncConflict('GitHub'); });
+    await triggerSyncConflict(page, 'GitHub');
     await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('#sync-conflict-dialog')).toBeHidden();
     // 枠外クリック
-    await page.evaluate(() => { window.bookshelf._conflictNotified = false; window.bookshelf._handleSyncConflict('GitHub'); });
+    await triggerSyncConflict(page, 'GitHub');
     await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
     await page.locator('.cfm-overlay').click({ position: { x: 5, y: 5 } });
     await expect(page.locator('#sync-conflict-dialog')).toBeHidden();

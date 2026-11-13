@@ -3,6 +3,7 @@
 // localStorage の bookshelf_sync、自分のタグは userData.settings.affiliateId で与え、画面の実操作で確かめる。
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock, flushArtSave, getArtDraft, openArtPreview as openPreview } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -59,8 +60,8 @@ async function boot(page, { target = 'hub', plan = 'free', github = false, affil
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 

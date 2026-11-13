@@ -5,6 +5,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick, openSettingsForTest } from './helpers/settings.js';
+import { mockSyncReady } from './helpers/sync.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -70,8 +71,8 @@ async function boot(page, { query = '', ...opts } = {}) {
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         adapter.readText = async (path) => (mem.has(path) ? mem.get(path) : null);
         adapter.writeText = async (path, text) => { mem.set(path, text); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return { errors, captured, state };
 }
 

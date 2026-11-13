@@ -2,6 +2,7 @@
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, setArtPreviewStallMs, setArtPreviewHardDeadlineMs, runArtRenderList, runArtRenderPublishPanel, spyOnArtPublish, wasArtPublishCalled, openArtEditor, editArtBlockViaMenu, openArtSheet, closeArtSheet, openArtPublishPanelReopen, createArticlesAndRenderList } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
+import { mockSyncReady, stubScheduleSync } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -99,11 +100,11 @@ async function bootApp(page, initialArticlesJSON) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        // イシュー#35: 未接続のまま記事を編集させないガードを追加した。この E2E は dirHandle を持たない
-        // LocalFS のまま記事ストアだけメモリ差替で動かす都合上、実際には「未接続」判定になってしまうため、
-        // 接続済み相当にモックする (bootAppForPublish 等で既に使われているのと同じパターン)。
-        window.bookshelf._isSyncReady = () => true;
     }, initialArticlesJSON || null);
+    // イシュー#35: 未接続のまま記事を編集させないガードを追加した。この E2E は dirHandle を持たない
+    // LocalFS のまま記事ストアだけメモリ差替で動かす都合上、実際には「未接続」判定になってしまうため、
+    // 接続済み相当にモックする (bootAppForPublish 等で既に使われているのと同じパターン)。
+    await mockSyncReady(page, true);
     return errors;
 }
 
@@ -130,8 +131,8 @@ async function bootAppNoShelves(page, initialArticlesJSON) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => true;
     }, initialArticlesJSON || null);
+    await mockSyncReady(page, true);
     return errors;
 }
 
@@ -178,8 +179,8 @@ async function bootAppWithManyBooks(page, count = 800) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 
@@ -803,12 +804,12 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
             adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
             window.bookshelf.flushSync = async () => {};
-            window.bookshelf._isSyncReady = () => true;
-            // 本棚全体 (userData) のバックグラウンド同期は LocalFSAdapter 未接続 (dirHandle なし) の
-            // ため、_isSyncReady() の偽装だけでは記事保存を繰り返すうちに debounce タイマーが発火して
-            // 無関係な同期エラーが console.error に混入する (公開テストとは別経路)。ここで止める。
-            window.bookshelf._scheduleSync = () => {};
         }, [JSON.parse(fixtureLibrary), JSON.parse(fixtureUserData).notes]);
+        await mockSyncReady(page, true);
+        // 本棚全体 (userData) のバックグラウンド同期は LocalFSAdapter 未接続 (dirHandle なし) の
+        // ため、_isSyncReady() の偽装だけでは記事保存を繰り返すうちに debounce タイマーが発火して
+        // 無関係な同期エラーが console.error に混入する (公開テストとは別経路)。ここで止める。
+        await stubScheduleSync(page);
         return { errors, hubCaptured };
     }
 
@@ -2304,7 +2305,7 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
 
     test('保存先に未接続のまま開くと通知が出て新規作成できない (編集させない)', async ({ page }) => {
         await bootApp(page);
-        await page.evaluate(() => { window.bookshelf._isSyncReady = () => false; });
+        await mockSyncReady(page, false);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
 
         await expect(page.locator('#art-store-notice')).toBeVisible();

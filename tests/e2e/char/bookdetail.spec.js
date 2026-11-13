@@ -2,6 +2,7 @@
 // 出典: 499-step1-inventory.md §6「B：本の詳細」・499-step4-plan.md §3-1 の77件表
 // 操作はクリックだけで書く。本を開く導線は本棚一覧のカードクリック(内部メソッドは呼ばない)。
 import { test, expect } from '../helpers/test-base.js';
+import { mockSyncReady } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -60,7 +61,7 @@ test('B3@390/768/1024: 長文メモを開いて書く→戻ると本の詳細に
     await bootApp(page);
     // 実測: 長文メモの入口は.memo-file-btn(js/bookshelf.js:3297-3301)。openOrCreateBookMemo()は
     // _isSyncReady()がfalseだとtoastを出すだけなので、他のcharスペックと同じ型でモックする。
-    await page.evaluate(() => { window.bookshelf._isSyncReady = () => true; });
+    await mockSyncReady(page, true);
     await openBookFromHome(page, ASIN);
     await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();
     await page.click('.edit-mode-btn');

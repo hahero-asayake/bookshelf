@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { openSettingsByClick, openPluginSettingsByClick } from './helpers/settings.js';
 import { setBookMemoValue, waitForBookMemoEditor } from './helpers/book-memo.js';
 import { getArtDraft, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtSheetInternal } from './helpers/art-editor.js';
+import { mockSyncReady, showConflictDialogForTest } from './helpers/sync.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -48,9 +49,9 @@ async function bootApp(page) {
         adapter.writeJSON = async (p, d) => { mem.set(p, JSON.parse(JSON.stringify(d))); };
         adapter.readText = async (p) => (mem.has(p) ? mem.get(p) : null);
         adapter.writeText = async (p, t) => { mem.set(p, t); };
-        window.bookshelf._isSyncReady = () => true;
         if (window.HubAuth) window.HubAuth.renderSignInButton = () => {};
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 
@@ -1408,7 +1409,7 @@ const openReport = (page) => page.evaluate(() => {
     test('D03c 同期衝突ダイアログ→戻る＝「何もしない」で閉じる (D04)・下の面は残る', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r) => {
         // 確認ダイアログは履歴に積まない規則 (②決裁)。下に面 (ここではドロワー) がある時、戻る＝確認だけキャンセルで下は残る
         await openDrawerTap(page);
-        await page.evaluate(() => { window.bookshelf._conflictNotified = false; window.__cf = window.bookshelf._showConflictDialog('GitHub'); window.__cf.then((v) => { window.__cfv = v; }); });
+        await showConflictDialogForTest(page, 'GitHub');
         await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
         await back(page);
         const s = await snap(page); await r.step(page, 'back1');

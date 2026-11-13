@@ -1,6 +1,7 @@
 // 同期衝突ダイアログ (WP-B2) の回帰テスト
 //  3択 (何もしない / JSON書き出し / 再読込) + 書き出し後に選び直せること
 import { test, expect } from './helpers/test-base.js';
+import { triggerSyncConflict } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -25,7 +26,7 @@ async function bootApp(page) {
 
 test('衝突ダイアログに3択が出て、同期元名が入る (ハブ)', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => { window.bookshelf._handleSyncConflict('Asayake ハブ'); });
+    await triggerSyncConflict(page, 'Asayake ハブ');
     const dlg = page.locator('#sync-conflict-dialog');
     await expect(dlg).toBeVisible();
     await expect(dlg.locator('.cfm-message')).toContainText('Asayake ハブ');
@@ -40,7 +41,7 @@ test('衝突ダイアログに3択が出て、同期元名が入る (ハブ)', a
 
 test('書き出しを選ぶと JSON がダウンロードされ、ダイアログに戻って再読込も選べる', async ({ page }) => {
     const errors = await bootApp(page);
-    await page.evaluate(() => { window.bookshelf._handleSyncConflict('GitHub'); });
+    await triggerSyncConflict(page, 'GitHub');
     const dlg = page.locator('#sync-conflict-dialog');
     await expect(dlg).toBeVisible();
     const downloadPromise = page.waitForEvent('download');

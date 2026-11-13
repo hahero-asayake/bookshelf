@@ -10,6 +10,7 @@
 // 本棚から本を開いたときに detailSection の ctx.bookshelf が実アプリから正しく配線され、
 // 合成表示・保存・本棚文脈なしの分岐が動くことを検証する。
 import { test, expect } from './helpers/test-base.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -38,8 +39,8 @@ async function boot(page) {
             async syncBatch(entries) { for (const e of entries) s[e.path] = e.data; },
             async readText(path) { return path in s ? s[path] : null; },
         };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     // per-shelf-memo/index.js の activate ロジックを inline 実装して有効化
     // (plugins-sample/per-shelf-memo/index.js と同一ロジック。動的 import はしない)
     await page.evaluate(() => {

@@ -5,6 +5,7 @@
 // .hist-no-anim を付けてtransitionを一時無効化する実装(js/bookshelf.js _histNoAnimOnce)。
 import { test, expect } from './helpers/test-base.js';
 import { addBlock, openArtSheet } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -33,9 +34,9 @@ async function bootApp(page) {
         adapter.writeJSON = async (p, d) => { mem.set(p, JSON.parse(JSON.stringify(d))); };
         adapter.readText = async (p) => (mem.has(p) ? mem.get(p) : null);
         adapter.writeText = async (p, t) => { mem.set(p, t); };
-        window.bookshelf._isSyncReady = () => true;
         if (window.HubAuth) window.HubAuth.renderSignInButton = () => {};
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 async function settle(page, ms = 400) { await page.waitForTimeout(ms); }

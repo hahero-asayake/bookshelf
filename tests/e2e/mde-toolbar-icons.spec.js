@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openBookMemoInAppEditor, setBookMemoValue, getBookMemoValue, getBookMemoBoldToolbarHtml } from './helpers/book-memo.js';
 import { waitForArtTextFsEditor, setArtTextFsEditorValue, getArtTextFsEditorBoldToolbarHtml } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8');
@@ -34,8 +35,8 @@ async function bootApp(page) {
         adapter.writeJSON = async (p, d) => { mem.set(p, JSON.parse(JSON.stringify(d))); };
         adapter.readText = async (p) => (mem.has(p) ? mem.get(p) : null);
         adapter.writeText = async (p, t) => { mem.set(p, t); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 

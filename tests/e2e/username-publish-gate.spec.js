@@ -5,6 +5,7 @@
 //    ここでは「公開ボタン→ブロック→設定→再公開が通る」までの一連の導線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
 import { canvas, addBlock, flushArtSaveAndRemote, getArtEditingId, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
+import { mockSyncReady, stubRunPendingSync } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -104,13 +105,13 @@ async function bootAppForPublish(page, { username = null } = {}) {
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         window.bookshelf.flushSync = async () => {};
-        // この経路は dirHandle 無しの LocalFS のため、保存で予約される保留同期 (800ms デバウンス) が走ると
-        // 「dirHandle not set」を console.error に出す。公開が 600ms 以上かかるだけで expect.poll の1回の間隔に
-        // 収まらず露出する (HEAD に 600ms の遅延を足しただけで再現＝OGP画像生成 S5・ADR-098 で公開が遅くなって顕在化)。
-        // このテストの関心は username ゲートなので、同期の実行は止めておく。
-        window.bookshelf._runPendingSync = async () => {};
-        window.bookshelf._isSyncReady = () => true;
     }, JSON.parse(fixtureLibrary));
+    // この経路は dirHandle 無しの LocalFS のため、保存で予約される保留同期 (800ms デバウンス) が走ると
+    // 「dirHandle not set」を console.error に出す。公開が 600ms 以上かかるだけで expect.poll の1回の間隔に
+    // 収まらず露出する (HEAD に 600ms の遅延を足しただけで再現＝OGP画像生成 S5・ADR-098 で公開が遅くなって顕在化)。
+    // このテストの関心は username ゲートなので、同期の実行は止めておく。
+    await stubRunPendingSync(page);
+    await mockSyncReady(page, true);
     return { errors, hubCaptured };
 }
 

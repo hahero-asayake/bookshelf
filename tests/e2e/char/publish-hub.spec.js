@@ -8,6 +8,7 @@
 // 問題(#502)の根本原因そのもので、addBlockヘルパー本体は変えずcharテスト側でこの分岐を吸収する。
 import { test, expect } from '../helpers/test-base.js';
 import { addBlock, flushArtSave, openArtSheet, closeArtSheet } from '../helpers/art-editor.js';
+import { mockSyncReady, stubScheduleSync } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -69,9 +70,9 @@ async function bootApp(page) {
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         window.bookshelf.flushSync = async () => {};
-        window.bookshelf._isSyncReady = () => true;
-        window.bookshelf._scheduleSync = () => {};
     }, [JSON.parse(fixtureLibrary), JSON.parse(fixtureUserData).notes]);
+    await mockSyncReady(page, true);
+    await stubScheduleSync(page);
     return { errors, hubCaptured };
 }
 

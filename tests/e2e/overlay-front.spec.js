@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { confirmOpenSettingsForTest } from './helpers/settings.js';
+import { mockSyncReady } from './helpers/sync.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureUserData = JSON.parse(readFileSync(join(here, '../fixtures/fixture-userdata.json'), 'utf-8'));
@@ -37,15 +38,15 @@ async function boot(page, { syncReady = true } = {}) {
     }, [JSON.stringify(userData), fixtureLibrary, JSON.stringify(sync)]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
-    await page.evaluate((ready) => {
+    await page.evaluate(() => {
         window.bookshelf.saveUserData = async () => {};
         window.HubAuth.renderSignInButton = () => {};
         const mem = new Map();
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => ready;
-    }, syncReady);
+    });
+    await mockSyncReady(page, syncReady);
 }
 
 // 設定モーダルの中心点で「いちばん手前にある要素」を調べる。insideSettings=true が期待値。

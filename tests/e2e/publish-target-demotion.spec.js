@@ -3,6 +3,7 @@
 // 配置は 3 幅 (1280 / 900 以下 / スマホ) で boundingBox を数値検証する (UI の整列が弱い→座標で検証してから見せる)。
 // ISSUE220_SHOT_DIR を指定すると同じ状態のスクリーンショットも保存する (検証の証跡用・通常の CI では保存しない)。
 import { test, expect } from './helpers/test-base.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -32,8 +33,8 @@ async function boot(page, { target = null } = {}) {
     await page.evaluate(() => {
         window.HubAuth.renderSignInButton = () => {};
         window.bookshelf.saveUserData = async () => {};
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 

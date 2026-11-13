@@ -22,6 +22,7 @@
 // 下記のうち「本」関連のテスト(旧A-a)だけ#539で期待値を書き直した(タイトルに#539を付記)。
 import { test, expect } from '../helpers/test-base.js';
 import { addBlock, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, editArtBlockForSetup } from '../helpers/art-editor.js';
+import { mockSyncReady } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -50,8 +51,8 @@ async function bootApp(page, { histFlagOld = false } = {}) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 

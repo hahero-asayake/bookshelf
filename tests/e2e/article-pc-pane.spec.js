@@ -4,6 +4,7 @@
 // 390 では従来どおり全画面。閉じ方の規則 (ESC=完了・キャンセル=変更ありなら確認・枠外クリックで閉じない) は共通。
 import { test, expect } from './helpers/test-base.js';
 import { getArtBlocks, setArtBlocks, buildArtPublicPreviewHtml, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -30,8 +31,8 @@ async function bootApp(page) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (p) => (mem.has(p) ? JSON.parse(JSON.stringify(mem.get(p))) : null);
         adapter.writeJSON = async (p, d) => { mem.set(p, JSON.parse(JSON.stringify(d))); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return errors;
 }
 

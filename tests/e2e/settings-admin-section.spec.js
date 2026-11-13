@@ -2,6 +2,7 @@
 // アカウントから独立させた専用カテゴリに集約した。出し分け(管理者のみ表示)とプラン切替の経路を確認する。
 // 通報審査の操作バリエーション(hide/restore/dismiss・配置)は tests/e2e/report-moderation.spec.js が担当。
 import { test, expect } from './helpers/test-base.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -48,8 +49,8 @@ async function boot(page, { loggedIn = true, isAdmin = false } = {}) {
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
         adapter.readText = async (path) => (mem.has(path) ? mem.get(path) : null);
         adapter.writeText = async (path, text) => { mem.set(path, text); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
     return { errors, captured };
 }
 

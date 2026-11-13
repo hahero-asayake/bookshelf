@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, expect } from '../e2e/helpers/test-base.js';
 import { addBlock } from '../e2e/helpers/art-editor.js';
+import { mockSyncReady } from '../e2e/helpers/sync.js';
 import { openSettingsByClick } from '../e2e/helpers/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -59,8 +60,8 @@ async function mockPublishAdapter(page) {
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        window.bookshelf._isSyncReady = () => true;
     });
+    await mockSyncReady(page, true);
 }
 
 async function shot(page, name) {

@@ -1,13 +1,14 @@
 // イシュー#506 U0c: E4(ハブの412衝突→O27の衝突ダイアログが出て選べる)をタッチ3端末(390/768/1024)で
 // 固定する。正本はdocs/char/u0-targets.md:108「hubの412(同期の衝突)→O27が出て選べる」。
 //
-// tests/e2e/sync-conflict.spec.jsは window.bookshelf._handleSyncConflict() を直接呼ぶ単体テスト
+// tests/e2e/sync-conflict.spec.jsは同期競合処理を直接呼ぶ単体テスト
 // だったが、ここでは経路を通す(js/bookshelf.js の syncToObsidianFolder → js/hub-adapter.js の
 // commitBatch → POST /data/batch が412を返す → conflicts詳細なし(想定外応答扱い) → HubConflictError
 // → _handleSyncConflict('Asayake ハブ') → #sync-conflict-dialog表示、という実際のコードパス)。
 // addInitScriptのコールバックはブラウザ側で評価されるため、Node側変数(HUB等)は直接参照できず、
 // 第2引数で渡す必要がある(u0-77-table §見つけた不具合の教訓)。
 import { test, expect } from '../helpers/test-base.js';
+import { flushSyncNow } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -74,10 +75,7 @@ test.describe('E4: ハブの412(同期の衝突)でO27(衝突ダイアログ)が
             // syncToObsidianFolder→hub-adapter.commitBatch)。ダイアログが選ばれるまで
             // _handleSyncConflictのPromiseは解決しないため、ここではawaitせずfire-and-forgetで
             // 呼び、ダイアログの出現をlocatorの自動待ちで確認する。
-            await page.evaluate(() => {
-                window.bookshelf._scheduleSync();
-                window.bookshelf._runPendingSync();
-            });
+            await flushSyncNow(page);
 
             const dlg = page.locator('#sync-conflict-dialog');
             await expect(dlg).toBeVisible({ timeout: 10_000 });

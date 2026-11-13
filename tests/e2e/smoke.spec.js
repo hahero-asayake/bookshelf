@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openSettingsByClick } from './helpers/settings.js';
+import { mockSyncReady } from './helpers/sync.js';
 
 // イシュー#268: 見たまま編集UI。ブロック追加はキャンバス(iframe)の＋→#art-add-sheet (publish-article-editor.spec.js の手本と同じ)。
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
@@ -168,10 +169,10 @@ test('公開: 記事を新規作成→本棚ブロックに本を配置→プレ
         const adapter = window.bookshelf.storage.adapter;
         adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
         adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
-        // イシュー#35: 未接続のまま記事を編集させないガードを追加した。dirHandle を持たない LocalFS の
-        // ままなので実際には「未接続」判定になってしまうため、接続済み相当にモックする。
-        window.bookshelf._isSyncReady = () => true;
     });
+    // イシュー#35: 未接続のまま記事を編集させないガードを追加した。dirHandle を持たない LocalFS の
+    // ままなので実際には「未接続」判定になってしまうため、接続済み相当にモックする。
+    await mockSyncReady(page, true);
     await page.evaluate(() => { window.HubAuth.renderSignInButton = () => {}; });
     await page.evaluate(() => window.bookshelf.openPublishPagesModal());
     await page.click('#art-new');
