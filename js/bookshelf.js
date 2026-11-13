@@ -3642,6 +3642,10 @@ class VirtualBookshelf {
                 ...(existingMain.home ? { home: existingMain.home } : {})
             }});
 
+            // 削除・slug 変更で要らなくなった本棚ファイル (イシュー#587)。いまの一覧にある slug は消さない
+            const shelfDeletes = this.storage.takeBookshelfFileDeletes(bookshelvesMetaEntries.map(b => b.slug));
+            entries.push(...shelfDeletes.entries);
+
             // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
             try {
                 await this.storage.syncBatch(entries, {
@@ -3656,6 +3660,7 @@ class VirtualBookshelf {
                 }
                 throw err;
             }
+            this.storage.clearBookshelfFileDeletes(shelfDeletes.slugs);
 
             this._lastSyncOk = true;
             this.updateSyncStatus('synced', this._syncLabel());

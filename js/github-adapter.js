@@ -322,9 +322,20 @@ class GitHubAdapter extends StorageAdapter {
         if (!commitRes.ok) throw new Error(this._ghErr(commitRes, `get commit ${latestCommitSha}`));
         const baseTreeSha = commitRes.json.tree.sha;
 
+        // 2'. 削除は土台の tree にあるパスだけに絞る (イシュー#587)。Trees API は無いパスの削除をエラーにする
+        //     (公式「Returns an error if you try to delete a file that does not exist.」・状態コードは当てにしない)。
+        //     作ってすぐ消した本棚など、保存先にまだ無いファイルの削除が混ざってもまとめ保存全体を失敗させない。
+        let entries = batch;
+        const deletes = batch.filter(e => e.op === 'delete');
+        if (deletes.length > 0) {
+            const existing = await this._existingPaths(baseTreeSha, deletes);
+            entries = batch.filter(e => e.op !== 'delete' || existing.has(this._fullPath(e.path)));
+            if (entries.length === 0) return null;
+        }
+
         // 3. Tree entries 構築 (put = blob 作成, delete = sha:null)
         const treeEntries = [];
-        for (const e of batch) {
+        for (const e of entries) {
             const fullPath = this._fullPath(e.path);
             if (e.op === 'delete') {
                 treeEntries.push({ path: fullPath, mode: '100644', type: 'blob', sha: null });
@@ -354,7 +365,7 @@ class GitHubAdapter extends StorageAdapter {
         if (!treeRes.ok) throw new Error(this._ghErr(treeRes, 'create tree'));
 
         // 5. Commit を作成
-        const msg = message || `chore(bookshelf): batch update ${batch.length} file(s)`;
+        const msg = message || `chore(bookshelf): batch update ${entries.length} file(s)`;
         const newCommitRes = await StorageAdapter.fetchJSON(`https://api.github.com/repos/${this.owner}/${this.repo}/git/commits`, {
             method: 'POST',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
@@ -380,6 +391,23 @@ class GitHubAdapter extends StorageAdapter {
         // 書き込み後はキャッシュした sha を全部破棄 (Tree 経由で更新したので個別 sha は古い)
         this._shaCache.clear();
         return newCommitRes.json.sha;
+    }
+
+    // 土台の tree (treeSha) にある、targets のうち存在するパス (fullPath) の集合。一覧が大きすぎて
+    // 切れた (truncated) 時は1件ずつ確かめる。
+    async _existingPaths(treeSha, targets) {
+        const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${treeSha}?recursive=1`;
+        const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers(), cache: 'no-store' });
+        if (!treeRes.ok) throw new Error(this._ghErr(treeRes, `get tree ${treeSha}`));
+        if (!treeRes.json.truncated) {
+            return new Set(treeRes.json.tree.filter(t => t.type === 'blob').map(t => t.path));
+        }
+        const found = new Set();
+        for (const e of targets) {
+            const content = await this._getContent(e.path);
+            if (content && content.type === 'file') found.add(this._fullPath(e.path));
+        }
+        return found;
     }
 
     _ghErr(fetchResult, ctx) {

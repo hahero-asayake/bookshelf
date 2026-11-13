@@ -37,6 +37,24 @@ async function runLimited(tasks, limit = 4) {
     return results;
 }
 
+const PENDING_SHELF_DELETES_KEY = 'virtualBookshelf_pendingShelfDeletes';
+
+function readPendingShelfDeletes() {
+    try {
+        const v = JSON.parse(localStorage.getItem(PENDING_SHELF_DELETES_KEY) || '[]');
+        return Array.isArray(v) ? v.filter(s => typeof s === 'string' && s) : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function writePendingShelfDeletes(slugs) {
+    try {
+        if (slugs.length) localStorage.setItem(PENDING_SHELF_DELETES_KEY, JSON.stringify(slugs));
+        else localStorage.removeItem(PENDING_SHELF_DELETES_KEY);
+    } catch (_) { /* 書けなくても保存そのものは止めない */ }
+}
+
 class BookshelfStorage {
     constructor(adapter) {
         this.adapter = adapter || new LocalFSAdapter();
@@ -353,6 +371,33 @@ class BookshelfStorage {
 
     deleteBookshelfFile(slug) {
         return this.adapter.deleteFile(`private/bookshelves/${slug}.json`);
+    }
+
+    // ===== 本棚ファイルの削除待ち (イシュー#587) =====
+    // 本棚の削除・slug 変更で要らなくなった private/bookshelves/<slug>.json は、その場では消さず、
+    // 次の保存 (syncToObsidianFolder のまとめ保存) に削除として載せる＝保存先 (ローカル/GitHub/ハブ) を
+    // 問わず同じ経路で消える。保存が成功するまで localStorage に覚えておくので、通信失敗・未接続・
+    // 再読込をまたいでも次の保存で再試行される。
+    queueBookshelfFileDelete(slug) {
+        if (!slug || slug === 'all') return;
+        const pending = readPendingShelfDeletes();
+        if (!pending.includes(slug)) writePendingShelfDeletes([...pending, slug]);
+    }
+
+    // 次の保存で消す本棚ファイル。keepSlugs (いまの本棚一覧の slug) は削除待ちから外す＝同じ slug で
+    // 作り直した本棚・読み込み直しで戻った本棚のファイルは消さない。
+    takeBookshelfFileDeletes(keepSlugs = []) {
+        const keep = new Set(keepSlugs);
+        const pending = readPendingShelfDeletes();
+        const slugs = pending.filter(s => !keep.has(s));
+        if (slugs.length !== pending.length) writePendingShelfDeletes(slugs);
+        return { slugs, entries: slugs.map(s => ({ op: 'delete', path: `private/bookshelves/${s}.json` })) };
+    }
+
+    // 保存が成功した分を削除待ちから外す (保存中に新しく積まれた分は残る)
+    clearBookshelfFileDeletes(slugs) {
+        const done = new Set(slugs);
+        writePendingShelfDeletes(readPendingShelfDeletes().filter(s => !done.has(s)));
     }
 
     // ===== 汎用 (プラグインスキャン・公開ページ等の二次利用向け) =====

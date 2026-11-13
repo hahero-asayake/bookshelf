@@ -314,15 +314,8 @@ class BookshelfManager {
             delete this.app.userData.bookOrder[oldSlug];
         }
 
-        // 同期フォルダの旧ファイル削除（書き込みは syncToObsidianFolder 側で）
-        if (this.app.obsidianDirHandle && this.app.storage) {
-            this.app.storage.setDirHandle(this.app.obsidianDirHandle);
-            try {
-                await this.app.storage.deleteBookshelfFile(oldSlug);
-            } catch (e) {
-                console.error('旧 slug ファイル削除エラー:', e);
-            }
-        }
+        // 保存先の旧ファイルは次の保存で消す（書き込みも削除も syncToObsidianFolder 側・保存先を問わない。イシュー#587）
+        if (this.app.storage) this.app.storage.queueBookshelfFileDelete(oldSlug);
         return bs;
     }
 
@@ -357,16 +350,9 @@ class BookshelfManager {
             }
         }
 
-        // 同期フォルダの slug.json も削除
-        if (this.app.obsidianDirHandle && this.app.storage) {
-            this.app.storage.setDirHandle(this.app.obsidianDirHandle);
-            for (const slug of slugsToDelete) {
-                try {
-                    await this.app.storage.deleteBookshelfFile(slug);
-                } catch (e) {
-                    console.error(`本棚ファイル削除エラー (${slug}):`, e);
-                }
-            }
+        // 保存先の slug.json は次の保存で消す（保存先を問わない。失敗しても次の保存で再試行。イシュー#587）
+        if (this.app.storage) {
+            for (const slug of slugsToDelete) this.app.storage.queueBookshelfFileDelete(slug);
         }
         return allTargets;
     }
