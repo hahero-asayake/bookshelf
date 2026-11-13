@@ -329,3 +329,45 @@ for (const { name, boot } of FAILABLE) {
         });
     });
 }
+
+test.describe('長文メモ: フォルダ未接続の間の変更 ローカルフォルダ (イシュー#594)', () => {
+    // fixme (step3 の実測・594-results.md): 繋ぎ直すと、未接続の間に変えた題名が保存先の古い題名に戻る
+    // (すぐ再読込と同じ・本の編集の保存の既存の動き)。その時、移す記録は捨てられ、メモは古い題名のまま読める
+    test.fixme('フォルダ未接続の間に題名を変え、繋ぎ直した後の保存で新しい名前へ移って古いファイルが消える', async ({ page }) => {
+        // #587 の E2E と同じ形: 印が立っている間だけ queryPermission が 'prompt' を返す＝再読込後に「要再接続」になる
+        await page.addInitScript(() => {
+            const orig = FileSystemHandle.prototype.queryPermission;
+            FileSystemHandle.prototype.queryPermission = function (...args) {
+                return localStorage.getItem('__e2e_perm_prompt') === '1' ? Promise.resolve('prompt') : orig.apply(this, args);
+            };
+        });
+        const local = await bootWithLocalFolder(page);
+        await addBook(page, local, ASIN, TITLE);
+        await writeMemo(page, local, ASIN, TITLE);
+
+        await page.evaluate(() => localStorage.setItem('__e2e_perm_prompt', '1'));
+        await page.reload();
+        await expect(page.locator('#app-status-bar')).toContainText('保存先が未設定');
+        await editBook(page, ASIN, { title: NEW_TITLE });
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingShelfDeletes') || ''), { message: '移す記録が端末に残る' }).toContain('memo-move');
+        expect(await local.has(memoPath(ASIN, TITLE)), '未接続の間は保存先は古い名前のまま').toBe(true);
+
+        await page.evaluate(() => localStorage.removeItem('__e2e_perm_prompt'));
+        await openSettingsByClick(page, 'sync-section');
+        await page.locator('#obsidian-sync-btn').click();
+        await expect(page.locator('#obsidian-sync-status')).toContainText('同期済み');
+        await page.keyboard.press('Escape');
+
+        try {
+            await expect.poll(async () => (await remoteBooks(local))[ASIN], { message: '繋ぎ直した後の保存で新しい題名が届く' }).toBe(NEW_TITLE);
+            expect.soft(await settle(() => local.has(memoPath(ASIN, NEW_TITLE)), true), '新しい名前が保存先にある').toBe(true);
+            expect.soft(await settle(() => local.has(memoPath(ASIN, TITLE)), false), '古い名前が保存先に残っていない').toBe(false);
+            expect.soft(await openMemoFromDetail(page, ASIN), '新しい題名で本文が出る').toContain(BODY);
+        } catch (e) {
+            await attachDiag(page, local, '繋ぎ直した後に新しい題名が届かない');
+            throw e;
+        } finally {
+            await attachRemoteState(local);
+        }
+    });
+});
