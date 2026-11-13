@@ -109,7 +109,7 @@
 ## §3 文言規約
 
 - **機械チェック**: `npm run lint:copy`（UI文字列を抽出→ textlint: JTFスタイル＋ai-writing プリセット）。表記ゆれ・AIくさい強調/箇条書きパターンはここで落とす。
-- **用語表（正）**: 迷ったらここに追記して統一する。
+- **用語表（正）**: 正本は `docs/ui-terms.json`（この表はその写し。「正」「使わない」の2列が食い違うと `npm run lint:terms` が落ちる・イシュー#585）。迷ったら両方に追記して統一する。全文言との照合は `npm run lint:terms`。
   | 正 | 使わない | 備考 |
   |---|---|---|
   | 取り込む（動詞）/ 取込（複合名詞: 取込データ・取込モーダル） | インポート | UI表面ではカタカナ避け |
@@ -148,8 +148,9 @@
 | 資産 | 場所 | 実行 |
 |---|---|---|
 | 標準操作マトリクス打鍵 | `tests/e2e/standard-ops.spec.js` | `npx playwright test` |
-| 文言 lint | `.textlintrc.json` + `scripts/extract-ui-strings.mjs` | `npm run lint:copy` |
-| アクセシビリティ | （未導入・axe-core 予定） | — |
+| 文言 lint（件数の上限つき） | `.textlintrc.json` + `scripts/extract-ui-strings.mjs` + `scripts/check-ui-copy.mjs` | `npm run lint:copy` |
+| 用語表の照合 | `docs/ui-terms.json` + `scripts/check-ui-terms.mjs` | `npm run lint:terms` |
+| 監査の機械検査（名前の無い部品＝aria/alt・ボタン名の揺れ・表示崩れ。全画面×6幅） | `tests/audit/`・決まりは `docs/audit/machine-checks.md`・基準値は `tests/audit/baseline.json` | `npm run audit`（3つまとめて）・`audit:a11y-names`・`audit:buttons`・`audit:layout` |
 | CSS lint（罫線色トークンの文字色流用禁止） | `.stylelintrc.json` | `npm run lint:css` |
 | 罫線色トークン流用の回帰・コントラスト実測 | `tests/e2e/ux-u4-contrast.spec.js` | `npx playwright test` |
 | E2E 共通 fixture（GIS モック・外部ネットワーク遮断: AdSense/Lucide CDN/Amazon 書影） | `tests/e2e/helpers/test-base.js` | 全 spec が import |

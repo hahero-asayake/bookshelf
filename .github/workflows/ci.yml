@@ -21,7 +21,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [e2e, char]
+        # イシュー#585: audit = 監査の機械検査 (名前の無い部品・ボタン名の揺れ・表示崩れ。docs/audit/machine-checks.md)。
+        # check-run 名は「test (audit)」。
+        suite: [e2e, char, audit]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +78,13 @@ jobs:
       - name: 門のE2Eの書き方と観測点の網羅 (@gate・イシュー#583)
         if: matrix.suite == 'e2e'
         run: npm run lint:e2e-gate
+      # イシュー#585: 画面の文言の表記 (textlint) と用語表の照合。件数が tests/audit/baseline.json の上限を超えたら落ちる。
+      - name: 文言の表記 (lint:copy・イシュー#585)
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
+        run: npm run lint:copy
+      - name: 用語表の照合 (lint:terms・イシュー#585)
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
+        run: npm run lint:terms
       - name: Unit tests (Vitest)
         if: matrix.suite == 'e2e'
         run: npm test
@@ -159,3 +168,32 @@ jobs:
       - name: E2E(char) 失敗テスト一覧 (annotation 補完・イシュー#508)
         if: ${{ !cancelled() && matrix.suite == 'char' && steps.install_playwright.outcome == 'success' }}
         run: node scripts/ci-annotate-failures.mjs test-results/e2e.json
+      # イシュー#585: 監査の巡回は、文字を Noto Sans CJK JP に固定して測る (tests/audit/boot.js)。
+      # 実行する機械で字幅が変わらないようにするため。入っていないと巡回の最初に「フォントが違う」で落ちる。
+      - name: fonts-noto-cjk を入れる (監査・イシュー#585)
+        id: install_noto_cjk_audit
+        if: ${{ !cancelled() && matrix.suite == 'audit' && steps.install_playwright.outcome == 'success' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          echo "fc-match: $(fc-match 'Noto Sans CJK JP')"
+      # 3検査 (名前の無い部品・ボタン名の揺れ・表示崩れ) を1回の訪問でまとめて流す (npm run audit)。
+      # 1つの検査が落ちても、残りの検査の判定まで流してから落とす (scripts/run-audit.mjs)。
+      - name: 監査の機械検査 (npm run audit・イシュー#585)
+        id: run_audit
+        if: ${{ !cancelled() && matrix.suite == 'audit' && steps.install_noto_cjk_audit.outcome == 'success' }}
+        run: npm run audit -- --workers=4
+      - name: 監査の件数 (annotation・イシュー#585)
+        if: ${{ !cancelled() && matrix.suite == 'audit' && steps.run_audit.outcome != 'skipped' }}
+        run: |
+          node -e "const fs=require('fs');const f='_local/gate/audit.json';if(!fs.existsSync(f)){console.log('::warning::監査の結果が無い');process.exit(0)}for(const c of JSON.parse(fs.readFileSync(f,'utf-8')).checks)console.log('::notice title=監査 '+c.name+'::'+c.detected+' 件 ('+c.detail+')')"
+      - name: 監査の結果をartifactへ保存 (イシュー#585)
+        if: ${{ !cancelled() && matrix.suite == 'audit' && steps.run_audit.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-results
+          path: |
+            test-results-audit/all/raw/
+            _local/gate/audit.json
+          retention-days: 14
+          if-no-files-found: warn
