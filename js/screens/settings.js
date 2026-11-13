@@ -1937,11 +1937,11 @@ class _SettingsMethods {
         const loadedSet = new Set(this.pluginLoader?.loaded?.keys?.() || []);
 
         if (!this._isSyncReady()) {
-            host.innerHTML = '<p style="color:#888;">先に「同期」で保存先（Asayake ハブ・この端末のフォルダ・GitHub のどれか）を設定してください。</p>';
+            host.innerHTML = '<p style="color:var(--muted);">先に「同期」で保存先（Asayake ハブ・この端末のフォルダ・GitHub のどれか）を設定してください。</p>';
             return;
         }
         if (installedPlugins.length === 0) {
-            host.innerHTML = '<p style="color:#888;">インストール済みのプラグインはありません。上の「GitHub からインストール」で追加できます。</p>';
+            host.innerHTML = '<p style="color:var(--muted);">インストール済みのプラグインはありません。上の「GitHub からインストール」で追加できます。</p>';
             return;
         }
 
@@ -2020,7 +2020,7 @@ class _SettingsMethods {
         if (!host) return;
         const apiBase = (SyncConfigManager.load().hub?.apiBase) || 'https://hub.asayake.org';
         const icoBtn = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-        host.innerHTML = '<p style="color:#888;">マーケットを読み込み中…</p>';
+        host.innerHTML = '<p style="color:var(--muted);">マーケットを読み込み中…</p>';
         let plugins = [];
         try {
             const res = await fetch(`${apiBase}/plugins`, { method: 'GET' });
@@ -2028,12 +2028,12 @@ class _SettingsMethods {
             const data = await res.json();
             plugins = Array.isArray(data.plugins) ? data.plugins : [];
         } catch (e) {
-            host.innerHTML = `<p style="color:#888;">マーケットを読み込めませんでした（${BookshelfEscape.escapeHtml(e.message)}）。 <button type="button" class="btn btn-small" id="market-retry">再試行</button></p>`;
+            host.innerHTML = `<p style="color:var(--muted);">マーケットを読み込めませんでした（${BookshelfEscape.escapeHtml(e.message)}）。 <button type="button" class="btn btn-small" id="market-retry">再試行</button></p>`;
             host.querySelector('#market-retry')?.addEventListener('click', () => this._renderMarketSection());
             return;
         }
         if (plugins.length === 0) {
-            host.innerHTML = '<p style="color:#888;">公開中のプラグインはまだありません。</p>';
+            host.innerHTML = '<p style="color:var(--muted);">公開中のプラグインはまだありません。</p>';
             return;
         }
         let installedIds = new Set();
@@ -2504,13 +2504,13 @@ class _SettingsMethods {
     async _renderPluginsList() {
         const container = document.getElementById('plugins-list');
         if (!container || !this.pluginLoader) {
-            container.innerHTML = '<p style="color:#888">プラグインローダ未初期化</p>';
+            container.innerHTML = '<p style="color:var(--muted)">プラグインローダ未初期化</p>';
             return;
         }
-        container.innerHTML = '<p style="color:#888;">読み込み中...</p>';
+        container.innerHTML = '<p style="color:var(--muted);">読み込み中...</p>';
 
         if (!this._isSyncReady()) {
-            container.innerHTML = '<p style="color:#888;">同期先 (ローカルフォルダ or GitHub) を先に接続してください。</p>';
+            container.innerHTML = '<p style="color:var(--muted);">同期先 (ローカルフォルダ or GitHub) を先に接続してください。</p>';
             return;
         }
 
@@ -2518,12 +2518,12 @@ class _SettingsMethods {
         try {
             installed = await this.pluginLoader.listInstalledPlugins({ refresh: true });
         } catch (e) {
-            container.innerHTML = `<p style="color:#c00;">読み込み失敗: ${e.message}</p>`;
+            container.innerHTML = `<p style="color:var(--danger);">読み込み失敗: ${e.message}</p>`;
             return;
         }
 
         if (installed.length === 0) {
-            container.innerHTML = '<p style="color:#888;">インストール済みのプラグインはありません。</p>';
+            container.innerHTML = '<p style="color:var(--muted);">インストール済みのプラグインはありません。</p>';
             return;
         }
 
@@ -2535,8 +2535,8 @@ class _SettingsMethods {
             return `
                 <div class="plugin-card" data-plugin-card="${id}" style="border:1px solid #ddd; border-radius:6px; padding:0.8rem; margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
                     <div style="flex:1 1 200px; min-width:0;">
-                        <div style="font-weight:600;">${manifest.name || id} <span style="color:#888; font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '' : ''}</span></div>
-                        <div style="font-size:0.85rem; color:#666;">${manifest.description || ''}</div>
+                        <div style="font-weight:600;">${manifest.name || id} <span style="color:var(--muted); font-weight:normal; font-size:0.85rem;">v${manifest.version || '?'} ${manifest.publishable ? '' : ''}</span></div>
+                        <div style="font-size:0.85rem; color:var(--muted);">${manifest.description || ''}</div>
                         <div class="plugin-status"></div>
                     </div>
                     <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
@@ -2572,8 +2572,8 @@ class _SettingsMethods {
         const loaded = this.pluginLoader && this.pluginLoader.loaded.has(id);
         const failure = this.pluginLoader && this.pluginLoader.failedToLoad.get(id);
         let html = '';
-        if (failure) html += `<div style="font-size:0.8rem; color:#c00;">${failure}</div>`;
-        if (loaded) html += '<div style="font-size:0.8rem; color:#0a0;">✓ 読み込み済み（リロード不要で有効）</div>';
+        if (failure) html += `<div style="font-size:0.8rem; color:var(--danger);">${failure}</div>`;
+        if (loaded) html += '<div style="font-size:0.8rem; color:var(--success, #3aa657);">✓ 読み込み済み（リロード不要で有効）</div>';
         statusEl.innerHTML = html;
     }
 

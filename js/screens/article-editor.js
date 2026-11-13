@@ -3624,7 +3624,7 @@ class _ArticleEditorMethods {
         // プレビューが閉じなかった (イシュー#284 A30)。キャンバスと同じく新しい要素へ差し替える
         const frame = old.cloneNode(false);
         frame.removeAttribute('srcdoc');
-        frame.srcdoc = html || '<p style="padding:1rem;color:#888;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
+        frame.srcdoc = html || '<p style="padding:1rem;color:#5b6270;font-family:sans-serif">「プレビュー」を押すと表示されます</p>';
         old.replaceWith(frame);
     }
 

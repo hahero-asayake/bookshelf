@@ -10,9 +10,11 @@ const BODY_CLASS = 'plugin-dark';
 const CSS = `
 body.${BODY_CLASS} {
     --bg: #15171c; --panel: #1d2026; --side: #191c22;
-    --fg: #e6e8ec; --fg2: #b3b9c4; --muted: #8b93a1;
+    --fg: #e6e8ec; --fg2: #b3b9c4; --muted: #9aa2af;
     --line: #2c313a; --line2: #242831;
     --accent: #4d5fd6; --accent-bg: #232842; --accent-strong: #9aa6ff;
+    /* イシュー#565: 文字のアクセント・プラン表示の面・--bg3 (ライト固定値のままだと暗い面で 4.5 を割る・axe実測) */
+    --accent-text: #9aa6ff; --plan-badge-bg: #2a2733; --bg3: #242831;
     --danger: #ff6b6b; --warning: #e0a930;
     /* ホバー背景専用トークン(イシュー#247 決裁1・2 スコープ外指摘の解消)。--accent-strong は
        --accent-bg上の文字色にも使う明るい値のため、そのまま.btn-primary:hoverの背景に使うと

@@ -167,3 +167,27 @@ test.describe('U-4: --line/--line2 文字色流用の再発防止 (実測)', () 
     });
 
 });
+
+// イシュー#565 (#556 報告の3): --muted を最も暗いライト面で 4.5 以上に・ダークでは文字のアクセントを --accent-text へ。
+// axe で不足だった代表 (サイドバーの見出し・プラン表示・本詳細の見出し) を実測で固定する。
+test.describe('#565: 色トークン (--muted / --accent-text) のコントラスト (実測)', () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test('サイドバーの見出し・プラン表示・本詳細の見出しが AA(4.5) を満たす (ライト/ダーク)', async ({ page }) => {
+        await bootApp(page);
+        await page.evaluate(() => window.bookshelf.showBookDetail(window.bookshelf.books[0]));
+        const targets = {
+            'sidebar-section-title': page.locator('.sidebar-section-title > span').first(),
+            'sidebar-account-plan': page.locator('#sidebar-account-plan'),
+            'bd-meta-key': page.locator('.bd-meta-row .k').first(),
+        };
+        for (const theme of ['light', 'dark']) {
+            if (theme === 'dark') await enableDarkTheme(page);
+            for (const [name, loc] of Object.entries(targets)) {
+                if (!(await loc.isVisible().catch(() => false))) continue;
+                const r = await contrastOf(loc);
+                expect(r, `${theme} ${name}=${r}`).toBeGreaterThanOrEqual(TEXT_MIN);
+            }
+        }
+    });
+});

@@ -3753,23 +3753,23 @@ class VirtualBookshelf {
             pathEl.title = folderName;
             pathEl.style.color = '';
             status.textContent = `${new Date().toLocaleTimeString()} 同期済み（「フォルダを選ぶ」で再読み込み）`;
-            status.style.color = '#4caf50';
+            status.style.color = 'var(--success, #3aa657)';
         } else if (state === 'loading') {
             pathEl.textContent = folderName;
             pathEl.title = folderName;
             pathEl.style.color = '';
             status.textContent = '読み込み中...';
-            status.style.color = '#888';
+            status.style.color = 'var(--muted)';
         } else if (state === 'reconnect') {
             pathEl.textContent = `${folderName || ''}（要再接続）`;
             pathEl.title = folderName || '';
-            pathEl.style.color = '#f44336';
+            pathEl.style.color = 'var(--danger)';
             status.textContent = '「フォルダを選ぶ」を押してフォルダを選び直してください';
-            status.style.color = '#f44336';
+            status.style.color = 'var(--danger)';
         } else {
             pathEl.textContent = '（未接続）';
             pathEl.title = '';
-            pathEl.style.color = '#888';
+            pathEl.style.color = 'var(--muted)';
             status.textContent = '';
         }
     }
@@ -4311,7 +4311,7 @@ class VirtualBookshelf {
                     html += `<div class="icon-picker-section-label">★ おすすめ</div>`;
                     html += `<div class="icon-picker-section">${candList.map(v => cellHtml(v, v === current)).join('')}</div>`;
                 }
-                if (!html) html = '<p style="color:#9ca3af;padding:0.5rem;">該当なし</p>';
+                if (!html) html = '<p style="color:var(--muted);padding:0.5rem;">該当なし</p>';
                 lucideGrid.innerHTML = html;
             };
             renderLucideGrid('');
@@ -4333,23 +4333,23 @@ class VirtualBookshelf {
                 renderLucideGrid(raw);
                 // Lucide 名パターンで同梱一覧をチェック
                 if (!/^[a-z][a-z0-9-]*$/.test(raw)) {
-                    lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">英小文字/数字/ハイフンのみ。文字アイコンタブへ →</span>`;
+                    lucidePreview.innerHTML = `<span style="color:var(--danger);font-size:0.75rem;">英小文字/数字/ハイフンのみ。文字アイコンタブへ →</span>`;
                     lucideUseBtn.disabled = true;
                     lucideUseBtn.dataset.pendingValue = '';
                     return;
                 }
-                lucidePreview.innerHTML = '<span style="color:#9ca3af;font-size:0.75rem;">確認中…</span>';
+                lucidePreview.innerHTML = '<span style="color:var(--muted);font-size:0.75rem;">確認中…</span>';
                 lucideUseBtn.disabled = true;
                 const mySeq = ++lucideSeq;
                 lucideTimer = setTimeout(async () => {
                     const inner = await window.resolveIcon(raw);
                     if (mySeq !== lucideSeq) return;
                     if (inner) {
-                        lucidePreview.innerHTML = window.icon(raw, { size: 24 }) + `<span style="color:#374151;font-size:0.8rem;">${raw}</span>`;
+                        lucidePreview.innerHTML = window.icon(raw, { size: 24 }) + `<span style="color:var(--fg2);font-size:0.8rem;">${raw}</span>`;
                         lucideUseBtn.disabled = false;
                         lucideUseBtn.dataset.pendingValue = raw;
                     } else {
-                        lucidePreview.innerHTML = `<span style="color:#dc2626;font-size:0.75rem;">"${raw}" は同梱のアイコンに見つかりません</span>`;
+                        lucidePreview.innerHTML = `<span style="color:var(--danger);font-size:0.75rem;">"${raw}" は同梱のアイコンに見つかりません</span>`;
                         lucideUseBtn.disabled = true;
                         lucideUseBtn.dataset.pendingValue = '';
                     }
@@ -4361,7 +4361,7 @@ class VirtualBookshelf {
                 const recents = (window.getIconRecents ? window.getIconRecents() : [])
                     .filter(v => !/^[a-z][a-z0-9-]*$/.test(v)); // Lucide 以外
                 if (recents.length === 0) {
-                    textGrid.innerHTML = '<p style="color:#9ca3af;padding:0.5rem;font-size:0.85rem;">履歴はまだありません。上の入力欄から文字を指定してください。</p>';
+                    textGrid.innerHTML = '<p style="color:var(--muted);padding:0.5rem;font-size:0.85rem;">履歴はまだありません。上の入力欄から文字を指定してください。</p>';
                     return;
                 }
                 let html = '<div class="icon-picker-section-label">🕐 履歴</div>';
@@ -4380,7 +4380,7 @@ class VirtualBookshelf {
                     return;
                 }
                 const v = raw.trim();
-                textPreview.innerHTML = window.renderTextIcon(v, { size: 28 }) + `<span style="color:#374151;font-size:0.8rem;">${BookshelfEscape.escapeHtml(v)}</span>`;
+                textPreview.innerHTML = window.renderTextIcon(v, { size: 28 }) + `<span style="color:var(--fg2);font-size:0.8rem;">${BookshelfEscape.escapeHtml(v)}</span>`;
                 textUseBtn.disabled = false;
                 textUseBtn.dataset.pendingValue = v;
             };
@@ -5082,7 +5082,7 @@ class VirtualBookshelf {
             ` + descendants.map(d => `
                 <label style="display: block; padding: 0.25rem 0;">
                     <input type="checkbox" class="descendants-pick-item" value="${d.internalId}">
-                    <span data-icon-value="${(d.iconName || 'library').replace(/"/g,'&quot;')}" style="display:inline-flex;vertical-align:-3px;color:#4338ca;margin-right:0.25rem;">${window.renderIcon(d.iconName || 'library', { size: 14 })}</span>${d.name}
+                    <span data-icon-value="${(d.iconName || 'library').replace(/"/g,'&quot;')}" style="display:inline-flex;vertical-align:-3px;color:var(--accent);margin-right:0.25rem;">${window.renderIcon(d.iconName || 'library', { size: 14 })}</span>${d.name}
                 </label>
             `).join('');
 

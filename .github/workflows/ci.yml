@@ -63,6 +63,9 @@ jobs:
       - name: Esc の判定の直書き禁止 (イシュー#565)
         if: matrix.suite == 'e2e'
         run: npm run lint:esc
+      - name: JS内インラインstyleの色直書き禁止 (イシュー#565)
+        if: matrix.suite == 'e2e'
+        run: npm run lint:js-color
       - name: テストの内部参照(bookshelf._/app._)の上限 (イシュー#548・U9)
         if: matrix.suite == 'e2e'
         run: npm run lint:internal-refs

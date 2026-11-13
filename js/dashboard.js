@@ -301,7 +301,7 @@ class BookshelfDashboard {
                 entry.render.call(this, body, this.app, w.config || {});
             } catch (e) {
                 console.error(`[dashboard] widget "${w.id}" render error:`, e);
-                body.innerHTML = `<p style="color:#dc2626;">${BookshelfEscape.escapeHtml(e.message)}</p>`;
+                body.innerHTML = `<p style="color:var(--danger);">${BookshelfEscape.escapeHtml(e.message)}</p>`;
             }
         }
 

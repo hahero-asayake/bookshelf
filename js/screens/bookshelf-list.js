@@ -30,7 +30,7 @@ class _BookshelfListMethods {
         if (!container) return;
         const bookshelves = this.bookshelfManager?.getBookshelves?.() || [];
         if (bookshelves.length === 0) {
-            container.innerHTML = '<p class="tree-empty" style="padding:0.5rem 0.6rem;color:#9ca3af;font-size:0.8rem;">本棚がありません</p>';
+            container.innerHTML = '<p class="tree-empty">本棚がありません</p>';
             return;
         }
         // 展開状態を localStorage から復元

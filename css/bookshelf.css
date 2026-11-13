@@ -76,12 +76,15 @@
     --side: #fbfbfd;
     --fg: #1c1f24;
     --fg2: #4b5460;
-    --muted: #6b7280;
+    --muted: #5b6270; /* イシュー#565: 最も暗いライト面 (#e4e7eb/#e7e3ee) で 4.5 以上 (旧 #6b7280 は 3.82〜4.43)。--fg2 より薄い段は保つ */
     --line: #e4e7eb;
     --line2: #eef0f3;
     --accent: #3d52ff;
     --accent-bg: #eef0ff;
     --accent-strong: #2a3aff;
+    /* 文字色としてのアクセント (イシュー#565)。ライトは --accent と同じ。ダークは --accent が白文字ボタンの背景用に暗いため
+       (文字に使うと #1d2026 上で 3.04)、dark-theme.js で明るい値に上書きする。文字には --accent でなくこちらを使う */
+    --accent-text: var(--accent);
     --danger: #c23a3a;
     --warning: #a06800;
     /* ホバー背景専用トークン (イシュー#247 決裁1・2 ダーク対応)。--accent-strong はテキスト用途
@@ -117,7 +120,7 @@
     align-items: center;
     justify-content: center;
     vertical-align: -0.15em;
-    color: var(--accent);
+    color: var(--accent-text);
     margin-right: 0.4rem;
 }
 h1 .h-icon,
@@ -132,7 +135,7 @@ summary .h-icon,
 }
 /* 見出しに使うときは accent 色 (オーバーライド) */
 .modal-header h2 .h-icon,
-.settings-section-title .h-icon { color: var(--accent); }
+.settings-section-title .h-icon { color: var(--accent-text); }
 
 /* Cover Size Variants */
 .bookshelf.size-small {
@@ -251,7 +254,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent);
+    color: var(--accent-text);
     width: 20px;
     height: 20px;
 }
@@ -292,7 +295,7 @@ body {
 }
 
 .palette-trigger:hover .palette-icon {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 .palette-placeholder {
@@ -613,7 +616,7 @@ body.app-view-bookshelf .view-bookshelf {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--accent);
+    color: var(--accent-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -628,7 +631,7 @@ body.app-view-bookshelf .view-bookshelf {
     height: 44px;
     transform: translate(-50%, -50%);
 }
-.sidebar-add-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--accent); }
+.sidebar-add-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--accent-text); }
 
 .sidebar-nav-item {
     display: flex;
@@ -651,7 +654,7 @@ body.app-view-bookshelf .view-bookshelf {
 
 .sidebar-nav-item.is-active {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
 }
 
@@ -731,7 +734,7 @@ body.app-view-bookshelf .view-bookshelf {
 
 .tree-node.is-active {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
 }
 
@@ -868,7 +871,7 @@ body.app-view-bookshelf .view-bookshelf {
 }
 .tree-node:hover .tree-more,
 .tree-node.is-active .tree-more { color: var(--fg2); }
-.tree-more:hover { background: var(--line); color: var(--accent); }
+.tree-more:hover { background: var(--line); color: var(--accent-text); }
 
 .tree-node-menu {
     position: fixed;
@@ -1015,7 +1018,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     height: 44px;
     transform: translate(-50%, -50%);
 }
-.bd-edit-toggle:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.bd-edit-toggle:hover { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
 .bd-edit-toggle.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* cover (140px 固定 + 星 overlay) */
@@ -1142,7 +1145,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 .bd-section-title .h-icon { color: var(--muted); }
 .bd-section.has-context .bd-section-title,
-.bd-section.has-context .bd-section-title .h-icon { color: var(--accent); }
+.bd-section.has-context .bd-section-title .h-icon { color: var(--accent-text); }
 
 /* meta table */
 .bd-meta {
@@ -1179,7 +1182,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     align-items: center;
     gap: 0.25rem;
 }
-.bd-chip-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.bd-chip-add:hover { color: var(--accent-text); border-color: var(--accent); background: var(--accent-bg); }
 
 .bd-empty-note {
     color: var(--muted);
@@ -1246,7 +1249,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 0.45rem 0.7rem;
     border: 1px solid var(--line);
     border-radius: 6px;
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 0.82rem;
     text-decoration: none;
     background: var(--panel);
@@ -1289,7 +1292,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     text-decoration: none;
     font-family: inherit;
 }
-.bd-actions .amazon-link:hover { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.bd-actions .amazon-link:hover { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
 .bd-actions .btn:hover { background: var(--line2); color: var(--fg); }
 /* ::after でタップ領域の高さだけ44pxに拡張 (見た目は変えない・横長リンクのため幅は要素自身と同じにし
    隣接する除外ボタンとのgapを侵さない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
@@ -1417,7 +1420,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 .bd-memo-scope-bs {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .bd-memo-scope .bd-chip-icon {
     display: inline-flex;
@@ -1519,7 +1522,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 .icon-picker-tab.is-active {
-    color: var(--accent);
+    color: var(--accent-text);
     border-bottom-color: var(--accent);
     font-weight: 600;
 }
@@ -1547,7 +1550,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     background: var(--line2);
     border: 1px solid var(--line);
     border-radius: 6px;
-    color: var(--accent);
+    color: var(--accent-text);
     box-sizing: border-box;
     flex-shrink: 0;
 }
@@ -1604,7 +1607,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     border: 1px solid var(--line);
     border-radius: 6px;
     cursor: pointer;
-    color: var(--accent);
+    color: var(--accent-text);
     transition: background 0.1s, border-color 0.1s;
 }
 
@@ -1644,14 +1647,14 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 }
 
 .icon-picker-direct-hint a {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 .icon-picker-direct-preview {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--accent);
+    color: var(--accent-text);
     min-width: 130px;
     max-width: 200px;
     overflow: hidden;
@@ -1721,7 +1724,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .icon-picker-cell.is-selected {
     background: var(--accent-bg);
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 .icon-picker-cell-name {
@@ -1759,7 +1762,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 /* ===== Lucide star (本詳細 / 本一覧の星評価) ===== */
@@ -1801,7 +1804,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 0.2rem 0.5rem 0.2rem 0.45rem;
     border-radius: 999px;
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 0.76rem;
     margin: 0.15rem 0.2rem 0.15rem 0;
     border: 1px solid transparent;
@@ -1816,7 +1819,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
 .bd-chip-remove {
     background: transparent;
     border: none;
-    color: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     padding: 0 0.2rem;
     margin-left: 0.15rem;
@@ -1856,7 +1859,7 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     gap: 0.4rem;
 }
 
-.dashboard-title .h-icon { color: var(--accent); }
+.dashboard-title .h-icon { color: var(--accent-text); }
 
 .dashboard-toolbar-actions {
     display: flex;
@@ -1954,7 +1957,7 @@ html.bs-likely-has-data #dashboard-welcome {
 }
 
 .add-widget-card:hover {
-    color: var(--accent);
+    color: var(--accent-text);
     border-color: var(--accent);
     background: var(--accent-bg);
 }
@@ -2041,7 +2044,7 @@ html.bs-likely-has-data #dashboard-welcome {
     height: 22px;
     border: 1px solid var(--line);
     background: var(--panel);
-    color: var(--accent);
+    color: var(--accent-text);
     border-radius: 4px;
     cursor: pointer;
     line-height: 1;
@@ -2075,7 +2078,7 @@ html.bs-likely-has-data #dashboard-welcome {
 .widget-hole span { white-space: nowrap; }
 .widget-hole:hover,
 .widget-hole:focus-visible {
-    color: var(--accent);
+    color: var(--accent-text);
     border-color: var(--accent);
     background: var(--accent-bg);
 }
@@ -2100,7 +2103,7 @@ html.bs-likely-has-data #dashboard-welcome {
     font-size: 0.8rem;
     cursor: pointer;
 }
-.wps-btn[aria-checked="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.wps-btn[aria-checked="true"] { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-text); }
 .wps-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .widget-picker-item.is-unfit { display: none; }
 
@@ -2124,7 +2127,7 @@ html.bs-likely-has-data #dashboard-welcome {
 .bn-value {
     font-size: 2.2rem;
     font-weight: 700;
-    color: var(--accent);
+    color: var(--accent-text);
     line-height: 1;
     letter-spacing: -0.02em;
 }
@@ -2250,7 +2253,7 @@ html.bs-likely-has-data #dashboard-welcome {
     color: var(--fg2);
     transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
-.widget-picker-item:hover { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.widget-picker-item:hover { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-text); }
 .wpi-icon { display: inline-flex; }
 .wpi-label { font-size: 0.8rem; }
 
@@ -2872,7 +2875,7 @@ html.bs-likely-has-data #dashboard-welcome {
 
 .book-badge-accent {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 /* イシュー#484: 重複ASIN検出バッジ (warning色。既存の book-badge 型を踏襲) */
@@ -3852,10 +3855,10 @@ html.bs-likely-has-data #dashboard-welcome {
 .settings-cat:hover { background: var(--line2); }
 .settings-cat-ic {
     flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px;
-    background: var(--accent-bg); color: var(--accent);
+    background: var(--accent-bg); color: var(--accent-text);
     display: flex; align-items: center; justify-content: center;
 }
-.settings-cat-ic .h-icon { color: var(--accent); }
+.settings-cat-ic .h-icon { color: var(--accent-text); }
 .settings-cat-tx { flex: 1 1 auto; min-width: 0; }
 .settings-cat-tt { display: block; font-size: 0.95rem; font-weight: 600; line-height: 1.25; }
 .settings-cat-ds { display: block; font-size: 0.74rem; color: var(--muted); margin-top: 2px; line-height: 1.25; }
@@ -3890,9 +3893,9 @@ html.bs-likely-has-data #dashboard-welcome {
     .settings-cat-tt { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .settings-cat-ds, .settings-cat-chev { display: none; }
     .settings-cat.cat-active { background: var(--accent-bg); }
-    .settings-cat.cat-active .settings-cat-tt { color: var(--accent); }
+    .settings-cat.cat-active .settings-cat-tt { color: var(--accent-text); }
     .settings-cat.cat-active .settings-cat-ic,
-    .settings-cat.cat-active .settings-cat-ic .h-icon { color: var(--accent); }
+    .settings-cat.cat-active .settings-cat-ic .h-icon { color: var(--accent-text); }
     .settings-detail { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
     .settings-md-back { display: none !important; }
 }
@@ -4174,7 +4177,7 @@ html.bs-likely-has-data #dashboard-welcome {
 .account-legal-note a { color: var(--muted); }
 .account-consent { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.2rem 0 0.7rem; font-size: 0.85rem; line-height: 1.5; cursor: pointer; }
 .account-consent input[type="checkbox"] { flex: 0 0 auto; }
-.account-consent a { color: var(--accent); }
+.account-consent a { color: var(--accent-text); }
 
 /* 課金 (アップグレード / 支払い管理, ADR-035) */
 .account-billing { margin: 0.7rem 0; }
@@ -4189,7 +4192,7 @@ html.bs-likely-has-data #dashboard-welcome {
 /* comp (管理者付与 Plus) 向け案内・支払い遅延警告 (イシュー#231) */
 .account-comp-notice { display: flex; align-items: flex-start; gap: 0.35rem; margin: 0 0 0.55rem; font-size: 0.82rem; color: var(--muted, #6b6477); line-height: 1.5; }
 .account-comp-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; }
-.account-comp-notice a { color: var(--accent); }
+.account-comp-notice a { color: var(--accent-text); }
 .account-past-due-notice { display: flex; align-items: flex-start; gap: 0.35rem; margin: 0 0 0.55rem; font-size: 0.82rem; color: var(--warning, #a06800); line-height: 1.5; }
 .account-past-due-notice .h-icon { flex: 0 0 auto; margin-top: 0.15rem; color: var(--warning, #a06800); }
 /* 管理者: プラン手動切替 (ADR-038) */
@@ -4242,7 +4245,7 @@ html.bs-likely-has-data #dashboard-welcome {
 }
 .sidebar-account-chip .sac-plan {
     flex: 0 0 auto; font-size: 0.68rem; font-weight: 700; padding: 0.08rem 0.4rem;
-    border-radius: 999px; background: #e7e3ee; color: var(--muted);
+    border-radius: 999px; background: var(--plan-badge-bg, #e7e3ee); color: var(--muted);
 }
 .sidebar-account-chip .sac-plan.is-plus { background: var(--accent, #3d52ff); color: #fff; }
 body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
@@ -4631,7 +4634,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* イシュー#166: 本ブロック空状態を <button> 化 (対象が明確なブロック内の追加入口)。<p>向けの .pp-empty に
    button 既定装飾のリセットを重ねる (常時表示・hover非依存)。 */
 .pp-empty-btn { width: 100%; font: inherit; cursor: pointer; }
-.pp-empty-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pp-empty-btn:hover { border-color: var(--accent); color: var(--accent-text); }
 .pp-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--line2); }
 .pp-row-main { display: flex; flex-direction: column; min-width: 0; }
 /* イシュー#442・ハヘロ指摘②: タイトルは状態と同居させず単独行(1内容1行)。長いタイトルは省略せず
@@ -4641,10 +4644,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .pp-row-status-line { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.3rem; }
 .pp-row-meta { font-size: 0.78rem; color: var(--muted); }
 .pp-row-url { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.25rem; min-width: 0; }
-.pp-row-url a { font-size: 0.76rem; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-row-url a { font-size: 0.76rem; color: var(--accent-text); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-row-url a:hover { text-decoration: underline; }
 .pp-url-copy { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; flex-shrink: 0; }
-.pp-url-copy:hover { color: var(--accent); }
+.pp-url-copy:hover { color: var(--accent-text); }
 .pp-row-actions { display: flex; gap: 0.35rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .pp-status { font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; white-space: nowrap; }
 .pp-status-on { color: #1f7a4d; background: #e3f5ec; }
@@ -4860,7 +4863,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-block-bar-sp { flex: 1; }
 .art-block-bar-sep { width: 1px; align-self: stretch; background: var(--line2); margin: 0 0.1rem; }
 .art-block-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 0.2rem; display: inline-flex; align-items: center; border-radius: 4px; }
-.art-block-ic:hover { color: var(--accent); }
+.art-block-ic:hover { color: var(--accent-text); }
 /* イシュー#170: 削除は複製/選び直しと重さが違う破壊的操作。hover依存の無色は「削除」だと
    伝わらない(Nielsen #4/#9)ため、記事削除(.btn-danger)と同じ常時弱いdangerトーンへ揃える。 */
 .art-block-ic.art-block-del { color: var(--danger); }
@@ -4893,7 +4896,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .art-shelf-selbar > * { flex-shrink: 0; white-space: nowrap; }
 .art-shelf-selbar-master { padding: 0.1rem 0.3rem; font-size: 0.76rem; font-weight: 600; color: var(--fg); }
 .art-shelf-selbar .art-block-bar-sp { flex: 1; }
-.art-sel-all-btn, .art-sel-clear-btn { border: none; background: none; color: var(--accent); cursor: pointer; padding: 0.1rem 0.2rem; font-size: 0.74rem; }
+.art-sel-all-btn, .art-sel-clear-btn { border: none; background: none; color: var(--accent-text); cursor: pointer; padding: 0.1rem 0.2rem; font-size: 0.74rem; }
 .art-sel-all-btn:hover, .art-sel-clear-btn:hover { text-decoration: underline; }
 
 /* カード表示 (密度=card) */
@@ -4955,7 +4958,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
    (旧 .art-icon-toggle の縮小指定を移設。視覚言語は5種のchip-toggleへ統一、サイズだけ個別) */
 .art-shelf-item-toggles .art-chip-toggle { font-size: 0.62rem; padding: 0.05rem 0.3rem; }
 .art-shelf-item-ic { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.1rem; display: inline-flex; align-items: center; }
-.art-shelf-item-ic:hover { color: var(--accent); }
+.art-shelf-item-ic:hover { color: var(--accent-text); }
 .art-shelf-item-ic:disabled { opacity: 0.3; cursor: default; }
 .art-shelf-item-remove { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; line-height: 1; padding: 0.1rem; }
 .art-shelf-item-remove:hover { color: var(--danger); }
@@ -5121,7 +5124,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* イシュー#170 step1で判定: chip-toggle化しない(押すとパネルごと消える=シートの×と同じ性質、
    ON/OFFの状態トグルではない)。「アイコンのみ弱色・hoverでaccent」の5分類へ正式に寄せる微修正のみ。 */
 .art-drawer-collapse-btn { display: inline-flex; align-items: center; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0.2rem; margin-left: auto; }
-.art-drawer-collapse-btn:hover { color: var(--accent); }
+.art-drawer-collapse-btn:hover { color: var(--accent-text); }
 .art-badge { background: #fff7e6; border: 1px solid #f0d9a8; color: #8a6410; border-radius: 999px; font-size: 0.65rem; padding: 0.05rem 0.45rem; font-weight: 700; }
 /* #99 <select> だったが #133 でアイコン+パス表記のためボタン+ポップオーバーへ置換
    (.bookshelf-popover-item 型を流用)。.art-side は overflow:hidden のスクロールコンテナのため
@@ -5378,7 +5381,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 .btn-icon-square:hover {
     background: var(--accent-bg);
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 .btn-icon-square:active {
@@ -5387,7 +5390,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 
 .btn-icon-square.is-active {
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--accent-text);
     border-color: var(--accent);
 }
 
@@ -5423,11 +5426,11 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     transition: background 0.12s, color 0.12s;
 }
 .sidebar-brand:hover { background: var(--line2); }
-.sidebar-brand:hover .brand-text { color: var(--accent); }
+.sidebar-brand:hover .brand-text { color: var(--accent-text); }
 .sidebar-brand .brand-icon {
     width: 18px;
     height: 18px;
-    color: var(--accent);
+    color: var(--accent-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5448,7 +5451,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
     justify-content: center;
     background: var(--accent-bg);
     border: 1px solid var(--accent);
-    color: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     box-shadow: 0 2px 6px var(--shadow-color);
     transition: color 0.12s, border-color 0.12s, background 0.12s, left 0.18s, right 0.18s;
@@ -5947,7 +5950,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .plugin-state.muted { color: var(--muted); }
 
 .plugin-card-icon-preview {
-    color: var(--accent);
+    color: var(--accent-text);
     margin-right: 0.4rem;
     display: inline-flex;
     align-items: center;
@@ -5957,7 +5960,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .plugin-publishable-badge {
     display: inline-flex;
     align-items: center;
-    color: var(--accent);
+    color: var(--accent-text);
     margin-left: 0.2rem;
     vertical-align: -2px;
 }
@@ -6260,7 +6263,7 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     background: var(--line2);
     border: 1px solid var(--line, #e5e7eb);
     border-radius: 9px;
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .bvh-text {
     display: flex;
@@ -6474,13 +6477,16 @@ a.relay-url-copy { color: var(--accent-strong); text-decoration: underline; word
     margin-left: 0.4rem;
     font-size: 0.72rem;
     font-weight: 600;
-    background: #fff3;
+    /* イシュー#565: 塗りボタン (--accent) の上で白文字 4.5 以上を保つため、白を重ねて明るくせず黒を重ねて沈める (旧 #fff3 は実効 #6475ff で 3.79) */
+    background: rgba(0, 0, 0, 0.22);
     border: 1px solid #fff5;
     border-radius: 999px;
     padding: 0 0.45em;
     vertical-align: middle;
     line-height: 1.6;
 }
+/* 本棚ツリーの空表示 (イシュー#565: js/screens/bookshelf-list.js のインライン #9ca3af を撤去してトークンへ) */
+.tree-empty { padding: 0.5rem 0.6rem; color: var(--muted); font-size: 0.8rem; }
 .upgrade-costly-badge {
     display: inline-block;
     margin-left: 0.4rem;
@@ -7211,7 +7217,7 @@ input.art-shelf-select-all.is-mixed::after {
     align-items: center;
     vertical-align: -2px;
     margin-right: 0.3rem;
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 .bookshelf-info {
@@ -7352,7 +7358,7 @@ body.plugin-dark .status-row.status-update { background: var(--accent-bg); }
     pointer-events: none;
     z-index: 4;
 }
-.ptr-indicator.is-armed { color: var(--accent); }
+.ptr-indicator.is-armed { color: var(--accent-text); }
 .ptr-spinner {
     width: 16px; height: 16px;
     border: 2px solid var(--line);
@@ -7597,7 +7603,7 @@ body.select-mode .drag-handle { display: none; }
 .bulk-count {
     font-size: 0.85rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--accent-text);
     flex-shrink: 0;
 }
 .bulk-actions {
@@ -7657,9 +7663,9 @@ body.select-mode .drag-handle { display: none; }
     animation: toast-in 0.18s ease-out;
 }
 .toast-message { white-space: pre-line; word-break: break-word; }
-.toast .toast-icon { display: inline-flex; flex: 0 0 auto; color: var(--accent); }
+.toast .toast-icon { display: inline-flex; flex: 0 0 auto; color: var(--accent-text); }
 .toast-success { border-left-color: var(--accent); }
-.toast-success .toast-icon { color: var(--accent); }
+.toast-success .toast-icon { color: var(--accent-text); }
 .toast-warn { border-left-color: var(--warning); }
 .toast-warn .toast-icon { color: var(--warning); }
 .toast-error { border-left-color: var(--danger); }
@@ -7770,7 +7776,7 @@ body.select-mode .drag-handle { display: none; }
     padding: 4px 0 6px;
 }
 .mobile-bottom-nav button .mnav-icon { display: inline-flex; }
-.mobile-bottom-nav button.is-active { color: var(--accent); }
+.mobile-bottom-nav button.is-active { color: var(--accent-text); }
 
 /* PC: フッターナビは左ペインに統合済みのため非表示 */
 @media (min-width: 901px) {
@@ -8136,7 +8142,7 @@ body.select-mode .drag-handle { display: none; }
 .art-pub-check-rq { font-size: 0.7rem; color: var(--fg2); }
 .art-pub-line { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin: 0; font-size: 0.86rem; }
 .art-pub-note { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--fg2); }
-.art-pub-link { color: var(--accent); font-size: 0.8rem; white-space: nowrap; }
+.art-pub-link { color: var(--accent-text); font-size: 0.8rem; white-space: nowrap; }
 .art-pub-lock { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.5rem 0.7rem; border: 1px dashed var(--line); border-radius: 8px;
     background: var(--side); font-size: 0.84rem; color: var(--fg2); }
 .art-pub-radios { display: grid; gap: 0.35rem; }
@@ -8177,7 +8183,7 @@ body.select-mode .drag-handle { display: none; }
 .art-add-sheet-item:hover { background: var(--accent-bg); }
 .art-add-sheet-item[disabled] { opacity: 0.5; cursor: not-allowed; }
 .art-add-sheet-ic { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 10px; background: var(--bg); display: inline-flex;
-    align-items: center; justify-content: center; color: var(--accent); }
+    align-items: center; justify-content: center; color: var(--accent-text); }
 .art-add-sheet-body { display: flex; flex-direction: column; min-width: 0; }
 .art-add-sheet-body b { font-size: 14px; }
 .art-add-sheet-body small { font-size: 12px; color: var(--fg2); margin-top: 1px; }
@@ -8269,7 +8275,7 @@ body.select-mode .drag-handle { display: none; }
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
 .art-fs-ic[disabled] { opacity: 0.4; cursor: default; }
 .art-fs-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 44px; margin-top: 12px;
-    border: 1.5px dashed var(--accent); border-radius: 9px; background: var(--panel); color: var(--accent); font-size: 14px;
+    border: 1.5px dashed var(--accent); border-radius: 9px; background: var(--panel); color: var(--accent-text); font-size: 14px;
     font-weight: 700; cursor: pointer; }
 .art-fs-note { font-size: 12px; color: var(--fg2); margin: 10px 0 0; line-height: 1.6; }
 /* 文章ブロックの全画面編集 (EasyMDE・イシュー#276 step3)。長文メモと同じエディタをここでも使う */
@@ -8286,7 +8292,7 @@ body.select-mode .drag-handle { display: none; }
 .art-lk-lays { display: flex; gap: 8px; }
 .art-lk-lay { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 1px solid var(--line);
     border-radius: 9px; background: var(--panel); font-size: 12px; color: var(--fg); cursor: pointer; }
-.art-lk-lay[aria-checked="true"] { border: 2px solid var(--accent); padding: 9px 3px; color: var(--accent); }
+.art-lk-lay[aria-checked="true"] { border: 2px solid var(--accent); padding: 9px 3px; color: var(--accent-text); }
 .art-lk-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .art-lk-col { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; padding: 0;
     font-size: 12px; color: var(--fg); cursor: pointer; }
@@ -8341,9 +8347,9 @@ body.select-mode .drag-handle { display: none; }
         color: var(--fg2); font-size: 0.68rem; line-height: 1.2; cursor: pointer; padding: 4px 2px;
     }
     #art-edit-bottom-bar .art-bar-btn:active { background: var(--side); }
-    #art-edit-bottom-bar #art-bar-publish { color: var(--accent); }
+    #art-edit-bottom-bar #art-bar-publish { color: var(--accent-text); }
     #art-edit-bottom-bar #art-bar-publish.is-stale { color: var(--warning); }
-    #art-edit-bottom-bar #art-bar-done { color: var(--accent); font-weight: 700; }
+    #art-edit-bottom-bar #art-bar-done { color: var(--accent-text); font-weight: 700; }
     /* バーの実高さ (44px+上下padding+safe-area) 分だけ本文を持ち上げ、最終ブロックが隠れないようにする */
     #art-edit-view[data-art-mode="edit"] .art-wrap { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
 }
@@ -8371,7 +8377,7 @@ body.select-mode .drag-handle { display: none; }
 /* 並び順を揃える: 「＋本を追加」の隣の小さいテキストボタン (②決裁 step5) */
 .art-fs-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .art-fs-actions .art-fs-add { flex: 1; margin-top: 0; }
-.art-fs-sort-btn { flex: 0 0 auto; border: none; background: none; color: var(--accent); font-size: 12px; padding: 6px 2px; cursor: pointer;
+.art-fs-sort-btn { flex: 0 0 auto; border: none; background: none; color: var(--accent-text); font-size: 12px; padding: 6px 2px; cursor: pointer;
     text-decoration: underline; text-underline-offset: 3px; }
 .art-fs-sort-btn[disabled] { color: var(--fg2); text-decoration: none; cursor: default; opacity: 0.6; }
 .art-fs-sort-opts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
@@ -8450,7 +8456,7 @@ body.select-mode .drag-handle { display: none; }
     font-family: inherit;
 }
 .widget-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.widget-grip[aria-pressed="true"] { color: var(--accent); background: var(--accent-bg); }
+.widget-grip[aria-pressed="true"] { color: var(--accent-text); background: var(--accent-bg); }
 .dashboard-grid.is-picking .dashboard-widget { cursor: pointer; }
 .dashboard-grid.is-picking .dashboard-widget:not(.is-picked):hover,
 .dashboard-grid.is-picking .widget-hole { border-color: var(--accent); }

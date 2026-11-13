@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026111304">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026111323">
     <!-- 蔵書ありの可能性が高い端末では、最初の描画前に静的な #dashboard-welcome を隠す
          (フラッシュ防止・イシュー#265)。virtualBookshelf_userData の有無だけを見る軽量判定
          (JSON.parseはしない)。実際は蔵書0でも userData キーは存在しうるが、その場合は
@@ -1499,9 +1499,9 @@
     <!-- イシュー#359: 画面遷移・履歴の正本は NavState (js/nav-state.js) (イシュー#407で kill-switch を物理撤去) -->
     <script defer src="js/router.js?v=2026110210"></script>
     <script defer src="js/nav-state.js?v=2026110423"></script>
-    <script defer src="js/dashboard.js?v=2026110414"></script>
+    <script defer src="js/dashboard.js?v=2026111323"></script>
     <script defer src="js/ui-components.js?v=2026110413"></script>
-    <script defer src="js/bookshelf.js?v=2026111322"></script>
+    <script defer src="js/bookshelf.js?v=2026111323"></script>
     <!-- イシュー#546 (U8e): 本棚カード・ツリー順の共用部品(_bookshelvesInTreeOrder・
          _bindBookshelfOverviewEvents・_renderBookshelfCard。bookshelf.js と dashboard.js の
          両方から呼ばれる)。js/ui/ 配下だが article-editor.js 等と同じ Plan A の prototype 合成
@@ -1511,10 +1511,10 @@
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける
          (イシュー#547 U8f: U7の移し残しだった_reopenArt*クラスタ10個を末尾に追加) -->
-    <script defer src="js/screens/article-editor.js?v=2026111319"></script>
+    <script defer src="js/screens/article-editor.js?v=2026111323"></script>
     <!-- イシュー#537 (U8a): 設定画面(設定モーダルとその各タブ)。article-editor.js と同じ理由で
          VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
-    <script defer src="js/screens/settings.js?v=2026111311"></script>
+    <script defer src="js/screens/settings.js?v=2026111323"></script>
     <!-- イシュー#542 (U8b): 本の詳細画面(右ペイン・モバイルの本モーダル)。article-editor.js/
          settings.js と同じ理由で VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/book-detail.js?v=2026111308"></script>
@@ -1525,7 +1525,7 @@
     <!-- イシュー#545 (U8d): 本棚の一覧とツリー(サイドバーツリー・本棚一覧モーダル・作成編集フォームの
          画面部分)。article-editor.js/settings.js/book-detail.js/import.js と同じ理由で
          VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
-    <script defer src="js/screens/bookshelf-list.js?v=2026111315"></script>
+    <script defer src="js/screens/bookshelf-list.js?v=2026111323"></script>
     <!-- イシュー#547 (U8f): 記事の通報(ADR-099・全件手動審査)。article-editor.js/settings.js/
          book-detail.js/import.js/bookshelf-list.js と同じ理由で VirtualBookshelf 定義後・
          インスタンス化より前に、prototypeへ取り付ける -->
