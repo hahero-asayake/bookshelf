@@ -308,6 +308,26 @@ describe('batch: 期待ETag(ifMatch/ifNoneMatch)の付与 (イシュー#376)', (
         expect(adapter._etagCache.size).toBe(0);
     });
 
+    it('一括書き込み (POST /data/batch) だけ打ち切りを30秒にする・HEAD 等は既定 (イシュー#600)', async () => {
+        mockFetch({
+            'HEAD /data/private/old.json': () => res(null, 200, { ETag: '"o1"' }),
+            'POST /data/batch': () => res(null, 200)
+        });
+        const spy = vi.spyOn(globalThis.StorageAdapter, 'fetchJSON');
+        try {
+            adapter.beginBatch();
+            adapter.addBatchEntry('private/old.json', '{"v":2}');
+            await adapter.commitBatch();
+            const calls = spy.mock.calls.map(([url, init, timeoutMs]) => ({ path: new URL(url).pathname, method: init.method, timeoutMs }));
+            expect(calls).toEqual([
+                { path: '/data/private/old.json', method: 'HEAD', timeoutMs: undefined },
+                { path: '/data/batch', method: 'POST', timeoutMs: 30000 }
+            ]);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
     it('キャッシュ無しの entry は単発 _writeOnce と同じく HEAD で事前確定する: 既存ファイルなら ifMatch', async () => {
         let sentBody;
         mockFetch({

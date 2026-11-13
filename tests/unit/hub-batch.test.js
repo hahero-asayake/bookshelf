@@ -123,8 +123,11 @@ describe('ifNoneMatch:"*" (新規作成)', () => {
         // 本番実測(#376)で再現したTOCTOU: head()が「存在しない」と見た直後に別タブが作成する窓。
         // head()を常にnullにして「見落とした」状態を模し、onlyIf単独で排他が効くことを確認する。
         await R2.put('data/u1/race.txt', 'already-there');
+        // 段階1は get で読む (イシュー#600)。head と get の両方を「見落とした」状態にする
         const originalHead = R2.head.bind(R2);
+        const originalGet = R2.get.bind(R2);
         R2.head = async (k) => (k === 'data/u1/race.txt' ? null : originalHead(k));
+        R2.get = async (k) => (k === 'data/u1/race.txt' ? null : originalGet(k));
         const res = await batch([{ op: 'put', path: 'race.txt', content: 'new-content', ifNoneMatch: '*' }]);
         expect(res.status).toBe(412);
         expect(R2.store.get('data/u1/race.txt').body).toBe('already-there'); // 上書きされていない
@@ -167,12 +170,12 @@ describe('原子性: 段階2 (実書込) 中に他の書込が割り込む (TOCT
         const etagA0 = (await R2.head('data/u1/a.txt')).etag;
         const etagB0 = (await R2.head('data/u1/b.txt')).etag;
 
-        // a.txt への put が成功した直後に、別端末が b.txt を横から書き換えたことを模す
+        // 段階1の後、b.txt を書く直前に別端末が b.txt を横から書き換えたことを模す
+        // (イシュー#600 で段階2の put を並列にしたため、割り込む時点を「a の後」から「b の直前」へ移した。期待値は同じ)
         const origPut = R2.put.bind(R2);
         R2.put = async (k, body, opts) => {
-            const res = await origPut(k, body, opts);
-            if (k === 'data/u1/a.txt' && res) R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 });
-            return res;
+            if (k === 'data/u1/b.txt' && opts && opts.onlyIf) R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 });
+            return origPut(k, body, opts);
         };
 
         const res = await batch([
@@ -195,14 +198,11 @@ describe('原子性: 段階2 (実書込) 中に他の書込が割り込む (TOCT
         const origPut = R2.put.bind(R2);
         let aPutCount = 0;
         R2.put = async (k, body, opts) => {
+            // 割り込み: b.txt を書く直前に別端末が書き換える (イシュー#600: 並列化に合わせて時点を移した)
+            if (k === 'data/u1/b.txt' && opts && opts.onlyIf) R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 });
             if (k === 'data/u1/a.txt') {
                 aPutCount++;
-                if (aPutCount === 1) {
-                    const res = await origPut(k, body, opts);
-                    R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 }); // 割り込み
-                    return res;
-                }
-                throw new Error('R2 outage during compensation'); // 2回目=補償の戻し書込みで失敗させる
+                if (aPutCount !== 1) throw new Error('R2 outage during compensation'); // 2回目=補償の戻し書込みで失敗させる
             }
             return origPut(k, body, opts);
         };
@@ -215,6 +215,149 @@ describe('原子性: 段階2 (実書込) 中に他の書込が割り込む (TOCT
         const body = await res.json();
         expect(body.partial).toBe(true);
     });
+});
+
+// ===== イシュー#600: 使用量の書き込みはバッチで1回・並列でも同時2件の契約は保つ =====
+// usage:<uid> への KV put の回数を数える (KV.put を包む)
+function countUsagePuts() {
+    const counter = { n: 0, fail: false };
+    const origPut = KV.put.bind(KV);
+    KV.put = async (k, v) => {
+        if (k === `usage:${UID}`) {
+            counter.n++;
+            if (counter.fail) throw new Error('KV PUT failed: 429 Too Many Requests');
+        }
+        return origPut(k, v);
+    };
+    return counter;
+}
+// R2 の各操作に非同期の遅れを入れて、2本のバッチが交互に進むようにする (onlyIf の判定と書込は遅れの後に一度に行う＝本番 R2 と同じく原子的)
+function addR2Jitter(seed) {
+    let s = seed;
+    const next = () => { s = (s * 1103515245 + 12345) % 2147483648; return s % 4; };
+    for (const m of ['get', 'head', 'put', 'delete']) {
+        const orig = R2[m].bind(R2);
+        R2[m] = async (...args) => { await new Promise(r => setTimeout(r, next())); return orig(...args); };
+    }
+}
+
+describe('使用量 (usage:<uid>) はバッチで1回だけ書く (イシュー#600)', () => {
+    it('put/delete 混在でも KV の usage put は1回だけで、値は差分の合計', async () => {
+        await R2.put('data/u1/a.txt', 'v1');      // 2バイト
+        await R2.put('data/u1/b.txt', 'bb');      // 2バイト
+        await KV.put(`usage:${UID}`, '4');
+        const counter = countUsagePuts();
+        const res = await batch([
+            { op: 'put', path: 'a.txt', content: 'v22', ifMatch: `"${(await R2.head('data/u1/a.txt')).etag}"` }, // +1
+            { op: 'delete', path: 'b.txt', ifMatch: `"${(await R2.head('data/u1/b.txt')).etag}"` },              // -2
+            { op: 'put', path: 'c.txt', content: 'hello', ifNoneMatch: '*' }                                       // +5
+        ]);
+        expect(res.status).toBe(200);
+        expect(counter.n).toBe(1);
+        expect(await usedBytes()).toBe(8);
+        expect(R2.store.get('data/u1/a.txt').body).toBe('v22');
+        expect(R2.store.has('data/u1/b.txt')).toBe(false);
+        expect(R2.store.get('data/u1/c.txt').body).toBe('hello');
+    });
+    it('旧アプリの無条件バッチも usage put は1回だけ', async () => {
+        const counter = countUsagePuts();
+        const res = await batch([{ op: 'put', path: 'x.txt', content: 'abc' }, { op: 'put', path: 'y.txt', content: 'de' }]);
+        expect(res.status).toBe(200);
+        expect(counter.n).toBe(1);
+        expect(await usedBytes()).toBe(5);
+    });
+    it('補償で全部戻せた時は usage を書かない (412)', async () => {
+        await R2.put('data/u1/a.txt', 'A0');
+        await R2.put('data/u1/b.txt', 'B0');
+        await KV.put(`usage:${UID}`, '4');
+        const etagA0 = (await R2.head('data/u1/a.txt')).etag;
+        const etagB0 = (await R2.head('data/u1/b.txt')).etag;
+        const origPut = R2.put.bind(R2);
+        R2.put = async (k, body, opts) => {
+            if (k === 'data/u1/b.txt' && opts && opts.onlyIf) R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 });
+            return origPut(k, body, opts);
+        };
+        const counter = countUsagePuts();
+        const res = await batch([
+            { op: 'put', path: 'a.txt', content: 'A1-longer', ifMatch: `"${etagA0}"` },
+            { op: 'put', path: 'b.txt', content: 'B1', ifMatch: `"${etagB0}"` }
+        ]);
+        expect(res.status).toBe(412);
+        expect(R2.store.get('data/u1/a.txt').body).toBe('A0');
+        expect(counter.n).toBe(0);
+        expect(await usedBytes()).toBe(4);
+    });
+    it('補償の一部が失敗した時は、残った分の差分だけを1回で足す (409)', async () => {
+        await R2.put('data/u1/a.txt', 'A0');
+        await R2.put('data/u1/b.txt', 'B0');
+        await KV.put(`usage:${UID}`, '4');
+        const etagA0 = (await R2.head('data/u1/a.txt')).etag;
+        const etagB0 = (await R2.head('data/u1/b.txt')).etag;
+        const origPut = R2.put.bind(R2);
+        let aPutCount = 0;
+        R2.put = async (k, body, opts) => {
+            if (k === 'data/u1/b.txt' && opts && opts.onlyIf) R2.store.set('data/u1/b.txt', { body: 'B-hijacked', etag: 'eB-hijacked', size: 10 });
+            if (k === 'data/u1/a.txt' && ++aPutCount !== 1) throw new Error('R2 outage during compensation');
+            return origPut(k, body, opts);
+        };
+        const counter = countUsagePuts();
+        const res = await batch([
+            { op: 'put', path: 'a.txt', content: 'A1-longer', ifMatch: `"${etagA0}"` }, // 2→9 バイト・戻せない
+            { op: 'put', path: 'b.txt', content: 'B1', ifMatch: `"${etagB0}"` }
+        ]);
+        expect(res.status).toBe(409);
+        expect(R2.store.get('data/u1/a.txt').body).toBe('A1-longer');
+        expect(counter.n).toBe(1);
+        expect(await usedBytes()).toBe(4 + 7);
+    });
+    it('usage の書き込みが失敗しても (429 等)、データは戻さず200', async () => {
+        const counter = countUsagePuts();
+        counter.fail = true;
+        const res = await batch([{ op: 'put', path: 'n.txt', content: 'hello', ifNoneMatch: '*' }]);
+        expect(res.status).toBe(200);
+        expect(R2.store.get('data/u1/n.txt').body).toBe('hello');
+        expect(counter.n).toBe(1);
+    });
+    it('ctx.waitUntil がある時は、使用量の書き込みを応答の後に回し、waitUntil に渡す', async () => {
+        const pending = [];
+        const res = await worker.fetch(new Request('https://hub.test/data/batch', {
+            method: 'POST', headers: { Authorization: `Bearer ${KEY}` },
+            body: JSON.stringify({ entries: [{ op: 'put', path: 'w.txt', content: 'hello', ifNoneMatch: '*' }] })
+        }), env, { waitUntil: (p) => pending.push(p) });
+        expect(res.status).toBe(200);
+        expect(pending.length).toBe(1);
+        await Promise.all(pending);
+        expect(await usedBytes()).toBe(5);
+    });
+});
+
+describe('同時2件 (2本のバッチを本当に並行に流す・イシュー#376/#381/#600)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+        it(`ifNoneMatch:'*' 同士は片方だけ200・もう片方412 (seed=${seed})`, async () => {
+            addR2Jitter(seed);
+            const [r1, r2] = await Promise.all([
+                batch([{ op: 'put', path: 'race.txt', content: 'from-1', ifNoneMatch: '*' }, { op: 'put', path: 'only1.txt', content: 'x', ifNoneMatch: '*' }]),
+                batch([{ op: 'put', path: 'race.txt', content: 'from-2', ifNoneMatch: '*' }, { op: 'put', path: 'only2.txt', content: 'y', ifNoneMatch: '*' }])
+            ]);
+            expect([r1.status, r2.status].sort()).toEqual([200, 412]);
+            const winner = r1.status === 200 ? 1 : 2;
+            expect(R2.store.get('data/u1/race.txt').body).toBe(`from-${winner}`);
+            // 負けた側は他の entry も戻されている
+            expect(R2.store.has(`data/u1/only${3 - winner}.txt`)).toBe(false);
+            expect(R2.store.has(`data/u1/only${winner}.txt`)).toBe(true);
+        });
+        it(`同じ ifMatch 同士は片方だけ200・もう片方412 (seed=${seed})`, async () => {
+            await R2.put('data/u1/a.txt', 'v1');
+            const etag = `"${(await R2.head('data/u1/a.txt')).etag}"`;
+            addR2Jitter(seed);
+            const [r1, r2] = await Promise.all([
+                batch([{ op: 'put', path: 'a.txt', content: 'from-1', ifMatch: etag }]),
+                batch([{ op: 'put', path: 'a.txt', content: 'from-2', ifMatch: etag }])
+            ]);
+            expect([r1.status, r2.status].sort()).toEqual([200, 412]);
+            expect(R2.store.get('data/u1/a.txt').body).toBe(r1.status === 200 ? 'from-1' : 'from-2');
+        });
+    }
 });
 
 describe('認証', () => {

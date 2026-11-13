@@ -22,6 +22,10 @@
 
 // commitBatch の事前HEAD (期待ETag確定) を同時に送る本数の上限 (イシュー#376 ②指示2026-10-26)。
 const BATCH_HEAD_CONCURRENCY = 6;
+// 一括書き込み (POST /data/batch) だけは打ち切りを30秒にする (イシュー#600)。保存は毎回「固定7本＋本棚の数」を
+// 1回で送るため、本棚の多い利用者は27件以上になる。他の要求は既定の10秒のまま (StorageAdapter.fetchJSON)。
+// 30秒で切れても、ハブ側は ctx.waitUntil で書き切るか戻し切る＝次の保存で本文を比べて回復できる。
+const BATCH_TIMEOUT_MS = 30000;
 
 // loadAll() は private/ 直下7本 + private/bookshelves/ 配下 N 本を読む (js/storage.js:291)。
 // listDir は1階層しか見えないため、この2つの dir を一覧すれば読み出す全パスのETagが揃う。
@@ -264,7 +268,8 @@ class HubStorageAdapter extends StorageAdapter {
         const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries })
+            body: JSON.stringify({ entries }),
+            timeoutMs: BATCH_TIMEOUT_MS
         });
         if (res.status === 409) {
             // worker 側の補償ロールバック自体が失敗した (partial:true・ADR-xxx 参照)。
@@ -331,7 +336,8 @@ class HubStorageAdapter extends StorageAdapter {
         }
         if (retry.length === 0) { this._etagCache.clear(); return true; }
         const res2 = await this._fetch('POST', `${this.apiBase}/data/batch`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: retry })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: retry }),
+            timeoutMs: BATCH_TIMEOUT_MS
         });
         if (res2.status === 409 || res2.status === 412) {
             throw new HubConflictError('batch conflict on hub (data changed since read)', null);
@@ -508,7 +514,8 @@ class HubStorageAdapter extends StorageAdapter {
         // no-store: GitHubAdapter と同じ理由 (イシュー#150・#374案D) で、ブラウザの自動キャッシュに
         // よる古い ETag/本文の再取得を防ぐ。全リクエスト (GET/HEAD/PUT/DELETE/POST) に一律適用して
         // よい (非 GET はそもそもキャッシュされないため実害は無い・1か所にまとめる)。
-        const res = await StorageAdapter.fetchJSON(url, { method: init.method || method, headers, body: init.body, cache: 'no-store' }, undefined, hooks);
+        // init.timeoutMs は一括書き込みだけが渡す (無ければ fetchJSON の既定10秒)
+        const res = await StorageAdapter.fetchJSON(url, { method: init.method || method, headers, body: init.body, cache: 'no-store' }, init.timeoutMs, hooks);
         if (res.status === 401) throw new HubAuthError('Asayake ハブの認証が失効しました。再接続してください');
         return res;
     }

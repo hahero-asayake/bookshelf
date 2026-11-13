@@ -104,7 +104,7 @@ export default {
             if (path === '/username' && request.method === 'POST') return cors(await handleUsername(request, env), env, request);
             if (path === '/usage' && request.method === 'GET') return cors(await handleUsage(request, env), env, request);
             if (path === '/publish' && request.method === 'POST') return cors(await handlePublish(request, env), env, request);
-            if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env), env, request);
+            if (path === '/data/batch' && request.method === 'POST') return cors(await handleBatch(request, env, ctx), env, request);
             if (path === '/account' && request.method === 'DELETE') return cors(await handleAccountDelete(request, env), env, request);
             if (path === '/admin/plan' && request.method === 'POST') return cors(await handleAdminSetPlan(request, env), env, request);
             if (path === '/plugins' && request.method === 'GET') return cors(await handleListPlugins(request, env), env, request);
@@ -603,11 +603,23 @@ async function listDir(env, base, rel) {
 // 原子性 (R2 はトランザクション非対応・KV も原子的 CAS が無いため完全な原子性は不可。
 // Durable Object で uid 単位に直列化すれば可能だが新バインディング・本番構成変更を伴うため
 // 本イシューでは採らない。ADR-xxx 参照):
-//   段階1 検証: 条件付き entry を全件 head し、1件でも不一致なら何も書かずに 412 (conflicts 付き) で返す。
-//   段階2 書込: 各 entry の書く前の本文を退避しつつ (無条件 entry も含む=ロールバック対象にするため)、
-//     条件付き entry には onlyIf.etagMatches を付けて書く。途中で onlyIf 失敗 (段階1〜2 間の TOCTOU) し
-//     たら、それまでに書いた entry を逆順に退避内容へ戻し (新規作成分は delete)、usage 差分も戻して
-//     412 を返す。補償自体が失敗したら 409 + partial:true (この回では直せない=要人手介入)。
+//   段階1 検証: 全 entry を get で並列に読み (ETag・本文・大きさ)、条件付き entry が1件でも不一致なら
+//     何も書かずに 412 (conflicts 付き) で返す。get 1回で検証と補償用の元本文の退避を兼ねる。
+//   段階2 書込: 全 entry を並列に書く (条件付き entry は onlyIf 付き)。1件でも失敗 (onlyIf 不成立=段階1〜2 間の
+//     TOCTOU、または例外) したら、書けた entry を退避内容へ戻し (新規作成分は delete) 412 を返す。
+//     補償自体が失敗したら 409 + partial:true (この回では直せない=要人手介入)。
+// 並列化と使用量 (イシュー#600・ADR-xxx):
+//   1件ずつ順番に待つと R2 の往復 (head 約0.28秒・put と使用量 約1.8秒) が件数分積み上がり、7件で約19.5秒＝
+//   アプリの打ち切り (当時10秒) を必ず超えていた (scripts/verify/600-step1.md)。Worker が同時に待てる接続は
+//   6本まで (R2・KV の呼び出しも数える) で、7本目からは runtime が順番待ちにする＝Promise.all で投げてよい。
+//   同じキーへの条件付き書込は R2 が直列化するので、同時2件の両方が通ることは無い (#376/#381 の契約は不変)。
+//   別々のキーで交差した2つのバッチは両方 412 になりうる (安全側＝失われる更新は無い。アプリは 412 の後に
+//   本文を比べて再送する)。同じキーが1つのバッチに2回ある時だけは、順番どおり1件ずつ書く。
+//   使用量 (usage:<uid>) は書けた分の差分の合計をバッチで1回だけ足す。失敗してもデータは戻さない (ログのみ)。
+// 打ち切り (イシュー#600): アプリが接続を切っても書き切る・戻し切るよう、処理全体を ctx.waitUntil にも渡す。
+//   waitUntil は応答・切断の後 30 秒まで。6件で1回 ≈ 2.2秒 (get 0.4 + put と使用量 1.8) なので、
+//   通常の書込は約80件 (30 ÷ 2.2 × 6)、全件を戻す最悪の場合 (戻しの put +1.8秒/回) は約45件まで収まる。
+//   アプリは一括書き込みを30秒待ってから切るので、実際にはその前の30秒も使える。
 // ifNoneMatch:'*' (新規作成) の排他 (2026-10-26 イシュー#381で修正):
 //   当初は段階1/段階2の head 判定のみで「存在しない」を確認しており、head 判定〜実際の put の間に
 //   別タブが新規作成すると TOCTOU で両方が成功する窓があった (#381 本番実測で確定再現=lost update)。
@@ -619,7 +631,7 @@ async function listDir(env, base, rel) {
 //   残す (atomic な保証は onlyIf 側が担う)。
 // 残る窓 (ADR に明記):
 //   - 補償 (ロールバック) 自体が失敗した場合 (R2 側の一時障害等) は中途半端な状態が残り得る。
-async function handleBatch(request, env) {
+async function handleBatch(request, env, ctx) {
     await enforceWriteLimit(request, env);
     const sess = await requireAuth(request, env);
     const { entries } = await request.json().catch(() => ({}));
@@ -629,93 +641,117 @@ async function handleBatch(request, env) {
         if (e.ifNoneMatch !== undefined && e.ifNoneMatch !== '*') throw httpError(400, "ifNoneMatch must be '*'");
         if (e.op === 'delete' && e.ifNoneMatch) throw httpError(400, 'ifNoneMatch not valid for delete');
     }
+    // パスの検証は書き始める前に全件 (途中の entry で 400 になって前半だけ書かれることを防ぐ)
+    const keyed = entries.map(e => ({ e, key: `data/${sess.uid}/${safeRel(e.path)}` }));
     const hasConditional = entries.some(e => e.ifMatch || e.ifNoneMatch);
 
-    if (!hasConditional) {
-        // 旧アプリ互換: 期待ETagを送ってこないバッチは従来どおり無条件で適用 (挙動不変)
-        for (const e of entries) {
-            const key = `data/${sess.uid}/${safeRel(e.path)}`;
-            if (e.op === 'delete') {
-                const head = await env.BUCKET.head(key);
-                if (head) { await env.BUCKET.delete(key); await addUsage(env, sess.uid, -head.size); }
-            } else if (e.op === 'put') {
-                const head = await env.BUCKET.head(key);
-                const size = new TextEncoder().encode(e.content || '').length;
-                await env.BUCKET.put(key, e.content || '');
-                await addUsage(env, sess.uid, size - (head ? head.size : 0));
-            }
-        }
-        return new Response(null, { status: 200 });
-    }
+    const acc = { usageDelta: 0 }; // 実際に書けた分 (戻した分を除く) の使用量の差分
+    const work = hasConditional ? writeBatchConditional(env, keyed, acc) : writeBatchUnconditional(env, keyed, acc);
+    // 使用量は書き終わった後にバッチで1回だけ足す。失敗してもデータは戻さない (ログだけ)
+    const usage = work.catch(() => null).then(() => (acc.usageDelta
+        ? addUsage(env, sess.uid, acc.usageDelta).catch(err => console.error('[handleBatch] usage update failed:', err))
+        : null));
+    // アプリが接続を切っても書き切る・戻し切る (イシュー#600)。waitUntil が無い時 (テスト等) は待つ
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(usage); else await usage;
+    return (await work).response;
+}
 
-    // ===== 条件付きバッチ: 段階1 (事前検証) =====
-    const keyed = entries.map(e => ({ e, key: `data/${sess.uid}/${safeRel(e.path)}` }));
-    const conflicts = [];
+// 旧アプリ互換: 期待ETagを送ってこないバッチは従来どおり無条件で、順番どおりに適用 (挙動不変。使用量だけ1回にまとめる)
+async function writeBatchUnconditional(env, keyed, acc) {
     for (const { e, key } of keyed) {
-        const wantEtag = normalizeEtag(e.ifMatch);
-        const wantAbsent = e.ifNoneMatch === '*';
-        if (!wantEtag && !wantAbsent) continue;
-        const head = await env.BUCKET.head(key);
-        if (wantAbsent) {
-            if (head) conflicts.push({ path: e.path, etag: head.etag });
-        } else if (!head || head.etag !== wantEtag) {
-            conflicts.push({ path: e.path, etag: head ? head.etag : null });
-        }
-    }
-    if (conflicts.length > 0) return json({ error: 'etag mismatch', conflicts }, 412);
-
-    // ===== 段階2 (書込 + 失敗時補償ロールバック) =====
-    const applied = []; // { key, prevBody(退避した元本文|null), sizeBefore, sizeAfter, op }
-    let conflictPath = null;
-    try {
-        for (const { e, key } of keyed) {
-            const wantEtag = normalizeEtag(e.ifMatch);
-            const wantAbsent = e.ifNoneMatch === '*';
+        if (e.op === 'delete') {
             const head = await env.BUCKET.head(key);
-            const prevObj = head ? await env.BUCKET.get(key) : null;
-            const prevBody = prevObj ? await prevObj.text() : null;
-            if (e.op === 'delete') {
-                if (wantEtag && (!head || head.etag !== wantEtag)) { conflictPath = e.path; break; }
-                if (!head) { applied.push({ key, prevBody, sizeBefore: 0, sizeAfter: 0, op: 'noop' }); continue; }
-                await env.BUCKET.delete(key);
-                await addUsage(env, sess.uid, -head.size);
-                applied.push({ key, prevBody, sizeBefore: head.size, sizeAfter: 0, op: 'delete' });
-            } else if (e.op === 'put') {
-                if (wantAbsent && head) { conflictPath = e.path; break; } // 非atomicな事前フィルタ(無駄なputを避けるだけ)。atomicな保証はonlyIf側(下記)
-                const content = e.content || '';
-                const size = new TextEncoder().encode(content).length;
-                const putOpts = {};
-                if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
-                else if (wantAbsent) putOpts.onlyIf = new Headers({ 'If-None-Match': '*' }); // R2が同一keyへの競合するIf-None-Match:'*'を直列化する(上のコメント参照)
-                const res = await env.BUCKET.put(key, content, putOpts);
-                if (!res) { conflictPath = e.path; break; } // onlyIf 失敗 (TOCTOU、またはifNoneMatch不成立)
-                await addUsage(env, sess.uid, size - (head ? head.size : 0));
-                applied.push({ key, prevBody, sizeBefore: head ? head.size : 0, sizeAfter: size, op: 'put' });
-            }
+            if (head) { await env.BUCKET.delete(key); acc.usageDelta -= head.size; }
+        } else if (e.op === 'put') {
+            const head = await env.BUCKET.head(key);
+            const size = new TextEncoder().encode(e.content || '').length;
+            await env.BUCKET.put(key, e.content || '');
+            acc.usageDelta += size - (head ? head.size : 0);
         }
-    } catch (err) {
-        console.error('[handleBatch] write failed mid-batch:', err);
-        conflictPath = conflictPath || '(unknown)';
     }
+    return { response: new Response(null, { status: 200 }) };
+}
 
-    if (!conflictPath) return new Response(null, { status: 200 });
+async function writeBatchConditional(env, keyed, acc) {
+    // ===== 段階1 (事前検証＋補償用の退避): 全件を並列に get =====
+    const snaps = await Promise.all(keyed.map(async ({ key }) => {
+        const obj = await env.BUCKET.get(key);
+        return obj ? { etag: obj.etag, size: obj.size, body: await obj.text() } : null;
+    }));
+    const conflicts = [];
+    keyed.forEach(({ e }, i) => {
+        const wantEtag = normalizeEtag(e.ifMatch);
+        const snap = snaps[i];
+        if (e.ifNoneMatch === '*') {
+            if (snap) conflicts.push({ path: e.path, etag: snap.etag });
+        } else if (wantEtag && (!snap || snap.etag !== wantEtag)) {
+            conflicts.push({ path: e.path, etag: snap ? snap.etag : null });
+        }
+    });
+    if (conflicts.length > 0) return { response: json({ error: 'etag mismatch', conflicts }, 412) };
 
-    // 補償ロールバック: 書いた entry (無条件 entry 含む) を逆順に退避内容へ戻す
+    // ===== 段階2 (書込): 並列。同じキーが2回ある時だけ順番どおり =====
+    const sequential = new Set(keyed.map(k => k.key)).size !== keyed.length;
+    const settled = await settleAll(keyed, async ({ e, key }, i) => {
+        const snap = snaps[i];
+        const wantEtag = normalizeEtag(e.ifMatch);
+        if (e.op === 'delete') {
+            if (!snap) return { op: 'noop' };
+            // R2 の delete には条件を付けられない＝消す直前に head で照合する (照合〜削除の窓は従来と同じ幅)
+            if (wantEtag) {
+                const head = await env.BUCKET.head(key);
+                if (!head || head.etag !== wantEtag) return { conflict: true, path: e.path };
+            }
+            await env.BUCKET.delete(key);
+            return { op: 'delete', key, prevBody: snap.body, sizeBefore: snap.size, sizeAfter: 0 };
+        }
+        if (e.op !== 'put') return { op: 'noop' };
+        const content = e.content || '';
+        const size = new TextEncoder().encode(content).length;
+        const putOpts = {};
+        if (wantEtag) putOpts.onlyIf = { etagMatches: wantEtag };
+        else if (e.ifNoneMatch === '*') putOpts.onlyIf = new Headers({ 'If-None-Match': '*' }); // R2が同一keyへの競合するIf-None-Match:'*'を直列化する(上のコメント参照)
+        const res = await env.BUCKET.put(key, content, putOpts);
+        if (!res) return { conflict: true, path: e.path }; // onlyIf 失敗 (TOCTOU、またはifNoneMatch不成立)
+        return { op: 'put', key, prevBody: snap ? snap.body : null, sizeBefore: snap ? snap.size : 0, sizeAfter: size };
+    }, sequential);
+
+    const applied = [];
+    let conflictPath = null;
+    let failed = false;
+    for (const s of settled) {
+        if (s.status === 'rejected') { failed = true; console.error('[handleBatch] write failed mid-batch:', s.reason); }
+        else if (s.value.conflict) { failed = true; conflictPath = conflictPath || s.value.path; }
+        else if (s.value.op !== 'noop') applied.push(s.value);
+    }
+    let usageDelta = applied.reduce((sum, a) => sum + a.sizeAfter - a.sizeBefore, 0);
+    if (!failed) { acc.usageDelta = usageDelta; return { response: new Response(null, { status: 200 }) }; }
+
+    // 補償ロールバック: 書けた entry (無条件 entry 含む) を退避内容へ戻す (新規作成分は delete)
     let compensateFailed = false;
-    for (let i = applied.length - 1; i >= 0; i--) {
-        const a = applied[i];
-        if (a.op === 'noop') continue;
+    await settleAll(applied.slice().reverse(), async (a) => {
         try {
             if (a.prevBody != null) await env.BUCKET.put(a.key, a.prevBody);
             else await env.BUCKET.delete(a.key);
-            await addUsage(env, sess.uid, a.sizeBefore - a.sizeAfter);
+            usageDelta -= a.sizeAfter - a.sizeBefore;
         } catch (compErr) {
             compensateFailed = true;
             console.error(`[handleBatch] compensate failed for ${a.key}:`, compErr);
         }
+    }, sequential);
+    acc.usageDelta = usageDelta; // 戻せなかった分だけが残る (全部戻せたら 0＝書かない)
+    if (compensateFailed) return { response: json({ error: 'batch write failed, partial compensation', partial: true }, 409) };
+    return { response: json({ error: 'etag mismatch', conflicts: [{ path: conflictPath || '(unknown)' }] }, 412) };
+}
+
+// Promise.allSettled と同じ形の結果を返す。sequential=true の時は順番どおりに1件ずつ実行する
+async function settleAll(items, fn, sequential) {
+    if (!sequential) return Promise.allSettled(items.map((x, i) => fn(x, i)));
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+        try { out.push({ status: 'fulfilled', value: await fn(items[i], i) }); } catch (reason) { out.push({ status: 'rejected', reason }); }
     }
-    if (compensateFailed) return json({ error: 'batch write failed, partial compensation', partial: true }, 409);
-    return json({ error: 'etag mismatch', conflicts: [{ path: conflictPath }] }, 412);
+    return out;
 }
 
 // ===== 公開 (投稿): sites/<siteId>/ を今回集合で置換 =====
