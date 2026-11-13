@@ -83,6 +83,17 @@ MAX見込み：298 → **約214**（lintの実測値で確定、step2で定数�
 
 2回目：`_artFlushSave`内`this._artSaveDraftToLocalStorage();`（article-editor.js:2901、メモリ反映直後にlocalStorageへ下書きを同期する行）をコメントアウトして`publish-article-editor.spec.js`をフル実行(109件) → **1件失敗**(`記事下書きのlocalStorageバックアップと復元(イシュー#142) > 編集中は入力のたびlocalStorageに下書きが同期保存され、リモート保存完了後は消える`、325行目。`flushArtSave`/`getArtEditingId`を使う置換後のテスト)。エラーは`TypeError: Cannot read properties of null (reading 'draft')`＝`localStorage.getItem(...)`がnullを返しJSON.parseが失敗。置き換えたテストが「保存確定でlocalStorageに下書きが書かれる」という元の挙動を正しく検知できていることを確認。`git diff`で元に戻し、同テストが再度1件通ることを確認した(664ms)。
 
+## 5-2. e2e-diff-main.mjs --visual フル実行（step4実測）
+
+`PORT=8151 PLAYWRIGHT_BASE_URL=http://localhost:8151 node scripts/verify/e2e-diff-main.mjs --visual` をフル実行（約7分、base=origin/main@0f82658、work=作業ツリーHEAD f8314182・未コミット差分含む）。
+
+- E2E(playwright)：新しく落ちた0件／新しく通った0件／両方で落ちた0件。判定不能0件。
+- Unit(vitest)：新しく落ちた0件／新しく通った0件／両方で落ちた0件。
+- 画像の差分(visual)：0件/54件。
+- 結果一式：`/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261113-114148-1253330`（生成2026-11-13T02:48:45Z）。
+
+完了条件（新しく落ちたテスト0件・画像差分0件）を満たした。再実行・flake判定は不要だった。
+
 ## 6. 次イシュー（暫定G3-1b）への申し送り
 
 `_artDraft`(36件)・`_artTextFsEditor`(29件)は本イシューの対象外。`_artDraft`はオブジェクトの多様なフィールド読み書き（`.blocks`配列操作・`.theme`・`.adTag`・`.sourceShelfId`等、直接代入によるテスト用セットアップも含む）で、1〜2種の汎用ヘルパーに収まらず複数の専用ヘルパーが必要になる見込み（複雑度が高い）。`_artTextFsEditor`は`waitForFunction(!!...)`＋`.value()`の2パターンがほぼ全件（29件中27件）で比較的均一・低コストだが、`_artDraft`と同じ名前単位の提案に含まれていたため今回は一緒に見送った。次イシューの着手時はこの2名の実測（本ドキュメント§1の表）から始められる。
