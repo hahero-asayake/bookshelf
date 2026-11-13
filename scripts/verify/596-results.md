@@ -68,3 +68,31 @@
 - isConfigured() = 印あり、または「method が hub/github」(既定は local なので hub/github は決める操作でしか書かれない＝印の無い既存データの移行を兼ねる)。M1 なら local は印だけで判定する。
 - #592 の `_recordLocalSyncChoice` は `!isConfigured()` を見ているので、新しい isConfigured に変わると (a) で汚染された人にもフォルダがあれば印が立つ (method は local のまま)。method が hub/github の人は isConfigured()=true なので書かない (#592 の「上書きしない」と同じ)。
 - 決めない書き手 9 か所は直さない。
+
+## step2 印の実装と既存利用者の移行 (2026-11-14 05:50〜05:55・②決定: B案・境界 M1)
+
+### 変えたこと (commit fb59ea3)
+- js/sync-config.js
+  - `isConfigured()`: キーの有無 → 「`methodChosen === true`、または method が hub/github」。JSON が壊れていたら false。
+  - `setMethod(method, base?)`: 決める操作専用の書き込み。method と `methodChosen: true` を一緒に保存する。base を渡すとそれを土台にする (GitHub の接続情報と一緒に書く時)。
+  - `resetMethod(base?)` (新設): 切断用。method を local にし、`methodChosen` を消す。
+  - 冒頭の設定形式の説明に `methodChosen` を足した。
+- js/screens/settings.js: GitHub 接続 (`_connectToGitHub`)・GitHub の「この設定で使う」(`_saveGitHubRepo`) を `setMethod('github', merged)` に、GitHub の切断 (`_disconnectGitHub`)・ハブの切断 (`_disconnectHub`・method が hub だった時) を `resetMethod` に付け替えた。local 切替 (:121)・`_useHub` は #592 で既に `setMethod` を使っているのでそのまま印が立つ。
+- js/bookshelf.js: `_recordLocalSyncChoice` のコメントだけ直した (判定は isConfigured() のまま=印の無い local でもフォルダがあれば印を立てる。移行はこの1か所・#592 の補正と同じ場所)。
+- index.html: ?v= を sync-config.js・bookshelf.js・screens/settings.js とも 2026111596 に上げた (origin/main の最大 2026111499 より新しい)。並行イシューが次に選びやすい 2026111500 を避けた = 同じファイルに同じ値が入って rebase で黙って重なる事故を避けるため。
+- 決めない書き手 9 か所 (hub-auth.js:126/162/186/201・settings.js:447/455/467・bookshelf.js:3024/5376) は無改修。
+
+### isConfigured() の他の読み手
+- js/screens/settings.js `_applySyncMethodView` (:82): 新しい定義でそのまま正しい (決めていない人はハブ表示)。
+- js/bookshelf.js `_recordLocalSyncChoice` (:3155): 上記のとおり。method が hub/github の人は書かない。
+- js/dashboard.js `_computeSyncDone` (:373): 変更不要。決めていない local は以前も「フォルダが無いので未完了」だった。印の無い local でフォルダがある人は、起動時の initObsidianSync → `_recordLocalSyncChoice` で印が立ってから案内の手順1が計算し直される (#592 の「フォルダはあるがキーが無い人」と同じ流れ)。
+
+### 確かめたこと
+- `npm test`: 69 ファイル・1041 件 passed (2 todo)。tests/unit/sync-config.test.js (#592 の2件) もそのまま緑。
+- `tests/e2e/repro-596.spec.js` (使い捨て) を修正後に流した: (a) ハブにログインしただけ → キーは method=local で作られるが isConfigured=false・再読込後のセレクト=`hub`。(b) 公開先を選んだだけ → 同じく isConfigured=false・セレクト=`hub`。対照は変わらず `hub`。
+- #592 の `tests/e2e/sync-first-connect.spec.js` 5件: 緑。
+- 保存先セレクトに触れる既存 E2E (smoke・ux-h-series・ux-p2-settings・account-billing・overlay-front・gate/j7-account-delete): 46 passed・1 skipped。
+- `npm run check:version -- --range=origin/main..HEAD`: OK。
+
+### 気づいたこと (範囲外・未実測)
+- `_disconnectGitHub` は、method が hub の人 (公開のためだけに GitHub をつないだ人) が GitHub を切断しても、保存先を local に戻す (修正前からの動き)。#596 では method の書き換えは変えず、切断なので印も外す (=決めていない扱い)。ハブを使っている人の保存先が GitHub の切断で local に変わること自体が意図どおりかは別に確かめる価値がある。
