@@ -381,6 +381,46 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 
 **既知の限界**: (1) Workers のプラン (Free/Paid) は kuroko のトークンで読めず未確認。D1 Time Travel が実測で 30 日保持できたこと・scheduled の CPU 時間が 51〜68ms (Free の Cron 上限 10ms を超える) で 2 回とも成功したことから、Paid の可能性が高いと判断している (確定ではない)。(2) R2 の取得は 1 オブジェクトずつ呼ぶため、数千件規模になると 1 起動の操作数上限 (既定 900) に近づく。増えたら etag 差分だけコピーする方式へ見直す。(3) `asayake-hub-backup` バケット自体が漏れた場合は平文が読める (暗号化しない判断・E0)。バケットの読み取り権限は本番 R2 と同じ強さの Cloudflare トークン管理下にある。
 
+### G-6. 端末エラーの匿名収集 (イシュー#584・ADR-152)
+
+- **仕組み**: アプリ (`js/ui-feedback.js`) が予期しないエラーを `POST /client-error` へ送る。送るのは版・画面名・エラーの先頭行だけ。受け口は [client-errors.js](client-errors.js)。D1 の `client_errors` に、(JST の日, 指紋) ごとに件数を足す。IP・User-Agent・アカウントは保存しない。行は 30 日で日次 cron が消す。
+- **通知**: 同じ日・同じ指紋が 10 件を超えた最初の 1 回だけ、`REPORT_WEBHOOK_URL` (Discord #📚bookshelf) に「【端末エラー】…」が 1 行届く。
+- **通知が来たら**: (1) 下のコマンドで内訳を見る (2) 版と画面名から直近の変更を当たる (3) 致命・高ならアプリを戻す (G-8)。
+  ```bash
+  wrangler d1 execute asayake-community --remote -c wrangler.hub.toml --command "SELECT day, v, screen, msg, count FROM client_errors ORDER BY day DESC, count DESC LIMIT 20"
+  ```
+- **止める**: `wrangler.hub.toml` の `[vars]` に `CLIENT_ERRORS_OFF = "1"` を足して hub を deploy する (受けても捨てて 204 を返す)。端末側から送らせない時は、アプリの `errorReportEnabled()` を直して push する。
+- **乱用対策**: IP ごとのレート制限 (`WRITE_LIMITER`・保存はしない)・本文 1KB まで・1 日の新しい指紋は 500 まで。
+- **初回の反映**: マイグレーション `migrations/0004_client_errors.sql` を流してから hub を deploy する。戻し方は hub の rollback と `DROP TABLE client_errors` (追加型なので他の表には触れない)。
+
+### G-7. 本番の常時テスト (イシュー#584・ADR-153)
+
+- **何を確かめるか**: テスト専用アカウント `kurokotest` で、1 時間ごとに (1) 保存→別のブラウザで読める (ハブ・GitHub) (2) 公開→公開 URL が 200→非公開→404 を流す。
+- **どこで動くか**: homelab の systemd user timer `kuroko-bookshelf-canary.timer` (kuroko ユーザー)。実行役は `~/kuroko/discord/tools/bookshelf-prod-canary.mjs`。結果は `~/.local/state/kuroko/bookshelf-canary-state.json` (最後に成功した時刻・連続失敗数・最後に落ちた流れと段)。
+- **資格** (値はどこにも書かない・すべて 600): ハブ鍵 `~/.local/share/kuroko/bookshelf-canary.json`／GitHub `~/.local/share/kuroko/bookshelf-canary-github.json`／通知先 `~/.local/share/kuroko/bookshelf-report-webhook`。
+- **一覧に出さない印**: テストの記事が /top・sitemap・検索に出ないよう、KV の `uname:kurokotest` に `unlisted: true` を付けてある。`wrangler kv key put` は値を丸ごと上書きするので、既存の項目 (`uid`・`siteId`) を保ったまま足す。退会→再登録をしたら印は消えるので付け直す。印が本番に入るまで、公開の流れは流さない (`CANARY_ALLOW_PUBLISH=1` を付けない)。
+- **通知**: 「成功→失敗」に変わった最初の回と、「失敗→成功」に戻った回だけ、Discord #📚bookshelf に 1 行届く。
+- **失敗の通知が来たら**: (1) 状態ファイルの `lastFailure` を見る (2) `journalctl --user -u kuroko-bookshelf-canary -n 50` を見る (3) 手で 1 回流す (`systemctl --user start kuroko-bookshelf-canary.service`) (4) 2 回続けて落ちるなら本番の不具合として調べる。401 なら鍵が切れている (他の検証で退会・再登録をした時など)＝ハブへログインし直して鍵を置き直す。
+- **止める・再開**: `systemctl --user disable --now kuroko-bookshelf-canary.timer`／`systemctl --user enable --now kuroko-bookshelf-canary.timer`。
+- **書込の量**: ハブはファイルを 1 つ書くたびに KV を 1 回書く (`addUsage`)。Free の KV 書込は 1 日 1,000 回まで。60 分ごとで始め、1 回あたりの書込数を実測してから間隔を詰める。
+
+### G-8. 戻し方と復元の練習 (イシュー#584)
+
+| 対象 | 戻し方 | 練習の記録 |
+|---|---|---|
+| Worker | deploy の前に `wrangler deployments list -c <toml>` で直前の版 ID を控える → `wrangler rollback <版ID> -c <toml> -m <理由>`。D1 は戻らない (追加型のマイグレーションだけを使う) | 練習用 Worker で 1 回 (実施後にここへ秒数と結果を書く) |
+| アプリ | `git revert --no-commit <sha>` → 戻したファイルを読む index.html の `?v=` を、origin/main の今の値より新しい値に上げる (revert は `?v=` も古い値に戻し、検査はそれを見逃す) → `Issue: #N` を付けて 1 つの commit にする → `node scripts/check-version-bump.mjs --range=origin/main..HEAD` → push → `curl` で新しい `?v=` が配信されたことを確かめる | 練習ブランチで 1 回 (2026-11-14・約 2 分・push と配信の切替は含まない)。[docs/ops/drill-app-rollback.md](../docs/ops/drill-app-rollback.md) |
+| データ | G-5 の「復元手順」。本番へ書く前に人の承認を得る | 練習用の KV・D1・R2 へ 1 回 (実施後にここへ秒数と結果を書く) |
+
+### G-9. サーバの 5xx の率の見方 (閾値 1%・イシュー#584)
+
+- **見る物**: Worker 3 本 (`asayake-hub`・`bookshelf-cdn`・`bookshelf-oauth-proxy`) の、直近 24 時間のリクエストの総数と、状態コード 500 以上の数。率＝5xx ÷ 総数。
+- **閾値**: 1% を超えたら調べる。総数が 100 未満の日は 1〜2 件で 1% を超えるので、件数と中身で判断する。
+- **調べ方**: Logs で 5xx のパスと例外を見る → 直近の deploy が原因なら rollback (G-8) → 外部 (Stripe・Google・GitHub) の障害なら様子を見る。
+- **頻度**: 最初の 7 日間は毎日。その後は週 1 回と、deploy の直後。
+- **手段** (kuroko のトークンで読める・読むだけ): Workers Observability の telemetry/query API で、Worker ごとに総数と状態コード 500 以上の数を数える。`node ~/kuroko/discord/core/tmp/wr584-ops.mjs obs-5xx --execute` が Worker 名・総数・5xx・率だけを出す。予備は GraphQL Analytics API の `workersInvocationsAdaptive`。ダッシュボードでは Workers & Pages → 対象の Worker → Metrics の Errors と、Logs の状態コードの絞り込みで見る。
+- **実測** (2026-11-14 03:15 JST・直近 24 時間): `asayake-hub` 285 件中 5xx 0／`bookshelf-cdn` 581 件中 5xx 0／`bookshelf-oauth-proxy` 0 件。絞り込みが効いていることは、400 以上で cdn 8 件・hub 1 件が出ることで確かめた。
+
 ---
 
 ## Phase H. 公開URL移設 (S6・ADR-076・イシュー#124/#126)
