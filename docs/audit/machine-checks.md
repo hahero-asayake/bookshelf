@@ -17,7 +17,8 @@
   2. `docs/ui-standards.md` §1 の表の全行（今は28。「面」の列の文字で突き合わせる）
 - `index.html` にあるのに上の2つのどちらにも無い面は、一覧に手で載せる（今は `bulk-shelf-popover`・`mobile-setup-banner`・`art-drawer-shelf-popover`）。
 - 片方にしか無い面（今は `plugins-modal`・`publish-settings-modal`・`dashboard-edit` が `S.define` にだけある）は、検査の結果に名前を出す。落とさない。
-- 開き方は、利用者の操作（クリック・タップ・キー）と `tests/e2e/helpers/` の関数で書く。spec と一覧に `bookshelf._`・`app._` を直接書かない（`lint:internal-refs` の対象に `tests/audit` を足し、上限82のまま保つ）。
+- 開き方は、次の順で最初に使えるもので書く。①利用者の操作（クリック・タップ・キー）②`tests/e2e/helpers/` の関数 ③公開の窓口（`window.bookshelf.` の、先頭に `_` の無いメソッド）。
+- spec と一覧に `bookshelf._`・`app._` を直接書かない（`lint:internal-refs` の対象に `tests/audit` を足し、上限82のまま保つ）。
 
 ### 1-2. 画面（初版）
 
@@ -73,6 +74,40 @@
 |---|---|
 | プラグインの面（`api.ui.openOverlay`・ui-standards §1 の行「プラグインの面」） | 中身はプラグインごとに違う。標準プラグインがこの面を使う場合は一覧へ移す |
 | トースト | 数秒で消える表示。文言は抽出（§7）で見る |
+
+開き方（既存の spec が使っている入口。表に無い画面は①利用者の操作で書く）
+
+| 画面ID | 開き方 |
+|---|---|
+| home | 起動する |
+| home-empty・shelf-empty | 本が0冊のデータで起動する |
+| home-edit | `#dashboard-edit-toggle` を押す |
+| shelf | 左ナビの本棚を押す（左ナビが畳まれている幅は、先にドロワーを開く） |
+| book-detail | 本棚の一覧で本を押す |
+| book-memo | `openBookMemoInAppEditor`（helpers/book-memo.js） |
+| drawer | `openDrawer`（helpers/nav.js） |
+| command-palette | `openCommandPalette`（helpers/nav.js） |
+| settings・settings-cat-* | `openSettingsByClick`（helpers/settings.js。節は第2引数） |
+| plugin-settings | `openPluginSettingsByClick`（helpers/settings.js） |
+| import-* | `showImportModal()` |
+| add-book | `showAddBookModal()` |
+| exclusions | `showExclusionsModal()` |
+| shelves-manage | `showBookshelfManager()` |
+| shelf-form | `#add-bookshelf` を押す。または `showBookshelfForm()` |
+| icon-picker | 本棚フォームのアイコンのボタンを押す。または `openIconPicker()` |
+| publish-list | `openPublishPagesModal()` |
+| art-viewing | 記事の一覧で `#art-new` を押す |
+| art-edit | `#art-mode-edit` を押す |
+| art-drawer | `addBlock(page, 'shelf', 'first')`・`openArtSheet`（helpers/art-editor.js） |
+| art-blk-menu・art-fs | `editArtBlockViaMenu`（helpers/art-editor.js） |
+| art-look-sheet | `#art-look-btn`（幅によっては `#art-bar-look`）を押す |
+| art-more-menu | `#art-more-btn` を押す |
+| art-publish | `#art-publish-header`（幅によっては `#art-bar-publish`）を押す |
+| art-preview | `openArtPreview`（helpers/art-editor.js） |
+| report | `openReportModal()` |
+| confirm | `confirmOpenSettingsForTest`（helpers/settings.js） |
+| sync-conflict | `showConflictDialogForTest`（helpers/sync.js） |
+| usage-alert | `renderUsageAlertForTest`（helpers/settings.js） |
 
 - 幅で出ない画面（例：ドロワー）は、その幅では飛ばす。どの幅で出るかは `screens.js` に書く。飛ばした組合せは結果に件数を出す。
 - 同じ起動のまま、同じ群の画面を順に開いて検査する（群の単位は `screens.js` で決める）。1画面の失敗が次の画面に残らないよう、群ごとに起動し直す。
