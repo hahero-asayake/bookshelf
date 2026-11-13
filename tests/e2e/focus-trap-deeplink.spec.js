@@ -26,6 +26,14 @@ async function bootApp(page, hash) {
     await page.waitForFunction(() => window.bookshelf && (window.bookshelf.books || []).length > 0);
 }
 
+// ホームで起動し、本棚へ hash で移る = 着地の前にアプリ内のエントリが2つある (閉じた後の戻る1回がアプリの外へ出ないことを見るため)
+async function bootFromHomeToShelf(page) {
+    await bootApp(page);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { location.hash = '#/bookshelf/all'; });
+    await page.waitForTimeout(500);
+}
+
 // Tab を n 回押し、そのたびにフォーカスが sel の中にあるかを数える
 async function tabLeaks(page, sel, n, allowSel) {
     let leaks = 0;
@@ -85,8 +93,7 @@ const isShown = (page, id) => page.evaluate((i) => {
 
 test.describe('直リンク着地した面を閉じた時の URL と戻る', () => {
     test('アプリ内で #/publish へ移って閉じると URL が元の画面に戻り 戻る1回で開き直らない', async ({ page }) => {
-        await bootApp(page, '#/bookshelf/all');
-        await page.waitForTimeout(300);
+        await bootFromHomeToShelf(page);
         const before = await page.evaluate(() => location.hash);
         await page.evaluate(() => { location.hash = '#/publish'; });
         await expect.poll(() => isShown(page, 'publish-pages-modal')).toBe(true);
@@ -96,28 +103,30 @@ test.describe('直リンク着地した面を閉じた時の URL と戻る', () 
         expect(await page.evaluate(() => location.hash)).toBe(before);
         await page.goBack();
         await page.waitForTimeout(500);
+        expect(await page.evaluate(() => !!window.bookshelf), '戻る1回でアプリの外へ出ない').toBe(true);
         expect(await isShown(page, 'publish-pages-modal')).toBe(false);
     });
 
-    test('起動時に #/publish へ着地して閉じると 戻る1回で開き直らない', async ({ page }) => {
+    // 起動 (新しい文書の読み込み) で #/publish に着地する。閉じたら URL がホームになり、再読込しても開き直らない。
+    // 着地エントリが最初のエントリなので、戻るはアプリを開く前へ出る (= 起動前に戻る。開き直す段は残らない)
+    test('起動時に #/publish へ着地して閉じると URL が着地のまま残らず 再読込で開き直らない', async ({ page }) => {
         await seed(page);
-        await page.goto('index.html#/bookshelf/all');
-        await page.waitForFunction(() => window.bookshelf && (window.bookshelf.books || []).length > 0);
         await page.goto('index.html#/publish');
+        await page.waitForFunction(() => window.bookshelf && (window.bookshelf.books || []).length > 0);
         await expect.poll(() => isShown(page, 'publish-pages-modal')).toBe(true);
         await page.evaluate(() => document.getElementById('publish-pages-close').click());
         await expect.poll(() => isShown(page, 'publish-pages-modal')).toBe(false);
         await page.waitForTimeout(300);
-        const hash = await page.evaluate(() => location.hash);
-        expect(hash).not.toBe('#/publish');
-        await page.goBack();
-        await page.waitForTimeout(500);
+        expect(await page.evaluate(() => location.hash)).not.toBe('#/publish');
+        expect(await page.evaluate(() => history.state && history.state.nav && history.state.nav.faces.length), '段が残っていない').toBeFalsy();
+        await page.reload();
+        await page.waitForFunction(() => window.bookshelf && (window.bookshelf.books || []).length > 0);
+        await page.waitForTimeout(800);
         expect(await isShown(page, 'publish-pages-modal')).toBe(false);
     });
 
     test('アプリ内で #/publish/settings へ移って閉じると 戻る1回で公開の設定が開き直らない', async ({ page }) => {
-        await bootApp(page, '#/bookshelf/all');
-        await page.waitForTimeout(300);
+        await bootFromHomeToShelf(page);
         await page.evaluate(() => { location.hash = '#/publish/settings'; });
         await expect.poll(() => isShown(page, 'publish-settings-modal')).toBe(true);
         await page.evaluate(() => {
@@ -129,14 +138,14 @@ test.describe('直リンク着地した面を閉じた時の URL と戻る', () 
         expect(await page.evaluate(() => location.hash)).not.toBe('#/publish/settings');
         await page.goBack();
         await page.waitForTimeout(500);
+        expect(await page.evaluate(() => !!window.bookshelf), '戻る1回でアプリの外へ出ない').toBe(true);
         expect(await isShown(page, 'publish-settings-modal')).toBe(false);
     });
 
     test('アプリ内で #/settings へ移って閉じると URL と画面が揃い 戻る1回で設定が開き直らない', async ({ page }) => {
         // 設定の出口 ← ホーム は狭幅だけに出る (PC は行き先の1つで←も×も無い・index.html settings-modal-close)
         await page.setViewportSize({ width: 390, height: 844 });
-        await bootApp(page, '#/bookshelf/all');
-        await page.waitForTimeout(300);
+        await bootFromHomeToShelf(page);
         await page.evaluate(() => { location.hash = '#/settings'; });
         await expect.poll(() => isShown(page, 'settings-modal')).toBe(true);
         await page.evaluate(() => {
@@ -148,6 +157,7 @@ test.describe('直リンク着地した面を閉じた時の URL と戻る', () 
         expect(await page.evaluate(() => location.hash)).not.toBe('#/settings');
         await page.goBack();
         await page.waitForTimeout(500);
+        expect(await page.evaluate(() => !!window.bookshelf), '戻る1回でアプリの外へ出ない').toBe(true);
         expect(await isShown(page, 'settings-modal')).toBe(false);
     });
 });

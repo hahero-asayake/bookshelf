@@ -220,7 +220,10 @@
 
     // ===== 段階③ (イシュー#365 step2) の核: 純関数のみ・まだ bookshelf.js からは呼ばれていない (接続は次の commit) =====
     // 設計: tmp/359/stage3/design.md §2-3・§6。
-    const OVERLAY_FACES = ['drawer', 'command-palette']; // hash 遷移で静かに閉じる面 (旧 _closeOverlayFacesSilently)
+    const OVERLAY_FACES = ['drawer', 'command-palette'];
+    // イシュー#568: 面としてだけ存在する route (直リンク・ブックマーク・hash 変更・起動で「着地」しうる)。
+    // この route に居て面が1つも無い = ブラウザか起動処理が段の無いエントリを既に作った状態 = 着地
+    const LANDING_VIEWS = ['publish', 'publish-settings', 'settings']; // hash 遷移で静かに閉じる面 (旧 _closeOverlayFacesSilently)
     // 本詳細を開いたまま UI から本棚を切り替えた時の扱い (②指示=C。A/B は定数1つで切替・ハヘロ決裁待ち)
     //   C: route は本棚・book はそのまま (現状)  A: book を閉じる  B: route を #book/asin?from=新本棚 に保つ
     const SHELF_SWITCH_WITH_BOOK = 'C';
@@ -233,7 +236,7 @@
             v: 1, seq: seq | 0,
             route: canonRoute(state.route),
             book: state.book ? { asin: state.book.asin || null, edit: !!state.book.edit } : null,
-            faces: state.faces.map((f) => ({ id: f.id, extra: f.extra || null })),
+            faces: state.faces.map((f) => (f.landed ? { id: f.id, extra: f.extra || null, landed: true, ret: f.ret || null, back: !!f.back } : { id: f.id, extra: f.extra || null })),
             view: state.view,
         };
     }
@@ -250,7 +253,7 @@
             view: s.view || 'main',
             route: canonRoute(s.route),
             book: s.book ? { asin: s.book.asin || null, edit: !!s.book.edit } : null,
-            faces: (s.faces || []).map((f) => ({ id: f.id, extra: f.extra || null, close: closers && closers[f.id] ? closers[f.id] : null })),
+            faces: (s.faces || []).map((f) => Object.assign({ id: f.id, extra: f.extra || null, close: closers && closers[f.id] ? closers[f.id] : null }, f.landed ? { landed: true, ret: f.ret || null, back: !!f.back } : {})),
             source: 'history',
         };
     }
@@ -426,10 +429,42 @@
             apply(input, meta) {
                 const m = meta || {};
                 const prev = this.state;
-                const next = reduce3(prev, input);
+                let next = reduce3(prev, input);
+                // イシュー#568 (#556 報告の5): 直リンク着地の面。着地 route (LANDING_VIEWS) に面が無い状態で面を開いた =
+                // 段の無い着地エントリが既にあるので、その上に push せず、そのエントリを面の段として引き継ぐ (replace)。
+                // 面に landed と ret (開く前の画面の route。hash 変更の着地ならその前の route・起動の着地ならホーム) を付ける。
+                // 閉じる時は go で着地エントリへ戻らず、ret の URL へ replace する = 戻るで開き直らず、URL と画面が揃う。
+                // 着地3種 (publish・publish-settings・settings) はみなここを通る (画面ごとの分岐は足さない)
+                let landOp = null;
+                const prevIds = new Set(prev.faces.map((f) => f.id));
+                const nextIds = new Set(next.faces.map((f) => f.id));
+                if (m.source !== 'history' && prev.faces.length === 0 && next.faces.length > 0 && LANDING_VIEWS.includes(canonRoute(prev.route).view)) {
+                    const before = this._routeBeforeLanding;
+                    const hasPrev = !!(before && !LANDING_VIEWS.includes(canonRoute(before).view));
+                    const ret = hasPrev ? canonRoute(before) : { view: 'main' };
+                    // back: hash 変更の着地 = すぐ下に開く前の画面のエントリがある。閉じたらそこへ戻す (同じ画面のエントリを2つ並べない)
+                    next = { ...next, faces: next.faces.map((f) => (prevIds.has(f.id) ? f : { ...f, landed: true, ret, back: hasPrev })) };
+                    landOp = { op: 'replace', landed: true };
+                    this._routeBeforeLanding = null; // 使ったら捨てる
+                } else {
+                    const closedLanded = prev.faces.filter((f) => f.landed && !nextIds.has(f.id));
+                    if (closedLanded.length && m.source !== 'history') {
+                        const ret = closedLanded[0].ret || { view: 'main' };
+                        // 戻し先は呼び手の route ではなく ret (着地する前の画面) に揃える。back なら go(-1) で着くエントリと同じ route
+                        // (呼び手の route = 開いた時の router.current は着地 route のままのことがある・起動の着地はホーム)
+                        if (closedLanded[0].back || LANDING_VIEWS.includes(canonRoute(next.route).view)) next = { ...next, route: ret };
+                        const above = prev.faces.filter((f) => !f.landed && !nextIds.has(f.id)).length;
+                        // 着地エントリを閉じた後の写し (ret の URL・段なし) で上書きする。back なら続けて1つ戻り、開く前の画面の
+                        // エントリへ着く (上書き済みのエントリは「進む」の先に残るだけ = 進むでも面を開き直さない・#288 と同じ規則)
+                        const back = !!closedLanded[0].back;
+                        landOp = above > 0 ? { op: 'go', n: -above, thenReplace: true, back } : { op: 'replace', landed: true, back };
+                    }
+                }
                 this.state = next;
                 if (input.close) this.closers[input.type === 'openBook3' ? 'book-detail' : (input.type === 'rename' ? input.to : input.id)] = input.close;
-                let op = historyOp(prev, next, m);
+                let op = landOp || historyOp(prev, next, m);
+                if (op.thenReplace) this._replaceAfterGo = op.back ? 'back' : true;
+                else if (op.landed && op.back) { this._write('replace'); op = { op: 'go', n: -1, landed: true }; }
                 if (op.op === 'none' && m.source !== 'history' && JSON.stringify(snapshot(prev, 0)) !== JSON.stringify(snapshot(next, 0))) op = { op: 'replace' };
                 if (op.op === 'push' && this._pendingGo < 0) { this._pendingGo += 1; op = { op: 'replace', reused: true }; }
                 if (op.op === 'push' || op.op === 'replace') this._write(op.op);
@@ -483,6 +518,16 @@
             // 唯一の聞き手。着地したエントリの写しに画面を合わせ、その写しをそのまま採用する (数え合わせ無し)
             async onPopstate(ev) {
                 const snapIn = ev && ev.state && ev.state.nav;
+                // イシュー#568: 着地の面の上に積まれた段を go で外した着地点 = 今の写し (閉じた後) でそのエントリを上書きする
+                if (this._replaceAfterGo) {
+                    const back = this._replaceAfterGo === 'back';
+                    this._replaceAfterGo = false;
+                    this._write('replace');
+                    if (back) { try { H.go(-1); } catch (_) {} }
+                    return { landed: true, same: true, landedClose: true };
+                }
+                // hash だけのエントリ (直リンク・hash 変更) へ移る直前の route。この後の着地で開く面の ret になる
+                this._routeBeforeLanding = snapIn ? null : canonRoute(this.state.route);
                 const hashRoute = canonRoute(parse(L.hash));
                 const snap = snapIn
                     ? { ...snapIn, route: canonRoute(snapIn.route), faces: snapIn.faces || [] }
@@ -526,8 +571,11 @@
                     this.state = { ...this.state, route: snap.route, book: snap.book ? { ...snap.book } : null, source: 'history' };
                     if (o.onLanded) await o.onLanded(snap, { animate: false, routeChanged: diff.routeChanged, bookChanged: diff.bookChanged });
                 }
-                // 4) 着地した写しをそのまま採用
+                // 4) 着地した写しをそのまま採用。イシュー#568: 3) の着地 (onLanded) の中で直リンクの面を開いた (landed) 時は
+                //    その面を残す (エントリは apply が既に面の段として replace 済み・写しから消すと閉じる時に着地を見失う)
+                const landedNow = this.state.faces.filter((f) => f.landed && !(snap.faces || []).some((x) => x.id === f.id));
                 this.state = { ...fromSnapshot(snap), source: 'history' };
+                if (landedNow.length) this.state = { ...this.state, route: canonRoute(landedNow[0].route || this.state.route), faces: [...this.state.faces, ...landedNow] };
                 this.seq = Math.max(this.seq, snap.seq | 0);
                 return { landed: true, diff };
             },

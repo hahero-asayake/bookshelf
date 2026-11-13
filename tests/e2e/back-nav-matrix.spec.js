@@ -1898,3 +1898,41 @@ test.describe('戻る: イシュー#495回帰(公開/設定の複数face close)'
         expect(errors).toEqual([]);
     });
 });
+
+// イシュー#568 (#556 報告の5): 直リンク着地 (hash 変更) の面を閉じた後の戻る/進む。着地エントリは閉じた時に
+// 開く前の画面の写しで上書きされ、1つ戻る。戻る1回でアプリの外へ出ない・同じ画面が2回続かない・進むで開き直さない (#288)
+test.describe('戻る: イシュー#568 直リンク着地の閉じ方', () => {
+    for (const row of [
+        { id: 'L568a', hash: '#/publish', modal: 'publish-pages-modal', close: () => document.getElementById('publish-pages-close').click() },
+        { id: 'L568b', hash: '#/settings', modal: 'settings-modal', narrow: true, close: () => document.getElementById('settings-modal-close').click() },
+    ]) {
+        test(`${row.id} ${row.hash} へ hash で着地→閉じる→戻る1回で1つ前の画面・進むで開き直さない`, async ({ page }) => {
+            if (row.narrow) await page.setViewportSize({ width: 390, height: 844 });
+            const errors = await bootApp(page);
+            await settle(page, 300);
+            const home = await snap(page);
+            await page.evaluate(() => { location.hash = '#/bookshelf/all'; });
+            await settle(page, 600);
+            await page.evaluate((h) => { location.hash = h; }, row.hash);
+            await expect(page.locator('#' + row.modal)).toHaveClass(/show/);
+            await page.evaluate(row.close);
+            await settle(page, 800);
+            const closed = await snap(page);
+            expect.soft(closed.hash, '閉じたら開く前の画面の URL').toBe('#/bookshelf/all');
+            expect.soft(closed.openModals, '面が残っていない').not.toContain(row.modal);
+            expect.soft(closed.navPendingGo, '保留中のgoが残っていない').toBe(0);
+            await page.goBack();
+            await settle(page, 800);
+            const back1 = await snap(page);
+            expect.soft(await page.evaluate(() => !!window.bookshelf), '戻る1回でアプリの外へ出ない').toBe(true);
+            expect.soft(back1.hash, '戻る1回で1つ前 (ホーム) へ = 同じ画面が2回続かない').toBe(home.hash);
+            expect.soft(back1.openModals, '戻るで開き直さない').not.toContain(row.modal);
+            await page.goForward();
+            await settle(page, 800);
+            const fwd = await snap(page);
+            expect.soft(fwd.hash, '進むで本棚へ').toBe('#/bookshelf/all');
+            expect.soft(fwd.openModals, '進むで面を開き直さない (#288)').not.toContain(row.modal);
+            expect(errors).toEqual([]);
+        });
+    }
+});
