@@ -61,7 +61,10 @@ test('@gate J5-2 記事に本棚ブロックを置き、キャンバスのブロ
 
     await test.step('操作: キャンバスの本棚ブロックをタップし、「本を追加」からもう1冊入れる', async () => {
         // ブロックの右側の余白をタップする (1冊だけの本棚は右側が空いている)。#580 で直した入口
-        const box = await shelfBlock(page).boundingBox();
+        // キャンバスの描き直しの最中は位置が取れない (null) ことがある。取れるまで待ってからタップする
+        // (門のE2E が増えて並列の負荷が上がると出た・#588 で実測 8回中3回)
+        let box = null;
+        await expect.poll(async () => (box = await shelfBlock(page).boundingBox())).not.toBeNull();
         await shelfBlock(page).tap({ position: { x: Math.round(box.width - 24), y: Math.round(box.height / 2) } });
         await expect(editView(page)).toHaveAttribute('data-art-mode', 'form');
         await page.locator('#art-edit-view .art-shelf-add:visible').first().tap();
