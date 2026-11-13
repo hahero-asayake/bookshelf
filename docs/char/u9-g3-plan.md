@@ -77,6 +77,12 @@ lint全体の実測内訳（298件）：`bookshelf._` 286・`app._` 12。`_art*`
 純減 ≈ 87 - 3 = 84（内訳：(a)由来0件・(c)由来84件）。
 MAX見込み：298 → **約214**（lintの実測値で確定、step2で定数を書き換える）。
 
+## 5-1. 変異検査（step3実測）
+
+1回目：`_artFlushSave`内`this._artEditingId = created.id;`（article-editor.js:2895、新規記事の初回保存でストアの発行idを編集中idへ確定させる行）をコメントアウトして`publish-article-editor.spec.js`をフル実行 → **0件も落ちなかった**。原因：`_artEditingId`はこの行より前（記事を開く時点、`_artPendingId`の仮id発行）で既に設定されており、`create()`に`id: this._artPendingId`を渡しているため`created.id`と既存の`_artEditingId`が同値になる経路がほとんどで、この行の無効化が無害化されていた。1回目は不採用と判断し元に戻した（diffなしを確認）。
+
+2回目：`_artFlushSave`内`this._artSaveDraftToLocalStorage();`（article-editor.js:2901、メモリ反映直後にlocalStorageへ下書きを同期する行）をコメントアウトして`publish-article-editor.spec.js`をフル実行(109件) → **1件失敗**(`記事下書きのlocalStorageバックアップと復元(イシュー#142) > 編集中は入力のたびlocalStorageに下書きが同期保存され、リモート保存完了後は消える`、325行目。`flushArtSave`/`getArtEditingId`を使う置換後のテスト)。エラーは`TypeError: Cannot read properties of null (reading 'draft')`＝`localStorage.getItem(...)`がnullを返しJSON.parseが失敗。置き換えたテストが「保存確定でlocalStorageに下書きが書かれる」という元の挙動を正しく検知できていることを確認。`git diff`で元に戻し、同テストが再度1件通ることを確認した(664ms)。
+
 ## 6. 次イシュー（暫定G3-1b）への申し送り
 
 `_artDraft`(36件)・`_artTextFsEditor`(29件)は本イシューの対象外。`_artDraft`はオブジェクトの多様なフィールド読み書き（`.blocks`配列操作・`.theme`・`.adTag`・`.sourceShelfId`等、直接代入によるテスト用セットアップも含む）で、1〜2種の汎用ヘルパーに収まらず複数の専用ヘルパーが必要になる見込み（複雑度が高い）。`_artTextFsEditor`は`waitForFunction(!!...)`＋`.value()`の2パターンがほぼ全件（29件中27件）で比較的均一・低コストだが、`_artDraft`と同じ名前単位の提案に含まれていたため今回は一緒に見送った。次イシューの着手時はこの2名の実測（本ドキュメント§1の表）から始められる。
