@@ -56,3 +56,33 @@ npm run gate:report -- --collect
 ```
 
 観測点37が全部そろったら、CI の `lint:e2e-gate` に `--strict-coverage` を付けて、未達を失敗にする（`.github/workflows/ci.yml`）。
+
+## 保存先と別の端末の前提（公開・同期の観測点・イシュー#588）
+
+外部は通信の模擬で、アプリの読み書きは本物を通す。どれも前提の区間で呼ぶ。使い方の例は J5・J6 の spec。
+
+| やりたいこと | ヘルパー |
+|---|---|
+| 保存先・公開先をハブにする（保存・まとめ書き・公開・公開ページの配信） | `gate-hub.js`：`createHubStateForTest` → `seedHubDataForTest`（ハブに蔵書）→ `seedHubLoginForTest(page, hub, { method: 'hub', library: false })` → `mockHubForTest` → `bootAppForTest` → `waitForHubStartupForTest` |
+| ハブへの書き込みを失敗させる・届くのを待つ | `failHubWritesForTest`・`waitForHubFileContainsForTest` |
+| 保存先を GitHub にする | `gate-github.js`：`createMockGitHubForTest` → `seedGitHubDataForTest` → `seedGitHubLoginForTest` → `mockGitHubForTest`（届くのを待つのは `waitForGitHubFileContainsForTest`） |
+| 別の端末（2つ目のブラウザコンテキスト）で同じ保存先を開く | `gate-device.js`：`prepareOtherDeviceForTest(page, hub または gh)`・`closeOtherDeviceForTest` |
+| 保存先をローカルのフォルダにする（ブラウザの中の OPFS） | `gate-local.js`：`stubFolderPickerForTest`・`seedLocalLibraryOnceForTest`・`seedLocalFolderForTest`・`waitForLocalFileContainsForTest`・`clearLocalCacheForTest` |
+
+- 模擬の route はページではなくコンテキストに、ホストごとに1本だけ掛ける。同じコンテキストに同じ模擬を2回掛けない（取り合いになる）。
+- `seedLibraryForTest`（gate-setup.js）は再読込のたびに入れ直す。再読込・再起動をまたいで確かめるテストでは、1回だけ入れる `seedHubLoginForTest`・`seedGitHubLoginForTest`・`seedLocalLibraryOnceForTest` を使う。
+- ハブと GitHub の保存では「同期済み」の文字が画面に出ない。保存が届いたことは、前提の `wait…FileContainsForTest` で待つ。
+- 公開URLは本番と同じ形（`https://bookshelf.asayake.org/<username>/<publicId>/`）。新しいタブで開いても同じ模擬が答える。
+
+### J5・J6 の網羅（イシュー#588 時点）
+
+赤の4本は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
+
+| 観測点 | テスト | 状態 |
+|---|---|---|
+| J5-1 | `j5-1-article-create.spec.js` | テストあり・不具合のため未投入（題名を入れてすぐ一覧へ戻ると記事が出ない・#595） |
+| J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
+| J6-1 | `j6-1-local-restart.spec.js` | テストあり・不具合のため未投入（ローカルのフォルダに書いた短文メモが開き直すと消える） |
+| J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
+| J6-4 | `j6-4-sync-conflict.spec.js` | テストあり・不具合のため未投入（2台の本当の衝突で3択も知らせも出ない） |
+| J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |

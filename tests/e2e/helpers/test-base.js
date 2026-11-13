@@ -101,41 +101,49 @@ function installGisMock() {
     };
 }
 
+/** 外部への通信の遮断と模擬 (GIS・AdSense・Amazon 書影) をコンテキストに掛ける。既定の context は下の fixture が
+ * 掛ける。門のE2E で2つ目のコンテキスト (= 別の端末・tests/e2e/helpers/gate-device.js) を作る時も同じ物を掛ける
+ * (イシュー#588 で fixture の中身をそのまま関数に切り出した。順番も中身も変えていない)。
+ * @param {import('@playwright/test').BrowserContext} context */
+export async function blockExternalForTest(context) {
+    await context.addInitScript(installGisMock);
+    // イシュー#513 S6: フラグ旧状態での比較(e2e-diff-main.mjs --init-storage)用の汎用口。
+    // E2E_INIT_STORAGE は {"key":"value",...} のJSON文字列(環境変数)。S6専用の分岐は書かず、
+    // どのテストでも使える汎用のlocalStorage事前注入にする(②指示・s6-scope.md §5)。
+    // 既定(未設定)は何もしない=既存スイートの結果に影響しない。
+    if (process.env.E2E_INIT_STORAGE) {
+        const kv = JSON.parse(process.env.E2E_INIT_STORAGE);
+        await context.addInitScript((pairs) => {
+            for (const [k, v] of pairs) localStorage.setItem(k, v);
+        }, Object.entries(kv));
+    }
+    // index.html の AdSense 審査用スニペット (adsbygoogle.js) を止める。
+    // このスクリプト自体を止めれば、それが内部で発生させる広告配信/不正検出通信
+    // (googleads.g.doubleclick.net・adtrafficquality.google・www.google.com/recaptcha 等)
+    // も連鎖的に発生しなくなる。
+    // route.abort() ではなく空スクリプトの fulfill にする: <script async src=...> は
+    // index.html に静的に書かれているため毎回必ずリクエストが発生し、abort するとブラウザが
+    // "Failed to load resource: net::ERR_FAILED" を console error として出し、それ自体が
+    // 新しいフレーク源になることを実測した (GIS は動的挿入なので abort で問題ないが、
+    // 静的 <script> タグは fulfill で「読み込み成功」に見せる必要がある)。
+    await context.route('https://pagead2.googlesyndication.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: '// adsbygoogle.js stubbed out for E2E (issue #53)'
+    }));
+    // Lucide アイコンの unpkg.com 取得はイシュー#565で撤去済み (全部 js/icons.js に同梱)。
+    // ここで route しないことで、万一復活したら tests/e2e/no-external-icons.spec.js が検出する。
+    // Amazon 書影フォールバック URL (イシュー#57)
+    await context.route('https://images-na.ssl-images-amazon.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
+    }));
+}
+
 export const test = base.extend({
     context: async ({ context }, use, testInfo) => {
-        await context.addInitScript(installGisMock);
-        // イシュー#513 S6: フラグ旧状態での比較(e2e-diff-main.mjs --init-storage)用の汎用口。
-        // E2E_INIT_STORAGE は {"key":"value",...} のJSON文字列(環境変数)。S6専用の分岐は書かず、
-        // どのテストでも使える汎用のlocalStorage事前注入にする(②指示・s6-scope.md §5)。
-        // 既定(未設定)は何もしない=既存スイートの結果に影響しない。
-        if (process.env.E2E_INIT_STORAGE) {
-            const kv = JSON.parse(process.env.E2E_INIT_STORAGE);
-            await context.addInitScript((pairs) => {
-                for (const [k, v] of pairs) localStorage.setItem(k, v);
-            }, Object.entries(kv));
-        }
-        // index.html の AdSense 審査用スニペット (adsbygoogle.js) を止める。
-        // このスクリプト自体を止めれば、それが内部で発生させる広告配信/不正検出通信
-        // (googleads.g.doubleclick.net・adtrafficquality.google・www.google.com/recaptcha 等)
-        // も連鎖的に発生しなくなる。
-        // route.abort() ではなく空スクリプトの fulfill にする: <script async src=...> は
-        // index.html に静的に書かれているため毎回必ずリクエストが発生し、abort するとブラウザが
-        // "Failed to load resource: net::ERR_FAILED" を console error として出し、それ自体が
-        // 新しいフレーク源になることを実測した (GIS は動的挿入なので abort で問題ないが、
-        // 静的 <script> タグは fulfill で「読み込み成功」に見せる必要がある)。
-        await context.route('https://pagead2.googlesyndication.com/**', (route) => route.fulfill({
-            status: 200,
-            contentType: 'application/javascript',
-            body: '// adsbygoogle.js stubbed out for E2E (issue #53)'
-        }));
-        // Lucide アイコンの unpkg.com 取得はイシュー#565で撤去済み (全部 js/icons.js に同梱)。
-        // ここで route しないことで、万一復活したら tests/e2e/no-external-icons.spec.js が検出する。
-        // Amazon 書影フォールバック URL (イシュー#57)
-        await context.route('https://images-na.ssl-images-amazon.com/**', (route) => route.fulfill({
-            status: 200,
-            contentType: 'image/png',
-            body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
-        }));
+        await blockExternalForTest(context);
         await use(context);
         // イシュー#359 段階②: NavState 影モードのずれ (window.__navShadow.diffs) を opt-in で検査する。
         //   NAV_SHADOW_CHECK=log    … 各テスト終了時に diffs を NAV_SHADOW_LOG (jsonl) へ追記するだけ (集計用)
