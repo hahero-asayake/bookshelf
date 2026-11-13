@@ -54,36 +54,42 @@ jobs:
             exit 0
           fi
           CHECK_VERSION_RANGE="${BASE}..${HEAD}" npm run check:version
+      # イシュー#619: lint の各 step と Unit tests は、前の step が落ちても流す (!cancelled())。
+      # if に状態関数が無いと success() が補われ、1本落ちた時点で後ろの lint と Vitest が
+      # skipped になり結果が見えなかった (#613 の調べ・run 320〜323)。失敗した step があれば
+      # job は failure のまま (判定は緩めない)。npm ci が落ちた時は依存が無く紛らわしいので流さない
+      # (lint:copy・lint:terms (#585) と同じ条件)。lint:* を足したらここへ step も足す
+      # (書き漏れは tests/unit/ci-lint-steps.test.js が落とす。手元では npm run lint が全部流す)。
       - name: CSS lint (stylelint)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:css
       - name: E2E goto() 先頭スラッシュ禁止 (イシュー#396/#399)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:e2e-goto
       - name: E2E waitForFunction に async 関数を渡さない (イシュー#607)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:e2e-wait
       # イシュー#637: fixture (test-base.js) を通らない context の作り方を止める＝表紙・AdSense の遮断が効かず外へ出るため
       - name: E2E の context は外への通信の遮断を通す (イシュー#637)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:e2e-external
       - name: 画面の境目(スマホ/PC)の直書き禁止 (イシュー#505)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:breakpoint
       - name: Esc の判定の直書き禁止 (イシュー#565)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:esc
       - name: JS内インラインstyleの色直書き禁止 (イシュー#565)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:js-color
       - name: テストの内部参照(bookshelf._/app._)の上限 (イシュー#548・U9)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:internal-refs
       # イシュー#583: 門のE2E(テスト名に @gate と観測点ID)の書き方を構文木で確かめる。
       # 禁止物(操作・確認の区間の evaluate 系・内部から開くヘルパー等)は失敗にする。
       # 観測点37は揃った (イシュー#629・#632) ので、--strict-coverage で未達も失敗にする。
       - name: 門のE2Eの書き方と観測点の網羅 (@gate・イシュー#583)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:e2e-gate -- --strict-coverage
       # イシュー#585: 画面の文言の表記 (textlint) と用語表の照合。件数が tests/audit/baseline.json の上限を超えたら落ちる。
       - name: 文言の表記 (lint:copy・イシュー#585)
@@ -93,10 +99,10 @@ jobs:
         if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:terms
       - name: 既知の赤の一覧の検査 (docs/gate/known-red.json・イシュー#589)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm run lint:known-red
       - name: Unit tests (Vitest)
-        if: matrix.suite == 'e2e'
+        if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
         run: npm test
       # イシュー#487: 以降のPlaywright系(Install Playwright browser〜annotate補完)は、
       # 直前の「Unit tests」がfailureでも実行する(デフォルトのif無しだとジョブ内の
