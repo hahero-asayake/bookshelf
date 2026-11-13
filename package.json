@@ -16,6 +16,7 @@
     "audit:layout": "playwright test -c playwright.audit.config.js --output=test-results-audit/layout tests/audit/layout.spec.js && node scripts/check-audit.mjs layout",
     "lint:css": "stylelint \"css/**/*.css\"",
     "lint:e2e-goto": "node scripts/check-e2e-goto.mjs",
+    "lint:e2e-wait": "node scripts/check-e2e-async-wait.mjs",
     "lint:breakpoint": "node scripts/check-breakpoint-literal.mjs",
     "lint:esc": "node scripts/check-esc-literal.mjs",
     "lint:js-color": "node scripts/check-js-color-literal.mjs",

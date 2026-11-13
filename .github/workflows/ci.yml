@@ -60,6 +60,9 @@ jobs:
       - name: E2E goto() 先頭スラッシュ禁止 (イシュー#396/#399)
         if: matrix.suite == 'e2e'
         run: npm run lint:e2e-goto
+      - name: E2E waitForFunction に async 関数を渡さない (イシュー#607)
+        if: matrix.suite == 'e2e'
+        run: npm run lint:e2e-wait
       - name: 画面の境目(スマホ/PC)の直書き禁止 (イシュー#505)
         if: matrix.suite == 'e2e'
         run: npm run lint:breakpoint

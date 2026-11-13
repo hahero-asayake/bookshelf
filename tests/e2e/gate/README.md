@@ -33,6 +33,7 @@ test('@gate J5-2 記事に本棚ブロックを置き、キャンバスのブロ
 - **helpers の `open*`・`show*`・`*Internal`** は、中身がクリックだけでも操作・確認では使えない（`openArtEditor`・`openDrawer` 等）。ボタンを直接押すか、クリックだけのヘルパーを別の名前で足す。
 - **アプリ自身のファイル**（`index.html`・`js/`・`css/`・`sw.js`）への通信は、前提のヘルパーの中でも差し替えない。外部（ハブ・GitHub・Amazon）の模擬は前提でしてよい。
 - `@gate` に `test.skip`・`test.only` 等を付けない。`@gate` を `describe` やタグのオプションで付けない。
+- ファイル・IndexedDB など非同期でしか読めないものを待つ時は `expect.poll(() => page.evaluate(async …))` を使う（`waitForFunction` に async 関数を渡さない。返る Promise が真とみなされ、待たずに通る・#607）。門に数えないテストも含めて `npm run lint:e2e-wait` が確かめる。
 
 ## 機械では分からない決まり（書く人が守る）
 
@@ -76,13 +77,13 @@ npm run gate:report -- --collect
 
 ### J5・J6 の網羅（イシュー#588 時点）
 
-赤の4本は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
+赤の3本（J5-1・J6-4・J6-5）は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない（J6-1 も赤だったが、原因はアプリではなくテストの待ちのヘルパーだったので、直して緑で入れた・#607）。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
 
 | 観測点 | テスト | 状態 |
 |---|---|---|
 | J5-1 | `j5-1-article-create.spec.js` | テストあり・不具合のため未投入（題名を入れてすぐ一覧へ戻ると記事が出ない・#595） |
 | J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
-| J6-1 | `j6-1-local-restart.spec.js` | テストあり・不具合のため未投入（ローカルのフォルダに書いた短文メモが開き直すと消える） |
+| J6-1 | `j6-1-local-restart.spec.js` | 投入済み・緑（赤はアプリの不具合ではなく、フォルダへの書き込みを待たずに通るヘルパーのせいだった・#607） |
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
 | J6-4 | `j6-4-sync-conflict.spec.js` | テストあり・不具合のため未投入（2台の本当の衝突で3択も知らせも出ない） |
 | J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |

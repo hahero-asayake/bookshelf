@@ -4,6 +4,7 @@
 // アプリの読み書き (js/local-fs-adapter.js・フォルダの控えを IndexedDB に置く処理・再起動時の復元) は本物を通す。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { expect } from './test-base.js';
 
 const fixture = (name) => readFileSync(fileURLToPath(new URL(`../../fixtures/${name}`, import.meta.url)), 'utf-8');
 
@@ -61,7 +62,8 @@ export async function seedLocalFolderForTest(page, dirName = 'gate-local') {
 /** フォルダ dirName の中のファイル path に text が入るまで待つ (アプリの書き込みがフォルダに届いたことの前提)。
  * @param {import('@playwright/test').Page} page @param {string} dirName @param {string} path @param {string} text @param {number} [timeoutMs] */
 export async function waitForLocalFileContainsForTest(page, dirName, path, text, timeoutMs = 20000) {
-    await page.waitForFunction(async ([name, filePath, want]) => {
+    // waitForFunction に async 関数を渡すと、返る Promise が真とみなされて待たずに通る (#607)。expect.poll で毎回の結果を待つ
+    await expect.poll(() => page.evaluate(async ([name, filePath, want]) => {
         try {
             let dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
             const parts = filePath.split('/');
@@ -69,7 +71,7 @@ export async function waitForLocalFileContainsForTest(page, dirName, path, text,
             const file = await (await dir.getFileHandle(parts[parts.length - 1])).getFile();
             return (await file.text()).includes(want);
         } catch (_) { return false; }
-    }, [dirName, path, text], { timeout: timeoutMs, polling: 200 });
+    }, [dirName, path, text]), { timeout: timeoutMs, intervals: [200] }).toBe(true);
 }
 
 /** 端末内の控え (localStorage の蔵書・利用者データ) だけを消す。フォルダと、フォルダの控え (IndexedDB) は残す。
