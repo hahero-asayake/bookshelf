@@ -5464,6 +5464,7 @@ class VirtualBookshelf {
             if (!this.userData.notes[asin]) this.userData.notes[asin] = { memo: '', rating: 0 };
             this.userData.notes[asin].hasDetailMemo = true;
             this.saveUserData();
+            this._applyDetailMemoEverywhere(asin); // イシュー#611: 詳細のボタンを「長文メモを開く」へ
         } catch (e) {
             console.error('長文メモ作成エラー:', e);
             toast(`ファイル操作に失敗しました: ${e.message}`);
@@ -5506,7 +5507,10 @@ class VirtualBookshelf {
             toast(`同期フォルダの ${fullPath} を OS のエクスプローラ等で開いてください。\n（パスはクリップボードにコピー済み）`);
         }
 
-        // PC v2: 右ペインで表示中なら再描画 (modal の互換用に旧 #book-modal もチェック)
+        // PC v2: 右ペインで表示中なら編集モードで開き直す (modal の互換用に旧 #book-modal もチェック)。
+        // 実際の動き (イシュー#611 step1 の実測): 閲覧中なら編集モードへ切り替わる。すでに編集モードなら
+        // 同じ本・同じモードなので showBookDetail の冪等化ガード (#330) で何もしない (ボタンの文言は
+        // 上の _applyDetailMemoEverywhere で揃える)。
         const isOpen = document.body.classList.contains('book-detail-pinned')
             || (document.getElementById('book-modal')?.classList.contains('show'));
         if (isOpen) {

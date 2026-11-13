@@ -235,7 +235,7 @@ class _BookDetailMethods {
         // 長文メモセクション body
         const longMemoBody = `
             <button class="bd-memo-link memo-file-btn" data-asin="${esc(book.asin)}" type="button">
-                ${ico('file-text')}${userNote.hasDetailMemo ? '長文メモを開く' : '長文メモを書く'}
+                ${this._detailMemoBtnInner(userNote.hasDetailMemo)}
             </button>
             ${isEditMode ? `
                 <label class="bd-flag-label">
@@ -542,6 +542,27 @@ class _BookDetailMethods {
         if (oldBody) oldBody.innerHTML = '';
     }
 
+    // 長文メモのボタンの中身 (アイコン＋文言・イシュー#611)。詳細を描く時 (showBookDetail) と、
+    // 長文メモの有無が変わった時の書き換え (_applyDetailMemoEverywhere) の両方がここを通る。
+    _detailMemoBtnInner(hasDetailMemo) {
+        const label = hasDetailMemo ? '長文メモを開く' : '長文メモを書く';
+        return `<span class="h-icon">${window.renderIcon('file-text', { size: 14 })}</span>${label}`;
+    }
+
+    // 長文メモの有無 (notes[asin].hasDetailMemo) の変化を、画面に出ている該当ボタンへ即時反映する
+    // (イシュー#611)。showBookDetail は同じ本・同じモードなら描き直さない (#330 の冪等化ガード) ため、
+    // _applyRatingEverywhere と同じ型でボタンだけを書き換える (詳細全体を描き直すと、編集モードの
+    // 未保存の入力が消える・#611 step1 の実測)。
+    _applyDetailMemoEverywhere(asin) {
+        const note = this.userData.notes[asin];
+        let sel;
+        try { sel = `.memo-file-btn[data-asin="${(window.CSS && CSS.escape) ? CSS.escape(asin) : asin}"]`; }
+        catch (_) { sel = `.memo-file-btn[data-asin="${asin}"]`; }
+        document.querySelectorAll(sel).forEach((btn) => {
+            btn.innerHTML = this._detailMemoBtnInner(!!(note && note.hasDetailMemo));
+        });
+    }
+
     // ヘッダー2行目に出す行数・文字数 (イシュー#282・②決裁=タイトル下2行目に小さく表示)
     _bookMemoFsSubText(markdown) {
         const v = markdown || '';
@@ -638,7 +659,9 @@ class _BookDetailMethods {
             this.userData.notes[ctx.asin].hasDetailMemo = true;
             await this.saveUserData();
             this._bookMemoInitial = editor.value();
-            return this._bookMemoFsClose({ fromHistory });
+            const closed = this._bookMemoFsClose({ fromHistory });
+            this._applyDetailMemoEverywhere(ctx.asin); // イシュー#611: 詳細のボタンを「長文メモを開く」へ
+            return closed;
         } catch (e) {
             console.error('長文メモ保存失敗:', e);
             window.SaveStatus.set(statusEl, `${e.message}`);
