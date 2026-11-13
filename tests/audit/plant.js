@@ -3,12 +3,12 @@
 //   aria    ホームで、名前を aria-label に頼っているボタンから aria-label を外す (検査 a11y)
 //   button  本の手動追加の閉じるボタンの名前を変える (検査 buttons)。同じ操作キー・同じ名前のボタンがほかの画面にも
 //           ある所を選ぶ = 名前の種類が1つ増える (1つしか無い名前を変えると、入れ替わるだけで件数は増えない)
-//   clip    ホームで、文字を持つ要素を狭めて切る (検査 layout)
+//   clip    本の手動追加で、文字を持つ最初の要素 (見出し) を狭めて切る (検査 layout)
 const PLANT = process.env.AUDIT_PLANT || '';
 const TARGET = {
     aria: { check: 'a11y', screen: 'home' },
     button: { check: 'buttons', screen: 'add-book' },
-    clip: { check: 'layout', screen: 'home' },
+    clip: { check: 'layout', screen: 'add-book' },
 };
 
 export async function plantFault(page, check, screen) {
@@ -38,11 +38,13 @@ export async function plantFault(page, check, screen) {
             return true;
         }
         if (kind === 'clip') {
-            const el = [...document.querySelectorAll('#dashboard *')].find((x) => shown(x)
+            // 列の末端の画面で入れる (途中の画面で入れると、続きの操作が押せなくなって別の理由で落ちる)
+            const el = [...document.querySelectorAll('#add-book-modal .modal-content *')].find((x) => shown(x)
                 && [...x.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length >= 4));
             if (!el) return false;
             el.id = 'audit-planted-clip';
-            el.style.cssText += ';display:block;width:24px;overflow:hidden;white-space:nowrap;';
+            // flex の中でも幅が広がらないよう、幅の上限と flex も固定する
+            el.style.cssText += ';display:block !important;width:24px !important;max-width:24px !important;min-width:0 !important;flex:0 0 24px !important;overflow:hidden !important;white-space:nowrap !important;';
             return true;
         }
         return false;
