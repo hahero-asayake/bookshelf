@@ -46,6 +46,8 @@ async function boot(page, { target = 'hub', plan = 'free', github = false, affil
         publish: { target },
         ...(github ? { github: { token: 'gho_test' } } : {}),
     };
+    // 起動時にプランを取り直す (イシュー#604) ので、/usage は入れた接続情報と同じ中身を返す (実ハブへ出さない)
+    await page.route('https://hub.example.test/usage', (route) => route.fulfill({ json: sync.hub }));
     await page.addInitScript(([u, l, s]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);

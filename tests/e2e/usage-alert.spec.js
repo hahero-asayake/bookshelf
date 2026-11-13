@@ -15,6 +15,8 @@ async function bootWithHub(page, hub) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
+    // 起動時にプランを取り直す (イシュー#604) ので、/usage は入れた接続情報と同じ中身を返す (実ハブへ出さない)
+    if (hub && hub.apiBase) await page.route(`${hub.apiBase}/usage`, (route) => route.fulfill({ json: hub }));
     await page.addInitScript(([userData, library, hubJson]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);

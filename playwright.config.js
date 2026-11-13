@@ -17,6 +17,8 @@ const gateWebkitProjects = process.env.GATE_WEBKIT === '1'
     // Playwright の WebKit には OPFS (navigator.storage.getDirectory) も無い (イシュー#607 で実測)。他の j6 系は外さない。
     ? [{ name: 'gate-webkit', testMatch: /tests[\\/]e2e[\\/]gate[\\/].*\.spec\.js$|art-canvas-tap-edit\.spec\.js$/, testIgnore: /j8-offline\.spec\.js$|[\\/]j6-1-local-restart\.spec\.js$/, use: { ...devices['iPhone 13'] } }]
     : [];
+// 門ではない E2E のうち、webkit (iPhone 相当) でも流すもの (イシュー#604: 支払い管理からの戻り)
+gateWebkitProjects.forEach((p) => { p.testMatch = [p.testMatch, /billing-portal-return\.spec\.js$/]; });
 
 // worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
 // portを使い、どちらも無ければ既定の8000(従来どおり)。webServer.command/portとuse.baseURLの両方に使う

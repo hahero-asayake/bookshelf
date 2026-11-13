@@ -24,6 +24,13 @@ async function bootApp(page, hubOverrides = {}, settingsOverrides = {}) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
+    const seededHub = {
+        apiBase: 'https://hub.example.test', key: 'hk_test', uid: 'u1', siteId: 's1', email: 'taro@example.com',
+        plan: 'free', quotaBytes: 100000000, usedBytes: 0, username: null, bookshelfBase: null,
+        ...hubOverrides
+    };
+    // 起動時にプランを取り直す (イシュー#604) ので、/usage は入れた接続情報と同じ中身を返す (実ハブへ出さない)
+    await page.route('https://hub.example.test/usage', (route) => route.fulfill({ json: seededHub }));
     await page.addInitScript(([userDataJson, library, hub, settingsOv]) => {
         const userData = JSON.parse(userDataJson);
         Object.assign(userData.settings, settingsOv);
@@ -32,11 +39,7 @@ async function bootApp(page, hubOverrides = {}, settingsOverrides = {}) {
         // 同期方式 (データの保存先) はローカルのまま、アカウント (ハブ) 接続だけ設定する
         // (account-username.spec.js と同じ理由: 同期=hub にすると起動時に実ハブへ fetch しにいく)。
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', hub }));
-    }, [fixtureUserData, fixtureLibrary, {
-        apiBase: 'https://hub.example.test', key: 'hk_test', uid: 'u1', siteId: 's1', email: 'taro@example.com',
-        plan: 'free', quotaBytes: 100000000, usedBytes: 0, username: null, bookshelfBase: null,
-        ...hubOverrides
-    }, settingsOverrides]);
+    }, [fixtureUserData, fixtureLibrary, seededHub, settingsOverrides]);
     await page.goto('index.html');
     await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
     await page.evaluate(() => {

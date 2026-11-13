@@ -1,11 +1,4 @@
 {
     "source": "イシュー#589 (2026-11-14)。アプリの不具合で赤になっている門のE2E (@gate) の一覧。書き方は tests/e2e/gate/README.md の「既知の赤」",
-    "tests": [
-        {
-            "test": "@gate J7-2 Plus のアカウントから、「プラン変更・支払い・解約」で解約すると、解約予約済みと表示される",
-            "gate": "J7-2",
-            "issue": 604,
-            "reason": "J7-PORTAL-1: 支払い管理のページから戻った後にプランを取り直さない (cf-worker/asayake-hub.js:1068・js/bookshelf.js:2981)"
-        }
-    ]
+    "tests": []
 }

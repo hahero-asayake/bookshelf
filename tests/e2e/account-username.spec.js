@@ -16,6 +16,8 @@ async function bootApp(page, hubOverrides = {}) {
     const errors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', (err) => errors.push(String(err)));
+    // 起動時にプランを取り直す (イシュー#604) ので、/usage は入れた接続情報と同じ中身を返す (実ハブへ出さない)
+    await page.route('https://hub.example.test/usage', (route) => route.fulfill({ json: { plan: 'free', quotaBytes: 100000000, usedBytes: 0, ...hubOverrides } }));
     await page.addInitScript(([userData, library, hub]) => {
         localStorage.setItem('virtualBookshelf_userData', userData);
         localStorage.setItem('virtualBookshelf_library', library);

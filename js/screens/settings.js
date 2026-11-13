@@ -46,6 +46,15 @@
 //    js/ui/surface.js:130/145 が h._bindSettingsPopstate() を直接呼ぶ(コメント27行目に明記)。
 //    一覧は docs/char/u8a-step1-scope.md §4 参照
 
+// 支払い管理 (Stripe Billing Portal) からの戻りでプランを取り直す (ADR-035 追補・イシュー#604)。
+// Portal の戻り先は Worker がクエリを落とすので URL では見分けられない → 出る前に sessionStorage へ印と
+// プランの写しを置き、戻り (起動時・bfcache からの復元) で印を見て、写しと違いが出るまで間隔を空けて取り直す
+// (解約などは Webhook が後から KV に書くため、戻った直後はまだ古いことがある)。上限まで違いが出なければ静かに終える
+// (管理のページで何も変えずに戻った時)。
+const BILLING_PORTAL_MARK_KEY = 'bookshelf.billingPortalReturn';
+const BILLING_PORTAL_MARK_TTL_MS = 60 * 60 * 1000;                     // これより古い印は拾わない
+const BILLING_PORTAL_RECHECK_DELAYS_MS = [0, 2000, 4000, 8000, 16000];  // 最大5回・指数で間隔を空ける (計 30 秒)
+
 class _SettingsMethods {
     // 保存先セレクトで選んだ方式のパネルだけを出す
     _showSyncPanel(method) {
@@ -923,8 +932,12 @@ class _SettingsMethods {
             if (!email.trim()) { toast('対象のメールを入力してください。', { type: 'warn' }); return; }
             if (await window.confirmDialog({ message: `${email.trim()} の Stripe 課金リンク（customer/subscription）を外して無料に戻します。\n（test→live 切替で詰まった時の復旧用。Stripe 側の課金は止めません）\nよろしいですか？` })) this._adminSetPlan('free', true);
         });
-        // 決済からの戻り (?billing=success|cancel) を処理 (1 回だけ)
+        // 決済・支払い管理からの戻りを処理 (起動時に1回。bfcache から復元した時も同じ入口で受ける・イシュー#604)
         this._handleBillingReturn();
+        window.addEventListener('pageshow', (ev) => { if (ev && ev.persisted) this._handleBillingReturn(); });
+        // 起動時にプランを取り直す (ハブにログイン済みなら、保存先や読み込みの成否に関係なく1回・イシュー#604)。
+        // 別のタブ・別の端末・Webhook の後着で変わったプランを、次に開いた時に拾う。未ログインなら通信しない
+        this._refreshHubUsage();
         // 公開記事フッタの「通報」リンク (?report=<記事URL>) から来たら通報ダイアログを開く (ADR-099)
         this._handleReportParam();
         // 同期節の「アカウントでログイン」誘導 → アカウントカテゴリへ切替 (設定は既に開いている)
@@ -1291,7 +1304,12 @@ class _SettingsMethods {
             if (res.status === 503) { toast('支払い管理は現在準備中です。', { type: 'warn' }); return; }
             if (!res.ok) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error(`${res.status}${d ? ': ' + d : ''}`); }
             const data = await res.json();
-            if (data.url) { location.href = data.url; return; }
+            if (data.url) {
+                // 戻った時に取り直すための印と、出る前のプランの写し (_handleBillingReturn が読む)
+                try { sessionStorage.setItem(BILLING_PORTAL_MARK_KEY, JSON.stringify({ at: Date.now(), snap: this._billingPlanSnapshot(hub) })); } catch (_) {}
+                location.href = data.url;
+                return;
+            }
             throw new Error('管理ページの URL が取得できませんでした');
         } catch (e) {
             toast(`支払い管理を開けませんでした: ${e.message}`, { type: 'error' });
@@ -1302,9 +1320,18 @@ class _SettingsMethods {
 
     // 決済直後のプラン反映を指数バックオフで確認 (WP-B4)。全滅時は案内を出して黙って諦めない
     async _pollPlusActivation() {
-        const delays = [2000, 4000, 8000, 16000, 30000];
+        if (await this._pollHubPlan([2000, 4000, 8000, 16000, 30000], (hub) => hub.plan === 'plus')) {
+            toast('Plus が有効になりました。', { type: 'success' });
+            return;
+        }
+        toast('Plus の反映を確認できませんでした。数分後にページを再読み込みしてください。それでも反映されない場合は asayake.hahero@gmail.com へご連絡ください。', { type: 'warn' });
+    }
+
+    // 外の決済のページから戻った後の取り直し (決済・支払い管理で共用・イシュー#604)。delays の間隔で
+    // プランを取り直して画面へ反映し、isDone(hub) が真になったら true で終える。上限まで届かなければ false
+    async _pollHubPlan(delays, isDone) {
         for (const ms of delays) {
-            await new Promise(r => setTimeout(r, ms));
+            if (ms) await new Promise(r => setTimeout(r, ms));
             try {
                 if (typeof HubAuth === 'undefined') break;
                 const hub = await HubAuth.refreshUsage();
@@ -1313,15 +1340,32 @@ class _SettingsMethods {
                     this._renderAccountUsageBar(hub);
                     this._reflectAccountChip(hub, true);
                     this._renderUsageAlert(hub);
-                    if (hub.plan === 'plus') { toast('Plus が有効になりました。', { type: 'success' }); return; }
+                    if (isDone(hub)) return true;
                 }
             } catch (_) { /* 一時失敗は次の試行へ */ }
         }
-        toast('Plus の反映を確認できませんでした。数分後にページを再読み込みしてください。それでも反映されない場合は asayake.hahero@gmail.com へご連絡ください。', { type: 'warn' });
+        return false;
     }
 
-    // 決済からの戻り (?billing=success|cancel)。プラン反映は Webhook 経由なので使用量を再取得
+    // 支払い管理で変わりうるプランの項目 (表示に使うもの) を1つの文字列にする。出る前と戻った後の比較用
+    _billingPlanSnapshot(hub) {
+        const h = hub || {};
+        return JSON.stringify([h.plan || 'free', h.interval || null, h.currentPeriodEnd || null, !!h.cancelAtPeriodEnd, h.subStatus || null, !!h.billingManaged, h.planSource || null]);
+    }
+
+    // 外の決済のページからの戻りを受ける入口 (起動時と bfcache からの復元で呼ぶ・イシュー#604)。
+    // Checkout は戻り先の ?billing=success|cancel、Billing Portal は出る前に置いた sessionStorage の印で見分ける。
+    // プラン反映は Webhook 経由なので使用量 (プラン) を取り直す
     _handleBillingReturn() {
+        let mark = null;
+        try {
+            const raw = sessionStorage.getItem(BILLING_PORTAL_MARK_KEY);
+            if (raw) { sessionStorage.removeItem(BILLING_PORTAL_MARK_KEY); mark = JSON.parse(raw); }
+        } catch (_) { mark = null; }
+        if (mark && Date.now() - Number(mark.at) < BILLING_PORTAL_MARK_TTL_MS) {
+            // 出る前の写しと違いが出るまで取り直す。上限まで同じなら静かに終える (何も変えずに戻った時)
+            this._pollHubPlan(BILLING_PORTAL_RECHECK_DELAYS_MS, (hub) => this._billingPlanSnapshot(hub) !== mark.snap);
+        }
         if (this._billingReturnHandled) return;
         let params;
         try { params = new URLSearchParams(location.search); } catch (_) { return; }
