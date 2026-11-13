@@ -97,7 +97,7 @@ const BACKENDS = [
 ];
 
 /** 前提づくり: 手動追加の処理で本を1冊足し、保存先の library.json に届くまで待つ */
-// 落ちた時に原因を見るための記録 (アプリの保存の状態・画面に出ている確認や画面・console・保存先の library.json)
+// 落ちた時に原因を見るための記録 (本の一覧・未保存ありの印・画面に出ている確認や画面・console・保存先の library.json)
 let consoleLines = [];
 test.beforeEach(({ page }) => {
     consoleLines = [];
@@ -108,11 +108,7 @@ test.beforeEach(({ page }) => {
 async function attachDiag(page, remote, label) {
     const app = await page.evaluate(() => ({
         books: (window.bookshelf.books || []).map((b) => b.asin),
-        syncInProgress: window.bookshelf._syncInProgress,
-        pendingSync: window.bookshelf._pendingSync,
-        lastSyncOk: window.bookshelf._lastSyncOk,
-        syncError: window.bookshelf._syncError,
-        syncErrorMsg: window.bookshelf._syncErrorMsg,
+        pendingSync: localStorage.getItem('virtualBookshelf_pendingSync'),
         shown: Array.from(document.querySelectorAll('.cfm-overlay, .modal.show, [role="dialog"], [role="alertdialog"]'))
             .filter((el) => el.offsetParent !== null || getComputedStyle(el).position === 'fixed')
             .map((el) => `${el.id || el.className}: ${(el.innerText || '').replace(/\s+/g, ' ').slice(0, 160)}`),
