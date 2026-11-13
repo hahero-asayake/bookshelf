@@ -412,7 +412,7 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
 |---|---|---|
 | Worker | deploy の前に `wrangler deployments list -c <toml>` で直前の版 ID を控える → `wrangler rollback <版ID> -c <toml> -m <理由> --yes`。D1 は戻らない (追加型のマイグレーションだけを使う)。台本 `~/kuroko/discord/core/tmp/wr584-ops.mjs hub-rollback / cdn-rollback` | 2026-11-14 に 2 回。(1) 練習用 Worker `asayake-drill-584` を版A→版B と deploy → 版A へ rollback (**2.2 秒**) → workers.dev が版A の応答を返すことを確認 → 削除。全体 12.5 秒。(2) 本番 hub を直前版 `8c2c255f` へ実際に戻した (**2.4 秒**・保存の不具合が deploy 由来か切り分けるため)。新しい版 `92039c90` へ戻し直し (約 3 秒) → 確認 5 点が通った |
 | アプリ | `git revert --no-commit <sha>` → 戻したファイルを読む index.html の `?v=` を、origin/main の今の値より新しい値に上げる (revert は `?v=` も古い値に戻し、検査はそれを見逃す) → `Issue: #N` を付けて 1 つの commit にする → `node scripts/check-version-bump.mjs --range=origin/main..HEAD` → push → `curl` で新しい `?v=` が配信されたことを確かめる | 練習ブランチで 1 回 (2026-11-14・約 2 分・push と配信の切替は含まない)。[docs/ops/drill-app-rollback.md](../docs/ops/drill-app-rollback.md) |
-| データ | G-5 の「復元手順」。本番へ書く前に人の承認を得る | 練習用の KV・D1・R2 へ 1 回 (実施後にここへ秒数と結果を書く) |
+| データ | G-5 の「復元手順」。本番へ書く前に人の承認を得る。練習の台本は `~/kuroko/discord/core/tmp/wr584-restore-drill.mjs` (既定は空回し・`--execute` で練習用の資源 `asayake-drill-584` を作って戻し、照合して必ず消す。本番の名前・id には書けない作り) | 2026-11-14 に 1 回。最新世代 (KV 43 キー・D1 sites 2 件・R2 50 件) を練習用の KV・D1・R2 へ戻し、照合 19 項目すべて一致。全体約 4 分 10 秒 (R2 が 198 秒＝1 件約 4 秒)。片付けの後に練習用の資源と作業フォルダが消えたことを確認 |
 
 ### G-9. サーバの 5xx の率の見方 (閾値 1%・イシュー#584)
 
