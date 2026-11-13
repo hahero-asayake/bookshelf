@@ -8,6 +8,7 @@
     "test:e2e": "playwright test",
     "ci:annotate-e2e": "node scripts/ci-annotate-failures.mjs",
     "check:version": "node scripts/check-version-bump.mjs",
+    "lint": "node scripts/run-lint.mjs",
     "lint:copy": "node scripts/extract-ui-strings.mjs && node scripts/check-ui-copy.mjs",
     "lint:terms": "node scripts/extract-ui-strings.mjs && node scripts/check-ui-terms.mjs",
     "audit": "node scripts/run-audit.mjs",
