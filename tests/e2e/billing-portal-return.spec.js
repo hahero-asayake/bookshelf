@@ -9,7 +9,7 @@
 // 受け口が取り直しを始めることだけを確かめる。本物の bfcache の復元そのものは確かめていない。
 import { test, expect } from './helpers/test-base.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
-import { createHubStateForTest, resetHubStateForTest, plusStateForTest, seedHubLoginForTest, mockHubForTest, mockBillingPagesForTest, HUB_BASE, BILLING_BASE } from './helpers/gate-hub.js';
+import { createHubStateForTest, resetHubStateForTest, plusStateForTest, seedHubLoginForTest, mockHubForTest, mockBillingPagesForTest, waitForHubStartupForTest, HUB_BASE, BILLING_BASE } from './helpers/gate-hub.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -45,14 +45,6 @@ async function delayWebhookForTest(page, hub, stale) {
     return d;
 }
 
-// 保存先がハブの時の、ハブからの読み込み (起動の後半) が終わるまで待つ
-async function waitForHubStartup(page) {
-    await page.waitForFunction(() => {
-        const loading = document.getElementById('loading');
-        return window.bookshelf && !window.bookshelf._syncChecking && (!loading || loading.style.display === 'none');
-    });
-}
-
 async function tapToAccountSettings(page) {
     await page.locator('[data-mobile-nav="settings"]').tap();
     await expect(page.locator('#settings-modal')).toBeVisible();
@@ -84,11 +76,11 @@ test('保存先がハブでも、支払い管理で解約して戻ると、解�
     const hub = createHubStateForTest();
     await startPlus(page, hub, 'hub');
     await bootAppForTest(page);
-    await waitForHubStartup(page);
+    await waitForHubStartupForTest(page);
     await tapToAccountSettings(page);
     await expect(page.locator('#account-plan-period')).toContainText('月額 ・ 次回更新');
     await cancelInPortalAndReturn(page);
-    await waitForHubStartup(page);
+    await waitForHubStartupForTest(page);
     await tapToAccountSettings(page);
     await expect(page.locator('#account-plan-period')).toContainText('解約予約済み');
     await expect(page.locator('#account-plan-cancel')).toContainText('無料プランに戻ります');
@@ -101,11 +93,11 @@ for (const [method, stale] of [['local', 2], ['hub', 3]]) {
         await startPlus(page, hub, method);
         const delay = await delayWebhookForTest(page, hub, stale);
         await bootAppForTest(page);
-        if (method === 'hub') await waitForHubStartup(page);
+        if (method === 'hub') await waitForHubStartupForTest(page);
         await tapToAccountSettings(page);
         await expect(page.locator('#account-plan-period')).toContainText('月額 ・ 次回更新');
         await cancelInPortalAndReturn(page, () => { delay.on = true; });
-        if (method === 'hub') await waitForHubStartup(page);
+        if (method === 'hub') await waitForHubStartupForTest(page);
         await tapToAccountSettings(page);
         // 間隔を空けた取り直し (0・2・4・8・16 秒) のどれかで Webhook の後の中身が届く
         await expect(page.locator('#account-plan-period')).toContainText('解約予約済み', { timeout: 20000 });
