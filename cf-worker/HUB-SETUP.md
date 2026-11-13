@@ -390,12 +390,13 @@ wrangler kv key delete "report:<siteId>" --namespace-id d429572547b4434486d44ee0
   wrangler d1 execute asayake-community --remote -c wrangler.hub.toml --command "SELECT day, v, screen, msg, count FROM client_errors ORDER BY day DESC, count DESC LIMIT 20"
   ```
 - **止める**: `wrangler.hub.toml` の `[vars]` に `CLIENT_ERRORS_OFF = "1"` を足して hub を deploy する (受けても捨てて 204 を返す)。端末側から送らせない時は、アプリの `errorReportEnabled()` を直して push する。
+- **利用者が止める**: 設定 →「このアプリについて」→「エラー情報を送らない」。その端末からは送らなくなる (端末ごとの設定・localStorage `bookshelf_errReportOff`)。プライバシーポリシーにも止め方を書く。
 - **乱用対策**: IP ごとのレート制限 (`WRITE_LIMITER`・保存はしない)・本文 1KB まで・1 日の新しい指紋は 500 まで。
 - **初回の反映**: マイグレーション `migrations/0004_client_errors.sql` を流してから hub を deploy する。戻し方は hub の rollback と `DROP TABLE client_errors` (追加型なので他の表には触れない)。
 
 ### G-7. 本番の常時テスト (イシュー#584・ADR-153)
 
-- **何を確かめるか**: テスト専用アカウント `kurokotest` で、1 時間ごとに (1) 保存→別のブラウザで読める (ハブ・GitHub) (2) 公開→公開 URL が 200→非公開→404 を流す。
+- **何を確かめるか**: テスト専用アカウント `kurokotest` で、1 時間ごとに (1) 保存→別のブラウザで読める (ハブ・GitHub) (2) 公開→公開 URL が 200→非公開→404 を流す。保存は、決まった目印の本 1 冊の短文メモを上書きして確かめる (本棚の追加・削除は使わない。ハブでは本棚を消しても本棚ごとのファイルが残るため)。
 - **どこで動くか**: homelab の systemd user timer `kuroko-bookshelf-canary.timer` (kuroko ユーザー)。実行役は `~/kuroko/discord/tools/bookshelf-prod-canary.mjs`。結果は `~/.local/state/kuroko/bookshelf-canary-state.json` (最後に成功した時刻・連続失敗数・最後に落ちた流れと段)。
 - **資格** (値はどこにも書かない・すべて 600): ハブ鍵 `~/.local/share/kuroko/bookshelf-canary.json`／GitHub `~/.local/share/kuroko/bookshelf-canary-github.json`／通知先 `~/.local/share/kuroko/bookshelf-report-webhook`。
 - **一覧に出さない印**: テストの記事が /top・sitemap・検索に出ないよう、KV の `uname:kurokotest` に `unlisted: true` を付けてある。`wrangler kv key put` は値を丸ごと上書きするので、既存の項目 (`uid`・`siteId`) を保ったまま足す。退会→再登録をしたら印は消えるので付け直す。印が本番に入るまで、公開の流れは流さない (`CANARY_ALLOW_PUBLISH=1` を付けない)。
