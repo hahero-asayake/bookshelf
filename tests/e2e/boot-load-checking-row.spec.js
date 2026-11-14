@@ -18,6 +18,8 @@ const LEAVE_MS = 2000;
 const checkingRow = (page) => page.locator('#app-status-bar .status-row', { hasText: CHECKING });
 const hubFailureRow = (page) => page.locator('#app-status-bar .status-row.status-warn');
 const githubToast = (page) => page.locator('.toast-message', { hasText: 'GitHub' });
+// 通信の失敗は、GitHub も toast をやめ、状態バーに読込の失敗の行を出す (イシュー#666)。認証切れは今も toast
+const loadFailureRow = (page) => page.locator('#app-status-bar [data-load-failure]');
 const syncStatus = (page) => page.locator('#obsidian-sync-status');
 
 // 確認中の行が一度でも出たかを、開くたびに画面の側で覚える (1秒ほどで消える行も取りこぼさない。bookshelf._* は読まない)
@@ -71,13 +73,13 @@ async function bootGitHub(page, context) {
     return { gh, cut };
 }
 
-test('GitHub: 起動の読込が通信で失敗したら、toast が出てから2秒のうちに「最新のデータを確認しています…」が消える', async ({ page, context }) => {
+test('GitHub: 起動の読込が通信で失敗したら、状態バーの読込の失敗の行が出てから2秒のうちに「最新のデータを確認しています…」が消える', async ({ page, context }) => {
     const { cut } = await bootGitHub(page, context);
     cut.mode = 'net';
     await page.reload();
-    await expect(githubToast(page)).toBeVisible({ timeout: 20_000 });
+    await expect(loadFailureRow(page)).toBeVisible({ timeout: 20_000 });
     await expectCheckingRowSeen(page);
-    await expect(checkingRow(page), 'toast が出た後も「確認しています」が残っている').toHaveCount(0, { timeout: LEAVE_MS });
+    await expect(checkingRow(page), '読込の失敗の行が出た後も「確認しています」が残っている').toHaveCount(0, { timeout: LEAVE_MS });
 });
 
 test('ハブ: 起動の読込が通信で失敗したら、状態バーの失敗の行が出てから2秒のうちに「最新のデータを確認しています…」が消える', async ({ page, context }) => {
