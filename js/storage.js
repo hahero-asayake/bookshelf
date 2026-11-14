@@ -353,7 +353,7 @@ class BookshelfStorage {
         // PAR (イシュー#391): 固定7本は同時数4で並列取得 (直列だと起動時タイムアウトの本線になる・
         // step1実測)。bookshelvesMeta が確定してから本棚ごとのファイル(本数は蔵書構成に依存)を
         // 同じく同時数4で並列取得する2段構成 (本棚一覧はbookshelvesMetaの中身が無いと分からないため)。
-        const [library, exclusionsRaw, notesFileRaw, bookshelvesMetaRaw, allBookshelf, privateSettingsRaw, privateMainRaw] =
+        const [library, exclusionsRaw, notesFileRaw, bookshelvesMetaRaw, allBookshelf, privateSettingsRaw, privateMainRaw, syncStampRaw] =
             await runLimited([
                 () => this.adapter.readJSON('private/library.json'),
                 () => this.adapter.readJSON('private/exclusions.json'),
@@ -361,8 +361,11 @@ class BookshelfStorage {
                 () => this.adapter.readJSON('private/bookshelves.json'),
                 () => this.adapter.readJSON('private/bookshelves/all.json'),
                 () => this.adapter.readJSON('private/settings.json'),
-                () => this.adapter.readJSON('private/main.json')
+                () => this.adapter.readJSON('private/main.json'),
+                // 版の印 (イシュー#612)。中身が壊れていても読み込みは止めない (無いものとして扱う)。通信の失敗は他と同じく投げる
+                () => this.adapter.readJSON(BookshelfStorage.SYNC_STAMP_PATH).catch((e) => { if (e instanceof SyntaxError) return null; throw e; })
             ], 4);
+        this.syncStamp = (syncStampRaw && typeof syncStampRaw.stamp === 'string') ? syncStampRaw.stamp : null;
         const exclusions = exclusionsRaw || { excludedASINs: [] };
         const notesFile = notesFileRaw || { notes: {} };
         const bookshelvesMeta = bookshelvesMetaRaw || { bookshelves: [] };
@@ -387,7 +390,8 @@ class BookshelfStorage {
             allBookshelf,
             bookshelfFiles,
             privateSettings,
-            privateMain
+            privateMain,
+            syncStamp: this.syncStamp
         };
     }
 
@@ -454,9 +458,15 @@ class BookshelfStorage {
     //   { op: 'delete', path: '...' }
     // ]
     // GitHubAdapter なら Trees API で 1 commit にまとめる。LocalFS では順次書く。
-    async syncBatch(entries, { message } = {}) {
+    //
+    // stamp (任意・イシュー#612): 保存先の版の印。渡すと、同じ書き込みで private/sync-stamp.json に書く。
+    //   保存先の種類を問わず、照合を付けずに書く (印なので、後から書いた方が勝ちでよい)。
+    //   変えたファイルだけ送る adapter (ハブ) は、他に送る物が無ければ印も書かない (addBatchStamp)。
+    //   保存先に今ある印は this.syncStamp に覚える (読んだ時は loadAll・書けた時はここ)。
+    async syncBatch(entries, { message, stamp } = {}) {
         if (!Array.isArray(entries) || entries.length === 0) return;
         const a = this.adapter;
+        const stampContent = stamp ? JSON.stringify({ stamp }, null, 2) : null;
         if (typeof a.beginBatch === 'function' && typeof a.commitBatch === 'function') {
             a.beginBatch();
             try {
@@ -470,7 +480,14 @@ class BookshelfStorage {
                         a.addBatchEntry(e.path, content);
                     }
                 }
-                return await a.commitBatch(message);
+                if (stampContent) {
+                    if (typeof a.addBatchStamp === 'function') a.addBatchStamp(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
+                    else a.addBatchEntry(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
+                }
+                const res = await a.commitBatch(message);
+                // 送る物が無くて印も書かなかった時 (adapter が lastBatchWroteStamp=false と言う) は、覚えている印を進めない
+                if (stampContent && a.lastBatchWroteStamp !== false) this.syncStamp = stamp;
+                return res;
             } catch (err) {
                 if (typeof a.discardBatch === 'function') a.discardBatch();
                 throw err;
@@ -486,7 +503,16 @@ class BookshelfStorage {
                 await a.writeJSON(e.path, e.data);
             }
         }
+        if (stampContent) {
+            await a.writeText(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
+            this.syncStamp = stamp;
+        }
         return null;
+    }
+
+    // 保存ごとに変わる値 (時刻と乱数)。保存先がこの端末と最後に揃えた後に変わったかを見分ける印に使う (イシュー#612・#602)
+    newSyncStamp() {
+        return `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
     // ===== 長文メモ.md =====
@@ -675,5 +701,7 @@ function generateInternalId() {
     return id;
 }
 
+// 保存先の版の印のファイル (イシュー#612)。中身は { stamp: '<時刻>-<乱数>' }
+BookshelfStorage.SYNC_STAMP_PATH = 'private/sync-stamp.json';
 window.BookshelfStorage = BookshelfStorage;
 window.generateInternalId = generateInternalId;

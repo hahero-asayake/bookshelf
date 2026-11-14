@@ -713,7 +713,7 @@ async function writeBatchConditional(env, keyed, acc) {
         else if (e.ifNoneMatch === '*') putOpts.onlyIf = new Headers({ 'If-None-Match': '*' }); // R2が同一keyへの競合するIf-None-Match:'*'を直列化する(上のコメント参照)
         const res = await env.BUCKET.put(key, content, putOpts);
         if (!res) return { conflict: true, path: e.path }; // onlyIf 失敗 (TOCTOU、またはifNoneMatch不成立)
-        return { op: 'put', key, prevBody: snap ? snap.body : null, sizeBefore: snap ? snap.size : 0, sizeAfter: size };
+        return { op: 'put', key, path: e.path, etag: res.httpEtag, prevBody: snap ? snap.body : null, sizeBefore: snap ? snap.size : 0, sizeAfter: size };
     }, sequential);
 
     const applied = [];
@@ -725,7 +725,15 @@ async function writeBatchConditional(env, keyed, acc) {
         else if (s.value.op !== 'noop') applied.push(s.value);
     }
     let usageDelta = applied.reduce((sum, a) => sum + a.sizeAfter - a.sizeBefore, 0);
-    if (!failed) { acc.usageDelta = usageDelta; return { response: new Response(null, { status: 200 }) }; }
+    if (!failed) {
+        acc.usageDelta = usageDelta;
+        // 書いた後の ETag を返す (イシュー#612)。アプリはこれを覚えて次の保存の ifMatch に使う＝2回目以降の保存でも
+        // 「自分が最後に書いた版」と照合できる。返さないと、アプリは次の保存の前に HEAD で「今の」ETag を取るしかなく、
+        // 他の端末が間に書いた変更を古い中身で上書きしてしまう。本文を読まない古いアプリには影響しない (状態コードは同じ)。
+        const etags = {};
+        for (const a of applied) if (a.op === 'put' && a.etag) etags[a.path] = a.etag;
+        return { response: json({ etags }, 200) };
+    }
 
     // 補償ロールバック: 書けた entry (無条件 entry 含む) を退避内容へ戻す (新規作成分は delete)
     let compensateFailed = false;

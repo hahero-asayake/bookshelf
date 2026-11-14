@@ -219,7 +219,7 @@ for (const { name, boot } of BACKENDS.filter((b) => b.name !== 'ローカルフ�
 
         test('保存先にまだ無い本棚ファイルの削除が混ざっても、保存は失敗しない', async ({ page }) => {
             const remote = await boot(page);
-            await createShelf(page, remote, '残す本棚'); // bookshelf1 (削除した slug が作り直しで再利用されないように先に埋める)
+            const keeper = await createShelf(page, remote, '残す本棚'); // bookshelf1 (削除した slug が作り直しで再利用されないように先に埋める)
 
             remote.failNextWrites(1); // 次の本棚は保存先に届かない
             await page.locator('#sidebar-add-bookshelf').click();
@@ -231,9 +231,15 @@ for (const { name, boot } of BACKENDS.filter((b) => b.name !== 'ローカルフ�
             const ghost = 'bookshelf2';
             expect(remote.has(shelfFile(ghost)), '保存先にはまだ無い').toBe(false);
 
-            const writesBefore = remote.writes.length;
             await deleteShelf(page, ghost); // 保存先に無いファイルの削除が次の保存に載る
-            await expect.poll(() => remote.writes.length, { message: '削除後の保存が成功する (書き込みが進む)' }).toBeGreaterThan(writesBefore);
+            // ハブは変えたファイルだけ送る (イシュー#612) ので、この削除だけの保存は書く物が無いことがある (保存先は既に同じ中身)。
+            // 保存が止まっていないことは、続けて残す本棚の名前を変え、それが保存先に届くことで確かめる
+            await openTreeMenu(page, keeper);
+            await page.locator('#tree-node-menu [data-act="edit"]').click();
+            await page.locator('#bookshelf-name').fill('残す本棚 (改名)');
+            await page.locator('#save-bookshelf-form').click();
+            await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
+            await expect.poll(() => (remote.readJSON(shelfFile(keeper)) || {}).name, { message: '削除後の保存が成功する (次の変更が届く)' }).toBe('残す本棚 (改名)');
             expect(remote.has(shelfFile('bookshelf1'))).toBe(true);
             expect(await remoteSlugs(remote)).toEqual(['all', 'bookshelf1']);
         });

@@ -169,7 +169,9 @@ class HubStorageAdapter extends StorageAdapter {
         if (res.status === 404) return false;
         if (!res.ok) throw this._err(res, `HEAD ${path}`);
         const etag = res.headers.get('ETag');
-        if (etag) this._etagCache.set(path, etag);
+        // 既に覚えている ETag (自分が最後に読んだ・書いた版) は、「今の」ETag で置き換えない (イシュー#612)。
+        // 置き換えると、他の端末が間に書いた変更を、次の保存で気づかずに上書きしてしまう
+        if (etag && !this._etagCache.has(path)) this._etagCache.set(path, etag);
         return true;
     }
 
@@ -223,8 +225,40 @@ class HubStorageAdapter extends StorageAdapter {
         if (!this._batch || this._batch.length === 0) { this._batch = null; return null; }
         const batch = this._batch;
         this._batch = null;
-        const entries = await this._prepareBatchEntries(batch);
-        return this._commitBatchOnce(entries);
+        this.lastBatchWroteStamp = false;
+        const stamps = batch.filter((e) => e.stamp);
+        const entries = await this._prepareBatchEntries(this._dropUnchanged(batch.filter((e) => !e.stamp)));
+        // 版の印は、他に送る物がある時だけ、照合なし (ifMatch 無し) で一緒に送る。何も変えない保存では印も書かない
+        if (entries.length > 0) for (const s of stamps) entries.push({ op: 'put', path: this._normalize(s.path), content: s.content });
+        const ok = await this._commitBatchOnce(entries);
+        this.lastBatchWroteStamp = entries.length > 0 && stamps.length > 0;
+        return ok;
+    }
+
+    // 版の印 (イシュー#612・BookshelfStorage.syncBatch から)。印なので照合しない＝後から書いた方が勝ち
+    addBatchStamp(path, content) {
+        if (!this._batch) throw new Error('HubStorageAdapter: no active batch (call beginBatch first)');
+        this._batch.push({ op: 'put', path, content, stamp: true });
+    }
+
+    // 変えたファイルだけ送る (イシュー#612)。中身が、自分が最後に読んだ・書いた中身 (_lastKnownContent) と同じ put は送らない。
+    // 以前は毎回全部 (固定7本＋本棚の数) を送っていたため、変えていないファイルも古い中身で書き直し、他の端末が間に書いた
+    // 変更を黙って上書きしていた。送らなければ上書きしない。読んだことの無いファイルは今までどおり送る。
+    _dropUnchanged(batch) {
+        return batch.filter((e) => !(e.op === 'put' && this._lastKnownContent.get(this._normalize(e.path)) === e.content));
+    }
+
+    // 一括書き込みが成功した後の覚え直し (イシュー#612)。ハブが返した「書いた後の ETag」を覚え、次の保存の ifMatch に使う。
+    // 送らなかったファイルの ETag は捨てない。ハブが etags を返さない (古いハブ) 時は、今までどおり全部捨てる
+    // (次の保存の前に HEAD で取り直す)。
+    _rememberBatchResult(entries, res) {
+        const etags = (res.json && res.json.etags && typeof res.json.etags === 'object') ? res.json.etags : null;
+        if (!etags) this._etagCache.clear();
+        for (const e of entries) {
+            if (e.op !== 'delete' && etags && etags[e.path]) this._etagCache.set(e.path, etags[e.path]);
+            else this._etagCache.delete(e.path);
+            this._lastKnownContent.set(e.path, e.op === 'delete' ? undefined : e.content);
+        }
     }
 
     // 各 entry に ifMatch/ifNoneMatch を付与する。_etagCache に値があればそれを使い (追加の通信無し)、
@@ -264,7 +298,7 @@ class HubStorageAdapter extends StorageAdapter {
     }
 
     async _commitBatchOnce(entries) {
-        if (entries.length === 0) { this._etagCache.clear(); return true; } // 全entryが事前判定で既に不要だった
+        if (entries.length === 0) return true; // 送る物が無い (全部が保存先と同じ中身、または削除対象が既に無い)。覚えた ETag は捨てない
         const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -278,8 +312,7 @@ class HubStorageAdapter extends StorageAdapter {
         }
         if (res.status === 412) return this._recoverBatchConflictAndRetry(entries, res);
         if (!res.ok) throw this._err(res, 'POST data/batch');
-        this._etagCache.clear();
-        for (const e of entries) this._lastKnownContent.set(e.path, e.op === 'delete' ? undefined : e.content);
+        this._rememberBatchResult(entries, res);
         return true;
     }
 
@@ -334,7 +367,7 @@ class HubStorageAdapter extends StorageAdapter {
             console.error(`[HubStorageAdapter] ${e.path} はリモートで内容が変わっている。上書きせず中断します`);
             throw new HubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
         }
-        if (retry.length === 0) { this._etagCache.clear(); return true; }
+        if (retry.length === 0) return true; // 衝突した件は全部、既に望む中身だった (ETag は上で覚え直した)
         const res2 = await this._fetch('POST', `${this.apiBase}/data/batch`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: retry }),
             timeoutMs: BATCH_TIMEOUT_MS
@@ -343,8 +376,7 @@ class HubStorageAdapter extends StorageAdapter {
             throw new HubConflictError('batch conflict on hub (data changed since read)', null);
         }
         if (!res2.ok) throw this._err(res2, 'POST data/batch (retry)');
-        this._etagCache.clear();
-        for (const e of retry) this._lastKnownContent.set(e.path, e.op === 'delete' ? undefined : e.content);
+        this._rememberBatchResult(retry, res2);
         return true;
     }
 

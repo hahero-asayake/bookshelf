@@ -285,6 +285,13 @@ class GitHubAdapter extends StorageAdapter {
         this._batch.push({ op: 'put', path, content, encoding });
     }
 
+    // 版の印 (イシュー#612・BookshelfStorage.syncBatch から)。同じ commit に入れるが、古い版の照合 (_assertBatchNotStale) には
+    // かけない＝印なので、後から書いた方が勝ち (かけると、2台を交互に使うだけで毎回「他で変わった」になる)
+    addBatchStamp(path, content) {
+        if (!this._batch) throw new Error('GitHubAdapter: no active batch (call beginBatch first)');
+        this._batch.push({ op: 'put', path, content, stamp: true });
+    }
+
     addBatchDelete(path) {
         if (!this._batch) throw new Error('GitHubAdapter: no active batch (call beginBatch first)');
         this._batch.push({ op: 'delete', path });
@@ -411,7 +418,7 @@ class GitHubAdapter extends StorageAdapter {
      *   どちらでもない (他の端末が中身を変えた・消した) → 上書きせず GitHubRemoteChangedError
      */
     async _assertBatchNotStale(baseTreeSha, entries) {
-        const known = entries.filter(e => e.op === 'put' && e.encoding !== 'base64' && this._shaCache.has(e.path));
+        const known = entries.filter(e => e.op === 'put' && !e.stamp && e.encoding !== 'base64' && this._shaCache.has(e.path));
         if (known.length === 0) return;
         const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${baseTreeSha}?recursive=1`;
         const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers(), cache: 'no-store' });

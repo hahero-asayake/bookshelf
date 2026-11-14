@@ -2860,19 +2860,29 @@ class VirtualBookshelf {
         } catch (e) { return null; }
     }
 
-    _writeSyncBase(exportDate) {
+    // 保存先の版は2つで見る (イシュー#612): library.json の exportDate と、版の印 (private/sync-stamp.json の stamp)。
+    // exportDate は本の一覧が変わった時だけ進む。印は、書く物がある保存のたびに進む。どちらかが控えと違えば
+    // 「保存先は変わった」と見る。exportDate も見続けるのは、印を書かない古い版のアプリの保存に気づくため
+    _writeSyncBase(exportDate, stamp) {
         try {
-            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ target: this._syncBaseTarget(), exportDate: exportDate || null }));
+            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ target: this._syncBaseTarget(), exportDate: exportDate || null, stamp: stamp || null }));
         } catch (e) {}
     }
 
     // これから書く版を控える。保存の途中で閉じた・再読込した時、保存先に届いていた自分の書き込みを
     // 「他の端末の更新」と見誤らないため (門の E2E J4-1 で実測: メモを保存してすぐ再読込すると3択が出た)
-    _noteSyncBaseWriting(exportDate) {
+    _noteSyncBaseWriting(exportDate, stamp) {
         try {
-            const b = this._readSyncBase() || { target: this._syncBaseTarget(), exportDate: null };
-            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ ...b, writing: exportDate }));
+            const b = this._readSyncBase() || { target: this._syncBaseTarget(), exportDate: null, stamp: null };
+            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ ...b, writing: { exportDate: exportDate || null, stamp: stamp || null } }));
         } catch (e) {}
+    }
+
+    // 読んだ保存先の版が、控え (v = { exportDate, stamp }) と同じか
+    _sameSyncVersion(v, state) {
+        if (!v) return false;
+        const remoteDate = (state.library && state.library.exportDate) || null;
+        return (v.exportDate || null) === remoteDate && (v.stamp || null) === (state.syncStamp || null);
     }
 
     /** @returns {'remote'|'local'|'ask'|'held'} */
@@ -2886,7 +2896,7 @@ class VirtualBookshelf {
         const base = this._readSyncBase();
         const remoteDate = state.library && state.library.exportDate;
         // 保存先にあるのが自分の書きかけた版なら、他の端末は変えていない
-        if (base && pending && remoteDate && remoteDate === base.writing) return 'local';
+        if (base && pending && remoteDate && this._sameSyncVersion(base.writing, state)) return 'local';
         if (!base || !base.exportDate) {
             const localHasData = (this.books || []).length > 0
                 || (prior.bookshelves || []).some(b => !b.isSpecial)
@@ -2898,7 +2908,7 @@ class VirtualBookshelf {
             return (pending && localHasData) ? 'ask' : 'remote';
         }
         if (!pending) return 'remote';
-        return remoteDate && remoteDate === base.exportDate ? 'local' : 'ask';
+        return remoteDate && this._sameSyncVersion(base, state) ? 'local' : 'ask';
     }
 
     // 手元を丸ごと採る。保存先からは、手元に持たない値 (除外した本の書誌・main.json・all の internalId) だけを受け取る
@@ -2952,7 +2962,7 @@ class VirtualBookshelf {
         if (choice === 'local') {
             this._loadConflictHold = null;
             // 読んだ保存先を見たことにして、手元で上書きする
-            this._writeSyncBase(state.library && state.library.exportDate);
+            this._writeSyncBase(state.library && state.library.exportDate, state.syncStamp);
             this._keepLocalOverLoaded(state);
             return;
         }
@@ -3464,6 +3474,8 @@ class VirtualBookshelf {
                 lastImportDate: state.library.exportDate || null
             }
         };
+        // 読んだ library.json の日時と本の一覧を覚える (保存の時、一覧が同じなら日時を据え置く・イシュー#612)
+        this._libraryExport = { booksJson: JSON.stringify(state.library.books || []), exportDate: state.library.exportDate || null };
         localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
         this.books = this.bookManager.getAllBooks();
 
@@ -3577,7 +3589,7 @@ class VirtualBookshelf {
 
         this._snapshotSyncedState();
         // 保存先と揃えた印を控える (イシュー#602)
-        this._writeSyncBase(state.library && state.library.exportDate);
+        this._writeSyncBase(state.library && state.library.exportDate, state.syncStamp);
         // 手元の方が新しい設定・並び順を採用した場合は、読込後に同期先へ再 push して確定させる
         if (_localWon && this._isSyncReady()) {
             this._scheduleSync();
@@ -3698,6 +3710,15 @@ class VirtualBookshelf {
             const currentBooksByAsin = new Map((this.books || []).map(b => [b.asin, b]));
             const excludedCache = ((this.userData._storage && this.userData._storage.libraryBooks) || [])
                 .filter(b => exclusionsSet.has(b.asin) && !currentBooksByAsin.has(b.asin));
+            // 取得日・追加日の無い本は、補った時刻を手元の本にも入れる (イシュー#612)。入れないと保存のたびに今の時刻が入り、
+            // 中身が同じでも library.json が毎回変わって毎回送られる
+            const fillDates = (b) => {
+                if (!b.acquiredTime) b.acquiredTime = Date.now();
+                if (!b.addedDate) b.addedDate = Date.now();
+                return b;
+            };
+            currentBooksByAsin.forEach(fillDates);
+            excludedCache.forEach(fillDates);
             const normalize = (b) => ({
                 asin: b.asin,
                 title: b.title || '',
@@ -3720,8 +3741,14 @@ class VirtualBookshelf {
                 ...excludedCache.map(normalize)
             ];
             this.userData._storage.libraryBooks = libraryBooks;
-            // exportDate は保存のたびに変わる＝保存先と揃えた印にも使う (イシュー#602・_writeSyncBase)
-            const libraryExportDate = new Date().toISOString();
+            // 本の一覧が、読んだ時・前回の保存と同じなら、日時を据え置く (イシュー#612)。毎回今の時刻を入れると、中身が同じでも
+            // library.json が毎回変わる＝保存のたびに送られ、2台を交互に使うと衝突する。
+            // 保存先と揃えた印 (イシュー#602・_writeSyncBase) は、この日時と、保存のたびに変わる版の印 (syncStamp) の両方で見る
+            const booksJson = JSON.stringify(libraryBooks);
+            const keptExport = this._libraryExport;
+            const libraryExportDate = (keptExport && keptExport.exportDate && keptExport.booksJson === booksJson)
+                ? keptExport.exportDate : new Date().toISOString();
+            this._libraryExport = { booksJson, exportDate: libraryExportDate };
             entries.push({ op: 'put', path: 'private/library.json', data: {
                 exportDate: libraryExportDate,
                 books: libraryBooks
@@ -3844,11 +3871,14 @@ class VirtualBookshelf {
             );
             entries.push(...memoOps.entries);
 
-            this._noteSyncBaseWriting(libraryExportDate);
+            // 版の印 (イシュー#612)。書く物がある保存のたびに、同じ書き込みで private/sync-stamp.json に書かれる
+            const syncStamp = this.storage.newSyncStamp();
+            this._noteSyncBaseWriting(libraryExportDate, syncStamp);
             // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
             try {
                 await this.storage.syncBatch(entries, {
-                    message: `chore(bookshelf): sync ${entries.length} file(s)`
+                    message: `chore(bookshelf): sync ${entries.length} file(s)`,
+                    stamp: syncStamp
                 });
             } catch (err) {
                 // GitHub と Asayake ハブの衝突 (楽観ロック・中身が他で変わっていた) を同じ3択に合流させる (WP-B2・イシュー#616)。
@@ -3866,7 +3896,8 @@ class VirtualBookshelf {
             this.storage.clearBookMemoOps(memoOps.records);
 
             this._lastSyncOk = true;
-            this._writeSyncBase(libraryExportDate);
+            // 印は「保存先に今ある印」を控える (送る物が無かった保存では印を書かないので、前の印のまま)
+            this._writeSyncBase(libraryExportDate, this.storage.syncStamp);
             this.updateSyncStatus('synced', this._syncLabel());
             if (this.pluginAPI) this.pluginAPI._emit('sync:completed', {});
         } catch (e) {

@@ -409,11 +409,12 @@ function runBatch(state, entries) {
         else if (want) { if (!entry || cur !== want) conflicts.push({ path: e.path, etag: cur }); }
     }
     if (conflicts.length) return { status: 412, body: { error: 'etag mismatch', conflicts } };
+    const etags = {}; // 書いた後の ETag を返す (本物のハブと同じ・イシュー#612)
     for (const e of entries) {
         if (e.op === 'delete') deleteFile(state, e.path, 'batch');
-        else putFile(state, e.path, e.content || '', 'batch');
+        else etags[e.path] = putFile(state, e.path, e.content || '', 'batch');
     }
-    return { status: 200 };
+    return { status: 200, body: { etags } };
 }
 
 // GET /data/<dir>?list=1 (dir の直下のファイルとフォルダ)。本物 (cf-worker/asayake-hub.js の listDir) と同じく
