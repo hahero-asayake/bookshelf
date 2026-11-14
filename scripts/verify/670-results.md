@@ -343,3 +343,10 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 - `npm run lint`：12 本中 0 本失敗。
 - `npm test`（vitest）：80 files・1192 passed・2 todo。
 - spec（chromium）：6 passed・1 fixme（E）。
+- `scripts/verify/e2e-diff-main.mjs --port=8170`：**全件は未完**。
+  - 18:53 に始めた。基準側（origin/main 47505b2）の E2E だけで約 8.5 分かかり、作業側（feca5cb）の E2E が 19:01 に始まった。
+  - run の締切（19:14）までに終わらないため、19:02 に止めた（最大待ち時間 15 分の代替判定）。作業側の結果は 0 件。
+  - 基準側には #669 が入っていた。作業側は d18af26 の上で、#669 を含まない。
+- 代わりの判定：新しい spec と本棚まわりの spec を、単独で流した（chromium・workers=4・1.4 分）。**90 passed・0 failed**（670-E の fixme は除く）。
+  - 対象の 10 ファイル：exclude-custom-shelf・manual-add-reload-all-shelf・library-count-refresh・shelf-structure-home-refresh・dashboard-stats-after-manual-add・book-detail-shelf-add・book-detail-shelf-meta・shelf-delete-open-descendant・shelf-file-delete・bookshelf-open-paths。
+- 全件の比較（e2e-diff）は、#669 の上に載せ直して引き出しを足した後に、改めて流す（6-3）。
