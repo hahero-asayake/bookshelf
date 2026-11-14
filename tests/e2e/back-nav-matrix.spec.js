@@ -736,6 +736,8 @@ test.describe('戻る網羅マトリクス 残り1 (イシュー#284 差し戻�
     test('R13 URL直 ?report= →通報ダイアログ→戻る＝閉じ、クエリは消えたまま', async ({ page }, ti) => caseRun(page, ti, 'R13', async (r) => {
         // 通報はハブのログインが前提。起動時に ?report= を処理するので、保存済みの同期設定にハブの鍵を入れておく
         await page.addInitScript(() => { try { const c = JSON.parse(localStorage.getItem('bookshelf_sync') || '{}'); c.hub = { key: 'test-key', apiBase: 'https://hub.example.invalid' }; localStorage.setItem('bookshelf_sync', JSON.stringify(c)); } catch (_) {} });
+        // 起動時の使用量の取り直し (/usage) は外へ出さずに止める＝今までの名前解決の失敗と同じく取得失敗のまま (イシュー#647)
+        await page.route('https://hub.example.invalid/**', (route) => route.abort('blockedbyclient'));
         await page.goto('about:blank');
         await page.goto('index.html?report=' + encodeURIComponent('https://example.org/a/b/'));
         await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData);

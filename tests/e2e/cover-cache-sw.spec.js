@@ -22,6 +22,7 @@
 // 構築されているので0件になることを検証する。CPUx6下で20回反復し0件失敗を確認済み(アプリ=sw.jsは
 // 無変更のため?v=バンプ不要)。
 import { test, expect } from '@playwright/test';
+import { blockExternalForTest } from './helpers/test-base.js';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
@@ -87,6 +88,9 @@ test.afterAll(async () => {
 
 test('SW許可下で、3回目のロードでは表紙画像(別オリジン)のネットワーク要求が0件になる', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'allow' });
+    // AdSense (index.html の adsbygoogle.js) などを止める (イシュー#647)。adsbygoogle.js は別オリジンで COVER_HOSTS に
+    // 無いので SW を通らず (sw.js の fetch)、context.route で止まる。表紙は 127.0.0.1 から出すので、この遮断には当たらない
+    await blockExternalForTest(ctx);
     let reqCount = 0;
     await ctx.route(`http://127.0.0.1:${imgPort}/**`, async (route) => {
         reqCount++;

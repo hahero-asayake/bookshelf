@@ -87,6 +87,12 @@
 // 全 tests/e2e/*.spec.js はこのファイルから test/expect を import すること
 // (@playwright/test を直接 import すると遮断が効かない・lint:e2e-external が検査する)。
 // browser.newContext() で context を作る時は、その context に blockExternalForTest を掛けること。
+//
+// 予約済みの名前 (.test・.invalid・.example) への要求も止める (イシュー#647)
+//
+// なぜ: #637 の実測で、偽のハブ (hub.example.test・hub.example.invalid) の /usage を route していない spec が、
+// 名前解決のために外 (DNS) へ出ていた (overlay-front・back-nav-matrix の R13)。spec の中で route したうえで、
+// route を書き忘れても外へ出ないよう、blockExternalForTest に受け皿を置く (止め方の理由は blockExternalForTest の中)。
 import { test as base, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
@@ -99,6 +105,9 @@ const KNOWN_RED = JSON.parse(readFileSync(new URL('../../../docs/gate/known-red.
 const TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 // 表紙の画像のホスト (sw.js の COVER_HOSTS と同じ3つ・イシュー#637)。ホスト単位の狭いパターンで返す (上の #53 の注意)
 const COVER_IMAGE_HOSTS = ['images-na.ssl-images-amazon.com', 'm.media-amazon.com', 'images-amazon.com'];
+// 予約済みの名前 (.test・.invalid・.example・RFC 2606/6761) のホストへの URL (イシュー#647)。ホストの末尾だけを見る
+// 狭い RegExp にする (関数で照合しない＝全要求の横取りにしない)。localhost・127.0.0.1・表紙のホストには当たらない
+const RESERVED_TEST_HOSTS = /^https?:\/\/[^/?#]*\.(?:test|invalid|example)(?::\d+)?(?:[/?#]|$)/;
 
 function installGisMock() {
     window.google = window.google || {};
@@ -136,6 +145,12 @@ export async function blockExternalForTest(context) {
             for (const [k, v] of pairs) localStorage.setItem(k, v);
         }, Object.entries(kv));
     }
+    // 予約済みの名前 (偽のハブ hub.example.test・mockhub.test など) への要求の受け皿 (イシュー#647)。
+    // spec の route は後から登録される (page.route は context.route より先に効く) ので優先され、既存の模擬は変わらない。
+    // 'blockedbyclient' で止める: アプリから見た失敗は名前解決の失敗と同じ (fetch の TypeError)。名前解決の失敗の形
+    // ('namenotresolved') にすると、計測の道具 (scripts/verify/external-requests-report.mjs) が ERR_NAME_NOT_RESOLVED を
+    // 「外へ向かって失敗」に数えるため、外へ出た要求と見分けられない。
+    await context.route(RESERVED_TEST_HOSTS, (route) => route.abort('blockedbyclient'));
     // index.html の AdSense 審査用スニペット (adsbygoogle.js) を止める。
     // このスクリプト自体を止めれば、それが内部で発生させる広告配信/不正検出通信
     // (googleads.g.doubleclick.net・adtrafficquality.google・www.google.com/recaptcha 等)

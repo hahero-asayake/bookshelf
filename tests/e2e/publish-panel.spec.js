@@ -30,7 +30,7 @@ const fixtureLibrary = readFileSync(join(here, '../fixtures/fixture-library.json
 
 async function boot(page, { target = 'hub', plan = 'free', github = false, affiliateId = '' } = {}) {
     const errors = [];
-    // github 連携済みを模すダミー token では、起動時の GitHub API 照会が 401 になる (テスト環境の外部遮断由来で
+    // github 連携済みを模すダミー token では、起動時の GitHub API 照会に下の route が 401 を返す (外へは出さない・
     // 画面の不具合ではない)。その場合だけリソース読み込み失敗を除外する
     page.on('console', (msg) => {
         if (msg.type() !== 'error') return;
@@ -48,6 +48,14 @@ async function boot(page, { target = 'hub', plan = 'free', github = false, affil
     };
     // 起動時にプランを取り直す (イシュー#604) ので、/usage は入れた接続情報と同じ中身を返す (実ハブへ出さない)
     await page.route('https://hub.example.test/usage', (route) => route.fulfill({ json: sync.hub }));
+    // 設定の同期欄は token があると GitHub App の入れ先を照会する (js/screens/settings.js _fetchAccessibleRepos)。
+    // 本物の GitHub へは出さず、ダミー token に本物が返すのと同じ 401 を返す (イシュー#647・画面の経路は変えない)
+    if (github) {
+        await page.route('https://api.github.com/**', (route) => route.fulfill({
+            status: 401,
+            json: { message: 'Bad credentials', documentation_url: 'https://docs.github.com/rest', status: '401' },
+        }));
+    }
     await page.addInitScript(([u, l, s]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);

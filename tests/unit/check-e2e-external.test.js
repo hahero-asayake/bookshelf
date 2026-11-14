@@ -65,6 +65,8 @@ describe('npm run lint:e2e-external と同じ入口', () => {
         expect(r.status).toBe(1);
         expect(r.stderr).toContain('tests/e2e/leak.spec.js:1 [A]');
         expect(r.stderr).not.toContain('cover-cache-sw.spec.js:1');
+        // 許可するのは A だけ。blockExternalForTest を掛けない newContext は cover-cache-sw でも違反 (イシュー#647)
+        expect(r.stderr).toContain('tests/e2e/cover-cache-sw.spec.js:2 [B]');
     });
     it('該当が無くなった許可リストの行も失敗にする', () => {
         const root = mkdtempSync(join(tmpdir(), 'lint-e2e-external-'));

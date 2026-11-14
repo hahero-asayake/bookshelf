@@ -27,11 +27,7 @@ const BASE = 'tests/e2e/helpers/test-base.js';
 export const ALLOW = [
     {
         file: 'tests/e2e/cover-cache-sw.spec.js', rule: 'A',
-        reason: 'SW の表紙キャッシュを確かめるため serviceWorkers:allow の自前の context が要る (page.route は SW の fetch を安定して横取りできない・同ファイル冒頭)。表紙は 127.0.0.1 の画像サーバから出すので外へ出ない (#637 実測で0件)',
-    },
-    {
-        file: 'tests/e2e/cover-cache-sw.spec.js', rule: 'B',
-        reason: '同上 (A と同じ自前の context)',
+        reason: 'SW の表紙キャッシュを確かめるため serviceWorkers:allow の自前の context が要る (page.route は SW の fetch を安定して横取りできない・同ファイル冒頭)。表紙は 127.0.0.1 の画像サーバから出すので外へ出ない (#637 実測で0件)。その context には blockExternalForTest を掛ける (B は例外にしない・イシュー#647)',
     },
 ];
 

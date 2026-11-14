@@ -31,6 +31,9 @@ async function boot(page, { syncReady = true } = {}) {
         hub: { key: 'hk_test', apiBase: 'https://hub.example.test', plan: 'free', username: 'tester' },
         publish: { target: 'hub' },
     };
+    // 使用量 (/usage) は外へ出さずに止める (イシュー#647)。publish-panel.spec.js と違い成功では返さない＝今までの
+    // 名前解決の失敗と同じく、アプリは取得失敗として扱う (成功させると使用量バー・注意が描き直され、前面の判定に効きうる)
+    await page.route('https://hub.example.test/usage', (route) => route.abort('blockedbyclient'));
     await page.addInitScript(([u, l, s]) => {
         localStorage.setItem('virtualBookshelf_userData', u);
         localStorage.setItem('virtualBookshelf_library', l);
