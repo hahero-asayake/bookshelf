@@ -86,4 +86,73 @@
   3. #666 と同じ箇所を触らない（finishStartup の中だけ）。
   - (a) のほうが事実には素直だが、30 spec の待ちの道具を一緒に直す必要があり、割に合わない。
 - 直す前に赤になる E2E の見込み（step2）：GitHub・通信の失敗で、toast が出た後1.5秒のうちに確認中の行が消えること（今は約6秒なので赤）。守りとして、ハブ・通信の失敗（今も緑）と、成功の起動で行が出て「保存済み」の後に消えることを入れる。
-- 別に回す候補（この件では直さない・②の判断）：(e)。端末にデータが無い起動の #loading の覆いも、同じ作りで約6秒長く残るはず（未実測）。通信の失敗が分かった後も、公開記事の移行とプラグインの列挙が保存先を2秒ずつ待って読み直すこと自体を直すなら、プラグインの読み込みの決まりに関わるので別イシューにする。
+- 別に回す候補（この件では直さない・②の判断）→ ②の決定（19:00）で、(e) はこのイシューでは触らず、別に起票する。(e) の中身：端末にデータが無い起動の #loading の覆いも、同じ作りで約6秒長く残るはず（未実測）。通信の失敗が分かった後も、公開記事の移行とプラグインの列挙が保存先を2秒ずつ待って読み直すこと自体を直すなら、プラグインの読み込みの決まりに関わるので別イシューにする。
+
+### ②の決定（2026-11-14 19:00）
+
+- 直す。案は (b)：initSync の後に、finishStartup の中で `_initLoadFailed` を見て、確認中の行を下ろす。#666 の catch と `_updateStatusBar` には触らない。
+- E2E の基準：失敗の表示（ハブは状態バーの失敗の行、GitHub は toast）が出てから2秒のうちに、確認中の行が消える（`toHaveCount(0, { timeout: 2000 })`）。
+- (e) はこのイシューでは触らず、別に起票する。
+
+## step2 直す前に赤になる E2E を足す（2026-11-14 19:01〜19:04・アプリのコードは変えていない）
+
+### 通信の失敗の後に waitForHubStartupForTest で待つ spec の洗い出し
+
+(b) で変わるのは、起動の読込が通信の失敗で終わった時（`_initLoadFailed` が立った時）だけ。その時は、確認中の行がプラグインの読み込みより前に消える。そのため、読込が失敗した起動の後でこの道具を呼び、その後の確かめがプラグインの読み込みの完了に頼っている spec があるかを見た。
+
+- 道具を使う spec は30ファイル（`grep -rl "waitForHubStartupForTest(" tests/e2e`）。
+- そのうち、通信を落とす作り（`abort(`・401・`hub.deleted`・`setOffline(true)`・5xx の fulfill）も持つものは6ファイル。下の表で、道具をどの起動の後に呼んでいるかを1か所ずつ読んだ。
+
+| spec | 道具を呼ぶ所 | その起動の読込 | 落とすのはいつ・何を | (b) で待ちが変わるか |
+|---|---|---|---|---|
+| boot-load-failure-status.spec.js | L43・L56（bootHub・bootGitHub の中） | 成功（切る前） | 呼んだ後に cut.mode を立てて reload。reload の後は文で待つ（道具は呼ばない） | 変わらない |
+| online-resync.spec.js | L52・L93・L125・L202・L220・L244・L272 | どれも成功（cut は off のまま起動） | 呼んだ後に電波を切って書く。穴1（L64 など）は切ったまま reload し、その後は「読み込みに失敗しました」の文と `statusBar toBeHidden` で待つ（道具は呼ばない） | 変わらない（reload の後の `toBeHidden` は、行が早く消える分だけ早く通る向き） |
+| sync-conflict-overwrite.spec.js | L57 | 成功 | L124 の offline は、起動した後の保存の経路 | 変わらない |
+| sync-section-status.spec.js | L236 | 成功 | L160-164 の 503 は書き込みだけ（GET・HEAD・OPTIONS は通す）＝起動の読込は失敗しない | 変わらない |
+| status-bar-over-faces.spec.js | L112（setupSaveFailure の中） | 成功 | L184 の 503 は保存の失敗を作る口（起動の後） | 変わらない |
+| load-conflict-unsaved.spec.js | L433 | 成功 | L290 の 503 は保存の失敗を作る口（起動の後） | 変わらない |
+
+- 結論：**読込が失敗した起動の後に道具を呼ぶ spec は0件**。(b) で待ちの意味が変わる spec は無い。step3 で道具（gate-hub.js）を合わせる必要は無い。
+- 確認中の行そのものを待つ spec（startup-background-sync L45・L57、gate/j1-3-connect-hub L30、gate/j6-4-sync-conflict L91・L176、sync-conflict-overwrite L105）も、どれも読込が成功する起動。成功の起動は (b) で変わらない。
+
+### 足した spec：tests/e2e/boot-load-checking-row.spec.js（6本）
+
+作り方は step1 の probe と同じ。1回ふつうに起動してから、模擬より手前の `context.route` で切って開き直す。
+
+- 失敗の表示は、文ではなく出る場所で見る（ハブ＝状態バーの `.status-row.status-warn`、GitHub＝`.toast-message` のうち「GitHub」を含むもの）。失敗の文は #666 で変わりうるため。#666 が GitHub の toast をやめて別の場所に出すことにしたら、後から入る側がこの spec の「失敗の表示」をその場所に合わせる。
+- 失敗の4本も、開き直した後に確認中の行が一度は出たことを見る（addInitScript の MutationObserver で画面の側に覚える・`expect.poll`）。行が出ないまま通ってしまうのを防ぐため。
+- 待つのは `expect(locator)` と `expect.poll` だけ。bookshelf._* は読まない。
+
+| # | 場面 | 確かめること | 直す前（2回） |
+|---|---|---|---|
+| 1 | GitHub・通信の失敗 | toast が出てから2秒のうちに行が消える | **赤・赤** |
+| 2 | ハブ・通信の失敗 | 失敗の行が出てから2秒のうちに行が消える | 緑・緑 |
+| 3 | ハブ・認証切れ（hub.deleted） | 同上 | 緑・緑 |
+| 4 | GitHub・認証切れ（401） | toast が出てから2秒のうちに行が消える | 緑・緑 |
+| 5 | 守り：GitHub・成功 | 行が出て、「保存済み」の後に消える | 緑・緑 |
+| 6 | 守り：ハブ・成功 | 同上 | 緑・緑 |
+
+### 直す前の出力（47505b2＋spec だけ・アプリのコードは変えていない）
+
+流し方：`PORT=8172 npx playwright test tests/e2e/boot-load-checking-row.spec.js --project=chromium --workers=4 --global-timeout=300000`。2回流して同じ赤になった（1回目 `tmp/672/step2-before-run1.txt`、2回目 `tmp/672/step2-before.txt`。commit しない）。
+
+- 1回目：`1 failed / 5 passed (7.8s)`。落ちたのは #1 だけ（4.8s）。
+- 2回目：`1 failed / 5 passed (8.4s)`。落ちたのは同じ #1。
+- #1 のメッセージ（2回とも同じ）：
+
+```
+Error: toast が出た後も「確認しています」が残っている
+expect(locator).toHaveCount(expected) failed
+Expected: 0
+Received: 1
+  - toast が出た後も「確認しています」が残っている with timeout 2000ms
+> 80 |     await expect(checkingRow(page), 'toast が出た後も「確認しています」が残っている').toHaveCount(0, { timeout: LEAVE_MS });
+```
+
+- E2E にかかわる lint を流して、どれも OK（`npm run -s lint:<名前>`、出力は `tmp/672/step2-lint:*.txt`）。
+  - lint:e2e-goto（167 ファイル・0件）
+  - lint:e2e-wait（168 ファイル・0件）
+  - lint:e2e-external（169 ファイル・0件）
+  - lint:internal-refs（上限 82 以内）
+  - lint:e2e-gate（@gate 41本・違反0件）
+  - lint:known-red（0件）
