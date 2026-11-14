@@ -350,3 +350,31 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 - 代わりの判定：新しい spec と本棚まわりの spec を、単独で流した（chromium・workers=4・1.4 分）。**90 passed・0 failed**（670-E の fixme は除く）。
   - 対象の 10 ファイル：exclude-custom-shelf・manual-add-reload-all-shelf・library-count-refresh・shelf-structure-home-refresh・dashboard-stats-after-manual-add・book-detail-shelf-add・book-detail-shelf-meta・shelf-delete-open-descendant・shelf-file-delete・bookshelf-open-paths。
 - 全件の比較（e2e-diff）は、#669 の上に載せ直して引き出しを足した後に、改めて流す（6-3）。
+
+### 6-5 step4 の続き（2026-11-14 19:05〜。②の「続けよ」の5点）
+
+1. **一時 worktree の片付け**：`/tmp/670-e2e-diff/_worktree-base` を `git worktree remove --force` → `git worktree prune` で片付けた（`git worktree list` に残り 0）。途中で止めた2回目の `/tmp/670-e2e-diff2/_worktree-base` も同じく片付けた。
+2. **rebase は2回**：
+   - 1回目（19:06）：origin/main 9713381（#669 の最後の docs）の上へ。
+     - 衝突は index.html の bookshelf.js の ?v= だけ（main 2026111796 と #670 の 2026111797）。2026111798 で解いた。
+     - js/bookshelf.js の `_bulkExclude` は自動で合わさり、両方の変更が残った：#669 が確認文に足した `pubNote` の行と、#670 の1冊ごとの `book:removed` の行。excludeBook も同じ。
+   - 2回目（19:11）：その間に **#664（bbc3526 fix・ADR-170）と #663（605825f）が入った**ので、origin/main 02772ca の上へ載せ直した。衝突は無かった。
+     - ただし bookshelf.js の ?v= が、main の 2026111798 と同じ値になって消えていた（衝突なく消える罠）。
+     - #670 で変えた6ファイル（bookshelf.js・plugin-api.js・dashboard.js・ui/bookshelf-card.js・screens/bookshelf-list.js・screens/article-editor.js）を、main の最大より新しい 2026111799 にした（f23070d）。`check:version --range=origin/main..HEAD` は OK。
+   - **今の HEAD は f23070d（origin/main 02772ca の上）。**
+3. **引き出し**（2f08092）：article-editor.js の `_artDrawerFilteredAsins`・`_artRenderDrawer` を `this.shelfVisibleAsins(shelf)` に通した。
+   - 670-E を fixme から本物のテストにした：子の本棚では1冊だけが並ぶ、「表示中の1冊を追加」、押すと記事に入るのは Y だけ。緑。
+   - 「すべての本」の経路は、#664 の直し（書き出しで all.json と bookOrder.all に除外を入れない）で閉じる。
+4. **全件の検証**：
+   - 2回目の rebase の後に、単独で流した結果：
+     - `npm run lint`：12 本中 0 本失敗。
+     - vitest：80 files・1194 passed・2 todo。
+     - 除外まわり3ファイル（exclude-custom-shelf・#669 の exclude-article-publish・#664 の exclude-export-all-shelf）：**14 passed**。
+     - 本棚まわりと記事の引き出し11ファイル（manual-add-reload-all-shelf・library-count-refresh・shelf-structure-home-refresh・dashboard-stats-after-manual-add・book-detail-shelf-add・book-detail-shelf-meta・shelf-delete-open-descendant・shelf-file-delete・bookshelf-open-paths・first-run-add-article-drawer・first-run-drawer-before-first-save）：**88 passed**。
+     - publish-article-editor の引き出しの行（`--grep 引き出し|drawer`）：19 passed。これは1回目の rebase の後（30fc0dd）の結果。
+   - **e2e-diff は未完**：
+     - 1つ目の unit `bookshelf-670-e2e-diff`（19:07〜）は、基準の origin/main が #663・#664 で動いたので、19:11 に stop した。結果は無い。
+     - 載せ直した後に、**unit `bookshelf-670-e2e-diff-2`** で流し直した（19:12:45〜・基準 origin/main @ 61a91a2・作業側 f23070d・port 8170）。
+     - ログは `/tmp/670-e2e-diff3.log`（標準エラーは `.err`）、報告の出力先は `/tmp/670-e2e-diff3/`。
+     - 19:17 の時点では、まだ基準側の E2E を流している（1つ前の回では、基準側だけで約 8.5 分かかった）。
+     - **新しく落ちた件数はまだ出ていない**。②の指示どおり、unit は止めずに提出する。
