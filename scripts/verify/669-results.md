@@ -221,8 +221,11 @@ spec の判定（期待は、どの案でも成り立つ「公開物に X が出
 
 ## §3 step3：案1の実装と検証（2026-11-14 18:27〜）
 
-- 基準：origin/main **492ed66** へ rebase した（#634 が着地していた）。#662・#664 は 18:27 の時点で origin/main に無い（`git log origin/main --grep 'Issue: #664' --grep 'Issue: #662'` で0件）。
-- commit：**32f3f41**（fix・Issue: #669・push していない）。
+- 基準：
+  - 18:27 に origin/main **492ed66** へ rebase した（#634 が着地していた）。この時点で #662・#664 は無い（`git log origin/main --grep 'Issue: #664' --grep 'Issue: #662'` で0件）。
+  - 18:36 に **#662・#660 の着地**を題で確かめた（5a344c6 ほか）。origin/main **2946a43** へ載せ直した。index.html の衝突は bookshelf.js の ?v= の1行（#660 の 2026111782 とこちらの 2026111769）。変えた3ファイルとも **2026111783** にそろえて解いた（main の最大 2026111782 より新しい・`check:version --range=origin/main..HEAD` OK）。
+  - #664 は 18:38 の時点でも未着。
+- commit（載せ直した後の sha）：fix **84ed3cc**・§3 の記録 **06fcdaa**（Issue: #669・push していない）。載せ直す前は 32f3f41。
 
 ### 3-1 何を変えたか（②の承認＝案1・確認文2か所・「書影」の誤カウントも直す・自作の本棚の片付けは範囲外）
 
@@ -292,11 +295,23 @@ spec の判定（期待は、どの案でも成り立つ「公開物に X が出
 | `npm test`（vitest） | 1187 passed・2 todo（79 ファイル） |
 | `check:version --range=origin/main..HEAD` | OK |
 | #664 の spec | 未着のため流していない |
+| **載せ直した後（2946a43 の上）**：新しい spec・除外の既存 spec 3本・#662 の manual-add-reload-all-shelf.spec.js、`--repeat-each=3` | 57 passed・12 skipped・**3 failed**。3件とも duplicate-asin-notice.spec.js:111（本の詳細の付け直し案内）。**今の origin/main（c34be0a・この変更なし）の作業ツリーでも同じ spec が 3 failed・6 passed**。つまり main の側の赤で、この変更が原因ではない（#660・#662 の後に出た。載せ直す前の 492ed66 の上では緑だった） |
+| 載せ直した後の `npm test` | 1187 passed・2 todo |
+| 載せ直した後の `npm run lint` | 12 本中 0 本失敗 |
 | e2e-diff-main | 下の 3-4 |
 
-### 3-4 e2e-diff-main
+- 測る途中のつまずき：1回目の e2e-diff-main は、走らせた後に #662・#660 の着地に気づいて止めた（基準がずれて比較にならないため）。止めた後も、その一時 worktree（消えたディレクトリ）を配る python の http.server が 8169 に残っていた。そのため、次の E2E が `ERR_EMPTY_RESPONSE` で60件落ちた。`/proc/<pid>/cwd` が `/tmp/669-diff/_worktree-base (deleted)` であることを確かめてから止め、流し直した（上の行）。
 
-（結果は下に追記する）
+### 3-4 e2e-diff-main（18:38〜18:47・約8.5分）
+
+- 基準は `--base=2946a43`（この枝を載せた先）。18:38 の時点で origin/main は c34be0a（#653 が着地）まで進んでいた。base を origin/main にすると、#653 の差分が混ざって比べられない。そのため、自分の差分だけを比べる基準にした。`--port=8169`。結果一式は `/tmp/669-diff2`。
+- **E2E：新しく落ちた 0件・新しく通った 0件・両方で落ちた 3件**
+  - duplicate-asin-notice.spec.js（付け直し案内）：上の表で、main（c34be0a）単独でも 3/3 赤と確かめたもの
+  - list-staged-render.spec.js（#401 段階描画 913冊）
+  - sync-conflict-overwrite.spec.js（ハブの書き込み時の衝突の上書き）
+  - いずれも base 側でも落ちる＝この変更が原因ではない。
+- **vitest：新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件**。
+- **画像の差分：0件 / 54件**。
 
 ### 3-5 step4 で書く設計書の文案（②の指示＝push の前にまとめて見せる）
 
