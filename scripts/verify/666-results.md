@@ -161,3 +161,55 @@
 
 - 最初の版（tmp/666/step2-before-v1.txt・1回目 2.0m）では、2 の toast の0件が緑になっていた。toast を見る前に、soft の4つ（各5秒）を待っていた。その間に、10秒で消える toast が消えていた。toast を最初に見る形に直し、2回とも流し直した。
 - 流し直しの1回目の途中で、前の実行を止めた。その時、port 8166 の `python3 -m http.server` が残った（親の playwright が無くなり、ログの出口を失ったと見ている）。残ったサーバへの要求は、すべて `net::ERR_EMPTY_RESPONSE` になった（tmp/666/step2-before-v2-server-broken.txt）。そのサーバを PID で止めて、もう一度2回流した（上の表）。
+
+## step3 文を1か所で決める形にして直し、緑にする（2026-11-14 19:09〜19:2x）
+
+### 直したこと
+
+- js/sync-failure.js：`SyncFailure.loadFailure(method)` を足した。返すのは `{ kind: 'load-network', retryable: true, actionLabel: '再試行', message }`。文はハブと GitHub で分けた（案A）。認証切れの文は移していない（対象外）。
+- js/bookshelf.js
+  - 2つの catch（`_initCloudSyncLoad`・`_initGitHubSyncLoad`）：認証切れの分岐はそのまま（文・`_syncError`・GitHub の toast とも #653 と同じ）。読みやすくするため、先に認証切れを扱って return する形にしただけ。通信の失敗の分岐は、`_markInitLoadFailed(SyncFailure.loadFailure(method))` で印に文を持たせ、同期欄へは `updateSyncStatus('failed', label, 同じ文)` を渡す。状態バーは `_updateStatusBar()` で出す。GitHub の toast（「手元のデータで表示中です。…」と「再試行」）はやめた（(b)）。
+  - 状態バー：`_updateStatusBar` に、`_initLoadFailed` から描く読込の失敗の行（`data-load-failure="load-network"`・文と「再試行」）を足した。`_syncChecking` の行の次に置く。`_syncErrorMsg` は使わない（②の決定3）。ハブの通信の失敗では `_syncError`・`_syncErrorMsg` を立てなくなった。
+  - 同期欄：`_renderSyncState` で、保存の失敗（`_syncFail`）が無く `_initLoadFailed` がある時に、`#sync-state-actions` へ同じ「再試行」を出す。文は updateSyncStatus が書いた同じ文。
+  - 「再試行」の動き：`_runStatusAction` に `retry-load` を足した。`_retryInitLoad()` を呼ぶ（保存の `retry-sync`＝`_retrySyncNow` とは別）。状態バーと同期欄のボタンは、どちらもこの動きを通る（#657 の共有の口）。
+  - 印の上げ下げ：`_markInitLoadFailed(failure)` は印に文と種類を持たせる（前は barMsg だけ）。新しく `_clearInitLoadFailed()` を作った。印を下ろし、状態バーの行と同期欄の「再試行」を消す。読み直しの始め（2つの load 関数の先頭）と `_retryInitLoad` から呼ぶ。`_retryInitLoad` の barMsg の後始末（`_syncErrorMsg` を消す所）は、`_syncErrorMsg` を使わなくなったので外した。
+- 触っていないもの：updateSyncStatus の本体（`_applySyncStatus`）、保存の失敗（classify・`_onSyncFailed`・`_syncFailureRow`）、認証切れの文、#648 のキャンセルの後。
+- index.html：`js/sync-failure.js?v=2026111691` を `2026111866` に、`js/bookshelf.js?v=2026111795` を `2026111866` に上げた。値は、19:10 の origin/main（02772ca）の最大値 2026111798 と、開いている他の worktree の最大値 2026111799（#672）より大きい。
+- 設計の記述
+  - docs/ui-standards.md §2-11（L71）に1文を足した：「起動時の保存先からの読み込みが通信で失敗した時も、同じ1か所（SyncFailure.loadFailure）で文を決め、状態バーの行と設定の同期欄に同じ文と「再試行」（読み直す）を出す（トーストは出さない・イシュー#666）。」。改訂履歴にも1行足した。
+  - vault の 04_画面設計書 L336「設定の同期欄の起動の読込の失敗」：ハブ・GitHub の通信の失敗の文を新しい文にし、「同じ失敗で状態バー (ハブ)・トースト (GitHub) に出す文」を「状態バーの行 (GitHub の接続切れはトースト) と同じ文」に直した。行の末尾に「通信の失敗の時は、状態バーの行と同期欄に「再試行」を出し、押すと読み直す (トーストは出さない・…)」を足した。直すのに使ったのは tmp/666/edit-04.mjs。vault のパスは、文字列をつないで組んだ。vault の commit は自動バックアップに任せる。
+
+### 書き換えた既存の spec の行（変えた文を直書きしていた行だけ・期待は全文のまま）
+
+| ファイル | 行（前） | 前 | 後 | 理由 |
+|---|---|---|---|---|
+| tests/e2e/boot-load-failure-status.spec.js | L82 | 状態バー `toContainText('Asayake ハブ からの読み込みに失敗しました。')` | 状態バー `toContainText(新しいハブの文の全文)` | 文が変わった |
+| 同 | L83 | 同期欄 `toHaveText('Asayake ハブ からの…')` | 同期欄 `toHaveText(新しいハブの文の全文)` | 同じ |
+| 同 | L99 | toast `.toast-message` hasText 'GitHub からの読み込みに失敗しました。' が見える | 状態バー `toContainText(新しい GitHub の文の全文)` | GitHub の toast をやめ、状態バーに出すようにした（(b)） |
+| 同 | L100 | 同期欄 `toHaveText('GitHub からの…')` | 同期欄 `toHaveText(新しい GitHub の文の全文)` | 文が変わった |
+| 同 | L95 のテスト名 | 「同期欄は toast と同じ読込の失敗の文」 | 「同期欄は状態バーと同じ読込の失敗の文」 | toast をやめた |
+| tests/e2e/online-resync.spec.js | L65 | 状態バー `toContainText('読み込みに失敗しました')`（部分一致） | 状態バー `toContainText(新しいハブの文の全文)` | 文が変わった（前より狭い期待にした） |
+| 同 | L137 | toast `.toast-message` hasText 'GitHub からの読み込みに失敗しました' が見える | 状態バー `toContainText(新しい GitHub の文の全文)` | toast をやめた |
+
+### 二重押し（②の申し送り）
+
+- `_retryInitLoad` は、最初に印（`_initLoadFailed`）を下ろす。下ろすと、状態バーの行と同期欄の「再試行」は、その場で（同じ処理の中で）描き直されて消える。読み直しの間は `_initLoadRetrying` も立っている。だから、読み直しの最中に押し直したり、電波が戻った・タブに戻ったの合図が重なったりしても、2回目の initSync は走らない。
+- spec の5（dblclick）では、素早く2回押した時の読み直しの GET の数が、1回押した時と同じだった（直した後、2回とも緑）。
+- 前の GitHub の toast の「再試行」は、`initGitHubSync()` を直に呼んでいて、この守りを通っていなかった。toast をやめたので、この経路は無くなった。
+
+### 流した結果（直す前と直した後）
+
+| 対象 | 直す前 | 直した後 |
+|---|---|---|
+| 新しい spec boot-load-failure-message（7本） | step2 の2回とも 1〜5 が赤・6・7 が緑 | 2回とも 7本すべて緑（11.0s・11.6s・19:11） |
+| 関係する spec の束（16ファイル・chromium・下の一覧） | このステップでは流していない（#653 が push する前に、同じ origin/main の土台で流して緑にしていた・653-results.md） | 124本：120 通過・2 失敗・2 スキップ（2.9m・19:14）。落ちた2本は下の注 |
+| 落ちた2本だけ流し直し | — | 4本（save-failure-visible L149 のハブ・GitHub・ローカルと、load-conflict-unsaved L180）すべて緑（32.8s・19:15） |
+| `npm test`（vitest） | — | 80ファイル・1194 通過・2 todo（sync-failure.test.js に loadFailure の2本を足した） |
+| `npm run lint` | — | 12 本中 0 本失敗（lint:copy・lint:terms を含む） |
+
+- 関係する spec の束の一覧：boot-load-failure-status・online-resync・save-failure-visible・gate/j6-5-sync-failure・first-run-init-status。ほかに、`git grep -l -e obsidian-sync-status -e 読み込みに失敗 -- tests` で出た book-memo-file-lifecycle・first-run-save-during-init-empty・gate/j1-3-connect-local・gate/j6-1-local-restart・gate/j6-3-hub-other-device・import-reload-persist・load-conflict-unsaved・shelf-file-delete・sync-first-connect・sync-offline-reconnect・sync-section-status。出力は tmp/666/step3-after.txt。
+- 注（落ちた2本）：どちらもローカルフォルダの場面で、今回の印（`_initLoadFailed`）はハブ・GitHub でしか立たない。
+  - load-conflict-unsaved L180 は、失敗が `ENOENT: copyfile …test-results/…`（テストの添付を写す所）だった。この束は、`npm test`・`npm run lint` と同時に流していた。
+  - save-failure-visible L149（ローカル）は、出力に失敗の行が残っていなかった。
+  - 2本とも、単独で流し直すと緑だった。step4 の全件比較でもう一度見る。
+- 直した後に変わった挙動（記録しておく）：ハブの通信の失敗で `_syncError` を立てなくなった。そのため、公開の前の確認（js/bookshelf.js の `if (hadPending && this._syncError)`・公開の flush の後）は、ハブの読込の失敗だけでは公開を止めなくなった。flush で保存が失敗すれば、`_onSyncFailed` が `_syncError` を立てるので、今までどおり止まる。GitHub は前から読込の失敗で `_syncError` を立てていなかったので、ハブが GitHub と同じ形になった。止める条件に読込の失敗を足すかは、②の判断にする。
