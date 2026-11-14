@@ -444,37 +444,12 @@ class VirtualBookshelf {
                     if (!this._syncErrorMsg) this._syncErrorMsg = '同期の初期化に失敗しました。設定から接続を確認してください。';
                     this._updateStatusBar();
                 }
-                // 公開v2「記事」モデルへの初回移行 (非破壊・冪等・ADR-058 §11)。同期フォルダ接続済みのタイミングで
-                // 旧 pages.json → articles.json を機械変換する (articles.json に既に記事があれば何もしない)。
-                if (this.publishArticleStore && this._isSyncReady()) {
-                    try {
-                        await this.publishArticleStore.migrateFromLegacyIfNeeded((shelfKey) => {
-                            const shelf = this.bookshelfManager.getById(shelfKey);
-                            return (shelf && shelf.books) || [];
-                        });
-                    } catch (e) {
-                        console.warn('公開記事モデルへの移行に失敗:', e);
-                    }
-                }
-                // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
-                if (this.pluginLoader) {
-                    try {
-                        this._setLoadingSub('プラグインを読み込み中…');
-                        // 標準機能5個の初回シード・欠損復元 (ADR-059)。読み込み前に済ませ、同じ起動サイクルで反映する
-                        if (this._isSyncReady()) {
-                            await this.pluginLoader.ensureStandardPlugins();
-                        }
-                        // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
-                        this.pluginLoader.onProgress = (done, total) => {
-                            if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
-                        };
-                        await this.pluginLoader.loadEnabledPlugins();
-                    } catch (e) {
-                        console.warn('プラグイン読み込み中にエラー:', e);
-                    } finally {
-                        this.pluginLoader.onProgress = null;
-                    }
-                }
+                // 起動の読込が通信で失敗した時 (_initLoadFailed) は、後半 (公開記事の移行・プラグインの読み込み) を流さない。
+                // 流しても同じ通信の失敗を GitHub の読み込みの再試行 (2秒) で3回待つだけで全部失敗し、端末にデータが無い起動では
+                // その間 #loading が残っていた (約6秒・止まったままなら約51秒)。後で読込が通った時 (電波が戻った時・状態バーと
+                // 同期欄の「再試行」) に、読込の成功の終わりの _runStartupTailIfPending が1回だけ流す (イシュー#677)
+                if (this._initLoadFailed) { this._startupTailPending = true; return; }
+                await this._runStartupTail();
             };
             const startRouter = () => {
                 if (this.router) {
@@ -3289,6 +3264,8 @@ class VirtualBookshelf {
                 this._refreshOpenDetailMemo();
             }
             this.updateSyncStatus('synced', label);
+            // 起動で後半 (移行・プラグイン) を飛ばしていたら、読込が通ったここで1回流す (電波が戻った時・状態バーと同期欄の「再試行」・イシュー#677)
+            this._runStartupTailIfPending();
             // ハブは保存のたびに usedBytes が変わる → 読込後に使用量バーを更新
             if (method === 'hub') this._refreshHubUsage().catch(() => {});
         } catch (e) {
@@ -3428,6 +3405,8 @@ class VirtualBookshelf {
                 this._refreshOpenDetailMemo();
             }
             this.updateSyncStatus('synced', label);
+            // 起動で後半 (移行・プラグイン) を飛ばしていたら、読込が通ったここで1回流す (電波が戻った時・状態バーと同期欄の「再試行」・イシュー#677)
+            this._runStartupTailIfPending();
         } catch (e) {
             console.error('initGitHubSync:', e);
             // 同期欄にも toast と同じ読込の失敗の文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
@@ -5359,6 +5338,53 @@ class VirtualBookshelf {
     _markInitLoadFailed(failure) {
         this._initLoadFailed = { ...failure };
         this._watchSyncRecovery();
+    }
+
+    // 起動の後半 (公開記事の移行・標準機能のシード・プラグインの読み込み)。起動の読込が通った後に1回だけ流す (イシュー#677)。
+    // 起動では finishStartup から流す。起動の読込が通信で失敗した時は飛ばし、後で読込が通った時に _runStartupTailIfPending から流す
+    async _runStartupTail() {
+        // 公開v2「記事」モデルへの初回移行 (非破壊・冪等・ADR-058 §11)。同期フォルダ接続済みのタイミングで
+        // 旧 pages.json → articles.json を機械変換する (articles.json に既に記事があれば何もしない)。
+        if (this.publishArticleStore && this._isSyncReady()) {
+            try {
+                await this.publishArticleStore.migrateFromLegacyIfNeeded((shelfKey) => {
+                    const shelf = this.bookshelfManager.getById(shelfKey);
+                    return (shelf && shelf.books) || [];
+                });
+            } catch (e) {
+                console.warn('公開記事モデルへの移行に失敗:', e);
+            }
+        }
+        // プラグイン読み込み（同期フォルダ接続済み + 設定読み込み済みのタイミング）
+        if (this.pluginLoader) {
+            try {
+                this._setLoadingSub('プラグインを読み込み中…');
+                // 標準機能5個の初回シード・欠損復元 (ADR-059)。読み込み前に済ませ、同じ起動サイクルで反映する
+                if (this._isSyncReady()) {
+                    await this.pluginLoader.ensureStandardPlugins();
+                }
+                // 進捗をローディング表示に反映 (並列読み込み後、activate ごとに n/total)
+                this.pluginLoader.onProgress = (done, total) => {
+                    if (total > 0) this._setLoadingSub(`プラグインを読み込み中… (${done}/${total})`);
+                };
+                await this.pluginLoader.loadEnabledPlugins();
+            } catch (e) {
+                console.warn('プラグイン読み込み中にエラー:', e);
+            } finally {
+                this.pluginLoader.onProgress = null;
+            }
+            // プラグインの一覧が読めなかった時は、次に読込が通った時にもう1回だけ流す (読込が通るたびに1回まで・自分では繰り返さない)
+            if (this.pluginLoader.lastListFailed) this._startupTailPending = true;
+        }
+    }
+
+    // 起動で後半を飛ばした印 (_startupTailPending) が立っている時だけ、読込の成功の終わりから1回流して印を下ろす。
+    // 普通に成功した起動では印が立たないので、後半は finishStartup の中の1回だけになる。待たない (読込の呼び出し元を
+    // プラグインの読み込みで待たせない・イシュー#677)
+    _runStartupTailIfPending() {
+        if (!this._startupTailPending) return;
+        this._startupTailPending = false;
+        this._runStartupTail().catch((e) => console.warn('起動の後半 (読込が通った後):', e));
     }
 
     // 印を下ろし、出していた読込の失敗の行と「再試行」を消す (読み直しを始める時)

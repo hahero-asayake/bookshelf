@@ -54,8 +54,11 @@ class BookshelfPluginLoader {
         let pluginIds;
         try {
             pluginIds = await this.app.storage.listDirs('plugins');
+            this.lastListFailed = false;
         } catch (e) {
             console.warn('[pluginLoader] plugins ディレクトリ列挙失敗:', e);
+            // 読めなかった印。起動の後半は、次に読込が通った時にもう1回流す (bookshelf.js _runStartupTail・イシュー#677)
+            this.lastListFailed = true;
             return (this._installed = []);
         }
         // manifest.json を並列読み込み (逐次 await だと同期先が GitHub のとき特に遅い)。
@@ -93,6 +96,8 @@ class BookshelfPluginLoader {
         const enabledSet = new Set(enabled.map(p => p.manifest.id || p.id));
         const ok = [];
         for (const p of enabled) {
+            // 既に有効なもの (起動の後半を読込が通った後に流した時に、設定から入れて有効にしてあったもの) は2回 activate しない (イシュー#677)
+            if (this.loaded.has(p.id)) continue;
             const deps = p.manifest.dependencies || [];
             const missing = deps.filter(d => !enabledSet.has(d));
             if (missing.length > 0) {
