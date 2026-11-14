@@ -2464,18 +2464,36 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
 // イシュー#155: 本棚ブロックが shelfId:null のまま保存される不具合の再発防止。
 // step1で特定した再現条件 (本棚が1つも無い状態) を潰す実装と、既存 shelfId:null データの後方互換を固定する。
 test.describe('記事エディタ: 本棚ブロックの shelfId 解決 (イシュー#155)', () => {
-    test('本棚が1つも無い状態では「本棚」ブロックの追加メニューが無効化され、追加できない', async ({ page }) => {
+    // イシュー#636: 端末の本棚データが空でも、起動時に「すべての本」をメモリに置く (js/bookshelf.js _ensureAllShelf)。
+    // 以前はこの前提で本棚が1つも無く、本棚ブロックの入れ先が決まらない (shelfId:null) ため追加メニューを無効にしていた。
+    // 今は「すべての本」が入れ先になる = shelfId:null のブロックは作られない。その形で固定する。
+    test('端末の本棚データが空でも「すべての本」が入れ先になり、本棚ブロックを shelfId:null で作らない', async ({ page }) => {
         const errors = await bootAppNoShelves(page);
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
-        await page.click('#art-mode-edit');
-        await canvas(page).locator('.art-cv-ins-btn').last().click();
-        const shelfItem = page.locator('#art-add-sheet [data-block-type="shelf"]');
-        await expect(shelfItem).toBeDisabled();
-        await expect(shelfItem).toHaveAttribute('title', /本棚がまだ1つもありません/);
-        // 無効化されたボタンはクリックしても _artInsertBlock に届かずブロックは増えない
-        await shelfItem.click({ force: true });
-        expect((await getArtBlocks(page)).length).toBe(0);
+        // (a) 本棚ブロックを足せる
+        await addBlock(page, 'shelf', 'first');
+        const blocks = await getArtBlocks(page);
+        expect(blocks.map((b) => b.type)).toEqual(['shelf']);
+        // (c) 引き出しに「すべての本」の本が出て、押すとそのブロックに本が表示される
+        await expect(page.locator('#art-drawer-list .art-drawer-item').first()).toBeVisible();
+        await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        await expect(page.locator('.art-shelf-item')).toHaveCount(1);
+        // (b) 保存した記事の本棚ブロックの shelfId は null でなく「すべての本」の id
+        await flushArtSaveAndRemote(page);
+        const ids = await page.evaluate((id) => {
+            const article = window.bookshelf.publishArticleStore.get(id);
+            const all = window.bookshelf.bookshelfManager.getBookshelves().find((s) => s.isSpecial);
+            return {
+                shelfId: article.blocks.find((b) => b.type === 'shelf').shelfId,
+                allId: all ? all.internalId : null,
+                storageAllId: window.bookshelf.bookshelfManager.getAllInternalId() || null
+            };
+        }, await getArtEditingId(page));
+        expect(ids.shelfId).not.toBeNull();
+        expect(ids.shelfId).toBe(ids.allId);
+        // 保存先の all の id (_storage.allInternalId) を持っている時は、それとも同じ
+        if (ids.storageAllId) expect(ids.storageAllId).toBe(ids.allId);
         expect(errors).toEqual([]);
     });
 
