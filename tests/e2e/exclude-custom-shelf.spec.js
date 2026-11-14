@@ -155,6 +155,36 @@ test.describe('#670 除外した本と自作の本棚', () => {
         expect.soft(shownC, '取り消すと子の本棚に並び直す').toContain(X);
     });
 
+    test('670-D 1冊除外した後の、ホームのカードと本棚の管理一覧の冊数', async ({ page }) => {
+        await bootApp(page);
+        const p = page.evaluate((x) => window.bookshelf.excludeBook(x), X);
+        await confirmOk(page);
+        await p;
+        await expect.poll(() => page.evaluate((x) => window.bookshelf.books.some(b => b.asin === x), X)).toBe(false);
+        // .book-count から上へたどり、最初に本棚の名前を含む要素 (カード・行) で、どの本棚の冊数かを決める
+        const readCounts = (root) => page.evaluate((root) => {
+            const out = {};
+            document.querySelectorAll(`${root} .book-count`).forEach(el => {
+                let n = el.parentElement;
+                for (let i = 0; i < 8 && n && !/子の本棚|親の本棚/.test(n.textContent); i++) n = n.parentElement;
+                const t = n ? n.textContent : '';
+                const key = t.includes('子の本棚') && !t.includes('親の本棚') ? 'c' : (t.includes('親の本棚') && !t.includes('子の本棚') ? 'p' : null);
+                if (key && !(key in out)) out[key] = el.textContent.trim();
+            });
+            return out;
+        }, root);
+        await page.goto('index.html#/');
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
+        await page.waitForTimeout(500); // 計測用: ホームの描画の後に読む
+        const home = await readCounts('body');
+        log('D1 home-card-counts', home);
+        await page.evaluate(() => window.bookshelf.showBookshelfManager());
+        await expect(page.locator('#bookshelf-modal')).toHaveClass(/show/);
+        const manager = await readCounts('#bookshelves-list');
+        log('D1 manager-list-counts', manager);
+        expect.soft(manager.c, '管理一覧の子の本棚の冊数が、並ぶ冊数 (1冊) と合う').toBe('1冊');
+    });
+
     test('670-B 一括で除外すると、book:removed は出るか・自作の本棚の books はどうなるか', async ({ page }) => {
         await bootApp(page);
         // 一括の除外は画面から: 「すべての本」を開き、選択モードで Y を選んで「すべての本から除外」
