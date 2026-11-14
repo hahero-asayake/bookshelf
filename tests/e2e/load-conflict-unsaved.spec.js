@@ -69,6 +69,16 @@ async function editMemo(page, asin, text) {
     }, [asin, text]);
 }
 
+/** 設定を閉じる。スマホ幅では同期のページから設定の一覧に戻ってから閉じるので、Esc を閉じるまで (最大3回) 押す */
+async function closeSettings(page) {
+    const modal = page.locator('#settings-modal');
+    for (let i = 0; i < 3 && await modal.isVisible(); i++) {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+    }
+    await expect(modal).toBeHidden();
+}
+
 /** 画面に見えている物を集める: 状態バー (表示・文・失敗の種類)・設定の同期欄 (文)・未反映の印 */
 async function observe(page) {
     const bar = page.locator('#app-status-bar');
@@ -78,8 +88,7 @@ async function observe(page) {
     if (!(await page.locator('#settings-modal').isVisible())) await openSettingsByClick(page, 'sync-section');
     const syncStatus = ((await page.locator('#obsidian-sync-status').textContent()) || '').trim();
     const syncPath = ((await page.locator('#obsidian-sync-path').textContent()) || '').trim();
-    await page.keyboard.press('Escape');
-    await expect(page.locator('#settings-modal')).toBeHidden();
+    await closeSettings(page);
     const pendingSync = await page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'));
     return { barVisible, barText, failureKinds, syncStatus, syncPath, pendingSync };
 }
@@ -104,8 +113,7 @@ async function takeShots(page, label) {
             const sync = test.info().outputPath(`${label}-${tag}-sync.png`);
             await page.screenshot({ path: sync });
             files.push(sync);
-            await page.keyboard.press('Escape');
-            await expect(page.locator('#settings-modal')).toBeHidden();
+            await closeSettings(page);
         }
     } catch (e) {
         await test.info().attach(`${label}: 画像を撮れなかった`, { body: String(e && e.message), contentType: 'text/plain' });
@@ -466,6 +474,9 @@ test.describe('同じ種類 (b): 書き込み時の選択を選ばずに閉じ�
 
             // ③ 状態バーの「選ぶ」から開き直して「保存先の内容を読み込む」を選ぶと、読み直して表示が消える
             const row = other.locator('#app-status-bar [data-sync-failure="sync-conflict"]');
+            // スマホ幅では本の詳細が状態バーに重なるので、詳細の「戻る」で閉じてから押す (PC 幅では出ない)
+            const detailBack = other.locator('#mobile-detail-back');
+            if (await detailBack.isVisible()) { await detailBack.click(); await other.waitForTimeout(800); } // 詳細は画面の外へ動くだけで要素は残る
             await row.locator('[data-status-action="resolve-hold"]').click();
             await expect(dlg).toBeVisible();
             await dlg.locator('.cfm-remote').click();
