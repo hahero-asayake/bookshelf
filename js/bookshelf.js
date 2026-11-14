@@ -5388,15 +5388,22 @@ class VirtualBookshelf {
         pane._ptrBound = true;
         const THRESHOLD = 72, MAX = 120;
         const txt = indicator.querySelector('.ptr-text');
-        let startY = 0, startX = 0, active = false, dist = 0;
+        let startY = 0, startX = 0, active = false, dist = 0, byReorder = false;
         const scroller = () => document.body.classList.contains('app-view-main')
             ? document.getElementById('view-main') : document.getElementById('view-bookshelf');
+        // イシュー#659: 並べ替えのドラッグ中は引っ張り更新にしない (つまみを下へ運ぶと再読込されていた)。
+        // 本のつまみ (_onBookPointerDown) は this.draggedElement、Reorder (ホームのウィジェット等・js/ui/reorder.js) は
+        // ドラッグ中に body 直下へ置く .drag-ghost で見る。Reorder のタッチは長押しの後に始まる (touchstart の時点では
+        // まだドラッグ中でない) ので、touchstart・touchmove・touchend のどこでも見る
+        const reordering = () => !!this.draggedElement || !!document.querySelector('.drag-ghost');
+        const hide = () => { indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); };
+        const retract = () => { active = false; hide(); };
 
         pane.addEventListener('touchstart', (e) => {
             if (e.touches.length !== 1 || document.body.classList.contains('drawer-open')
-                || document.body.classList.contains('book-detail-pinned')) { active = false; return; }
+                || document.body.classList.contains('book-detail-pinned') || reordering()) { active = false; return; }
             const sc = scroller();
-            if (sc && sc.scrollTop <= 0) { startY = e.touches[0].clientY; startX = e.touches[0].clientX; active = true; dist = 0; }
+            if (sc && sc.scrollTop <= 0) { startY = e.touches[0].clientY; startX = e.touches[0].clientX; active = true; dist = 0; byReorder = false; }
             else active = false;
         }, { passive: true });
 
@@ -5404,9 +5411,12 @@ class VirtualBookshelf {
             if (!active) return;
             dist = e.touches[0].clientY - startY;
             // イシュー#359 段階⑤ (H11): 横の移動が縦より大きい (端スワイプの戻る/進む・横スクロール) は引っ張り更新にしない
-            if (Math.abs(e.touches[0].clientX - startX) > Math.abs(dist)) { active = false; indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); return; }
-            if (dist <= 0) { active = false; indicator.style.transform = 'translateY(-100%)'; indicator.classList.remove('is-armed'); return; }
+            if (Math.abs(e.touches[0].clientX - startX) > Math.abs(dist)) { retract(); return; }
+            if (dist <= 0) { retract(); return; }
             if (e.cancelable) e.preventDefault(); // 自前のPTRに切替 (ネイティブのバウンス抑制)
+            // 並べ替えのドラッグ中 (#659) は印を出さず、離しても更新しない。上の preventDefault は今までどおり続ける
+            // (長押しで始まる Reorder のドラッグは、ここで止めないとブラウザのスクロールに取られて終わる・#659 step2 で実測)
+            if (byReorder || reordering()) { byReorder = true; hide(); return; }
             const pull = Math.min(dist * 0.5, MAX);
             indicator.style.transform = `translateY(${pull - 52}px)`;
             const armed = dist >= THRESHOLD;
@@ -5416,6 +5426,7 @@ class VirtualBookshelf {
 
         const end = () => {
             if (!active) return;
+            if (byReorder || reordering()) { retract(); dist = 0; byReorder = false; return; }
             const trigger = dist >= THRESHOLD;
             active = false;
             if (trigger) {

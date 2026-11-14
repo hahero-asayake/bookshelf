@@ -63,10 +63,12 @@ async function armProbe(page) {
 }
 
 // from から真下へ dy だけ、steps 回に分けて運んで離す。離す前の様子と、離した直後の印 (is-refreshing) を返す
-async function dragDown(page, from, dy, steps = 8) {
+const dragDown = (page, from, dy, steps = 8) => dragTo(page, from, { x: from.x, y: from.y + dy }, steps);
+
+async function dragTo(page, from, to, steps = 8) {
     const t = await cdpTouch(page);
     await t.start(from);
-    for (let i = 1; i <= steps; i++) await t.move({ x: from.x, y: from.y + (dy * i) / steps });
+    for (let i = 1; i <= steps; i++) await t.move({ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
     const before = await page.evaluate(() => ({
         dragging: !!document.querySelector('.book-item.dragging'),
         armed: !!document.getElementById('ptr-indicator')?.classList.contains('is-armed'),
@@ -132,6 +134,34 @@ test.describe('引っぱって更新: 本のつまみをタッチで下へ運ぶ
         expect(gesture.refreshing, '離した直後に「更新中」の印が付かない').toBe(false);
         expect(result.loads, '離してから 1.5 秒の間に再読込されない').toBe(0);
         expect(result.markerKept, '置いた印が残っている').toBe(true);
+    });
+
+    // (A) の続き: 運んだ先が別の本の上になる形で、並べ替えが効いたこと (並びが変わった) も確かめる。
+    // 390幅では本が2列に並ぶので、1冊目の下の段の本の上まで運ぶ (下へ 72px より遠く・横より縦に離れた向き＝引っぱりと見なされる向き)
+    test('(A2) つまみを下の段の本の上まで運んで離すと、並びが変わり再読込されない', async ({ page }, info) => {
+        await openAllShelf(page);
+        const from = center(await card(page, BOOKS[0][0]).locator('.drag-handle').boundingBox());
+        // 1冊目の前へ入れても並びが変わらない2冊目は除き、一番下の段の本を選ぶ (1冊目をその前へ入れると並びが変わる)
+        const target = await listItems(page).evaluateAll((els, f) => {
+            let found = null;
+            for (const el of els.slice(2)) {
+                const r = el.getBoundingClientRect();
+                const p = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+                if (p.y - f.y > 72 && Math.abs(p.x - f.x) < p.y - f.y) found = { asin: el.dataset.asin, x: p.x, y: p.y };
+            }
+            return found;
+        }, from);
+        expect(target, '1冊目の下の段に本がある').not.toBeNull();
+        const orderBefore = await order(page);
+        const probe = await armProbe(page);
+        const gesture = await dragTo(page, from, target, 12);
+        const result = await observeReload(page, probe);
+        const orderAfter = result.markerKept ? await order(page) : null;
+        writeRecord({ scene: 'A2', repeat: info.repeatEachIndex, from, to: target, ...gesture, ...result, orderBefore, orderAfter });
+        expect(gesture.dragging, 'つまみのドラッグが始まっている').toBe(true);
+        expect(result.loads, '離してから 1.5 秒の間に再読込されない').toBe(0);
+        expect(result.markerKept, '置いた印が残っている').toBe(true);
+        expect(orderAfter, '下の段の本の上で離すと並びが変わる').not.toEqual(orderBefore);
     });
 
     // 同種: ホームのウィジェットの並べ替え (js/dashboard.js の Reorder・handle 無し=タッチは長押し 450ms で始まる)。
