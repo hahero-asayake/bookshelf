@@ -521,25 +521,24 @@ class _BookDetailMethods {
      * メモ自動保存（textarea の oninput から呼ばれる）
      * 300ms 入力停止で saveNote 実行。さらに saveUserData 側で 800ms debounce されるので
      * 連続入力時の Obsidian I/O は最小化される。
+     * イシュー#618: 予約は PendingSave (js/ui/pending-save.js) に置く。保存待ちの間にページを離れたら、その場で
+     * saveNote を呼ぶ (最初の await より前に localStorage と未反映の印へ書く=端末に残る)。続けて flushSync で、
+     * 保存先への同期の予約 (800ms) を待たずに送る (#609 の記事エディタの本のメモと同じ)
      */
     _scheduleNoteAutoSave(asin, value, modalRoot, scope = 'all') {
-        if (!this._noteAutoSaveTimers) this._noteAutoSaveTimers = new Map();
-        const key = `${asin}::${scope}`;
-        const existing = this._noteAutoSaveTimers.get(key);
-        if (existing) clearTimeout(existing);
         const statusEl = (modalRoot || document).querySelector(`.save-note-status[data-asin="${asin}"][data-scope="${scope}"]`);
         window.SaveStatus.set(statusEl, '入力中…'); // イシュー#518: SaveStatus経由(短文メモ)
-        const timer = setTimeout(async () => {
-            this._noteAutoSaveTimers.delete(key);
+        window.PendingSave.schedule(`book-note:${asin}::${scope}`, async ({ reason }) => {
+            const saving = this.saveNote(asin, value);
+            if (reason === 'leave') this.flushSync().catch(() => {});
             try {
-                await this.saveNote(asin, value);
+                await saving;
                 window.SaveStatus.set(statusEl, '保存しました', { autoClearMs: 1500 });
             } catch (e) {
                 console.error('メモ自動保存エラー:', e);
                 window.SaveStatus.set(statusEl, e.message || '保存失敗');
             }
         }, 300);
-        this._noteAutoSaveTimers.set(key, timer);
     }
 
     // 本の詳細を閉じる (手元の資料・×/Esc/スマホ戻るの共通の閉じ手・イシュー#511 X1 P11)。

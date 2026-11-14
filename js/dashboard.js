@@ -1083,10 +1083,10 @@ class BookshelfDashboard {
             <textarea class="widget-pinned-memo" placeholder="自由メモ (localStorage に保存)...">${BookshelfEscape.escapeHtml(current)}</textarea>
         `;
         const ta = host.querySelector('textarea');
-        let timer = null;
+        // イシュー#618: 予約は PendingSave (js/ui/pending-save.js) に置く。保存待ちの間にページを離れたら、その場で
+        // 書き切る (localStorage.setItem は同期)。描き直しで textarea が替わっても、同じ key の予約が置き換わるだけ
         ta.addEventListener('input', () => {
-            clearTimeout(timer);
-            timer = setTimeout(() => {
+            window.PendingSave.schedule('dashboard:pinned-memo', () => {
                 try { localStorage.setItem(memoKey, ta.value); } catch (_) {}
             }, 400);
         });
