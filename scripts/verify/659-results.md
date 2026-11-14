@@ -165,3 +165,63 @@
 - push はしていない（brief の指示）。
 - origin/main は、さらに fa4f41f（#656 が入った版・bookshelf.js の `?v=` は 2026111721）まで進んでいる。push する時は、もう一度載せ直し、`?v=` が origin/main と作業中の値より新しいかを確かめる。
 - 全件比較は、負荷の低い時に流し直す必要がある。
+
+## §5 #665 での載せ直し・全件比較・push の前の確認
+
+イシュー#665 で、§4 の「この後に要ること」を片付けた。
+
+### 載せ直し（cherry-pick）
+
+- origin/main f9468f8（#622 が入った版）を base にした。issue/665 に `git cherry-pick 1234cf4..b2cc7ad` で4つを載せた（issue/659 の rebase と同じ結果。issue/659 は b2cc7ad のまま残した）。
+  - 142542c test（元 d55a774）・762dce1 fix（元 a91d2bb）・6db37ee docs（元 443fdfb）・e73326e docs（元 b2cc7ad）。trailer はどれも `Issue: #659` のまま。
+- ぶつかったのは、762dce1 の index.html の bookshelf.js の `?v=` の1行だけだった。js/bookshelf.js は自動で合わさった（main 側の #656 の +4行は `_decideLoadedState` の中で、離れている）。
+- `?v=` は 2026111763 に取り直した。解く直前（18:02）に集めた値は次のとおり。
+  - origin/main: 2026111721
+  - 作業中の worktree: issue-660 2026111762（未コミット）・653 2026111753・645 2026111746・634 2026111734・657 2026111730・662 2026111722・651/664/666/667/668 2026111721・663 2026111711
+- 載せ直した後の差分は4ファイルだけ（index.html・js/bookshelf.js・659-results.md・pull-to-refresh-drag.spec.js）。js/bookshelf.js の差分は L5298〜5336 で、どれも `_initPullToRefresh`（L5290〜5355）の中にある。元の差分（1234cf4..b2cc7ad）と1行も違わない。#654 の spec と hunk には触れていない。
+
+### 手元の検査（載せ直した版・PORT=8165）
+
+- 新しい spec（`--repeat-each=3`）: 15 passed（16.3 秒）
+- `npm run lint`: 12 本中 0 本失敗。lint:esc は「直書き無し（例外: js/ui/reorder.js）」で、数は変わっていない
+- `npm test`（vitest）: 79 ファイル・1181 passed・2 todo
+- `npm run check:version -- --range=origin/main..HEAD`: OK
+
+### 負荷の待ち
+
+- §4 で完走しなかったのは負荷のためだった。そこで、1分値が 32（16 コアの2倍）以下を2回続けて見てから流した。
+
+| 時刻 | 1分値 | playwright のプロセス数 |
+| --- | --- | --- |
+| 18:04:59 | 61.94 | 334 |
+| 18:05:59 | 76.35 | 309 |
+| 18:06:59 | 68.56 | 287 |
+| 18:07:59 | 69.99 | 260 |
+| 18:08:59 | 58.05 | 265 |
+| 18:09:59 | 53.22 | 176 |
+| 18:10:59 | 42.66 | 142 |
+| 18:11:59 | 29.09 | 205 |
+| 18:13:00 | 18.96 | 117 |
+
+- 待ったのは約8分（最大 30 分のうち）。流し始めた 18:13:17 の1分値は 14.40 だった。
+
+### origin/main との全件比較（e2e-diff-main）: 完走した
+
+- 流したもの: `node scripts/verify/e2e-diff-main.mjs --base=f9468f8 --port=8165 --out=_local/665/e2e-diff`（18:13〜18:27:47）。
+  - base は既定の origin/main にせず、載せ直しの base の f9468f8 にした。流す直前に origin/main が 36cf113（#645 が入った版）へ進んでいたため。既定のままだと、#645 の差分まで比べることになる。
+- 件数: base は 1081 passed・9 failed・593 skipped（約 7.7 分）。work は 1095 passed・0 failed・593 skipped（約 5.4 分）。work が5件多いのは、新しい spec の5場面の分。
+
+| 区分 | 新しく落ちた | 新しく通った | 両方で落ちた |
+| --- | --- | --- | --- |
+| E2E（playwright・sort-perf-budget は既定の除外） | 0 | 9 | 0 |
+| Unit（vitest） | 0 | 0 | 0 |
+
+- 画像の差分（playwright.visual.config.js・work 側だけ）: 54 件中 0 件。判定不能: 0 件。
+- 新しく通った9件は、base 側だけで落ちたもの。base を流した 18:13〜18:21 は、まだ1分値が 40〜50 台だった。この修正と関係しない負荷の揺れと見た。
+  - book-memo-file-lifecycle×2・gate/j3-5-many-books・icons-vendor・list-staged-render×2・no-external-icons・save-failure-visible・sync-offline-reconnect
+- 新しく落ちたものが0件だったので、単独で3回流す切り分けは要らなかった。
+
+### push の判断
+
+- 新しく落ちたもの 0 件・vitest 0 件・画像の差分 0 件なので、push してよいと判断した。②の確認を取ってから push する。
+- push の直前に、もう一度 fetch する。main が 36cf113 より先へ進んでいたら、進んだ分が `_initPullToRefresh` に触れていないかを確かめる。index.html は、bookshelf.js の `?v=` の行の外でぶつかっていないかを確かめる。触れていなければ、載せ直して lint・check:version・新しい spec だけを流し直す。
