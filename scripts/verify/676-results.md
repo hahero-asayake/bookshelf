@@ -209,3 +209,27 @@
 - origin/main は 9713381 から進んでいる（19:17 に見た時点で、#663・#664・#668 の commit が入っていた）。js/bookshelf.js の変更は 3730行付近と 3910行付近だけで、reorderBooks・`_ensureAllShelf`・`_onBookPointerDown` には触れていない。
 - このイシューの変更は spec 2本と results だけなので、rebase で js/bookshelf.js・index.html と衝突しない見込み。?v= も上げない（アプリを変えていない）。
 - push の前に、#674 の着地を題で確かめる。#674 が入っていれば、duplicate-asin-notice.spec.js:111 も1回流して状態を書く。
+
+## §4 載せ直し・push・CI（step4・2026-11-14 19:24〜）
+
+### 載せ直し
+
+- fetch した origin/main は 4fa0d72（19:24）。9713381 の後に入った commit を題で見ると、#663（7件）・#664（8件）・#668（7件）・#671（5件）・#674（7件）。
+  - #674 の直しは df58981「fix: 重複ASINの本を付け直す時、本棚の books と bookOrder が同じ配列でも2回書かず…」（migrateUserData）。
+  - js/bookshelf.js の変更は、3730行付近（#663）・3910行付近（#664）・6973〜7003行付近（#674）だけ。reorderBooks・`_ensureAllShelf`・`_onBookPointerDown` には触れていない。
+- `git rebase origin/main` は衝突なしで終わった（5件）。
+  - reorderBooks まわりの衝突の解き方：このイシューの変更は spec 2本と results だけで、js・index.html を変えていないので、衝突は起きなかった。
+  - ?v= も変えていない（`git diff origin/main HEAD -- js css index.html sw.js` は0行）。
+
+### rebase の後の流し直し（origin/main 4fa0d72 ＋ 自分の5件・chromium・PORT=8176）
+
+| 何を | 結果 |
+|---|---|
+| list-staged-render.spec.js 全4件 ×3 | 12 passed（10.8秒） |
+| custom-order-only-drag.spec.js 2件 ×3 | 6 passed（4.9秒） |
+| duplicate-asin-notice.spec.js:111（#674 の着地の後） | 1 passed |
+| `npm run lint` | 12 本中 0 本失敗 |
+| `npm test` | Test Files 80 passed・Tests 1197 passed・2 todo |
+
+- load average は 25〜29（16 CPU）。
+- sort-perf-budget.spec.js:390 の手元の値（§3）：この版は中央値 583ms、origin/main 9713381 は中央値 502ms。予算は 420ms で、どちらも超えた。アプリの差分は0行なので、このイシューとは関係しない。
