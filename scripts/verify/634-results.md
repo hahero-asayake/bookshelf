@@ -130,3 +130,20 @@
 - 削除を操作する既存の spec 5本（shelf-file-delete・sync-offline-reconnect・save-failure-visible・book-detail-shelf-meta・shelf-structure-home-refresh）も70件すべて通過。
 - lint：internal-refs・e2e-wait・e2e-goto・esc・js-color は OK。`check:version --range=origin/main..HEAD` も OK。lint 一式・vitest・e2e-diff は step3 で流す。
 - 設計書：03_詳細設計書の主要メソッド表を更新した。L124 の `switchBookshelf(id, { replace })` に replace の意味を足し、L153 に `_leaveRemovedShelf(removed)` の行を足した。obsidian 側の commit はしていない（自動バックアップに任せる）。
+
+## step3 の結果（push の前の検証）
+
+- 土台：origin/main 1234cf4（17:35 に fetch。step2 の rebase から進んでいない＝rebase・`?v=` の取り直しは不要。`?v=` 2026111734 は origin/main の最大値 2026111711 より新しい）。
+- 対象の commit：f62bea6（docs・step1）→ 3f09f51（test）→ ded59dd（fix）→ 7a97601（docs・step2）。
+- `check:version --range=origin/main..HEAD`：OK（変更された js/css はすべて `?v=` がバンプ済み）。
+- lint 一式（CI と同じ11本：css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・e2e-gate・copy・terms・known-red）：11本すべて OK。
+  - lint:internal-refs：82件（上限82）。origin/main も82件で、増えていない。新しい spec の参照は0件。
+- vitest：78ファイル・1176件通過（todo 2件）・失敗0件。
+- 新しい spec を3回（`--repeat-each=3`・8634番・e2e-diff と同時に流した）：PC 幅 12/12・390 幅 12/12（計24件通過・失敗0件）。
+- e2e-diff（`--port=8134 --out=_local/634/e2e-diff`・画像比較は既定のオン）：**時間内に終わらなかった**。
+  - 17:36 に始め、base 側（origin/main）の E2E 全件が終わったのは約17分後の 17:53。その時点で work 側の E2E に入ったところだった。
+  - work 側も同じくらいかかり、締切（18:00）に間に合わないため、17:53 に自分の e2e-diff だけを止めた。
+  - 一時 worktree（`_local/634/e2e-diff/_worktree-base`）は片付いたことを `git worktree list` で確認した。親が消えて残った 8134番の配信（cwd はこの worktree）も止めた。
+  - ログ：`_local/634/e2e-diff/run.log`。
+  - 同じ時刻のマシンの負荷：load average 86（16コア）、他イシューの playwright が9本並行。
+  - 3表の件数は取れていない。次の run で e2e-diff だけ取り直す（step の決まり）。
