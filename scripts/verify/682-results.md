@@ -57,3 +57,54 @@
   - 画像：`tmp/682/<chromium|gate-webkit>/pc-art-editor-band-ruleA-editmode.png`（案A を当てた編集状態）・`narrow-art-editor-band-ruleA.png`。1回目の測りの `pc-art-editor-band-ruleA.png` は、Escape で面が閉じた後に撮っていて使えないので、`tmp/682/invalid-escape-closed/` に分けた（値も使っていない）。
 - 案B：各所の高さを `calc(100dvh - var(--status-urgent-h, 0px))` にする。`--status-urgent-h` は帯が無い時 0px（js/bookshelf.js:5448 `_syncStatusUrgent`）なので見た目は変わらないが、`.ov-full`・css:4770・css:8267・css:5272 の 4 か所に書く＝面ごとに書く形に近い。
 - 案C：全画面の時だけ PC の `.modal.show` を align-items:stretch にする。見出しは出るが、下端が帯の分だけ画面の外に出る（狭幅の今の状態と同じ）＝不採用の見込み。
+
+## §2 守りの spec（赤→緑）と直し（step2・2026-11-14）
+
+### 2-1 直したこと（②が step1 の tp で選んだ案A・!important なし）
+
+- css/bookshelf.css:7334（帯の節）に1つ足した：`body.has-status-urgent [data-ov-below-notice] > .ov-full { height: 100%; }`＝全画面の段階の中身を、帯の下に下げた箱（帯の下端〜画面の下端）に合わせる。面ごとの高さは書かない。
+- 記事エディタ固有の `height: 100dvh` を外した：css:4770 `.art-modal-content.art-editing` と ≤600px の css:8271 `#publish-pages-modal .art-modal-content.art-editing`（どちらも `.ov-full` と重複。`.art-editing` と setSize full は article-editor.js:421/423 で同時に付き、:402/:403 で同時に外れる）。帯が無い時の高さは `.ov-full` の 100dvh のまま。
+- 帯の節のコメント（css:7311〜）に、全画面の段階も中身の高さを箱に合わせる旨を足した。
+- `?v=`：index.html の bookshelf.css を 2026111867 → 2026111893（origin/main の最大 2026111891・走っている worktree の最大 2026111892 より新しい）。sw.js の先読み一覧に bookshelf.css の版は無い。`check:version --range=origin/main..HEAD` は OK。
+- 専用の回避（記事エディタだけの top ずらし等）は足していない。js は変えていない。
+
+### 2-2 守りの spec（tests/e2e/status-bar-over-faces.spec.js の (g)）
+
+- PC 幅 1280×800（describe「(g) PC 幅 1280×800 (イシュー#682)」・:515〜）
+  - 記事エディタ：閲覧状態で中身と見えている操作部品が帯の下端以上にあることを確かめ、その他（メニューが開く→もう一度押して閉じる）・編集を通常の click で押す。編集状態でも同じ位置の確かめをする。本棚ブロックを足し、その他→「表示幅を切り替えて見る」でプレビューを開き、プレビューも位置を確かめて閉じる（閉じる）。完了・編集・公開も通常の click で押す。
+  - 長文メモ：位置を確かめ、見出しのボタンを通常の click で押す。
+  - 帯が無い時：記事エディタの中身の箱が 0〜innerHeight（見た目不変の守り）。
+- 狭幅 390×844（describe「(g) 狭幅 390×844 (イシュー#682)」・:564〜）
+  - 帯あり：記事エディタと長文メモの中身の下端が innerHeight 以下で、上端と操作部品が帯の下端以上。
+  - 帯が無い時：記事エディタの中身の箱が 0〜innerHeight。webkit の 100dvh は 843.98 と端数が出る（直す前も同じ）ので 0.5px まで許す。
+- 押せたかの判定：通常の `locator.click()`（force・evaluate・dispatchEvent の迂回なし）を使い、ボタン自身の capture の click の数が 1 であることで確かめる。押した後に面が閉じても同じ要素を数えるよう印（data-click682）を付ける。Escape は面ごと閉じるので使わない。
+- `setupSaveFailure` は、PC 幅（901px 以上）では詳細を閉じない（詳細は面ではなく列）。390 幅の (a)〜(e) は今までどおり。共通の起動は `bootHub` に分けた。
+- プレビュー：step1 で開けなかった理由は、`_artPreview` がブロック0件の時に「ブロックを1つ以上追加してください。」で止めるため。しかも見出しの #art-preview は今の画面では出ていない（今の入口は、その他→#art-width-preview）。引き出しの「表示中のN冊を追加」でブロックを作ってから開けたので、実測して spec に入れた（未実測ではなくなった）。
+
+### 2-3 赤→緑
+
+| 版 | (g) chromium | (g) gate-webkit | 内容 |
+|---|---|---|---|
+| 直す前の CSS（63b11a6 の spec） | 3 failed・2 passed | - | PC の記事エディタと長文メモで「中身の上端 30 が帯の下端 59.375 より上」、狭幅で「中身の下端 923 が画面の下端 844 より下」。帯なしの2件は緑 |
+| 直した後の CSS・spec の直し後 | 5 passed | 5 passed | - |
+| 直す前の CSS＋最終の spec（CSS を一時的に戻して確かめた・戻した後の差分は 4e04582 と同じ） | 3 failed・2 passed | - | 同じ3件が同じ理由で赤 |
+
+- status-bar-over-faces.spec.js 全件（chromium・gate-webkit）：直した後の1回目は 49 passed・5 failed で、落ちた5件はすべて (g) の書き方（#art-preview が出ていない・数える要素の取り違え・webkit の端数）だった。(a)〜(e) の 44 件はこの時点で緑。最終の spec での全件の結果は 2-5。
+- vitest（`npm test`）：80 files・1199 passed・2 todo（exit 0）。
+
+### 2-4 直した後の値（step1 と同じ測り・`tmp/682/after/<project>/*.json`・画像は `*-after.png`）
+
+| 幅・帯 | 中身 top–bottom（高さ） | 見出しのボタンの上端 | ボタン中心 | 直す前 |
+|---|---|---|---|---|
+| 1280×800・帯あり（59.4） | 60–800（740） | 64 | ボタン自身 | 30–830（800）・34・帯の行 |
+| 1280×800・帯なし | 0–800（800） | 4 | ボタン自身 | 同じ（0–800・4） |
+| 390×844・帯あり（78.4） | 79–844（765） | 91 | ボタン自身 | 79–923（844）・91 |
+| 390×844・帯なし | 0–844（844・webkit は 843.98） | 12 | ボタン自身 | 同じ（0–844・12・webkit 843.98） |
+
+- chromium・gate-webkit とも同じ値（帯の下端だけ 78.4 / 78.3）。
+
+### 2-5 最終の確かめ（48dd1b3 の時点）
+
+- `GATE_WEBKIT=1 PORT=8182 npx playwright test tests/e2e/status-bar-over-faces.spec.js --project=chromium --project=gate-webkit --workers=6`：**54 passed**（2.0分・(a)〜(e) の 44 件と (g) の 10 件）。
+- `npm run lint`：12 本中 0 本失敗。`npm test`：1199 passed・2 todo。`check:version --range=origin/main..HEAD`：OK。
+- 載せ直し（origin/main への rebase）は step4 で行う（この時点の基準は 95d6f9d。origin/main は fb3f3b9 まで進んでいる）。
