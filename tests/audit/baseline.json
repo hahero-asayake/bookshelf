@@ -1,7 +1,7 @@
 {
   "copy": { "textlint": 119 },
   "terms": { "table": 1, "jargon": 0 },
-  "buttons": { "variants": 9 },
+  "buttons": { "variants": 8 },
   "a11y": { "axe": 6, "button": 0, "link": 0, "image": 0, "input": 2, "inputPlaceholderOnly": 12, "select": 2, "other": 0 },
   "layout": { "clip": 70, "overflow": 30, "pageX": 0, "overlap": 0 }
 }

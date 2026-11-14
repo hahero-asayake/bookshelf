@@ -1,7 +1,6 @@
 [
  "variants|confirm:cancel|やめる",
  "variants|confirm:cancel|キャンセル",
- "variants|confirm:cancel|何もしない",
  "variants|confirm:cancel|編集を続ける",
  "variants|confirm:cancel|閉じる",
  "variants|std:back|← 設定",

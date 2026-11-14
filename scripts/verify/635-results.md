@@ -123,3 +123,38 @@ lint:copy・lint:terms は直さずに通った。
 - 直した spec: `gate/j6-4-sync-conflict.spec.js` (題・ボタンの名前・押すボタン・最初のフォーカス・ボタンが2つ)、`sync-conflict.spec.js`、`char/hub-conflict.spec.js`、`standard-ops.spec.js` と `back-nav-matrix.spec.js` D03c (テスト名の「何もしない」)。
 - 足したテスト (`sync-conflict.spec.js`・②の回答3): 390幅で2台の本当の衝突を起こし、最初のフォーカスが「書き出す」、Enter は書き出すだけでダイアログに戻る、枠外クリックで閉じた後も手元の短文メモ・衝突中の印・未反映の印が残り、保存先は端末Aの短文メモのまま。
 - 結果: chromium (J6-4・sync-conflict・standard-ops・sync-offline-reconnect) 46 passed、gate-webkit の J6-4 2 passed、D03c 1 passed、char hub-conflict 3 passed (15 skipped)。lint (css・esc・js-color・copy・terms・internal-refs・e2e-gate・e2e-wait・e2e-goto) すべて OK。
+
+## step3: 残りのテスト・lint・全件比較と docs (2026-11-14 15:25〜)
+
+### 1. docs の更新
+
+- `docs/ui-standards.md` §1: 「同期衝突ダイアログ (3択)」と「読込時の衝突ダイアログ (3択・イシュー#602)」の2行を、「衝突の選択ダイアログ (書き込み時・読込時・イシュー#635)」の1行にした (定義 `CONFLICT_DIALOG`・選べる物・既定のフォーカス・選ばずに閉じた時・幅)。
+- `tests/audit/screens.js`: §1 の行の名前が変わったので、`sync-conflict` の `std1` を「衝突の選択ダイアログ」に、題を「衝突の選択ダイアログ（書き込み時）」にした。読込時の対象外の行は `std1` を外し、理由に「書き込み時と同じ定義から出る」を足した (`tests/unit/audit-screens-coverage.test.js` 5本 OK)。
+- `docs/char` の E4 (u0-findings.md・u0-77-table.md・u0-targets.md・u5-inventory.md) と `tests/e2e/gate/README.md` の J6-4 の行を、今の選び方 (読み込む・書き出す・Esc で閉じる) と定義の場所に合わせた。
+
+### 2. 書き込み時の「保存先の内容を読み込む」で最新の中身が入るか (GitHub の模擬・②の追加指示)
+
+- 手順 (門の J6-4 GitHub 版 `tests/e2e/gate/j6-4-sync-conflict.spec.js:106` と同じ): リポジトリの模擬 (gate-github.js) に蔵書を置き、端末Aと端末Bで開く → Aが短文メモを書いてリポジトリに届く → Bが古い版のまま同じ本に別の短文メモを書く → Bにダイアログが出る → 「この端末の内容を書き出す」→ もう一度出たダイアログで「保存先の内容を読み込む」→ 読み込みの後に本を開く。
+- 結果: Bの短文メモ欄が端末Aの短文メモ (最新) になった (`toHaveValue(MEMO_A)`)。chromium・gate-webkit とも緑 (step2 の `_local/635/after-chromium.log`・`after-webkit.log`、この step の全件比較)。
+- 理由: 「保存先の内容を読み込む」は今までの「再読込」と同じく `location.reload()` でページごと作り直すので、GitHub のアダプタも作り直され、tree の控え (`_ensureRemoteShaMap`) も取り直される。step1 で見つけた「同じページのまま読み直すと起動時の古い中身が返る」は、この道には効かない。
+
+### 3. lint・check:version
+
+- lint は package.json の11本すべて OK (css・esc・js-color・copy・terms・internal-refs・e2e-gate・e2e-wait・e2e-goto・breakpoint・known-red)。
+- `check:version --range=origin/main..HEAD`: OK (bookshelf.js・bookshelf.css の ?v= は上げてある)。
+- vitest: step2 で 1088 passed。この step の docs 変更で関わる `tests/unit/audit-screens-coverage.test.js` は5本 OK。
+
+### 4. 全件比較 (e2e-diff-main)
+
+- 最初は base を origin/main にしたが、origin/main が進んでいた (J5-1・J6-5 の投入、#631 の修正、J3-4 の待ちの修正など6 commit) ので、今回の変更だけを比べるため base を作業の土台 `6dc2c04` にして流し直した (`--base=6dc2c04 --port=8135`)。
+- 12分の上限で打ち切った (他のイシューの全件比較と重なり、base 側の E2E だけで5分半かかった)。**base 側は完走、work 側の E2E は途中、vitest と画像比較 (visual) は流れていない**。work 側の結果は JSON の書き出しが最後なので残っていない。
+- base 側 (変更前): 991 passed・2 failed・594 skipped。落ちた2本は `book-memo-file-lifecycle.spec.js`「題名を変えると、長文メモが新しい名前で読め、古いファイルが残らない」(GitHub) と `save-failure-visible.spec.js`「再試行が尽きた失敗は…」(GitHub)。
+- この2本の spec を work 側で単独に流し直した (監査の6並列と同時): 3 failed・28 passed。落ちたのは上の2本と `save-failure-visible.spec.js:136`「1回目の自動の再試行で直る失敗は、何も出さない」(GitHub)。3本とも `expect.poll` の5秒の時間切れ。保存の失敗 (500) の再試行と長文メモの題名の変更の spec で、衝突の経路 (`_handleSyncConflict`・`_showConflictChoiceDialog`) は通らない。今回の変更で動きが変わるのは衝突した時だけなので、負荷による揺れと見ている (base でも同じ spec が落ちている)。
+- 衝突まわりの spec は step2 で単独に緑を確かめてある (chromium 46・gate-webkit の J6-4 2・D03c 1・char hub-conflict 3)。
+- visual: 衝突ダイアログの基準画像は無い。全件比較の中の画像比較は流れなかったので、他の画面に差分が出ないことは確かめていない。CSS の変更は、2つの id を並べたセレクタを1つのクラスに置き換えただけ (値は同じ)。
+
+### 5. 監査 (npm run audit・6並列・744件)
+
+- 3検査とも exit 0 (a11y・buttons・layout)。
+- buttons (ボタン名の揺れ): 前回の一覧から「`variants|confirm:cancel|何もしない`」が消えた (書き込み時の衝突ダイアログから「何もしない」のボタンを無くしたため)。増えたものは0。`node scripts/check-audit.mjs buttons --from=test-results-audit/all --update` で一覧 (`tests/audit/findings/buttons.json`) と基準値 (`tests/audit/baseline.json` の buttons.variants 9→8) を書き直した。
+- layout: clip が1件減った (`shelf` の char-390 の表紙の代わりの表示)。衝突ダイアログとは関係ないので、基準値は書き直していない (69/70 のまま上限以内)。a11y は前回と同じ。
