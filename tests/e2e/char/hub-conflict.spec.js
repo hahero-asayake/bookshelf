@@ -67,7 +67,7 @@ const TOUCH_3 = ['char-390', 'char-768', 'char-1024'];
 
 test.describe('E4: ハブの412(同期の衝突)でO27(衝突ダイアログ)が出て選べる(77件表・今の振る舞い)', () => {
     for (const name of TOUCH_3) {
-        test(`E4@${name}: 衝突ダイアログに3択が出て選べる`, async ({ page }, testInfo) => {
+        test(`E4@${name}: 衝突ダイアログに選び方が出て選べる`, async ({ page }, testInfo) => {
             test.skip(testInfo.project.name !== name, `この端末専用のE4テスト`);
             await bootApp(page);
 

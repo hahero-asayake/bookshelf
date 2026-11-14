@@ -23,7 +23,7 @@ const memoBox = (page) => page.locator('.note-textarea[data-scope="all"]:visible
 const savedNote = (page) => page.locator('.save-note-status:visible').first();
 const conflictDialog = (page) => page.locator('#sync-conflict-dialog');
 
-test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突すると、3択が出て、書き出しとやり直しで失われない', async ({ page }) => {
+test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突すると、選び方が出て、書き出しと読み込みで失われない', async ({ page }) => {
     let hub = null;
     let other = null;
     let exported = null;
@@ -103,7 +103,7 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
     });
 });
 
-test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突すると、3択が出て、書き出しとやり直しで失われず、リポジトリからAの短文メモも消えない', async ({ page }) => {
+test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突すると、選び方が出て、書き出しと読み込みで失われず、リポジトリからAの短文メモも消えない', async ({ page }) => {
     let gh = null;
     let other = null;
     let exported = null;
