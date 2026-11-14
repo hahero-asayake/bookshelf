@@ -49,7 +49,7 @@
    - `saveUserData` は端末の控えへ書く時に `_storage.libraryBooks` を落とす（js/bookshelf.js:2870-2873）。
    - そのため再読込の後は `_storage.libraryBooks` が null になる（A3 で null を確認）。
    - `unexcludeBook` は書誌を `_storage.libraryBooks` から探すので、見つからない。
-   
+
    フォルダにつないだ時は `syncToObsidianFolder` が `libraryBooks` を作り直す（:3872）ので、戻る見込みがある（未実測）。step2 の書き出しの実測で、フォルダにつないだ時も測る。#670 の範囲に入れるかは、step3 の tp で②に諮る。
    → **step2 で実測した（f-4）**：フォルダにつないだ時は、再読込の後でも `libraryBooks` が3冊あり、取り消すと蔵書に戻る。戻らないのはフォルダ未接続（端末の控えだけ）の時に限る。
 
@@ -437,3 +437,50 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 
 - 設計書の反映（§5-4 の文案。02 D-1/D-7・01 F-03-6・03・05・06・08 ADR-174）と、push と、push の後の CI の確認。
 - push の直前に origin/main を取り直す。?v= の最大が 2026111869 以上になっていたら、取り直す。
+
+## §9 step5 の3回目（2026-11-14 19:33〜）：載せ直し・設計書・push
+
+### 9-1 載せ直し
+
+- origin/main 5f27297（#672 の docs まで）へ rebase した。
+- 衝突は、最初の fix の commit で index.html の1か所だけ。②の新しい決まり（`?v=` の行だけの衝突は、main の最大より新しい値で解いてよい）で解いた。
+- 手での置き換えに頼らない手順にした：
+  1. index.html の両側（`git show :2:` と `:3:`）を、`?v=` の値を伏せて比べる。同じだったので、衝突は `?v=` の行だけだと確かめた。
+  2. main 側（:2）の index.html を採る。
+  3. #670 の6ファイルの `src="js/…?v=…"` だけを **2026111878**（main の最大 2026111877 + 1）にする。
+  4. 衝突の印を数えて 0 を確かめてから、`git add` した。
+- 後ろの commit は衝突しなかった。
+- 確かめたこと：
+  - `git grep` で、index.html と js に衝突の印は 0。origin/main..HEAD の全 commit の index.html も 0。
+  - `git diff --check origin/main..HEAD` は、results.md の行末の空白1か所だけ（コードには無い）。
+  - check:version は OK。origin/main との差は8ファイル（+51/−19）。
+- 取り込んだ main で js/bookshelf.js が変わっていたので、流し直した：lint は 12 本中 0 本失敗。vitest は 80 files・1197 passed・2 todo。exclude-* の spec 3ファイルは 14 passed。
+
+### 9-2 設計書（vault・obsidian の自動バックアップが commit する）
+
+- 02_基本設計書：
+  - D-1 に1行：自作の本棚の books は除外した本も含む。見せる本は `shelfVisibleAsins` の1か所。
+  - D-7 に2行：所属は残して本棚の一覧・冊数・引き出しには出さない（解除すると戻る）。除外は1冊ずつ・一括とも `book:removed {reason:'excluded'}` で、`bookshelf:updated` は出ない。
+- 01_要件定義書：F-03-6 に「自作の本棚にも出なくなり、解除すると元の本棚に戻る」を足した。
+- 03_詳細設計書：VirtualBookshelf のメソッド表に `shelfVisibleAsins(shelf)` を足した。
+- 05_プラグイン仕様書：本棚の取得の表（`books` は見える本だけ）と、イベント一覧の `book:removed` を直した。
+- 06_データ仕様書：`bookshelves/<slug>.json` の `books` に「除外した本も含む（所属の正本）」を足した。
+- 08_意思決定記録：**ADR-174** を足した（除外しても自作の本棚の所属は消さない。見せる本は所属 ∩ 蔵書を1つの関数で求め、解除すると元の本棚に戻る）。
+- 07_残検討事項：当たる行は無かった。
+
+### 9-3 push
+
+- `BOOKSHELF_ISSUE=670 git push origin 703699c:main`：**5f27297..703699c**（19 commit・どれも `Issue: #670`）。pre-push の lint は 12 本中 0 本失敗。
+
+### 9-4 残した課題
+
+- 保存先に書誌の控え（`_storage.libraryBooks`）が無い時に解除すると、本が蔵書に戻らない。②が別のイシューで扱う。起きるのは、保存先につないでいない再読込の後（c-2）と、読込の途中（670-F で見つけた形）。
+- e2e-diff で「両方で落ちた」2件（duplicate-asin-notice・list-staged-render）は、main 側の既存の問題で、#670 では扱っていない。
+
+### 9-5 push の後の CI（1回だけ・push の1分後の 19:37 に見た）
+
+- GitHub API（未認証）は 403（利用回数の上限）で、読めなかった。
+- CI のバッジ（`ci.yml/badge.svg?branch=main`）は **「CI - failing」**。
+  - バッジが示すのは main で直近に**終わった**実行で、#670 の push（703699c）の実行かどうかは分からない。push の1分後なので、#670 の実行は**まだ実行中**の見込み。
+- Actions の一覧の画面（branch:main）に 703699c の行はあったが、状態は HTML からは読み取れなかった。
+- 決まりにより、これ以上は待っていない。CI の結果は、②が run の画面で確かめてほしい。
