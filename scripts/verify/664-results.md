@@ -204,7 +204,11 @@ if (ex.size && ud.bookOrder.all.some(a => ex.has(a))) {
 ### 前提
 
 - #662 の着地を題で確かめた（`git log origin/main --grep 'Issue: #662'`：77c86ae・2f4d112・5a344c6・2efb45c・6b22a9e）。
-- rebase の基準は origin/main = **2946a43**。衝突は無かった。18:42 の時点で origin/main は 2072774 へ進んでいる。push の前（step5）にもう一度 rebase する。
+- rebase は2回した。
+  - 1回目の基準は origin/main = **2946a43**（衝突なし）。
+  - 実装と検証の後、origin/main が **2072774** へ進んだ（#653 の fb319f2 で storage.js・exporter.js が変わり、?v= が 2026111795 になった）。そこへ2回目の rebase をした。
+  - 2回目は index.html の ?v= の1行が衝突した。**2026111796** で解いた（`check-version-bump --range=origin/main..HEAD` は OK）。
+  - push の前（step5）に、もう一度 rebase する。
 - 着地版の `_ensureAllShelf`（5a344c6・ADR-166 追補）は、蔵書（`bookManager.library.books`＝除外を引いた本）にあって bookOrder.all に無い本を末尾に足す。除外した本は足さない。案A とぶつからない。
 
 ### 直したこと（案A・承認どおり）
@@ -213,7 +217,7 @@ if (ex.size && ud.bookOrder.all.some(a => ex.has(a))) {
   - all.json の books と、置き換える `bookOrder.all` に、除外した本が入らない。
   - library.json は今のまま（除外を含む全書誌）。
   - `includes` の2乗の走査を Set にした。
-- `index.html`：`js/bookshelf.js?v=2026111783`（origin/main の最大 2026111782 より新しい）。
+- `index.html`：`js/bookshelf.js?v=2026111796`（2回目の rebase の後。origin/main 2072774 の 2026111795 より新しい）。
 
 ### テスト
 
@@ -231,12 +235,13 @@ if (ex.size && ud.bookOrder.all.some(a => ex.has(a))) {
 
 ### 結果（chromium・`--repeat-each=3`・workers=4）
 
-| 流したもの | 結果 |
+| 流したもの（基準） | 結果 |
 |---|---|
-| #664 の spec（R・L・S・U・D・K）＋#662 の spec（E・G・H・I・J・D・K・HUB・GH） | **45 passed**（1.0分・最終の spec。記録は `664-run4-final.jsonl`）。`_lastLoadDecision` を読むのをやめる前にも 45 passed（1.1分・`664-run3-fixed.jsonl`） |
-| library-count-refresh・kindle-reimport-merge・first-run-drawer-before-first-save（#636） | **24 passed**（12.5秒） |
-| vitest（npm test 相当） | 79 ファイル・**1185 passed**・2 todo・失敗0 |
-| lint（`scripts/run-lint.mjs`） | 1回目は12本中1本失敗（lint:internal-refs 83/82）→ 直して lint:internal-refs は OK。12本全部の流し直しは step4 で行う |
+| #664 の spec（R・L・S・U・D・K）＋#662 の spec（E・G・H・I・J・D・K・HUB・GH）（2946a43） | **45 passed**（1.0分・最終の spec。記録は `664-run4-final.jsonl`）。`_lastLoadDecision` を読むのをやめる前にも 45 passed（1.1分・`664-run3-fixed.jsonl`） |
+| library-count-refresh・kindle-reimport-merge・first-run-drawer-before-first-save（#636）（2946a43） | **24 passed**（12.5秒） |
+| **上の5ファイルをまとめて（2072774 へ rebase した後）** | **69 passed**（1.1分） |
+| vitest（npm test 相当） | 2946a43 で 79 ファイル・1185 passed。**2072774 で 80 ファイル・1192 passed**・2 todo・失敗0 |
+| lint（`scripts/run-lint.mjs`） | 1回目は12本中1本失敗（lint:internal-refs 83/82）。`_lastLoadDecision` を読むのをやめた後、**2072774 で 12本中0本失敗** |
 
 場所ごとの値（`664-run4-final.jsonl`・各3回）：
 
