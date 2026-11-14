@@ -120,3 +120,16 @@ pointerup から click までの時間（click が出た場面）: chromium 0〜
 7. 他の呼び出し元の見張り（案A で共通の部品を変えるため）: 本棚管理モーダルでつまみを運んだ後もモーダルが開いたまま・何も開かない（M1）。ホームの部品をつまみから運んだ後も「選んで置く」にならない（W1）
 
 ドラッグは #623 (j)・#642 と同じ mouseDrag（隣の行へ落とす）。遠くへ運ぶ場面（3・4）は、元の行の中で 6px を超えて始めてから運ぶ（#638 の落とし穴）。spec を先に赤のまま commit する（1〜5 が赤・6・7 は緑の見込み）。
+
+## §3 赤の E2E と修正（step3・2026-11-14）
+
+- spec: `tests/e2e/tree-drop-stays-home.spec.js`（9本・chromium）。
+  - 1 真ん中へ落とす／2 別の親の下の端／3 ツリーの外／4 Esc の後に離す／5 循環 → ホームのまま（`body.app-view-main`・hash が空）、1・2 は確認の後に親が付け替わる（expect.poll）。
+  - 6 ドラッグの直後 400ms 以内に別の行を普通にクリック → その本棚の一覧が開く（捨てる口が pointerdown で外れる）。
+  - 7 6px 未満で離したクリック → ドラッグにならず一覧が開く（口を付けない）。
+  - 8 本棚管理のモーダルでつまみを運ぶ → モーダルは開いたまま・ホームのまま。9 ホームの部品をつまみから運ぶ → 「選んで置く」(`#dashboard-grid.is-picking`) にならない。
+- 赤（修正前・c0ae23c の spec を 51f29dd の上で）: 9本中5本が赤。1〜5 が `body` = `app-view-bookshelf`（ホームを離れた）。6〜9 は緑（見張り）。
+  - 最初の実行では 8 も赤だった。モーダルの一覧で下の行が見えておらず、つまみの運び先がずれて確認ダイアログが出なかった（テストの組み方の誤り）。`scrollIntoViewIfNeeded` を足して、修正前のコードで緑になることを確かめてから commit した。
+- 修正（40af09a）: `js/ui/reorder.js` に「次の click を1回捨てる口」を足した。`finishDrag` の全経路で付ける（落とす・pointercancel は離した時から、Esc・blur・visibilitychange は次の pointerup から 400ms）。捨てるのは container か掴んだ要素の中の click だけ。次の pointerdown で外す。`index.html` の reorder.js の `?v=` を 2026111683 にした。
+- 緑（修正後）: 9 passed（8.0s）。lint:esc・lint:internal-refs（82 以内）・lint:e2e-goto・lint:e2e-wait・lint:e2e-gate --strict-coverage・lint:known-red は OK。check:version --range=origin/main..HEAD は OK。tests/unit/reorder.test.js 10 passed。
+- 設計書: 03_詳細設計書 123 行目（`_bindPointerReorder` の行）に、捨てる口の決まりを1文足した。07_残検討事項 の「### UX」の表に1行足した（独自のドラッグ3つ＝本のカード・キャンバスのつまみ・`_artBindDrag` を、共通の決まりへ寄せる候補として並べた）。vault の commit は自動バックアップに任せる。
