@@ -56,7 +56,7 @@ PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 PLAYWRIGHT_JSON_OUTPUT_NAME=
 npm run gate:report -- --collect
 ```
 
-観測点37が全部そろったら、CI の `lint:e2e-gate` に `--strict-coverage` を付けて、未達を失敗にする（`.github/workflows/ci.yml`）。
+観測点37は全部そろったので、CI の `lint:e2e-gate` は `--strict-coverage` 付きで流し、未達も失敗にする（`.github/workflows/ci.yml`・#629）。手元で同じ判定をするなら `npm run lint:e2e-gate -- --strict-coverage`。
 
 ## 保存先と別の端末の前提（公開・同期の観測点・イシュー#588）
 
@@ -159,4 +159,4 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 
 webkit（gate-webkit）で流さない分と理由は、playwright.config.js の GATE_WEBKIT_IGNORE に1行ずつ書いてある。
 
-観測点37のうち、未達は J5-1・J6-5 の2点（2026-11-14 #629 時点の `npm run lint:e2e-gate`）。どちらもテストの本体は上の「J5・J6 の網羅」の patch にあり、直す側のイシュー（#595・#603）の commit は main に入っているが、テストはまだ入っていない。37点がそろうまで、CI の `--strict-coverage` は付けない。
+観測点37は全部そろった（2026-11-14・#632 の J5-1・J6-5 と #629 の J3-5 で。`npm run lint:e2e-gate` は「網羅 37/37」）。CI の `lint:e2e-gate` は `--strict-coverage` 付きで流す（#629）。

@@ -77,11 +77,10 @@ jobs:
         run: npm run lint:internal-refs
       # イシュー#583: 門のE2E(テスト名に @gate と観測点ID)の書き方を構文木で確かめる。
       # 禁止物(操作・確認の区間の evaluate 系・内部から開くヘルパー等)は失敗にする。
-      # 観測点37の未達は、門のE2Eが揃うまで警告(::warning::)に留める。揃ったら
-      # `npm run lint:e2e-gate -- --strict-coverage` に変えて未達も失敗にする。
+      # 観測点37は揃った (イシュー#629・#632) ので、--strict-coverage で未達も失敗にする。
       - name: 門のE2Eの書き方と観測点の網羅 (@gate・イシュー#583)
         if: matrix.suite == 'e2e'
-        run: npm run lint:e2e-gate
+        run: npm run lint:e2e-gate -- --strict-coverage
       # イシュー#585: 画面の文言の表記 (textlint) と用語表の照合。件数が tests/audit/baseline.json の上限を超えたら落ちる。
       - name: 文言の表記 (lint:copy・イシュー#585)
         if: ${{ !cancelled() && matrix.suite == 'e2e' && steps.npm_ci.outcome == 'success' }}
