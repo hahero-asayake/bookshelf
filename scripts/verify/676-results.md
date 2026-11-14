@@ -156,3 +156,56 @@
 
 - 109行（直した後）：カスタム順へ切り替えた直後、DOM の冊数が913より少ない時に、まだ置かれていない本の前へ1冊動かす。置き終えた時に、DOM＝`_orderedBooksToRender()`、動かした本はドロップ先の直前、bookOrder.all は913冊で重複が無い。
 - 新しいテスト：取得日の順で `.drag-handle` を押して5冊目の上で離す。ドラッグが始まらず（`draggedElement` が空）、DOM の並び・bookOrder・sortOrder（acquiredTime）が変わらない。すべての本と自作の本棚の2つで見る。
+
+## §3 承認された案 C' で直す・検証（step3・2026-11-14 19:15〜）
+
+### ②の決定（step3 の承認）
+
+- 案は C'。D（reorderBooks の入口のガード）は採らず、アプリは変えない。js・index.html（?v=）・設計書は触らない（ADR-010 のまま・08 の追補なし）。
+- 109行は「カスタム順へ切り替えた直後の段階描画の途中に、まだ置かれていない本へ1冊動かす」に直す。見本には bookOrder.all を書く。
+- 新しいテストは、別のファイル tests/e2e/custom-order-only-drag.spec.js に置く。
+
+### 変えたもの
+
+| ファイル | 変更 |
+|---|---|
+| tests/e2e/list-staged-render.spec.js | 見本を `setAllShelfBooksForTest`（tests/e2e/helpers/all-shelf.js・#662）で書く（「すべての本」の books と bookOrder.all が同じ並び）。109行のテストを、`#sort-order` をカスタム順へ切り替えた直後（段階描画の途中）に、まだ置かれていない本の前へ1冊動かす形に直す。<br>見るもの：切り替えた直後の冊数が913より少ない・ドロップ先がまだ置かれていない・置き終えた DOM＝`_orderedBooksToRender()`・動かした本はドロップ先の直前・bookOrder.all は913冊で重複が無い（#662）・例外が無い。<br>コメントに ADR-010・イシュー#676 と、#401 で確かめたいことが残ることを書いた |
+| tests/e2e/custom-order-only-drag.spec.js（新しい） | ADR-010 のガードを確かめる。60冊の見本（取得日の順が見本の並びと違う）。すべての本・自作の本棚（30冊）で、取得日の順のまま実マウスで1冊目のつまみを押し、5冊目の上で離す。<br>離す前に、ドラッグの印（`draggedElement`・`.dragging`）が無いことを見る。離した後に、画面の並び・bookOrder・sortOrder（acquiredTime）・並び順の選択が変わらないことを見る |
+
+### 先に取った赤・陰性対照
+
+- 直す前の109行（旧版）は、origin/main 9713381 で 3/3 赤（§1）。
+- 新しいテストの陰性対照：`_onBookPointerDown` の先頭の `if (this.sortOrder !== 'custom') return;` を一時的に外して流した。
+  - 2本とも赤：「カスタム順でないのにドラッグが始まった (ADR-010)」（dragStarted true・dragging 1）。
+  - ガードは流した後にすぐ元へ戻した（`git diff js/bookshelf.js` は0行）。外した変更は commit していない。
+- 直した後の109行は、origin/main と同じアプリで緑（下）。ガードを外すと赤になるのは新しいテストの側（上）で、109行は、カスタム順で動かすのでガードに関係しない。
+
+### 検証（chromium・PORT=8176）
+
+| 何を | 結果 |
+|---|---|
+| list-staged-render.spec.js 全4件 ×3（`--repeat-each=3`・workers=1） | 12 passed（11.1秒）。109行（直した後）も3回とも緑 |
+| custom-order-only-drag.spec.js 2件 ×3 | 6 passed（8.7秒）。内部参照を直した後（下）にも流し直して 6 passed（8.4秒） |
+| 陰性対照（ガードを外して1回） | 2 failed（上のとおり）。直した後にも流し直して 2 failed |
+| 並べ替えに関係する spec 14ファイル・108件（workers=2） | 107 passed・1 failed（下の sort-perf-budget:390） |
+| `npm run lint` | 1回目は「12 本中 1 本失敗 (lint:internal-refs)」。新しい spec の `window.bookshelf._listTail` 1件で、テストの内部参照が上限82を超えた（83件）。既にある `waitForListStaged`（helpers/app-misc.js）に置き換えて amend した後、「12 本中 0 本失敗」 |
+| `npm test` | Test Files 80 passed・Tests 1194 passed・2 todo |
+
+- 並べ替えに関係する spec の選び方：tests/e2e の spec を、`reorderBooks`・`sort-order`・`drag-handle`・`is-custom-order`・`_bindPointerReorder`・`reorder` で grep した。
+  - 流したのは chromium の14ファイル：book-card-tap-after-touch-drag・book-detail-shelf-meta・custom-order-switch・gate/j3-3-sort-persist・gate/j3-5-many-books・home-highlight-sort・onboarding-and-prefs・pull-to-refresh-drag・reimport-diff・shelf-structure-home-refresh・sort-perf-budget・sort-persist・touch-reorder・tree-drop-stays-home。
+  - char の2本（char/settings-shelves-nav・char/widgets）は chromium の対象外なので流していない。
+- **sort-perf-budget.spec.js:390（#397 並び替えの時間上限・913冊・390px・CPU×6）の赤は、このイシューと関係しない。**
+  - 関係する spec をまとめて流した時は、Playwright の中の `assert(!this.paused)` で落ちた。
+  - 単独で流し直すと、予算の判定で落ちた：中央値 583ms（最大 719.5ms）・予算 420ms。
+  - origin/main 9713381 で同じく単独で流しても落ちた：中央値 502ms（最大 1066.6ms）・予算 420ms。
+  - このイシューの commit は js・css・index.html・sw.js を変えていない（`git diff 9713381 HEAD` は0行）。負荷（load average 42〜57・16 CPU）による時間超過と判定した。
+- 全件比較（e2e-diff-main）は流していない。
+  - 理由：load average が 29〜57（16 CPU）と高い。#634・#668 では、この負荷だと run に収まらなかった。
+  - 変えたのは spec 2本だけで、アプリは origin/main と同じ。そのため他の spec の結果は変わらない。
+  - step4 の rebase の後に、当該 spec 2本と lint・npm test を流し直す。
+
+### step4 への申し送り
+
+- origin/main は 9713381 から進んでいる（19:17 に見た時点で、#663・#664・#668 の commit が入っていた）。js/bookshelf.js の変更は 3730行付近と 3910行付近だけで、reorderBooks・`_ensureAllShelf`・`_onBookPointerDown` には触れていない。
+- このイシューの変更は spec 2本と results だけなので、rebase で js/bookshelf.js・index.html と衝突しない見込み。?v= も上げない（アプリを変えていない）。
+- push の前に、#674 の着地を題で確かめる。#674 が入っていれば、duplicate-asin-notice.spec.js:111 も1回流して状態を書く。
