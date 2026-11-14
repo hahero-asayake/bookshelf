@@ -173,3 +173,34 @@
   - 却下した案：(B) 各所の高さを `calc(100dvh - var(--status-urgent-h, 0px))` にする (4か所に書く＝面ごとに書く形に近い)。(C) 全画面の時だけ PC の `.modal.show` を stretch にする (見出しは出るが、下端が帯の分だけ画面の外に出る)。
   - 確かめ方：`tests/e2e/status-bar-over-faces.spec.js` の (g) (1280×800 と 390×844・chromium と gate-webkit)。記録は `scripts/verify/682-results.md`。
 - 03_詳細設計書：クラス・メソッドの変更が無いので更新は不要と考える。
+
+## §5 push・CI・本番・設計書（step5・2026-11-14）
+
+### 5-1 push
+
+- push の直前に fetch した。origin/main は 9b25e4c のまま（behind 0・ahead 8）で、載せ直しは要らなかった。lint・vitest は step4 の載せ直し後に通してある（その後の commit は results の docs だけ）。
+- `BOOKSHELF_ISSUE=682 git push origin 0adf37c:main`：**9b25e4c..0adf37c**（20:46:34）。pre-push の lint は 12 本中 0 本失敗。
+- 本件の commit（8本）：7e33db3 docs §1 → e9de95c test（(g) 赤のまま）→ **14a82d5 fix（帯の節の .ov-full の規則・記事エディタ固有の 100dvh を外す・?v=2026111893）** → dead70f test（(g) の直し）→ 4b96efb docs §2 → 7ea8899 docs §3 → 14094b8 docs（ui-standards §2-11）→ 0adf37c docs §4。
+
+### 5-2 本番の反映
+
+- `https://hahero-asayake.github.io/bookshelf/` は `https://asayake.org/bookshelf/` へ 301 で移る。
+- 20:46:52 は `bookshelf.css?v=2026111867`（旧）。**20:47:52 に `bookshelf.css?v=2026111893`（push した値）になった**。
+
+### 5-3 CI
+
+- run：CI の Run 415（https://github.com/hahero-asayake/bookshelf/actions/runs/43591617836・0adf37c）。
+- workflow の一覧の HTML で見た（GitHub API は未認証の上限で 403＝IP 共有）。job ごとの状態は run のページの HTML に出ない（動的に読み込まれる）ので、run 全体の状態だけを記録した。
+- 状態：push（20:46:34）から最大待ち時間5分まで、50秒おきに見た（20:49:13・20:50:04・20:50:55・20:51:46）。**4回とも「currently running」＝未確定**（同じ時間に #677 の Run 413・414 も走っていた）。test (e2e)・test (char) の job ごとの結果は、この時点で取れていない。
+- CI が gate-webkit を流すかは未確認。webkit の緑は手元の結果で示す（status-bar-over-faces.spec.js を chromium と gate-webkit で 54 passed・step4 の載せ直し後）。
+
+### 5-4 設計書（obsidian・②承認の差分案どおり・vault の commit は自動バックアップに任せた）
+
+- 04_画面設計書：L340（帯が出ている間に外枠と全画面の面を帯の高さだけ下げる段）の後ろ（L341）に1行足した。全画面の段階 (size full＝記事エディタ (PC 幅を含む)・長文メモ・プレビュー) は、中身 (`.ov-full`) の高さも下げた箱に合わせる (`height: 100%`。帯が無い時は 100dvh のまま)。中身の高さは面ごとに書かない (ADR-177・イシュー#682)。
+- 08_意思決定記録：**ADR-177**「帯の分だけ下げた全画面の面は、中身 (.ov-full) の高さも下げた箱に合わせる。面ごとに高さを書かない」を足した（L2339〜・書いた時の最大は ADR-176）。中身は背景・決定・理由・却下した案 (B)(C)・確かめ方で、実装は bookshelf@14a82d5。
+- bookshelf 側の commit との対応：14a82d5 `fix: 保存の失敗・未保存の帯が出ている間、全画面の段階 (.ov-full…) の中身の高さを帯の下に下げた箱に合わせ…` ↔ ADR-177・04 L341。14094b8 `docs: ui-standards §2-11 に…` ↔ 同じ決まりの UI 標準側。
+- 03_詳細設計書：クラス・メソッドの変更が無いので更新していない。
+
+### 5-5 プロジェクトノート
+
+- append_project_note に足した。索引は「全画面の面 (size full・.ov-full) を足す・帯の下げ方を触る時、PC 幅で帯が見出しを覆う時 → 中身の高さを箱に合わせる規則と (g) spec を読む (#682)」。詳細には、規則・面ごとに高さを書かない理由・(g) の中身・記事エディタの E2E の作法（Escape で面ごと閉じる・プレビューの入口・PC 幅の帯の出し方・click の数え方・webkit の端数）を書いた。
