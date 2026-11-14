@@ -11,6 +11,7 @@ import { bootAppForTest } from './helpers/gate-setup.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, failHubWritesForTest, hubStoreForTest, publicBaseOf, HUB_BASE } from './helpers/gate-hub.js';
 import { shortenSyncRetryForTest } from './helpers/gate-sync-retry.js';
 import { openSettingsByClick } from './helpers/settings.js';
+import fs from 'node:fs';
 
 test.use({ viewport: { width: 390, height: 844 }, actionTimeout: 10_000 });
 
@@ -328,4 +329,115 @@ test('(d) 帯が出ている間に、本の詳細と設定の一番下の操作�
     await test.info().attach('bottom-reach.json', { body: JSON.stringify({ detail, settings }, null, 2), contentType: 'application/json' });
     console.log(`[#660 bottom-reach] ${test.info().project.name} ${JSON.stringify({ detail, settings })}`);
     await expect.poll(() => hitState(page), { message: '設定の一番下まで送っても、帯は一番上' }).toBe('一番上');
+});
+
+// ---- (e) イシュー#671: ホームのウィジェット選択 (kind 'popover'・全画面の重ね) を開いたまま、帯の文が1〜4行の時 ----
+// iPhone 13 の高さ (390×664) で、panel の上端が帯の下端より下にあり (見出しの × が帯に隠れない)、帯の「再試行」が押せる。
+// 帯の文は「文言を長くして再現」= .status-msg の文だけを置き換えて行数を決める (状態の判定・描画は変えない。
+// 状態バーは中身が変わった時だけ作り直すので、focus の再評価では置き換えた文が残る = #660 の _statusHtml の控え)。
+// 画像と数値は tmp/671/<project>/<行数>line-<before|after>.png・.json (before = 帯の下げ対象の印がまだ無い時)
+const PICKER_ROW_MSG = `${ROW} .status-msg`;
+
+/** 帯の文を n 行にする (1行は短文・2行以上は文を伸ばし、n 行目が半分ほど埋まる長さにする) */
+const setBandLines = (page, n) => page.evaluate(([sel, want]) => {
+    const msg = document.querySelector(sel);
+    if (!msg) return { ok: false, why: '帯の文が無い' };
+    const linesOf = () => {
+        const r = document.createRange();
+        r.selectNodeContents(msg);
+        return new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size;
+    };
+    if (want === 1) {
+        msg.textContent = '保存できていません';
+        return { ok: linesOf() === 1, lines: linesOf(), text: msg.textContent };
+    }
+    const base = '保存先へ書けませんでした。電波の良い所へ移ってから「再試行」を押してください。届くまでこの端末に残ります。'.repeat(4);
+    let reach = 0;
+    let over = 0;
+    for (let i = 1; i <= base.length; i++) {
+        msg.textContent = base.slice(0, i);
+        const l = linesOf();
+        if (!reach && l >= want) reach = i;
+        if (l > want) { over = i; break; }
+    }
+    if (!reach || !over) return { ok: false, why: `${want}行に届かない`, reach, over };
+    msg.textContent = base.slice(0, Math.floor((reach + over - 1) / 2));
+    return { ok: linesOf() === want, lines: linesOf(), text: msg.textContent };
+}, [PICKER_ROW_MSG, n]);
+
+/** 帯・panel・×・「再試行」の座標と、× と「再試行」の中心で一番上にあるのが自分か */
+const pickerGeometry = (page) => page.evaluate((rowSel) => {
+    const rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: Math.round(r.top * 10) / 10, bottom: Math.round(r.bottom * 10) / 10, height: Math.round(r.height * 10) / 10 }; };
+    const onTop = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!hit && el.contains(hit);
+    };
+    const band = document.querySelector('#app-status-bar .status-urgent');
+    const panel = document.querySelector('#widget-picker-overlay .widget-picker-panel');
+    const close = document.querySelector('#widget-picker-overlay .widget-picker-close');
+    const retry = [...document.querySelectorAll(`${rowSel} button.status-btn`)].find((b) => b.textContent.trim() === '再試行') || null;
+    const overlay = document.getElementById('widget-picker-overlay');
+    return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        statusUrgentH: getComputedStyle(document.documentElement).getPropertyValue('--status-urgent-h').trim(),
+        band: rect(band), panel: rect(panel), overlay: rect(overlay),
+        gap: band && panel ? Math.round((panel.getBoundingClientRect().top - band.getBoundingClientRect().bottom) * 10) / 10 : null,
+        panelBottomInView: panel ? panel.getBoundingClientRect().bottom <= window.innerHeight : null,
+        closeOnTop: onTop(close), retryOnTop: onTop(retry),
+        belowNoticeMark: overlay ? overlay.hasAttribute('data-ov-below-notice') : null,
+        overlayKind: overlay ? overlay.dataset.ovKind || null : null
+    };
+}, ROW);
+
+test.describe('(e) ホームのウィジェット選択 (390×664・イシュー#671)', () => {
+    test.use({ viewport: { width: 390, height: 664 } });
+
+    for (const lines of [1, 2, 3, 4]) {
+        test(`(e) 帯の文が${lines}行: ウィジェット選択の panel の上端が帯の下端より下にあり、× と「再試行」が押せる`, async ({ page }) => {
+            test.setTimeout(90_000);
+            const hub = await setupSaveFailure(page);
+            // ホームの編集から、利用者と同じ入口 (「ここにウィジェットを追加」) で開く
+            await page.locator('[data-mobile-nav="home"]').click();
+            await page.locator('#dashboard-edit-toggle').click();
+            await expect(page.locator('#dashboard-edit-done')).toBeVisible();
+            await page.locator('#add-widget-card').click();
+            await expect(page.locator('#widget-picker-overlay .widget-picker-panel')).toBeVisible();
+            await waitStableFailed(page);
+
+            const set = await setBandLines(page, lines);
+            expect(set.ok, `帯の文を${lines}行にする (${JSON.stringify(set)})`).toBe(true);
+            // 帯の高さの変数 (--status-urgent-h・ResizeObserver が測り直す) が、帯の実高に追いつくまで待つ
+            await expect.poll(() => page.evaluate(() => {
+                const band = document.querySelector('#app-status-bar .status-urgent');
+                const v = getComputedStyle(document.documentElement).getPropertyValue('--status-urgent-h').trim();
+                return !!band && v === `${Math.ceil(band.getBoundingClientRect().height)}px`;
+            }), { message: '--status-urgent-h が帯の実高と同じになる' }).toBe(true);
+            // focus の再評価 (30秒ごとと同じ) でも状態バーは作り直されず、置き換えた文が残る
+            await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+            await expect(page.locator(PICKER_ROW_MSG)).toHaveText(set.text);
+
+            const geo = await pickerGeometry(page);
+            const tag = geo.belowNoticeMark ? 'after' : 'before';
+            const project = test.info().project.name;
+            const dir = `tmp/671/${project}`;
+            fs.mkdirSync(dir, { recursive: true });
+            await page.screenshot({ path: `${dir}/${lines}line-${tag}.png` });
+            fs.writeFileSync(`${dir}/${lines}line-${tag}.json`, JSON.stringify({ lines, text: set.text, ...geo }, null, 2));
+            await test.info().attach(`${lines}line-${tag}.json`, { body: JSON.stringify({ lines, ...geo }, null, 2), contentType: 'application/json' });
+            console.log(`[#671 picker] ${project} lines=${lines} ${tag} ${JSON.stringify(geo)}`);
+
+            expect.soft(geo.gap, `panel の上端 (${geo.panel && geo.panel.top}) が帯の下端 (${geo.band && geo.band.bottom}) より下`).toBeGreaterThanOrEqual(0);
+            expect.soft(geo.closeOnTop, 'ウィジェット選択の × が帯に隠れず一番上').toBe(true);
+            expect(geo.retryOnTop, '帯の「再試行」が一番上').toBe(true);
+            await rowButton(page, '再試行').click({ trial: true });
+
+            hub.failWrites = false;
+            hub.failNextWrites = 0;
+            await rowButton(page, '再試行').click();
+            await expect(page.locator(ROW)).toHaveCount(0, { timeout: 15000 });
+            await expect.poll(() => hubHasMemo(hub), { message: '短文メモが保存先 (ハブ) へ届く', timeout: 15000 }).toBe(true);
+        });
+    }
 });
