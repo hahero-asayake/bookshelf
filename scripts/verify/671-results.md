@@ -104,3 +104,33 @@
 - **char の widgets.spec.js と x2-widgets.spec.js**：6端末で **74件通過・10件 skipped**（34.3秒・CI の test (char) と同じ project）。
 - **vitest 全件**：80ファイル・1195件通過（2件は todo）。overlay-manager は12件。
 - **npm run lint**：12本中0本失敗。
+
+## §3 回帰の確認：e2e-diff-main（step3・2026-11-14）
+
+- **載せ直し**：流す前に、origin/main 9713381 へ `git rebase` した（#669 の5件が先に入っていたため）。
+  - 衝突は無し。commit は 3c60f16（test）・470e632（fix）になった。
+  - ?v= の 2026111798 は、origin/main と他の worktree の最大値（2026111797）より新しいまま。`check:version --range=origin/main..HEAD` は OK。
+- **流し方**：`node scripts/verify/e2e-diff-main.mjs --port=8171 --out=tmp/671/e2e-diff` を、`systemd-run --user` で run の外に出して流した（#634 の作法）。visual は既定でオン。--init-storage と --grep は使っていない。
+- **走らせる前の状態**：PORT 8171 は空き（`ss -ltn`）。負荷の平均は 36.5／34.7／28.0（18:57）。
+- **1回目（18:57〜19:02）は失敗**：
+  - base 側の playwright（1744件・8 workers）が、途中で外から止められた（`exit=null`＝シグナル）。
+  - その時に残った webServer（python3）が 8171 を塞ぎ、work 側の開始時のポートの確認（2.5秒）で落ちた。
+  - 止めたものは分かっていない（未確認。負荷は 40 前後）。8171 は自分のシェルからも systemd の unit からも listen できることを確かめ、同じ条件で流し直した。
+- **2回目（19:03:20〜19:15:07・約12分）は完走**（exit 0）：
+  - base（origin/main 9713381）の E2E：1744件のうち、通過 1149・skipped 593・失敗 2（4.2分）。
+  - work（470e632）の E2E：1748件のうち、通過 1152・skipped 593・失敗 3（6.0分）。
+    - base より4件多いのは、(e) の chromium 分の4件（gate-webkit は e2e-diff の既定では流れない）。4件とも通った。
+    - 通過の差が +3 なのは、j3-5 が work 側で落ちたため（下の flake）。
+
+### 3表（E2E）
+
+| 区分 | 件数 | 中身 |
+|---|---|---|
+| 新しく落ちた | 1件（**flake**） | gate/j3-5-many-books（chromium）「913冊・CPU 6倍遅くでも、並び順と昇順・降順の切替と直後の本の詳細が、基準時間内に出る」。work 側で3回流し直し、1回目は通り、2・3回目は落ちた。時間を測る門で、#660 の記録でも負荷で揺れていた。並び順の切替の描画時間を測るもので、この件の変更（帯の下げ規則・ウィジェット選択の印）は通らない。 |
+| 新しく通った | 0件 | |
+| 両方で落ちた | 2件 | duplicate-asin-notice（本の詳細の付け直し案内）と list-staged-render（913冊の段階描画で途中で1冊を動かす）。base でも落ちる既存の問題。 |
+
+- **単体（vitest）**：新しく落ちた0・新しく通った0・両方で落ちた0。
+- **画像の差分（visual・playwright.visual.config.js）**：**0件／54件**。基準画像の更新は無し。帯は保存の失敗・未保存の時だけ出て、基準画像にその状態は無いため。
+- **判定**：新しく落ちたものは flake の1件だけで、回帰は0件。#660 の既存 spec は step2 で全件通った（status-bar-over-faces 44件・load-conflict-unsaved 3件・char ウィジェット 74件）。
+- 結果一式：`tmp/671/e2e-diff/`（report.md・report.json・各 json と log）。
