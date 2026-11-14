@@ -190,3 +190,58 @@
 2. 既存データの扱い：**(b) ＋ (d)**（推奨）／(b) だけ／(c)。
 3. 675-C/D/E を範囲に入れるか：**入れる**（推奨）。
 4. 依存：#670 は未着。step3 は #670 の着地を待って載せる（waitForIssues=[670]）。#664 は入ったので待たない。
+
+## §4 承認案の実装と spec（2026-11-14 19:39〜19:48・step3）
+
+### §4-0 載せ直し
+
+- `git fetch` の後の origin/main は 33eda9e。題で確かめた：#670 は入った（0dfcfbd・73a7153 fix・ADR-174）。#664（bbc3526・ADR-170）・#663（605825f）も入っている。
+- `git rebase origin/main` は衝突なし。自分の commit（spec と results だけ）は b1a7d43・45aa443 になった。
+- 承認（step3 時点の申し送り）：① 案1a、② (b)＋(d)、③ C/D/E を範囲に入れる、④ #670 の上に載せる。
+
+### §4-1 直したこと（js/bookshelf.js・js/screens/import.js・index.html）
+
+| # | 場所（関数） | 直したこと | 閉じる行 |
+|---|---|---|---|
+| 1 | 新しい `_storageForDevice(st)` | 端末の控えへ書く `_storage` を作る。`libraryBooks` は今どおり落とし、`excludedBooks`＝（控えの `excludedBooks` ∪ 写し）のうち exclusions にある本だけを入れる（無ければ欄を作らない）。控えに書く3か所（`saveUserData`・`_applyLoadedState`・`_applyMergedRemote`）をこれに替えた | A・B |
+| 2 | 新しい `_restoreLibraryCopy(always)`・`loadData` | 起動の1段目（端末の控えを読んだ直後）に、控えに `excludedBooks` があれば、写しを「見える本 ∪ `excludedBooks`」で組み直す。保存先につないでいる時は、2段目の `_applyLoadedState` が今どおり library.json で置き換える | A・B・D |
+| 3 | 新しい `_libraryRecordOf(b)` | 写しに入れる1冊の形。`_excludeAsinCore` にあった形をそのまま切り出した（形は変えていない） | — |
+| 4 | `_excludeAsinCore` | 写しが無い時は 2 の式で作る（見える本だけで作らない）。除外する本の書誌は、除外する直前の `this.books` から必ず写しに入れる（既にある書誌＝library.json 由来は置き換えない） | C・D |
+| 5 | `unexcludeBook` | 書誌が写しにも `excludedBooks` にも無い時は、exclusions から外さず、toast（warning）で知らせて止める（(b)）。文は「この本の書誌が端末に残っていないため、元に戻せません。Kindle の取込で同じ本を読み込むと、元に戻せるようになります。」（`lint:copy` は通った）。書誌がある時は今どおり蔵書へ戻し、`book:added {reason:'unexcluded'}` を出す | (b) |
+| 6 | 新しい `_fillExcludedBooksFrom(books)`・js/screens/import.js（取込の選択画面を出す所） | 取り込むファイルにある除外中の本の書誌を写しへ補う（(d)）。除外は外さず、取り込む本にも入れない（選択画面では今どおり除外中として選べない）。補った時だけ保存し、除外一覧を描き直す | (d) |
+| 7 | `_keepLocalOverLoaded` | **step3 で見つけた**：1〜6 の後も E だけ赤だった。保存先なしで除外した後にフォルダにつなぐと、空の保存先では「手元を採る」この経路を通る。ここが写しを読んだ側の library（空）で丸ごと置き換えていて、組み直した除外の書誌が書き出しの前に消えていた。手元を採るので、手元の除外した本の書誌（写し・`excludedBooks` のうち exclusions にある本）は残して合わせる形にした。§2 の全数表の 5（作る所）に当たる | E |
+| 8 | index.html | `js/bookshelf.js?v=` 2026111878 → 2026111890、`js/screens/import.js?v=` 2026111405 → 2026111890（origin/main 33eda9e の index.html の最大は 2026111878） | — |
+
+- 読む所（`unexcludeBook` の書誌の引き方・`renderExclusionsList`・書き出しの `excludedCache`・`_artBookState`）は、5 で `excludedBooks` も引くようにした以外は変えていない。
+- 保存先へ書くファイルは変えていない（`_storage` は丸ごとは送らない・§3-0）。
+
+### §4-2 spec（tests/e2e/exclude-local-reload-unexclude.spec.js）
+
+- 675-C の判定を「取り込んだ直後に写しへ入る」から「**取り込んだ後に除外した本の書誌が写しにある**」に替えた。承認案（4）は、取込のたびではなく除外の時に入れる形のため。取り込んだ直後の値も記録には残している（afterImport.memLibHas＝false のまま）。
+- 675-A に、端末の控えに `excludedBooks` が残ること・取り消した本は控えから外れること・**元の本棚の冊数（ツリー・ホームのカード・本棚の管理一覧）が戻ること**を足した。冊数の読み方は #670 の 670-D と同じ。
+- **675-H（既存データ）を足した**：exclusions に TARGET の ASIN だけがある控えで起動する。取り消しを押すと、除外は外れず・行が残り・知らせが出て・book:added は出ない。取込（TARGET の書誌を含むファイル）の後は、題が出て、取り消すと蔵書に戻り、book:added が1回出る。
+
+| 行 | 直す前（step1・3回） | 直した後（step3・3回） | 直した後の値（JSONL） |
+|---|---|---|---|
+| 675-A 1冊除外→再読込→取り消し | 赤 | **緑** | 控えのキーは allInternalId・excludedBooks・exclusions（X あり）。再読込の後の写しは5冊。題「フィクスチャの本 1」。蔵書に戻る。子の本棚は Y・X。冊数はツリー 親3・子2、ホームのカード 3冊・2冊、管理一覧 3冊・2冊。book:added 1回。取り消した後、控えの excludedBooks から X が外れる |
+| 675-B 一括→再読込→取り消し | 赤 | **緑** | 写し5冊・題「フィクスチャの本 2」・蔵書に戻る・子の本棚は X・Y・book:added 1回 |
+| 675-C 取込の後に除外→取り消し | 赤 | **緑** | 除外した後の写しに TARGET あり・題「門の取込の本 3」・蔵書に戻る・book:added 1回 |
+| 675-D 再読込の後に別の本を除外 | 赤 | **緑** | Y を除外した後も写しに X あり。X・Y とも戻り、book:added は各1回 |
+| 675-E 後からフォルダにつなぐ | 赤 | **緑**（7 の直しの後） | library.json は B000000002〜B000000005 と B000000001 の5冊。exclusions.json は B000000001 |
+| 675-H 既存データ（書誌の無い除外） | （無し） | **緑** | 最初の題は「B0GATEIMP3」（ASIN だけ）。取り消しを押すと止まる（除外のまま・蔵書に無い・book:added 0回）。取込の後は控えに書誌があり、除外中のまま取り込まれない。題「門の取込の本 3」になり、取り消すと戻る・book:added 1回 |
+| 675-G フォルダの対照 | 緑 | **緑** | 題「門の取込の本 3」・蔵書に戻る・book:added 1回 |
+
+- 実行：直した後に1回（1〜6 だけの時点：6 passed・1 failed＝E）。7 を直した後に `--repeat-each=3`：**21 passed（13.6 秒）**。値は7本とも3回同じ。記録は `scripts/verify/675-step3-run.jsonl`。
+- 待ちは expect.poll・toBeVisible・toHaveCount だけ（waitForTimeout は使っていない）。
+
+### §4-3 関連 spec・vitest・lint
+
+- 関連 spec 17ファイル（全プロジェクト）：bookshelf-open-paths・book-memo-file-lifecycle・duplicate-asin-notice・exclude-article-publish（#669）・first-run-save-during-init-empty・exclude-custom-shelf（#670）・exclude-export-all-shelf（#664）・import-reload-persist・manual-add-reload-all-shelf・kindle-reimport-merge・back-nav-matrix・library-count-refresh・load-conflict-unsaved・standard-ops・status-bar-over-faces・sync-offline-reconnect・sync-section-status。**285 passed（3.3 分）・失敗 0**。選び方は承認の一覧に、`load-conflict|_keepLocalOverLoaded|unexcludeBook|exclusions|libraryBooks|excludeBook` を含む spec を足したもの。duplicate-asin-notice（計画時は #674 の既知の赤）も緑だった（#674 が入った後）。
+- `npm test`：Test Files 80 passed (80)。
+- `npm run lint`：12 本中 0 本失敗（`lint:copy` に toast の文を含む）。
+
+### §4-4 残り・step4 で見ること
+
+- F（#669 の `_artBookState` で記事の除外中の本の題が出るか）は、この step でも画面では測っていない（②の step3 の完了条件には無い）。`_artBookState` は写しを引き、A で再読込の後の写しに X があることは測った。この step の関連 spec（§4-3）で、#669 の spec（exclude-article-publish・保存先あり）が緑のことは確かめた。保存先なしの再読込の後の題の画面の行は、要れば step4 で足す。
+- 設計書（02 D-1・D-7・06・03・08）は step4 で書く。ADR の番号は、#670 が ADR-174 を取ったので **ADR-175** になる見込み（step4 で最新を見て取り直す。コードのコメントには ADR-175 と書いた）。
+- `?v=` は、step4 の載せ直しで origin/main の最大より新しいか取り直す。
