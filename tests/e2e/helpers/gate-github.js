@@ -4,7 +4,9 @@
 //
 // 模擬するのはアプリが使う範囲だけ (js/github-adapter.js):
 //  - GET /repos/:o/:r (リポジトリ情報)・GET /user
-//  - contents の GET (?ref=) / PUT / DELETE と sha の照合 (違えば 409)
+//  - contents の GET (?ref=) / PUT / DELETE と sha の照合 (違えば 409)。フォルダの GET は、実際の API と同じく、その下の一覧
+//    ({ type: 'file' | 'dir', name, path, sha } の配列。無いパスは 404) を返す (イシュー#683。前は 404 を返していたので listDirs('plugins') が空になり、
+//    GitHub の E2E ではプラグインが常に0個で、起動のたびに標準機能のシードを書き直していた)
 //  - git の refs (GET・PATCH・早送りでなければ 422)・commits (GET・POST)・trees (GET ?recursive=1・POST)・blobs (POST)
 // 状態は1つのリポジトリの1本のブランチ (main)。route はコンテキストに1本 (2つ目のコンテキスト = 別の端末にも同じ
 // state を渡すと、同じリポジトリを読み書きする)。
@@ -85,6 +87,18 @@ export async function waitForGitHubFileContainsForTest(state, path, text, timeou
     throw new Error(`gate-github.js: ${path} に「${text}」が ${timeoutMs}ms 以内に届かなかった`);
 }
 
+/** リポジトリから prefix で始まるパスのファイルを、1つの commit で消して main を進める (別の端末で消した場面・イシュー#683)。
+ * 例: 'plugins/' を消すと、次の起動で標準機能のシードがもう1回走る。
+ * @param {ReturnType<typeof createMockGitHubForTest>} state @param {string} prefix @returns {number} 消したファイルの数 */
+export function removeGitHubPathsForTest(state, prefix) {
+    const map = new Map(headTree(state));
+    const gone = [...map.keys()].filter((p) => p.startsWith(prefix));
+    if (gone.length === 0) return 0;
+    for (const p of gone) map.delete(p);
+    state.head = newCommit(state, newTree(state, map), [state.head]);
+    return gone.length;
+}
+
 const b64 = (text) => Buffer.from(String(text), 'utf-8').toString('base64');
 const unb64 = (text) => Buffer.from(String(text || ''), 'base64').toString('utf-8');
 
@@ -110,7 +124,20 @@ async function routeGitHub(route, state) {
         const p = decodeURIComponent(rest.slice('/contents/'.length));
         const cur = headTree(state).get(p) || null;
         if (method === 'GET') {
-            if (!cur) return route.fulfill({ status: 404, json: { message: 'Not Found' } });
+            if (!cur) {
+                // フォルダ: その下の一覧 (tests/e2e/helpers/storage-fakes.js の installFakeGitHub と同じ形・イシュー#683)
+                const prefix = `${p.replace(/\/+$/, '')}/`;
+                const seen = new Map();
+                for (const [fp, sha] of headTree(state)) {
+                    if (!fp.startsWith(prefix)) continue;
+                    const rest = fp.slice(prefix.length);
+                    const i = rest.indexOf('/');
+                    if (i < 0) seen.set(rest, { type: 'file', name: rest, path: fp, sha });
+                    else seen.set(rest.slice(0, i), { type: 'dir', name: rest.slice(0, i), path: `${prefix}${rest.slice(0, i)}`, sha: 'dir' });
+                }
+                if (seen.size === 0) return route.fulfill({ status: 404, json: { message: 'Not Found' } });
+                return route.fulfill({ json: [...seen.values()] });
+            }
             return route.fulfill({ json: { type: 'file', path: p, name: p.split('/').pop(), sha: cur, encoding: 'base64', content: b64(state.blobs.get(cur)) } });
         }
         if (method === 'PUT' || method === 'DELETE') {

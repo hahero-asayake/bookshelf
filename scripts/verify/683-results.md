@@ -211,7 +211,7 @@ spec の中に自前の模擬を持つもの（コードを読んで分類した
 - 本文の引用：「This API has an upper limit of 1,000 files for a directory.」
 - 状態コードの一覧に「404 - Resource not found」がある。
 - 各要素の項目は `type`・`size`・`name`・`path`・`sha`・`url`・`git_url`・`html_url`・`download_url`・`_links`。ただし、取得した本文で確かめられたのは object 形式の例だけ。
-- 未確認：配列の各要素の `type` が `dir` になること。取得した本文では、フォルダの schema の部分が欠けていた。アプリは `type === 'dir'` で読む（js/github-adapter.js L279）。
+- 配列の各要素の `type` が `dir` になること：docs の取得本文では確かめられず（フォルダの schema の部分が欠けていた）、GitHub の REST の既知の挙動に依った。要素の `type` は `file` か `dir`（ほかに `symlink`・`submodule`）。アプリは `type === 'dir'` で読む（js/github-adapter.js L279）。（②の申し送りで書き直した）
 
 ### 2-5 推奨：(a)
 
@@ -234,3 +234,33 @@ spec の中に自前の模擬を持つもの（コードを読んで分類した
 
 - 20:58:01 に `git checkout -- tests/e2e/helpers tests/e2e/import-reload-persist.spec.js` で、試作と計測を戻した。直後の `git status --short` は `?? scripts/verify/683-results.md` の1行だけ（この results）。
 - 生データは /tmp/683/ にあり、commit しない。base-report.json と a-report.json が Playwright の JSON、trace-base.jsonl・trace-a.jsonl・trace-a-fix.jsonl が計測、compare.mjs が比べるスクリプト、apply-a.cjs と apply-fix-irp.cjs が試作の差分。
+
+## §3 直したもの（step3・2026-11-14 21:00〜・案 (a)）
+
+②が (a) に決めた（20:59）。アプリのコード（js/）は変えていない。そのため ?v= も変えていない。
+
+### 3-1 差分
+
+- tests/e2e/helpers/gate-github.js
+  - contents の GET で、完全に一致するファイルが無い時は、その下の一覧を返すようにした。形は `{ type: 'file' | 'dir', name, path, sha }` の配列で、何も無ければ404。作りは storage-fakes.js の installFakeGitHub と同じ。冒頭の「模擬するのは」のコメントも直した。
+  - `removeGitHubPathsForTest(state, prefix)` を足した。prefix で始まるファイルを1つの commit で消し、main（ref）を進める＝別の端末で消した場面と同じ流れ（②の申し送りどおり）。返り値は消したファイルの数。
+- tests/e2e/import-reload-persist.spec.js（GitHub の「再読込の後の同期と標準機能の補充のまとめ保存が重なっても…」）
+  - 1回目の起動の補充が入るのを待ってから、`removeGitHubPathsForTest(gh, 'plugins/')` で plugins/ を消し、それから取込と再読込をする形にした。再読込の後の起動で補充が走り、同期と重なる。
+  - テストの目的と、待つ条件（L231 の plugins/・patches≥2・422 が0本・3択が0）は変えていない。コメント（前の L181）も直した。
+- tests/e2e/boot-load-failure-tail.spec.js：L8 のコメント「GitHub の模擬はフォルダの一覧を返さないので、成功でも0個になる」を直した（コメントだけ）。
+- tests/e2e/gate/README.md：保存先を GitHub にする行に、一覧を返すことと `removeGitHubPathsForTest` を書き足した。
+- 新しい spec：tests/e2e/github-standard-plugins.spec.js（1本・chromium・gate-github の模擬）。画面の経路（起動と `page.reload()`）で、次を確かめる。
+  - 1回目の起動：標準5個が `bookshelf.pluginLoader.loaded` に入る（読み方は plugin-seed.spec.js L110 と同じ）。リポジトリに plugins/ の5個がある。plugins/ の下を書いた commit が1つ。読み込みの失敗が0件。
+  - 再読込の後：5個のまま。再読込の後に届いた、まとめ保存の書き込み（POST git/blobs・git/trees）が0本。plugins/ の下を書いた commit は1つのまま。
+
+### 3-2 手元の確認
+
+- **新しい spec と import-reload-persist（全9本）を `--repeat-each=3` で流した**：24 passed・6 skipped・13.7秒で、3回とも緑。skipped は、もとから skip の R2 の2本が3回ずつ。
+- **新しい spec が直す前の模擬で落ちることを確かめた**：gate-github.js だけを HEAD の版に一時的に戻して流すと、`loaded` が `[]` のままで落ちた（1 failed）。その後、直した版に戻した。
+- **gate-github を使う spec 15ファイル＋新しい spec＋plugin-seed.spec.js**：86 passed・0 failed・2 skipped（52秒）。
+- **lint:internal-refs**（②の申し送り）：82件（上限82）で、直す前と変わらない。
+  - この lint が数えるのは `bookshelf._<英字>` と `app._<英字>`（scripts/check-test-internal-refs.mjs L82-83）。
+  - 新しい spec の `window.bookshelf.pluginLoader.loaded` は数える形ではない。plugin-seed.spec.js L110・boot-load-failure-tail L28-32 と同じ扱い。
+  - 新しい spec の中で数えられるものは0件。冒頭のコメントの「bookshelf._*」は、`_` の後が英字でないので当たらない。
+- **E2E の lint**：e2e-goto・e2e-wait・e2e-external・known-red・e2e-gate（@gate 41本・違反0・観測点の網羅 37/37）も OK。
+- 全件の比較・`npm run lint`・`npm test` は step4 で行う。

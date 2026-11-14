@@ -8,7 +8,7 @@ import { test, expect } from './helpers/test-base.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { stubFolderPickerForTest, connectLocalFolderForTest } from './helpers/gate-local.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, waitForHubFileContainsForTest } from './helpers/gate-hub.js';
-import { createMockGitHubForTest, seedGitHubDataForTest, seedGitHubLoginForTest, mockGitHubForTest, waitForGitHubFileContainsForTest } from './helpers/gate-github.js';
+import { createMockGitHubForTest, seedGitHubDataForTest, seedGitHubLoginForTest, mockGitHubForTest, waitForGitHubFileContainsForTest, removeGitHubPathsForTest } from './helpers/gate-github.js';
 
 const EXPORT_JSON = readFileSync(new URL('../fixtures/gate-kindle-export.json', import.meta.url), 'utf-8');
 const ASINS = JSON.parse(EXPORT_JSON).map((b) => b.asin);
@@ -178,7 +178,8 @@ for (const kind of ['hub', 'github']) {
 
 // 負荷に頼らず、重なりを毎回作る (イシュー#667)。再読込の後の同期のまとめ保存の ref の更新 (PATCH) を、標準機能の補充の
 // まとめ保存が ref を進めるまで (最大3秒) 止める。書き込みが1本ずつ流れていなければ、補充が先に ref を進め、
-// 同期の PATCH が 422 になって書き込み時の3択が出る。模擬はディレクトリの一覧に 404 を返すので、補充は起動のたびに走る
+// 同期の PATCH が 422 になって書き込み時の3択が出る。補充が走るのは plugins/ が欠けた起動だけ (模擬はフォルダの一覧を返す・イシュー#683) なので、
+// 1回目の起動の補充が入った後に、別の端末で plugins/ を消した場面にしてから再読込する
 test('GitHub: 再読込の後の同期と標準機能の補充のまとめ保存が重なっても、1本ずつ流れて3択が出ず、両方が保存先に入る', async ({ page }) => {
     const gh = createMockGitHubForTest();
     seedGitHubDataForTest(gh, { exportDate: SEED_EXPORT_DATE });
@@ -217,6 +218,10 @@ test('GitHub: 再読込の後の同期と標準機能の補充のまとめ保存
     await waitForHubStartupForTest(page);
     await expect(allShelf(page)).toBeVisible();
     const before = Number(await allShelf(page).locator('.bsr-count').textContent());
+    // 1回目の起動の補充がリポジトリに入るのを待ってから、別の端末で plugins/ を消した場面にする (再読込の後の起動で補充が走る)
+    const repoHasPlugins = () => [...gh.trees.get(gh.commits.get(gh.head).tree).keys()].some((p) => p.startsWith('plugins/'));
+    await expect.poll(repoHasPlugins, { timeout: 15000 }).toBe(true);
+    expect(removeGitHubPathsForTest(gh, 'plugins/')).toBeGreaterThan(0);
     await page.locator('#sidebar-settings').click();
     await page.locator('#settings-master .settings-cat[data-cat="library-section"]').click();
     await page.locator('#import-kindle').click();

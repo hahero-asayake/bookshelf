@@ -5,7 +5,7 @@
 // 決まり (②承認の案 (iii)): 起動の後半は、読込が通った後に1回だけ流す。失敗した起動では流さず、後で読込が通った時に1回流す。
 // 基準: 読込の失敗の行が出てから2秒のうちに覆い・確認中の行が消える (#672 と同じ LEAVE_MS)。通信を戻してから5秒のうちに標準機能5個が有効になる。
 // 守り: 失敗させない起動では、後半 (ensureStandardPlugins・loadEnabledPlugins) が1回ずつだけ流れる (プラグインの一覧の要求が2本)。
-// プラグインの数はハブの模擬で見る (GitHub の模擬はフォルダの一覧を返さないので、成功でも0個になる・677-results.md §1)。
+// プラグインの数はハブの模擬で見る (GitHub で標準機能5個が有効になることは github-standard-plugins.spec.js が見る・イシュー#683)。
 // 作り方は boot-load-checking-row.spec.js (#672) と同じ: 模擬より手前の route で通信を落とす。失敗の文は #666 で変わりうるので、
 // 文ではなく出る場所 (状態バーの読込の失敗の行 [data-load-failure]) で見る。
 import { test, expect } from './helpers/test-base.js';
