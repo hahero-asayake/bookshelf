@@ -186,6 +186,9 @@ book-memo-file-lifecycle.spec.js の残り2件 (ローカルの「長文メモ: 
 - 測定 (PORT=8156): `--grep "フォルダ未接続の間の変更" --repeat-each=10 --workers=1` → **10/10 緑** (35.5秒・`_local/656/f602-w1.log`)。
 - spec 全体を workers=3 で3回 (fixme が無くなり、skipped は0本になる): **3回とも 32 passed・0 failed・0 skipped** (1.9分・1.8分・1.9分・`_local/656/spec-all-{1,2,3}.log`)。流す前と後に 8156番が空いていることを確かめた。
 - lint:known-red: OK (既知の赤 2件・違反0件)。
+- 594-results.md の該当行を、古い記述を消さずに「→ 緑 (#656)」の形で更新した。
+  - :202 (ローカルの列の fixme)・:216 (ローカルの「未接続の間の変更 → 繋ぎ直し」の行)・:228 (ローカルの列)。
+  - ローカルの揺れを「長文メモの移す記録の側・未起票」と書いていた :214・:229 には、原因が読込の決め方の側だったことと、#656 で直したことを足した。
 
 ## step5: 載せ直しと全体の確認 (2026-11-14)
 
@@ -217,6 +220,18 @@ book-memo-file-lifecycle.spec.js の残り2件 (ローカルの「長文メモ: 
 - vitest 全体: e2e-diff-main の work 側 (上の表・1181 passed・0 failed)。
 - 範囲の外 (②の判断 (d)): 保存の途中で落ちた後に、別の端末がそのフォルダを読む場合 (library.json だけ新しい形)。ローカルは PC の1台向け (ADR-046) のため。
 
-- 594-results.md の該当行を、古い記述を消さずに「→ 緑 (#656)」の形で更新した。
-  - :202 (ローカルの列の fixme)・:216 (ローカルの「未接続の間の変更 → 繋ぎ直し」の行)・:228 (ローカルの列)。
-  - ローカルの揺れを「長文メモの移す記録の側・未起票」と書いていた :214・:229 には、原因が読込の決め方の側だったことと、#656 で直したことを足した。
+## step6: push と CI (2026-11-14)
+
+- push の直前の fetch で、origin/main は 1234cf4 のままだった (step5 の後に進んでいない) ので、載せ直しは無し。
+- push: `BOOKSHELF_ISSUE=656 git push origin 1c99d78:main` で `1234cf4..1c99d78` が main に入った (ゲートを通過・他のイシューの commit は混ざっていない・pre-push の lint は 12 本中 0 本失敗)。
+  - 入った commit: 1ec581d (fix)・8aa2007 (test)・1c99d78 (docs)。
+- 設計書: vault の 27a88dc8 (03・08 の ADR-162 追補) は、vault の自動の push (17:30 の vault backup 0844e18b) で vault の origin/main に入っている (`git branch -r --contains 27a88dc8` で確かめた)。27a88dc8 の題には bookshelf の sha が無い (先に commit したため)。対応する bookshelf の commit は **1ec581d** (fix)。
+- CI (Run 43576627384・API は使わず、commit の checks のページと job のページの HTML の `check-step` の `data-conclusion` を数えた・#624 の作法・`_local/656/ci-count.mjs`):
+  - push から約6分 (17:42) の時点で、全体はまだ実行中。どの job にも失敗の step は無い。
+    - test (char): 完了。失敗0 (成功10・飛ばし24)
+    - test (webkit): 完了。失敗0 (成功10・飛ばし24)
+    - test (e2e): 実行中 (成功19・未完了14)
+    - test (audit): 実行中 (成功6・飛ばし21・未完了6)
+    - pages build and deployment: 成功 (成功7)
+  - 最大待ち時間 (5分) を過ぎたので、この時点の状態で判定した (代替判定)。
+- 656-results.md の並びを直した: step5 の節を足した時に、step4 の最後の箇条 (594-results.md の更新) の前に入っていたので、step4 の中へ戻した (中身は変えていない)。
