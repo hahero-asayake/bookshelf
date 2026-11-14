@@ -186,6 +186,37 @@ book-memo-file-lifecycle.spec.js の残り2件 (ローカルの「長文メモ: 
 - 測定 (PORT=8156): `--grep "フォルダ未接続の間の変更" --repeat-each=10 --workers=1` → **10/10 緑** (35.5秒・`_local/656/f602-w1.log`)。
 - spec 全体を workers=3 で3回 (fixme が無くなり、skipped は0本になる): **3回とも 32 passed・0 failed・0 skipped** (1.9分・1.8分・1.9分・`_local/656/spec-all-{1,2,3}.log`)。流す前と後に 8156番が空いていることを確かめた。
 - lint:known-red: OK (既知の赤 2件・違反0件)。
+
+## step5: 載せ直しと全体の確認 (2026-11-14)
+
+### 載せ直し (rebase) と衝突の解き方
+
+- 17:22 に fetch すると、origin/main は 16c0a10 (24 commit 先・#648 などが入った版) だった。載せ直している間に、別のイシューの fetch で origin/main が 1234cf4 (#654) へ進んだので、もう一度載せ直した。最後の起点は **origin/main 1234cf4**。HEAD は 8aa2007 (fix 1ec581d・test 8aa2007)。
+- 衝突は2回とも index.html の `js/bookshelf.js?v=` の1行だけ。
+  - 1回目: main 側 2026111710・こちら 2026111721。2回目: main 側 2026111711 (#654 が上げた)・こちら 2026111721。
+  - 解き方: こちらの 2026111721 を残した。origin/main 1234cf4 の index.html の ?v= の最大は 2026111711 なので、それより新しい値 (値の大小ではなく、最新の main の値と比べた・#480)。
+- js/bookshelf.js は衝突しなかった (#648・#636・#639 が変えた所と、`_decideLoadedState` に足した4行は重ならない)。載せ直した後も、足した条件があることを確かめた。
+- 載せ直した後の差分 (origin/main..HEAD) は自分の6ファイルだけ: index.html・js/bookshelf.js・tests/e2e/book-memo-file-lifecycle.spec.js・tests/unit/decide-loaded-state.test.js・scripts/verify/594-results.md・scripts/verify/656-results.md。
+- tests/e2e/ に一時の spec (_tmp656-*) が無いことを、e2e-diff-main・lint:e2e-gate の前に確かめた (②の指示3)。
+
+### 検査
+
+- `check:version --range=origin/main..HEAD`: OK (変更した js はすべて ?v= が上がっている)。
+- `npm run lint` (lint:* の集約・#619): **12 本中 0 本失敗**。copy・terms・css・e2e-goto・e2e-wait・internal-refs (上限82以内)・e2e-gate (@gate 41本・違反0件・観測点 37/37)・esc・js-color・breakpoint・known-red (既知の赤 2件・違反0件) ほか。copy の jtf-style の指摘は既存の分で、上限以内 (119/119)。
+- e2e-diff-main (`--port=8156`・base は origin/main 1234cf4・work は HEAD 8aa2007): 判定は「**新しく落ちたテストは0件**」。結果一式は `_local/656/e2e-diff/report.md` (commit しない)。
+
+| | base (origin/main) | work (この版) |
+|---|---|---|
+| E2E (playwright・sort-perf-budget を除く) | 1080 passed・2 failed・591 skipped | **1085 passed・0 failed**・0 flaky・590 skipped |
+| vitest | 1176 passed・0 failed・2 todo | **1181 passed・0 failed**・2 todo |
+
+  - E2E: 新しく落ちた 0件・新しく通った 2件・両方で落ちた 0件。vitest: どれも 0件。
+  - 新しく通った2件は sync-offline-reconnect.spec.js「GitHub: 初めてつなぐ時・ログアウトしていた間の編集」の2本 (base 側だけ落ちた)。今回の直しで変わったものではない。js/bookshelf.js だけを origin/main の版に戻して流しても、3回とも通った (`--repeat-each=3`・6 passed・`_local/656/gh-first-base.log`)。そのため base 側の揺れと見る。
+  - 画像の比較 (work 側): **0件 / 54件** に差分。
+  - work 側で流れた E2E は base より3本多い (1085 = 1080 + 2 + 3。#656 で足した2本と fixme を外した1本・skipped は 591 → 590)。3本とも通っている。spec 全体は、載せ直した後に e2e-diff-main の work 側の全件の中で1回流れた (落ちた0件)。
+- vitest 全体: e2e-diff-main の work 側 (上の表・1181 passed・0 failed)。
+- 範囲の外 (②の判断 (d)): 保存の途中で落ちた後に、別の端末がそのフォルダを読む場合 (library.json だけ新しい形)。ローカルは PC の1台向け (ADR-046) のため。
+
 - 594-results.md の該当行を、古い記述を消さずに「→ 緑 (#656)」の形で更新した。
   - :202 (ローカルの列の fixme)・:216 (ローカルの「未接続の間の変更 → 繋ぎ直し」の行)・:228 (ローカルの列)。
   - ローカルの揺れを「長文メモの移す記録の側・未起票」と書いていた :214・:229 には、原因が読込の決め方の側だったことと、#656 で直したことを足した。
