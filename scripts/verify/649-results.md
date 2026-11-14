@@ -148,3 +148,16 @@ pointerup から click までの時間（click が出た場面）: chromium 0〜
 - lint 11本（copy・terms・css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・known-red・e2e-gate `--strict-coverage`）: すべて exit 0。internal-refs は上限 82 以内、e2e-gate は @gate 41本・観測点 37/37。
 - `check:version --range=origin/main..HEAD`: OK。
 - 設計書（vault）: 03_詳細設計書・07_残検討事項 の変更は、16:41 の時点でまだ自動バックアップに入っていない（`M`）。次の自動バックアップ（30分ごと・次は 17:00 頃）に入る見込み。
+
+## §4 全体の回帰（step5・e2e-diff-main・2026-11-14 16:46〜17:04）
+
+- 先に最新の origin/main（4aada0f・#619）へ載せ直した（ぶつかり無し）。HEAD は abef5d2。reorder.js の `?v=` 2026111683 は origin/main の最大 2026111682 より新しいまま。
+- `node scripts/verify/e2e-diff-main.mjs --out=/home/kuroko/worktrees/bookshelf/_artifacts/649-diff --port=8149` を単独で流した（16:46〜17:00・約14分・exit 0）。base は origin/main @ 4aada0f、work は作業ツリー（abef5d2）。最後の行は「新しく落ちたテストは0件(またはフレーク判定/判定不能のみ)」。
+  - E2E 新しく落ちた: 6件（すべて流し直し3回で flake 判定）。gate/j2-2-import-paste（J2-2 J2-6）・gate/j2-5-import-no-duplicate（J2-5）・reimport-diff（手動追加 #480）・sort-persist（#387 hub）・sync-offline-reconnect（#602 の2本）。どれも取込・同期・本のカードの並び順で、並べ替えの部品（Reorder）を使う画面ではない。
+  - E2E 新しく通った: 2件（book-memo-file-lifecycle #594・reimport-diff #406）。両方で落ちた: 0件。判定不能: 0件。
+  - vitest: 新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件。
+  - 画像の差分（work 側・54件）: 0件。
+- 単独での流し直し（指示どおり）:
+  - 6件を含む5ファイルをまとめて（chromium・workers=2）: 34 passed・1 failed。落ちたのは gate/j2-5 だけ。
+  - gate/j2-5 だけを `--repeat-each=3`（workers=1）: 2 passed・1 failed。
+  - j2-5 の落ち方: ツリーの「すべての本」（`#sidebar-bookshelf-tree [data-bookshelf-id="all"] .bsr-label`）を押そうとすると、要素が DOM から外れ続けて（ツリーの描き直しが続く）60秒で時間切れ。ドラッグはしていないので、今回の「次の click を捨てる口」は付かない（口はドラッグが始まった時だけ付く）。今回の変更とは別の揺れと見る。base（origin/main）での同じ回数の流し直しは、時間が足りず未実施。
