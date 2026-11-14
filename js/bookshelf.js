@@ -5229,6 +5229,9 @@ class VirtualBookshelf {
         status.style.color = color || '';
         if (actions) actions.innerHTML = buttons;
         row.hidden = !text;
+        // 保存できていない間は「この保存先を使用中です。」の帯を出さない (_renderHubAuthState と同じ条件・イシュー#657)
+        const band = document.getElementById('hub-active-state');
+        if (band && band.classList.contains('is-active')) band.hidden = !!f;
     }
 
     // 状態バーの「選ぶ」: 保存先へ書くのを止めている理由の3択を開き直す (イシュー#639)

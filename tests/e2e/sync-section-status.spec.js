@@ -11,7 +11,7 @@ import {
 } from './helpers/gate-hub.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { prepareOtherDeviceForTest, closeOtherDeviceForTest } from './helpers/gate-device.js';
-import { installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder, installLocalWriteFailures } from './helpers/storage-fakes.js';
+import { installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder, installLocalWriteFailures, installReloadPermissionPrompt } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
 
 test.use({ actionTimeout: 10_000 });
@@ -40,6 +40,8 @@ const retryDelays = (page, delays) => page.addInitScript((d) => {
 const syncLine = (page) => page.locator('#obsidian-sync-status');
 const syncButton = (page, action) => page.locator(`#sync-section [data-status-action="${action}"]`);
 const warnRow = (page) => page.locator('#app-status-bar .status-warn[data-sync-failure]');
+// 「この保存先を使用中です。」の帯 (ハブだけ)。保存できていない間は出さない (イシュー#657 ②決定 案2)
+const hubBand = (page) => page.locator('#hub-active-state');
 
 async function openSync(page) {
     await openSettingsByClick(page, 'sync-section');
@@ -122,6 +124,7 @@ for (const { name, boot, message } of CLOUD) {
             await expect(syncLine(page), '同期欄の状態の行が見える').toBeVisible();
             await expect(syncLine(page)).toContainText('保存済み');
             await expect(syncButton(page, 'retry-sync'), '正常の時は「再試行」を出さない').toHaveCount(0);
+            if (name === 'Asayake ハブ') await expect(hubBand(page), '正常の時は「この保存先を使用中です。」が見える').toBeVisible();
         });
 
         test('保存失敗: 再試行が尽きた後、同期欄に状態バーと同じ文と「再試行」が見え、押すと保存されて正常に戻る', async ({ page }) => {
@@ -139,6 +142,7 @@ for (const { name, boot, message } of CLOUD) {
             await expect(syncLine(page), '同期欄の状態の行が見える').toBeVisible();
             await expect(syncLine(page), '状態バーと同じ文').toContainText(message);
             await expect(syncLine(page)).not.toContainText('保存済み');
+            if (name === 'Asayake ハブ') await expect(hubBand(page), '保存できていない間は「この保存先を使用中です。」を出さない').toBeHidden();
             const retry = syncButton(page, 'retry-sync');
             await expect(retry, '同期欄に「再試行」が見える').toBeVisible();
             await retry.click();
@@ -147,6 +151,7 @@ for (const { name, boot, message } of CLOUD) {
             await expect(syncLine(page)).toContainText('保存済み');
             await expect(syncButton(page, 'retry-sync')).toHaveCount(0);
             await expect(page.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
+            if (name === 'Asayake ハブ') await expect(hubBand(page), '保存できた後は帯が見える').toBeVisible();
         });
     });
 }
@@ -204,6 +209,7 @@ test.describe('同期欄に保存の状態が見える: Asayake ハブの未保�
         await expect(syncLine(page), '状態バーと同じ文').toContainText(LOAD_HOLD);
         const choose = syncButton(page, 'resolve-hold');
         await expect(choose, '同期欄に「選ぶ」が見える').toBeVisible();
+        await expect(hubBand(page), '未保存の間は「この保存先を使用中です。」を出さない').toBeHidden();
         // 状態バーの「選ぶ」と同じ結果: 3択が開き直る
         await choose.click();
         await expect(dlg).toBeVisible();
@@ -214,6 +220,7 @@ test.describe('同期欄に保存の状態が見える: Asayake ハブの未保�
         await expect(syncLine(page)).toBeVisible();
         await expect(syncLine(page), '選んだ後は正常の文に戻る').toContainText('保存済み');
         await expect(syncButton(page, 'resolve-hold')).toHaveCount(0);
+        await expect(hubBand(page), '選んだ後は帯が見える').toBeVisible();
     });
 
     test('書き込み時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、選ぶと正常に戻る', async ({ page }) => {
@@ -253,6 +260,7 @@ test.describe('同期欄に保存の状態が見える: Asayake ハブの未保�
             await expect(syncLine(other), '状態バーと同じ文').toContainText(SYNC_HOLD);
             const choose = syncButton(other, 'resolve-hold');
             await expect(choose, '同期欄に「選ぶ」が見える').toBeVisible();
+            await expect(hubBand(other), '未保存の間は「この保存先を使用中です。」を出さない').toBeHidden();
             await choose.click();
             await expect(dlg).toBeVisible();
             await dlg.locator('.cfm-remote').click();
@@ -263,6 +271,7 @@ test.describe('同期欄に保存の状態が見える: Asayake ハブの未保�
             await openSync(other);
             await expect(syncLine(other)).toBeVisible();
             await expect(syncLine(other), '選んだ後は正常の文に戻る').toContainText('保存済み');
+            await expect(hubBand(other), '選んだ後は帯が見える').toBeVisible();
         } finally {
             await closeOtherDeviceForTest(other);
         }
@@ -358,5 +367,62 @@ test.describe('同期欄に保存の状態が見える: GitHub の未保存 (イ
         await expect(syncLine(page)).toBeVisible();
         await expect(syncLine(page), '選んだ後は正常の文に戻る').toContainText('保存済み');
         await expect(syncButton(page, 'resolve-hold')).toHaveCount(0);
+    });
+});
+
+// 他の端末での更新を模擬: フォルダの library.json に本C (exportDate も他の端末の保存と同じく変わる・#639 と同じ)
+async function otherDeviceUpdateLocal(page, dirName) {
+    await page.evaluate(async ([dir, c]) => {
+        const root = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+        const priv = await root.getDirectoryHandle('private');
+        const readJ = async (name) => JSON.parse(await (await (await priv.getFileHandle(name)).getFile()).text());
+        const writeJ = async (name, data) => {
+            const w = await (await priv.getFileHandle(name, { create: true })).createWritable();
+            await w.write(JSON.stringify(data, null, 2));
+            await w.close();
+        };
+        const lib = await readJ('library.json');
+        lib.books.push({ asin: c, title: '他の端末で足した本', authors: '', acquiredTime: Date.now(), readStatus: 'UNKNOWN', productImage: '', source: 'manual_add', addedDate: Date.now() });
+        lib.exportDate = new Date(Date.now() + 1000).toISOString();
+        await writeJ('library.json', lib);
+    }, [dirName, ASIN_C]);
+}
+
+test.describe('同期欄に保存の状態が見える: ローカルフォルダの未保存 (イシュー#657)', () => {
+    test.skip(({ browserName }) => browserName === 'webkit', 'ローカルフォルダは PC の Chrome/Edge だけ (ADR-046)');
+    test('読込時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、押すと3択が開く', async ({ page }) => {
+        const local = await installFakeLocalFolder(page);
+        const perm = await installReloadPermissionPrompt(page);
+        await page.addInitScript(() => {
+            localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local', methodChosen: true }));
+        });
+        await page.goto('index.html');
+        await openSync(page);
+        await page.locator('#obsidian-sync-btn').click();
+        await expect(syncLine(page)).toContainText('同期済み');
+        await closeSettings(page);
+        await expect.poll(() => local.has(shelfFile('all'))).toBe(true);
+        await addBook(page, ASIN_A, '繋いでいる間に足した本');
+        await expect.poll(() => remoteAsins(local)).toContain(ASIN_A);
+        await perm.promptOnNextReload();
+        await page.reload();
+        await expect(page.locator('#app-status-bar')).toContainText('保存先が未設定');
+        await otherDeviceUpdateLocal(page, local.dirName);
+        await addBook(page, ASIN_B, '未接続中に足した本');
+
+        await openSync(page);
+        await page.locator('#obsidian-sync-btn').click();
+        const dlg = page.locator('#load-conflict-dialog');
+        await expect(dlg).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(dlg).toBeHidden();
+        if (!(await page.locator('#settings-modal').isVisible())) await openSync(page);
+        await expect(syncLine(page), '同期欄の状態の行が見える').toBeVisible();
+        await expect(syncLine(page), '状態バーと同じ文').toContainText(LOAD_HOLD);
+        const choose = syncButton(page, 'resolve-hold');
+        await expect(choose, '同期欄に「選ぶ」が見える').toBeVisible();
+        // 状態バーの「選ぶ」と同じ結果: 3択が開き直る
+        await choose.click();
+        await expect(dlg).toBeVisible();
     });
 });

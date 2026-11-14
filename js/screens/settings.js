@@ -759,7 +759,9 @@ class _SettingsMethods {
             const active = cfg.method === 'hub';
             const stateEl = document.getElementById('hub-active-state');
             if (stateEl) {
-                stateEl.hidden = false;
+                // 保存できていない間 (保存の失敗・再試行中・保存先へ書くのを止めている間) は「この保存先を使用中です。」を出さない。
+                // 保存の状態は保存先の選択の下の行が出し、使用中であることは「使用中」ボタンで分かる (イシュー#657)
+                stateEl.hidden = active && !!(this._syncError && this._syncFail);
                 stateEl.classList.toggle('is-active', active);
                 stateEl.innerHTML = active
                     ? '<span class="h-icon" data-icon="check-circle" data-icon-size="14"></span>この保存先を使用中です。'
