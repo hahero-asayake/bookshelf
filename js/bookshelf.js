@@ -6173,7 +6173,10 @@ class VirtualBookshelf {
             // 編集中の変更を確実に書き出してから export
             await this.flushSync();
             // flush で同期が失敗した場合、保存先には古い内容しか無い → 古い内容での公開を防ぐ
-            if (hadPending && this._syncError) {
+            // ハブの起動の読込が通信で失敗したままの間も止める。前はその失敗を _syncError で知らせていたので止まっていた
+            // (#666 で知らせを _initLoadFailed に分けた後も同じに止める。GitHub は前から読込の失敗では止めていないので変えない)
+            const hubLoadFailed = !!this._initLoadFailed && this.syncMethod === 'hub';
+            if (hadPending && (this._syncError || hubLoadFailed)) {
                 toast('保存できていない変更があるため、公開を止めました。保存できてから、もう一度公開してください。', { type: 'warn' });
                 return { ok: false, reason: 'flush' };
             }

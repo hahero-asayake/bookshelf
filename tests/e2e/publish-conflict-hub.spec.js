@@ -377,3 +377,44 @@ test.describe('保存できていない変更があると公開を止める (イ
         expect(getPublishCount(), '直った後は公開が1回だけ届く').toBe(1);
     });
 });
+
+// イシュー#666: ハブの起動の読込が通信で失敗したままの間は、保存できていない変更があれば公開を止める (変更前と同じ)。
+// #666 で読込の失敗の知らせを保存の失敗の印 (_syncError) から分けたので、公開の前の確認がそれで緩まないことを見る。
+// 前の回に保存できなかった変更 (保存待ちの印) を残したまま開き直し、起動の読込 (GET) を通信の失敗にする
+test.describe('ハブの起動の読込が失敗している間は公開を止める (イシュー#666)', () => {
+    test('保存できなかった変更を残して開き直し、起動の読込が通信で失敗した時に「公開」を押すと、公開が止まり書き込みは0件', async ({ page }) => {
+        await page.addInitScript(() => localStorage.setItem('bookshelf.flag.syncRetryDelaysMs', '[60000,60000,60000]'));
+        const { getPublishCount } = await bootApp(page);
+        // まとめ保存を失敗させて、保存待ちの印を残す (#603 のテストと同じ順: 本棚を足してから記事を作る)
+        let batchFails = 0;
+        await page.route(`${HUB}/data/batch`, (route) => {
+            if (route.request().method() === 'POST') {
+                batchFails += 1;
+                return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"injected write failure"}' });
+            }
+            return route.fallback();
+        });
+        await page.locator('#sidebar-add-bookshelf').click();
+        await expect(page.locator('#bookshelf-form-modal')).toHaveClass(/show/);
+        await page.locator('#bookshelf-name').fill('保存できない本棚');
+        await page.locator('#save-bookshelf-form').click();
+        await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
+        await expect.poll(() => batchFails, { timeout: 15_000, message: 'まとめ保存が失敗する' }).toBeGreaterThan(0);
+        const id = await createArticleWithBook(page, '読込の失敗中の公開の記事');
+
+        // 開き直す。起動の読込 (GET) は通信の失敗にする。記事 (private/publish/ の下) は、公開を押せるように読ませる
+        await page.route(`${HUB}/data/**`, (route) => (route.request().method() === 'GET' && !decodeURIComponent(new URL(route.request().url()).pathname).includes('/publish/')
+            ? route.abort('internetdisconnected') : route.fallback()));
+        await page.reload();
+        await expect(page.locator('#app-status-bar [data-load-failure]'), '起動の読込の失敗の行').toBeVisible({ timeout: 20_000 });
+        // bootApp と同じく、無料プランのアフィリエイト同意はこのテストの関心外なので同意済みにする
+        await page.evaluate(() => {
+            window.bookshelf.userData.settings = window.bookshelf.userData.settings || {};
+            window.bookshelf.userData.settings.ackFreeAffiliate = true;
+        });
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.locator(`#art-list [data-id="${id}"] [data-act="publish"]`).click();
+        await expect(page.locator('.toast', { hasText: '保存できていない変更があるため、公開を止めました。保存できてから、もう一度公開してください。' })).toBeVisible();
+        expect(getPublishCount(), '公開の書き込みは0件').toBe(0);
+    });
+});
