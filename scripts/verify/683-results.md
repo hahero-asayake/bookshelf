@@ -264,3 +264,86 @@ spec の中に自前の模擬を持つもの（コードを読んで分類した
   - 新しい spec の中で数えられるものは0件。冒頭のコメントの「bookshelf._*」は、`_` の後が英字でないので当たらない。
 - **E2E の lint**：e2e-goto・e2e-wait・e2e-external・known-red・e2e-gate（@gate 41本・違反0・観測点の網羅 37/37）も OK。
 - 全件の比較・`npm run lint`・`npm test` は step4 で行う。
+
+### 3-3 前後の表（step4・2026-11-14 21:13〜21:15）
+
+- **前**：step1 の全件の計測（origin/main 9b25e4c・`GH_TRACE`）。
+- **後**：載せ直した work（b985e31）に計測を一時的に入れて流したもの。gate-github と storage-fakes を使う spec 21ファイルと新しい spec を流し、全件緑（exit 0）。流した後に `git checkout -- tests/e2e/helpers` で戻し、`git status` が空であることを確かめた。
+- **時間**：§4 の e2e-diff の base・work の全件の JSON から、同じテストの時間を足した。
+- **前の版について**：前は 9b25e4c の計測。base（b82ebf9）との違いは #682 の5ファイルで、どちらの模擬も変わっていない。
+
+| 模擬 | 版 | テストの本数 | 有効プラグイン（manifest を5本以上読んだテスト／0本のテスト） | 起動の回数 | シードの書き込み（合計） | 起動あたり | テストあたり | GitHub への要求（うち書き込み） | 関係 spec の時間の合計（e2e-diff） |
+|---|---|---|---|---|---|---|---|---|---|
+| gate-github | 前（origin/main） | 23 | 0／23 | 37 | 34 | 0.92 | 1.48 | 1560（762） | 61.6秒 |
+| gate-github | 後（work） | 24 | 23／1 | 39 | 24 | 0.62 | 1.00 | 1679（575） | 63.9秒 |
+| storage-fakes | 前（origin/main） | 28 | 27／1 | 34 | 27 | 0.79 | 0.96 | 3169（1562） | 99.7秒 |
+| storage-fakes | 後（work） | 28 | 27／1 | 34 | 27 | 0.79 | 0.96 | 3170（1562） | 97.9秒 |
+
+- **gate-github**：
+  - 一覧を読む所まで進む22本が、全部「有効プラグイン0個→5個」になった。2台を使う6本（j6-2・j6-4・sync-conflict-overwrite 2本・sync-section-status・import-reload-persist の重なりの1本）は、manifest を10本読む。0本のまま残る1本は sync-chosen-mark の (d-2) で、一覧を読む所まで進まない。
+  - シードの書き込みは34→24回。起動あたりは0.92→0.62回、テストあたりは1.48→1.00回。
+  - 24回の内訳は、22本×1回、import-reload-persist の重なりの1本の2回目（plugins/ を消した後の再読込で、狙って起こす）、新しい spec の1回。
+  - 書き込みの要求は762→575本（−25%）。要求の合計は1560→1679本に増えた。増えた分は、標準5個の manifest・index.js を起動ごとに読む GET。
+- **storage-fakes**：変わらない（もともと一覧を返す・27本が5個）。
+- **時間**：関係 spec の合計は、gate-github で61.6→63.9秒（後は新しい spec を含む）、storage-fakes で99.7→97.9秒。1本ずつの差は−1.1〜+2.2秒で、どちらの向きにも揃っておらず、揺れの範囲。プラグインが有効になって時間が揃って延びた・縮んだテストは無かった。要求の数は下の表のとおり。
+- **新しい spec の manifest の数**：新しい spec（起動2回）は、この数え方では manifest が5本だった。再読込の後の5個が有効なことは、spec の expect（`pluginLoader.loaded`）で確かめている。
+
+#### gate-github の1本ずつ（前→後）
+
+| spec | テスト名 | manifest（前→後） | シード（前→後） | 書き込みの要求（前→後） | 時間 秒（前→後・e2e-diff） |
+|---|---|---|---|---|---|
+| boot-load-checking-row.spec.js | GitHub: 起動の読込が通信で失敗したら、状態バーの読込の失敗の行が出てから2秒のうちに「最新のデータを確認しています…」が消える | 0→5 | 1→1 | 18→18 | 2.6→2.7 |
+| boot-load-failure-message.spec.js | GitHub: 起動の読込が通信で失敗した時、状態バーと同期欄に同じ文と「再試行」を出し、toast は出さない | 0→5 | 1→1 | 18→18 | 3.7→2.7 |
+| boot-load-failure-status.spec.js | GitHub: 起動の読込が通信で失敗した時、同期欄は状態バーと同じ読込の失敗の文を出し、path に「（要再接続）」を付けない | 0→5 | 1→1 | 18→18 | 2.6→4.8 |
+| boot-load-checking-row.spec.js | GitHub: 起動の読込が認証切れで失敗したら、toast が出てから2秒のうちに「最新のデータを確認しています…」が消える | 0→5 | 1→1 | 18→18 | 0.4→1.3 |
+| boot-load-checking-row.spec.js | GitHub: 読込が成功する起動では「最新のデータを確認しています…」が出て、「保存済み」の後に消える | 0→5 | 2→1 | 36→18 | 0.4→0.4 |
+| boot-load-failure-tail.spec.js | GitHub: 端末にデータがある起動で読込が通信で失敗したら、読込の失敗の行が出てから2秒のうちに「最新のデータを確認しています…」が消える | 0→5 | 1→1 | 18→18 | 2.6→2.8 |
+| boot-load-failure-message.spec.js | GitHub: 通信が戻ってから設定の同期欄の「再試行」を押すと読み直し、同期欄が「保存済み」になり状態バーの行も消える | 0→5 | 1→1 | 18→18 | 3.8→2.9 |
+| boot-load-failure-status.spec.js | GitHub: 起動の読込が認証切れで失敗した時、同期欄は toast と同じ認証切れの文を出し、path に「（要再接続）」を付ける | 0→5 | 1→1 | 18→18 | 1.4→0.3 |
+| boot-load-failure-tail.spec.js | GitHub: 読込が成功する起動では、プラグインの一覧を読むのは ensureStandardPlugins と loadEnabledPlugins の1回ずつ (2本) だけ | 0→5 | 1→1 | 18→18 | 1.7→1.8 |
+| boot-load-failure-status.spec.js | 守り GitHub: 保存の書き込みが通信で失敗した時は、今までどおり同期欄に「GitHub に保存できませんでした。…」を出す | 0→5 | 1→1 | 18→18 | 2.4→2.4 |
+| boot-load-failure-message.spec.js | 守り GitHub: 起動の読込が認証切れで失敗した時の文は、#653 で決めた文のまま | 0→5 | 1→1 | 18→18 | 0.3→2.4 |
+| j1-4-github-save-reload.spec.js | @gate J1-4 PC で GitHub に接続してリポジトリを選び「この設定で使う」を押すと、開き直した後も再読込の後も、保存先はそのリポジトリでその蔵書が見える | 0→5 | 1→1 | 25→18 | 7.2→7.2 |
+| j6-2-github-other-device.spec.js | @gate J6-2 GitHub：端末Aで書いた短文メモが、別の端末で開くと読める | 0→10 | 2→1 | 47→29 | 1.7→1.8 |
+| j6-4-sync-conflict.spec.js | @gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突すると、選び方が出て、書き出しと読み込みで失われず、リポジトリからAの短文メモも消えない | 0→10 | 3→1 | 65→29 | 3.9→3.7 |
+| import-reload-persist.spec.js | GitHub: 取込の直後に待たずに再読込しても、取り込んだ本が残り保存先にも入り、衝突の3択が出ない | 0→5 | 2→1 | 47→29 | 1.4→1.5 |
+| import-reload-persist.spec.js | GitHub: 再読込の後の同期と標準機能の補充のまとめ保存が重なっても、1本ずつ流れて3択が出ず、両方が保存先に入る | 0→10 | 2→2 | 47→47 | 1.5→1.6 |
+| online-resync.spec.js | GitHub でも、電波なしのまま開き直した端末は、電波が戻ると読み直して、前の回に書いた短文メモを届ける (イシュー#617 穴1) | 0→5 | 2→1 | 47→29 | 4.7→4.3 |
+| manual-add-reload-all-shelf.spec.js | 662-GH GitHub：1回目の保存の後に手動で追加した直後に再読込しても、すべての本と端末の控えの冊数が合う | 0→5 | 2→1 | 47→29 | 1.6→1.6 |
+| sync-conflict-overwrite.spec.js | GitHub: 書き込みで衝突した時に「この端末の内容で保存先を上書き」を選ぶと、保存先が端末の内容になり、続けて書いても衝突しない | 0→10 | 3→1 | 87→51 | 5.7→5.6 |
+| sync-chosen-mark.spec.js | 保存済みの人 (決めた印が入る前に保存した人) の method は変わらない › (d-2) GitHub を保存先にしていた人は、method が GitHub のままで「決めた」扱い | 0→0 | 0→0 | 0→0 | 0.2→0.2 |
+| sync-conflict-overwrite.spec.js | GitHub: 上書きを選んだ時に保存先を読み直せないと、何も書かずに知らせ、衝突中の印と未反映の印を残して選び直せる | 0→10 | 2→1 | 58→40 | 6.6→6.5 |
+| sync-github-disconnect.spec.js | GitHub を保存先にする人 › GitHub を保存先にしている人が切断すると、保存先は local に戻り、決めた印が外れる | 0→5 | 1→1 | 18→18 | 0.7→0.7 |
+| sync-section-status.spec.js | 同期欄に保存の状態が見える: GitHub の未保存 (イシュー#657) › 書き込み時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、上書きを選ぶと正常に戻る | 0→10 | 2→1 | 58→40 | 4.4→4.5 |
+| github-standard-plugins.spec.js | GitHub: 1回目の起動で標準機能5個がリポジトリに書き込まれて有効になり、再読込の後も5個のまま、書き直さない（新しい） | —→5 | —→1 | —→18 | —→0.3 |
+
+## §4 全件の前後比較（step4・2026-11-14 21:04〜）
+
+### 4-0 載せ直し
+
+- 21:04 に `git fetch` した。origin/main は 9b25e4c から b82ebf9 へ進んでいた（#682 の push：9b25e4c..0adf37c と、results の b82ebf9）。
+- #682 が変えたのは5ファイル（682-results.md・status-bar-over-faces.spec.js ほか）。このイシューで触ったファイルとは重ならない。
+- `git rebase origin/main` で、自分の2つの commit を載せ直した（a57064b・b985e31）。衝突は無かった。
+
+### 4-1 全件の比較（`scripts/verify/e2e-diff-main.mjs --port=8183`・21:05〜21:13）
+
+- 比べた版：base は origin/main（b82ebf9）、work は作業ツリー（HEAD b985e31・未コミットの差分なし）。workers は既定、`--init-storage` は付けていない。除外は既定の sort-perf-budget の1件だけ。
+- E2E の本数：
+  - base：1211 passed・0 failed・0 flaky・592 skipped（237秒）
+  - work：1212 passed・0 failed・0 flaky・592 skipped（234秒）。増えた1本は新しい spec。
+- vitest の本数：base・work とも 1203本中 1201 passed・0 failed・2 todo。
+
+| 3つの表 | E2E | vitest |
+|---|---|---|
+| 新しく落ちた | **0件** | **0件** |
+| 新しく通った | 0件 | 0件 |
+| 両方で落ちた（既存の問題） | 0件 | 0件 |
+
+- 画像の比較（work 側だけ）：54件中、差分ありは0件。
+- 結果一式：/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261114-210509-3426126/report.md
+
+### 4-2 lint と単体
+
+- `npm run lint`（21:05・載せ直した後）：最終行は「12 本中 0 本失敗」。
+- `npm test`（21:15・計測の差分を戻した後）：Test Files  80 passed (80)／Tests  1201 passed | 2 todo (1203)。
+  - 21:13 に1回目を流した時は、計測の一時差分を入れたままだった。そのため tests/unit/check-e2e-external.test.js が1本落ちた（計測が helpers で `@playwright/test` を import していることに、lint:e2e-external の検査が当たった）。差分を戻して流し直し、上の結果になった。commit した中身では落ちない。
