@@ -154,3 +154,15 @@ fixme 3本が緑だったのは、直前の長文メモの保存の印がまだ�
   - 画像比較: 54件中0件に差分。
   - 結果一式は `_local/614/e2e-diff2/report.md` (commit しない)。
 - 本の編集の E2E を repeat 3 で流した結果は step2 の表のとおり: 新しい6本は 18/18、fixme を外した3本はローカルが 2/3。
+
+## step5: push と CI (2026-11-14)
+
+- push: `BOOKSHELF_ISSUE=614 git push origin 25b9472:main` で `3a0d720..25b9472` が main に入った (ゲートを通過・他のイシューの commit は混ざっていない)。push の前の fetch で origin/main は 3a0d720 のままだったので、載せ直しは無し。
+- vault の commit 8bf13478 のメッセージにある `bookshelf@ed56c93` は rebase 前の sha。push した sha は 25b9472。
+- CI (Run 367・`actions/runs/43571897273`): push から5分 (16:41) の時点で、全体はまだ実行中。どの job にも失敗の step は無い。
+  - test (char): 完了。失敗0 (成功10・飛ばし24)
+  - test (webkit): 完了。失敗0 (成功10・飛ばし24)
+  - test (e2e): 実行中 (成功19・未完了14)
+  - test (audit): 実行中 (成功6・飛ばし21・未完了6)
+  - pages build and deployment: 成功
+- 見方: API を使わず HTML を読んだ (#624 の作法)。commit の checks のページから job を拾い、job のページの `check-step` の `data-conclusion` を数えた。
