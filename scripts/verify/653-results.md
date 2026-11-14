@@ -275,3 +275,15 @@ base は origin/main 36cf113、work は作業ツリー（HEAD fd11479）。E2E �
 - 結果一式は `tmp/653/e2e-diff/`（report.md・report.json・base/work の JSON。commit しない）。
 
 push はしていない。②の判断で止まる。
+
+## step5 push の前の載せ直し・push・CI（2026-11-14 18:30〜）
+
+### push の前の載せ直し（origin/main 72d31cb）
+
+- step4 の後に29件入っていた（#657 12件・#634 8件・#662 8件・#651 1件）。#657 は、同期欄に `#sync-state-row` を足し、updateSyncStatus を `_applySyncStatus`＋`_renderSyncState` に分けている。
+- ぶつかったのは index.html の `js/bookshelf.js?v=` の1行だけ（main は 2026111764）。**2026111773** にした。main の最大より新しく、開いている他のイシューの値（#660 2026111760/61/65・#665 2026111781・#667 2026111780）とも重ならない。check:version は OK。2つの catch は L3268・L3398。
+- 載せ直した後に新しい spec と online-resync を流した。読込の失敗の4本と online-resync は緑だった。**守りの2本（保存の失敗）だけが赤**になった。Expected「Asayake ハブに保存できませんでした。通信が戻ったら「再試行」を押してください。」に対し、Received は「保存できていない変更があります。自動で再試行しています。」（GitHub も同じ形）。
+  - 原因：#657 で、保存の失敗の同期欄が、再試行の間は再試行中の文、尽きた後に失敗の種類の文を出すようになった（04_画面設計書の「設定の同期欄」の行のとおり）。守りのテストは、1回目の失敗の直後に種類の文を待っていた。
+  - 直し（d715292・test だけ）：save-failure-visible.spec.js と同じく `bookshelf.flag.syncRetryDelaysMs` で再試行を [300,300,300] に縮め、尽きた後の文を見るようにした。確かめる文は変えていない。
+- 直した後：新しい spec と online-resync で **13 passed**（50.8s・`tmp/653/step5-after-rebase2.txt`）。lint:e2e-goto・e2e-wait・e2e-external・internal-refs（上限82以内）・e2e-gate は OK。
+- 最後の載せ直しの後の `npm run lint` は **12 本中 0 本失敗**、`npm test` は Test Files 79 passed・Tests 1185 passed | 2 todo。
