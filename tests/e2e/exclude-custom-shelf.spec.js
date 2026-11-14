@@ -7,6 +7,8 @@
 // 本の詳細にしか無い・#622 の 662-H と同じ入口の取り方)。一括の除外は選択モードから画面で行う。
 // フォルダ未接続で再読込した後に解除すると本が蔵書に戻らない件 (results の c-2) は別イシュー (#670 では扱わない)。
 import { test, expect } from './helpers/test-base.js';
+import { addBlock, getArtBlocks } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { stubFolderPickerForTest, connectLocalFolderForTest } from './helpers/gate-local.js';
 import { readFileSync } from 'node:fs';
@@ -176,8 +178,31 @@ test.describe('#670 除外した本と自作の本棚', () => {
         expect(got).toEqual({ c: [Y], p: [Y, Z], one: [Y], memberC: [X, Y] });
     });
 
-    // #669 (引き出しの「除外中」の印) の着地の後に、引き出しの一覧・「表示中のN冊を追加」を shelfVisibleAsins に通して緑にする
-    test.fixme('670-E 1冊除外した後、記事の本の引き出しで子の本棚を選ぶと、除外した本は並ばず N にも数えない', async () => {});
+    test('670-E 1冊除外した後、記事の本の引き出しで子の本棚を選ぶと、除外した本は並ばず N にも数えない', async ({ page }) => {
+        await bootApp(page);
+        await excludeOne(page, X);
+        // 記事の保存先だけメモリに差し替え、接続済み相当にする (tests/e2e/publish-article-editor.spec.js の bootApp と同じ)
+        await page.evaluate(() => {
+            window.HubAuth.renderSignInButton = () => {};
+            const mem = new Map();
+            const adapter = window.bookshelf.storage.adapter;
+            adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+            adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        });
+        await mockSyncReady(page, true);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // 本の引き出しは本棚の全画面編集で出る (#268)
+        await page.click('#art-drawer-shelf-btn');
+        await page.locator('#art-drawer-shelf-popover [data-shelf-internal="e2ec0001"]').click();
+        await expect(page.locator('#art-drawer-shelf-label')).toHaveText('親の本棚 / 子の本棚');
+        const rows = page.locator('#art-drawer-list .art-drawer-item');
+        await expect(rows).toHaveCount(1);
+        await expect(rows.first()).toHaveAttribute('data-asin', Y);
+        await expect(page.locator('#art-drawer-add-all')).toHaveText('表示中の1冊を追加');
+        await page.locator('#art-drawer-add-all').click();
+        await expect.poll(async () => (await getArtBlocks(page)).flatMap(b => (b.items || []).map(it => it.asin))).toEqual([Y]);
+    });
 
     test('670-B 一括で除外すると、1冊ごとに book:removed が出て、所属は残り、冊数は見える本だけになる', async ({ page }) => {
         await bootApp(page);

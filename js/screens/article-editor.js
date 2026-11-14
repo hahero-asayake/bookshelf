@@ -2840,7 +2840,8 @@ class _ArticleEditorMethods {
     // (783冊の "all" を検索無しで全追加しようとしても、ここでは絞り込み結果しか返らない)。
     _artDrawerFilteredAsins() {
         const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
-        const asins = (shelf && shelf.books) || [];
+        // 見える本だけ (除外した本は所属に残るが、引き出しには並べず N にも数えない・イシュー#670)
+        const asins = this.shelfVisibleAsins(shelf);
         const query = this._artDrawerQuery || '';
         if (!query) return asins;
         return asins.filter(asin => {
@@ -2916,7 +2917,8 @@ class _ArticleEditorMethods {
         if (wrap) wrap.classList.toggle('art-drawer-user-collapsed', !!this._artDrawerUserCollapsed);
         this._artRenderDrawerTargetHint();
         const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
-        const asins = (shelf && shelf.books) || [];
+        // 見える本だけ (除外した本は所属に残るが、引き出しには並べず N にも数えない・イシュー#670)
+        const asins = this.shelfVisibleAsins(shelf);
         if (!asins.length) {
             if (wrap) wrap.classList.add('art-drawer-collapsed');
             listHost.innerHTML = '';
