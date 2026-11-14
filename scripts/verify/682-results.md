@@ -108,3 +108,23 @@
 - `GATE_WEBKIT=1 PORT=8182 npx playwright test tests/e2e/status-bar-over-faces.spec.js --project=chromium --project=gate-webkit --workers=6`：**54 passed**（2.0分・(a)〜(e) の 44 件と (g) の 10 件）。
 - `npm run lint`：12 本中 0 本失敗。`npm test`：1199 passed・2 todo。`check:version --range=origin/main..HEAD`：OK。
 - 載せ直し（origin/main への rebase）は step4 で行う（この時点の基準は 95d6f9d。origin/main は fb3f3b9 まで進んでいる）。
+
+## §3 回帰の確認：e2e-diff-main（step3・2026-11-14）
+
+- 流し方：`node scripts/verify/e2e-diff-main.mjs --base=95d6f9d --port=8182 --workers=8 --out=/home/kuroko/kuroko/work/682-e2e-diff`。base は作業の分かれ目 95d6f9d に固定した。origin/main はその後 #675・#679 の分だけ進んでいて、比べると本件と関係のない差が混ざるため。work は HEAD 830d178。20:27〜20:37（約10分）で最後まで終わった（未完ではない）。
+- 結果一式：`/home/kuroko/kuroko/work/682-e2e-diff/report.md`（json と log も同じ場所）。
+
+| 区分 | E2E (playwright) | Unit (vitest) |
+|---|---|---|
+| 新しく落ちた | 1件（下）＝本件由来ではない | 0件 |
+| 新しく通った | 0件 | 0件 |
+| 両方で落ちた/既存の問題 | 0件 | 0件 |
+
+- 画像の差分（playwright.visual.config.js・work 側のみ）：**0件 / 54件**＝帯が無い時の見た目は変わっていない。
+- 新しく落ちた1件：`sync-conflict-overwrite.spec.js:76`「Asayake ハブ: 書き込みで衝突した時に「この端末の内容で保存先を上書き」を選ぶと…」。work 側では、1回目と流し直し3回の全部で `private/notes.json に「#645 端末Bが古い版のまま書いた短文メモ」が 20000ms 以内に届かなかった` で落ちた。base 側の1回は通っていた。
+  - 本件由来かの切り分け：同じ1本を `--repeat-each=4` で流した（20:38〜20:39）。
+    - 直した CSS（830d178）：ハブの回は4回中4回落ち、GitHub の回は4回中4回通った。
+    - CSS だけ直す前（95d6f9d の css/bookshelf.css）に戻した場合：同じくハブ 4/4 落ち・GitHub 4/4 通り（戻した後は 830d178 の CSS に戻した）。
+    - 直した CSS と直す前の CSS で結果が同じ＝本件の CSS は関係しない。本件は js を変えていない。
+  - 原因の見立て：この1本は #679（「sync-conflict-overwrite.spec.js のハブの1本が main の CI で赤」）が扱った揺れ。#679 は、ハブの一覧の控え（ETag の表）の3秒の境目が原因と特定し、7ce3837 fix・49bb4b0 test で直した。どちらも base 95d6f9d より後に origin/main へ入っている（`merge-base --is-ancestor 6539649 95d6f9d` は no、origin/main には有り）。base 側の1回が通ったのは境目の揺れによる。
+  - 扱い：本件では直さない。step4 で origin/main へ載せ直すと #679 の直しが入るので、載せ直した後にこの spec をもう一度流して確かめる。
