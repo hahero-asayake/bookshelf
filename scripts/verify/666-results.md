@@ -101,3 +101,63 @@
   2. 文の作りと出す場所が、保存の失敗（#603）と同じになる（「同じ操作は同じ見た目・同じ挙動」）。
   3. 読み直せた後に古い失敗の文が残らない（toast をやめるため）。
   4. lint:copy・lint:terms が今と同じ数で通る。
+
+### step1 の tp で決まったこと（②・18:56）
+
+- 文言は案A。出す場所は (b)。ハブ・GitHub とも、状態バーと同期欄に文と「再試行」を出し、GitHub の toast はやめる。完了条件は「2か所に同じ文が出て、toast は出ない」と読む。
+- 状態バーの行は `_syncErrorMsg` を使わず、`_initLoadFailed` から出す別の行にする（`_syncChecking` と同じ形）。settings.js L396-399 の失敗と取り合って、片方が無言で消えるのを避けるため。
+- 「再試行」の二重押しは、step2 の spec に1本足して、赤と緑で見る（読み直しの GET が1組だけか）。
+- 503 で自動では読み直さない件は、ボタンで覆えるので、今回は直さない。
+
+## step2 E2E を足し、直す前の版で赤を取る（2026-11-14 18:58〜19:08）
+
+### 新しい spec：tests/e2e/boot-load-failure-message.spec.js（7本）
+
+作りは boot-load-failure-status.spec.js（#653）と同じ。1回ふつうに起動してから、模擬（gate-hub.js・gate-github.js）より手前の `context.route` で起動の読込を落とし（`route.abort('internetdisconnected')`、GitHub の認証切れは 401）、開き直す。画面（`#app-status-bar`・`#obsidian-sync-status`・`#obsidian-sync-path`・`#sync-state-actions`・`.toast-message`）だけを読み、`bookshelf._*` は読まない。
+
+| # | 本 | 見ること |
+|---|---|---|
+| 1 | ハブ・通信の失敗 | toast（読込の失敗の文）が0件。同期欄の textContent が決めた文と完全に一致（toHaveText）。状態バーの行の文に決めた文がある。その行の `.status-msg` が決めた文と完全に一致する。その行に「再試行」が1つ。同期欄の `#sync-state-actions` に「再試行」が1つ。path に「（要再接続）」を付けない（#653） |
+| 2 | GitHub・通信の失敗 | 1 と同じ（文は GitHub の文） |
+| 3 | ハブ・状態バーの「再試行」 | 通信を戻してから押すと読み直し、同期欄が「保存済み」になる。状態バーの読込の失敗の行と、同期欄の「再試行」が消える |
+| 4 | GitHub・同期欄の「再試行」 | 同期欄が決めた文になる。通信を戻し、設定の同期を開いて同期欄の「再試行」を押すと読み直し、「保存済み」になる。同期欄の「再試行」と状態バーの行が消える |
+| 5 | ハブ・二重押し | 1回押した時の読み直しの GET の数を、同じテストの中で数える（落ち着くまで待つ）。もう一度落としてから「再試行」を素早く2回押し（dblclick）、GET の数が1回押しと同じであることを見る |
+| 6 | 守り・ハブの認証切れ | 状態バーと同期欄が #653 の文「Asayake ハブ の認証が切れました。設定から再接続してください。」のまま。path に「（要再接続）」が付く |
+| 7 | 守り・GitHub の認証切れ（401） | toast「GitHub との接続に失敗しました。」が出る。同期欄が #653 の文のまま。path に「（要再接続）」が付く |
+
+- 1・2 は、どこが違うかを1回で全部見るため soft にした。toast の0件は、最初に見る（10秒で消えるので）。同期欄の文と同じ catch の中で出すので、出るならもう出ている。
+- 待つのは expect(locator) と expect.poll だけ（GET の数が落ち着くのは、0.7秒あけて2回同じになるのを expect.poll で待つ）。lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:internal-refs（上限82以内）・lint:e2e-gate（@gate 41本・違反0件）は、すべて OK。
+
+### 直す前の版（issue/666 の 36aac79＝origin/main d18af26＋記録だけ）で2回流した結果
+
+流し方：`PORT=8166 npx playwright test tests/e2e/boot-load-failure-message.spec.js --project=chromium --workers=4`。出力は tmp/666/step2-before.txt（commit しない）。
+
+| 回 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 時間 |
+|---|---|---|---|---|---|---|---|---|
+| 1回目（19:03:59） | 赤 | 赤 | 赤 | 赤 | 赤 | 緑 | 緑 | 1.8m |
+| 2回目（19:05:50） | 赤 | 赤 | 赤 | 赤 | 赤 | 緑 | 緑 | 2.0m |
+
+赤の理由（Received の値）。2回で同じだった。失敗の見出しと Received の行を抜き出して比べると29行が一致した（tmp/666/step2-red-run{1,2}.txt）。
+
+- 1（ハブ）
+  - 同期欄：Received「Asayake ハブ からの読み込みに失敗しました。」
+  - 状態バーの行の文（全部）：Received ["Asayake ハブ からの読み込みに失敗しました。"]
+  - 決めた文の行：無い
+  - 行の「再試行」：0
+  - 同期欄の「再試行」：0
+  - toast の0件と path は緑（ハブは今も toast を出していない）
+- 2（GitHub）
+  - toast：Received 1（「手元のデータで表示中です。GitHub からの読み込みに失敗しました。」）
+  - 同期欄：Received「GitHub からの読み込みに失敗しました。」
+  - 状態バーの行の文（全部）：Received ["GitHub の保存先を取得できません。"]（settings.js の別の失敗。読込の失敗の行は無い）
+  - 決めた文の行：無い
+  - 「再試行」：状態バー・同期欄とも0
+  - path は緑
+- 3・5（ハブ）：状態バーに、決めた文の行の「再試行」が無い（20秒待って element(s) not found）
+- 4（GitHub）：同期欄が Received「GitHub からの読み込みに失敗しました。」
+- 6・7：緑（認証切れの文は #653 のまま）
+
+### 流し直した経緯
+
+- 最初の版（tmp/666/step2-before-v1.txt・1回目 2.0m）では、2 の toast の0件が緑になっていた。toast を見る前に、soft の4つ（各5秒）を待っていた。その間に、10秒で消える toast が消えていた。toast を最初に見る形に直し、2回とも流し直した。
+- 流し直しの1回目の途中で、前の実行を止めた。その時、port 8166 の `python3 -m http.server` が残った（親の playwright が無くなり、ログの出口を失ったと見ている）。残ったサーバへの要求は、すべて `net::ERR_EMPTY_RESPONSE` になった（tmp/666/step2-before-v2-server-broken.txt）。そのサーバを PID で止めて、もう一度2回流した（上の表）。
