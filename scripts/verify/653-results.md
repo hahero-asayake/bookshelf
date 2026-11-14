@@ -291,3 +291,7 @@ push はしていない。②の判断で止まる。
   - 新しい spec と online-resync：**13 passed**（43.6s・`tmp/653/step5-after-rebase3.txt`）
   - `npm run lint`：**12 本中 0 本失敗**
   - `npm test`：Test Files 79 passed・Tests 1185 passed | 2 todo
+- さらに origin/main が 2946a43 に進んだ（#660：面を開いたままでも状態バーを面より前に出す直し。?v= は 2026111782）。もう一度載せ直し、2026111791 のままにした（main の最大より新しい）。載せ直した後の結果は次のとおり。
+  - 新しい spec・online-resync・status-bar-over-faces（#660）：**31 passed**（1.1m）
+  - `npm run lint`：12 本中 0 本失敗
+  - `npm test`：79 passed・1185 passed | 2 todo
