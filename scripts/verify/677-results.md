@@ -220,3 +220,70 @@ S1 の1回目・S2 の2回も、並びは同じで、時刻の差は ±30ms 以�
   - そこで「ハブへの要求が800ms静まるまで待ってから通信を戻す」（`expect.poll`）を足した。2回目の流しで上の表のとおり赤になった。
   - 同じ待ちは、直した後（後半を飛ばすので要求がすぐ静まる）でもそのまま通る見込み。
 - step4 で直した後に同じ spec を3回流し、L66・L125 が緑、守りの5本が緑のままかを見る。
+
+## §4 案 (iii) の実装と前後比較（2026-11-14 19:58〜20:07）
+
+### 直したこと（fix 89fe888）
+
+- js/bookshelf.js
+  - finishStartup の後半（公開記事の移行・標準機能のシード・プラグインの読み込み）を `_runStartupTail()` に出した。
+  - `initSync()` の後に `_initLoadFailed` が立っていたら、印 `_startupTailPending` を立てて返す（後半を流さない）。
+  - 読込の成功の終わり（`_initCloudSyncLoad`・`_initGitHubSyncLoad` の `updateSyncStatus('synced')` の直後）に `_runStartupTailIfPending()` を置いた。印がある時だけ、印を下ろしてから後半を1回流す（await しない）。
+- js/plugin-loader.js
+  - `listInstalledPlugins` が、一覧が読めたかを `lastListFailed` に残す。
+  - `loadEnabledPlugins` は `this.loaded` にある id を activate しない。依存の判定は今までどおり、有効なもの全部で見る。
+- index.html：bookshelf.js・plugin-loader.js の `?v=` を 2026111880 にした（`check:version --range=origin/main..HEAD` は OK）。
+- docs/char/boot-flow.md §1-3：データ無しの行と、起動の後半の決まりの段落を足した（docs commit）。
+
+### ②の指示の守り方
+
+1. 流す口は読込の成功の終わりの2か所で、印がある時だけ流し、流す前に印を下ろす。普通に成功した起動では印が立たないので、後半は finishStartup の中の1回だけ。spec の L102・L113 で、一覧の要求が2本のまま（3回とも）。
+2. 成功の起動で一覧の要求が2本だけの守り：spec の L102（ハブ）・L113（GitHub）。
+3. `loadEnabledPlugins` の `loaded.has(p.id)` で飛ばす（js/plugin-loader.js）。
+4. 後から流した後半で一覧が読めなかった時（`lastListFailed`）は、`_runStartupTail` の終わりで印を立て直す。次に読込が通った時に、もう1回だけ流す。後半から読込や後半を呼ぶ所は無いので、自分では繰り返さない。
+   - 印を消費するのは読込の成功（電波が戻った時の読み直し・toast の「再試行」）だけ。読込は通ったのに後半の一覧だけ読めなかった時は、`_initLoadFailed` が立たないので 'online' の読み直しは起きない。印は、次に読込が通るまで残る。
+5. **公開記事の移行も、プラグインと同じく後から流す**。移行は冪等・非破壊（articles.json に記事があれば何もしない・ADR-058 §11）なので、起動の後半として1つのメソッドにまとめた。失敗した起動で飛ばしても、読込が通った時に1回流れる。
+
+### 前後比較（probe は step1 と同じ tmp/677/probe-677.spec.mjs・各2回。直す前は tmp/677/runs-before/、直した後は tmp/677/runs/）
+
+| 場面 | 直す前 | 直した後 |
+|---|---|---|
+| GitHub・通信の失敗・**データ無し**：toast → #loading が消えるまで | **6.04 秒・6.03 秒**（toast 2093/2095 → 8131/8122） | **0.001 秒・0.001 秒**（2086→2087・2083→2084） |
+| GitHub・**止まったまま**・データ無し：toast → #loading が消えるまで | **45秒の上限でも消えず**（toast 12088/12071・見積もり約51秒） | **0.002 秒・0.002 秒**（12079→12081・12078→12080） |
+| GitHub・通信の失敗・データあり：toast → 確認中の行が消えるまで | 0.00 秒（#672） | 0.00〜0.001 秒 |
+| 同上：toast の後に起動の後半が出す要求 | 移行2本・列挙4本・ref 2本（8.1秒まで） | **0本**（最後の要求が toast と同時） |
+| 同上：失敗の後の console の警告（移行・列挙・シード） | 4件 | 0件 |
+| ハブ・通信の失敗・データ無し：失敗の行 → #loading | 0.03 秒・0.03 秒 | 0.002 秒・0.002 秒 |
+| GitHub・成功・データ無し：#loading が消えた時刻 | 382・201 ms | 146・175 ms |
+| GitHub・成功・データあり：確認中の行 | 72→184・83→204 ms | 83→164・69→173 ms |
+| ハブ：最初の起動で有効なプラグイン | 5個 | 5個 |
+| ハブ：通信の失敗で開き直した時 | 0個（シードの書き込みを試みて失敗） | 0個（シードの書き込みを試みない・警告0件） |
+| ハブ：その後に通信を戻して 'online' | **0個のまま**（列挙の要求0本） | **5個**（列挙の要求2本＝1回ずつ・シードの書き込み0本＝もうあるため） |
+| GitHub：通信を戻した後の要求 | 列挙0本 | 列挙2本＋シードの書き込み（POST・PATCH 18本。GitHub の模擬は一覧を返さないので毎回シードする・§1） |
+
+### spec・lint・単体
+
+- 新しい spec（7本）を直した後に3回：**21 passed**（14.2秒）。L66・L125 も緑になり、守りの5本も緑のまま。
+- 関係する spec（17ファイル）：**84 passed・1 failed**（1.6分・`tmp/677/step4-related.txt`）。対象は boot-*・first-run-*・plugin-*・online-resync・github-sync-resilience・load-conflict-unsaved・status-bar-over-faces・sync-conflict-overwrite・sync-section-status・gate/j8-4・gate/j6-5。
+  - online-resync（GitHub の「電波が戻ると書いた短文メモが届く」を含む）と github-sync-resilience（「503 → toast の再試行で回復」）は緑だった。シードの書き込みが1回増えても、待ちの基準は緩めていない。
+  - 落ちた1本は sync-conflict-overwrite.spec.js L76 のハブの上書き（「private/notes.json に「#645 端末Bが古い版のまま書いた短文メモ」が 20000ms 以内に届かなかった」）。この1本だけを3回ずつ流して比べた。
+    - 直した版：ハブ ✘✘✘・GitHub ✓✓✓（`tmp/677/step4-sco.txt`）。
+    - 直す前のファイルに一時的に戻した版（446afe8 の js・index.html）：ハブ ✘✘✘・GitHub ✓✓✓。同じ文で落ちた（`tmp/677/step4-sco-base.txt`）。
+    - → 直しのせいではない。#672 でも、直しが無い main で3回中2回落ちていた（672-results.md の載せ直しの表）。この件では触らない。
+- `npm run lint`：12本中0本失敗。`npm test`：Test Files 80 passed・Tests 1197 passed（2 todo）。
+
+### 設計書の文案（step5 で書く）
+
+- **05_プラグイン仕様書 L19**（読み込み）に足す：「保存先の読込が通った後に1回だけ読み込む。起動の読込が通信で失敗した時は読み込まず、後で読込が通った時（電波が戻った時・「再試行」）に1回読み込む＝activate が起動より後になりうる。既に有効なプラグインは2回 activate しない。」
+- **03_詳細設計書**
+  - VirtualBookshelf の主要メソッドに `_runStartupTail()`（起動の後半）と `_runStartupTailIfPending()`（読込の成功の後に、飛ばした後半を1回流す）を足す。
+  - BookshelfPluginLoader に `lastListFailed` と「loadEnabledPlugins は loaded の id を飛ばす」を足す。
+- **08_意思決定記録**（番号は step5 で最新の 08 を見て決める）
+  - 見出し：「起動の後半（公開記事の移行・プラグインの読み込み）は、起動の読込が通った後に1回だけ流す (2026-11-14・イシュー#677・②承認)」
+  - 背景：起動の読込が通信で失敗した後も後半が流れ、GitHub の読み込みの再試行（2秒）で同じ失敗を3回待っていた。端末にデータが無い起動では、toast の後 6.0 秒（止まったままなら約51秒）#loading が残った。後半は全部失敗し、プラグインは0個のまま。通信が戻っても、開き直すまで0個だった。
+  - 決定：失敗した起動では後半を流さない（印 `_startupTailPending`）。読込の成功の終わりで、印がある時だけ1回流す。一覧が読めなかった時は印を立て直し、次に読込が通った時にもう1回だけ流す。loadEnabledPlugins は loaded の id を飛ばす。公開記事の移行も後半に含める（冪等・非破壊）。
+  - 却下した案：
+    - 再試行しない：止まったままの時に約30秒残り、ハブには効かない。
+    - 回路遮断：範囲が広い。
+    - 飛ばすだけ：通信が戻っても0個のまま。
+  - 補足：ADR-057（2段化）で、手元にデータがある起動は画面を出した後に activate している。activate が起動より後になるのは、新しい種類の時機ではない。ADR-059 の「欠けたら起動時に復元」は、読込が通った時に果たす。

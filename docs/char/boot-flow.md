@@ -22,7 +22,9 @@
 | ケース | 順番 | ローディング | confirmが出る瞬間の画面状態 |
 |---|---|---|---|
 | **データ有り**（467-474） | `startRouter()`→`hideLoading()`→（裏で）`finishStartup()`→(finally)`_syncChecking=false`。ただし起動の読込が通信で失敗した時（`_initLoadFailed`）は、`initSync()` が返った直後に `_syncChecking=false`（公開記事の移行・プラグインの読み込みを待たない・イシュー#672） | 即座に消える（確認を待たない） | 画面は通常表示済み・router起動済み。confirmDialogは通常操作中に割り込むモーダルと同じ見え方 |
-| **データ無し**（475-478） | `await finishStartup()`→`startRouter()`→`hideLoading()` | **finishStartup完了まで表示されたまま** | ローディング表示の最中にconfirmDialogが出る（router未起動・プラグイン未読込） |
+| **データ無し**（475-478） | `await finishStartup()`→`startRouter()`→`hideLoading()` | **finishStartup完了まで表示されたまま**。起動の読込が通信で失敗した時は、finishStartup が後半を流さずに返すので、失敗の知らせ（toast・状態バーの行）の直後に消える（イシュー#677） | ローディング表示の最中にconfirmDialogが出る（router未起動・プラグイン未読込） |
+
+起動の後半（公開記事の移行・プラグインの読み込み＝`_runStartupTail()`）は、起動の読込が通った後に1回だけ流す（イシュー#677）。起動の読込が通信で失敗した時（`_initLoadFailed`）は、finishStartup は後半を流さずに印 `_startupTailPending` を立てて返す。後で読込が通った時（電波が戻った時の `_retryInitLoad`・GitHub の toast の「再試行」）に、`_initCloudSyncLoad`/`_initGitHubSyncLoad` の `'synced'` の後の `_runStartupTailIfPending()` が、印がある時だけ1回流して印を下ろす（待たない）。普通に成功した起動では印が立たないので、後半は finishStartup の中の1回だけ。プラグインの一覧が読めなかった時（`pluginLoader.lastListFailed`）は印を立て直し、次に読込が通った時にもう1回だけ流す。`loadEnabledPlugins` は、`loaded` にある id を2回 activate しない。検査は `tests/e2e/boot-load-failure-tail.spec.js`。
 
 ### 1-4. `finishStartup`（413-454）内の時系列
 
