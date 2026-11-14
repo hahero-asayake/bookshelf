@@ -112,12 +112,17 @@ class _ArticleEditorMethods {
             unsent = !(await this._artFlushRemoteNow({ silent: true })).ok;
         }
         if (this._isSyncReady() && !unsent) {
+            let loaded = false;
             try {
                 await this.publishArticleStore.load();
+                loaded = true;
             } catch (e) {
                 this._artLoadError = e;
                 console.error('公開記事の読込に失敗:', e);
             }
+            // イシュー#599: 保存先へ届く前にタブが落ちた新規記事を、端末に残った下書きから作り直す
+            // (読み込めた時だけ。読み込めなかった時は「一覧に無い」のか「読めなかった」のかを見分けられない)
+            if (loaded) await this._artRecoverOrphanDrafts();
         }
         this._artShowList();
         // 重なり管理役 (イシュー#367): 一覧は大 (lg)・編集に入ると全画面 (full・_artOpenEditor で setSize)。履歴は従来どおり _modalHistPush/Pop (hist:false)
@@ -1299,6 +1304,8 @@ class _ArticleEditorMethods {
         this._artPendingId = id ? null : PublishArticleStore._newId('art');
         const effectiveId = id || this._artPendingId;
         this._artEditingId = effectiveId;
+        // イシュー#599: 新規記事は、保存先へ届くまで「保存先でまだ確かめていない新規記事」として覚える (下書きに印を付ける)
+        if (!id) this._artNewUnsentIds().add(effectiveId);
         this._artPendingBookBlockId = null;
         this._artActiveShelfBlockId = null;
         this._artShelfSel = {};
@@ -1369,19 +1376,108 @@ class _ArticleEditorMethods {
                     adTag: this._artDraft.adTag || null
                 }
             };
+            // イシュー#599: 保存先でまだ確かめていない新規記事の印。届く前にタブが落ちた時、この印の下書きから作り直す
+            if (this._artNewUnsentIds().has(this._artEditingId)) payload.newUnsent = true;
             localStorage.setItem(this._artLocalDraftKey(this._artEditingId), JSON.stringify(payload));
+            this._artSessionDraftIds().add(this._artEditingId);
         } catch (e) {
             console.error('記事下書きの localStorage 保存に失敗:', e);
         }
     }
 
-    _artClearLocalDraft() {
-        try { localStorage.removeItem(this._artLocalDraftKey(this._artEditingId)); } catch (_) { /* noop */ }
+    // イシュー#599: 保存先でまだ確かめていない新規記事の id (新規作成で開いた時に入れ、保存先へ届いたら抜く)
+    _artNewUnsentIds() {
+        if (!this._artNewUnsent) this._artNewUnsent = new Set();
+        return this._artNewUnsent;
+    }
+
+    // イシュー#599: この起動中に下書きを書いた (または下書きから作り直した) 記事の id。保存先へ届いた時に下書きを
+    // 消してよいのは、この記事だけ (前の起動から残っている別の記事の下書きは、まだ送っていない直しなので、
+    // その記事を開いた時の復元に任せる)
+    _artSessionDraftIds() {
+        if (!this._artSessionDrafts) this._artSessionDrafts = new Set();
+        return this._artSessionDrafts;
+    }
+
+    // イシュー#599: 保存先へ届いた記事 (sentIds) の下書きを片付ける。送り始めた時刻 (sentAt) より後に書かれた下書きは
+    // まだ送っていない入力なので残し、新規記事の印だけ外す (印が残ると、別の端末で削除された記事が甦る)
+    _artSettleDeliveredDrafts(sentIds, sentAt) {
+        const unsent = this._artNewUnsentIds();
+        const written = this._artSessionDraftIds();
+        sentIds.forEach((id) => {
+            unsent.delete(id);
+            if (!written.has(id)) return;
+            const key = this._artLocalDraftKey(id);
+            try {
+                const raw = localStorage.getItem(key);
+                const saved = raw ? JSON.parse(raw) : null;
+                if (saved && saved.updatedAt > sentAt) {
+                    if (saved.newUnsent) { delete saved.newUnsent; localStorage.setItem(key, JSON.stringify(saved)); }
+                    return;
+                }
+                localStorage.removeItem(key);
+                written.delete(id);
+            } catch (_) { /* noop */ }
+        });
+    }
+
+    // イシュー#599: 保存先へ届く前にタブが落ちた新規記事 (孤児の下書き) を、同じ id の記事として作り直す。
+    // 保存先から読み直せた直後 (openPublishPagesModal) に呼ぶ。孤児 = 下書きに新規記事の印 (newUnsent) があり、
+    // 読み込んだ一覧にその id が無いもの。印の無い下書きは拾わない (別の端末で削除された記事と見分けられない)。
+    // 作り直した記事はすぐ保存先へ送り、届いたら下書きを消す (届かなければ残り、次に開いた時にまた拾う。id が同じなので
+    // 二重にはならない)。題名も本文も空の下書きは拾わずに消す。
+    async _artRecoverOrphanDrafts() {
+        const unsent = this._artNewUnsentIds();
+        let recovered = 0;
+        try {
+            const keys = Object.keys(localStorage).filter((k) => k.startsWith(ART_LOCAL_DRAFT_PREFIX));
+            for (const key of keys) {
+                let saved = null;
+                try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { continue; }
+                if (!saved || !saved.draft || !saved.newUnsent) continue;
+                const id = key.slice(ART_LOCAL_DRAFT_PREFIX.length);
+                if (this.publishArticleStore.get(id)) {
+                    // 保存先に届いていた (届いた後、下書きを消す前にタブが落ちた)。印だけ外し、中身は開いた時の復元に任せる
+                    unsent.delete(id);
+                    delete saved.newUnsent;
+                    localStorage.setItem(key, JSON.stringify(saved));
+                    continue;
+                }
+                const d = saved.draft;
+                if (!(d.title || '').trim() && !(d.blocks || []).length && !(d.tags || []).length) {
+                    unsent.delete(id);
+                    localStorage.removeItem(key);
+                    continue;
+                }
+                await this.publishArticleStore.create(
+                    { title: d.title, tags: d.tags, blocks: d.blocks, theme: d.theme, sourceShelfId: d.sourceShelfId, adTag: d.adTag },
+                    { persist: false, id }
+                );
+                unsent.add(id);
+                this._artSessionDraftIds().add(id);
+                recovered += 1;
+            }
+        } catch (e) {
+            console.error('記事下書きからの作り直しに失敗:', e);
+        }
+        if (recovered > 0) {
+            toast(`保存先へ届く前に閉じた記事を戻しました（${recovered}件）`, { type: 'success' });
+            // すぐ保存先へ送る。送っている間に描いた一覧には「保存できていない変更があります。」が出るので、
+            // 送信が済んだら (届いても届かなくても) 一覧を描き直す
+            this._artFlushRemoteNow({ silent: true }).catch(() => {}).then(() => {
+                const lv = document.getElementById('art-list-view');
+                if (lv && !lv.hidden) this._artRenderList();
+            });
+        }
+        return recovered;
     }
 
     // localStorage の下書きがリモートより新しければ this._artDraft へ反映して true を返す。
     // 古い下書きは掃除する。新規記事 (id=null) は比較対象が無いため下書きがあれば無条件で拾う。
     _artRestoreLocalDraftIfNewer(id) {
+        // イシュー#599: 保存先でまだ確かめていない新規記事は、ストアの中身が下書きと同じ (同じ下書きから作った) なので
+        // 復元しない。下書きも消さない (届く前にまたタブが落ちた時に、ここから作り直す)
+        if (id && this._artNewUnsentIds().has(id)) return false;
         const key = this._artLocalDraftKey(id);
         let saved;
         try {
@@ -3026,17 +3122,23 @@ class _ArticleEditorMethods {
     async _artFlushRemote({ silent = false } = {}) {
         if (this._artRemoteFlushTimer) { clearTimeout(this._artRemoteFlushTimer); this._artRemoteFlushTimer = null; }
         try {
+            // イシュー#599: この送信に含まれる記事と、送り始めた時刻を控える (届いたら、その記事の下書きを片付ける。
+            // 今開いている記事だけを消すと、別の記事へ移った後に届いた時、前の記事の下書きが残る)
+            const sentAt = Date.now();
+            const sentIds = this.publishArticleStore.articles().map((a) => a.id);
             await this.publishArticleStore.retryPersist();
             this._artSetSaveStatus('保存しました');
             this._artRefreshPublishBadge(); // U1: 公開中・未反映のままなら「保存しました」をこの表示で上書きする
-            this._artClearLocalDraft();
+            this._artSettleDeliveredDrafts(sentIds, sentAt);
             return { ok: true };
         } catch (e) {
             // create() の書込 (persist) が失敗しても、記事オブジェクト自体は id/slug 確定済みで
             // メモリ上の store には既に積まれている (store.create() は persist 前に push するため)。
             // ここで id を拾っておかないと、次の保存 (「もう一度保存」や継続入力での再試行) が
             // create() をもう一度呼んでしまい、同じ記事が重複作成される。
-            if (!this._artEditingId && this.publishArticleStore.hasUnsavedChanges()) {
+            // (イシュー#599: エディタを一度も開いていない時は拾わない。一覧を開いた時に下書きから作り直した記事の
+            //  送信が失敗するとここに来るが、開いている下書きが無いので拾う相手がいない)
+            if (!this._artEditingId && this._artDraft && this.publishArticleStore.hasUnsavedChanges()) {
                 const pending = this.publishArticleStore.articles().slice(-1)[0];
                 if (pending) {
                     this._artEditingId = pending.id;
@@ -3454,6 +3556,10 @@ class _ArticleEditorMethods {
                 console.error('記事の削除に失敗:', e);
                 return false;
             }
+            // イシュー#599: 削除した記事の下書きも消す (新規記事の印つきの下書きが残ると、次に一覧を開いた時に甦る)
+            this._artNewUnsentIds().delete(id);
+            this._artSessionDraftIds().delete(id);
+            try { localStorage.removeItem(this._artLocalDraftKey(id)); } catch (_) { /* noop */ }
             return true;
         });
     }

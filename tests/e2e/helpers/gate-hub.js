@@ -1,7 +1,7 @@
 // 門のE2E (テスト名に `@gate` と観測点ID) の「前提」で使う、ハブ (Asayake ハブの Worker と公開ページの配信) の模擬
 // (イシュー#589 が作り、#588 で保存のまとめ書き・一覧・公開・公開ページの配信・書き込み失敗を足した。#598 で、
 // tests/e2e/helpers/storage-fakes.js にあったもう1本のハブの模擬をここへ寄せ、そちらにしか無かった一覧の entries・
-// If-Match の正規化・回数を決めた書き込みの失敗・書き込みと削除要求の記録・読み口 (hubStoreForTest) を足した)。
+// If-Match の正規化・回数を決めた書き込みの失敗・書き込みと削除要求の記録・読み口 (hubStoreForTest) を、#599 で記事の書き込みの宙づりを足した)。
 // 書き方の決まりは tests/e2e/gate/README.md。外部 (ハブ・公開ページの配信) への通信だけを差し替え、アプリ自身の
 // ファイル (index.html・js/・css/・sw.js) は差し替えない = 本物のコードを通す。
 //
@@ -56,6 +56,7 @@ function initialHubState(overrides) {
         seq: 0,                // ETag の連番
         failWrites: false,     // true の間は書き込み (PUT・DELETE・まとめ書き・公開) を 500 で失敗させる
         failNextWrites: 0,     // 1以上の間は書き込みを 500 で失敗させ、1回ごとに1減らす (failWrites が true ならそちらが優先)
+        holdArticleWrites: false, // true の間は記事のファイル (ARTICLES_PATH) への書き込みに応答を返さない (宙づり)
         requests: [],          // 届いた通信の記録 ({ method, path })。模擬に無い道を見つける時に読む
         writes: [],            // 中身が実際に変わった書き込み ({ op: 'put'|'delete', path, via: 'single'|'batch' })
         deleteRequests: [],    // 届いた削除の要求 ({ path, via, existed })。ハブに無いファイルへの要求も残す
@@ -194,6 +195,30 @@ function shouldFailWrite(state) {
     if (state.failWrites) return true;
     if (state.failNextWrites > 0) { state.failNextWrites -= 1; return true; }
     return false;
+}
+
+/** 記事のファイル (js/publish-article-store.js の PUBLISH_ARTICLES_PATH) */
+const ARTICLES_PATH = 'private/publish/articles.json';
+
+/** 次に (reloads 回目に) 再読込するまで、記事のファイルへの書き込み (PUT・DELETE・まとめ書き) に応答を返さない (宙づり)。読み込みは通す。
+ * 保存先へ届く前にタブが落ちた (再読込した) 時を模擬する (イシュー#599)。宙づりの通信は、ページを読み込み直すと
+ * ブラウザが捨てる (読み込み直さなければ、アプリの送信は10秒で時間切れになる・StorageAdapter.fetchJSON の既定)。
+ * 解けるのは、読み込み直したページの DOMContentLoaded の時 = 再読込の前のページが閉じる途中に送った書き込み
+ * (pagehide の送信) は届かず、読み込み直したページからの書き込みは届く。
+ * 500 で失敗させる failHubWritesForTest とは別物 (こちらは応答そのものを返さない。失敗の回数も減らさない)。
+ * @param {import('@playwright/test').Page} page
+ * @param {ReturnType<typeof createHubStateForTest>} state
+ * @param {number} [reloads] 何回目の再読込で解くか (既定 1。2 なら、1回目の再読込の後も届かないまま) */
+export function holdHubArticleWritesUntilReloadForTest(page, state, reloads = 1) {
+    state.holdArticleWrites = true;
+    let left = reloads;
+    const onLoaded = () => {
+        left -= 1;
+        if (left > 0) return;
+        state.holdArticleWrites = false;
+        page.off('domcontentloaded', onLoaded);
+    };
+    page.on('domcontentloaded', onLoaded);
 }
 
 /** ハブの中身を、保存先の模擬の共通の読み口で読む。名前は tests/e2e/helpers/storage-fakes.js の installFakeGitHub・
@@ -356,6 +381,7 @@ function fulfillData(route, state, method, path) {
         if (!entry) return route.fulfill({ status: 404 });
         return route.fulfill({ status: 200, headers: etagHeaders(entry.etag), body: method === 'HEAD' ? '' : entry.content, contentType: 'text/plain' });
     }
+    if (state.holdArticleWrites && path === ARTICLES_PATH) return undefined; // 宙づり: 応答を返さない (holdHubArticleWritesUntilReloadForTest)
     if (shouldFailWrite(state)) return writeFailure(route);
     if (method === 'PUT') {
         // 本物 (putObject) と同じく、If-Match が今の ETag と合わなければ 412 {error:'etag mismatch'} で書かない
@@ -497,8 +523,10 @@ export async function mockHubForTest(page, state) {
             return route.fulfill({ json: runPublish(state, JSON.parse(req.postData() || '{}')) });
         }
         if (path === '/data/batch' && method === 'POST') {
+            const entries = JSON.parse(req.postData() || '{}').entries;
+            if (state.holdArticleWrites && Array.isArray(entries) && entries.some((e) => e.path === ARTICLES_PATH)) return undefined; // 宙づり
             if (shouldFailWrite(state)) return writeFailure(route);
-            const r = runBatch(state, JSON.parse(req.postData() || '{}').entries);
+            const r = runBatch(state, entries);
             return r.body ? route.fulfill({ status: r.status, json: r.body }) : route.fulfill({ status: r.status });
         }
         if (path.startsWith('/data/')) {
