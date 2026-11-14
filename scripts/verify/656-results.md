@@ -178,3 +178,14 @@ book-memo-file-lifecycle.spec.js の残り2件 (ローカルの「長文メモ: 
 
 - 関係する vitest 4ファイル (decide-loaded-state・book-memo-file-ops・book-memo-move-target-exists・sync-failure): 40 passed。
 - lint:internal-refs (上限82以内)・lint:e2e-wait: OK。lint 一式・vitest 全体・e2e-diff-main・check:version は step5 で流す。
+
+## step4: #602 の残りの fixme を外す (2026-11-14)
+
+- #614 の証拠 `_local/614/step4-602fixme.log` は、#614 の worktree ごと無かった (計画の時に確かめた・_artifacts・_trash にも無い)。そのため測り直した。
+- book-memo-file-lifecycle.spec.js「長文メモ: フォルダ未接続の間の変更 ローカルフォルダ」の `test.fixme` を `test` にした。コメントは今の状態に直した (#602 の読込の決め方 029bf88 で直った・#656 で外した)。
+- 測定 (PORT=8156): `--grep "フォルダ未接続の間の変更" --repeat-each=10 --workers=1` → **10/10 緑** (35.5秒・`_local/656/f602-w1.log`)。
+- spec 全体を workers=3 で3回 (fixme が無くなり、skipped は0本になる): **3回とも 32 passed・0 failed・0 skipped** (1.9分・1.8分・1.9分・`_local/656/spec-all-{1,2,3}.log`)。流す前と後に 8156番が空いていることを確かめた。
+- lint:known-red: OK (既知の赤 2件・違反0件)。
+- 594-results.md の該当行を、古い記述を消さずに「→ 緑 (#656)」の形で更新した。
+  - :202 (ローカルの列の fixme)・:216 (ローカルの「未接続の間の変更 → 繋ぎ直し」の行)・:228 (ローカルの列)。
+  - ローカルの揺れを「長文メモの移す記録の側・未起票」と書いていた :214・:229 には、原因が読込の決め方の側だったことと、#656 で直したことを足した。
