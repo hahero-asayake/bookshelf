@@ -18,7 +18,7 @@
 //   node scripts/verify/e2e-diff-main.mjs [--base=origin/main] [--self]
 //     [--skip-e2e] [--skip-vitest] [--no-visual] [--grep=<pattern>]
 //     [--exclude=<pattern>]... [--no-default-exclude]
-//     [--out=<dir>] [--port=<n>] [--retries=<n>] [--keep]
+//     [--out=<dir>] [--port=<n>] [--retries=<n>] [--workers=<n>] [--keep]
 //
 //   --no-visual   画像比較(playwright.visual.config.js・work側のみ)を外す。既定はオン
 //                 (イシュー#526。UI変更時に画像比較の付け忘れが起きた反省から、判定ロジックを
@@ -36,6 +36,9 @@
 //   --out         結果の置き場(既定: 作業ツリーの外・恒久的な場所。runをまたいで残る。tmp配下ではない)。
 //   --port        既定は環境変数PORTまたは8000(playwright.config.jsと同じ規則)。
 //   --retries     新しく落ちたものの流し直し回数(既定3・計画§3-2の4)。
+//   --workers     playwrightの並列数(--workers)。指定した時だけ、base・work・流し直し・画像比較の
+//                 playwrightすべてに同じ値で渡す(両側を同じ条件で比べるため)。既定は渡さない=
+//                 playwrightの既定(CPUの半分)のまま。マシンが混んでいる時に絞る(イシュー#668)。
 //   --keep        デバッグ用。一時worktreeを片付けずに残す(通常は使わない)。
 //   --init-storage key=value
 //                 E2E実行前にlocalStorageへ値を注入する(複数回指定可)。base/work両方の
@@ -97,6 +100,10 @@ const { run: VISUAL, reason: VISUAL_REASON } = resolveVisual(argv);
 const GREP = opt('grep', '');
 const PORT = opt('port', process.env.PORT || '8000');
 const RETRIES = parseInt(opt('retries', '3'), 10);
+// playwrightの並列数(イシュー#668)。空=渡さない(従来どおり)。playwrightと同じく整数か「50%」の形
+const WORKERS = opt('workers', '');
+if (WORKERS && !/^[1-9]\d*%?$/.test(WORKERS)) throw new Error(`--workers は1以上の整数か「50%」の形で指定すること(受け取った値: ${WORKERS})`);
+const WORKERS_ARGS = WORKERS ? ['--workers', WORKERS] : [];
 const KEEP = flag('keep');
 const NO_DEFAULT_EXCLUDE = flag('no-default-exclude');
 const EXTRA_EXCLUDE_PATTERNS = optAll('exclude');
@@ -275,6 +282,7 @@ async function runE2E(sideDir, outFile, {
     if (project) args.push('--project', project);
     if (grep) args.push('--grep', grep);
     if (grepInvert) args.push('--grep-invert', grepInvert);
+    args.push(...WORKERS_ARGS);
     const env = {
         ...process.env, PORT, PLAYWRIGHT_BASE_URL: `http://localhost:${PORT}`, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
     };
@@ -461,7 +469,7 @@ async function main() {
                 ...process.env, PORT, PLAYWRIGHT_BASE_URL: `http://localhost:${PORT}`, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
             };
             log(`[visual] cwd=${workDir} (work側の画像比較を実行)`);
-            const r = await run(PW_BIN, ['test', '--config=playwright.visual.config.js', '--reporter=json'], { cwd: workDir, env });
+            const r = await run(PW_BIN, ['test', '--config=playwright.visual.config.js', '--reporter=json', ...WORKERS_ARGS], { cwd: workDir, env });
             writeFileSync(`${outFile}.log`, `exit=${r.code}\n${r.out}\n${r.err}`);
             const visualTests = parsePlaywrightJson(outFile, { log });
             const failed = [...visualTests.values()].filter((t) => t.failed);
