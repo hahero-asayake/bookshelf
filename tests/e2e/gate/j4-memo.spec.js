@@ -56,9 +56,8 @@ test('@gate J4-1 J4-2 J4-3 本の詳細で短文メモと長文メモを書い�
         await expect(memoModal(page)).toBeHidden();
     });
 
-    // 「完了」の直後は、詳細のボタンが「長文メモを書く」のまま (#590 不具合3の候補・調査中)。ほかの確かめも続けて見るため soft にする
     await test.step('確認: [J4-2] 詳細のボタンが「長文メモを開く」に変わる', async () => {
-        await expect.soft(longMemoBtn(page)).toHaveText(/長文メモを開く/);
+        await expect(longMemoBtn(page)).toHaveText(/長文メモを開く/);
     });
 
     await test.step('操作: [J4-2] 「長文メモを開く」で開き直す', async () => {

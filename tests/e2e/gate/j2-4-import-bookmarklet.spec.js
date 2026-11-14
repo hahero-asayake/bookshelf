@@ -51,9 +51,7 @@ test('@gate J2-4 Amazon の蔵書一覧で取込ブックマークを押すと�
     });
 
     await test.step('確認: 本棚の冊数が2になり、一覧に2冊の書名が見える', async () => {
-        // 取込の直後は、左の「すべての本」の冊数がアプリの不具合で 0 のまま (#590 不具合2・再読込で直る)。
-        // ほかの確かめも続けて見るため、この1つだけ expect.soft にする (外れればテストは赤)
-        await expect.soft(allShelf(page).locator('.bsr-count')).toHaveText('2');
+        await expect(allShelf(page).locator('.bsr-count')).toHaveText('2');
         await expect(listItems(page)).toHaveCount(2);
         await expect(listItems(page).filter({ hasText: 'ブックマークの本 2' })).toHaveCount(1);
     });

@@ -138,7 +138,7 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 | J1-3 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-github`（Device Flow） | 投入済み・緑。ハブの分は未達（ハブのログインの模擬がまだ無い） |
 | J1-4 | `j1-3-connect-local`（フォルダ） | 投入済み・緑。GitHub の分は**未達・GitHub の状態を持つ模擬が要る**。ハブの分は未達 |
 | J2-1・J2-3・J2-4 | `j2-1-import-entry`・`j2-3-import-file`・`j2-4-import-bookmarklet` | 投入済み・緑 |
-| J2-2・J2-5・J2-6 | `j2-2-import-paste`・`j2-5-import-no-duplicate` | テストあり・不具合の疑いのため未投入（取込の直後すぐ再読込すると冊数が 0 になる。3秒待つと通る。2026-11-14 #590 で実測） |
+| J2-2・J2-5・J2-6 | `j2-2-import-paste`・`j2-5-import-no-duplicate` | 投入済み・既知の赤（#622・取込の直後すぐ再読込すると冊数が 0 になる。3秒待つと通る。2026-11-14 #590 で実測） |
 | J3-1〜J3-4 | `j3-1-shelf-to-detail`〜`j3-4-back-forward-esc-pc`・`-phone` | 投入済み・緑 |
 | J3-5 | `j3-5-many-books.spec.js` | テストあり・測り方の仕上げ待ちのため未投入（ページの中で測る形＝案A を仕上げてから入れる。途中の版は kuroko の core/tmp/590-j3-5.patch） |
 | J4-1〜J4-3 | `j4-memo.spec.js` | 投入済み・緑（#611 の症状＝「完了」のあともボタンが「長文メモを書く」のまま、は #620 の本の詳細の更新の修正で出なくなった。2026-11-14 に3回とも緑） |

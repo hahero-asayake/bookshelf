@@ -37,9 +37,8 @@ test('@gate J1-3 J1-4 PC で保存先を「この端末のフォルダ」にし�
         await expect(methodSelect(page)).toBeHidden();
     });
 
-    // 下の2つ (案内の「設定済み」・再読込後の選択肢) は、ほかの確かめも続けて見るため expect.soft にする (1つでも外れればテストは赤)
     await test.step('確認: ホームの案内の1つめの手順が「設定済み」になっている', async () => {
-        await expect.soft(welcomeSyncBtn(page)).toHaveText('設定済み');
+        await expect(welcomeSyncBtn(page)).toHaveText('設定済み');
     });
 
     await test.step('操作: 再読込して、案内の1つめの手順のボタンを押して設定を開く', async () => {
@@ -52,6 +51,6 @@ test('@gate J1-3 J1-4 PC で保存先を「この端末のフォルダ」にし�
     await test.step('確認: 保存先は「この端末のフォルダ」のままで、同じフォルダにつながっている', async () => {
         await expect(page.locator('#obsidian-sync-path')).toHaveText(FOLDER);
         await expect(page.locator('#obsidian-sync-status')).toContainText('同期済み');
-        await expect.soft(methodSelect(page)).toHaveValue('local');
+        await expect(methodSelect(page)).toHaveValue('local');
     });
 });
