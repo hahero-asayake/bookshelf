@@ -272,3 +272,20 @@
   `check:version --range=origin/main..HEAD`: どれも exit 0。
 - 関係する spec (sync-github-disconnect・sync-chosen-mark・sync-first-connect) を単独で: 18 passed。
 - bookshelf の fix の commit の件名に「(設計: 03/06/08 2026-11-14 更新)」を足した (HEAD が自分の commit であることと、amend の前後で木が同じことを確かめた)。
+
+## step5 push と CI (2026-11-14 15:23〜15:52)
+
+- push: `BOOKSHELF_ISSUE=630 git push origin d43320d:main` (4f1a19b..d43320d・15:50)。自分の commit 3つ:
+  da523ff (fix)・e502ae6 (docs step4)・d43320d (chore ?v=)。他イシューの commit は混ざっていない。この記録はその後の docs の commit。
+- 載せ直し: 6dc2c04 → 0300351 (#628・#631・#632) → 4f1a19b (#629・#633。js/ のアプリのコードは無し・tests と ci.yml・playwright.config.js)。衝突なし。
+- ?v=: origin/main の最大が 2026111633 になり 2026111630 を上回ったので、sync-config.js・screens/settings.js を 2026111641 に上げた
+  (chore の commit・main に無い値)。check:version --range=origin/main..HEAD は OK。
+- e2e の差 (0300351 に対して・`--out=…/_artifacts/630-e2e-diff-4`): 機械が混んでいて (load average 45) work 側の E2E が 461 秒かかり、
+  work 側だけ 10件が落ちた (保存先に届くのを待つ所の時間切れが中心)。流し直しの途中で、裏の実行の時間の上限 (15分) で止まった。
+  落ちた5つの spec (book-memo-file-lifecycle・reimport-diff・save-failure-visible・shelf-file-delete・sync-offline-reconnect) を
+  単独で流すと 68 passed (load average 15)。今回の変更 (GitHub の接続・切断) の経路を通らない spec で、混み具合による揺れと判断した。
+  vitest・画像比較 (54件中差分 0) は差なし。
+- 4f1a19b に載せ直した後: GitHub と保存先の決め方に関わる spec (門の j1-4-github-save-reload・j1-3-connect-github・j1-3-connect-hub・
+  sync-github-disconnect・sync-chosen-mark) を流して 16 passed。#629 が足した J1-4 GitHub (接続→リポジトリを選んで「この設定で使う」→再読込) も、
+  案B (保存先を決めるのは「この設定で使う」) のまま通る。
+- CI: push の直後に checks のページの HTML を読んだ結果は、提出の報告に書く (5分の待ちの範囲・残りは②の確認)。
