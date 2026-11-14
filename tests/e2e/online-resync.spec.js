@@ -17,9 +17,17 @@ const memoBox = (page) => page.locator('.note-textarea[data-scope="all"]:visible
 const statusBar = (page) => page.locator('#app-status-bar');
 const hubHas = (hub, text) => { const e = hub.files.get(NOTES); return !!e && String(e.content).includes(text); };
 
+// 見本の library.json には exportDate が無い。アプリが保存した保存先には必ず入っているので、足しておく。
+// 無いと、開き直した後の読み込みが「初めて揃える保存先」の扱いになり、手元に未反映の編集があれば、
+// 送らずに3択を出して止まる (イシュー#602 の _decideLoadedState。保存先が変わっていなければ手元を書き戻す決まり)
+const SEED_EXPORT_DATE = '2026-11-01T00:00:00.000Z';
+const withExportDate = (json) => JSON.stringify({ ...JSON.parse(json), exportDate: SEED_EXPORT_DATE });
+
 async function prepareHub(page) {
     const hub = createHubStateForTest();
     seedHubDataForTest(hub);
+    const lib = hub.files.get('private/library.json');
+    hub.files.set('private/library.json', { ...lib, content: withExportDate(lib.content) });
     await seedHubLoginForTest(page, hub, { method: 'hub', library: false });
     await mockHubForTest(page, hub);
     return hub;
@@ -103,6 +111,8 @@ test('GitHub でも、電波なしのまま開き直した端末は、電波が�
     const MEMO = 'GitHub で電波なしの間に書いて、開き直した短文メモ';
     const gh = createMockGitHubForTest();
     seedGitHubDataForTest(gh);
+    const libSha = gh.trees.get(gh.commits.get(gh.head).tree).get('private/library.json');
+    gh.blobs.set(libSha, withExportDate(gh.blobs.get(libSha)));
     await seedGitHubLoginForTest(page, gh);
     await mockGitHubForTest(page, gh);
     const cut = { on: false, dropped: 0 };
