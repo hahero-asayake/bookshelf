@@ -46,7 +46,8 @@
 ### 基にした版
 
 - step2 の前に fetch した：#633 が origin/main に入った（4f1a19b）ので、その上に rebase した（step1 の commit は 57aad53 になった）。#612 はまだ入っていない＝「起動前から手元に別の保存先の allInternalId が残っている形」は未実測のまま（step4 の rebase で合わせる）
-- 0300351 と 4f1a19b の間で js/ と index.html は変わっていない（`git diff --stat 0300351 4f1a19b -- js/ index.html` が空）＝step1 の赤は、直す前の版 57aad53 の赤と同じ。spec は step1 から変えていないので、赤の取り直しはしていない
+- 0300351 と 4f1a19b の間で js/ と index.html は変わっていない（`git diff --stat 0300351 4f1a19b -- js/ index.html` が空）。spec も step1 から変えていない
+- 念のため、直した後に、直す前の版（57aad53）の js/bookshelf.js・index.html を作業ツリーに一時的に戻し、同じ spec を1回流して戻した：**赤**（`Error:` 7件・すべて「への PUT の回数」・初期化の id 3kbm3769 → udegk8h9 の2つ・出力 `tmp/643/red-before-final-1.txt`）
 
 ### 直したところ
 
