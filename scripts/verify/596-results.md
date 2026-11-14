@@ -105,3 +105,25 @@
 - #592 の `tests/e2e/sync-first-connect.spec.js` 5件: 緑。
 - e2e-diff (`_artifacts/596-e2e-diff/report.md`・base=origin/main 01a8bf0): 1回目は「リグレ 11件」+ 画像差分 6件 (設定の1節)。原因は全部同じで、テストの前提が `bookshelf_sync={method:'local'}` (印なし・フォルダ無し) を置いて設定の同期でローカルのパネルの「フォルダを選ぶ」を押す形だったこと。#596 (M1) ではこの形は「決めていない」=ハブのパネルが出る。前提を `{method:'local', methodChosen:true}` (この端末のフォルダに決めた人) に直した (shelf-file-delete・book-memo-file-lifecycle・helpers/gate-local.js・tests/visual/screens.spec.js・commit 920e32e)。直した後: 3ファイル 37 passed (4 skipped は元から)・画像比較「設定の1節」6件 passed (基準画像は更新していない)。残り2件は reimport-diff の flake 1件 (流し直しで通過) と、sync-chosen-mark (c) の判定不能 1件 (e2e-diff の実行中に spec を書き換えたため・単独で緑)。
 - `{method:'local'}` を置いている他の E2E (active-filter 等十数件) は、ローカルのパネルを使わないので e2e-diff で落ちていない (前提は変えていない)。
+
+## step4 設計書と push 前の状態 (2026-11-14 06:15〜06:24・利用上限で中断 → 13:30〜13:47 にやり直し)
+
+### 設計書 (obsidian `80_🚀project/81_🚀development/bookshelf/`)
+- 03_詳細設計書 SyncConfigManager: `isConfigured()` を「決めた印あり、または method が hub/github」に書き換え、`setMethod(method, base?)`・`resetMethod(base?)` を足した。#592 の古い `setMethod(method)` の行は消して1つにまとめた。
+- 06_データ仕様書 §同期設定 bookshelf_sync: `methodChosen` の意味・立てる操作・切断で外すこと・決めない書き込みでは立たないこと・印の無い local の扱いを書き、JSON 例に足した。
+- 08_意思決定記録 ADR-056 追補4: キーの有無の判定が決めない書き手 9 か所で崩れた経緯、印の導入、境界 M1 とその理由 (3つ)、M2 を採らなかった理由。
+- 07_残検討事項: 該当行なし (変更なし)。
+- obsidian の commit: 3d51eb6e (03/06/08)・361ab939 (03 の古い行の整理)。03 には他イシュー (#616・#620) の未 commit の行が同居していたので、自分の行だけを stage した。
+
+### rebase (13:31・origin/main 15b0f9e へ)
+- 衝突は index.html の ?v= 2行だけ (sync-config.js・bookshelf.js。#616 が 2026111561 に上げていた)。自分の値 2026111596 を残した (origin/main の最大 2026111561 より新しい・2026111596 は origin/main に無い)。js/sync-config.js・js/bookshelf.js は自動で両方残った (#616 の destinationKey / markConflict / conflict / clearConflict と、#596 の isConfigured / setMethod / resetMethod)。
+- `isConfigured()` の読み手が #616 で1つ増えた: `SyncConfigManager.save()` の `before` (保存の前の保存先の鍵。決めていなければ null)。印の無い local では null になり衝突中の印を外すが、衝突中の印はハブ・GitHub の衝突でしか立たない (js/bookshelf.js `StorageAdapter.isRemoteConflict` の経路) ので動きは変わらない。#616 の単体テスト (tests/unit/sync-conflict.test.js) も緑。
+- fix の commit の件名を `(設計: 03/06/08 2026-11-14 更新)` に直した (中身は同じ・木は直す前と一致)。
+
+### 確かめたこと (rebase 後・HEAD の木は d3c6b26 と同じ)
+- `npm test`: 73 ファイル・1088 passed (2 todo)。
+- CI の lint 11本 (css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・e2e-gate・copy・terms・known-red): 全部 OK。`check:version --range=origin/main..HEAD`: OK。
+- e2e-diff 3回目 (`_artifacts/596-e2e-diff-3/report.md`・base=origin/main 15b0f9e): E2E 新しく落ちた 2件はどちらも flake (流し直し 3回とも緑: reimport-diff の1件・shelf-file-delete の GitHub の1件)・regression 0件・判定不能 0件・両方で落ちた 0件。vitest 新しく落ちた 0件。画像比較 0件 / 54件。
+- e2e-diff 2回目 (06:15・base=a245035・`_artifacts/596-e2e-diff-2/`): 新しく落ちた 0件・画像比較 0件 / 54件。
+- 門のE2E の webkit レグ (`GATE_WEBKIT=1 E2E_SKIP_KNOWN_RED=1 --project=gate-webkit --workers=1`): 25 passed。
+- この後 origin/main が1つ進んだ (bd610ea・門のE2E J2-2/J2-5 の投入・テストだけ・自分のファイルと重なり無し)。step5 でもう一度 rebase する。
