@@ -100,9 +100,19 @@
 
 - **P2（衝突で「保存先」を選ぶ）は未実測**。理由：run の時間（30分）の中で、P1 の実測と記録・commit を先にした。
   - コードの読み：`_askLoadConflict` で `remote` を選ぶと、`_applyLoadedState(state, { adoptRemote: true })` のあと `updateDisplay()` などを呼ぶ（L3015 付近）。ここでも `applyFilters` は呼ばない。描き直しの組が P1 と同じなので、同じ症状（見出し・URL・一覧が X のまま）になる見込み。
-- **P3（電波なしで開いた後の読み直し）は未実測**。理由は P2 と同じ。
-  - コードの読み：`_retryInitLoad` → `initSync()` → initCloudSync / initGitHubSync と進み、P1 と同じ道を通る。
-  - ホームにいる時は一覧が見えない。ただし currentBookshelf は X のまま残る見込み。
+- **P3（電波なしで開いた後の読み直し）は実測した**（1280・chromium・18:41:36〜18:41:43・2件完走）。probe は `tests/e2e/probe-663-p3.spec.js`（commit しない）。
+  - 前提は P1 と同じで、別の端末から画面で X を消した。
+  - 端末Aは、ハブへの通信を `route.abort('internetdisconnected')` で落とした状態で再読込した。これで起動時の読込が失敗し、`_initLoadFailed` が立つ。
+  - そのあとハブへ届くように戻し、`setOffline(true→false)` で 'online' を出した。`_watchSyncRecovery` → `_retryInitLoad` → initCloudSync の順に進み、読込の決め方は `remote` だった。
+
+| 場面 | 見出し | URL | ツリーの選択 | 一覧 | currentBookshelf | history.length（読み直しの前→後） |
+|---|---|---|---|---|---|---|
+| X を開いたまま、電波が戻る | 本棚X | `#/bookshelf/p663-x` | どの行も選ばれていない | 2冊（X にあった本） | p663-x | 3 → 3 |
+| X を開いてからホームへ戻り（戻る1回）、電波が戻る | （ホーム） | `''` | — | — | **p663-x のまま** | 3 → 3 |
+
+- X を開いたままの時は、P1 と同じ症状が出る。
+- ホームにいる時は、画面には何も出ない。ただし currentBookshelf は消えた X を指したまま残る。
+- その後に「進む」で X の段へ行くと、`_applyRoute` が slug を引けず、ホームへ置き換わった（hash `''`）。消えた本棚の段は、ホームへ落ちるだけで壊れない。
 - **GitHub（initGitHubSync の L3379）**：コードの読みだけ。fingerprint を比べてから `updateDisplay()` 他を呼ぶ形が initCloudSync と同じなので、同じ症状の見込み。
 - **ローカルのフォルダ（loadFromObsidianFile の L3562）**：コードの読みだけ。呼び元は reloadFromObsidianFile と initObsidianSync で、`_applyLoadedState` のあとに `updateDisplay()` 他を呼ぶ。同じ症状の見込み。
 
@@ -135,10 +145,11 @@ step2 で気をつけること
 
 ### ホームにいる時の spec は要るか
 
-- **要らない（推奨）**。理由は2つ。
-  - 起動時の読み直し（P1）では、URL がホームなら、ルーターは currentBookshelf を消えた本棚にしない。
-  - ホームにいる時の扱いは、#634 の関数の中の決まりそのもので、今回の変更は呼び出しを足すだけ。
-- ホームで currentBookshelf が消えた本棚を指したまま残るのは、P2・P3（アプリを開いたまま読み直す時）だけ。ここは未実測。
-- 要る場合は、step2 で P3 の型（j8-4-online-resync.spec.js）を使って1件足す。
+- **要らない（推奨）**。理由は3つ。
+  - ホームで currentBookshelf が消えた本棚を指したまま残るのは、P3（実測）・P2（コードの読み）のように、アプリを開いたまま読み直す時だけ。
+  - その時も、ホームの画面には何も出ない（P3 の実測）。画面から確かめられるのは「次に本棚ビューへ入った時」だけになる。ただ、ホームから本棚ビューへ入る道（ツリー・ウィジェット・本の詳細の from）は、どれも行き先の本棚を指定して currentBookshelf を書き換える。これはコードの読みで、全部の道は確かめていない（未確認）。
+  - ホームにいる時の扱いは、#634 の関数の中の決まり（画面を動かさず `currentBookshelf = 'all'`）そのもので、今回の変更は呼び出しを足すだけ。
+- 判定を内部の値（currentBookshelf）だけで書く spec は、「画面から確かめる」の決まりに合わない。なので足さない。
+- ②が要ると判断した場合は、step2 で P3 の probe の型（`route.abort` → 再読込 → 'online'）を使って1件足す。
 
 ## §3 直した後（step2〜3 で書く）
