@@ -91,7 +91,46 @@
 | (C) つまみを下へ 50px | 3/3 緑 | 3/3 緑 |
 | (D) ホームのウィジェットを長押しして下へ 120px | 3/3 赤（再読込された） | 3/3 緑（`.is-dragging` が付いたまま・load 0回） |
 
+### 場所（e798de8 の js/bookshelf.js）
+
+- `_initPullToRefresh()`（L5252）の中だけ。
+  - L5263-5269: 「並べ替えのドラッグ中か」を見る `reordering()`（L5267）、印を引っ込める `hide()`・`retract()`。
+  - L5273: touchstart でドラッグ中なら、そのタッチは扱わない。
+  - L5286-5288: touchmove で、下へ動かす preventDefault の後、ドラッグ中（またはそのタッチの途中でドラッグ中だった＝`byReorder`）なら印を出さずに返す。
+  - L5298: touchend・touchcancel で、ドラッグ中だったタッチは再読込しない。
+- 既存の2か所（横の移動が大きい時・上へ動かした時）の「引っ込める」は、同じ中身の `retract()` に置き換えただけ（動きは同じ）。
+
 ### その他
 
 - index.html の bookshelf.js の `?v=` を 2026111730 にした（origin/main 16c0a10 は 2026111710。作業中の他の worktree の最大は #622 の 2026111722）。
 - 設計書: 04_画面設計書 の PWA の行（pull-to-refresh の決まり・「横の移動が縦より大きい touchmove は引っ張り更新にしない」の続き）に、「並べ替えのドラッグ中 (本のつまみ・ホームのウィジェット) も引っ張り更新にしない＝印を出さず、離しても再読込しない」を足した。03_詳細設計書 は `_initPullToRefresh()` の名前があるだけなので、変えていない。
+
+## §3 変異検査・関係する spec・lint・vitest（step3）
+
+測った版: e798de8（1a1b3ee の上・origin/main 16c0a10 の上）。2026-11-14 17:27〜17:29 JST。chromium（390×844・hasTouch・isMobile・CDP のタッチ）。
+
+### 変異検査（js/bookshelf.js だけを 1a1b3ee の版＝直す前に戻す・index.html と spec はそのまま）
+
+| 場面 | 直す前に戻した時（`--repeat-each=3`） | 修正に戻した後（`git checkout -- js/bookshelf.js`・`--repeat-each=3`） |
+|---|---|---|
+| (A) つまみを下へ 120px | 3/3 赤（load 1回） | 3/3 緑（load 0回・並び [1,2,3] のまま・`.dragging` が付いた） |
+| (A2) つまみを下の段の本の上まで | 3/3 赤（load 1回） | 3/3 緑（load 0回・並び [2,1,3]） |
+| (B) 対照：空いた所から下へ 120px | 3/3 緑（load 1回＝再読込される） | 3/3 緑（load 1回） |
+| (C) つまみを下へ 50px | 3/3 緑（load 0回） | 3/3 緑（load 0回） |
+| (D) ホームのウィジェットを長押しして下へ 120px | 3/3 赤（load 1回） | 3/3 緑（load 0回・`.is-dragging` が付いた） |
+
+- 合計: 戻した時は 9 failed・6 passed、修正に戻した後は 15 passed。修正だけで赤と緑が入れ替わる（記録は `_local/659/probe-mutation.jsonl`・`probe-restored.jsonl`）。
+
+### 関係する spec（修正の版・`--workers=4`）
+
+- 流したもの: tests/e2e/touch-reorder.spec.js・tree-drop-stays-home.spec.js・book-detail-shelf-meta.spec.js・smoke.spec.js・dashboard-stats-after-manual-add.spec.js・ux-u4-contrast.spec.js（chromium）と、ホームのウィジェットの並べ替えを含む tests/e2e/char/widgets.spec.js・char/x2-widgets.spec.js（char の6端末＝390/768/820/1024 はタッチ・1440/1920 はマウス）。
+  - 探し方: `git grep -l -E "dashboard-widget|widget-grip|bookshelf-drag-handle|setupBookshelfDragAndDrop|drag-handle|_bindPointerReorder|is-dragging" -- tests/e2e/`。
+- 結果: **129 passed・0 failed**（1.2分）。
+- 既存の引っぱって更新の spec: もう一度 `git grep -i -E "ptr-indicator|pull-to-refresh|PullToRefresh|下に引いて更新|離して更新" -- tests/` で探した。当たったのは新しい spec だけ（既存は0件）。なので「空いた所からの引っぱりは今までどおり効く」は、新しい spec の (B) が見張る。
+
+### lint・vitest・check:version（修正の版）
+
+- `npm run lint`: **12 本中 0 本失敗**。
+- lint:esc: 修正の前（1a1b3ee・step1）も後（e798de8）も「js/ 配下に Esc の判定の直書きは無い（例外: js/ui/reorder.js）」＝直書き0件・例外1件で同じ。
+- `npm test`（vitest）: Test Files 78 passed・Tests 1176 passed / 2 todo（失敗0）。
+- `npm run check:version -- --range=origin/main..HEAD`: OK（変更された js/css はすべて `?v=` がバンプ済み。vendor の未参照の警告は前からある・exit code に影響しない）。
