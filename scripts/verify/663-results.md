@@ -205,3 +205,53 @@ probe の見本では「すべて」の本棚の名前が「すべて」なの�
   - `_leaveRemovedShelf` の行（L153）の「呼ぶのは」に、`_applyLoadedState` の末尾を足した。
   - obsidian 側の commit はしていない（自動バックアップに任せる）。
 - probe 2本（`tests/e2e/probe-663-*.spec.js`）は commit せず、`_trash/663-probe/` へ移した。
+
+### step3：push の前の検証
+
+#### 載せ直し
+
+- 18:50:22 に fetch し、origin/main 47505b2 へ rebase した（衝突なし）。
+- issue/663 の commit は次の6件になった。どれも Issue: #663 付き。
+
+| sha | 種類 | step2 の時の sha |
+|---|---|---|
+| fa4d630 | docs | 7765101 |
+| b901e98 | docs | 58d687e |
+| a8bfda6 | test（赤） | 56bedc7 |
+| f5932f6 | fix | cdc0e8a |
+| cfabd29 | docs | 46b89b1 |
+| f47650e | chore（?v=） | なし（step3 で足した） |
+
+#### ?v= が衝突なしで消えた（#665 の罠）
+
+- origin/main の #669 の fix（0a75394）が、`js/bookshelf.js?v=` を同じ値の 2026111796 に上げていた。
+- そのため rebase で、この直しの index.html の変更が消えた（f5932f6 は js/bookshelf.js だけになった）。
+- f47650e で 2026111797 に上げ直した。origin/main の index.html の最大値は 2026111796。
+- `check:version --range=origin/main..HEAD` は OK。
+
+#### lint・vitest（rebase の後・f47650e）
+
+- `npm run lint`：12本中0本失敗。
+- `npm test`：80ファイル・1194件が通った（todo 2）。exit 0。
+
+#### main との全件比較（e2e-diff-main）：途中で壊れたので代替判定にした
+
+e2e-diff-main は、18:51:07〜19:03:07 に `--port=8163`・`--init-storage` なしで流した。12分の上限で打ち切った（exit 1）。
+
+- **base 側（origin/main 47505b2）は全件を流し切った**（18:51〜18:57・6分13秒）。
+  - 1147件が通り、4件が落ちた（skip 593・flaky 0）。
+  - 落ちた4件：duplicate-asin-notice・list-staged-render・reimport-diff・sync-offline-reconnect の「両方が変わった:「保存先の内容を読み込む」を選ぶと…」。どれも origin/main で落ちたもので、この直しとは関係しない。
+- **work 側の E2E は途中で終わった**（18:57:20〜19:02:39・1748件中およそ519件まで）。`work.e2e.json` が出ず、比較できなかった。
+  - 負荷が高かった（load average 41）。
+  - そのあと vitest は両側とも流れた（base 1194件・work 1194件が通り、どちらも失敗0）。
+  - 画像比較は「port 8163 が使用中」で止まった。
+- **後始末**：途中で終わった run が残したサーバ（`python3 -m http.server 8163`・cwd はこの worktree）が、空の応答を返していた。そのまま一覧を流すと89件すべてが `net::ERR_EMPTY_RESPONSE` で落ちたので、このサーバを止めた。
+
+**代替判定（step3 の決まりどおり、step2 の一覧を両側で比べた）**
+
+- base 側：e2e-diff が流し切った origin/main の全件の結果から、同じ spec の分を取り出した。新しい spec は base に無い。
+  - 86件のうち85件が通り、1件が落ちた（sync-offline-reconnect の上の1件）。
+- work 側：f47650e で、step2 と同じ13本を流し直した（chromium・PORT=8163・4 workers・19:04:32〜19:05:58）。
+  - **89件すべてが通った（1.4分）**。base で落ちた sync-offline-reconnect の1件も、work では通った。
+- **新しく落ちたもの：0件**。
+- 流し切れなかったのは、work 側の E2E 全件と画像比較。この2つは、この判定に入っていない。
