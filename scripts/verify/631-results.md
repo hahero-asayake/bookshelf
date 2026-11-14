@@ -196,3 +196,57 @@ E2E の内訳 (緑の本数):
 
 - `_local/631/step3-e2e.log`・`step3-visual.log`・`step3-vitest-all.log`・`step3-lint-*.log` (git の管理外)。
 - 読むだけのスクリプト: `_local/631/read-design.mjs` (設計書)・`count-shifted.mjs` (件数)・`where.mjs` (場所)。
+
+## step4 最新 main への載せ直しと全件比較
+
+### 載せ直し (rebase)
+
+- 土台を f6dd65a から origin/main の最新 `116db67` (14:54 時点・7つ進んでいた。#602・#617・#615 が入った) へ移した。
+- 自分の commit は `cd9f616` → `acde287` (fix)・`262ce80` → `6ab7d54` (docs) になった。
+- 衝突は `index.html:1519` の `js/bookshelf.js?v=` の1行だけ。相手 (#615) は 2026111596 → 2026111602、自分は 2026111632 にしていた。自分の 2026111632 を残した (origin/main の 2026111602 より新しく、ほかと重ならない)。
+- `js/bookshelf.js` は自動で合わさった。相手の変更 (元の行で 2828〜・5215・5327・6786) は、自分の saveBookChanges (`:6436-6446`)・addBookManually (`:6829-6830`) と重ならない。当て直した所は無い。
+- #614 (saveBookChanges まわり) は、まだ origin/main に入っていない (`Issue: #614` の commit は 0件)。
+
+`?v=` の値 (載せ直した後):
+
+| ファイル | 行 | origin/main | 自分 |
+|---|---|---|---|
+| `js/book-manager.js` | 1504 | 2026110207 | 2026111631 |
+| `js/bookshelf.js` | 1519 | 2026111602 | 2026111632 |
+| `js/screens/book-detail.js` | 1535 | 2026111521 | 2026111633 |
+
+- origin/main の index.html の最大は 2026111602。自分の 3つの値は、origin/main にも、ほかの未取り込みのブランチにも無い (自分のブランチを除いて数えて 0件)。
+
+### 載せ直した後の流し直し (6ab7d54)
+
+| 対象 | 結果 |
+|---|---|
+| lint 11本 (CI の e2e レグと同じ) | 全部 exit 0 (lint:e2e-gate は @gate 35本・違反 0件) |
+| `check:version --range=origin/main..HEAD` | OK |
+| 新しい spec (T1〜T6) | 6本とも緑 (5.8秒)。全件比較とポートを分けるため、空いていた 18131 番で流した。新しい `?v=` の bookshelf.js が読まれたことをサーバの記録で確かめた |
+| vitest 全件 | 74ファイル・1099本が緑 (ほかに todo 2本) |
+
+### 全件比較 (`scripts/verify/e2e-diff-main.mjs`・14:55〜15:04・約9分)
+
+- base: origin/main `116db67`。work: この作業ツリー (HEAD `6ab7d54`。未コミットはこの記録だけ)。
+- コマンド: `PORT=8131 node scripts/verify/e2e-diff-main.mjs --port=8131 --out=_local/631/e2e-diff` (Bash の裏で起動)。除外は既定の sort-perf-budget だけ。
+- 結果一式は `_local/631/e2e-diff/` (report.md・各 JSON。git の管理外)。
+
+| 対象 | base | work |
+|---|---|---|
+| E2E (chromium と char 6端末) | 977本が緑・594本がスキップ・失敗 0本 | 983本が緑・594本がスキップ・失敗 0本・フレーク 0本 |
+| vitest | 1088本が緑 (todo 2本) | 1099本が緑 (todo 2本) |
+| visual (work 側だけ) | — | 54本のうち差分 0本 |
+
+- work の E2E は base より 6本多い = 新しい spec の T1〜T6。vitest は 11本多い = 新しい単体テスト。
+
+3つの表 (report.md の写し):
+
+| 表 | E2E | vitest |
+|---|---|---|
+| 新しく落ちた | 0件 | 0件 |
+| 新しく通った | 0件 | 0件 |
+| 両方で落ちた (既存の問題) | 0件 | 0件 |
+
+- 判定不能 (流し直しで実行 0件) も 0件。新しく落ちたものが無いので、単独での流し直しは要らなかった。
+- 全件比較の後 (15:04) に origin/main がさらに 4つ進んだ。push の前 (step5) にもう一度載せ直し、流し直す。
