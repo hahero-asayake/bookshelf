@@ -225,3 +225,8 @@
 
 - 新しく落ちたもの 0 件・vitest 0 件・画像の差分 0 件なので、push してよいと判断した。②の確認を取ってから push する。
 - push の直前に、もう一度 fetch する。main が 36cf113 より先へ進んでいたら、進んだ分が `_initPullToRefresh` に触れていないかを確かめる。index.html は、bookshelf.js の `?v=` の行の外でぶつかっていないかを確かめる。触れていなければ、載せ直して lint・check:version・新しい spec だけを流し直す。
+
+### push の直前の載せ直し
+
+- push の直前（18:29）に fetch すると、origin/main は 72d31cb まで進んでいた（#657・#634・#645・#662・#651 の34 commit）。進んだ分は `_initPullToRefresh`（main 側の L5383〜5437）に触れておらず、index.html は bookshelf.js の `?v=` の行だけがぶつかった。そこで載せ直し、`?v=` は main がもう 2026111764 を使っていたため、作業中の worktree の最大（issue-667 の 2026111780）の次の 2026111781 に上げた（5d755ba・`Issue: #665`）。
+- 載せ直した版での流し直し: lint は 12 本中 0 本失敗（lint:esc は変わらず）。`check:version -- --range=origin/main..HEAD` は OK。新しい spec（`--repeat-each=3`）は 15 passed。
