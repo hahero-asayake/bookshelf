@@ -4,7 +4,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/storage-adapter.js');
 await import('../../js/hub-adapter.js');
+await import('../../js/storage.js');
 const { HubStorageAdapter, HubConflictError, HubRemoteChangedError, HubAuthError, HubQuotaError } = globalThis;
+const BookshelfStorage = window.BookshelfStorage;
 
 const API = 'https://api.asayake.test';
 
@@ -280,6 +282,100 @@ describe('R: listDir の entries による差分のみ取得 (イシュー#391�
         const fn3 = mockFetch({ ...listRoutes({ libEtag: '"e1"', entries: false }), [`GET ${LIB_PATH}`]: () => res('{"books":[]}', 200, { ETag: '"e1"' }) });
         await adapter3.readJSON(LIB);
         expect(getCallCount(fn3)).toBe(1);
+    });
+});
+
+describe('読み直し (loadAll) のたびに一覧の控えを取り直す (イシュー#679)', () => {
+    // 一覧の控え (ETag の表) を3秒の間使い回すだけだと、3秒以内の読み直しは前の一覧のまま、端末に残した古い中身と版を返していた。
+    // 書き込み時の衝突で「この端末の内容で保存先を上書き」を選んだ直後の読み直しがこれに当たり、古い版で書いてまた 412 になっていた
+    const NOTES = 'private/notes.json';
+    const notesText = (memo) => JSON.stringify({ notes: { A1: { memo } } });
+    const memoOf = (text) => JSON.parse(text).notes.A1.memo;
+    const putNotes = (memo) => ({ op: 'put', path: NOTES, data: { notes: { A1: { memo } } }, kind: 'json' });
+
+    // 中身と ETag を持つハブの模擬 (一覧は本物の listDir と同じく entries 付き・まとめ書きは ifMatch を照合して 412)。
+    // hold() は次の private の一覧の応答を、返した関数を呼ぶまで止める (一覧の中身は要求を受けた時点のもの)
+    function fakeHub(initial) {
+        const files = new Map();
+        let seq = 0;
+        const put = (path, body) => { files.set(path, { body, etag: `"v${++seq}"` }); };
+        for (const [p, b] of Object.entries(initial)) put(p, b);
+        const lists = []; // private の一覧の要求のたびに、その時の notes.json の ETag
+        let holdNext = null;
+        const pathOf = (u) => decodeURIComponent(u.pathname.replace(/^\/data\//, ''));
+        const norm = (e) => (e == null ? e : String(e).replace(/^W\//, '').replace(/"/g, ''));
+        mockFetch({
+            'GET *': async ({ url }) => {
+                const path = pathOf(url);
+                if (url.searchParams.get('list')) {
+                    const prefix = `${path}/`;
+                    const entries = [...files].filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
+                        .map(([p, f]) => ({ name: p.slice(prefix.length), etag: f.etag, size: f.body.length }));
+                    const body = JSON.stringify({ files: entries.map((e) => e.name), dirs: [], entries, truncated: false });
+                    if (path === 'private') {
+                        lists.push(files.get(NOTES) && files.get(NOTES).etag);
+                        if (holdNext) { const wait = holdNext; holdNext = null; await wait; }
+                    }
+                    return res(body, 200);
+                }
+                const f = files.get(path);
+                return f ? res(f.body, 200, { ETag: f.etag }) : res('', 404);
+            },
+            'HEAD *': ({ url }) => { const f = files.get(pathOf(url)); return f ? res(null, 200, { ETag: f.etag }) : res(null, 404); },
+            'POST /data/batch': ({ init }) => {
+                const { entries } = JSON.parse(init.body);
+                const conflicts = entries.filter((e) => {
+                    const f = files.get(e.path);
+                    return e.ifNoneMatch === '*' ? !!f : (e.ifMatch && (!f || norm(f.etag) !== norm(e.ifMatch)));
+                }).map((e) => ({ path: e.path, etag: files.get(e.path) ? norm(files.get(e.path).etag) : null }));
+                if (conflicts.length) return res(JSON.stringify({ error: 'etag mismatch', conflicts }), 412);
+                const etags = {};
+                for (const e of entries) {
+                    if (e.op === 'delete') files.delete(e.path);
+                    else { put(e.path, e.content); etags[e.path] = files.get(e.path).etag; }
+                }
+                return res(JSON.stringify({ etags }), 200);
+            }
+        });
+        return {
+            files, put, lists,
+            hold() { let release; holdNext = new Promise((r) => { release = r; }); return release; }
+        };
+    }
+
+    it('他の端末が書いた直後 (前の一覧から3秒たたないうち) に loadAll で読み直しても、最新の中身と版が返り、その版で上書きできる', async () => {
+        const hub = fakeHub({ [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        expect((await storage.loadAll()).notes.A1.memo).toBe('最初');
+
+        hub.put(NOTES, notesText('別の端末')); // 他の端末が notes.json を書いた
+        const state = await storage.loadAll(); // 前の一覧から数ミリ秒 (3秒の控えの期限の内側)
+
+        expect(hub.lists).toEqual(['"v1"', '"v2"']); // 読み直しで一覧を取り直す
+        expect(state.notes.A1.memo).toBe('別の端末');
+        // 書き込みの照合に使う版も最新＝この端末の内容で上書きするまとめ書きが、古い版の照合で 412 にならない
+        expect(await storage.syncBatch([putNotes('この端末')])).toBe(true);
+        expect(memoOf(hub.files.get(NOTES).body)).toBe('この端末');
+    });
+
+    it('一覧の応答を待つ間に控えを捨てられたら (読み直しが重なった時)、捨てる前に取り始めた一覧で古い中身と版を控えに戻さない', async () => {
+        const hub = fakeHub({ [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        await storage.loadAll(); // 端末に v1 の中身が残る
+
+        adapter.forgetRemoteListing();
+        const release = hub.hold();          // 次の一覧 (この時の notes.json は v1) の応答を止める
+        const slow = adapter.readJSON(NOTES); // 一覧を待っている読み
+        await vi.waitFor(() => expect(hub.lists.length).toBe(2));
+
+        adapter.forgetRemoteListing();       // 読み直しの入口 (BookshelfStorage.loadAll) が控えを捨てる
+        expect(await storage.syncBatch([putNotes('この端末')])).toBe(true); // この端末の書き込みで v2 になる
+        release();
+
+        // 止めていた古い一覧 (v1) を使うと、端末に残した v1 の中身と版が返り、次の書き込みが自分の書いた版と食い違って止まる
+        expect((await slow).notes.A1.memo).toBe('この端末');
+        expect(await storage.syncBatch([putNotes('もう一度')])).toBe(true);
+        expect(memoOf(hub.files.get(NOTES).body)).toBe('もう一度');
     });
 });
 

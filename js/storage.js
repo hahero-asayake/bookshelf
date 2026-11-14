@@ -370,9 +370,9 @@ class BookshelfStorage {
 
     // ===== 一括読み込み (新構造: 全部 private/ 配下) =====
     async loadAll() {
-        // 読み直しのたびに、保存先の一覧の控え (GitHub の tree の sha) を捨てて取り直す (イシュー#645)。
-        // 持ち続けると、同じページのまま読み直しても起動した時の中身が返る。口を持つ adapter だけ呼ぶ
-        // (ハブは一覧の控えを短い時間で切っている＝js/hub-adapter.js の ETAG_MAP_TTL_MS)
+        // 読み直しのたびに、保存先の一覧の控え (GitHub の tree の sha・ハブの ETag の表) を捨てて取り直す (イシュー#645・#679)。
+        // 持ち続けると、同じページのまま読み直しても前に読んだ時の中身が返る。ハブの3秒の期限 (ETAG_MAP_TTL_MS) だけでは足りない
+        // (前の一覧から3秒以内の読み直しは前の一覧のまま・#679)。口を持つ adapter だけ呼ぶ (ローカルは一覧の控えを持たない)
         if (typeof this.adapter.forgetRemoteListing === 'function') this.adapter.forgetRemoteListing();
         // PAR (イシュー#391): 固定7本は同時数4で並列取得 (直列だと起動時タイムアウトの本線になる・
         // step1実測)。bookshelvesMeta が確定してから本棚ごとのファイル(本数は蔵書構成に依存)を

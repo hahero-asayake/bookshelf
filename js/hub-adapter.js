@@ -31,9 +31,9 @@ const BATCH_TIMEOUT_MS = 30000;
 // listDir は1階層しか見えないため、この2つの dir を一覧すれば読み出す全パスのETagが揃う。
 const ETAG_DIRS = ['private', 'private/bookshelves'];
 // 同一 loadAll() 呼び出し(固定7本の並列+本棚N本の並列、2段の runLimited)の間だけ一覧を
-// 共有してまとめる猶予。#391 の GitHubAdapter(_remoteShaMap を取得後ずっと保持し続ける)とは
-// 違い、ハブ側はここを短く切ることで「loadAll を呼ぶたびに一覧を取り直す」を実現する
-// (②指示2026-10-29: 使い回すと他端末の書き込みが見えなくなる)。
+// 共有してまとめる猶予。loadAll を呼ぶたびの取り直しは、この期限ではなく入口の forgetRemoteListing() で行う
+// (イシュー#679: 期限だけだと、前の一覧から3秒以内の読み直しが前の一覧のまま古い中身と版を返していた。
+// ②指示2026-10-29: 使い回すと他端末の書き込みが見えなくなる)。loadAll の外の読みは、この期限の間だけ使い回す。
 const ETAG_MAP_TTL_MS = 3000;
 
 class HubConflictError extends Error {
@@ -96,6 +96,7 @@ class HubStorageAdapter extends StorageAdapter {
         this._versionCache = new VersionCache(`virtualBookshelf_hubEtagCache_${this.apiBase}`);
         this._etagMapPromise = null; // {fullPath: etag} の取得中/取得済み Promise
         this._etagMapFetchedAt = 0;
+        this._remoteListingGen = 0; // forgetRemoteListing() の回数。捨てる前に始まった一覧の取得の結果を使わないため
     }
 
     // 一覧+ETag ({fullPath: etag}) を取得する。取得失敗/旧応答(entries無し)/truncated:true の
@@ -108,6 +109,18 @@ class HubStorageAdapter extends StorageAdapter {
         this._etagMapFetchedAt = now;
         this._etagMapPromise = this._fetchRemoteEtagMap();
         return this._etagMapPromise;
+    }
+
+    /**
+     * 一覧の控え (ETag の表) を捨てる (イシュー#679)。次の読みで一覧を取り直す。
+     * 読み直し (BookshelfStorage.loadAll) の入口で呼ばれる (js/github-adapter.js の forgetRemoteListing と同じ口)。
+     * 3秒の期限だけに任せると、前の一覧から3秒以内の読み直し (書き込み時の衝突で上書きを選んだ直後など) は前の一覧のまま、
+     * 端末に残した古い中身と版を返し、その版で書いてまた 412 になる。書き込みの照合の版 (_etagCache) は触らない
+     */
+    forgetRemoteListing() {
+        this._etagMapPromise = null;
+        this._etagMapFetchedAt = 0;
+        this._remoteListingGen++;
     }
 
     async _fetchRemoteEtagMap() {
@@ -123,7 +136,11 @@ class HubStorageAdapter extends StorageAdapter {
 
     // readJSON/readText の先頭で使う。ヒットすれば本文、ミスなら undefined (通常の GET にフォールバック)。
     async _tryReadFromEtagCache(path) {
+        const gen = this._remoteListingGen;
         const etagMap = await this._ensureRemoteEtagMap();
+        // 一覧を待つ間に控えを捨てられた (forgetRemoteListing) 時は、捨てる前に取り始めた一覧は古いかもしれないので使わない
+        // (古い中身と版を控えに戻さない)。ミス扱いにして本文を取り直す
+        if (gen !== this._remoteListingGen) return undefined;
         const remoteEtag = etagMap[path]; // 一覧に無い(フォールバック対象/本当に存在しない) なら undefined
         const cached = this._versionCache.read(path, remoteEtag);
         if (cached !== undefined) {
