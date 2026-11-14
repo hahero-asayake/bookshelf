@@ -406,3 +406,34 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 - ②の条件「新しく落ちたものが1件以上ある時は push せず、step5 を提出して②に返す」に当たる（新しく落ちた 2件・どちらも flake の判定）。そのため、push・設計書の反映・最後の rebase はしていない。
 - 今の HEAD は bf6afbe（origin/main 02772ca の上）。push していない。
 - 19:27 の時点で origin/main は 25 commit 先へ進み、index.html の ?v= の最大は 2026111868。#670 の 2026111799 はそれより古い。次に載せ直す時は、#670 で変えた6ファイルを 2026111868 より新しい値に取り直す必要がある。
+
+## §8 step5 の2回目（2026-11-14 19:29〜）：最後の rebase で index.html が衝突したので、push せずに返す
+
+### 8-1 rebase
+
+- origin/main def8437（#676 の docs まで）へ rebase した。
+- **index.html が衝突した**（②の条件「JS・index.html に衝突が出たら push せずに返す」に当たる）。JS の衝突は無い（js/dashboard.js は他のイシューの変更と自動で合わさった）。
+- 衝突したのは `?v=` の行だけ：
+  - #670 の fix の commit で dashboard.js（main 2026111867、#670 2026111798）。
+  - 引き出しの fix の commit で article-editor.js。
+  - ?v= だけを変える chore の commit で dashboard.js・bookshelf.js。
+- 解き方：#670 で変えた6ファイルの `?v=` を、origin/main の最大（2026111868）より新しい **2026111869** にそろえた。check:version（`--range=origin/main..HEAD`）は OK。
+- **途中でやり直したこと**：
+  - 3つ目の衝突を、`?v=` の1行ずつの衝突を解く置き換えで解こうとした。ところがこの衝突は4行の塊で、置き換えが当たらなかった。印が残ったまま `git add` して rebase を続けてしまい、chore の commit（feddb88）に衝突の印が入った。
+  - この commit の役目（?v= を上げること）は、前の2つの commit を解いた時点で済んでいた（2026111869）。そのため `git rebase --onto 582a9e3 feddb88` でこの commit を外した。後ろの4本（docs・test）は index.html に触らないので、そのまま載った。
+  - 今の全 commit（origin/main..HEAD の18本）の index.html に、衝突の印が無いことを確かめた。
+- **今の HEAD は ab2e630**（origin/main def8437 の上・push していない）。origin/main との差は、意図した8ファイル（+51/−19）だけ。
+
+### 8-2 検証（載せ直した後）
+
+- `npm run lint`：12 本中 0 本失敗。
+- vitest：80 files・1197 passed・2 todo。
+- spec：
+  - 除外まわり3つ（exclude-custom-shelf・exclude-article-publish・exclude-export-all-shelf）・本棚まわり9つ・記事の引き出し2つ（first-run-add-article-drawer・first-run-drawer-before-first-save）：**102 passed**（chromium・workers=4）。
+  - publish-article-editor の引き出しの行（`--grep 引き出し|drawer`）：16 passed。
+- `shelfVisibleAsins` は、読み手7か所（ツリー・管理一覧・ホームのカード・読書統計・プラグインの写し・引き出し2か所）に通ったまま。
+
+### 8-3 残り（次の run）
+
+- 設計書の反映（§5-4 の文案。02 D-1/D-7・01 F-03-6・03・05・06・08 ADR-174）と、push と、push の後の CI の確認。
+- push の直前に origin/main を取り直す。?v= の最大が 2026111869 以上になっていたら、取り直す。
