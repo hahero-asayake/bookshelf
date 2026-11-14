@@ -270,3 +270,38 @@ if (ex.size && ud.bookOrder.all.some(a => ex.has(a))) {
 - メモリと all.json は、書き出しで2に戻る（3/3）＝②の合格条件どおり。
 - 画面のツリーは、次に描き直されるまで3のまま残る（蔵書を変える操作・再読込など）。端末の控えは、次の保存（saveUserData）まで3のまま残る。次の起動で手元を採っても、`_ensureAllShelf` がメモリでは揃え直さない（除外を引くのは書き出しだけ）。このため、書き出しまでは同じ見え方を繰り返す。
 - これが残るのは、直す前の版で除外して書き出し、その後に保存した端末だけ。bookshelf は未公開なので、移行は書かない（ADR-006・②の承認どおり）。
+
+## §4 step4：全体の確認・設計書（2026-11-14 18:46〜）
+
+### 全体の確認（work＝issue/664 の HEAD 8f2c880・origin/main 2072774 の上。base＝origin/main d18af26＝2072774 に docs の1 commit だけ足したもの）
+
+| 確認 | 結果 |
+|---|---|
+| lint（`scripts/run-lint.mjs`＝npm run lint） | **12 本中 0 本失敗**（18:47） |
+| vitest（npm test・e2e-diff の中で両側） | base・work とも **1192 passed・失敗0**（1194件・2 todo）。新しく落ちた0件 |
+| e2e-diff-main（`--port=8164`・18:46〜18:58・結果一式は `/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261114-184644-299055/`） | E2E：base は expected 1148・skipped 593・unexpected 2。work は expected 1152・skipped 592・unexpected 5。増えた7件＝#664 の spec の6件＋#662 の I 行（skipped が1減った）。**新しく落ちた3件は、3件とも流し直しで通った（判定 flake）**。両方で落ちた既存の2件は duplicate-asin-notice・list-staged-render。画像の差分は 54件中0件。exit 0（「新しく落ちたテストは0件（またはフレーク判定のみ）」） |
+| 揺れた3ファイルを work で流し直し（`--repeat-each=3`・18:59〜19:01） | **92 passed・1 failed**。sync-offline-reconnect・sync-section-status は全部通った。reimport-diff の「direction: moved は wouldMove に一致し連鎖しない (#406)」が3回中1回落ちた |
+
+- 揺れた行が #664 の差分由来か：
+  - **reimport-diff #406（direction）**：並べ替えの向きを切り替えた時の、一覧の差分描画（moved と wouldMove）を測る試験。フォルダの接続・書き出し・除外を通らない（spec に `connectLocalFolder`・`syncToObsidian`・`bookOrder` は0件）。#664 の差分（書き出しの `allBooksList` の1か所）は、この経路に入らない。work 側の E2E は base 側より1.5倍遅かった（364秒対243秒）。負荷で揺れる型と見る。**#664 とは無関係**。base 側での流し直しは時間の都合でしていない。
+  - **sync-offline-reconnect（初めてつなぐ時）・sync-section-status（保存失敗の再試行）**：書き出しを通る試験。流し直しで 3/3 ずつ通った。e2e-diff の中でも、流し直しで通っている（flake）。
+
+### 設計書
+
+- **08_意思決定記録.md に ADR-170 を追記した**（§2-4 の承認した文言。却下した案 B に、§3 の K で測った見え方を足した）。題は「書き出しは all.json の books と bookOrder.all に除外した本を入れない。library.json は除外を含む全書誌のまま」。
+  - vault の 08 は CRLF の改行。追記の後も、LF だけの行は0行（2272行すべて CRLF）。
+  - 18:47 の時点では、obsidian の自動バックアップ（30分ごと）はまだこの追記を commit していない。vault の差分には、#667 の ADR-169 の未 commit 分も一緒に出ている。完了報告で、bookshelf 側の fix（fd48cf6・rebase で sha は変わる）と対応づける。
+- 06_データ仕様書.md:165・:503 と 02_基本設計書.md:95・:138 は、決まりがすでに正しい（all.json の books＝library − exclusions・書誌の正本＝library.json）。直したのはコードを決まりに戻す方なので、書き換えていない。
+- 07_残検討事項.md に該当する行は無い（「除外」「all.json」「bookOrder.all」で grep した。:640 は同じ ASIN の2冊の件で別）。
+- 03_詳細設計書.md：メソッドの追加・削除・引数の変更は無い。表（:163・:164 の `_onLibraryChanged`・`_ensureAllShelf`）の書き方とも食い違わないので、書き換えていない。
+
+### 結論（#664 の全体）
+
+1. **実測**：除外して書き出すと、all.json の books と bookOrder.all に除外した本が残った（直す前 9/9）。保存先を採る再読込では画面に戻らない。#662 の直し（ADR-166）の後は、書き出しのたびに「すべての本」の冊数と記事の引き出しに出る形になった（S 3/3）。library.json に除外した本の書誌が入るのは、決まりどおり（直さない・02:95）。
+2. **直し**：案A。書き出しの `allBooksList` の1か所で除外を引く。直した後は、all.json＝2・控え＝2・画面 R/L/S＝2・描き直し＝2・引き出しに除外した本0件・取り消しで3に戻り重複0（各 3/3・`--repeat-each=3` の2回の流し直しで揺れ0）。
+3. **#662 の I 行**：中身が空の fixme だった。除外がフォルダに届く（all.json＝2）のを待ってから取り消し、再読込の後に「すべての本」・控え・フォルダが3になることを書いて、fixme を外した（緑 3/3）。H 行はフォルダの all.json＝2 も見る。
+4. **横展開**：bookOrder.all を書く13か所のうち、決まりを破っていたのは書き出しの1か所だけ。読む所5か所のうち、`_shelfBooks`（公開）は呼び出し0件。引き出しは、直しで除外した本が出なくなった（D）。
+5. **残すもの（#664 では触らない・②の判断どおり）**：
+   - 除外する前から記事に置いた本が、除外した後も公開に出る（起票候補）。
+   - ドラッグの並べ替えで、`shelf.books` と `bookOrder[id]` が別のコピーになる件（起票候補）。
+   - 古い控えを持つ端末で、ツリーが次の描き直しまで3のまま残る見え方（移行を書かない・ADR-006）。
