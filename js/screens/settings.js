@@ -658,11 +658,13 @@ class _SettingsMethods {
                 refreshTokenExpiresAt: token.refresh_token_expires_in ? now + token.refresh_token_expires_in * 1000 : null,
                 login: user ? user.login : null
             };
-            // GitHub につないだ = 保存先を GitHub に決めた (決めた印も一緒に立てる・イシュー#596)
-            SyncConfigManager.setMethod('github', merged);
+            // つないだだけでは保存先を決めない (method も決めた印も書かない)。保存先を GitHub に決めるのは
+            // 「この設定で使う」(_saveGitHubRepo) だけ = ハブの「ログイン」と「この設定で使う」の2段と同じ形。
+            // ハブ・フォルダを保存先にしている人が公開のためだけにつないでも、保存先は変わらない (イシュー#630)
+            SyncConfigManager.save(merged);
             this._currentDeviceAuth = null;
             this._renderGitHubAuthState();
-            toast(`GitHub に接続しました${user ? ` (${user.login})` : ''}。\n下のリストからリポジトリを選んで「この設定で使う」を押してください。`);
+            toast(`GitHub に接続しました${user ? ` (${user.login})` : ''}。\nリポジトリを選んで「この設定で使う」を押すと、本のデータの保存先になります。`);
         } catch (e) {
             this._currentDeviceAuth = null;
             if (e.message === 'AUTH_CANCELLED') {
@@ -705,7 +707,15 @@ class _SettingsMethods {
     }
 
     async _disconnectGitHub() {
-        const ok = await window.confirmDialog({ message: 'GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。', danger: true });
+        // 保存先が GitHub の人だけ、切断で保存先が変わる。ハブ・この端末のフォルダの人 (公開のためだけにつないだ人)
+        // は接続情報が消えるだけ = 文面も出し分ける (イシュー#630)
+        const before = SyncConfigManager.load();
+        const wasMethod = before.method;
+        let message = wasMethod === 'github'
+            ? 'GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。'
+            : 'GitHub との接続を切断しますか？\n接続情報を削除します。本のデータの保存先は変わりません。';
+        if ((before.publish || {}).target === 'github') message += '\n自分の GitHub リポジトリへの公開は、もう一度接続するまでできません。';
+        const ok = await window.confirmDialog({ message, danger: true });
         if (!ok) return;
         const merged = SyncConfigManager.load();
         if (merged.github) {
@@ -718,8 +728,13 @@ class _SettingsMethods {
                 login: null
             };
         }
-        // 切断して local に戻った = 保存先を決めていない扱いに戻す (決めた印を外す・イシュー#596)
-        SyncConfigManager.resetMethod(merged);
+        if (wasMethod === 'github') {
+            // 切断して local に戻った = 保存先を決めていない扱いに戻す (決めた印を外す・イシュー#596)
+            SyncConfigManager.resetMethod(merged);
+        } else {
+            // 保存先は GitHub ではない = method も決めた印も変えず、接続情報だけを消す (_disconnectHub と同じガード)
+            SyncConfigManager.save(merged);
+        }
         location.reload();
     }
 

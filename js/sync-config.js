@@ -8,7 +8,8 @@
 //   {
 //     method: 'local' | 'github' | 'hub',
 //     methodChosen: true,   // 保存先 (method) を本人が決めた印 (イシュー#596)。決める操作 (setMethod) だけが立て、
-//                           // 切断 (resetMethod) で外す。ログイン・公開先・トークン更新などの書き込みは触らない
+//                           // 保存先だった接続の切断 (resetMethod) で外す。ログイン・GitHub の接続・公開先・
+//                           // トークン更新・保存先でない接続の切断などの書き込みは触らない (イシュー#630)
 //     github: { owner, repo, branch, basePath, token, login,
 //               refreshToken,           // ghr_… (約6ヶ月有効・refresh ごとにローテーション)
 //               tokenExpiresAt,         // access_token の失効時刻 (絶対時刻 ms)
@@ -95,8 +96,9 @@ class SyncConfigManager {
         }
     }
 
-    /** 保存先を決める操作 (保存先セレクトでの切替・「この設定で使う」・GitHub 接続・フォルダが決まった時) 専用の
+    /** 保存先を決める操作 (保存先セレクトでの切替・ハブと GitHub の「この設定で使う」・フォルダが決まった時) 専用の
      *  書き込み。method と、決めた印 (methodChosen) を一緒に保存する (イシュー#596)。
+     *  GitHub につないだだけ・ハブにログインしただけでは呼ばない = つなぐ操作は保存先を決めない (イシュー#630)。
      *  base を渡すとそれを土台にする (接続情報と一緒に書く時)。渡さなければ保存済みの設定の method だけを変え、
      *  接続情報など他のフィールドはそのまま残す。
      * @param {'local'|'github'|'hub'} method
@@ -105,8 +107,10 @@ class SyncConfigManager {
         SyncConfigManager.save({ ...(base || SyncConfigManager.load()), method, methodChosen: true });
     }
 
-    /** 切断で保存先をこの端末のフォルダに戻す時の書き込み。method を local にし、決めた印を外す
+    /** 保存先だった接続を切断した時 (GitHub が保存先の時の GitHub の切断・ハブが保存先の時のハブのログアウト) の
+     *  書き込み。method を local にし、決めた印を外す
      *  = 保存先を決めていない扱いに戻す (設定の保存先セレクトはハブを最初に見せる・イシュー#596)。
+     *  保存先でない接続の切断では呼ばない = method も印も変えない (イシュー#630)。
      *  base を渡すとそれを土台にする (接続情報を消した設定と一緒に書く時)。
      * @param {object} [base] */
     static resetMethod(base) {
