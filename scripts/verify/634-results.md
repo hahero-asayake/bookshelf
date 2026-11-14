@@ -147,3 +147,21 @@
   - ログ：`_local/634/e2e-diff/run.log`。
   - 同じ時刻のマシンの負荷：load average 86（16コア）、他イシューの playwright が9本並行。
   - 3表の件数は取れていない。次の run で e2e-diff だけ取り直す（step の決まり）。
+
+### step3 の2回目（e2e-diff を run の外で流す・②の差し戻しの案2）
+
+- origin/main が 1234cf4 から f9468f8 へ進んでいたので rebase した。
+  - index.html の `js/bookshelf.js?v=` の行で衝突した。origin/main の値は 2026111721。自分の 2026111734 の方が新しく、origin/main に同じ値は無いので、自分の行を採った。
+  - js/bookshelf.js は衝突なくまとまった（`_leaveRemovedShelf`・`switchBookshelf(..., { replace })`・`_navigateFromUi` の replace は残っている）。
+- ②の条件どおり、1秒の時間切れの保険に「#259 の方針（時間で待たない）の例外であることと、その理由」を1行のコメントで書いた（a9f5f9f）。動きは変えていない。
+  - 主は popstate の着地。時間切れに当たっても、同じ切り替えを1回するだけ。
+- rebase の後の検証：`check:version --range=origin/main..HEAD` は OK。lint 11本もすべて OK。
+  - lint:internal-refs は82件（上限82）で、増えていない。
+- rebase の後の sha：18907bc（docs・step1）→ 1cf0e4d（test）→ f0e6246（fix）→ 69a92e5（docs・step2）→ 9c9e419（docs・step3）→ a9f5f9f（refactor・コメント）。
+- e2e-diff は systemd の user unit で起動した（run の子プロセスにしない）。
+  - unit：`e2ediff-634-1756.service`（transient・`--remain-after-exit`）。
+  - 始めた時刻：17:56:39。
+  - 引数：`node scripts/verify/e2e-diff-main.mjs --port=8134 --out=_local/634/e2e-diff2`。画像比較は既定のオン。
+  - 出力先：`_local/634/e2e-diff2/`。ログは `_local/634/e2e-diff2/run.log`。
+  - 比べた土台：base は origin/main f9468f8、work はこの作業ツリー（HEAD a9f5f9f）。
+  - 状態の見方：`systemctl --user status e2ediff-634-1756`。
