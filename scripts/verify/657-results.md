@@ -77,7 +77,7 @@
 | before-local-failed-{wide,390}.png | ローカル・保存失敗。「「フォルダを選ぶ」を押して…」（赤）と名前の「（要再接続）」（状態バーの文とは違う＝(c)） |
 | before-from639-{hub,local}-unsaved-{390,pc}-sync.png・…-390-statusbar.png | 未保存（#639 が撮った webkit の画像を写した）。ハブは「この保存先を使用中です。」だけ |
 | mock-A-{hub,github,local}-failed-{wide,390}.png | 案A の試し。保存先セレクトの下に1行（赤字＋「再試行」） |
-| mock-A-local-normal-{wide,390}.png | 案A のローカルの前後の「後」（前は before-local-normal）。**試しの色とボタンは失敗の形で固定して撮った**＝実装では正常は緑・ボタン無し |
+| mock-A-local-normal-{wide,390}.png | 案A のローカルの前後の「後」（前は before-local-normal）。正常の文が緑で、保存先セレクトの下へ移る（「フォルダを選ぶ」の横は空く）。17:04 に正常の形（緑・ボタン無し）で撮り直した |
 | mock-B-{hub,github}-failed-{wide,390}.png | 案B の試し。欄の足元（「使用中」「この設定で使う」の横）に赤字＋「再試行」 |
 | mock-C-hub-failed-{wide,390}.png | 案C の試し。「この保存先を使用中です。」の帯を警告の帯に替える |
 
