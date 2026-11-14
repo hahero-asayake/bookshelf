@@ -1225,3 +1225,40 @@ describe('一気通貫: 旧 pages.json → 記事モデル移行 → 生成 (完
         expect(legacyStillThere.pages[0].id).toBe(legacyPage.id);
     });
 });
+
+// イシュー#669: 除外した本は、記事に置いたままでも記事に出さない (library − exclusions・06 の all.json と同じ式)。
+// 公開 (exporter) と同じく opts.state を渡さず storage.loadAll() を通す経路で確かめる。
+describe('build(): 除外した本は記事に置いたままでも出さない (イシュー#669)', () => {
+    function articleWithM1() {
+        return makeArticle({ blocks: [
+            { id: 'b1', type: 'book', asin: 'M1', show: { shortMemo: true, longMemo: false } },
+            { id: 'b2', type: 'shelf', shelfId: 'mid', items: [
+                { id: 'p1', blockId: 'b2', asin: 'M1', order: 0, show: { shortMemo: false, rating: false } },
+                { id: 'p2', blockId: 'b2', asin: 'M2', order: 1, show: { shortMemo: false, rating: false } }
+            ] }
+        ] });
+    }
+
+    it('loadAll の exclusions にある本は、本ブロックにも本棚ブロックの中にも出さず、冊数にも数えない。記事のデータは書き換えない', async () => {
+        const g = new PublishArticleGenerator(makeApp({ ...makeState(), exclusions: { excludedASINs: ['M1'] } }));
+        const article = articleWithM1();
+        const before = JSON.stringify(article);
+        const r = await g.build([article]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).not.toContain('漫画1');
+        expect(html).not.toContain('短文メモM1');
+        expect(html).not.toContain('/dp/M1');
+        expect(html).toContain('漫画2');
+        expect(r.articles[0].books).toBe(1);
+        expect(JSON.stringify(article)).toBe(before);
+        expect(r.errors).toEqual([]);
+    });
+
+    it('exclusions が無い (空の) 時は、今までどおり全部出す', async () => {
+        const r = await gen.build([articleWithM1()]);
+        const html = r.files.find(f => f.path === 'pub-test01/index.html').content;
+        expect(html).toContain('漫画1');
+        expect(html).toContain('漫画2');
+        expect(r.articles[0].books).toBe(3);
+    });
+});

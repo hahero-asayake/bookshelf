@@ -459,6 +459,15 @@ class PublishArticleGenerator {
 
     // ===== データ解決 =====
 
+    // 記事に出せる本の一覧 (イシュー#669): library − exclusions (06 の all.json と同じ式)。除外した本は、
+    // 記事に置いたままでも出さない (記事のデータは書き換えない＝除外を取り消すと次の生成から戻る)。
+    // 公開 (exporter・loadAll)・キャンバス・プレビュー (_artBuildPreviewState) はどれも build() からここを通る。
+    static publishableLibMap(state) {
+        const excluded = new Set((state && state.exclusions && state.exclusions.excludedASINs) || []);
+        const books = (state && state.library && state.library.books) || [];
+        return new Map(books.filter(b => b && !excluded.has(b.asin)).map(b => [b.asin, b]));
+    }
+
     _resolveBookData(asin, libMap, state, linkOpts) {
         const lib = libMap.get(asin);
         if (!lib) return null;
@@ -933,9 +942,10 @@ ${ctaHtml}
             allBookshelf: raw.allBookshelf || { books: [] },
             bookshelfFiles: raw.bookshelfFiles || {},
             notes: raw.notes || {},
-            privateSettings: raw.privateSettings || {}
+            privateSettings: raw.privateSettings || {},
+            exclusions: raw.exclusions || { excludedASINs: [] }
         };
-        const libMap = new Map((state.library.books || []).map(b => [b.asin, b]));
+        const libMap = PublishArticleGenerator.publishableLibMap(state);
         const ps = state.privateSettings || {};
         let publisher = ps.publicDisplayName || '';
         if (!publisher) {

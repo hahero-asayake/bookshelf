@@ -1556,9 +1556,11 @@ class VirtualBookshelf {
     async _bulkExclude() {
         const asins = [...(this.selectedAsins || [])];
         if (!asins.length) { toast('本を選択してください'); return; }
+        // 公開中の記事に入っている本なら件数を足す (記事からは消さず、次の更新で公開から消える・イシュー#669)
+        const pubNote = this._artPublishedNoteFor ? await this._artPublishedNoteFor(asins) : '';
         const okBulkExclude = await confirmDialog({
             title: 'すべての本から除外',
-            message: `選択した ${asins.length} 冊を all から除外しますか？\n\n再Kindle取込でも復活しません。除外一覧から解除できます。`,
+            message: `選択した ${asins.length} 冊を all から除外しますか？\n\n再Kindle取込でも復活しません。除外一覧から解除できます。${pubNote}`,
             okLabel: '除外する',
             danger: true
         });
@@ -6005,9 +6007,11 @@ class VirtualBookshelf {
             toast('指定された書籍が見つかりません');
             return;
         }
+        // 公開中の記事に入っている本なら件数を足す (記事からは消さず、次の更新で公開から消える・イシュー#669)
+        const pubNote = this._artPublishedNoteFor ? await this._artPublishedNoteFor([asin]) : '';
         const okExclude = await confirmDialog({
             title: 'すべての本から除外',
-            message: `「${book.title}」を all から除外しますか？\n\n再Kindle取込でも復活しません。\n除外一覧から解除できます。`,
+            message: `「${book.title}」を all から除外しますか？\n\n再Kindle取込でも復活しません。\n除外一覧から解除できます。${pubNote}`,
             okLabel: '除外する',
             danger: true
         });

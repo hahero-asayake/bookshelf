@@ -426,10 +426,44 @@ class _ArticleEditorMethods {
         this._surface().open('art-viewing', { close: (o) => this._artShowList(o), extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
     }
 
+    // 記事の中の本の状態 (イシュー#669)。蔵書 (this.books) に無く除外一覧にある本は「除外中」＝公開に出ない
+    // (generator の publishableLibMap と同じ決まり)。除外中の本の書誌は、除外を含む library (_storage.libraryBooks) から引く。
+    // 記事の本の表示 (ブロック・全画面・引き出し)・冊数・公開前チェックは、ここだけで判定する。
+    _artBookState(asin) {
+        const book = (this.books || []).find(b => b.asin === asin);
+        if (book) return { book, excluded: false };
+        const st = (this.userData && this.userData._storage) || {};
+        const excluded = Array.isArray(st.exclusions) && st.exclusions.includes(asin);
+        const lib = excluded && Array.isArray(st.libraryBooks) ? st.libraryBooks.find(b => b.asin === asin) : null;
+        return { book: lib || null, excluded };
+    }
+
+    // 除外中の本に付ける印 (ブロック・全画面・引き出しで同じ文言)
+    _artExcludedMark() {
+        return '<span class="art-item-excluded">除外中・公開されません</span>';
+    }
+
+    // 除外の確認文に足す1行 (イシュー#669): 公開中の記事に入っている本なら件数を知らせる。
+    // 記事はふだん記事の一覧を開いた時に読む。まだ読んでいなければここで読む (未送信の記事がある時は読み直さない)。
+    // 読めなければ何も足さない (除外そのものは止めない)。
+    async _artPublishedNoteFor(asins) {
+        const set = new Set(asins || []);
+        const store = this.publishArticleStore;
+        if (!store || typeof store.articles !== 'function') return '';
+        if (!store.articles().length && this._isSyncReady() && !store.hasUnsavedChanges()) {
+            try { await store.load(); } catch (e) { console.warn('[exclude] 記事を読めないため公開中の件数を出さない:', e); }
+        }
+        const list = store.articles();
+        const n = list.filter(a => a && a.published && (a.blocks || []).some(b =>
+            (b.type === 'book' && set.has(b.asin)) || (b.type === 'shelf' && (b.items || []).some(it => set.has(it.asin))))).length;
+        return n ? `\n\n公開中の記事 ${n} 件に入っています。記事を更新すると、公開からも消えます。` : '';
+    }
+
     _artCountBooks(blocks) {
+        const counted = (asin) => (asin && !this._artBookState(asin).excluded ? 1 : 0);
         return (blocks || []).reduce((n, b) => {
-            if (b.type === 'book') return n + (b.asin ? 1 : 0);
-            if (b.type === 'shelf') return n + (b.items || []).length;
+            if (b.type === 'book') return n + counted(b.asin);
+            if (b.type === 'shelf') return n + (b.items || []).reduce((m, it) => m + counted(it.asin), 0);
             return n;
         }, 0);
     }
@@ -919,6 +953,15 @@ class _ArticleEditorMethods {
                     sec.innerHTML = `<button type="button" class="art-cv-empty-guide" data-blk-idx="${i}">${BookshelfEscape.escapeHtml(EMPTY_GUIDE[b.type] || 'タップして編集')}</button>`;
                 } else {
                     sec.classList.remove('art-cv-empty');
+                    // 除外中の本 (イシュー#669): 生成器は公開と同じく出さない。編集状態でだけ印を足し、書き手が気づいて外せるようにする
+                    const exN = (b.type === 'book' ? [b.asin] : b.type === 'shelf' ? (b.items || []).map(it => it.asin) : [])
+                        .filter(a => a && this._artBookState(a).excluded).length;
+                    if (exN) {
+                        const note = doc.createElement('p');
+                        note.className = 'art-cv-ui art-cv-excluded';
+                        note.textContent = b.type === 'book' ? '除外中の本です。公開されません' : `除外した本 ${exN} 冊は公開されません`;
+                        sec.appendChild(note);
+                    }
                 }
                 sec.classList.add('art-cv-blk');
                 // イシュー#580: iOS WebKit は要素自身か祖先に click リスナーが無いとタップから click を合成しない
@@ -1897,7 +1940,7 @@ class _ArticleEditorMethods {
                     ${collapsed ? '' : '<div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>'}
                 </div>`;
             }
-            const book = this.books.find(x => x.asin === b.asin);
+            const { book, excluded } = this._artBookState(b.asin);
             const title = book ? book.title : b.asin;
             const author = book ? (book.authors || '') : '';
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
@@ -1909,6 +1952,7 @@ class _ArticleEditorMethods {
                     <div class="art-block-book-info">
                         <div class="art-item-title">${esc(title)}</div>
                         <div class="art-item-author">${esc(author)}</div>
+                        ${excluded ? this._artExcludedMark() : ''}
                     </div>
                     ${this._artChips(show, 'art-book-show-toggle')}
                 </div>`}
@@ -1981,7 +2025,7 @@ class _ArticleEditorMethods {
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
         const ic = (name, size) => `<span class="h-icon" data-icon="${name}" data-icon-size="${size}"></span>`;
         const rows = items.map((it, i) => {
-            const book = this.books.find(x => x.asin === it.asin);
+            const { book, excluded } = this._artBookState(it.asin);
             const title = book ? book.title : it.asin;
             const author = book ? (book.authors || book.author || '') : '';
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : `<span>${esc(title)}</span>`;
@@ -1991,6 +2035,7 @@ class _ArticleEditorMethods {
                 <div class="art-fs-cover">${cover}</div>
                 <div class="art-fs-body">
                     <div class="art-fs-ttl">${esc(title)}</div>
+                    ${excluded ? this._artExcludedMark() : ''}
                     ${author ? `<div class="art-fs-au">${esc(Array.isArray(author) ? author.join('、') : author)}</div>` : ''}
                     <input type="text" class="art-fs-memo" data-asin="${esc(it.asin)}" value="${esc(memo)}" placeholder="短文メモを書く" aria-label="${esc(title)}の短文メモ">
                     ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}" aria-describedby="art-item-tooltip"`, false)}
@@ -2088,7 +2133,7 @@ class _ArticleEditorMethods {
         const sel = this._artShelfSelSet(b.id);
         for (const id of [...sel]) { if (!items.some(it => it.id === id)) sel.delete(id); }
         const itemsHtml = items.map((it, i) => {
-            const book = this.books.find(x => x.asin === it.asin);
+            const { book, excluded } = this._artBookState(it.asin);
             const title = book ? book.title : it.asin;
             const cover = book && book.productImage ? `<img src="${esc(book.productImage)}" alt="">` : esc(title);
             const show = it.show || { shortMemo: false, rating: false };
@@ -2097,7 +2142,7 @@ class _ArticleEditorMethods {
                 <input type="checkbox" class="art-item-check" aria-label="${esc(title)}を選択"${checked ? ' checked' : ''}>
                 <span class="art-shelf-item-grip h-icon" data-icon="grip-vertical" data-icon-size="12"></span>
                 <div class="art-cover">${cover}</div>
-                <div class="art-shelf-item-title">${esc(title)}</div>
+                <div class="art-shelf-item-title">${esc(title)}${excluded ? this._artExcludedMark() : ''}</div>
                 ${this._artChips(show, 'art-item-show-toggle', ` data-asin="${esc(it.asin)}" aria-describedby="art-item-tooltip"`, false)}
                 <div class="art-shelf-item-order-btns">
                     <button type="button" class="art-shelf-item-ic art-item-to-first" title="先頭へ"${i === 0 ? ' disabled' : ''}><span class="h-icon" data-icon="chevron-up" data-icon-size="12"></span></button>
@@ -2799,7 +2844,7 @@ class _ArticleEditorMethods {
         const query = this._artDrawerQuery || '';
         if (!query) return asins;
         return asins.filter(asin => {
-            const book = this.books.find(b => b.asin === asin);
+            const { book } = this._artBookState(asin);
             const searchText = `${book ? book.title : asin} ${book ? book.authors : ''}`.toLowerCase();
             return searchText.includes(query);
         });
@@ -2899,7 +2944,8 @@ class _ArticleEditorMethods {
         // X3(イシュー#528・U6統合): 1件の中身はBookList.drawerItemInnerHtmlへ寄せた(#430のNEWバッジ撤去を反映)。
         // 外側のdiv・data-asin・titleとクリックハンドラの結線はここに残す。
         listHost.innerHTML = filteredAsins.map(asin => {
-            const book = this.books.find(b => b.asin === asin) || { asin, title: asin };
+            const st = this._artBookState(asin);
+            const book = st.book || { asin, title: asin };
             // K (イシュー#276): 追加先のブロックに既に入っている本は「追加済み」を出す。
             // 同じ本を複数回配置する多重配置 (ADR-058 §11.1) は既存仕様のため、印を付けるだけでクリックは禁じない。
             const inTarget = addedToTarget.has(asin);
@@ -2907,7 +2953,7 @@ class _ArticleEditorMethods {
             const inArticle = usedAsins.has(asin);
             const inner = window.BookList.drawerItemInnerHtml(book, { inTarget, inArticle });
             const cls = inTarget ? ' is-added' : (inArticle ? ' is-used' : '');
-            return `<div class="art-drawer-item${cls}" data-asin="${esc(asin)}" title="${inTarget ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">${inner}</div>`;
+            return `<div class="art-drawer-item${cls}" data-asin="${esc(asin)}" title="${inTarget ? 'クリックでもう一度追加' : 'クリックで記事に追加'}">${inner}${st.excluded ? this._artExcludedMark() : ''}</div>`;
         }).join('');
         listHost.querySelectorAll('.art-drawer-item').forEach(el => {
             el.addEventListener('click', () => this._artOnDrawerBookClick(el.dataset.asin));
@@ -3334,10 +3380,14 @@ class _ArticleEditorMethods {
             if (b.type === 'book' && b.asin) asins.push(b.asin);
             if (b.type === 'shelf') (b.items || []).forEach(it => it.asin && asins.push(it.asin));
         });
-        const noCover = asins.filter(a => { const bk = this.books.find(x => x.asin === a); return !(bk && bk.productImage); }).length;
+        // 除外中の本は公開に出ない (イシュー#669)＝「本」「書影」には数えず、冊数の横に知らせる
+        const excludedN = asins.filter(a => this._artBookState(a).excluded).length;
+        const pubAsins = asins.filter(a => !this._artBookState(a).excluded);
+        const exNote = excludedN ? `（除外した本 ${excludedN} 冊は公開に出ません）` : '';
+        const noCover = pubAsins.filter(a => { const bk = this._artBookState(a).book; return !(bk && bk.productImage); }).length;
         const rows = [
             { key: 'title', label: 'タイトル', required: true, ok: !!String(d.title || '').trim(), ng: 'タイトルを入れてください' },
-            { key: 'books', label: '本', required: true, ok: asins.length > 0, ng: '本を1冊以上置いてください', okText: `${asins.length}冊` },
+            { key: 'books', label: '本', required: true, ok: pubAsins.length > 0, ng: `本を1冊以上置いてください${exNote}`, okText: `${pubAsins.length}冊${exNote}` },
             { key: 'cover', label: '書影', required: false, ok: noCover === 0, ng: `書影の無い本が${noCover}冊あります` },
             { key: 'tags', label: 'タグ', required: false, ok: (d.tags || []).length > 0, ng: 'タグを付けると見つけてもらいやすくなります' },
         ];
@@ -3623,6 +3673,8 @@ class _ArticleEditorMethods {
         }
         return {
             library: { books: this.books || [] },
+            // 除外の判定は generator の publishableLibMap に寄せる (公開の loadAll と同じ形の state・イシュー#669)
+            exclusions: { excludedASINs: ((ud._storage && ud._storage.exclusions) || []).slice() },
             bookshelvesMeta: { bookshelves: metas },
             allBookshelf: { books: (allShelf && allShelf.books) || [] },
             bookshelfFiles,
