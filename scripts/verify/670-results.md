@@ -286,3 +286,56 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 3. プラグインの `getBookshelves` の books を見える本に絞るか（推奨：絞って、05 に書く）。それとも所属のまま渡し、見える本を返す関数を別に足すか。
 4. c-2 を別のイシューにするか（推奨：別にする。題の案は 5-3）。
 5. 漏れ止めの lint（本棚の books の長さを直に数える書き方を禁じる検査）を足すか（推奨：今回は spec で持ち、lint は足さない）。
+
+## §6 実装と検証（step4・2026-11-14 18:49〜。計画で「§3」と書いた中身。§3 は step1 の測れなかった項目に使ったので §6 に置く）
+
+### 6-0 着手条件
+
+- 18:49 に origin/main は d18af26。`--grep='#669'`・`--grep='#664'` はどちらも 0 件で、まだ入っていなかった。②の指示（引き出し以外を先に実装する）に従い、d18af26 へ rebase した（9 commit・衝突なし）。そこから実装した。
+- **18:53 に #669 が origin/main に入った**（0a75394「fix: 除外した本は記事に置いたままでも公開に出さず…」、47505b2 まで）。#664 はまだ入っていない（0 件）。
+- 引き出しの部分は、#669 の上に載せ直してから実装する（6-3）。
+
+### 6-1 実装（feca5cb・d18af26 の上）
+
+- `js/bookshelf.js`：
+  - `shelfVisibleAsins(shelf)` を足した。見える本＝所属 ∩ 蔵書（`this.books`）を、所属の並びのまま返す。「すべての本」は books をそのまま返す。蔵書の ASIN の集合は、蔵書の配列が替わった時だけ作り直す。
+  - `_bulkExclude`：`saveUserData` の後で、1冊ごとに `book:removed {asin, reason:'excluded'}` を出す（`excludeBook` と同じ順）。
+- 判定を通した読み手（§5-1 の 1〜4・6）：
+  - `js/screens/bookshelf-list.js` の `_renderSidebarTree`（ツリーの冊数）と `renderBookshelfList`（管理一覧の冊数）。
+  - `js/ui/bookshelf-card.js` の `_renderBookshelfCard`（ホームのカードの冊数と書影の並び）。
+  - `js/dashboard.js` の `_renderReadingStats`（本棚別 Top5）。
+  - `js/plugin-api.js` の `getBookshelves`・`getBookshelf`・`getBookshelfBySlug`。写しの books を `_shelfCopy` で見える本に絞る。プラグインには本棚へ書く口が無いので、所属は消えない。
+- イベントの説明：`js/plugin-api.js` 冒頭のイベント一覧と、`docs/plugin-dev.md`（`getBookshelves`・`getBookshelf`・`book:removed` の行）を直した。
+- `index.html` の ?v=：上の5ファイルを 2026111797 にした。`check:version --range=origin/main..HEAD` は OK。
+- **既存の利用者データは書き換えない**（所属・端末の控え・`bookshelves/<slug>.json` に触らない。移行なし）。670-A の再読込の行と 670-F で確かめた。
+
+### 6-2 spec（`tests/e2e/exclude-custom-shelf.spec.js`・読み手ごとに1行）
+
+| テスト | 確かめる読み手・経路 | 結果 |
+|---|---|---|
+| 670-A | 1冊ずつの除外：所属は残る（メモリ・端末の控え）。本棚を開いた一覧とツリーの冊数（子 1・親 2）。`book:removed` 1回・`bookshelf:updated` 0回。**既存データ**＝再読込した後も所属は書き換えずに、見える本だけを数える | 緑 |
+| 670-B | 一括の除外（画面の選択モード）：`book:removed` が1冊ごとに1回・`bookshelf:updated` 0回。所属は残る。ツリーの冊数 1 | 緑 |
+| 670-C | 解除：元の本棚にそのまま戻る（並ぶのは2冊）。ツリーの冊数 2。`book:added {reason:'unexcluded'}` が1回。プラグインの `getBookshelf` も2冊 | 緑 |
+| 670-D | ホームのカード（子「1冊」・親「2冊」）・読書統計の本棚別 Top5（子 1・親 2）・本棚の管理一覧（子「1冊」・親「2冊」） | 緑 |
+| 670-G | プラグインの `getBookshelves`・`getBookshelf` の books は見える本だけ。本体の所属は `[X, Y]` のまま | 緑 |
+| 670-F | フォルダ（OPFS）：除外して書き出しても `bookshelves/e670f.json` は `[TARGET]` のまま（所属の正本）。library.json は全書誌のまま。ツリーの冊数は 0。再読込の後も 0。解除すると蔵書に戻り、冊数は 1 | 緑 |
+| 670-E | 記事の本の引き出し（一覧・「表示中のN冊を追加」） | **test.fixme**（#669 の上に載せ直してから緑にする・6-3） |
+
+- 計測用の `waitForTimeout` は 0 か所にした（全て `expect.poll`・`toHaveCount`・`toHaveText` の待ちに替えた）。
+- `lint:internal-refs` は 82 件（上限 82）。
+- フォルダ未接続で再読込した後の解除（c-2）は、②の判断どおり #670 では扱わない（別のイシュー）。spec にも入れていない。
+
+### 6-3 まだ載せていない部分（push の前に必要）
+
+- **記事の本の引き出し**：`js/screens/article-editor.js` の `_artDrawerFilteredAsins`・`_artRenderDrawer`（一覧・「表示中のN冊を追加」の N と追加）を `shelfVisibleAsins` に通し、670-E を緑にする。
+  - #669 が 18:53 に入ったので、次は origin/main（47505b2 以降）へ rebase してから載せる。
+  - #669 の「除外中」の印は、引き出しの行では出なくなる（並ばないため）。キャンバス・全画面の印は残る。
+- rebase で衝突しそうな所：
+  - `index.html` の ?v=：#669 は 2026111783 を使った。#670 は 2026111797 なので、より新しい値を取り直す。
+  - `js/bookshelf.js` の `_bulkExclude`：#669 が確認文に `pubNote` を足した行の近く。
+
+### 6-4 検証
+
+- `npm run lint`：12 本中 0 本失敗。
+- `npm test`（vitest）：80 files・1192 passed・2 todo。
+- spec（chromium）：6 passed・1 fixme（E）。
