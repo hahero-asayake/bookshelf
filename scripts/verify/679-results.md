@@ -81,4 +81,5 @@ spec のハブ版に、両端末のハブへの要求（method・path・status�
 - 関係する spec（`tests/e2e/helpers/gate-hub.js` を使う spec と `sync-conflict*.spec.js`、40ファイル）: 225 本のうち **223 passed・2 skipped・失敗 0**（3.2m・--workers=4・負荷 5.63）。
 - `npm run lint`: 12 本中 0 本失敗。`npm test`: Test Files 80 passed・Tests 1201 passed | 2 todo。`check:version --range=origin/main..HEAD`: OK。
 - ?v=: 載せ直しで main の最大が 2026111886 になったので、hub-adapter.js・storage.js を 2026111887 に上げ直した。
+- 2回目の載せ直し（origin/main 95d6f9d・#675 の js の直しを含む）: main の最大が 2026111890 になったので 2026111891 に上げ直した。check:version OK・`npm run lint` 12 本中 0 本失敗・`npm test` Test Files 80 passed・Tests 1201 passed | 2 todo・`sync-conflict-overwrite.spec.js` の全4本 --repeat-each=5 で 20 passed（47.4s・負荷 2.28）。
 - `scripts/verify/e2e-diff-main.mjs`（全件の比較）は流していない。base と work で全件（約970本×2）と vitest を流すので、負荷のある時は run の30分に収まらない見込み（#668 では高負荷で base の 449/1744 本で止まった）。代わりの判定は、上の関係する spec 225 本・繰り返し・lint・vitest で行った。
