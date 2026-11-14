@@ -84,6 +84,36 @@ async function observe(page) {
     return { barVisible, barText, failureKinds, syncStatus, syncPath, pendingSync };
 }
 
+/** push 前の確認に見せる画像: 「未保存」の状態バーと設定の同期欄を、PC 幅と 390 幅で撮る (合否には使わない) */
+async function takeShots(page, label) {
+    const orig = page.viewportSize();
+    const files = [];
+    try {
+        for (const [width, height, tag] of [[1280, 800, 'pc'], [390, 844, '390']]) {
+            await page.setViewportSize({ width, height });
+            await page.waitForTimeout(400);
+            const bar = test.info().outputPath(`${label}-${tag}-statusbar.png`);
+            await page.screenshot({ path: bar });
+            files.push(bar);
+            await openSettingsByClick(page, 'sync-section');
+            const syncEl = page.locator('#obsidian-sync-status');
+            if (await syncEl.isVisible()) await syncEl.scrollIntoViewIfNeeded();
+            await page.waitForTimeout(300);
+            const sync = test.info().outputPath(`${label}-${tag}-sync.png`);
+            await page.screenshot({ path: sync });
+            files.push(sync);
+            await page.keyboard.press('Escape');
+            await expect(page.locator('#settings-modal')).toBeHidden();
+        }
+    } catch (e) {
+        await test.info().attach(`${label}: 画像を撮れなかった`, { body: String(e && e.message), contentType: 'text/plain' });
+        if (await page.locator('#settings-modal').isVisible()) await page.keyboard.press('Escape');
+    } finally {
+        if (orig) await page.setViewportSize(orig);
+    }
+    for (const f of files) await test.info().attach(f.split('/').pop(), { path: f, contentType: 'image/png' });
+}
+
 /** 直した後の姿: 保存先へ書いていないことが状態バーと同期欄に出る (期待値。origin/main では赤) */
 function expectUnsavedShown(where, got) {
     expect.soft(got.barVisible, `${where}: 状態バーが出る`).toBe(true);
@@ -133,7 +163,11 @@ async function otherDeviceUpdateLocal(page, dirName) {
 }
 
 test.describe('ローカルフォルダ: 読込時の3択を選ばずに閉じた後 (イシュー#639)', () => {
+    // ローカルフォルダは PC の Chrome/Edge だけで選べる (ADR-046)。iPhone 相当 (webkit) では流さない
+    test.skip(({ browserName }) => browserName === 'webkit', 'ローカルフォルダは PC の Chrome/Edge だけ (ADR-046)');
     test('閉じた後と、閉じた後に編集した後に、保存先へ書いていないことが状態バーと同期欄に出る', async ({ page }) => {
+        // 自動の再試行の間隔を短くする (止めている間に再試行の行にならないことを、時間を進めて確かめるため)
+        await page.addInitScript(() => localStorage.setItem('bookshelf.flag.syncRetryDelaysMs', '[300,300,300]'));
         const { local, perm } = await bootLocalWithPrompt(page);
         await addBook(page, ASIN_A, '繋いでいる間に足した本');
         await expect.poll(() => remoteAsins(local), { message: '本Aがフォルダに届く' }).toContain(ASIN_A);
@@ -165,6 +199,34 @@ test.describe('ローカルフォルダ: 読込時の3択を選ばずに閉じ�
         expect.soft(folderHasB, 'フォルダへは書かない (本Bは無い)').toBe(false);
         expectUnsavedShown('閉じた後', afterClose);
         expectUnsavedShown('閉じた後に編集した後', afterEdit);
+
+        // ① 自動の再試行はしない: 再試行の間隔を短くしてあっても (bootLocalWithPrompt の前に入れた印)、
+        // 行は警告のまま・「再試行」のボタンも出ない
+        const row = page.locator('#app-status-bar [data-sync-failure="load-conflict"]');
+        await expect(row).toHaveClass(/status-warn/);
+        await expect(row.locator('[data-status-action="retry-sync"]')).toHaveCount(0);
+
+        // 再読込でもう一度聞かれる (許可は戻っている)。閉じると、また「未保存」が出る
+        await page.reload();
+        await expect(dlg).toBeVisible({ timeout: 15_000 });
+        await page.keyboard.press('Escape');
+        await expect(dlg).toBeHidden();
+        await expect(row).toBeVisible();
+
+        // push 前の確認に見せる画像 (PC 幅・390 幅)
+        await takeShots(page, 'local-unsaved');
+
+        // ③ 状態バーの「選ぶ」から開き直し、「この端末の内容で保存先を上書き」を選ぶと、表示が消えてフォルダへ書かれる
+        await row.locator('[data-status-action="resolve-hold"]').click();
+        await expect(dlg).toBeVisible();
+        await dlg.locator('.cfm-local').click();
+        await expect(dlg).toBeHidden();
+        await expect(row).toHaveCount(0);
+        await expect.poll(() => remoteAsins(local), { message: '上書きで本Bがフォルダに届く' }).toContain(ASIN_B);
+        const afterChoose = await observe(page);
+        await test.info().attach('記録 (ローカルフォルダ・上書きを選んだ後)', { body: JSON.stringify(afterChoose, null, 2), contentType: 'application/json' });
+        expect.soft(afterChoose.failureKinds, '選んだ後は「未保存」の行が無い').not.toContain('load-conflict');
+        expect.soft(afterChoose.syncStatus, '選んだ後の同期欄は「同期済み」').toContain('同期済み');
     });
 });
 
@@ -273,25 +335,30 @@ test.describe('Asayake ハブ: 読込時の3択を選ばずに閉じた後 (イ�
         await page.waitForTimeout(1500);
         const afterClose = await observe(page);
 
-        // 公開を画面から押す (#603 の公開ガードのE2E と同じ入口)
-        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
-        await page.locator(`#art-list [data-id="${articleId}"] [data-act="publish"]`).click();
-        // 公開の前の確認 (同意など) が出たら、その文を残して進める
-        const cfm = page.locator('.cfm-overlay');
-        const confirms = [];
-        const shown = await cfm.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
-        if (shown) {
-            confirms.push((await cfm.first().innerText()).replace(/\s+/g, ' ').trim());
-            await cfm.first().locator('.cfm-ok').click();
-        }
-        // 止めた時の知らせ (toast は数秒で消えるので、出るのを待って文を残す)
-        const stopToast = page.locator('.toast', { hasText: '公開を止めました' }).first();
-        const toastSeen = await stopToast.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
-        const toasts = toastSeen ? [(await stopToast.textContent()).replace(/\s+/g, ' ').trim()] : [];
-        await page.waitForTimeout(1500); // 止まらなかった場合の公開の送信を待って数える
-        const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), articleId);
-        const publish = { confirms, posts: publishPosts.length, toasts, published: !!(article && article.published), remoteHasB: (await remoteAsins(store)).includes(ASIN_B) };
-        await closePublishPages(page);
+        // ② 公開を画面から押す (#603 の公開ガードのE2E と同じ入口)
+        const tryPublish = async () => {
+            const postsBefore = publishPosts.length;
+            await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await page.locator(`#art-list [data-id="${articleId}"] [data-act="publish"]`).click();
+            // 公開の前の確認 (同意など) が出たら、その文を残して進める
+            const cfm = page.locator('.cfm-overlay');
+            const confirms = [];
+            const shown = await cfm.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+            if (shown) {
+                confirms.push((await cfm.first().innerText()).replace(/\s+/g, ' ').trim());
+                await cfm.first().locator('.cfm-ok').click();
+            }
+            // 止めた時の知らせ (toast は数秒で消えるので、出るのを待って文を残す)
+            const stopToast = page.locator('.toast', { hasText: '公開を止めました' }).first();
+            const toastSeen = await stopToast.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+            const toasts = toastSeen ? [(await stopToast.textContent()).replace(/\s+/g, ' ').trim()] : [];
+            await page.waitForTimeout(1500); // 止まらなかった場合の公開の送信を待って数える
+            const article = await page.evaluate((id) => window.bookshelf.publishArticleStore.get(id), articleId);
+            const got = { confirms, posts: publishPosts.length - postsBefore, toasts, published: !!(article && article.published), remoteHasB: (await remoteAsins(store)).includes(ASIN_B) };
+            await closePublishPages(page);
+            return got;
+        };
+        const publish = await tryPublish();
 
         // 閉じた後にもう一度編集する (保存が走る＝保留中は書かずに戻る)
         await addBook(page, 'B0LCUNSD04', '閉じた後に足した本');
@@ -305,7 +372,36 @@ test.describe('Asayake ハブ: 読込時の3択を選ばずに閉じた後 (イ�
         expectUnsavedShown('閉じた後', afterClose);
         expect.soft(publish.posts, '公開の送信は0件').toBe(0);
         expect.soft(publish.toasts.join(' / '), '公開を止めた理由が出る').toContain('公開を止めました');
+        expect.soft(publish.published, '記事は公開済みにならない').toBe(false);
         expectUnsavedShown('閉じた後に編集した後', afterEdit);
+
+        // 再読込をまたいでも、保留がある間は公開が止まる (再読込でもう一度聞かれ、選ばずに閉じた後)
+        await page.reload();
+        await expect(dlg).toBeVisible({ timeout: 15_000 });
+        await page.keyboard.press('Escape');
+        await expect(dlg).toBeHidden();
+        const row = page.locator('#app-status-bar [data-sync-failure="load-conflict"]');
+        await expect(row).toBeVisible();
+        const publishAfterReload = await tryPublish();
+        await test.info().attach('記録 (ハブ・再読込の後の公開)', { body: JSON.stringify(publishAfterReload, null, 2), contentType: 'application/json' });
+        expect.soft(publishAfterReload.posts, '再読込の後も公開の送信は0件').toBe(0);
+        expect.soft(publishAfterReload.toasts.join(' / '), '再読込の後も公開を止めた理由が出る').toContain('公開を止めました');
+
+        // push 前の確認に見せる画像 (PC 幅・390 幅)
+        await takeShots(page, 'hub-unsaved');
+
+        // ③ 状態バーの「選ぶ」から開き直し、「保存先の内容を読み込む」を選ぶと、表示が消えて保存先の内容 (他の端末の本C) になる
+        await row.locator('[data-status-action="resolve-hold"]').click();
+        await expect(dlg).toBeVisible();
+        await dlg.locator('.cfm-remote').click();
+        await expect(dlg).toBeHidden();
+        await expect(row).toHaveCount(0);
+        const afterChoose = await observe(page);
+        const hasC = await page.evaluate((c) => (window.bookshelf.books || []).some((b) => b.asin === c), ASIN_C);
+        await test.info().attach('記録 (ハブ・読み込むを選んだ後)', { body: JSON.stringify({ afterChoose, hasC }, null, 2), contentType: 'application/json' });
+        expect.soft(afterChoose.failureKinds, '選んだ後は「未保存」の行が無い').not.toContain('load-conflict');
+        expect.soft(afterChoose.syncStatus, '選んだ後の同期欄は「保存済み」').toContain('保存済み');
+        expect.soft(hasC, '保存先の内容 (他の端末の本C) になる').toBe(true);
     });
 });
 
