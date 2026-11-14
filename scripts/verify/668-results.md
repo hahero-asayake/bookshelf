@@ -65,3 +65,40 @@
 - 落ちた回は無いので、負荷による揺れかどうかを切り分ける必要は無かった。
 - 出力：`tmp/668/step2-chromium.txt`・`tmp/668/step2-webkit.txt`・`tmp/668/step2-file.txt`
 - 先に当てた lint（新しい spec に関わるもの）：lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:e2e-gate・lint:known-red はどれも OK（全部の lint は step3 で流す）。
+
+## step3 spec が効くか（赤になるか）の確認・関係する spec・lint・npm test（2026-11-14 18:45〜18:50 JST）
+
+作業ツリーは `2072774` の上に `7a3169b`（step2 の commit）が乗った状態のまま流した。origin/main はその後 `d18af26`（#667 の results の docs）へ1件進んでいるが、docs だけなので載せ直しは step5 で行う。
+
+### 1. spec が効くか：#657 の直しの前の版で赤になる
+
+- #657 の直しの commit は、題「設定の同期欄の保存の状態を、3つの保存先に共通の1行」で探して `9f7d38e`。親は `e4b10ea`（#657 の「直す前は赤」の spec の commit。#645 の 8a84db9 より後なので、上書き＝`.cfm-local` はある）。
+- 一時の worktree `/home/kuroko/worktrees/bookshelf/_artifacts/668-red` を `git worktree add --detach … e4b10ea` で作り、`git -C … checkout 7a3169b -- tests/e2e/sync-section-status.spec.js` で新しい spec を置いた（node_modules は symlink）。e4b10ea の gate-github.js には、使う5つの関数がすべてある。
+- 新しい1本だけ（`--grep "上書きを選ぶと正常に戻る"`・chromium・--workers=1・--retries=0・PORT=8168）を 18:45:45 → 18:45:55 に1回流した（load 7.25 → 7.43）。結果は **1 failed（赤）**。
+  - 落ちた所は `tests/e2e/sync-section-status.spec.js:421` の `await expect(syncLine(other), '同期欄の状態の行が見える').toBeVisible();`。`locator('#obsidian-sync-status')` が Expected: visible／Received: hidden だった。
+  - その前の、書き込み時の3択（ボタン3つ・`.cfm-local`）・Esc・状態バーの `[data-sync-failure="sync-conflict"]` とその文（SYNC_HOLD）までは通っている。赤になったのは同期欄の所だけ。直しの前は、GitHub の書き込み時の未保存が同期欄に出ていなかったことと合う（直した後の版では step2 で緑）。
+  - 出力：`tmp/668/step3-red.txt`・`tmp/668/step3-red-error-context.md`
+- 片付け：node_modules の symlink を `_trash/668-red-node_modules-link` へ移してから、`git worktree remove --force` で消した。`git worktree list` に残っていないことと、自分の node_modules が無事なことを確かめた。
+
+### 2. 関係する既存の spec（chromium・--workers=2・PORT=8168・1回）
+
+- 18:46:26 → 18:49:17（load 8.69 → 11.53）：**78 passed (2.8m)・失敗 0・flaky 0**（出力 `tmp/668/step3-related.txt`）
+
+| spec | 本数 | 結果 |
+|---|---|---|
+| sync-section-status.spec.js（新しい1本を含む） | 11 | 全部緑 |
+| sync-conflict-overwrite.spec.js | 3 | 全部緑 |
+| sync-conflict.spec.js | 3 | 全部緑 |
+| gate/j6-4-sync-conflict.spec.js | 2 | 全部緑 |
+| load-conflict-unsaved.spec.js | 3 | 全部緑 |
+| save-failure-visible.spec.js | 11 | 全部緑 |
+| book-memo-file-lifecycle.spec.js | 32 | 全部緑 |
+| sync-offline-reconnect.spec.js | 13 | 全部緑 |
+
+- char/hub-conflict.spec.js は chromium の project では除外される（`CHAR_TEST_MATCH`）。そこで char の project で別に流した（18:49:23 → 18:49:26）：**3 passed・15 skipped・失敗 0**（出力 `tmp/668/step3-char.txt`）。skipped は、端末ごとのテストを自分の project でだけ流す作り（`test.skip(testInfo.project.name !== name)`）のため。char-390・char-768・char-1024 で各1本が緑。
+- 赤が無かったので、base と比べる必要は無かった。#657 の step4 で赤になった8件（book-memo-file-lifecycle の GitHub 3本・save-failure-visible の GitHub 2本・sync-offline-reconnect のローカル2本と GitHub 1本）は、#657 がその後に base とその版を workers=2 で流し直し、「負荷による揺れ」と切り分けている（657-results.md L243-245・b007994）。この回は8件とも緑（load は 8〜12）。
+
+### 3. lint・npm test
+
+- `npm run lint`（18:49:35 → 18:49:38）：最終行は **`[lint] 12 本中 0 本失敗`**（出力 `tmp/668/step3-lint.txt`）
+- `npm test`（18:49:41 → 18:49:55）：**Test Files 80 passed (80)・Tests 1192 passed | 2 todo (1194)**・exit 0（出力 `tmp/668/step3-vitest.txt`。途中に `at startTests` で始まるスタックの行が出るが、exit 0・全件 passed なので失敗ではない。何のログかは調べていない）
