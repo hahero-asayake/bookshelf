@@ -6458,14 +6458,18 @@ class VirtualBookshelf {
                 updateData.asin = newOriginalAsin;
             }
 
-            // 購入日が変更されている場合は更新
-            if (newAcquiredTime) {
-                updateData.acquiredTime = new Date(newAcquiredTime).getTime();
+            const currentBook = this.books.find(b => b.asin === asin) || {};
+
+            // 購入日は、欄の日付を変えた時だけ更新する。変えていなければ元の取得日時を時刻まで保つ
+            // (欄は日付しか持てない。毎回書き戻すと時刻が消え、取得した時刻によっては日付もずれた・イシュー#631)。
+            // 欄と取得日時の変換は bookManager の2つが唯一の正 (端末のタイムゾーンの日付で行き来する)
+            if (newAcquiredTime && newAcquiredTime !== this.bookManager.acquiredTimeToDateInput(currentBook.acquiredTime)) {
+                const acquiredTime = this.bookManager.dateInputToAcquiredTime(newAcquiredTime);
+                if (acquiredTime !== null) updateData.acquiredTime = acquiredTime;
             }
 
             // 変更後ASINの処理。productImage は ASIN が実際に変わったときだけ更新する
             // (タイトル等の編集のたびに Kindle 取込の恒久 CDN URL を組み立て URL で潰していた事故の防止)
-            const currentBook = this.books.find(b => b.asin === asin) || {};
             if (newUpdatedAsin) {
                 updateData.updatedAsin = newUpdatedAsin;
                 if (newUpdatedAsin !== currentBook.updatedAsin) {
@@ -6845,7 +6849,8 @@ class VirtualBookshelf {
             return;
         }
 
-        const acquiredTime = dateInput ? new Date(dateInput).getTime() : Date.now();
+        // 「読み終えた日」は端末のタイムゾーンの日付として読む (変換は bookManager が唯一の正・イシュー#631)
+        const acquiredTime = (dateInput ? this.bookManager.dateInputToAcquiredTime(dateInput) : null) ?? Date.now();
 
         try {
             const bookData = {

@@ -327,7 +327,7 @@ class _BookDetailMethods {
                     <div class="edit-field"><label>著者</label>
                         <input type="text" class="edit-authors" data-asin="${esc(book.asin)}" value="${esc(book.authors)}"></div>
                     <div class="edit-field"><label>購入日</label>
-                        <input type="date" class="edit-acquired-time" data-asin="${esc(book.asin)}" value="${new Date(book.acquiredTime).toISOString().split('T')[0]}"></div>
+                        <input type="date" class="edit-acquired-time" data-asin="${esc(book.asin)}" value="${this.bookManager.acquiredTimeToDateInput(book.acquiredTime)}"></div>
                     <div class="edit-field"><label>オリジナル ASIN</label>
                         <input type="text" class="edit-original-asin" data-asin="${esc(book.asin)}" value="${esc(book.asin)}" maxlength="10" pattern="[A-Z0-9]{10}"></div>
                     <div class="edit-field"><label>変更後 ASIN (オプション)</label>

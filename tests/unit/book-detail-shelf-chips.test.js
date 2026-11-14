@@ -44,6 +44,7 @@ function makeApp() {
         bookManager: {
             getAmazonUrl: (b) => `https://www.amazon.co.jp/dp/${b.asin}`, isKindleBook: () => false, getKindleReadUrl: () => '',
             hasCoverImage: () => false, getProductImageUrl: () => '', getEffectiveASIN: (b) => b.asin,
+            acquiredTimeToDateInput: () => '',
         },
         nav: null,
         router: null,

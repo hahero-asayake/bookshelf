@@ -500,6 +500,34 @@ class BookManager {
     }
 
     /**
+     * 取得日時 (acquiredTime・ミリ秒) を、日付だけの欄 (type="date") の値 'YYYY-MM-DD' にする。
+     * 閲覧の表示 (toLocaleDateString) と同じ、端末のタイムゾーンの日付で作る
+     * (toISOString は UTC の日付になり、閲覧と1日ずれることがある・イシュー#631)。
+     * 数として読めない値は '' (空の欄) を返す。
+     * 欄と取得日時の変換は、これと dateInputToAcquiredTime が唯一の正。
+     */
+    acquiredTimeToDateInput(acquiredTime) {
+        const date = new Date(Number(acquiredTime));
+        if (Number.isNaN(date.getTime())) return '';
+        const pad = (n, width) => String(n).padStart(width, '0');
+        return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}`;
+    }
+
+    /**
+     * 日付だけの欄の値 'YYYY-MM-DD' を、取得日時 (ミリ秒) にする。その日の、端末のタイムゾーンの0時。
+     * new Date('YYYY-MM-DD') は UTC の0時になり、UTC より西では前の日として表示されるので使わない (イシュー#631)。
+     * 形式が違う値・実在しない日付は null を返す。
+     */
+    dateInputToAcquiredTime(value) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
+        if (!m) return null;
+        const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+        return date.getTime();
+    }
+
+    /**
      * ライブラリデータをファイルに保存（エクスポート用）
      */
     async saveLibrary() {

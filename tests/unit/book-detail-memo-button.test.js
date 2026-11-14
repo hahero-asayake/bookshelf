@@ -39,6 +39,7 @@ function makeApp({ writeBookMemo = async () => {}, readBookMemo = async () => nu
         bookManager: {
             getAmazonUrl: () => `https://www.amazon.co.jp/dp/${ASIN}`, isKindleBook: () => false, getKindleReadUrl: () => '',
             hasCoverImage: () => false, getProductImageUrl: () => '', getEffectiveASIN: (b) => b.asin,
+            acquiredTimeToDateInput: () => '',
         },
         nav: null,
         router: null,
