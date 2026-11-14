@@ -102,3 +102,33 @@
 
 - `npm run lint`（18:49:35 → 18:49:38）：最終行は **`[lint] 12 本中 0 本失敗`**（出力 `tmp/668/step3-lint.txt`）
 - `npm test`（18:49:41 → 18:49:55）：**Test Files 80 passed (80)・Tests 1192 passed | 2 todo (1194)**・exit 0（出力 `tmp/668/step3-vitest.txt`。途中に `at startTests` で始まるスタックの行が出るが、exit 0・全件 passed なので失敗ではない。何のログかは調べていない）
+
+## step4 全件比較（e2e-diff-main・workers を絞る・uptime）（2026-11-14 18:51〜 JST）
+
+### 1. --workers を足した（chore の commit `63a5b5a`）
+
+- 着手した時に origin/main（`47505b2`）をもう一度確かめた。`scripts/verify/e2e-diff-main.mjs` にも `playwright.config.js` にも workers の引数・設定は無かった（`git grep -i workers` で当たるのは、注釈の文字列と `serviceWorkers` だけ）。e2e-diff-main.mjs を変えているブランチも無かった（ローカルの issue/* と origin の各ブランチで確かめた）。そこで足した。
+- 足したもの：`--workers=<n>`（1以上の整数か「50%」の形。それ以外は起動の時点でエラーにする）。指定した時だけ、base・work の E2E、新しく落ちたものの流し直し、画像比較の playwright すべてに、同じ値の `--workers n` を渡す。指定しなければ今までどおり（playwright の既定＝CPU の半分）。使い方の注釈にも足した。
+- 確かめたこと：`node --check` が通る。`--workers=abc` は起動の時点で「--workers は1以上の整数か「50%」の形で指定すること」で止まる。流した時のログで、base 側の playwright に `--workers 2` が渡っている（`args=test --reporter=json --grep-invert sort-perf-budget --workers 2`）。
+
+### 2. 流す前の載せ直しと比べる相手
+
+- origin/main が #669 などで6件進んでいた（d18af26〜47505b2）。比べる相手がずれないように、自分の2件を `git rebase origin/main` で載せ直した（衝突なし。7a3169b → `6258b95`、bc38852 → `d95e670`）。その上に chore の `63a5b5a` を積んだ。
+- base は、流している途中で origin/main が進んでも変わらないように、`--base=47505b2`（載せ直した時の origin/main）で固定した。work は `47505b2` に本件の3件を足したもの。
+- base との差分（`git diff --stat 47505b2..HEAD`）は3ファイルだけ：`tests/e2e/sync-section-status.spec.js`（+72・−1）、`scripts/verify/668-results.md`、`scripts/verify/e2e-diff-main.mjs`。spec から消えた行は、見出しの注釈の1行だけ。もとの10本のテストの中身は base と同じ。
+
+### 3. 流した結果：通しでは終わらず、代替判定で判定した
+
+- 流す前の uptime は 18:53:11 で load average 32.43, 16.83, 20.93（16コア）。直前の 18:52:35 には 21.40 だった。1分の値が16以上なので `--workers=2` にした。
+- コマンド：`timeout -s TERM 1140 node scripts/verify/e2e-diff-main.mjs --workers=2 --base=47505b2 --port=8168 --out=/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff`。裏で流し、19分で TERM が飛ぶようにした。ログは `tmp/668/step4-e2e-diff.log`、uptime は `tmp/668/step4-uptime.txt`。
+- 何が起きたか：
+  - base 側の E2E は「Running 1744 tests using 2 workers」で始まった。19:02:42 ごろに **449/1744 本まで進んだ所で、playwright がシグナルで終わった**（`base.e2e.json.log` の先頭が `exit=null`。json の結果ファイルは書かれていない）。
+  - その後、e2e-diff-main が work 側の E2E に入る所で「port 8168 が使用中」で止まった。8168 を握っていたのは、base 側の playwright が 18:53:14 に立てた `python3 -m http.server 8168`（pid 528256）。playwright が止まっても残っていた（cwd は消えた `_worktree-base`）。
+  - 一時の worktree は e2e-diff-main 自身が片付けていた（`git worktree list` に残っていない・`git worktree prune --dry-run` も空）。残っていたサーバーは `kill` で止め、8168 が空いたことを確かめた。e2e-diff-main の node と timeout の行も残っていない。
+  - playwright が止まった原因は分かっていない。カーネルのログ（`journalctl -k`）に OOM の行は無い。同じ 19:02:42 に、別イシューの全件比較（systemd の `bs671-e2e-diff.service`・port 8171）が終わっている。分かっているのは、時刻が重なっているということだけ。
+  - 途中の負荷は、18:58 に 35.40、19:02 に 40.10 だった。2並列で9分かけて 449 本なので、両側の 1744×2 本を流しきるには、この負荷のままだと 70 分ほどかかる見込み。run の30分の中には収まらない。
+- **3つの表（新しく落ちた／直った／両方で落ちた）は作れなかった**。base 側が途中で止まり、work 側は始まらなかったため。件数は「判定に使えるもの 0件」。
+- 代替判定（計画のとおり (a) と (b) で判定する）：
+  - (a) base との差分は、spec 1本の追加（import 1行と見出しの注釈1行を含む）、検証スクリプトの引数、results の docs だけ。もとからあるテストの中身と、アプリのコード（js/・css/・index.html）は base と同じ。なので新しい赤が出るとすれば、足した1本の中だけになる。
+  - (b) その1本は、step2 で chromium 3回・webkit 1回とも緑だった。step3 では、関係する8ファイルの 78本と char の hub-conflict の3本がすべて緑（失敗 0・flaky 0）。spec を足した sync-section-status.spec.js の11本も、そこに含まれている。
+  - → 「base と比べて新しい赤は無い」と判定した。全件の比較で裏付けられてはいない。全件比較の結果が要るなら、負荷が下がってから、run をまたいで流せる形（systemd-run・#634 のやり方）で流し直す必要がある。step5 の tp で②の判断を受ける。
