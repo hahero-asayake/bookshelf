@@ -57,3 +57,37 @@ describe('SyncFailure.retryDelays', () => {
         expect(SyncFailure.retryDelays()).toEqual([5000, 15000, 45000]);
     });
 });
+
+// イシュー#639: 保存先へ書くのを止めている間 (3択をまだ選んでいない) の印。失敗とは別の名前1つで、理由で種類を分ける
+describe('SyncFailure.holdError と、止めている間の種類', () => {
+    it('印は SyncHoldError の1つの名前で、理由 (reason) を持つ', () => {
+        const e = SyncFailure.holdError('load-conflict');
+        expect(e).toBeInstanceOf(Error);
+        expect(e.name).toBe('SyncHoldError');
+        expect(e.reason).toBe('load-conflict');
+    });
+
+    it('読込時の3択 (load-conflict): 再試行せず、「選ぶ」で3択を開き直す。保存先の種類によらず同じ文', () => {
+        for (const method of ['local', 'hub', 'github']) {
+            const f = SyncFailure.classify(SyncFailure.holdError('load-conflict'), method);
+            expect(f).toMatchObject({ kind: 'load-conflict', retryable: false, reconnect: false, hold: true, actionLabel: '選ぶ' });
+            expect(f.message).toBe('保存先とこの端末の両方が変わっているため、保存先へ保存していません。「選ぶ」から、どちらの内容を使うか選んでください。');
+        }
+    });
+
+    it('書き込み時の3択 (sync-conflict): 再試行せず、「選ぶ」で3択を開き直す', () => {
+        const f = SyncFailure.classify(SyncFailure.holdError('sync-conflict'), 'hub');
+        expect(f).toMatchObject({ kind: 'sync-conflict', retryable: false, reconnect: false, hold: true, actionLabel: '選ぶ' });
+        expect(f.message).toContain('保存先へ保存していません');
+    });
+
+    it('ふつうの失敗には hold が付かない (状態バーのボタンは設定を開く)', () => {
+        expect(SyncFailure.classify(new Error('timeout'), 'hub').hold).toBeUndefined();
+        expect(SyncFailure.classify(err('HubAuthError'), 'hub').hold).toBeUndefined();
+    });
+
+    it('公開を止めた時の文は「何が起きたか＋次にどうすればよいか」', () => {
+        expect(SyncFailure.HOLD_PUBLISH_MESSAGE).toContain('公開を止めました');
+        expect(SyncFailure.HOLD_PUBLISH_MESSAGE).toContain('「選ぶ」');
+    });
+});

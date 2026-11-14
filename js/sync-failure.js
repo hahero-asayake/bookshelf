@@ -6,16 +6,36 @@
 //   SyncFailure.classify(error, method) → { kind, retryable, reconnect, message, actionLabel }
 //   SyncFailure.RETRY_DELAYS_MS                 自動の再試行の間隔 (実測前の仮の値・ADR に記録)
 //   SyncFailure.RETRYING_MESSAGE                自動の再試行の途中に出す文
+//   SyncFailure.holdError(reason)               保存先へ書くのを止めている間の印のエラー (イシュー#639)
+//   SyncFailure.HOLD_PUBLISH_MESSAGE            止めている間に公開を止めた時の文
 (function () {
     'use strict';
 
     // 自動の再試行の間隔 (1回目の失敗の5秒後・その15秒後・その45秒後の3回)。実測前の仮の値。
     const RETRY_DELAYS_MS = [5000, 15000, 45000];
     const RETRYING_MESSAGE = '保存できていない変更があります。自動で再試行しています。';
+    const HOLD_PUBLISH_MESSAGE = '保存先とこの端末の両方が変わっているため、公開を止めました。状態バーの「選ぶ」で使う内容を選んでから、もう一度公開してください。';
 
+    // 保存先へ書くのを止めている間 (利用者が3択で選ぶまで書かない) の印。失敗とは別の名前1つにまとめ、
+    // 止めている理由 (reason) で種類を分ける: 'load-conflict' = 読込時の3択 (イシュー#602)・'sync-conflict' = 書き込み時の3択 (イシュー#616)
+    function holdError(reason) {
+        const e = new Error(`sync hold: ${reason}`); // 利用者には出さない (出す文は classify の message)
+        e.name = 'SyncHoldError';
+        e.reason = reason;
+        return e;
+    }
 
     function classify(error, method) {
         const name = (error && error.name) || '';
+        // 止めている間は、直らない種類と同じく再試行せず、すぐ出す。hold=true は「選ぶ」で3択を開き直す印
+        if (name === 'SyncHoldError') {
+            if (error.reason === 'sync-conflict') {
+                return { kind: 'sync-conflict', retryable: false, reconnect: false, hold: true, actionLabel: '選ぶ',
+                    message: '別の端末で保存先が更新されたため、保存先へ保存していません。「選ぶ」から、どちらの内容を使うか選んでください。' };
+            }
+            return { kind: 'load-conflict', retryable: false, reconnect: false, hold: true, actionLabel: '選ぶ',
+                message: '保存先とこの端末の両方が変わっているため、保存先へ保存していません。「選ぶ」から、どちらの内容を使うか選んでください。' };
+        }
         if (method === 'hub' && name === 'HubAuthError') {
             return { kind: 'auth', retryable: false, reconnect: true, actionLabel: 'ログインし直す',
                 message: 'Asayake ハブのログインが切れたため、保存できませんでした。設定からログインし直してください。' };
@@ -57,7 +77,7 @@
         return RETRY_DELAYS_MS;
     }
 
-    const api = { classify, retryDelays, RETRY_DELAYS_MS, RETRYING_MESSAGE };
+    const api = { classify, retryDelays, holdError, RETRY_DELAYS_MS, RETRYING_MESSAGE, HOLD_PUBLISH_MESSAGE };
     if (typeof window !== 'undefined') window.SyncFailure = api;
     if (typeof globalThis !== 'undefined') globalThis.SyncFailure = api;
 })();

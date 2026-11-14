@@ -2967,6 +2967,9 @@ class VirtualBookshelf {
         }
         if (choice === 'remote') {
             this._loadConflictHold = null;
+            // 止めていた表示を解く (保存先の内容を採ったので、保存先と揃っている・イシュー#639)
+            this._clearSyncFailure();
+            this.updateSyncStatus('synced', this._syncLabel());
             this._pendingSync = false;
             try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
             // 手元で消した本棚・長文メモの削除待ちは、次の保存の時に「いまある本棚・本のファイルは消さない」で外れる
@@ -2981,13 +2984,17 @@ class VirtualBookshelf {
         }
         if (choice === 'local') {
             this._loadConflictHold = null;
+            // 止めていた表示を解く。上書きが書けたかどうかは、この後の保存がふつうに知らせる (イシュー#639)
+            this._clearSyncFailure();
             // 読んだ保存先を見たことにして、手元で上書きする
             this._writeSyncBase(state.library && state.library.exportDate, state.syncStamp);
             this._keepLocalOverLoaded(state);
             return;
         }
-        // 選ばずに閉じた: 手元の表示のまま保存先へは書かない。次に保存しようとした時 (1分は空ける)・次に開いた時に聞き直す
+        // 選ばずに閉じた: 手元の表示のまま保存先へは書かない。次に保存しようとした時 (1分は空ける)・次に開いた時に聞き直す。
+        // 書いていないことは保存の失敗と同じ1か所で、状態バー・同期欄・記事エディタの注意帯に出し続ける (イシュー#639)
         this._loadConflictAskedAt = Date.now();
+        this._onSyncFailed(window.SyncFailure.holdError('load-conflict'));
     }
 
     // 読込で両方が変わったと分かった時の選択 (イシュー#602)。選べるのは読み込む・上書き・書き出すの3つ
@@ -3094,7 +3101,8 @@ class VirtualBookshelf {
             // 保存成功 → 失敗の表示と自動の再試行を解く (イシュー#603)
             this._clearSyncFailure();
         } catch (e) {
-            console.error('Obsidian同期エラー:', e);
+            // 書くのを止めている間 (SyncHoldError・イシュー#639) は決めた動きなので、エラーとして記録しない
+            if (!(e && e.name === 'SyncHoldError')) console.error('Obsidian同期エラー:', e);
             // 保存の失敗はここ1か所で状態を立てる (イシュー#603)
             this._onSyncFailed(e);
         } finally {
@@ -3732,11 +3740,12 @@ class VirtualBookshelf {
         await this._waitBootLoads();
         if (!this._isSyncReady()) return;
         // 読込で「両方が変わった」と分かり、利用者がまだ選んでいない間は書かない (イシュー#602)。
-        // _lastSyncOk を偽にして、未反映の印を残す
+        // _lastSyncOk を偽にして、未反映の印を残す。黙って戻ると呼び手 (_runPendingSync) が保存できたとみなして
+        // 表示を消すので、止めている印のエラーで知らせる (イシュー#639)
         if (this._loadConflictHold) {
             this._lastSyncOk = false;
             if (Date.now() - (this._loadConflictAskedAt || 0) > 60000) this._askLoadConflict();
-            return;
+            throw window.SyncFailure.holdError('load-conflict');
         }
         await this._ensureFreshGitHubToken();
         this._lastSyncOk = false;
@@ -4092,6 +4101,20 @@ class VirtualBookshelf {
         const pathEl = document.getElementById('obsidian-sync-path');
         const status = document.getElementById('obsidian-sync-status');
         if (!pathEl || !status) return;
+        // 保存先へ書くのを止めている間 (読込時の3択をまだ選んでいない・イシュー#639) は「同期済み／保存済み」と言わず理由を出す。
+        // 読み込んだ後の 'synced' (フォルダを選んだ時・起動時の読み込み) が、止めている表示を上書きしないようにここで受ける
+        if (state === 'synced' && this._loadConflictHold) {
+            state = 'held';
+            detail = window.SyncFailure.classify(window.SyncFailure.holdError('load-conflict'), this.syncMethod).message;
+        }
+        if (state === 'held') {
+            pathEl.textContent = folderName;
+            pathEl.title = folderName || '';
+            pathEl.style.color = '';
+            status.textContent = detail;
+            status.style.color = 'var(--danger)';
+            return;
+        }
         const cloud = this.syncMethod === 'hub' || this.syncMethod === 'github';
         // ハブ・GitHub には「フォルダを選ぶ」が無い＝フォルダ向けの案内を出さない (イシュー#603)
         if (cloud && (state === 'synced' || state === 'reconnect' || state === 'failed')) {
@@ -4982,6 +5005,7 @@ class VirtualBookshelf {
                 if (btn.dataset.statusAction === 'update') this._applyPwaUpdate();
                 else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal('sync-method-select');
                 else if (btn.dataset.statusAction === 'retry-sync') this._retrySyncNow();
+                else if (btn.dataset.statusAction === 'resolve-hold') this._resolveSyncHold();
             });
         }
         this._updateStatusBar();
@@ -5042,6 +5066,8 @@ class VirtualBookshelf {
         this._syncFail = { ...f, count: count + 1, phase };
         this._syncError = true;
         this._syncErrorMsg = phase === 'quiet' ? '' : (phase === 'retrying' ? window.SyncFailure.RETRYING_MESSAGE : f.message);
+        // 書くのを止めている間は、設定の同期欄にも同じ文を出す (保存の失敗の同期欄は syncToObsidianFolder の catch が出す・イシュー#639)
+        if (f.hold) this.updateSyncStatus('held', this._syncLabel(), f.message);
         this._watchSyncRecovery();
         this._updateStatusBar();
     }
@@ -5051,6 +5077,11 @@ class VirtualBookshelf {
         const had = this._syncError || this._syncFail;
         this._syncFail = null;
         if (had) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
+    }
+
+    // 状態バーの「選ぶ」: 保存先へ書くのを止めている理由の3択を開き直す (イシュー#639)
+    _resolveSyncHold() {
+        if (this._loadConflictHold) this._askLoadConflict();
     }
 
     _scheduleSyncRetry(ms) {
@@ -5116,8 +5147,10 @@ class VirtualBookshelf {
         const msg = BookshelfEscape.escapeHtml(this._syncErrorMsg || f.message);
         const retry = f.retryable || f.phase === 'retrying'
             ? '<button class="status-btn" data-status-action="retry-sync" type="button">再試行</button>' : '';
+        // 書くのを止めている間 (f.hold) のボタンは、設定ではなく3択を開き直す (イシュー#639)
+        const action = f.hold ? 'resolve-hold' : 'open-sync';
         const open = f.phase === 'retrying' ? ''
-            : `<button class="status-btn" data-status-action="open-sync" type="button">${BookshelfEscape.escapeHtml(f.actionLabel || '確認')}</button>`;
+            : `<button class="status-btn" data-status-action="${action}" type="button">${BookshelfEscape.escapeHtml(f.actionLabel || '確認')}</button>`;
         const cls = f.phase === 'retrying' ? 'status-checking' : 'status-warn';
         return `<div class="status-row ${cls}" data-sync-failure="${f.kind}">${ico(f.phase === 'retrying' ? 'refresh-cw' : 'alert-triangle')}<span class="status-msg">${msg}</span>${retry}${open}</div>`;
     }
@@ -5810,6 +5843,12 @@ class VirtualBookshelf {
                 await this._confirmOpenSettings('公開先リポジトリが未設定です。設定の「公開」で公開用 GitHub リポジトリ（public）を選んでください。', 'publish-target-select');
                 return { ok: false, reason: 'repo' };
             }
+        }
+        // 保存先へ書くのを止めている間 (読込時の3択をまだ選んでいない) は、保存先に手元の編集が無い＝古い内容を公開しない。
+        // 保存の失敗の印 (_syncError) ではなく、止めている状態そのものを見る (印が外れても止める・再読込の後も止める・イシュー#639)
+        if (this._loadConflictHold) {
+            toast(window.SyncFailure.HOLD_PUBLISH_MESSAGE, { type: 'warn' });
+            return { ok: false, reason: 'hold' };
         }
         // 未保存編集が保存先に書けているかを公開後に判定するため、flush 前に pending 有無を記録
         let hadPending = this._pendingSync || this._syncInProgress;

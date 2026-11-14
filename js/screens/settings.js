@@ -377,7 +377,9 @@ class _SettingsMethods {
             if (currentFull && repos.some(r => r.full_name === currentFull)) {
                 await this._loadGitHubBranches(currentFull, current.branch);
             }
-            if (this.syncMethod === 'github') {       // 取得成功 → 同期エラー解消 (GitHub が同期先のとき)
+            // 取得成功 → 一覧の取得の失敗の印を解く (GitHub が同期先のとき)。保存の失敗・保存先へ書くのを止めている間 (_syncFail) は
+            // 一覧とは別の理由なので消さない (イシュー#639)
+            if (this.syncMethod === 'github' && !this._syncFail) {
                 this._syncError = false;
                 this._syncErrorMsg = '';
                 this._updateStatusBar();
