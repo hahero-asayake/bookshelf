@@ -17,7 +17,8 @@
 //      宛先が文字列・正規表現で書かれている範囲だけを見る(変数・関数の述語は判定できない)。
 //
 // 数えるもの(既定は警告だけ・終了コード0): jobs.json の全IDが、どれかの `@gate` に載っているか。
-//   `--strict-coverage` を付けた時だけ未達を失敗にする(門のE2Eが揃ってから CI で付ける)。
+//   `--strict-coverage` を付けた時だけ未達を失敗にする。npm run lint:e2e-gate は package.json で付けて流す
+//   (npm run lint・pre-push・CI で同じ判定・イシュー#658)。node で直接起動した時の既定は警告だけ(lint 自身のテスト用)。
 //
 // 使い方:
 //   node scripts/check-e2e-gate.mjs [--strict-coverage] [--json=<path>]

@@ -56,7 +56,7 @@ PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 PLAYWRIGHT_JSON_OUTPUT_NAME=
 npm run gate:report -- --collect
 ```
 
-観測点37は全部そろったので、CI の `lint:e2e-gate` は `--strict-coverage` 付きで流し、未達も失敗にする（`.github/workflows/ci.yml`・#629）。手元で同じ判定をするなら `npm run lint:e2e-gate -- --strict-coverage`。
+観測点37は全部そろったので、`npm run lint:e2e-gate` は `--strict-coverage` 付きで流れ、未達も失敗にする（package.json・#629・#658）。`npm run lint`・pre-push・CI はどれもこの1行を流すので、同じ判定になる。
 
 ## 保存先と別の端末の前提（公開・同期の観測点・イシュー#588）
 
@@ -159,4 +159,4 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 
 webkit（gate-webkit）で流さない分と理由は、playwright.config.js の GATE_WEBKIT_IGNORE に1行ずつ書いてある。
 
-観測点37は全部そろった（2026-11-14・#632 の J5-1・J6-5 と #629 の J3-5 で。`npm run lint:e2e-gate` は「網羅 37/37」）。CI の `lint:e2e-gate` は `--strict-coverage` 付きで流す（#629）。
+観測点37は全部そろった（2026-11-14・#632 の J5-1・J6-5 と #629 の J3-5 で。`npm run lint:e2e-gate` は「網羅 37/37」）。`npm run lint:e2e-gate` は `--strict-coverage` 付き（package.json・#658）＝`npm run lint`・pre-push・CI で同じ判定。

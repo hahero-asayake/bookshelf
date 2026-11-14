@@ -348,6 +348,8 @@ export function collectChecks({ dir, versionRange = 'origin/main..HEAD', run = r
     };
     for (const name of AUTO_CHECKS) {
         if (name === 'check:version') record(name, 'auto', [], { CHECK_VERSION_RANGE: versionRange });
+        // lint:e2e-gate は package.json で --strict-coverage 付き (イシュー#658)。未達があると終了コード1になり条件3にも数える
+        // (条件2は gate-lint.json から未達を出す。gate-lint.json は終了コードに関わらず書かれる)
         else if (name === 'lint:e2e-gate') record(name, 'auto', ['--', `--json=${join(dir, 'gate-lint.json')}`]);
         else record(name, 'auto');
     }
