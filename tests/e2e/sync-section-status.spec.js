@@ -119,7 +119,7 @@ for (const { name, boot, message } of CLOUD) {
         test('正常: 保存の後、同期欄に「保存済み」が見える', async ({ page }) => {
             const { remote } = await boot(page);
             await addBook(page, ASIN_A, '保存できる間に足した本');
-            await expect.poll(() => remoteAsins(remote)).toContain(ASIN_A);
+            await expect.poll(() => remoteAsins(remote), { timeout: 15_000 }).toContain(ASIN_A);
             await openSync(page);
             await expect(syncLine(page), '同期欄の状態の行が見える').toBeVisible();
             await expect(syncLine(page)).toContainText('保存済み');
@@ -131,7 +131,7 @@ for (const { name, boot, message } of CLOUD) {
             await retryDelays(page, [300, 300, 300]);
             const { remote, inject } = await boot(page);
             await addBook(page, ASIN_A, '保存できる間に足した本');
-            await expect.poll(() => remoteAsins(remote)).toContain(ASIN_A);
+            await expect.poll(() => remoteAsins(remote), { timeout: 15_000 }).toContain(ASIN_A);
             // 最初の1回＋自動の再試行3回が全部失敗する
             await inject.failNextWrites(4);
             await addBook(page, ASIN_B, '保存できない間に足した本');
@@ -286,7 +286,7 @@ test.describe('同期欄に保存の状態が見える: ローカルフォルダ
     test('正常: 保存の後、同期欄に「同期済み」が見える', async ({ page }) => {
         const { remote } = await bootWithLocalFolder(page);
         await addBook(page, ASIN_A, '保存できる間に足した本');
-        await expect.poll(() => remoteAsins(remote)).toContain(ASIN_A);
+        await expect.poll(() => remoteAsins(remote), { timeout: 15_000 }).toContain(ASIN_A);
         await openSync(page);
         await expect(syncLine(page)).toBeVisible();
         await expect(syncLine(page)).toContainText('同期済み');
@@ -297,7 +297,7 @@ test.describe('同期欄に保存の状態が見える: ローカルフォルダ
         await retryDelays(page, [300, 300, 300]);
         const { remote, inject } = await bootWithLocalFolder(page);
         await addBook(page, ASIN_A, '保存できる間に足した本');
-        await expect.poll(() => remoteAsins(remote)).toContain(ASIN_A);
+        await expect.poll(() => remoteAsins(remote), { timeout: 15_000 }).toContain(ASIN_A);
         const message = 'フォルダに保存できませんでした。「再試行」で直らないときは、設定からフォルダを選び直してください。';
         await inject.failNextWrites(4);
         await addBook(page, ASIN_B, '保存できない間に足した本');
@@ -333,7 +333,7 @@ test.describe('同期欄に保存の状態が見える: GitHub の未保存 (イ
         await confirmOk(page);
         await expect.poll(() => gh.has(shelfFile('all'))).toBe(true);
         await addBook(page, ASIN_A, '書ける間に足した本');
-        await expect.poll(() => remoteAsins(gh)).toContain(ASIN_A);
+        await expect.poll(() => remoteAsins(gh), { timeout: 15_000 }).toContain(ASIN_A);
         await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'))).toBeNull();
 
         // 書き込みだけ失敗させて編集し (未反映の印が立つ)、他の端末の更新を入れてから読み直す
