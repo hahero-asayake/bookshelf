@@ -110,3 +110,23 @@
 - 対照A の不足（見出し・URL・ツリー）も同じ変更で直るので、このイシューで一緒に直したい（②の判断を待つ）。
 - 読み直しの経路は実測していないので、このイシューでは直さず別イシューにする。今回作る関数を呼ぶ形にしておけば、その別イシューは呼び出しを足すだけになる。
 - E2E（step2）は、B・C・D と対照A の見出し・件数・URL・ツリーの選択を、画面から確かめる形にする。
+
+## step2 の結果（E2E の赤と緑・直し）
+
+②の決定（step1 の承認）：案A'。対照A の不足も一緒に直す。削除の後の切り替えは履歴を積まない（置き換える）。保存先から読み直す経路は別イシュー。
+
+- spec：`tests/e2e/shelf-delete-open-descendant.spec.js`（PC 幅・390 幅で各4本＝A 対照・B 子・C 孫・D 無関係）。
+  - 前提の本棚は fixture を localStorage に入れて用意。開く・削除・確認ダイアログは画面から操作する。`bookshelf._`／`app._` の参照は0件。
+  - 見るもの：見出し・本の数・ツリーで選択中の行・URL。A・B では、削除の後に戻るを1回押した時の行き先も見る。
+  - 戻るの見方：着いた段の URL を、アプリより先に聞く popstate で記録する。着いた段がホームの1つだけ（`['']`）であることを確かめる。
+    - `history.length` は使わない。戻った後も進む用の段が数に残るため。
+- 赤（3f09f51 の spec・直す前のコード）：PC 幅は A・B・C が落ち、D が通る。390 幅も同じ。計6件落ち・2件通過。
+- 直し：ded59dd。`_leaveRemovedShelf(removed)` を足し、deleteBookshelf から await で呼ぶ。`switchBookshelf`・`_navigateFromUi` に replace を渡せるようにした。`?v=` は 2026111711 → 2026111734。
+  - 390 幅の実測（`_local/634/probe.mjs`）では、削除の時ドロワーが開いていて、その段が履歴に積まれていた（段数3→4）。
+  - ドロワーを普通に閉じてすぐ置き換えると、閉じる戻るが置き換えの後に着地する。消えた子の本棚の段に着き、`_applyRoute` がホームへ飛ばした（URL は空・ホームの表示）。
+  - 静かに閉じる（silent）と、ドロワーの段が「すべての本」に置き換わる。消えた子の本棚の段は下に残る（戻ると消えた本棚の段からホームへ飛ばされる）。
+  - 採った形：ドロワーを普通に閉じ、その戻るの着地（popstate）を待ってから、消えた本棚の段を「すべての本」に置き換える。着地は子の本棚の段で、ホームへは飛ばされない。popstate が来ない時の保険で1秒の時間切れを置いた。
+- 緑：同じ spec が PC 幅・390 幅とも4本ずつ通る（計8件・2回流して2回とも全部通過）。
+- 削除を操作する既存の spec 5本（shelf-file-delete・sync-offline-reconnect・save-failure-visible・book-detail-shelf-meta・shelf-structure-home-refresh）も70件すべて通過。
+- lint：internal-refs・e2e-wait・e2e-goto・esc・js-color は OK。`check:version --range=origin/main..HEAD` も OK。lint 一式・vitest・e2e-diff は step3 で流す。
+- 設計書：03_詳細設計書の主要メソッド表を更新した。L124 の `switchBookshelf(id, { replace })` に replace の意味を足し、L153 に `_leaveRemovedShelf(removed)` の行を足した。obsidian 側の commit はしていない（自動バックアップに任せる）。
