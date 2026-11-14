@@ -319,3 +319,14 @@ commit：`65990ba`（branch issue/636・未push）。origin/main の eef77b5 に
 - 新しく落ちた表の3件は、すべて再試行で通った揺れ：gate/j2-5-import-no-duplicate・gate/j3-5-many-books・reimport-diff（#406）。
 - #155 の書き換えたテストは落ちていない。vitest の新しい落ち 0件。
 - 記録：`_local/636/e2e-diff4/report.md`・`_local/636/e2e-diff4.log`。
+
+#### push の前の最後の確認（②の条件 (i)〜(iii)・origin/main 985e770 の上の e2cc01c・abc65de・6ce207a）
+
+- (i) 全件比較（eb316db に対して新しい落ち0件）の後に main が進んだ分（eb316db→985e770・#639 ほか）と、自分の変更が同じ関数の中に触れていないかを、変わった行の入っているメソッド名で比べた（`_local/636/fn-of-diff.mjs`）。
+  - main が進んだ分：_askLoadConflict・_clearSyncFailure・_initStatusBar・_onSyncFailed・_resolveSyncHold・_runPendingSync・_runPublishExport・_syncFailureRow・**syncToObsidianFolder**・updateSyncStatus（ほかに js/screens/settings.js・js/sync-failure.js）。
+  - 自分の変更：_ensureAllShelf・_keepLocalOverLoaded・_onLibraryChanged・loadData・**syncToObsidianFolder**・updateBookshelfSelector（_ensureAllShelf を置いた前後の行）。
+  - **syncToObsidianFolder が重なる** → (i) を満たさない → ②の決まりどおり、全件比較をやり直した（下）。
+- (ii) check:version `--range=origin/main..HEAD`：OK。lint の集約（scripts/run-lint.mjs・#619）：「12 本中 0 本失敗」。vitest：77ファイル・1156件が緑（todo 2）。
+- 全件比較のやり直し（6ce207a と origin/main 985e770・16:56〜17:06）：**新しく落ちた 0件**（E2E・vitest とも）。画像の差分 0件 / 54件。記録：`_local/636/e2e-diff5/report.md`。
+- 新しい spec 2本と書き換えた #155：各3回で 9/9 緑。
+- (iii) は、全件比較のやり直しで main が進んだ分の spec（#639 の load-conflict-unsaved など）も含めて流れたので、それで確かめた。
