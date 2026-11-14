@@ -213,3 +213,41 @@
   - save-failure-visible L149（ローカル）は、出力に失敗の行が残っていなかった。
   - 2本とも、単独で流し直すと緑だった。step4 の全件比較でもう一度見る。
 - 直した後に変わった挙動（記録しておく）：ハブの通信の失敗で `_syncError` を立てなくなった。そのため、公開の前の確認（js/bookshelf.js の `if (hadPending && this._syncError)`・公開の flush の後）は、ハブの読込の失敗だけでは公開を止めなくなった。flush で保存が失敗すれば、`_onSyncFailed` が `_syncError` を立てるので、今までどおり止まる。GitHub は前から読込の失敗で `_syncError` を立てていなかったので、ハブが GitHub と同じ形になった。止める条件に読込の失敗を足すかは、②の判断にする。
+
+## step4 載せ直し・main との全件比較（2026-11-14 19:16〜・push はしない）
+
+### 載せ直し
+
+- 19:16 に `git fetch -q origin` した。origin/main は 61a91a2。`git rebase origin/main` した（土台は d18af26 から 61a91a2 へ。間に #663・#664・#668・#669 などが入っていた）。
+- ぶつかったのは index.html の `?v=` の2行だけ。main 側は `sync-failure.js?v=2026111691`・`bookshelf.js?v=2026111798`、こちらは両方 2026111866 だった。ほかの開いている worktree を見ると #671 が 2026111867 を使っていた。そこで両方を **2026111876** にして解いた（main の最大 2026111798、ほかの worktree の最大 2026111867 より大きい）。`npm run check:version -- --range=origin/main..HEAD` は OK。
+- js/bookshelf.js は自動でまとまった。main 側の d18af26..61a91a2 の差分（26行）を見たが、今回触った所（`_updateStatusBar`・`_renderSyncState`・`_runStatusAction`・2つの catch・`_initLoadFailed` まわり）には当たっていない。#657・#660 は d18af26 の時点でもう入っていたので、状態の欄と状態バーの扱いは step3 で読んだ形のまま。
+- 載せ直した後の sha：9ca6c40（step1 の記録）・fc7d5ec（test・赤のまま）・e18a12c（fix）・d0bc39e（step3 の記録）。
+- 全件比較を始めた時（19:18）には、origin/main が 80e2cc8 に進んでいた。増えたのは 668-results.md の docs の commit 1件だけなので、比較の結果には響かない。
+
+### 最後の載せ直しの後の lint・単体（19:17）
+
+- `npm run lint`：12 本中 0 本失敗。
+- `npm test`：80ファイル・1196 通過・2 todo。
+
+### main との全件比較（`node scripts/verify/e2e-diff-main.mjs --port=8166 --out=tmp/666/e2e-diff`・19:18〜19:29）
+
+- 負荷が高かったので（load average 37〜47・16コア）、run の30分を超えても止まらないように、`systemd-run --user --unit=bs666-e2e-diff` で切り離して流した（#634 のノートの流し方）。19:29 に終わった（11分）。比較のための base の worktree は、スクリプトが片付けた。
+- base は origin/main 80e2cc8、work は作業ツリー（HEAD d0bc39e）。visual は既定どおりオン。除外は sort-perf-budget だけ（ci.yml と同じ）。
+- 件数：base は E2E 1100 通過・592 スキップ・3 失敗。work は 1106 通過・592 スキップ・4 失敗（新しい spec の7本などが増えた分）。
+
+| 表 | 件数 | 中身 |
+|---|---|---|
+| 新しく落ちた（E2E） | **1** | github-sync-resilience.spec.js:59「GitHub からの読み込みが失敗すると「手元のデータで表示中・再試行」が出て、再試行で回復できる」（流し直し3回とも落ちた＝揺れではない） |
+| 新しく通った（E2E） | 0 | — |
+| 両方で落ちた（E2E） | 3 | duplicate-asin-notice.spec.js:111・gate/j3-5-many-books.spec.js:29（913冊・CPU 6倍遅くの時間計測）・list-staged-render.spec.js:109（913冊の段階描画）。どれも今回の変更に関係しない所で、base でも落ちた（負荷の揺れの見込み） |
+| vitest | 新しく落ちた 0・新しく通った 0・両方で落ちた 0 | — |
+| 画像の差分 | 0 / 54 | — |
+
+- step3 の束の中でだけ落ちたローカルフォルダの2本（load-conflict-unsaved L180・save-failure-visible L149 のローカル）は、この全件比較では base・work とも通っていた。
+
+#### 新しく落ちた1本の原因と直し
+
+- 原因：この spec（#391 E2E#1）は、GitHub の読込の失敗で出していた toast「手元のデータで表示中です。…」（`.toast-error .toast-message`）と、その「再試行」（`.toast-action`）を見ていた。step2 の tp の決定 (b) でこの toast をやめたので落ちた。step3 で書き換える spec を探した時の grep（`obsidian-sync-status`・`読み込みに失敗`）の語に当たらず、書き換えから漏れていた。
+- 直し：tests/e2e/github-sync-resilience.spec.js の L59 のテストを、今の挙動に合わせて書き換えた。状態バーの読込の失敗の行（`#app-status-bar [data-load-failure] .status-msg`）が新しい GitHub の文と完全に一致すること、その行に「再試行」（`data-status-action="retry-load"`）があること、読込の失敗の toast が出ないことを見る。テスト名も「状態バーに「この端末の内容を表示しています」と「再試行」が出る」に変えた。手元のデータの冊数が変わらないことの確認は、そのまま残した。
+- 直した後：github-sync-resilience.spec.js を `--repeat-each=2` で流し、4本すべて緑（2.9s・19:29）。`npm run lint` は 12 本中 0 本失敗。
+- 同じ漏れが他に無いかの確認として、`git grep -n "手元のデータで表示中" -- tests js` を使った。直す前に当たったのはこの spec の2行だけだった。
