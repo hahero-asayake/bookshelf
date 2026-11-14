@@ -3242,7 +3242,7 @@ class VirtualBookshelf {
         }
         const label = 'Asayake ハブ';
         const svc = 'Asayake ハブ';
-        this._initLoadFailed = null; // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
+        this._clearInitLoadFailed(); // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -3286,17 +3286,21 @@ class VirtualBookshelf {
             if (method === 'hub') this._refreshHubUsage().catch(() => {});
         } catch (e) {
             console.error(`initCloudSync(${method}):`, e);
-            this._syncError = true;
             const isAuthErr = (e && e.name === 'HubAuthError');
-            this._syncErrorMsg = isAuthErr
-                ? `${svc} の認証が切れました。設定から再接続してください。`
-                : `${svc} からの読み込みに失敗しました。`;
-            // 同期欄にも状態バーと同じ読込の失敗の文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
-            // 「（要再接続）」は認証切れの時だけ。通信の失敗は電波が戻れば読み直す (下の _markInitLoadFailed・イシュー#653)
-            this.updateSyncStatus(isAuthErr ? 'reconnect' : 'failed', label, this._syncErrorMsg);
+            // 同期欄にも状態バーと同じ文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
+            // 「（要再接続）」は認証切れの時だけ。通信の失敗は電波が戻れば読み直す (_markInitLoadFailed・イシュー#653)
+            if (isAuthErr) {
+                this._syncError = true;
+                this._syncErrorMsg = `${svc} の認証が切れました。設定から再接続してください。`;
+                this.updateSyncStatus('reconnect', label, this._syncErrorMsg);
+                this._updateStatusBar();
+                return;
+            }
+            // 通信の失敗: 文は SyncFailure の1か所で決め、状態バーの読込の失敗の行と同期欄に同じ文と「再試行」を出す (イシュー#666)。
+            // 電波が戻った時・タブに戻った時にも読み直す (イシュー#617)
+            this._markInitLoadFailed(window.SyncFailure.loadFailure(method));
+            this.updateSyncStatus('failed', label, this._initLoadFailed.message);
             this._updateStatusBar();
-            // ログイン切れ以外 (通信の失敗など) は、電波が戻った時に読み直す (イシュー#617)
-            if (!isAuthErr) this._markInitLoadFailed(this._syncErrorMsg);
         }
     }
 
@@ -3385,7 +3389,7 @@ class VirtualBookshelf {
         }
         await this._ensureFreshGitHubToken();
         const label = `${adapter.owner}/${adapter.repo}@${adapter.branch}`;
-        this._initLoadFailed = null; // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
+        this._clearInitLoadFailed(); // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -3422,24 +3426,18 @@ class VirtualBookshelf {
             // 同期欄にも toast と同じ読込の失敗の文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
             // 「（要再接続）」は認証切れの時だけ。通信の失敗は電波が戻れば読み直す (下の _markInitLoadFailed・イシュー#653)
             const authErr = e instanceof GitHubAuthError;
-            const authMsg = 'GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。';
-            this.updateSyncStatus(authErr ? 'reconnect' : 'failed', label,
-                authErr ? authMsg.replace('\n', '') : 'GitHub からの読み込みに失敗しました。');
             if (authErr) {
+                const authMsg = 'GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。';
+                this.updateSyncStatus('reconnect', label, authMsg.replace('\n', ''));
                 toast(authMsg);
-            } else {
-                // 失敗しても画面は直前の手元データのまま(起動2段化・C-277、loadData()が先に描画済み)。
-                // エラー文言だけだと「表示が壊れているのでは」という不安を招くため、「今表示しているのは
-                // 手元のデータであること」と「再試行できること」を併せて出す
-                // (ui-standards §2-11「失敗を無言にしない・何が起きたか+次にどうすればよいかの2要素」・イシュー#391 E案)。
-                toast('手元のデータで表示中です。GitHub からの読み込みに失敗しました。', {
-                    type: 'error',
-                    action: { label: '再試行', onClick: () => this.initGitHubSync() },
-                    duration: 10000
-                });
-                // 電波が戻った時にも読み直す (イシュー#617)
-                this._markInitLoadFailed();
+                return;
             }
+            // 通信の失敗: ハブと同じく、SyncFailure の文と「再試行」を状態バーの行と同期欄に出す (toast はやめた・イシュー#666)。
+            // 失敗しても画面は直前の手元データのまま (起動2段化・C-277) なので、文に「この端末の内容を表示しています」を含める (#391 E案)。
+            // 電波が戻った時・タブに戻った時にも読み直す (イシュー#617)
+            this._markInitLoadFailed(window.SyncFailure.loadFailure('github'));
+            this.updateSyncStatus('failed', label, this._initLoadFailed.message);
+            this._updateStatusBar();
         }
     }
 
@@ -5237,6 +5235,7 @@ class VirtualBookshelf {
         if (action === 'update') this._applyPwaUpdate();
         else if (action === 'open-sync') this._openSettingsModal('sync-method-select');
         else if (action === 'retry-sync') this._retrySyncNow();
+        else if (action === 'retry-load') this._retryInitLoad();
         else if (action === 'resolve-hold') this._resolveSyncHold();
     }
 
@@ -5289,6 +5288,9 @@ class VirtualBookshelf {
             color = retrying ? 'var(--warning)' : 'var(--danger)';
             if (f.retryable || f.phase === 'retrying') buttons += '<button class="btn btn-secondary btn-small" data-status-action="retry-sync" type="button">再試行</button>';
             if (f.hold) buttons += `<button class="btn btn-secondary btn-small" data-status-action="resolve-hold" type="button">${BookshelfEscape.escapeHtml(f.actionLabel || '選ぶ')}</button>`;
+        } else if (this._initLoadFailed) {
+            // 起動の読込の失敗 (イシュー#666): 文は updateSyncStatus が書いた状態バーと同じ文。状態バーと同じ「再試行」を出す
+            buttons += '<button class="btn btn-secondary btn-small" data-status-action="retry-load" type="button">再試行</button>';
         }
         status.textContent = text || '';
         status.style.color = color || '';
@@ -5348,22 +5350,28 @@ class VirtualBookshelf {
 
     // 起動時の同期先 (ハブ/GitHub) からの読み込みが、ログイン切れ以外で失敗した印 (イシュー#617)。
     // 電波なしのまま開いた端末は、ここで見張りを登録しておき、電波が戻った時・タブに戻った時に読み直す。
-    // barMsg は、この失敗で状態バーに出した文 (読み直す時に下ろす)。
-    _markInitLoadFailed(barMsg = '') {
-        this._initLoadFailed = { barMsg };
+    // failure は SyncFailure.loadFailure の結果 (文と種類)。状態バーの読込の失敗の行と同期欄の「再試行」は、この印から描く
+    // (保存の失敗の _syncError・_syncErrorMsg とは別の行。settings.js の取得の失敗と1つの行を取り合わない・イシュー#666)
+    _markInitLoadFailed(failure) {
+        this._initLoadFailed = { ...failure };
         this._watchSyncRecovery();
     }
 
-    // 起動時の読み込みをやり直す。読めたら、前の回の保存待ち (virtualBookshelf_pendingSync) は
-    // _applyLoadedState が手元を優先して取り込み、送り直す。また失敗したら initSync が印と知らせを立て直す。
-    async _retryInitLoad() {
-        const failed = this._initLoadFailed;
-        if (!failed || this._initLoadRetrying) return;
-        this._initLoadRetrying = true;
+    // 印を下ろし、出していた読込の失敗の行と「再試行」を消す (読み直しを始める時)
+    _clearInitLoadFailed() {
+        if (!this._initLoadFailed) return;
         this._initLoadFailed = null;
-        if (failed.barMsg && this._syncErrorMsg === failed.barMsg && !this._syncFail) {
-            this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar();
-        }
+        this._updateStatusBar();
+        this._renderSyncState();
+    }
+
+    // 起動時の読み込みをやり直す (電波が戻った時・タブに戻った時・状態バーと同期欄の「再試行」)。読めたら、前の回の保存待ち
+    // (virtualBookshelf_pendingSync) は _applyLoadedState が手元を優先して取り込み、送り直す。また失敗したら initSync が印と知らせを立て直す。
+    // 印を先に下ろす (行とボタンが消える) ので、読み直しの最中に押し直しても2回目は走らない
+    async _retryInitLoad() {
+        if (!this._initLoadFailed || this._initLoadRetrying) return;
+        this._initLoadRetrying = true;
+        this._clearInitLoadFailed();
         try { await this.initSync(); } catch (e) { console.error('initSync (読み直し):', e); } finally { this._initLoadRetrying = false; }
     }
 
@@ -5390,6 +5398,11 @@ class VirtualBookshelf {
         }
         if (this._syncChecking) {
             rows.push(`<div class="status-row status-checking">${ico('refresh-cw')}<span class="status-msg">最新のデータを確認しています…</span></div>`);
+        }
+        // 起動の読込が通信で失敗したまま (イシュー#666)。文は SyncFailure.loadFailure の1か所から。保存の失敗の行とは別の行
+        const loadFail = this._initLoadFailed;
+        if (loadFail && loadFail.message) {
+            rows.push(`<div class="status-row status-warn" data-load-failure="${loadFail.kind}">${ico('alert-triangle')}<span class="status-msg">${BookshelfEscape.escapeHtml(loadFail.message)}</span><button class="status-btn" data-status-action="retry-load" type="button">${BookshelfEscape.escapeHtml(loadFail.actionLabel || '再試行')}</button></div>`);
         }
         const fail = this._syncError ? this._syncFail : null;
         if (fail && fail.kind === 'permission') {

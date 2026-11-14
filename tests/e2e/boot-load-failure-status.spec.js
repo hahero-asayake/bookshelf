@@ -79,8 +79,9 @@ test('ハブ: 起動の読込が通信で失敗した時、同期欄は状態バ
     const { cut } = await bootHub(page, context);
     cut.mode = 'net';
     await page.reload();
-    await expect(statusBar(page)).toContainText('Asayake ハブ からの読み込みに失敗しました。', { timeout: 20_000 });
-    await expectSyncField(page, { status: 'Asayake ハブ からの読み込みに失敗しました。', path: HUB_LABEL });
+    // 文は js/sync-failure.js の loadFailure で決める (イシュー#666)
+    await expect(statusBar(page)).toContainText('Asayake ハブから読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', { timeout: 20_000 });
+    await expectSyncField(page, { status: 'Asayake ハブから読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', path: HUB_LABEL });
 });
 
 test('ハブ: 起動の読込が認証切れで失敗した時、同期欄は状態バーと同じ認証切れの文を出し、path に「（要再接続）」を付ける', async ({ page, context }) => {
@@ -92,12 +93,13 @@ test('ハブ: 起動の読込が認証切れで失敗した時、同期欄は状
     await expectSyncField(page, { status: 'Asayake ハブ の認証が切れました。設定から再接続してください。', path: `${HUB_LABEL}（要再接続）` });
 });
 
-test('GitHub: 起動の読込が通信で失敗した時、同期欄は toast と同じ読込の失敗の文を出し、path に「（要再接続）」を付けない', async ({ page, context }) => {
+test('GitHub: 起動の読込が通信で失敗した時、同期欄は状態バーと同じ読込の失敗の文を出し、path に「（要再接続）」を付けない', async ({ page, context }) => {
     const { gh, cut } = await bootGitHub(page, context);
     cut.mode = 'net';
     await page.reload();
-    await expect(page.locator('.toast-message', { hasText: 'GitHub からの読み込みに失敗しました。' })).toBeVisible({ timeout: 20_000 });
-    await expectSyncField(page, { status: 'GitHub からの読み込みに失敗しました。', path: ghLabel(gh) });
+    // GitHub も toast をやめ、状態バーに同じ文を出す (イシュー#666)
+    await expect(statusBar(page)).toContainText('GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', { timeout: 20_000 });
+    await expectSyncField(page, { status: 'GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', path: ghLabel(gh) });
 });
 
 test('GitHub: 起動の読込が認証切れで失敗した時、同期欄は toast と同じ認証切れの文を出し、path に「（要再接続）」を付ける', async ({ page, context }) => {

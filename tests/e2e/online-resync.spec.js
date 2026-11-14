@@ -62,7 +62,8 @@ test('電波なしのまま開き直した端末でも、電波が戻ると、�
     // 一時的に戻して再読込する。ハブへの通信は落としたまま = アプリから見れば、起動の間ずっとハブに届かない
     await context.setOffline(false);
     await page.reload();
-    await expect(statusBar(page)).toContainText('読み込みに失敗しました', { timeout: 15000 });
+    // 読込の失敗の文 (js/sync-failure.js の loadFailure・イシュー#666)
+    await expect(statusBar(page)).toContainText('Asayake ハブから読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', { timeout: 15000 });
     await context.setOffline(true);
     await expect(memoBox(page)).toHaveValue(MEMO); // 手元には残っている (再読込で本の詳細は開き直される)
     expect(hubHas(hub, MEMO)).toBe(false);
@@ -133,8 +134,8 @@ test('GitHub でも、電波なしのまま開き直した端末は、電波が�
     // 電波なしのまま開き直す (ハブの時と同じ作り方: ブラウザの電波だけ一時的に戻し、GitHub への通信は落としたまま)
     await context.setOffline(false);
     await page.reload();
-    // toast の文で待つ (設定の同期欄にも同じ文が入る＝ページ全体の getByText は2つに当たる・イシュー#653)
-    await expect(page.locator('.toast-message', { hasText: 'GitHub からの読み込みに失敗しました' })).toBeVisible({ timeout: 15000 });
+    // 状態バーの文で待つ (GitHub も toast をやめ、状態バーと設定の同期欄に同じ文を出す・イシュー#666)
+    await expect(statusBar(page)).toContainText('GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。', { timeout: 15000 });
     await context.setOffline(true);
     await expect(memoBox(page)).toHaveValue(MEMO); // 手元には残っている
 

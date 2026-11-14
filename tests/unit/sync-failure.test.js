@@ -91,3 +91,19 @@ describe('SyncFailure.holdError と、止めている間の種類', () => {
         expect(SyncFailure.HOLD_PUBLISH_MESSAGE).toContain('「選ぶ」');
     });
 });
+
+describe('SyncFailure.loadFailure (起動の読込が通信で失敗した時・イシュー#666)', () => {
+    it('ハブと GitHub で文を分け、どちらも「何が起きたか＋この端末の内容＋次にどうすればよいか」', () => {
+        expect(SyncFailure.loadFailure('hub')).toEqual({ kind: 'load-network', retryable: true, actionLabel: '再試行',
+            message: 'Asayake ハブから読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。' });
+        expect(SyncFailure.loadFailure('github')).toEqual({ kind: 'load-network', retryable: true, actionLabel: '再試行',
+            message: 'GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。' });
+    });
+
+    it('文に出す手 (「再試行」) とボタンの名前が同じ・呼ぶたびに別の物を返す (呼んだ側が書き換えても次に響かない)', () => {
+        const a = SyncFailure.loadFailure('hub');
+        expect(a.message).toContain(`「${a.actionLabel}」`);
+        a.message = 'x';
+        expect(SyncFailure.loadFailure('hub').message).not.toBe('x');
+    });
+});

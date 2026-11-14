@@ -8,6 +8,7 @@
 //   SyncFailure.RETRYING_MESSAGE                自動の再試行の途中に出す文
 //   SyncFailure.holdError(reason)               保存先へ書くのを止めている間の印のエラー (イシュー#639)
 //   SyncFailure.HOLD_PUBLISH_MESSAGE            止めている間に公開を止めた時の文
+//   SyncFailure.loadFailure(method)             起動時の保存先 (ハブ/GitHub) からの読み込みが通信で失敗した時の種類と文 (イシュー#666)
 (function () {
     'use strict';
 
@@ -67,6 +68,15 @@
                 : 'Asayake ハブに保存できませんでした。通信が戻ったら「再試行」を押してください。' };
     }
 
+    // 起動時の保存先からの読み込みが、ログイン切れ以外 (通信の失敗・時間切れ・サーバの失敗) で失敗した時 (イシュー#666)。
+    // 状態バーの行と設定の同期欄に、この文と「再試行」(読み直す) を出す。ログイン切れの文はここで決めない (js/bookshelf.js の catch)
+    function loadFailure(method) {
+        return { kind: 'load-network', retryable: true, actionLabel: '再試行',
+            message: method === 'github'
+                ? 'GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。'
+                : 'Asayake ハブから読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。' };
+    }
+
     // E2E だけが待ち時間を短く差し替える (localStorage 'bookshelf.flag.syncRetryDelaysMs' = JSON の数値配列)
     function retryDelays() {
         try {
@@ -77,7 +87,7 @@
         return RETRY_DELAYS_MS;
     }
 
-    const api = { classify, retryDelays, holdError, RETRY_DELAYS_MS, RETRYING_MESSAGE, HOLD_PUBLISH_MESSAGE };
+    const api = { classify, loadFailure, retryDelays, holdError, RETRY_DELAYS_MS, RETRYING_MESSAGE, HOLD_PUBLISH_MESSAGE };
     if (typeof window !== 'undefined') window.SyncFailure = api;
     if (typeof globalThis !== 'undefined') globalThis.SyncFailure = api;
 })();
