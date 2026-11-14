@@ -249,3 +249,41 @@
 - lint:internal-refs：`OK: 上限(82)以内`（新しい spec はアプリの内部を読まない）。
 - index.html の ?v= は上げていない（公開されるファイルを変えていない）。check:version は commit の後に `--range=origin/main..HEAD` で流す。
 - 関係する spec の単独の流し（sync-offline-reconnect・boot-confirm-dialog・dashboard-stats-after-manual-add）は step5（②の指示で step5 に回した）。
+
+## step4 完了条件の確認（2026-11-14 15:15〜15:20）
+
+アプリは main の最新 **0300351**（`git archive origin/main` を `tmp/633/app-0300351/` に展開して配信）。canary は issue/626 の先頭 **3340f9c** を写し直したもの（`tmp/633/canary-step4/`・#626 の step1/step2 と同じ版）。本番への通信は0。#626 の worktree・状態ファイルには触れていない。
+
+### 観測を足していない canary（元の写し）を、空の保存先から流した
+
+| 回 | 流れ | 遅延 書込/読取 | 結果 | やり直し | 1回目の失敗 | 記録 |
+|---|---|---|---|---|---|---|
+| s1-canary-publish-0 | 公開（pick-book を含む） | 0 | **成功** 8.4秒 | なし（attempts=1） | なし | 同意 302ms・公開URL 575ms・404まで 5012ms |
+| s2-canary-publish-slow | 公開 | 1900/280 | **成功** 52.3秒 | なし（attempts=1） | なし | 同意 2296ms・公開URL 12987ms・404まで 10006ms |
+| s3-canary-save-0 | 保存（edit-memo を含む） | 0 | **成功** 8.7秒 | なし（attempts=1） | なし | |
+| s4-canary-save-slow | 保存 | 1900/280 | **成功** 34.4秒 | なし（attempts=1） | なし | |
+
+- 4回とも、空の保存先からの1回目で通った（pick-book・edit-memo を含む）。模擬のハブの中身は、終了時に library.json・all.json とも1冊。
+- 公開の流れで pick-book が通った＝記事の画面を開いた時には「すべての本」の本棚があった（step3 で見つけた別件＝最初の保存の前に記事の画面を開くと引き出しが空のまま戻らない、には当たらなかった）。canary は記事の画面を開く前に記事の一覧を開く・前の回の記事を消す等をするので、その間に最初の保存が済むためと見ている（推定・時刻は測っていない）。
+
+- 記録：`tmp/633/runs/<回>/run.log`・`state.json`（canary 自身の状態ファイル。attempts と firstFailure を読む）。要点の出力は `node tmp/633/summarize-canary.mjs <回,…>`。
+- 直す前（#626 step1・bd610ea）は、空の保存先からの1回目が毎回 pick-book で落ちてやり直していた（`tmp/626-step1/step1-report.md` §5）。保存の流れも1回目が edit-memo で落ちていた（#626 step2-report L47）。
+
+### probe（step1 と同じ観測）を、直した後の版で流した
+
+| 回 | 足し方 | 遅延 | 直す前（f6dd65a・step1） | 直した後（0300351） | 読込で採った側（直した後） | 手元（読込の前→後） |
+|---|---|---|---|---|---|---|
+| direct・0 | direct | 0 | 失敗 pick-book（1-direct-0） | **通った**（p1-direct-0） | local | 1→1 |
+| ui・0 | ui | 0 | 通った（2-ui-0。読込の後に足した） | **通った**（p2-ui-0） | remote（読込の後に足した＝手元0冊） | 0→0 |
+| ui・遅延あり | ui | 1900/280 | 失敗 pick-book（3-ui-slow・3b-ui-slow） | **通った**（p3-ui-slow） | local | 1→1 |
+| direct・遅延あり | direct | 1900/280 | 失敗 pick-book（4-direct-slow） | **通った**（p4-direct-slow） | local | 1→1 |
+
+- 引き出しに本が出ている画面：`tmp/633/runs/p2-ui-0/pick-before.png`（「本の引き出し」に canary-book が1件）。同じ形で p1・p3・p4 の `pick-before.png`。
+- 直す前の画面（0件・畳まれた引き出し）：`tmp/633/runs/3-ui-slow/pick-before.png`。
+
+### #626 の canary を壊していない確認（run-mock-check.mjs の全件）
+
+- 写し：issue/626 の 3340f9c（`tmp/633/canary-step4/SOURCE_SHA.txt`）。写しの中だけでポートを変えた（場面の起点 18590→28800・静的配信 18584→28884・ハブと GitHub の模擬 18585→28885。どれも空きを確かめてから使った）。
+- アプリ：CANARY_MOCK_APP_ROOT＝`tmp/633/app-0300351`（main の最新）。
+- 結果：**50/50 OK**（`tmp/633/mock-check-step4.log`）。#626 step2-report の 50/50 と同じ。
+- 1回目は 49/50 だった（`tmp/633/mock-check-step4-run1-missing-datacheck.log`）。NG の1件「データ確認 (状態ファイルの目印と一致) は exit 0」は、写しに `tools/bookshelf-canary-datacheck.mjs` を入れ忘れたため（実行役のファイルが無く、node が読み込みで止まって exit 1）。アプリとは関係ない。写しに足して全件を流し直した。
