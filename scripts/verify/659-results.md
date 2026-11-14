@@ -134,3 +134,34 @@
 - lint:esc: 修正の前（1a1b3ee・step1）も後（e798de8）も「js/ 配下に Esc の判定の直書きは無い（例外: js/ui/reorder.js）」＝直書き0件・例外1件で同じ。
 - `npm test`（vitest）: Test Files 78 passed・Tests 1176 passed / 2 todo（失敗0）。
 - `npm run check:version -- --range=origin/main..HEAD`: OK（変更された js/css はすべて `?v=` がバンプ済み。vendor の未参照の警告は前からある・exit code に影響しない）。
+
+## §4 全体の回帰と仕上げ（step4）
+
+### 載せ直し（rebase）
+
+- origin/main 1234cf4（#654 が入った版）へ載せ直した（d55a774 test・a91d2bb fix・443fdfb docs）。
+- ぶつかったのは index.html の bookshelf.js の `?v=` の1行だけだった。js/bookshelf.js は自動で合わさった（#654 の hunk と離れている）。
+- `?v=` は 2026111740 に取り直した（1234cf4 の値は 2026111711。作業中の他の worktree の最大は 2026111734）。
+- 載せ直した後、新しい spec は 15 passed（5場面×3回）。`check:version -- --range=origin/main..HEAD` も OK。
+
+### origin/main との全件比較（e2e-diff-main）: 2回とも完走しなかった
+
+- 1回目（17:31 開始・base は origin/main 1234cf4）: base 側の E2E を流している途中で、前の run の終わりと一緒に止まった。3表は出ていない。
+- 2回目（17:36:37 開始・`--port=8159 --out=_local/659/e2e-diff2`・base は origin/main 1c99d78。その間に #656 が入った）: 9分たっても base 側の E2E 全件の途中だった。
+  - この時、マシンの負荷は load average 100（16コア）で、playwright のプロセスが 271 あった。
+  - work 側（この修正の版）まで、この run の締切（18:05）に終わらない。なので 17:46 に止めた（最大待ち時間 15 分の手前）。
+- 3表（新しく落ちた・新しく通った・両方落ちた）は出ていない。流せなかったものは、work 側の E2E 全件と vitest の比較のすべて（base 側も途中）。
+- 代わりに確かめたもの（この修正の版）:
+  - 新しい spec: 15 passed（載せ直した後）
+  - 関係する spec: 129 passed（§3・載せ直す前の版）
+  - `npm run lint`: 12 本中 0 本失敗（§3）
+  - vitest: 1176 passed（§3）
+- 止めた後の後始末:
+  - 残っていた http.server（8159・この run が起こしたもの）を止めた。
+  - 一時の worktree 2つ（`_local/659/e2e-diff`・`e2e-diff2` の `_worktree-base`）は `_trash/659-e2e-diff-run1`・`run2` へ移し、`git worktree prune` で登録を外した。
+
+### この後に要ること
+
+- push はしていない（brief の指示）。
+- origin/main は、さらに fa4f41f（#656 が入った版・bookshelf.js の `?v=` は 2026111721）まで進んでいる。push する時は、もう一度載せ直し、`?v=` が origin/main と作業中の値より新しいかを確かめる。
+- 全件比較は、負荷の低い時に流し直す必要がある。
