@@ -63,6 +63,10 @@ jobs:
       - name: E2E waitForFunction に async 関数を渡さない (イシュー#607)
         if: matrix.suite == 'e2e'
         run: npm run lint:e2e-wait
+      # イシュー#637: fixture (test-base.js) を通らない context の作り方を止める＝表紙・AdSense の遮断が効かず外へ出るため
+      - name: E2E の context は外への通信の遮断を通す (イシュー#637)
+        if: matrix.suite == 'e2e'
+        run: npm run lint:e2e-external
       - name: 画面の境目(スマホ/PC)の直書き禁止 (イシュー#505)
         if: matrix.suite == 'e2e'
         run: npm run lint:breakpoint

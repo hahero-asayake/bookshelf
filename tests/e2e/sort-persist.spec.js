@@ -11,7 +11,7 @@
 //   見た目の好み (並び方・昇降・表示形式など13個) は端末ごと＝localStorage のみ・同期先へ書かない。
 //   ドラッグで決めた並び順 (bookOrder) と残りの設定は全端末共通で、キーごとの更新時刻で新しい方を採る。
 // 同期先はハブを第一に、GitHub でも同じ結果になることを同じテストで確かめる。
-import { test, expect } from './helpers/test-base.js';
+import { test, expect, blockExternalForTest } from './helpers/test-base.js';
 
 const BOOKS = Array.from({ length: 6 }, (_, i) => [`B0SORT000${i}`, `書名${'カアイエウオ'[i]}`, `著者${i}`]);
 const library = {
@@ -131,8 +131,13 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
     });
 
     test('PC と交互に変更: 並び方は端末ごと・ドラッグの並び順は新しい方が残る', async ({ browser }) => {
-        const phone = await (await browser.newContext()).newPage();
-        const pc = await (await browser.newContext()).newPage();
+        // browser.newContext() には fixture の遮断が掛からない＝自分で掛ける (イシュー#637: 掛けないと本物の Amazon へ表紙を48件取りに行っていた)
+        const phoneContext = await browser.newContext();
+        await blockExternalForTest(phoneContext);
+        const pcContext = await browser.newContext();
+        await blockExternalForTest(pcContext);
+        const phone = await phoneContext.newPage();
+        const pc = await pcContext.newPage();
         await seed(phone); await phone.goto('index.html'); await boot(phone, { remote: '{}', method });
         await selectSort(phone, 'custom');
         await pushAll(phone);

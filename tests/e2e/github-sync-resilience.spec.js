@@ -9,7 +9,8 @@
 // 60秒で時間切れになる。ローカル (baseURL='http://localhost:8000'、サブパス無し) では表面化しない。
 // 'index.html' 相対形式なら new URL('index.html', baseURL) が baseURL のパスを保ったまま解決する
 // ため、ローカル・本番どちらでも同じ画面に着地する(実機確認: scripts/verify/396-prod-resilience-probe*.mjs)。
-import { test, expect } from '@playwright/test';
+// イシュー#637: test-base から import する (@playwright/test の直 import だと表紙・AdSense の遮断が効かず、本物の Amazon へ5件出ていた)
+import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 
 const fixtureUserData = JSON.parse(readFileSync('tests/fixtures/fixture-userdata.json', 'utf-8'));

@@ -74,8 +74,19 @@
 // route.fulfill する。route.abort() は使わない (#53 の教訓: net::ERR_FAILED が新しい
 // console error を生む)。
 //
+// 表紙のホストは sw.js の COVER_HOSTS と同じ3つを全部返す (イシュー#637)
+//
+// なぜ: #57 で返していたのは images-na.ssl-images-amazon.com (ASIN からの組み立て・book-manager.js
+// getProductImageUrl) だけだった。Kindle 取込が保存する m.media-amazon.com と、Amazon リンクから追加した本の
+// images-amazon.com (bookshelf.js fetchBookMetadata) は返していなかった。#637 の実測 (scripts/verify/637-results.md)
+// では、この2つへの要求は0件だったので予防で揃える。固定画像は同じ透明 PNG なので、visual の絵は変わらない。
+// 同じ実測で、外へ出た表紙の要求53件は全部この fixture を通らない context から出ていた
+// (@playwright/test の直 import・blockExternalForTest を掛けない browser.newContext())。
+// これは npm run lint:e2e-external (scripts/check-e2e-external.mjs) で止める。
+//
 // 全 tests/e2e/*.spec.js はこのファイルから test/expect を import すること
-// (@playwright/test を直接 import すると遮断が効かない)。
+// (@playwright/test を直接 import すると遮断が効かない・lint:e2e-external が検査する)。
+// browser.newContext() で context を作る時は、その context に blockExternalForTest を掛けること。
 import { test as base, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
@@ -86,6 +97,8 @@ const KNOWN_RED = JSON.parse(readFileSync(new URL('../../../docs/gate/known-red.
 
 // 1x1 透明 PNG (書影スタブ用)
 const TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+// 表紙の画像のホスト (sw.js の COVER_HOSTS と同じ3つ・イシュー#637)。ホスト単位の狭いパターンで返す (上の #53 の注意)
+const COVER_IMAGE_HOSTS = ['images-na.ssl-images-amazon.com', 'm.media-amazon.com', 'images-amazon.com'];
 
 function installGisMock() {
     window.google = window.google || {};
@@ -139,12 +152,14 @@ export async function blockExternalForTest(context) {
     }));
     // Lucide アイコンの unpkg.com 取得はイシュー#565で撤去済み (全部 js/icons.js に同梱)。
     // ここで route しないことで、万一復活したら tests/e2e/no-external-icons.spec.js が検出する。
-    // Amazon 書影フォールバック URL (イシュー#57)
-    await context.route('https://images-na.ssl-images-amazon.com/**', (route) => route.fulfill({
-        status: 200,
-        contentType: 'image/png',
-        body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
-    }));
+    // Amazon 書影 (イシュー#57: ASIN からの組み立て URL・イシュー#637: COVER_HOSTS の残り2つも)
+    for (const host of COVER_IMAGE_HOSTS) {
+        await context.route(`https://${host}/**`, (route) => route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: Buffer.from(TRANSPARENT_PNG_BASE64, 'base64')
+        }));
+    }
 }
 
 export const test = base.extend({
