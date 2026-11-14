@@ -3730,6 +3730,15 @@ class VirtualBookshelf {
 
         if (this.pluginAPI) this.pluginAPI._emit('books:changed', {});
         if (this.bookshelfManager) this.bookshelfManager.rebuildReverseIndex();
+        // 保存先で消えていた本棚 (他の端末で削除) を開いていたら「すべての本」へ (イシュー#663)。消えたかの判定は削除と同じ
+        // _leaveRemovedShelf (イシュー#634) に任せ、ここでは読み込む前の手元にあって読み込んだ後に無い本棚を _keyOf で突き合わせて渡すだけ。
+        // この関数は同期のまま (戻り値を呼び出し元が使う) なので待たない。ドロワーが閉じていれば切り替えはこの中で済み、
+        // 呼び出し元が後で呼ぶ updateDisplay は切り替えの後の一覧 (applyFilters 済み) を描く
+        if (this.bookshelfManager && Array.isArray(_priorLocal?.bookshelves)) {
+            const loadedKeys = new Set(bookshelves.map((b) => this.bookshelfManager._keyOf(b)));
+            const removed = _priorLocal.bookshelves.filter((b) => !loadedKeys.has(this.bookshelfManager._keyOf(b)));
+            if (removed.length) this._leaveRemovedShelf(removed).catch((e) => console.error('_leaveRemovedShelf (読み直し):', e));
+        }
         return true;
     }
 
