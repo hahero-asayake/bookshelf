@@ -122,3 +122,55 @@ export async function throttleCpuForTest(page, rate = 6) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate });
 }
+
+/** ページの中で、操作から次の描画までの時間を測って、画面の隠し要素 #gate-timings の data 属性に書き出す (J3-5)。
+ * 測る区間は tests/e2e/sort-perf-budget.spec.js の tFrame (操作 → rAF → rAF) に近い = 操作のイベントが届いた時から、アプリの処理が
+ * 終わって次の描画 (requestAnimationFrame → setTimeout 0) までの ms。テスト側の時計 (Playwright の往復が乗る) を
+ * 使わないので、BUDGET と同じ物差しで比べられる。 再読込のあとも測れるよう、アプリを開く前に呼ぶ (addInitScript)。書き出す属性 (回数も書く):
+ * - 並び順 (#sort-order) を変えた: data-gate-sort-order-ms・data-gate-sort-order-count
+ * - 昇順・降順 (#sort-direction) を押した: data-gate-sort-direction-ms・data-gate-sort-direction-count
+ * - 一覧の本 (#bookshelf .book-item) を押した (押した時からアプリが click を処理して次の描画まで): data-gate-open-detail-ms・data-gate-open-detail-count
+ * テストは、記録が済むのを「#gate-timings[data-gate-<名前>-count="<回数>"] が1つ見つかる」(toHaveCount) で待つ。
+ * expect(…).toHaveAttribute では待たない: 913冊・CPU 6倍の下では、その問い合わせがページを数秒塞ぎ、ここで測る値
+ * そのものが遅れる (イシュー#629 で実測。toHaveCount・locator.getAttribute では塞がらない)。
+ * @param {import('@playwright/test').Page} page */
+export async function recordInPageTimingsForTest(page) {
+    await page.addInitScript(() => {
+        const rootOf = () => {
+            let root = document.getElementById('gate-timings');
+            if (!root) { root = document.createElement('div'); root.id = 'gate-timings'; root.hidden = true; document.body.appendChild(root); }
+            return root;
+        };
+        // 記録先は、アプリを開く時に作っておく (テストが待つ相手が、最初から在る要素になる)
+        if (document.body) rootOf(); else document.addEventListener('DOMContentLoaded', rootOf, { once: true });
+        const record = (name, t0) => {
+            requestAnimationFrame(() => setTimeout(() => {
+                const root = rootOf();
+                root.setAttribute(`data-gate-${name}-ms`, String(Math.round(performance.now() - t0)));
+                const n = Number(root.getAttribute(`data-gate-${name}-count`) || '0') + 1;
+                root.setAttribute(`data-gate-${name}-count`, String(n));
+            }, 0));
+        };
+        // capture で受ける = アプリの処理より先に時刻を取る
+        document.addEventListener('change', (e) => {
+            if (e.target && e.target.id === 'sort-order') record('sort-order', performance.now());
+        }, true);
+        document.addEventListener('click', (e) => {
+            const el = e.target instanceof Element ? e.target : null;
+            if (el && el.closest('#sort-direction')) record('sort-direction', performance.now());
+        }, true);
+        // 本を押した時は、押した時 (pointerdown) から、アプリが click を処理して次の描画までを測る。押したあと一覧が
+        // 描き直されて click の的が一覧から外れることがあるので、click では的を見ず、直前の pointerdown で決める
+        let pressedAt = null;
+        document.addEventListener('pointerdown', (e) => {
+            const el = e.target instanceof Element ? e.target : null;
+            pressedAt = el && el.closest('#bookshelf .book-item') ? performance.now() : null;
+        }, true);
+        document.addEventListener('click', () => {
+            if (pressedAt === null) return;
+            const t0 = pressedAt;
+            pressedAt = null;
+            record('open-detail', t0);
+        }, true);
+    });
+}
