@@ -4056,6 +4056,18 @@ html.bs-likely-has-data #dashboard-welcome {
     min-width: 0;
 }
 
+/* 設定の同期欄の保存の状態の行 (3つの保存先に共通・状態バーと同じ文とボタン・イシュー#657) */
+.sync-state-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0 0.75rem;
+}
+.sync-state-row .path-status { flex: 1 1 14rem; }
+.sync-state-actions { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
+.sync-state-actions:empty { display: none; }
+
 /* 同期方式セレクタ */
 /* 統一方針 (C-271): ラベル→コントロールの縦積み。説明をカード枠で囲わない */
 .sync-method-row {

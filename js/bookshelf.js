@@ -4153,7 +4153,16 @@ class VirtualBookshelf {
         return this.obsidianDirHandle ? this.obsidianDirHandle.name : '';
     }
 
+    // 設定の同期欄の名前と状態の文を書く。状態の行 (#sync-state-row) は3つの保存先に共通で、保存の失敗・書くのを止めている間は
+    // _renderSyncState が状態バーと同じ文とボタンで上書きする (イシュー#657)。ここで書いた文は、失敗が解けた時に戻す文として控える
     updateSyncStatus(state, folderName = '', detail = '') {
+        this._applySyncStatus(state, folderName, detail);
+        const status = document.getElementById('obsidian-sync-status');
+        if (status) this._syncStatusBase = { text: status.textContent, color: status.style.color };
+        this._renderSyncState();
+    }
+
+    _applySyncStatus(state, folderName = '', detail = '') {
         const pathEl = document.getElementById('obsidian-sync-path');
         const status = document.getElementById('obsidian-sync-status');
         if (!pathEl || !status) return;
@@ -4183,7 +4192,15 @@ class VirtualBookshelf {
             status.style.color = failed ? 'var(--danger)' : 'var(--success, #3aa657)';
             return;
         }
-        if (state === 'failed') state = 'reconnect';
+        if (state === 'failed') {
+            // ローカルの保存の失敗 (要再接続ではない種類): 名前に「（要再接続）」を付けず、状態バーと同じ文を出す (イシュー#657)
+            pathEl.textContent = folderName;
+            pathEl.title = folderName || '';
+            pathEl.style.color = '';
+            status.textContent = detail || '保存できませんでした';
+            status.style.color = 'var(--danger)';
+            return;
+        }
         if (state === 'synced') {
             pathEl.textContent = folderName;
             pathEl.title = folderName;
@@ -5093,17 +5110,20 @@ class VirtualBookshelf {
 
     // ===== 上部ステータスバー (#4 同期切断 / #5 更新あり) =====
     _initStatusBar() {
+        const onClick = (e) => {
+            const btn = e.target.closest('[data-status-action]');
+            if (btn) this._runStatusAction(btn.dataset.statusAction);
+        };
         const bar = document.getElementById('app-status-bar');
         if (bar && !bar._bound) {
             bar._bound = true;
-            bar.addEventListener('click', (e) => {
-                const btn = e.target.closest('[data-status-action]');
-                if (!btn) return;
-                if (btn.dataset.statusAction === 'update') this._applyPwaUpdate();
-                else if (btn.dataset.statusAction === 'open-sync') this._openSettingsModal('sync-method-select');
-                else if (btn.dataset.statusAction === 'retry-sync') this._retrySyncNow();
-                else if (btn.dataset.statusAction === 'resolve-hold') this._resolveSyncHold();
-            });
+            bar.addEventListener('click', onClick);
+        }
+        // 設定の同期欄の状態の行のボタンも、状態バーのボタンと同じ動きにする (イシュー#657)
+        const row = document.getElementById('sync-state-row');
+        if (row && !row._bound) {
+            row._bound = true;
+            row.addEventListener('click', onClick);
         }
         this._updateStatusBar();
         if (!this._statusBarWatch) {
@@ -5148,6 +5168,13 @@ class VirtualBookshelf {
     // 失敗の状態はここだけで立てる。retryable な失敗は SyncFailure.retryDelays() の間隔で自動で再試行し、
     // 1回目の再試行を待つ間は出さない (phase 'quiet')・再試行の途中は控えめな行 ('retrying')・
     // 再試行が尽きた/直らない種類は警告の行 ('final')。
+    _runStatusAction(action) {
+        if (action === 'update') this._applyPwaUpdate();
+        else if (action === 'open-sync') this._openSettingsModal('sync-method-select');
+        else if (action === 'retry-sync') this._retrySyncNow();
+        else if (action === 'resolve-hold') this._resolveSyncHold();
+    }
+
     _onSyncFailed(e) {
         const f = window.SyncFailure.classify(e, this.syncMethod);
         const prev = this._syncFail;
@@ -5167,6 +5194,7 @@ class VirtualBookshelf {
         if (f.hold) this.updateSyncStatus('held', this._syncLabel(), f.message);
         this._watchSyncRecovery();
         this._updateStatusBar();
+        this._renderSyncState();
     }
 
     _clearSyncFailure() {
@@ -5174,6 +5202,33 @@ class VirtualBookshelf {
         const had = this._syncError || this._syncFail;
         this._syncFail = null;
         if (had) { this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar(); }
+        this._renderSyncState();
+    }
+
+    // 設定の同期欄の状態の行 (3つの保存先に共通・イシュー#657)。保存の失敗・保存先へ書くのを止めている間は、状態バーと同じ源 (_syncFail) から
+    // 同じ文と同じボタン (「再試行」「選ぶ」) を出す。1回目の自動の再試行を待つ間も「保存済み」とは言わず、再試行中の文を出す。
+    // 設定の同期を開くボタン (「確認」「ログインし直す」) は、もう同期の画面にいるので出さない。それ以外は updateSyncStatus が書いた文
+    _renderSyncState() {
+        const row = document.getElementById('sync-state-row');
+        const status = document.getElementById('obsidian-sync-status');
+        const actions = document.getElementById('sync-state-actions');
+        if (!row || !status) return;
+        const base = this._syncStatusBase || { text: status.textContent, color: status.style.color };
+        const f = this._syncError ? this._syncFail : null;
+        let text = base.text;
+        let color = base.color;
+        let buttons = '';
+        if (f) {
+            const retrying = f.phase === 'quiet' || f.phase === 'retrying';
+            text = retrying ? window.SyncFailure.RETRYING_MESSAGE : (this._syncErrorMsg || f.message);
+            color = retrying ? 'var(--warning)' : 'var(--danger)';
+            if (f.retryable || f.phase === 'retrying') buttons += '<button class="btn btn-secondary btn-small" data-status-action="retry-sync" type="button">再試行</button>';
+            if (f.hold) buttons += `<button class="btn btn-secondary btn-small" data-status-action="resolve-hold" type="button">${BookshelfEscape.escapeHtml(f.actionLabel || '選ぶ')}</button>`;
+        }
+        status.textContent = text || '';
+        status.style.color = color || '';
+        if (actions) actions.innerHTML = buttons;
+        row.hidden = !text;
     }
 
     // 状態バーの「選ぶ」: 保存先へ書くのを止めている理由の3択を開き直す (イシュー#639)

@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026111601">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026111720">
     <!-- 起動に必須で、js が fetch で読むファイル。sw.js の install はこの index.html から先読みの一覧を作るため、
          ここに載せておくと1回開いただけの端末でも電波なしで起動できる (イシュー#597)。
          rel="bookshelf-precache" はブラウザが取得しない印 (sw.js だけが読む)。rel="preload" にすると WebKit は
@@ -456,6 +456,13 @@
                         </select>
                     </div>
 
+                    <!-- 保存の状態の行: 3つの保存先に共通で、保存先の欄の外に置く (ハブ・GitHub でも見える)。
+                         保存の失敗・保存先へ書くのを止めている間は、状態バーと同じ文と同じボタンを出す (イシュー#657) -->
+                    <div id="sync-state-row" class="sync-state-row" hidden>
+                        <span id="obsidian-sync-status" class="path-status"></span>
+                        <span id="sync-state-actions" class="sync-state-actions"></span>
+                    </div>
+
                     <div id="sync-config-local" class="sync-config-panel">
                         <div class="path-card">
                             <div class="path-card-header">
@@ -467,7 +474,6 @@
                             </div>
                             <div class="path-card-footer">
                                 <button id="obsidian-sync-btn" class="btn btn-primary btn-small"><span class="h-icon" data-icon="folder-open" data-icon-size="14"></span>フォルダを選ぶ</button>
-                                <span id="obsidian-sync-status" class="path-status"></span>
                             </div>
                         </div>
 
@@ -1517,7 +1523,7 @@
     <script defer src="js/dashboard.js?v=2026111702"></script>
     <script defer src="js/ui-components.js?v=2026110413"></script>
     <script defer src="js/sync-failure.js?v=2026111691"></script>
-    <script defer src="js/bookshelf.js?v=2026111746"></script>
+    <script defer src="js/bookshelf.js?v=2026111750"></script>
     <!-- イシュー#546 (U8e): 本棚カード・ツリー順の共用部品(_bookshelvesInTreeOrder・
          _bindBookshelfOverviewEvents・_renderBookshelfCard。bookshelf.js と dashboard.js の
          両方から呼ばれる)。js/ui/ 配下だが article-editor.js 等と同じ Plan A の prototype 合成
