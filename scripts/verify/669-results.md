@@ -350,3 +350,49 @@ spec の判定（期待は、どの案でも成り立つ「公開物に X が出
 >   - 現状維持：書き手の画面と公開物が食い違ったまま。
 > - **範囲外**：自作の本棚の books に除外した本が残る件（データの片付け）。引き出しでは印だけ出す。
 > - **教訓**：同じ本の解決を、経路ごとに別の一覧（`this.books` と library.json）で行うと、画面と公開物が食い違う。解決の入口は1か所にする。
+
+## §4 step4：設計書・載せ直し・push（2026-11-14 18:48〜）
+
+### 4-1 載せ直し
+
+- 18:48 に fetch した。origin/main は **d18af26**（#667 が着地・ADR-169）。#664 は未着（`git log origin/main --grep 'Issue: #664'` で0件・18:50 の時点も同じ）。
+- 載せ直しで index.html が衝突した（?v= の2か所）：
+  - publish-article-generator.js と exporter.js の行
+  - bookshelf.js の行
+- exporter.js は main の値（2026111795・#667）を残した。変えた3ファイル（publish-article-generator.js・bookshelf.js・screens/article-editor.js）は **2026111796** にした（main の最大 2026111795 より新しい）。`check:version --range=origin/main..HEAD` は OK。
+- 載せ直した後の検証：
+  - `npm run lint` 12 本中 0 本失敗
+  - `npm test` 1194 passed・2 todo
+  - exclude-article-publish.spec.js と library-count-refresh.spec.js を `--repeat-each=3` → 12 passed
+
+### 4-2 設計書（vault 80帯 bookshelf/・18:49〜18:50 に Edit）
+
+| 文書 | 書いたこと |
+|---|---|
+| 02_基本設計書 D-7 | 除外した本は記事に置いたままでも公開に出さない（library − exclusions・3経路同じ判定）。記事のデータは書き換えず、取り消すと戻る。エディタの印・冊数と公開前チェックに数えない・公開済みは作り直さない・確認文で件数（ADR-171）の2行 |
+| 06_データ仕様書 private/exclusions.json | 「記事の公開にも出さない (D-7)。library.json の書誌は残す。articles.json のブロック・配置は書き換えない」 |
+| 03_詳細設計書 | PublishArticleGenerator の節に `publishableLibMap(state)` の1項。記事エディタの表に、`_artPublishCheck` の追記・`_artBookState`・`_artPublishedNoteFor` の行 |
+| 04_画面設計書 | 「すべての本から除外」の行に、確認文の追加行（一括も同じ）。公開前チェックの項に、除外した本の数え方と「除外中の本の表示」 |
+| 08_意思決定記録 | **ADR-171**（ADR-170 は #664 が先に書いていたので次の番号にした） |
+| 07_残検討事項 | 該当行なし（除外と記事・公開の行は無い） |
+
+- vault への commit は自分では作っていない。同じファイル（08 など）に、他イシュー（#664・#667）のまだ commit されていない変更が混ざっていたため。ADR-169 の並べ替え・ADR-170 が該当する。obsidian の自動バックアップ（30分ごと・次は 19:00 の「vault backup」）で入る見込み。bookshelf 側の commit との対応は、題（fix 0a75394）とこの記録でとる。
+
+### 4-3 push
+
+- `BOOKSHELF_ISSUE=669 git push origin 47505b2:main` → **d18af26..47505b2**。pre-push の lint は 12 本中 0 本失敗。
+- push した commit（どれも Issue: #669）：
+  - 9b2bf52（test・step1）
+  - 0e1d84b（§2）
+  - **0a75394（fix）**
+  - 6a5a208（§3）
+  - 47505b2（§3）
+
+### 4-4 CI（run 43582423053・https://github.com/hahero-asayake/bookshelf/actions/runs/43582423053）
+
+- push 18:50:18 から最大5分（50秒おき・未認証 API）。最後に見たのは **18:56:05**。全部は終わっていない＝代替判定どおり、その時点の状態を書く：
+  - **test (char)**：completed・**success**
+  - **test (e2e)**：in_progress。lint・check:version・Unit (Vitest) の各 step を通り、Smoke tests (Playwright, sort-perf-budget 以外・並列) を流している途中。途中の step で落ちれば job はそこで止まる
+  - **test (audit)**：in_progress（監査の機械検査 npm run audit の途中）
+  - **test (webkit)**：in_progress（門の E2E・gate-webkit・workers=1 の途中）
+- e2e と audit の結論は、5分の時点では出ていない。run の URL は上の見出し。
