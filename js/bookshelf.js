@@ -3047,6 +3047,22 @@ class VirtualBookshelf {
         return !!this.obsidianDirHandle;
     }
 
+    // 起動の読込 (保存先の判定→空なら確認して initEmpty→loadAll→適用→描画) の間に立てる印 (イシュー#643)。
+    // 立っている間、保存 (syncToObsidianFolder) は入口で待つ。待たずに進むと、初期化の途中の保存先を「空」と見て
+    // 2回目の initEmpty を呼ぶ (「すべての本」の id を作り直す)。返す関数で下ろす＝呼ぶ側は成功・中断・例外の
+    // どれでも finally から呼ぶ (待ちが宙づりにならない)。起動の読込を足す時は、ここを通す
+    _beginBootLoad() {
+        let end;
+        const p = new Promise((resolve) => { end = resolve; });
+        if (!this._bootLoads) this._bootLoads = new Set();
+        this._bootLoads.add(p);
+        return () => { this._bootLoads.delete(p); end(); };
+    }
+
+    async _waitBootLoads() {
+        while (this._bootLoads && this._bootLoads.size > 0) await Promise.all([...this._bootLoads]);
+    }
+
     /**
      * Obsidian 同期をスケジュール（debounce）
      */
@@ -3134,7 +3150,17 @@ class VirtualBookshelf {
     }
 
     // クラウド同期の初期化 (GitHub と同型: loadAll → 適用、空なら initEmpty)。現状は Asayake ハブ専用。
+    // 読込の間は保存を待たせる (_beginBootLoad・イシュー#643)
     async initCloudSync(method) {
+        const endBootLoad = this._beginBootLoad();
+        try {
+            return await this._initCloudSyncLoad(method);
+        } finally {
+            endBootLoad();
+        }
+    }
+
+    async _initCloudSyncLoad(method) {
         const adapter = this.storage.adapter;
         if (!(adapter instanceof HubStorageAdapter)) {
             console.warn(`initCloudSync(${method}): adapter type mismatch`);
@@ -3263,7 +3289,17 @@ class VirtualBookshelf {
         }
     }
 
+    // 読込の間は保存を待たせる (_beginBootLoad・イシュー#643)
     async initGitHubSync() {
+        const endBootLoad = this._beginBootLoad();
+        try {
+            return await this._initGitHubSyncLoad();
+        } finally {
+            endBootLoad();
+        }
+    }
+
+    async _initGitHubSyncLoad() {
         const adapter = this.storage.adapter;
         if (!(adapter instanceof GitHubAdapter)) {
             console.warn('initGitHubSync: storage adapter is not GitHubAdapter');
@@ -3405,6 +3441,7 @@ class VirtualBookshelf {
             toast('このブラウザはフォルダ選択に対応していません。\nChrome または Edge をご利用ください。');
             return;
         }
+        let endBootLoad = null;
         try {
             const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
             await storeDirHandle(handle);
@@ -3413,6 +3450,8 @@ class VirtualBookshelf {
             this.storage.setDirHandle(handle);
             this.updateSyncStatus('loading', handle.name);
 
+            // 読込が終わるまで保存を待たせる (イシュー#643・下の finally で下ろす)
+            endBootLoad = this._beginBootLoad();
             // フォルダの内容を先に判定: 空のときだけ初期化、それ以外はあるデータを尊重して読み込む
             const format = await this.storage.detectFormat();
             if (format === 'empty') {
@@ -3447,6 +3486,8 @@ class VirtualBookshelf {
             } else {
                 toast(`フォルダ選択エラー: ${e.message}`);
             }
+        } finally {
+            if (endBootLoad) endBootLoad();
         }
     }
 
@@ -3685,6 +3726,10 @@ class VirtualBookshelf {
 
     // 同期先への書き出し (LocalFS / GitHub Adapter 等、storage の adapter に委譲)
     async syncToObsidianFolder() {
+        if (!this._isSyncReady()) return;
+        // 起動の読込の途中なら、終わるまで待つ (イシュー#643)。読込で決まる保留・衝突・allInternalId を見てから
+        // 下の判定をするため、入口で待つ (initEmpty だけを待つと、allInternalId が無いまま別の id を作る)
+        await this._waitBootLoads();
         if (!this._isSyncReady()) return;
         // 読込で「両方が変わった」と分かり、利用者がまだ選んでいない間は書かない (イシュー#602)。
         // _lastSyncOk を偽にして、未反映の印を残す
