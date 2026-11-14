@@ -237,3 +237,41 @@ lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:internal-refs（上限 
   - 1回目（前の run）は、run の終わりで49本まで（すべて緑）流れたところで止まっていた。まとめの行が無いので数えず、全部を流し直した。
 - `npm test`（vitest）：**Test Files 76 passed (76)**。
 - lint 一式（直しを作業ツリーに入れた後の 16:32 に流した）：lint:copy（119/119）・lint:terms・lint:esc・lint:js-color・lint:breakpoint・lint:internal-refs（上限82以内）・lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:e2e-gate・lint:known-red、すべて OK。
+
+## step5 載せ直し・main との全件比較（2026-11-14 16:36〜・push の前に止まる）
+
+### 載せ直し
+
+- origin/main 25b9472 の上に載せ直した（`git rebase origin/main`）。前の土台 98de66d から入っていたのは #614（25b9472・js/bookshelf.js と index.html）・#640・#642。**#643・#636・#639 はまだ main に入っていない**（initCloudSync/initGitHubSync を包む #643 の変更は無いので、直した行は元の関数のまま）。
+- 衝突は index.html の `js/bookshelf.js?v=` の1行だけ（#614 が 2026111661 にしていた）。こちらの 2026111681 を残した（main の最大 2026111661 より新しく、#636/#639 の 2026111672・#643 の 2026111674 とも重ならない）。js/bookshelf.js は自動で合わさった（直した行は L3158・L3286）。
+- 載せ直した後の自分の commit：c089e3d（step1）・8adb681（step2）・3b905a9（test）・7cb621e（fix）・72e40f9（step4 の記録）。`git diff --stat origin/main..HEAD` は自分の5ファイルだけ（docs/char/boot-flow.md・index.html・js/bookshelf.js・scripts/verify/648-results.md・tests/e2e/first-run-init-status.spec.js）。
+
+### 載せ直した後の確かめ
+
+- 新しい spec（6本）：**6 passed**（4.0s・`tmp/648/step5-newspec.txt`）。
+- `npm run check:version -- --range=origin/main..HEAD`：OK。
+- lint 一式：lint:copy（119/119）・lint:terms・lint:esc・lint:js-color・lint:breakpoint・lint:internal-refs（上限82以内）・lint:e2e-goto・lint:e2e-wait（#640 で足された「ページ全体を写す待ち」も0件）・lint:e2e-external・lint:e2e-gate・lint:known-red、すべて OK。
+
+### origin/main との全件比較（scripts/verify/e2e-diff-main.mjs）
+
+- 1回目の載せ直しの後（base＝origin/main 25b9472・work＝作業ツリー HEAD 72e40f9）、`node scripts/verify/e2e-diff-main.mjs --port=8148 --out=tmp/648/e2e-diff` を流した（16:37〜16:47・9分45秒・`tmp/648/e2e-diff/report.md`）。
+  - E2E（playwright・sort-perf-budget を除く全件）：**新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件**。判定不能 0件。
+  - Unit（vitest）：新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件。
+  - 画像の差分（work 側）：0件 / 54件。
+  - 終了の文：「新しく落ちたテストは0件」（exit=0）。webkit は同時に流していない。
+
+### 全件比較の間に main が進んだので、2回載せ直した
+
+比べている間に、.git を共有する他の作業が fetch し、origin/main が2回進んだ。どちらの上にも載せ直した。
+
+1. **4aada0f の上**（16:47）：#643（initEmpty を2回呼ばない・`_beginBootLoad` で initCloudSync/initGitHubSync を包む）と #619（`npm run lint` の集約・pre-push で lint）が入っていた。
+   - 衝突：index.html の ?v=（#643 が 2026111682 にしていた）と、docs/char/boot-flow.md §1-5（#643 と同じ所に段落を足していた）。boot-flow.md は両方の段落を残した（#643 の「読込の間は保存が待つ」が先、次に同期欄の移り変わり）。直した行は #643 が作った中の関数（`_initCloudSyncLoad`・`_initGitHubSyncLoad`）の中へ自動で移った。
+   - 流し直し（10ファイル・85本・4並列）：**83 passed・1 skipped・1 failed**（2.6分・`tmp/648/step5-specs-on643.txt`）。新しい spec 6本と #643 の first-run-save-during-init-empty.spec.js は緑。
+   - 落ちた1本は book-memo-file-lifecycle.spec.js:253「長文メモのファイルが取り残されない: GitHub」（「本 B0MEMO5941 が保存先に届く」の5秒の待ちが切れた）。この1本を単独（1並列）で `--repeat-each=3` で流すと、6種×3回＝**18本すべて緑**（1.2分・`tmp/648/step5-bookmemo-rerun.txt`）。4並列の負荷による揺れと判定した。直した初期化の経路の同期欄の文字とは別の所（長文メモの保存）。
+   - skipped が4本→1本になったのは、#614 が book-memo-file-lifecycle の fixme（#594）を3本外したため。
+   - `npm run lint`（#619 の集約）：exit=0。
+2. **985e770 の上**（16:53・いまの土台）：#639（読込時・書き込み時の3択を選ばずに閉じた後の「未保存」・updateSyncStatus の頭に 'held'）が入っていた。
+   - 衝突：index.html の ?v= だけ（#639 が sync-failure.js を 2026111691、js/bookshelf.js を 2026111692 にしていた）。sync-failure.js は main の値のまま、js/bookshelf.js を **2026111699** にした（main の最大 2026111693 より新しい）。js/bookshelf.js は自動で合わさった（直した行は L3192・L3330。updateSyncStatus には触っていないので #639 の 'held' と文面の衝突は無い）。
+   - 流し直し（新しい spec・#643 の first-run-save-during-init-empty・#639 の load-conflict-unsaved・save-failure-visible・first-run-add-article-drawer）：**22 passed・失敗0**（57秒・`tmp/648/step5-specs-on639.txt`）。
+   - `npm run check:version -- --range=origin/main..HEAD`：OK。`git diff --stat` は自分の5ファイルだけ（+475/-4）。
+3. いまの土台（985e770）の上では、全件比較（e2e-diff）は流し直していない（1回目に約10分かかり、この run の時間に入らないため）。push の前に main がさらに進んでいれば、step6 でもう一度載せ直しが要る。
