@@ -223,3 +223,27 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 - 載せ直した後（`fa4f41f` の上）: 新しい spec（chromium）10 passed（出力 `tmp/657/step4-spec-after-rebase.txt`）。
 - **全件比較（e2e-diff-main）は終わっていない**。17:36:41 に始めたが、機械の負荷が高く（load average 94・他のイシューの全件実行が重なっていた）、17:47 になっても base 側の E2E が終わらなかった。締切までに終わらないので止めた（一時 worktree は `_trash/657-e2e-diff2-stopped`・残っていた 8157 番のサーバーも止めた）。3表はまだ無い。
 - **載せ直した後に関係の深い spec 9本（chromium）を流すと 63 passed・8 failed**（出力 `tmp/657/step4-related.txt`）。落ちたのは book-memo-file-lifecycle の GitHub 3本・save-failure-visible の GitHub 2本・sync-offline-reconnect のローカル2本と GitHub 1本。エラーは「GitHubConflictError: Branch main was updated since batch start」（GitHub のまとめ保存の衝突）と、保存先に届くのを待つ所の時間切れ。step3（`1234cf4` の前・負荷が低い時）では同じ spec が全部緑だった。原因（この版の変更・origin/main で入った変更・負荷）はまだ切り分けていない。次に base（origin/main）で同じ spec を同じ負荷で流して比べる。
+
+### step4 の続き（差し戻しの後・3回目の run・17:54〜）
+
+- 始める前の負荷: 17:54:21 load average 36.56（16 コア）。各実行の前の負荷は `tmp/657/iso-uptime.txt`。
+- origin/main が `f9468f8` まで進んでいた（足されたのはテストと記録だけで、js・index.html・css の変更は無い）。衝突なしで載せ直した。
+
+#### 赤8件の切り分け（--workers=2・chromium・同じ順で続けて流した）
+
+8件が入っている spec 3本（book-memo-file-lifecycle・save-failure-visible・sync-offline-reconnect）を、base（origin/main `f9468f8` の一時 worktree `tmp/657/iso-base`）とこの版で流した。
+
+| 実行 | 始めた時の負荷 | 結果 | 出力 |
+|---|---|---|---|
+| base | 17:54:52 load 29.99 | 56 passed（2.5分） | tmp/657/iso-base.txt |
+| この版 | 17:57:30 load 52.49 | 56 passed（2.5分） | tmp/657/iso-work.txt |
+
+| 前の run で落ちた8件 | base | この版 | 判定 |
+|---|---|---|---|
+| book-memo-file-lifecycle GitHub 3本（203・234・253行） | 通った | 通った | 負荷による揺れ |
+| save-failure-visible GitHub 2本（136・149行） | 通った | 通った | 負荷による揺れ |
+| sync-offline-reconnect ローカル2本（279・385行）・GitHub 1本（456行） | 通った | 通った | 負荷による揺れ |
+
+- 前の run（17:48・--workers=6・load average 75〜94）だけで落ち、workers を絞ると base・この版とも全部通った。この版だけで落ちる赤は無い。
+- 9本のうち残りの6本（load-conflict-unsaved・first-run-init-status・gate/j6-5・gate/j6-4・gate/j1-3-connect-hub・gate/j6-3-hub-other-device）は、前の run で全部通っていたので、今回は流していない（全件比較の負荷を増やさないため）。
+- 「Branch main was updated since batch start」（GitHub のまとめ保存の衝突）について: この版が origin/main に足した行のうち、保存の入口（`saveUserData`・`_runPendingSync`・`syncToObsidianFolder`・`_scheduleSyncRetry`・`_pendingSync = true`）を呼ぶ行は0行。`_retrySyncNow`・`_resolveSyncHold` は、元から状態バーのクリックの処理にあった呼び出しを `_runStatusAction` へ移しただけで、呼ばれるのはボタンを押した時だけ。`_renderSyncState` は DOM を書くだけで、呼ぶのは `updateSyncStatus`・`_onSyncFailed`・`_clearSyncFailure` の3か所。帯の描き直しも DOM の hidden を変えるだけ。保存を余分に呼ぶ経路は足していない。
