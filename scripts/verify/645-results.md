@@ -247,3 +247,75 @@ step2 (読み直しのたびに控えを捨てる＋ref の GET に no-store) �
 - 比較画像: §1 のパス。座標: §1 の表。
 - (a)〜(d): step2 §4 の表 (GitHub・ハブとも通った。変更前の GitHub は (a)(b) が通らなかった)。step3 では同じことを画面の操作で E2E にした (`tests/e2e/sync-conflict-overwrite.spec.js`)。
 - API の回数 (GitHub の模擬): 起動1回は変更前後とも ref 2・commit 2・tree 1・contents 13 (増えない)。同じページのまま読み直し1回は、変更前 ref 0・commit 0・tree 0・contents 4 (古い中身)、変更後 ref 1・commit 1・tree 1・変わったファイルの contents (最新)。step2 §3 の表。
+
+## step5: 全件比較・設計書の更新・origin/main へ載せ直し・push 前の確認 (2026-11-14 17:47〜)
+
+### 1. 載せ直し
+
+- origin/main が `16c0a10` から12 commit 進んでいた (`f9468f8`・#622・#654・#656・#662 ほか) ので `git rebase origin/main` した。
+- 衝突は `index.html` の `bookshelf.js?v=` の1か所だけ (main は 2026111721)。自分の値 **2026111746** を採った (origin/main の最大値 2026111721 より新しい)。`github-adapter.js`・`storage.js` の 2026111745 は衝突しなかった。
+- main 側で `js/bookshelf.js` が変わった (#656 の読込時の自分の書きかけ判定ほか) が、上書きの道で呼ぶ `_writeSyncBase(exportDate, stamp)`・`_keepLocalOverLoaded(state)` の形は変わっていない (載せ直した後の 2916・2969 行)。
+- #612 は step1 の時点で main に入っていたので、上書きの道への効き方は step1 §2 のとおり (版の印も `_writeSyncBase` に渡している)。
+
+### 2. GitHub を保存先にした時の書き込み時のダイアログ (変更後・390×844・②の追加指示)
+
+- 画像: `_local/645/after-write-390-github.png` (commit しない)。撮り方は `_local/645/645-shots-github.mjs` (gate-github.js の模擬 taro/bookshelf-data@main に接続して起動し、保存先の名前はアプリの `_syncLabel()` から出す。設定の同期欄が起動時に問い合わせる `/user/installations` も模擬で返す＝返さないと状態バーに「GitHub の保存先を取得できません。」が出て、衝突と関係ない表示が写る)。座標は `_local/645/after-write-390-github.json`。
+
+| 本文の保存先の名前 | 箱 (左〜右) | ボタン (上→下) | ボタンの右端 | 行数 | 箱からのはみ出し | 文字の切れ | 最初のフォーカス |
+|---|---|---|---|---|---|---|---|
+| taro/bookshelf-data@main | 16〜374 | 読み込む／上書き／書き出す | 352・352・352 | 3 | 0 | 0 | この端末の内容を書き出す |
+
+- 本文: 「保存先（taro/bookshelf-data@main）の内容が、別の端末などで更新されています。この端末にも、まだ保存先に入っていない編集があります。どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。迷う時は、先にこの端末の内容を書き出してください。」
+- ハブで撮った変更後 (step4) と、ボタンの位置・右端・行数は同じ。
+
+### 3. 設計書 (obsidian の bookshelf・2026-11-14 更新)
+
+| 文書 | 直したところ |
+|---|---|
+| 07_残検討事項 | #635 が起こした「書き込みで衝突した時に『この端末の内容で保存先を上書き』が選べない」の行を ➡️ → **✅ 実装 (2026-11-14)** にし、直し方 (3つにした・読み直してから書く・tree の控えの取り直しと ref の no-store・読み直せない時・E2E) を書いた |
+| 04_画面設計書 | 衝突の選択ダイアログの節: 上書きのボタンの「読込時だけ」を「書き込み時と読込時の両方」に、本文の後半の出し分けを「2つとも同じ」に直し、上書きを選んだ時の動き (読み直してから書く・読み直せない時の知らせ) を1行足した |
+| 03_詳細設計書 | `_showConflictChoiceDialog`/`_showConflictDialog` の行: 書き込み時の選択肢を3つにし、`_handleSyncConflict` の `'local'` を書いた。GitHubAdapter の節: 読み直し (`forgetRemoteListing`・世代・loadAll の入口・ref の no-store・照合の版は触らない) を1項目足した |
+| 06_データ仕様書 | `virtualBookshelf_syncConflict` の行: 上書きは保存先を読み直せた時だけ印を消す (読み直せない時は残す) を足した |
+| 08_意思決定記録 | **ADR-167** を足した (書き込み時も上書きを出す・GitHub のアダプタは読み直しのたびに tree の控えを取り直し ref は no-store。控えの取り直し方の比較と却下した案を含む)。ADR-164 の決定4 と「分かっている残り」に、ADR-167 で置き換えた印を付けた。08 は CRLF のまま (素の LF 0件) |
+
+- 設計書の commit は obsidian の自動の保存に任せる (vault は別のリポジトリ)。
+
+### 4. 全件比較 (e2e-diff-main)
+
+- `node scripts/verify/e2e-diff-main.mjs --base=origin/main --port=8145` (載せ直した後・base = origin/main `f9468f8`・work = `252a0fa`)。17:49 に始め、**E2E は両側とも全件流れた** (base 17:55・work 18:01)。その後の vitest の段 (base 側) で、自分で付けた13分の上限に当たって止まった＝**vitest と画像比較 (visual) は流れていない**。12分の上限を1分ほど過ぎたが、止める前に work 側の E2E が終わっていたので、その JSON (`_local/645/e2e-diff/{base,work}.e2e.json`) から3表を自分で数えた (`_local/645/diff3.mjs`・結果 `_local/645/e2e-diff-3tables.json`)。
+
+| | 件数 |
+|---|---|
+| base (origin/main) | expected 1084・unexpected 6・skipped 593 |
+| work (このイシュー) | expected 1092・unexpected 1・skipped 593 |
+| **新しく落ちた** | **1** |
+| **新しく通った** | **6** (base だけで落ちた) |
+| **両方落ちた** | **0** |
+
+- 新しく落ちた1本: `book-memo-file-lifecycle.spec.js:234`「題名を変えると、長文メモが新しい名前で読め、古いファイルが残らない」(GitHub)。work 側で単独に `--repeat-each=3` で流すと、同じ名前の6本×3回が **18 passed** (`_local/645/s5-rerun-book-memo.log`)。同じ spec の ASIN を変える方 (:253) は base だけで落ちており、#635 の全件比較でも base・work の両方でこの spec の GitHub の分が負荷で落ちていた (`635-results.md` step3 §4)。今回の変更 (衝突の選択・loadAll の入口で tree の控えを捨てる) は、長文メモの題名を変える道 (loadAll を通らない) に入らないので、負荷による揺れと見ている。
+- 新しく通った6本 (base だけで落ちた): book-memo-file-lifecycle:253 (GitHub)・門の J3-5・門の J6-1・list-staged-render:71・reimport-diff:106・save-failure-visible:136 (GitHub)。どれも衝突の選択を通らない。両側を順に流した時の base 側の揺れと見ている。
+- 名前・行が変わっただけのもの: 片側にしかない行が work 7・base 4。J6-4 GitHub (106→107行)・sync-conflict の3本 (テスト名の「2つ」→「3つ」と行のずれ)・新しい sync-conflict-overwrite の3本。work 側はすべて expected。
+
+### 5. 載せ直した後の確認
+
+| 確認 (載せ直した後の `252a0fa` の上) | 結果 |
+|---|---|
+| chromium: J6-4 (2)・新しい sync-conflict-overwrite (3)・sync-offline-reconnect (13)・sync-conflict (3)・load-conflict-unsaved (3)・J1-4 GitHub (1) | 全件比較の work 側の結果ですべて expected (25本) |
+| gate-webkit: J6-4 | **2 passed** (`_local/645/s5-webkit-j64.log`) |
+| `npm run lint` | **12本中0本失敗** (`_local/645/s5-lint.log`) |
+| vitest | 79 files・**1185 passed** (2 todo)。main 側の新しい単体テストの分だけ増えた (`_local/645/s5-vitest.log`) |
+| `check:version --range=origin/main..HEAD` | 下の commit の後に流す (§6) |
+
+### 6. 送る commit (載せ直した後)
+
+| sha | 題 |
+|---|---|
+| `689705d` | docs: 645-results.md に着手条件・#612 の効き方・GitHub の模擬での読み直しの古い中身と要求の数・変更前の合否を記録する |
+| `9c1c22c` | fix: GitHub の保存先で同じページのまま読み直しても最新の中身が入るよう、読み直しのたびに tree の控えを取り直し、ref を no-store で取る |
+| `8a84db9` | feat: 書き込みで衝突した時も「この端末の内容で保存先を上書き」を選べるようにする (ハブ・GitHub 共通) |
+| `252a0fa` | docs: 書き込み時の衝突でも上書きを選べるようにしたのに合わせ、ui-standards・門の手引きの J6-4・char の E4 を直し、645-results.md に比較画像の座標と lint の結果を書く |
+| (この記録の commit) | docs: 645-results.md に step5 (載せ直し・全件比較の3表・GitHub の画像の座標) を記録 (設計: 03/04/06/07/08 2026-11-14 更新・ADR-167)。sha は提出に書く |
+
+- 全部 `Issue: #645` 付き。origin/main (`f9468f8`) の上に積んである。
+
+- `_local/645/base-16c0a10` (step4 の変更前の画像に使った取り出し・32MB) は使い終わったので `_trash/645-base-16c0a10` へ移した (消していない)。
