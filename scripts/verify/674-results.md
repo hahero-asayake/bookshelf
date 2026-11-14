@@ -211,3 +211,34 @@
 ### 判定
 
 - 当該の spec は3回とも全部緑（並列・1並列とも）。lint・vitest も失敗0。関連 E2E の赤2本は、base でも赤＝このイシュー由来ではない。push へ進んでよいと判断する（②の確認の後）。
+
+## §5 push と CI（step5・2026-11-14 19:22〜19:31）
+
+### push まで
+
+- 1回目の rebase：origin/main 80e2cc8（#668 の着地の後）へ6本を載せ直した（衝突なし）。bookshelf.js の ?v= 2026111799 は main の最大 2026111798 より新しく、check:version は OK。lint 12本中0本失敗・vitest 1194 passed・当該 spec 4 passed。
+- 1回目の push は拒否された。pre-push の lint の間に #671 が着地し、origin/main が d0a3552 へ進んだため（`cannot lock ref 'refs/heads/main': is at d0a3552… but expected 80e2cc8…`）。
+- 2回目の rebase：d0a3552 へ載せ直した（衝突なし）。#671 が bookshelf.css・overlay-manager.js・dashboard.js の ?v= を 2026111867 に上げていて、こちらの 2026111799 が main の最大より古くなった。bookshelf.js の ?v= を 2026111868 に上げる chore を足した（#665 の罠＝衝突なしで古いまま残る、を避ける）。
+- その後：check:version OK・vitest 1197 passed（#671 の分を含む）・当該 spec 4 passed・pre-push の lint 12本中0本失敗。`git log origin/main..HEAD` の7本は全部 `Issue: #674`。
+- push：`BOOKSHELF_ISSUE=674 git push origin 4fa0d72…:main` → `d0a3552..4fa0d72`（19:24:37）。
+
+| 題 | push した sha |
+| --- | --- |
+| docs: 674-results.md §1（赤の再現・bisect・first bad commit） | 6db770d |
+| docs: 674-results.md §2（判定・ハブの実測・横展開・案） | dab6889 |
+| test: ハブから読んだ本棚で重複ASINの本を付け直すと…を E2E で再現する (赤のまま)・… | 91d6e41 |
+| fix: 重複ASINの本を付け直す時、本棚の books と bookOrder が同じ配列でも2回書かず、… (設計: 03/08 2026-11-14 更新・ADR-172) | df58981 |
+| docs: 674-results.md §3 | a1b28a8 |
+| docs: 674-results.md §4 | be12c1d |
+| chore: bookshelf.js の ?v= を main の最大 (2026111867) より新しくする (#671 …) | 4fa0d72 |
+
+### CI（run 43585146179・ci.yml・push 4fa0d72）
+
+- GitHub API は残り0回（他のイシューが使い切っていた）だったので、run の画面の HTML を45秒おきに見た（`tmp/674/ci-poll.log`）。
+- 19:26:26〜19:29:27：In progress・0/4 jobs completed。19:30:13：In progress・**1/4 job completed**（完了したのは test (char)。注記は warning 1・notice 4 で、失敗の注記は無い）。test (e2e)・test (audit)・test (webkit) は進行中。
+- **最大待ち時間（push から5分）では結論が出なかった**。代替判定＝手元の結果で判定する：当該 spec は 3回×2本で12/12（6並列・1並列とも）、push 直前の rebase の後も 4 passed。lint 12本中0本失敗。vitest 1197 passed。→ duplicate-asin-notice.spec.js:111 は、この直しを入れた main で緑と判定する。
+- CI の e2e で落ちるものがあれば、§4 のとおり list-staged-render.spec.js:109（#401）と sort-perf-budget.spec.js:390 は直す前の main でも赤（このイシュー由来ではない）。それ以外が落ちていないかは、この run の中では見届けていない。
+
+### 設計書（vault）
+
+- 03・08 の変更（03 の `migrateUserData(oldAsin, newAsin)` の行・08 の ADR-166 追補と ADR-172）は、#671 が 19:18:08 に手で入れた vault の commit 12cf8ca0「bookshelf: 03/04/08 帯の下げ対象を印 data-ov-below-notice にまとめ、ホームのウィジェット選択も下げる (ADR-173・実装: bookshelf@bf569f6・イシュー#671)」に一緒に入った。その commit の中に ADR-172 と migrateUserData の行があることを確かめた。03・08 に未 commit の差分は無い。
