@@ -31,7 +31,7 @@ const gateWebkitProjects = process.env.GATE_WEBKIT === '1'
     : [];
 // 門ではない E2E のうち、webkit (iPhone 相当) でも流すもの (イシュー#604: 支払い管理からの戻り・
 // イシュー#599: 保存先へ届く前に再読込した新規記事が一覧に戻る)
-gateWebkitProjects.forEach((p) => { p.testMatch = [p.testMatch, /billing-portal-return\.spec\.js$/, /article-orphan-draft\.spec\.js$/]; });
+gateWebkitProjects.forEach((p) => { p.testMatch = [p.testMatch, /billing-portal-return\.spec\.js$/, /article-orphan-draft\.spec\.js$/, /book-card-tap-after-touch-drag\.spec\.js$/]; });
 
 // worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
 // portを使い、どちらも無ければ既定の8000(従来どおり)。webServer.command/portとuse.baseURLの両方に使う

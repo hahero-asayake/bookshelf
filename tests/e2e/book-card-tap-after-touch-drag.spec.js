@@ -137,6 +137,20 @@ function directTouch(page) {
     };
 }
 const touchOf = (page, mode) => (mode === 'cdp' ? cdpTouch(page) : directTouch(page));
+// 長押しの口 (_initBookPopLongPress) は touchstart/touchend を見る。touch はその型のイベントを押した所の要素へ直に送る。
+// webkit は new Touch() を作れない (Illegal constructor・step2 で実測)。口が読むのは e.touches[0] の座標だけなので、
+// ふつうの Event に touches を持たせて送る
+function directTouchEvents(page) {
+    const send = (type, p) => page.evaluate(([t, x, y]) => {
+        const el = document.elementFromPoint(x, y);
+        const ev = new Event(t, { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'touches', { value: t === 'touchend' ? [] : [{ clientX: x, clientY: y, target: el }] });
+        el.dispatchEvent(ev);
+    }, [type, p.x, p.y]);
+    let last = null;
+    return { start: (p) => { last = p; return send('touchstart', p); }, end: () => send('touchend', last) };
+}
+const longPressOf = (page, mode) => (mode === 'cdp' ? cdpTouch(page) : directTouchEvents(page));
 
 async function handlePoint(page, asin) {
     return center(await card(page, asin).locator('.drag-handle').boundingBox());
@@ -170,13 +184,15 @@ test.describe('本のカード: タッチでドラッグした後のタップ (�
                 await tapAndExpectOpen(page, asin, { browser: browserName, scene: 'b', mode, started, dragEvents });
             });
 
+            // 下へ 72px 以上運ぶと、一覧の先頭では「引っぱって更新」(js/bookshelf.js の _initPullToRefresh) が働いて
+            // 再読込し、印ごとカードが作り直される (step2 で実測)。印の確かめを再読込で隠さないよう、2冊目を1冊目の上へ運ぶ
             test(`(c) つまみでドラッグして別の本の上で離した後、同じカードのタップで詳細が開く [${mode}]`, async ({ page, browserName }) => {
                 await openAllShelf(page, { pop: false });
                 const t = await touchOf(page, mode);
-                const asin = BOOKS[0][0];
+                const asin = BOOKS[1][0];
                 const before = await order(page);
                 const from = await handlePoint(page, asin);
-                const to = center(await card(page, BOOKS[2][0]).boundingBox());
+                const to = center(await card(page, BOOKS[0][0]).boundingBox());
                 await takeEvents(page);
                 await t.start(from);
                 const started = await dragStarted(page);
@@ -221,10 +237,10 @@ test.describe('本のカード: タッチでドラッグした後のタップ (�
             test(`(g) つまみを長押ししてから動かして離した後、タップで詳細が開く [${mode}]`, async ({ page, browserName }) => {
                 await openAllShelf(page, { pop: false });
                 const t = await touchOf(page, mode);
-                const asin = BOOKS[0][0];
+                const asin = BOOKS[1][0];
                 const before = await order(page);
                 const from = await handlePoint(page, asin);
-                const to = center(await card(page, BOOKS[2][0]).boundingBox());
+                const to = center(await card(page, BOOKS[0][0]).boundingBox()); // (c) と同じ理由で上・横へ運ぶ
                 await takeEvents(page);
                 await t.start(from);
                 await page.waitForTimeout(550); // 長押し (450ms) を跨ぐ
@@ -241,10 +257,12 @@ test.describe('本のカード: タッチでドラッグした後のタップ (�
 
     // (f) 長押しの口 (js/bookshelf.js の _initBookPopLongPress) は touchstart/touchend を見る。
     // chromium は CDP のタッチで本物の touchstart を作る。webkit (step2) は別に用意する
-    test('(f) pop 有りの設定で長押しして離した後、同じカードの余白のタップで詳細が開く [cdp]', async ({ page, browserName }) => {
-        test.skip(browserName !== 'chromium', 'CDP は chromium だけ');
+    // webkit には本物のタッチを長く押す口が無いので、touch は TouchEvent を直に送る (click はブラウザが作らない)
+    for (const mode of ['cdp', 'touch']) {
+    test(`(f) pop 有りの設定で長押しして離した後、同じカードの余白のタップで詳細が開く [${mode}]`, async ({ page, browserName }) => {
+        test.skip(mode === 'cdp' && browserName !== 'chromium', 'CDP は chromium だけ');
         await openAllShelf(page, { pop: true });
-        const t = await cdpTouch(page);
+        const t = await longPressOf(page, mode);
         const asin = BOOKS[0][0];
         const p = await blankPoint(page, asin);
         await takeEvents(page);
@@ -254,13 +272,13 @@ test.describe('本のカード: タッチでドラッグした後のタップ (�
         await t.end();
         const opened = await isOpened(page, asin, 800);
         const dragEvents = await takeEvents(page);
-        await tapAndExpectOpen(page, asin, { browser: browserName, scene: 'f', mode: 'cdp', popShown, openedByLongPress: opened, dragEvents });
+        await tapAndExpectOpen(page, asin, { browser: browserName, scene: 'f', mode,popShown, openedByLongPress: opened, dragEvents });
     });
 
-    test('(f-星) pop 有りの設定で長押しして離した後、pop の星のタップで評価が変わる [cdp]', async ({ page, browserName }) => {
-        test.skip(browserName !== 'chromium', 'CDP は chromium だけ');
+    test(`(f-星) pop 有りの設定で長押しして離した後、pop の星のタップで評価が変わる [${mode}]`, async ({ page, browserName }) => {
+        test.skip(mode === 'cdp' && browserName !== 'chromium', 'CDP は chromium だけ');
         await openAllShelf(page, { pop: true });
-        const t = await cdpTouch(page);
+        const t = await longPressOf(page, mode);
         const asin = BOOKS[0][0];
         const p = await blankPoint(page, asin);
         await t.start(p);
@@ -274,9 +292,11 @@ test.describe('本のカード: タッチでドラッグした後のタップ (�
         let rated = true;
         try { await expect(card(page, asin).locator('.star-rating').first()).toHaveAttribute('data-current-rating', '4', { timeout: 2000 }); } catch { rated = false; }
         const tapEvents = await takeEvents(page);
-        writeRecord({ browser: browserName, scene: 'f-star', mode: 'cdp', firstTapRated: rated, tapEvents });
+        writeRecord({ browser: browserName, scene: 'f-star', mode,firstTapRated: rated, tapEvents });
         expect(rated, '長押しの後の1回目の星のタップで評価が変わる').toBe(true);
     });
+
+    }
 
     test('対照: マウスでつまみをドラッグした後、カードのクリックで詳細が開く', async ({ page, browserName }) => {
         await openAllShelf(page, { pop: false });
