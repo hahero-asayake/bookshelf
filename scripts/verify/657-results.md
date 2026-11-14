@@ -193,3 +193,25 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 
 - 時刻の書き方（「5:19:46 PM」）は、テストのブラウザの言語のせい。playwright.config.js に locale の指定が無く、Playwright の既定（en-US）で動いている。アプリは `toLocaleTimeString()` を言語の指定なしで呼ぶ（js/bookshelf.js の updateSyncStatus の2か所）ので、日本語の端末では「17:19:46」の形になる。英語の設定の端末では英語の書き方になる作り。起票するかは②の判断に任せる（直していない）。
 - 撮る spec は `tmp/657/zz-shots-sync-section-status.spec.js`（git には入れない。流す時は `tests/e2e/` へ写す。名前に `sync-section-status.spec.js` を含めると webkit の project で流れる）。
+
+## step4 設計書の更新・載せ直し・main との全件比較（push の前に止まる）
+
+### 載せ直し
+
+- `git fetch` の後、origin/main `1234cf4` へ rebase した。衝突は index.html の `js/bookshelf.js?v=` の1行だけ（origin/main 側 2026111711・こちら 2026111720）。2026111730 に取り直した。
+- #645・#653 はまだ origin/main に入っていない（`git log origin/main --grep` で0件）。案A は id を変えないので、#648・#653 の spec の読み口は直さなくてよい。
+
+### ②の決め（step3 の tp）を入れたこと（commit abef774）
+
+- 帯は案2: 保存できていない間（保存の失敗・再試行中・保存先へ書くのを止めている間）は、ハブの「この保存先を使用中です。」（`#hub-active-state`）を出さない。設定を開いた時の描画（js/screens/settings.js の `_renderHubAuthState`）と、状態が変わった時の描画（js/bookshelf.js の `_renderSyncState`）で同じ条件（`_syncError && _syncFail`）を使う。`settings.js?v=` も 2026111730 に上げた。
+- spec に足した: (i) ハブの保存失敗・未保存（読込時・書き込み時）の間は帯が見えない (ii) 再試行で保存できた後・3択で選んだ後・正常の時は帯が見える (iii) ローカルの未保存（読込時）で、同期欄に状態バーと同じ文と「選ぶ」が見え、押すと3択が開く。
+- GitHub の書き込み時の未保存（sync-conflict）は、spec を書いて流したが足せなかった。模擬（storage-fakes.js の `installFakeGitHub`）の `files` を他の端末の更新として書き換えても、まとめ保存はその版のずれに当たらず3択が出ない（chromium・webkit とも「#sync-conflict-dialog が無い」で赤）。模擬に「他の端末の commit を積む」口が要る。この spec は外し、08 の追補と 07 に残りとして書いた。#645（GitHub の書き込み時の衝突を触る）がまだ入っていないので、その上で確かめることもできていない。
+- 新しい spec（chromium＋webkit・1回）: 17 passed・3 skipped（ローカルは webkit で流さない）。出力 `tmp/657/step4-spec.txt`。
+- 画像を撮り直した（webkit の 390 幅）: after-hub-{normal,failed,unsaved}-390・after-github-{normal,failed,unsaved}-390。保存失敗・未保存では帯が消え、正常では帯が見える。**band-*-390 は、この撮り直しで、帯を隠した後の画面に試しの DOM を入れた形に上書きされた**（step3 の3案の画像は残っていない。②の判断は済んでいる）。
+
+### 設計書
+
+- 04_画面設計書.md: 「保存の失敗」の段の「設定の同期欄」の行を、共通の行・状態バーと同じ文とボタン・「（要再接続）」の付け方・帯を出さないことに書き換えた。「起動の読込」の行の末尾「…ハブ・GitHub を選んでいる間は隠れている。」を「状態の行は保存先の選択の下にあるので、ハブ・GitHub でも見える。」に替えた。GitHub フォームの行・ハブフォームの行に、保存の状態の置き場と帯の決まりを足した。
+- 07_残検討事項.md: L393（💡・#648 で発見）を ✅ 実装に書き直し、本件と合わせた（残り＝`#obsidian-sync-path` はハブ・GitHub の時もローカルの欄に書かれる・GitHub の書き込み時の衝突の spec が無い）。
+- 08_意思決定記録.md: ADR-158 に追補（決めたこと・帯を出さない決まり・却下した案B・C と帯の案1・3・確かめ方・残り）を足した。ADR-162 追補の「6. 分かっている残り」に「→ イシュー#657 で直した (ADR-158 の追補)」を足した。08 は CRLF のまま書いた（LF だけの行は0）。
+- docs/ui-standards.md §2-11 に1文と、改訂履歴の1行を足した。
