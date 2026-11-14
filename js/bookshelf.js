@@ -4342,7 +4342,8 @@ class VirtualBookshelf {
         return shelf;
     }
 
-    switchBookshelf(bookshelfId) {
+    // replace: URL を新しく積まず今の段を置き換える (消えた本棚から移る時・イシュー#634)
+    switchBookshelf(bookshelfId, { replace = false } = {}) {
         // 別の本棚へ移るときは前の本棚の絞り込みを持ち越さない
         // (見えない検索/評価フィルタが効き続けて「この本棚は空?」に見える事故の防止)
         if (bookshelfId !== this.currentBookshelf) this._resetFilters();
@@ -4370,7 +4371,7 @@ class VirtualBookshelf {
         if (this.router && !this._suppressRouterUpdate) {
             const bs = this.bookshelfManager?.getById?.(bookshelfId);
             const slug = bs?.slug || bookshelfId;
-            this._navigateFromUi('bookshelf', slug);
+            this._navigateFromUi('bookshelf', slug, { replace });
         }
         // 複数選択中なら一括バーのボタン表示 (本棚から外す等) を本棚に合わせて更新
         if (this.selectMode) this._updateBulkBar();
@@ -5509,7 +5510,7 @@ class VirtualBookshelf {
         this._closeOverlayFacesSilently();
         // replace/push の判断は台帳 (historyOp: overlay を閉じた遷移は replace・他は push)。router._setHash が nav へ委譲する
         if (kind === 'main') this.router.navigateMain();
-        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0]);
+        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0], args[1]);
         else if (kind === 'book') this.router.navigateBook(args[0], args[1]);
         return true;
     }
@@ -5690,12 +5691,36 @@ class VirtualBookshelf {
         this.updateBookshelfSelector();
         this.renderBookshelfList();
 
-        if (this.currentBookshelf === bookshelfId) {
-            this.currentBookshelf = 'all';
-            this.applyFilters();
-        }
+        // 開いている本棚が消えた本棚 (子孫を含む) なら「すべての本」へ (イシュー#634)
+        await this._leaveRemovedShelf(removed);
         // 開いている詳細の本棚のチップと選択肢 (イシュー#623)。開いている本棚を切り替えた後に呼ぶ (チップの強調を今の本棚に合わせる)
         this._applyShelfChangeToDetail(removed);
+    }
+
+    // 開いている本棚 (currentBookshelf) が、消えた本棚の一覧 removed (子孫を含む) に入っていたら「すべての本」へ移す (イシュー#634)。
+    // currentBookshelf は slug の時と internalId の時があるので両方で比べる。本棚ビューを表示中なら、本棚の切り替えと同じ道
+    // (switchBookshelf) を通して見出し・一覧・ツリーの選択・URL を揃える。URL は置き換える (消えた本棚の段を戻る用の履歴に残さない)。
+    // ホーム等で本棚ビューを表示していない時は画面を動かさず、次に本棚を開く時の行き先だけ「すべての本」にする。
+    async _leaveRemovedShelf(removed) {
+        const cur = this.currentBookshelf;
+        if (!cur || !removed.some(t => t.id === cur || t.internalId === cur)) return;
+        if (!document.body.classList.contains('app-view-bookshelf')) {
+            this.currentBookshelf = 'all';
+            this.applyFilters();
+            return;
+        }
+        // スマホ幅でドロワーのツリーから消した時は、ドロワーの段を先に戻して (着地を待って) から、消えた本棚の段を置き換える。
+        // 待たずに置き換えると、閉じる戻る (history.back) が置き換えの後に着地し、消えた本棚の段からホームへ飛ばされる。
+        // 静かに閉じる (silent) とドロワーの段が「すべての本」に置き換わり、下に消えた本棚の段が残る (どちらも #634 step2 の実測)
+        if (document.body.classList.contains('drawer-open')) {
+            await new Promise((resolve) => {
+                const done = () => { clearTimeout(timer); window.removeEventListener('popstate', done); resolve(); };
+                const timer = setTimeout(done, 1000); // 戻るが起きない時の保険 (段を積まない設定の時など)
+                window.addEventListener('popstate', done);
+                this._closeDrawer();
+            });
+        }
+        this.switchBookshelf('all', { replace: true });
     }
 
     async addBookToBookshelf(asin) {
