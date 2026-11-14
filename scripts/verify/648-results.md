@@ -196,3 +196,44 @@ updateSyncStatus 以外で見つけたもの：
 ### lint（新しい spec を足した後）
 
 lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:internal-refs（上限 82 以内）・lint:e2e-gate、すべて OK。
+
+## step4 直して緑にし、既存の spec・lint・設計の記述を揃える（2026-11-14 16:31〜16:35）
+
+### 直したこと（commit ba91959）
+
+- js/bookshelf.js（+8/-3）：ハブ（initCloudSync）・GitHub（initGitHubSync）とも、空と分かった時の `this.updateSyncStatus('reconnect', \`${label} (空)\`)` を、確認の前からキャンセルの分岐へ移した（ハブは `if (!ok) {` の先頭、GitHub は `if (!ok) return;` を `{ …; return; }` に）。updateSyncStatus・本当の保存の失敗（`_onSyncFailed`・L3936 の呼び出し）は変えていない。
+- index.html：`js/bookshelf.js?v=2026111660` → `2026111681`。origin/main（3a0d720）の最大は 2026111660。開いている他イシューの値（#614 2026111661・#636/#639 2026111672・#643 2026111674）とも重ならない値にした。`npm run check:version -- --range=origin/main..HEAD` は OK。
+- docs/char/boot-flow.md §1-5：同期欄は、確認を待つ間と initEmpty→loadAll の間も「読み込み中...」で、失敗の表示はキャンセルした時だけ、と書いた。
+- 設計書（vault）：
+  - 04_画面設計書：「保存の失敗」の段の「設定の同期欄」の次に、起動の読込の間の同期欄（読み込み中... → 保存済み／同期済み、空の確認の待ちと初期化の間も読み込み中...、キャンセルした時だけ「保存できませんでした」と「(空)（要再接続）」、ハブ・GitHub の間は欄が隠れていること）を1項目足した。
+  - 07_残検討事項「クラウド同期」の表に1行（💡 ハブ・GitHub の同期の状態が、ローカルの「保存フォルダ」の欄に書かれる・イシュー#648 で発見）。
+  - vault の commit は自動バックアップに任せた（自分では commit していない）。対応づけは bookshelf の commit の題「設計: 04_画面設計書・07_残検討事項 2026-11-14 更新」。
+
+### 直した後の出力（新しい spec＝直す前と同じ6本）
+
+```
+✓ 1 ハブ: 空の保存先を初期化する間、状態の欄は「読み込み中...」で、読込の後に「保存済み」になり、「保存できませんでした」は出ない
+✓ 6 ハブ: 初期化の確認でキャンセルした後は、今までどおり「保存できませんでした」と「(空)（要再接続）」を出す
+✓ 7 GitHub: 空の保存先を初期化する間、…「保存できませんでした」は出ない
+✓ 9 GitHub: 初期化の確認でキャンセルした後は、今までどおり…を出す
+✓ 10 ハブ: 初期化の途中で保存先を「この端末のフォルダ」に切り替えた時、確認の幕の後ろに見える状態の欄に「保存できませんでした」が出ない
+✓ 13 ローカルのフォルダ: 空のフォルダを選んで初期化する間、…「保存できませんでした」は出ない
+```
+
+### ②の完了条件の数え方に合わせた、直す前と直した後
+
+| 条件 | 直す前（step3・98de66d＋docs） | 直した後（ba91959） |
+|---|---|---|
+| ハブ・GitHub：確認から読込の終わりまで「保存できませんでした」0回、「読み込み中...」→「保存済み」 | **赤**（並び `["","読み込み中...","保存できませんでした","… 保存済み"]`・ハブ/GitHub とも） | **緑**（2本） |
+| ハブ (c)：切替の確認の幕の後ろに見える状態の欄 | **赤**（見えている文字が「保存できませんでした」） | **緑**（「読み込み中...」） |
+| キャンセルした後は今と同じ表示（ハブ・GitHub） | 緑 | 緑（2本） |
+| ローカルは守りとして緑 | 緑 | 緑 |
+
+### 既存の spec・vitest・lint（直した後）
+
+- spec 9ファイル（新しい spec と、save-failure-visible・sync-first-connect・first-run-add-article-drawer・gate/j1-3-connect-local・gate/j6-1-local-restart・sync-offline-reconnect・book-memo-file-lifecycle・shelf-file-delete）を chromium・4並列で流した：**78本中 74 passed・4 skipped・失敗0**（1.5分・`tmp/648/step4-specs-run2.txt`）。
+  - skipped の4本は book-memo-file-lifecycle.spec.js の既存の `test.fixme`（L259 の3保存先・L321＝#594 の fixme）。今回の直しとは関係ない。
+  - 完了条件2（本当の保存の失敗では今までどおり「保存できませんでした」）：save-failure-visible.spec.js が全部緑（状態バーの「Asayake ハブに保存できませんでした。…」「GitHub の接続が切れたため、保存できませんでした。…」「保存先のフォルダが見つからないため、保存できませんでした。」ほか）。
+  - 1回目（前の run）は、run の終わりで49本まで（すべて緑）流れたところで止まっていた。まとめの行が無いので数えず、全部を流し直した。
+- `npm test`（vitest）：**Test Files 76 passed (76)**。
+- lint 一式（直しを作業ツリーに入れた後の 16:32 に流した）：lint:copy（119/119）・lint:terms・lint:esc・lint:js-color・lint:breakpoint・lint:internal-refs（上限82以内）・lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:e2e-gate・lint:known-red、すべて OK。
