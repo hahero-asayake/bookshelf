@@ -215,3 +215,11 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 - 07_残検討事項.md: L393（💡・#648 で発見）を ✅ 実装に書き直し、本件と合わせた（残り＝`#obsidian-sync-path` はハブ・GitHub の時もローカルの欄に書かれる・GitHub の書き込み時の衝突の spec が無い）。
 - 08_意思決定記録.md: ADR-158 に追補（決めたこと・帯を出さない決まり・却下した案B・C と帯の案1・3・確かめ方・残り）を足した。ADR-162 追補の「6. 分かっている残り」に「→ イシュー#657 で直した (ADR-158 の追補)」を足した。08 は CRLF のまま書いた（LF だけの行は0）。
 - docs/ui-standards.md §2-11 に1文と、改訂履歴の1行を足した。
+
+### 確かめたこと（2回目の run・17:36〜17:53）と、終わっていないこと
+
+- origin/main が `fa4f41f` まで進んだ（#656 など）ので、もう一度載せ直した。衝突は index.html の `js/bookshelf.js?v=` の1行だけ（origin/main 2026111721・こちら 2026111730 を残した）。`check:version --range=origin/main..HEAD` は OK。
+- 載せ直す前（`1234cf4` の上）: `npm run lint` 12 本中 0 本失敗・`npm test` 78 files・1176 passed・2 todo。
+- 載せ直した後（`fa4f41f` の上）: 新しい spec（chromium）10 passed（出力 `tmp/657/step4-spec-after-rebase.txt`）。
+- **全件比較（e2e-diff-main）は終わっていない**。17:36:41 に始めたが、機械の負荷が高く（load average 94・他のイシューの全件実行が重なっていた）、17:47 になっても base 側の E2E が終わらなかった。締切までに終わらないので止めた（一時 worktree は `_trash/657-e2e-diff2-stopped`・残っていた 8157 番のサーバーも止めた）。3表はまだ無い。
+- **載せ直した後に関係の深い spec 9本（chromium）を流すと 63 passed・8 failed**（出力 `tmp/657/step4-related.txt`）。落ちたのは book-memo-file-lifecycle の GitHub 3本・save-failure-visible の GitHub 2本・sync-offline-reconnect のローカル2本と GitHub 1本。エラーは「GitHubConflictError: Branch main was updated since batch start」（GitHub のまとめ保存の衝突）と、保存先に届くのを待つ所の時間切れ。step3（`1234cf4` の前・負荷が低い時）では同じ spec が全部緑だった。原因（この版の変更・origin/main で入った変更・負荷）はまだ切り分けていない。次に base（origin/main）で同じ spec を同じ負荷で流して比べる。
