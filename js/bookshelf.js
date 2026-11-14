@@ -4327,6 +4327,15 @@ class VirtualBookshelf {
         let shelf = ud.bookshelves.find(b => b.isSpecial);
         // bookOrder.all が無い時だけ、本棚の books から作る (本棚の books を空で上書きしない)
         if (!Array.isArray(ud.bookOrder.all)) ud.bookOrder.all = (shelf && Array.isArray(shelf.books)) ? shelf.books : [];
+        // bookOrder.all は順序の正で、冊数を減らす正ではない。蔵書にあって bookOrder.all に無い本 (古い版の控え・旧形式の
+        // 保存先など) は落とさず、蔵書の並びのまま末尾に足す。除外した本は蔵書から外れているので足さない (イシュー#662)
+        const libBooks = this.bookManager && this.bookManager.library && this.bookManager.library.books;
+        if (Array.isArray(libBooks) && libBooks.length) {
+            const inOrder = new Set(ud.bookOrder.all);
+            for (const b of libBooks) {
+                if (b && b.asin && !inOrder.has(b.asin)) { ud.bookOrder.all.push(b.asin); inOrder.add(b.asin); }
+            }
+        }
         if (shelf) shelf.books = ud.bookOrder.all;
         if (!shelf) {
             shelf = {
