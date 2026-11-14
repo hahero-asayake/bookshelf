@@ -198,3 +198,70 @@ if (ex.size && ud.bookOrder.all.some(a => ex.has(a))) {
    - 書き出しの後、引き出しに除外した本が出ないことを1行。
 3. #662 の spec の I 行（`test.fixme(..., async () => {})`＝中身が空）に中身を書いて、fixme を外す。
 4. 関係する spec を `--repeat-each=3` で流す。
+
+## §3 step3：実装と検証（2026-11-14 18:36〜18:43）
+
+### 前提
+
+- #662 の着地を題で確かめた（`git log origin/main --grep 'Issue: #662'`：77c86ae・2f4d112・5a344c6・2efb45c・6b22a9e）。
+- rebase の基準は origin/main = **2946a43**。衝突は無かった。18:42 の時点で origin/main は 2072774 へ進んでいる。push の前（step5）にもう一度 rebase する。
+- 着地版の `_ensureAllShelf`（5a344c6・ADR-166 追補）は、蔵書（`bookManager.library.books`＝除外を引いた本）にあって bookOrder.all に無い本を末尾に足す。除外した本は足さない。案A とぶつからない。
+
+### 直したこと（案A・承認どおり）
+
+- `js/bookshelf.js` の `syncToObsidianFolder`：`allBooksList` を、除外を引いた ASIN（`visibleAsins`＝library.json の ASIN から `exclusionsSet` を引いたもの）から作る。
+  - all.json の books と、置き換える `bookOrder.all` に、除外した本が入らない。
+  - library.json は今のまま（除外を含む全書誌）。
+  - `includes` の2乗の走査を Set にした。
+- `index.html`：`js/bookshelf.js?v=2026111783`（origin/main の最大 2026111782 より新しい）。
+
+### テスト
+
+- `tests/e2e/exclude-export-all-shelf.spec.js`
+  - R・L・S・U は期待を変えずに緑になった。
+  - 行を足した：
+    - R・S・U の書き出しの後に、ツリーを描き直した冊数と、メモリの「すべて」本棚の books を見る。
+    - **D**：引き出しに除外した本が出ない。`.art-drawer-item` が2件で、除外した本は0件。
+    - **K**：古い控えで起動する（②の追加の指示）。
+  - lint:internal-refs が上限（82）を1件超えたので、読込の決め方（`_lastLoadDecision`）を読むのをやめた。K は「3択が出ない」と、起動の直後の冊数の記録で確かめる。
+- `tests/e2e/manual-add-reload-all-shelf.spec.js`（#662）
+  - **I 行**：中身を書き、fixme を外した。除外の保存がフォルダに届く（all.json＝2）のを待ってから取り消し、待たずに再読込する。「すべての本」・控え・フォルダが3であること。
+  - **H 行**：フォルダの all.json＝2 も見るようにした。前は、除外した本が残るので見ていなかった。
+- 単体（vitest）は足していない。`syncToObsidianFolder` と bookOrder.all を単体で試す土台が無い（tests/unit に該当0件）。経路を通す E2E（上の D・K を含む）で確かめた。
+
+### 結果（chromium・`--repeat-each=3`・workers=4）
+
+| 流したもの | 結果 |
+|---|---|
+| #664 の spec（R・L・S・U・D・K）＋#662 の spec（E・G・H・I・J・D・K・HUB・GH） | **45 passed**（1.0分・最終の spec。記録は `664-run4-final.jsonl`）。`_lastLoadDecision` を読むのをやめる前にも 45 passed（1.1分・`664-run3-fixed.jsonl`） |
+| library-count-refresh・kindle-reimport-merge・first-run-drawer-before-first-save（#636） | **24 passed**（12.5秒） |
+| vitest（npm test 相当） | 79 ファイル・**1185 passed**・2 todo・失敗0 |
+| lint（`scripts/run-lint.mjs`） | 1回目は12本中1本失敗（lint:internal-refs 83/82）→ 直して lint:internal-refs は OK。12本全部の流し直しは step4 で行う |
+
+場所ごとの値（`664-run4-final.jsonl`・各3回）：
+
+| 場所 | 直す前（§1・1c99d78） | 直した後 |
+|---|---|---|
+| library.json | 3（除外した本を含む） | 3（変わらない・決まりどおり） |
+| all.json の books（書き出しの後） | 3（除外した本が残る）9/9 | **2** 9/9（R・S・U） |
+| メモリの bookOrder.all（書き出しの後） | 3（除外入り）9/9 | **2** 9/9 |
+| 書き出しの後に描き直したツリー | （測っていない） | **2** 9/9 |
+| 端末の控えの bookOrder.all（S：次の保存の後） | 3・3/3 | **2** 3/3 |
+| 画面 R・L・S（再読込の後） | L で3（基準）／S で3（#662 の後） | **2**・各3/3 |
+| U（取り消しの後の書き出し） | all.json 3・重複0・ツリー3 | all.json 3・重複0・ツリー3。控えとメモリも3 |
+| D（引き出し） | （未実測・2-0 の見立て） | 2件・除外した本0件 3/3 |
+| 3択 | 0回 | 0回 |
+
+### K：案A の弱い点の見え方（②の追加の指示）
+
+古い控えを作って起動した。作り方：除外を書き出した後、控えの bookOrder.all と「すべて」本棚の books に除外した本を戻し、未反映の印を立てて、手元を採らせた。
+
+| 時点 | ツリー | メモリ | all.json | 端末の控え |
+|---|---|---|---|---|
+| 起動の直後〜書き出しの後（16回×250ms） | **3**（3/3） | － | 2 | 3（除外入り） |
+| 書き出しの後 | **3**のまま（書き出しはツリーを描き直さない） | **2**（3/3） | **2**（3/3） | **3**のまま（書き出しは控えを書き直さない） |
+| 描き直した後（`updateBookshelfSelector`） | **2**（3/3） | 2 | 2 | 3 |
+
+- メモリと all.json は、書き出しで2に戻る（3/3）＝②の合格条件どおり。
+- 画面のツリーは、次に描き直されるまで3のまま残る（蔵書を変える操作・再読込など）。端末の控えは、次の保存（saveUserData）まで3のまま残る。次の起動で手元を採っても、`_ensureAllShelf` がメモリでは揃え直さない（除外を引くのは書き出しだけ）。このため、書き出しまでは同じ見え方を繰り返す。
+- これが残るのは、直す前の版で除外して書き出し、その後に保存した端末だけ。bookshelf は未公開なので、移行は書かない（ADR-006・②の承認どおり）。
