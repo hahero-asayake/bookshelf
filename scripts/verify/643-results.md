@@ -143,3 +143,46 @@
 | vitest | Test Files 75 passed・Tests 1114 passed・2 todo | `tmp/643/vitest-after-612.txt` |
 
 - 「起動前から手元に別の保存先の allInternalId が残っている形」は、#612 が入ったので数える条件はそろったが、この step では測っていない（未実測のまま・step4 で数える）
+
+## step4 origin/main と全件比較（push の前）
+
+### 載せ直し（rebase）
+
+- step4 の開始時に fetch すると、origin/main が 98de66d（#635 衝突ダイアログの1本化・#637 E2E の外部通信の遮断ほか）まで進んでいたので、その上に rebase した（f6696eb test・83018ea fix・3058e2f docs・6ed51b7 docs・f6bf371 docs）
+- 衝突は index.html の bookshelf.js の ?v= の1行だけ（#635 が 2026111660 にしていた）。main と作業中の worktree の最大値は 2026111673 で、#614 が 2026111652（前の自分と同じ値）を使っていたので、**2026111674** にした
+- js/bookshelf.js は衝突なし（#635 の変更と重ならない）。待ち（`_waitBootLoads()`）は syncToObsidianFolder の先頭のまま
+- 前の run（16:01 に始めた全件比較）は base 側の E2E が終わった所で run ごと切れた（exit 137）。その結果は使わず、載せ直した後に最初から流し直した
+
+### 載せ直した後の確認（98de66d の上・PORT=8143）
+
+| 確かめたこと | 結果 | 出力 |
+|---|---|---|
+| lint 一式（CI と同じ14本：check:version・css・e2e-goto・e2e-wait・e2e-external・breakpoint・esc・js-color・internal-refs・e2e-gate --strict-coverage・copy・terms・known-red、e2e-gate は引数なしでも） | すべて exit 0（check:version OK・e2e-external 151ファイルで0件・e2e-gate 37/37） | `tmp/643/lint-all-step4.txt` |
+| 新しい spec（--repeat-each=3） | 3 passed | `tmp/643/green-step4-repeat3.txt` |
+| 関係する spec（sync-offline-reconnect・boot-confirm-dialog・dashboard-stats-after-manual-add・first-run-add-article-drawer） | 17 passed | `tmp/643/related3-step4.txt` |
+
+- CI の lint は #637 で lint:e2e-external が増え、e2e-gate は --strict-coverage 付きになっていた（ci.yml L56-97）。どちらも流した
+
+### 全件比較（e2e-diff-main・base=origin/main 98de66d・work=f6bf371・PORT=8143・visual 込み・16:15〜16:28）
+
+- 結果一式：`/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261114-161547-2700843`（報告は `tmp/643/e2e-diff-2.txt`）。exit 0
+- base 側の E2E：1019 passed・2 failed（list-staged-render・reimport-diff「手動追加は枚数・並びが正しい」）・594 skipped
+
+| 表 | 件数 | 中身 |
+|---|---|---|
+| 新しく落ちた（E2E） | 4件（スクリプトの判定はすべて flake） | duplicate-asin-notice（重複ASIN検出バッジ）・gate/j3-5-many-books（913冊・CPU 6倍遅く）・reimport-diff（order(title) の moved #406）・save-failure-visible（ローカルフォルダの再試行が尽きた失敗 #603） |
+| 新しく通った（E2E） | 2件 | list-staged-render（途中で並び順を変える）・reimport-diff（手動追加の枚数・並び #480）＝base 側で落ちた2件 |
+| 両方で落ちた（E2E） | 0件 | |
+| vitest | 新しく落ちた0・新しく通った0・両方0 | |
+| 画像の差分（work 側） | 0件 / 54件 | |
+
+- 「新しく落ちた」4件の切り分け：
+  - スクリプトが work 側で3回流し直し、4件とも flake と判定した（流し直しで通った）
+  - 4件を単独で（file:line 指定・--repeat-each=2・workers=2）流し直した：**work 側 12 passed**（`tmp/643/newfail-alone-work.txt`）・**base 側 12 passed**（一時の checkout・この時の origin/main は 3a0d720・`tmp/643/newfail-alone-base.txt`）
+  - 4件とも、全件を同時に流した時だけ落ち、単独では両側とも通る＝負荷による揺れ。新しい spec・直しの影響ではない（4件のうち保存の経路を通るのは save-failure-visible だけで、これはローカルフォルダの保存の失敗の出し方。起動の読込の印が立つのは起動の読込の間だけで、この spec の失敗の注入は起動の後）
+- base 側で使った一時の checkout は、流した後に `_trash/` へ退避して `git worktree prune` した
+
+### push する範囲（origin/main..HEAD）
+
+- 自分の commit 5本だけ・5本とも trailer `Issue: #643`：f6696eb test・83018ea fix・3058e2f docs・6ed51b7 docs・f6bf371 docs（＋この記録の commit）
+- 全件比較の後に origin/main が 3a0d720 まで進んだ（2本・js/ と index.html は変わっていない・main の bookshelf.js の ?v= は 2026111660 のまま）。push の前（step5）に、もう一度 rebase して lint（lint:e2e-wait が変わっている）と新しい spec を流し直す
