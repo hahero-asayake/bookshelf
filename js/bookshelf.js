@@ -534,6 +534,8 @@ class VirtualBookshelf {
             // ローカル保存が無ければ既定値 (サーバー側サンプルの自動読込はしない: ADR-053)
             this.userData = this.createDefaultUserData();
         }
+        // 初めての利用者 (手元に「すべての本」が無い) でも、最初から「すべての本」をメモリに置く (イシュー#636)
+        this._ensureAllShelf();
 
         // config は「未設定項目の既定値」。ユーザーが保存した設定を上書きしてはいけない
         // (旧: config が後勝ちで、表示形式などが再読み込みのたび既定に戻っていた)
@@ -2937,6 +2939,8 @@ class VirtualBookshelf {
         const st = this.userData._storage;
         st.libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
         if (!st.allInternalId && state.allBookshelf) st.allInternalId = state.allBookshelf.internalId;
+        // 手元に「すべての本」があればその id に揃え、無ければ作る (保存先の空の初期化の後でも引き出し等が本棚を見つける・イシュー#636)
+        this._ensureAllShelf();
         if (!st.main && state.privateMain) st.main = state.privateMain;
         this._snapshotSyncedState();
         if (this._isSyncReady()) this._scheduleSync();
@@ -3784,9 +3788,12 @@ class VirtualBookshelf {
                 this.userData._storage.allInternalId = allInternalId;
             }
 
+            // メモリの「すべての本」の id を _storage.allInternalId に揃えてから書き出す (イシュー#636)。
+            // 揃えないと、all.json (下の allInternalId) と bookshelves.json (メモリの本棚の id) で id が食い違う
+            if (!this.userData._storage) this.userData._storage = {};
+            this._ensureAllShelf();
             const allInternalId = (this.userData._storage && this.userData._storage.allInternalId)
                 || generateInternalId();
-            if (!this.userData._storage) this.userData._storage = {};
             this.userData._storage.allInternalId = allInternalId;
 
             // entries 配列に集めて、最後に syncBatch で一括書き込み (GitHub は 1 commit)
@@ -3888,18 +3895,8 @@ class VirtualBookshelf {
             for (const b of (this.userData.bookshelves || [])) {
                 if (!b.internalId) b.internalId = generateInternalId();
             }
-            if (!this.userData.bookshelves.some(b => b.isSpecial)) {
-                this.userData.bookshelves.unshift({
-                    id: 'all',
-                    internalId: allInternalId,
-                    name: 'すべての本',
-                    isSpecial: true,
-                    parent: null,
-                    appliedPlugins: [],
-                    books: allBooksList,
-                    notes: {}
-                });
-            }
+            // 「すべての本」は書き出しの前に _ensureAllShelf で置いてある (無ければここで作る・books は上の bookOrder.all)
+            this._ensureAllShelf();
             const bookshelvesMetaEntries = (this.userData.bookshelves || []).map(b => ({
                 internalId: b.internalId,
                 slug: b.id,
@@ -4234,13 +4231,47 @@ class VirtualBookshelf {
     // 未評価・本棚別 Top5 と左ツリーの本棚の冊数は、ここを通さないと再読込まで古いまま残る。
     // (1) all 本棚の books を bookOrder.all と同じ配列に揃え直す。除外・削除は bookOrder.all を filter で別の配列に
     //     置き換えるため、揃えないと左ツリーの「すべての本」が除外・削除した本まで数えたまま残る
-    //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚が無い時 (保存先なし) は飛ばす。
+    //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚は _ensureAllShelf が必ず置く (イシュー#636)。
     // (2) 左ツリーと、ホーム表示中ならダッシュボード (蔵書 N 冊・蔵書数・蔵書0の案内) を描き直す。
     _onLibraryChanged() {
+        const allShelf = this._ensureAllShelf();
         const order = this.userData && this.userData.bookOrder && this.userData.bookOrder.all;
-        const allShelf = ((this.userData && this.userData.bookshelves) || []).find(b => b.isSpecial);
         if (allShelf && Array.isArray(order)) allShelf.books = order;
         this.updateBookshelfSelector();
+    }
+
+    // 「すべての本」(isSpecial の本棚) を、メモリの userData に必ず1つ置く (イシュー#636)。
+    // 以前は最初の保存の書き出し (syncToObsidianFolder) で初めて作っていたため、初めての利用者がその前に記事の画面を
+    // 開くと、引き出しの本棚が見つからず 0件で畳まれ、保存の後も戻らなかった (ツリーも「本棚がありません」のまま)。
+    // 手元の userData が決まる所 (起動時・保存先の読込で手元を採った時・保存の書き出しの前) と _onLibraryChanged から呼ぶ。
+    // 作る時の books は bookOrder.all と同じ配列にする。id は、本棚がある時はその id を _storage.allInternalId に揃える
+    // (書き出しは all.json に _storage.allInternalId、bookshelves.json にメモリの本棚の id を書くため、揃えないと食い違う)。
+    // _storage が無い時 (保存先へまだ書いていない) は作らない。
+    _ensureAllShelf() {
+        const ud = this.userData;
+        if (!ud) return null;
+        if (!Array.isArray(ud.bookshelves)) ud.bookshelves = [];
+        if (!ud.bookOrder) ud.bookOrder = {};
+        if (!Array.isArray(ud.bookOrder.all)) ud.bookOrder.all = [];
+        let shelf = ud.bookshelves.find(b => b.isSpecial);
+        if (!shelf) {
+            shelf = {
+                id: 'all',
+                internalId: (ud._storage && ud._storage.allInternalId) || generateInternalId(),
+                name: 'すべての本',
+                iconName: 'library',
+                isSpecial: true,
+                parent: null,
+                appliedPlugins: [],
+                books: ud.bookOrder.all,
+                notes: {}
+            };
+            ud.bookshelves.unshift(shelf);
+        } else if (!shelf.internalId) {
+            shelf.internalId = (ud._storage && ud._storage.allInternalId) || generateInternalId();
+        }
+        if (ud._storage) ud._storage.allInternalId = shelf.internalId;
+        return shelf;
     }
 
     switchBookshelf(bookshelfId) {
