@@ -152,7 +152,7 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 | J1-3 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-github`（Device Flow）・`j1-3-connect-hub`（ハブのログイン） | 投入済み・緑。ハブの分は chromium・webkit とも緑 |
 | J1-4 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-hub`（ハブ）・`j1-4-github-save-reload`（GitHub） | 投入済み・緑。保存先として使っていることは、選択肢ではなく画面の「この保存先を使用中です。」（ハブ）・選択肢の「GitHub」とリポジトリの蔵書（GitHub）で確かめる（保存先を決めていない端末でも、選択肢は「ハブ」を表示するため）。GitHub の分は PC 幅なので webkit では流さない |
 | J2-1・J2-3・J2-4 | `j2-1-import-entry`・`j2-3-import-file`・`j2-4-import-bookmarklet` | 投入済み・緑 |
-| J2-2・J2-5・J2-6 | `j2-2-import-paste`・`j2-5-import-no-duplicate` | 投入済み・既知の赤（#622・取込の直後すぐ再読込すると冊数が 0 になる。3秒待つと通る。2026-11-14 #590 で実測） |
+| J2-2・J2-5・J2-6 | `j2-2-import-paste`・`j2-5-import-no-duplicate` | 投入済み・緑（#622 で、取込の直後すぐ再読込した時に1台でも衝突の3択が出るのを直し、既知の赤から外した。2026-11-14） |
 | J3-1〜J3-4 | `j3-1-shelf-to-detail`〜`j3-4-back-forward-esc-pc`・`-phone` | 投入済み・緑 |
 | J3-5 | `j3-5-many-books.spec.js` | 投入済み・緑。913冊・390×844・CPU 6倍で、ページの中で測った時間（`recordInPageTimingsForTest`）を sort-perf-budget と同じ基準（並び順 380／直後の本 420、昇降 340／直後の本 320ms）と比べる。記録が済むのは `toHaveCount` で待つ（`expect(…).toHaveAttribute` で待つと、その問い合わせがページを数秒塞ぎ、測る値が遅れる・#629）。chromium だけ（CPU を遅くするのに CDP を使う） |
 | J4-1〜J4-3 | `j4-memo.spec.js` | 投入済み・緑（#611 の症状＝「完了」のあともボタンが「長文メモを書く」のまま、は #620 の本の詳細の更新の修正で出なくなった。2026-11-14 に3回とも緑） |

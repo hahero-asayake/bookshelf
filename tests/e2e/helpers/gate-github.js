@@ -50,8 +50,10 @@ function commitFile(state, path, content) {
 /** リポジトリに蔵書の見本 (「フィクスチャの本 1」ほか) を、アプリが保存する形で置く。
  * 形は gate-hub.js の seedHubDataForTest と同じ (private/library.json・bookshelves.json・bookshelves/all.json・notes.json)。
  * @param {ReturnType<typeof createMockGitHubForTest>} state */
-export function seedGitHubDataForTest(state) {
+export function seedGitHubDataForTest(state, { exportDate } = {}) {
     const library = JSON.parse(fixture('fixture-library.json'));
+    // exportDate: library.json の版の日付 (gate-hub.js の seedHubDataForTest と同じ・イシュー#622)
+    if (exportDate) library.exportDate = exportDate;
     const userData = JSON.parse(fixture('fixture-userdata.json'));
     commitFile(state, 'private/library.json', JSON.stringify(library, null, 2));
     commitFile(state, 'private/bookshelves.json', JSON.stringify({ bookshelves: [{ internalId: 'fixall001', slug: 'all', name: 'すべて', isSpecial: true }] }, null, 2));

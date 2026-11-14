@@ -117,8 +117,10 @@ function usageOf(state) {
  * 形は tests/e2e/char/publish-hub.spec.js の保存先の見本と同じ (private/library.json・bookshelves.json・
  * bookshelves/all.json・notes.json)。保存先をハブにして蔵書をハブから読ませる時に、seedHubLoginForTest の前に呼ぶ。
  * @param {ReturnType<typeof createHubStateForTest>} state */
-export function seedHubDataForTest(state) {
+export function seedHubDataForTest(state, { exportDate } = {}) {
     const library = JSON.parse(fixture('fixture-library.json'));
+    // exportDate: library.json の版の日付 (アプリが書く library.json には必ず入る・見本には無い)。再読込で控えと照らす spec で渡す (イシュー#622)
+    if (exportDate) library.exportDate = exportDate;
     const userData = JSON.parse(fixture('fixture-userdata.json'));
     const put = (path, data) => { state.seq += 1; state.files.set(path, { content: JSON.stringify(data), etag: `"v${state.seq}"` }); };
     put('private/library.json', library);
