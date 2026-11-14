@@ -11,8 +11,11 @@
 
 - spec：`tests/e2e/exclude-custom-shelf.spec.js`（670-A・670-B・670-C）。赤のまま commit した。
 - 見本：fixture に、親の本棚 `e2e-p`（X・Y・Z）と、その子の本棚 `e2e-c`（X・Y）を足した。X = B000000001（1冊ずつ除外する本）、Y = B000000002（一括で除外する本）、Z = B000000003（除外しない本）。
-- 入口：`window.bookshelf.excludeBook` と `_bulkExclude` を呼び、確認の窓は画面で押した（除外ボタンは、編集モードの本の詳細にしか無い。#622 の 662-H と同じ入口の取り方）。取り消しは `window.bookshelf.unexcludeBook` を呼んだ（除外一覧の画面は通していない）。
-- 実行：同じ spec を3回流し、値は3回とも同じだった。最後の回は 2 failed・1 passed（4.6 秒）。
+- 入口：
+  - 1冊ずつの除外は `window.bookshelf.excludeBook` を呼び、確認の窓は画面で押した（除外ボタンは、編集モードの本の詳細にしか無い。#622 の 662-H と同じ入口の取り方）。
+  - 一括の除外は画面から行った（「すべての本」→ 選択モード → Y を選ぶ →「すべての本から除外」→ 確認）。初めは `_bulkExclude` を直に呼んだが、`lint:internal-refs` が上限を超えた（83 件、上限 82）ので画面の操作に替えた。替えた後も値は同じ。
+  - 取り消しは `window.bookshelf.unexcludeBook` を呼んだ（除外一覧の画面は通していない）。
+- 実行：同じ spec を4回流し、値は4回とも同じだった。最後の回は 2 failed・1 passed（4.9 秒）。`npm run lint` は、替えた後に 12 本中 0 本失敗。
 - 冊数の「並ぶ冊数」は、本棚を開いた時に見えている `.book-item[data-asin]` の数。ツリーの冊数は `.bsr-count`（`js/screens/bookshelf-list.js` のツリー描画で `bs.books.length` をそのまま出す）。
 
 | # | 項目 | 期待（方針が決まるまでの仮） | 実際 | ログ |
