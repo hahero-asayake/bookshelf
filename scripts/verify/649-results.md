@@ -133,3 +133,18 @@ pointerup から click までの時間（click が出た場面）: chromium 0〜
 - 修正（40af09a）: `js/ui/reorder.js` に「次の click を1回捨てる口」を足した。`finishDrag` の全経路で付ける（落とす・pointercancel は離した時から、Esc・blur・visibilitychange は次の pointerup から 400ms）。捨てるのは container か掴んだ要素の中の click だけ。次の pointerdown で外す。`index.html` の reorder.js の `?v=` を 2026111683 にした。
 - 緑（修正後）: 9 passed（8.0s）。lint:esc・lint:internal-refs（82 以内）・lint:e2e-goto・lint:e2e-wait・lint:e2e-gate --strict-coverage・lint:known-red は OK。check:version --range=origin/main..HEAD は OK。tests/unit/reorder.test.js 10 passed。
 - 設計書: 03_詳細設計書 123 行目（`_bindPointerReorder` の行）に、捨てる口の決まりを1文足した。07_残検討事項 の「### UX」の表に1行足した（独自のドラッグ3つ＝本のカード・キャンバスのつまみ・`_artBindDrag` を、共通の決まりへ寄せる候補として並べた）。vault の commit は自動バックアップに任せる。
+
+### step4 の検証（狙いの検証・2026-11-14 16:40〜16:46）
+
+- 先に、自分の5つの commit を最新の origin/main（eb316db）へ載せ直した（ぶつかり無し）。sha は 1ceb20a・f79a9b6・1622ef8（test）・45f6b42（fix）・3e674d0（docs）。reorder.js の `?v=` 2026111683 は、origin/main の最大 2026111682 より新しいまま。
+- 新しい spec（tests/e2e/tree-drop-stays-home.spec.js）を `--repeat-each=3`（chromium・workers=4）: **27 passed**（14.7s）。この spec は webkit の project の testMatch に入っていないので、webkit では流していない。
+- 既存の spec（chromium と char の各幅・workers=4）: **246 passed・10 skipped・0 failed**（4.0m）。skipped は幅で対象外の場面。
+  - tests/e2e/book-detail-shelf-meta.spec.js（#623 (j)・#638 (k)(k-2)(l)）
+  - tests/e2e/shelf-structure-home-refresh.spec.js（#642。origin/main に入っていたので、載せ直した後の版をそのまま流した）
+  - tests/e2e/touch-reorder.spec.js・tests/e2e/char/widgets.spec.js・tests/e2e/char/x2-widgets.spec.js（ホームの部品の並べ替え）
+  - tests/e2e/back-nav-matrix.spec.js・tests/e2e/ux-u4-contrast.spec.js（ドラッグを含む他の spec）
+- webkit（iPhone 相当・`BACKNAV_WEBKIT=1 --project=webkit`）の tests/e2e/touch-reorder.spec.js: **7 passed・2 skipped**（タッチの長押しで運んだ後も、次のタップが効く）。
+- `npm test`（vitest）: **76 files・1137 passed・2 todo**。
+- lint 11本（copy・terms・css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・known-red・e2e-gate `--strict-coverage`）: すべて exit 0。internal-refs は上限 82 以内、e2e-gate は @gate 41本・観測点 37/37。
+- `check:version --range=origin/main..HEAD`: OK。
+- 設計書（vault）: 03_詳細設計書・07_残検討事項 の変更は、16:41 の時点でまだ自動バックアップに入っていない（`M`）。次の自動バックアップ（30分ごと・次は 17:00 頃）に入る見込み。
