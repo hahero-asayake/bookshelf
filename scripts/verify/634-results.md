@@ -165,3 +165,24 @@
   - 出力先：`_local/634/e2e-diff2/`。ログは `_local/634/e2e-diff2/run.log`。
   - 比べた土台：base は origin/main f9468f8、work はこの作業ツリー（HEAD a9f5f9f）。
   - 状態の見方：`systemctl --user status e2ediff-634-1756`。
+- e2e-diff の結果（unit `e2ediff-634-1756`・17:56:39 開始 → 18:14 頃に終了・終了コード0）：
+  - base 側の E2E は 18:02:59 に終わった（1683件：通過1089・スキップ593・失敗1）。work 側の E2E は 18:10 頃、vitest と画像比較は 18:14 頃に終わった。
+  - E2E の3表：新しく落ちた 6件・新しく通った 1件・両方で落ちた 0件。
+    - 新しく落ちた6件は、スクリプトの流し直し（work 側で3回）で6件とも flake の判定（regression 0件・判定不能 0件）。
+      - book-memo-file-lifecycle（GitHub の題名の変更）2件
+      - gate/j3-5-many-books（913冊・CPU 6倍遅くで時間を測る）
+      - list-staged-render（途中で1冊を動かす）
+      - save-failure-visible（ローカルフォルダ・再試行が尽きた失敗）
+      - shelf-file-delete（GitHub・本棚の名前を変える）
+    - 新しく通った1件：save-failure-visible の「GitHub: 401 が返ったら、トークンを更新して1回だけ保存し直す」（base 側で落ちた1件）。
+  - vitest の3表：0件・0件・0件。画像の差分：0件／54件。
+  - 結果一式：`_local/634/e2e-diff2/report.md`・`report.json`。一時 worktree は片付き、終わった unit は `systemctl --user stop` で外した（8134番は空き）。
+- 新しく落ちた6件を単独で流し直した（8634番・`--repeat-each=2`・`--grep` に括弧なし・18:15〜18:18・その時の load average 83）。
+  - 結果は28件中22件通過・6件失敗。
+    - j3-5：2回とも落ちた。時間を測る門の E2E で、負荷に左右される。本棚の削除は通らない。
+    - book-memo-file-lifecycle：2件が各1回落ちた。本棚の削除は通らない。
+    - save-failure-visible（GitHub）：1回落ちた。
+    - shelf-file-delete（GitHub）：1回落ちた。
+    - list-staged-render：2回とも通った。
+  - save-failure-visible と shelf-file-delete の失敗は、どちらも本棚を作った直後に「保存先の一覧に届く」のを待つ5秒の待ちの時間切れ（save-failure-visible.spec.js:111・shelf-file-delete.spec.js:113）。削除より前で、今回の変更の経路（削除の後の切り替え）に入る前に落ちている。
+  - 判定：6件とも、今回の変更によるものではなく、負荷による揺れ。e2e-diff の流し直しでも6件とも flake。
