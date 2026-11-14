@@ -328,3 +328,22 @@ S1 の1回目・S2 の2回も、並びは同じで、時刻の差は ±30ms 以�
     - §4 で赤だった sync-conflict-overwrite L76 のハブの上書きは、#679 の直しが入った後は緑だった。
   - step4（95d6f9d の前）の関係 spec 17ファイルは、84 passed・1 failed（上の1本・#679 で直った）だった。
   - **全件の work 側は流せていない**。新しく落ちたものが0件かは、全件では確かめていない。step6 の push の前に、work 側だけの全件（`npm run test:e2e` か e2e-diff の再実行）を流すか、CI の test (e2e) で見るかを②に決めてほしい。
+
+## §6 push の前の全件・push・CI（2026-11-14 20:26〜20:40）
+
+- **push の前の全件（work 側・②の指示）**
+  - 最後の rebase（fb3f3b9）の後の tree で、base と同じ流し方で流した：`PORT=8177 npx playwright test --reporter=json --grep-invert sort-perf-budget --workers 4`（20:26 開始・459秒・`tmp/677/work.e2e.json`）。
+  - work：expected **1206**・unexpected **0**・flaky **0**・skipped 592。base（fb3f3b9）：expected 1199・unexpected 0・flaky 0・skipped 592。
+  - 増えた7本は新しい spec。base だけにある test は0本。**base と比べて新しく落ちたものは0件**なので push した（`tmp/677/cmp.mjs`）。
+- push の前の確認
+  - 20:34 に `git fetch`：main は fb3f3b9 のままで、載せ直しは要らなかった。
+  - 08 の ADR-176 は1件だけで、他と重なっていない（vault の最新は d1464a21）。
+  - `npm run lint` 12本中0本失敗・`npm test` Tests 1201 passed。
+  - origin/main..HEAD の8本は、どれも `Issue: #677` の trailer つき。
+- **push**：`BOOKSHELF_ISSUE=677 git push origin 252998f:main` → `fb3f3b9..252998f`（20:34:44・pre-push の lint は12本中0本失敗）。
+  - 直しの本体は fix **f6889f2**、spec は de40638 と 37cae7a。
+  - 設計書は vault の d1464a21（ADR-176）。
+- **CI**（run 43590694749・head 252998f・push から5分の時点 20:39:45）
+  - test (char)：**success**（20:38 に終わった）。
+  - test (e2e)・test (audit)・test (webkit)：in_progress。
+  - 20:39:45 に GitHub API の未認証の回数の上限（60回/時・同じ IP の他の作業と共用）に達したので、この後は見ていない。test (e2e) の緑の確認は②の完了確認に回す。
