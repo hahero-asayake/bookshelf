@@ -245,3 +245,30 @@
 - `tests/visual/screens.spec.js` で保存先に関わるのは「設定の1節」(`06-settings-section`) だけ。保存先セレクトと
   「この端末のフォルダ」のパネルを開いた形で、今回の変更 (接続・切断の処理と、操作した時にだけ出る知らせ・確認の文面) では見た目が変わらない。
   上の画像比較でも差分 0件。
+
+## step4 設計書の更新・rebase・push 前の確認 (2026-11-14 15:02〜15:13)
+
+### 設計書 (obsidian `80_🚀project/81_🚀development/bookshelf/`)
+
+- 03_詳細設計書: SyncConfigManager の `setMethod` を呼ぶ操作から GitHub の接続を外し (「この設定で使う」だけ)、`_connectToGitHub` を決めない書き込みに入れた。
+  `resetMethod` は「保存先だった接続を切った時」(GitHub の切断は method が github だった時・ハブの切断は method が hub だった時) に直し、
+  保存先でない接続の切断は接続情報だけを消すことを書いた。設定画面のメソッド表の `_connectToGitHub` / `_disconnectGitHub` の行にも同じことを書いた。
+- 06_データ仕様書 §同期設定 bookshelf_sync: 決める操作を「GitHub の「この設定で使う」」に直し、切断は保存先だった接続を切った時だけ印を外すこと・
+  GitHub への接続が決めない書き込みであることを書いた。
+- 08_意思決定記録: ADR-056 追補5 (経緯・決めたこと・理由・採らなかった案 C・合わせて変えた文面)。追補4 の「GitHub の接続＝決める操作」を変えた。
+- 04_画面設計書・07_残検討事項: 該当の記述なし (「切断」はステータスバーの同期の状態のことで、GitHub の切断の確認の文面は書かれていない)。
+- obsidian の commit: c6a0930a (3ファイル・6行足して5行消した)。作業前に vault の index と3ファイルに他の変更が無いことを確かめ、この3ファイルだけを stage した。
+
+### rebase と流し直し
+
+- origin/main が 88f02ba → 6dc2c04 に進んでいた (5 commit。#615・#623 の js/bookshelf.js・js/dashboard.js・index.html の ?v= 等)。衝突なしで載せ直した。
+- ?v=: sync-config.js・screens/settings.js とも 2026111630。origin/main 6dc2c04 の index.html の最大は 2026111603 で、2026111630 は origin/main に無い。
+- js/bookshelf.js に他イシューの変更が入ったので、e2e の差を流し直した:
+  `node scripts/verify/e2e-diff-main.mjs --port=8130 --out=/home/kuroko/worktrees/bookshelf/_artifacts/630-e2e-diff-2` (15:03〜15:11)
+  - E2E: 新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件・判定不能 0件。base 993 passed / work 999 passed。どちらも 0 failed・0 flaky・594 skipped。
+  - vitest (両側): 1088 passed・0 failed・2 todo。差 0件。画像比較 (work 側): 54件中 0件が差分。
+- `npm test`: 73 ファイル・1088 passed・2 todo。
+- lint 11本 (copy 119/119・terms・css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・e2e-gate・known-red) と
+  `check:version --range=origin/main..HEAD`: どれも exit 0。
+- 関係する spec (sync-github-disconnect・sync-chosen-mark・sync-first-connect) を単独で: 18 passed。
+- bookshelf の fix の commit の件名に「(設計: 03/06/08 2026-11-14 更新)」を足した (HEAD が自分の commit であることと、amend の前後で木が同じことを確かめた)。
