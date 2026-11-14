@@ -110,17 +110,27 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 - `gate-setup.js` の `seedLibraryForTest` は再読込のたびに見本を入れ直すので、再読込をまたいで「残る」を確かめる時は使わない。
 - webkit では流さない（`gate-webkit` の `testIgnore`）。Playwright の WebKit は、電波なしの間は SW のキャッシュからも読めない（最小の SW でも再読込が失敗する）。iPhone の電波なしは人の実機 H1 で見る。
 - SW がページを制御している間は、webkit では `page.route`・`context.route` の模擬が効かない（通信が実ネットワークへ出る）。
+- J8-4（電波が戻ると同期される）は SW を動かさない（既定のまま）。書き方は次の節。
+
+## 電波なし・電波が戻る（SW を止めたまま・J8-4・イシュー#617）
+
+アプリは開いたままで電波だけが切れる場面は、SW を止めたまま（既定）で書く。webkit でも外部の模擬が効く。見本は `j8-4-online-resync.spec.js`。
+
+- 電波の切り替えは `helpers/gate-network.js` を使う。前提で `prepareOfflineForTest(context, `${HUB_BASE}/**`)`（外部の模擬を掛けた後に呼ぶ）、操作で `goOfflineForTest(context)`・`goOnlineForTest(context)`。
+- **`context.setOffline(true)` だけで書かない**。chromium は `navigator.onLine` が false になり 'offline' も出るが、route で模擬した通信は模擬が答えてしまう（電波なしの間に保存先へ届く＝何も確かめずに緑になる）。webkit は模擬した通信も失敗する。'online'・'offline' はどちらのブラウザでも出る（2026-11-14 に実測）。`gate-network.js` は、電波なしの間、模擬より手前で通信を落として、両方のブラウザを同じにする。
+- 電波が戻った後の送り直しを、自動の再試行（5秒・15秒・45秒）と見分ける。電波なしの間に、状態バーの「保存できていない」知らせが出るまで待つ（次の番は15秒後になる）。電波を戻した後、知らせが既定の5秒以内に消えることを確認にする。
+- 門ではない E2E（二重に送らない・送信中に重ならない・電波なしのまま開き直した端末）は `tests/e2e/online-resync.spec.js`。
 
 ## J7・J8 の網羅（イシュー#589・2026-11-14）
 
 | 観測点 | spec | chromium | webkit |
 |---|---|---|---|
 | J7-1 | `j7-billing.spec.js` | 緑 | 緑 |
-| J7-2 | `j7-billing.spec.js` | 既知の赤（#604） | 既知の赤（#604） |
+| J7-2 | `j7-billing.spec.js` | 緑 | 緑 |
 | J7-3・J7-4 | `j7-account-delete.spec.js` | 緑 | 緑 |
-| J8-1 | `j8-offline.spec.js` | 既知の赤（#597） | 流さない（Playwright の制約） |
+| J8-1 | `j8-offline.spec.js` | 緑 | 流さない（Playwright の制約） |
 | J8-2・J8-3 | `j8-offline.spec.js` | 緑 | 流さない（Playwright の制約） |
-| J8-4 | — | 未達・#588 の部品待ち | 未達・#588 の部品待ち |
+| J8-4 | `j8-4-online-resync.spec.js` | 緑 | 緑 |
 
 ## 既知の赤（`docs/gate/known-red.json`・イシュー#589）
 
