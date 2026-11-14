@@ -237,3 +237,29 @@ Received: 1
 
 - 19:19 の時点で、origin/main は 80e2cc8 まで進んでいた（585f13a から14進み、#663・#668 が入った）。#663 は js/bookshelf.js（読み直しの後の本棚の切り替え。こちらの finishStartup とは別の箇所）と index.html の bookshelf.js の `?v=`（2026111798）を変えている。
 - なので、push の前にもう1回 rebase が要る。index.html の `?v=` は、こちらの 2026111799 がまだ新しい（衝突したら 99 を採る）。rebase の後に lint・npm test・新しい spec・関連する spec を流し直してから push する。
+
+## step5 push の前の載せ直しと流し直し（2026-11-14 19:25〜19:29・**push はしていない**）
+
+### 載せ直し
+
+- 19:25 に `git fetch` した。origin/main は 4fa0d72 で、585f13a から26進んでいた。#666 はまだ入っていない。
+- `git rebase origin/main` で、衝突は index.html の bookshelf.js の `?v=` の1行だけだった（main は 2026111868・こちらは 2026111799）。step4 の時点の 99 は、もう main の最大より古い。
+  - origin/main の最大は 2026111868。開いている他の worktree には 2026111876 がある。それより新しい **2026111877** にした。
+- js/bookshelf.js は衝突なしで合わさった。main 側の変更は L3730 付近と L6976〜7023 付近で、finishStartup（L433-）の近くではない。直しの1行は L439 のまま。
+- 載せ直した後の commit：5c39d14（docs）・b4d33d5（test）・536f831（fix）・d74c9a5（docs）。`check:version --range=origin/main..HEAD` は OK。
+
+### lint・単体・関連する spec
+
+- `npm run lint`：12 本中 0 本失敗。`npm test`：Test Files 80 passed・Tests 1197 passed | 2 todo。
+- 新しい spec と関連する6 spec（`tmp/672/step5-specs.txt`）の結果は、**1 failed / 26 passed**（47.9s）。新しい spec の6本は全部通った。
+- 落ちたのは sync-conflict-overwrite.spec.js:76「Asayake ハブ: 書き込みで衝突した時に『この端末の内容で保存先を上書き』を選ぶと…」。メッセージは「gate-hub.js: private/notes.json に『#645 端末Bが古い版のまま書いた短文メモ』が 20000ms 以内に届かなかった」（L92 の `s.waitNotes(MEMO_B)`）。起動の読込は成功している場面で、上書きを選んだ後の書き込みが届くかを見ている。`_initLoadFailed` は立たないので、今回の直しの1行は働かない。
+
+### 切り分け（同じ spec を3回ずつ）
+
+| 版 | Asayake ハブの上書き（L76） | ほか（GitHub の上書き・L115） | 出力 |
+|---|---|---|---|
+| このブランチ（d74c9a5） | 3回中1回落ちた | 全部通った | `tmp/672/step5-rerun-overwrite.txt`（8 passed / 1 failed） |
+| origin/main 4fa0d72（直しが無い版。一時 worktree） | **3回中2回落ちた**（同じメッセージ） | 全部通った | `tmp/672/step5-base-overwrite.txt`（7 passed / 2 failed） |
+
+- 直しが無い main でも同じ場所が同じメッセージで落ちる。なので、このイシューの直しが持ち込んだ赤ではなく、main にもとからある不安定さ（負荷が高い時にハブへの書き込みが20秒で届かない）と見る。step4 の全件比較（base 02772ca）では、この spec は落ちていなかった。
+- ②の指示（関連する spec が赤になったら push せずに報告）に従い、**push はしていない**。一時 worktree は `_trash/672-base-4fa0d72` へ退避し、`git worktree prune` した。
