@@ -140,3 +140,54 @@ GATE_WEBKIT=1 PORT=8198 PLAYWRIGHT_BASE_URL=http://localhost:8198 npx playwright
   - この1本は保存先がローカルで、ハブの /data（一覧・PUT・まとめ書き）を通らない。今回変えた道を通らず、失敗の判定も既定（0回・false）のままなので、変更とは関係のない揺れと判断した。単独で3回流すとすべて通り、全部を流し直しても通った。
   - billing-portal-return.spec.js は、step1 の後に main で a245035 が変えている（ハブの起動待ちの書き方）。step1 の表の数字は変わる前の版のもの。
 - (a) で、ハブから読む gate spec（j5-4・j5-5・j5-6・j6-3）のアプリは、hub-adapter の readJSON → `_tryReadFromEtagCache` → `_ensureRemoteEtagMap` で一覧の entries を ETag 表に使うようになる。通信の回数は測っていないが、合否は step1 と同じ（chromium と gate-webkit で全部通る）。
+
+## step3 呼び出し元を gate-hub.js へ移し、storage-fakes.js から installFakeHub を外す（2026-11-14・土台 origin/main 15b0f9e）
+
+- 始める前に fetch した。origin/main は 15b0f9e で、06:18 に rebase した時から動いていない（`git ls-remote` でも同じ）。3 spec は #603 の最終版（#603 は done）。#602 が storage-fakes.js の末尾に足す `installReloadPermissionPrompt` は、origin/main にまだ入っていない（rebase の衝突は起きていない）。
+- 移したもの（commit 4e54188）:
+  - 3 spec（shelf-file-delete・book-memo-file-lifecycle・save-failure-visible）の `bootWithHub` を、`createHubStateForTest({ usedBytes: 0, email })` → `seedHubLoginForTest(page, state, { method: 'hub', library: false })` → `mockHubForTest(page, state)` → `hubStoreForTest(state)` の順に替えた。email は spec ごとの今までの値を渡している。読み口の名前は同じなので、`bootWithHub` より下は変えていない。
+  - 接続の投入は `seedHubLoginForTest` に替えられた。入る値は増える（plan・使用量・公開名義 `hahero`・`publish:{target:'hub'}` など）が、起動の進み方（空のハブ →「新規データで初期化しますか？」→ OK → `private/bookshelves/all.json` が書かれる）は変わらなかった。spec 側の投入を残す必要は無かった。
+  - storage-fakes.js は 482行 → 328行。外したのは `FAKE_HUB_BASE`・`normEtag`・`installFakeHub`。残したのは `CORS`（GitHub の模擬が使う）・`FAKE_GITHUB`・`installFakeGitHub`・`installFakeLocalFolder`・`installLocalWriteFailures`。冒頭のコメントと「読み口は installFakeHub と同じ」の2か所を直した。
+  - gate-hub.js は冒頭のコメントだけ（外した関数の名前を書いていた行）。tests/e2e/gate/README.md の表は、`failHubWritesForTest` の行に回数の指定を足し、`hubStoreForTest` の行を足した。
+- 今までと違う点（合否には出ていない）:
+  - 接続を入れるのは、そのタブで最初の1回だけになった（今までは読み込みのたびに入れ直していた）。ハブで再読込するのは book-memo の「変更してすぐ再読込」だけで、これは fixme で流れていない。fixme を外す時は、再読込の後にアプリ自身が保存した接続情報が残る（本物に近い）。
+  - 書き込みを失敗させた時の本文が `{error:'injected write failure'}` から `{error:'gate-hub.js の模擬: 書き込みの失敗'}` に変わった（どちらも 500）。
+  - `GET /usage` は課金の項目（billingManaged・planSource など）も返す。plan・usedBytes・quotaBytes は今までと同じ値。
+
+### 確認
+
+| 何を | 結果 |
+|---|---|
+| (i) `git grep -nE 'installFakeHub\|FAKE_HUB_BASE\|fakehub\.test'` | scripts/verify 以外は0件。残るのは scripts/verify/587-results.md（#587 の記録・2行）と、この記録だけ |
+| (ii) 3 spec を chromium で（PORT=8198） | 51本中 47 passed・4 skipped（どれも既存の `test.fixme`）・失敗0・flaky 0（1.7分）。step1 の結果と1本ずつ突き合わせて、51本すべて同じ |
+| (iii) 模擬に無い道（501） | 0件（3 spec・51本の実行の間） |
+| `npm run lint:e2e-gate`・`lint:internal-refs`・`lint:e2e-goto`・`lint:e2e-wait` | どれも OK（@gate 32本・違反0。内部参照は上限82以内） |
+| `npm test`（vitest） | 73ファイル・1076 passed・2 todo |
+
+- (iii) の確かめ方: `state.requests` は状態コードを持たないので、501 を返す行の直前に「環境変数 `GATE_HUB_501_LOG` があれば、その道をファイルに1行書く」という1行を一時的に足して3 spec を流した（ファイルは作られなかった = 0件）。この1行が本当に拾うことは、模擬に無い道（`GET /no-such-route-598`）を1回呼ぶ対照の spec で確かめた（501 が返り、ファイルに1行出た）。足した1行と対照の spec は commit していない（gate-hub.js の差分はコメントだけ）。
+- (ii) の突き合わせの相手は step1（main 54363ab）の結果。3 spec は 54363ab から 15b0f9e の間に変わっていない。同じ土台での比較（origin/main と作業ツリー）は step4 の e2e-diff-main で行う。
+
+ハブを使う18本（fixme の1本を含む）の突き合わせ:
+
+| spec | テスト | step1 | step3 |
+|---|---|---|---|
+| book-memo-file-lifecycle | 長文メモ: 保存先に書けない間の変更 Asayake ハブ (イシュー#594) › 書けない間に題名を変えても、記録が残り、次の保存で新しい名前へ移って古いファイルが消える | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモ: 変更してすぐ再読込 Asayake ハブ (イシュー#594) › 題名を変えてすぐ再読込しても、新しい名前で読め、次の保存で古いファイルが消える | skip（fixme） | skip（fixme） |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ (イシュー#594) › ASIN を変えると、長文メモが新しい名前で読め、古いファイルが残らない | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ (イシュー#594) › 本を削除すると、保存先からその本の長文メモのファイルが消える | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ (イシュー#594) › 題名を変えると、長文メモが新しい名前で読め、古いファイルが残らない | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ・使えない文字と空白を含む題名 (イシュー#594) › ASIN を変えると、長文メモが新しい名前で読め、古いファイルが残らない | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ・使えない文字と空白を含む題名 (イシュー#594) › 本を削除すると、保存先からその本の長文メモのファイルが消える | 通った | 通った |
+| book-memo-file-lifecycle | 長文メモのファイルが取り残されない: Asayake ハブ・使えない文字と空白を含む題名 (イシュー#594) › 題名を変えると、長文メモが新しい名前で読め、古いファイルが残らない | 通った | 通った |
+| save-failure-visible | 保存の失敗が画面に出る: Asayake ハブ (イシュー#603) › 1回目の自動の再試行で直る失敗は、何も出さずに保存される | 通った | 通った |
+| save-failure-visible | 保存の失敗が画面に出る: Asayake ハブ (イシュー#603) › 再試行が尽きた失敗は状態バーに原因と「再試行」が出て、「再試行」・次の保存で消える (通常の保存と本棚の削除) | 通った | 通った |
+| save-failure-visible | 日本語のブラウザでの表示 (イシュー#603) › 同期欄の時刻と状態バーの文言が日本語の表記で出て、状態バーの行がはみ出さない | 通った | 通った |
+| save-failure-visible | 自動の再試行を待つ間にネットにつながったら、すぐ再試行して保存する (イシュー#603) | 通った | 通った |
+| shelf-file-delete | 本棚の削除で保存先の本棚ファイルも消える: Asayake ハブ (イシュー#587) › 子を持つ本棚を削除すると、親と子の両方のファイルが保存先から消える | 通った | 通った |
+| shelf-file-delete | 本棚の削除で保存先の本棚ファイルも消える: Asayake ハブ (イシュー#587) › 本棚の名前を変えても、保存先の本棚ファイルは同じ1つのまま (古いファイルが残らない) | 通った | 通った |
+| shelf-file-delete | 本棚の削除で保存先の本棚ファイルも消える: Asayake ハブ (イシュー#587) › 本棚を1つ削除すると、保存先からその本棚のファイルが消える | 通った | 通った |
+| shelf-file-delete | 本棚ファイルの削除待ち: Asayake ハブ (イシュー#587) › 保存先にまだ無い本棚ファイルの削除が混ざっても、保存は失敗しない | 通った | 通った |
+| shelf-file-delete | 本棚ファイルの削除待ち: Asayake ハブ (イシュー#587) › 削除の保存が一度失敗しても、次の保存で本棚ファイルが消える | 通った | 通った |
+| shelf-file-delete | 本棚ファイルの削除待ち: Asayake ハブ (イシュー#587) › 削除待ちの slug で作り直した本棚のファイルは消えない | 通った | 通った |
+
+残りの33本（GitHub・ローカルの分と、GitHub だけのテスト）も、step1 と同じ（30 passed・3 skipped）。
