@@ -247,3 +247,25 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 - 前の run（17:48・--workers=6・load average 75〜94）だけで落ち、workers を絞ると base・この版とも全部通った。この版だけで落ちる赤は無い。
 - 9本のうち残りの6本（load-conflict-unsaved・first-run-init-status・gate/j6-5・gate/j6-4・gate/j1-3-connect-hub・gate/j6-3-hub-other-device）は、前の run で全部通っていたので、今回は流していない（全件比較の負荷を増やさないため）。
 - 「Branch main was updated since batch start」（GitHub のまとめ保存の衝突）について: この版が origin/main に足した行のうち、保存の入口（`saveUserData`・`_runPendingSync`・`syncToObsidianFolder`・`_scheduleSyncRetry`・`_pendingSync = true`）を呼ぶ行は0行。`_retrySyncNow`・`_resolveSyncHold` は、元から状態バーのクリックの処理にあった呼び出しを `_runStatusAction` へ移しただけで、呼ばれるのはボタンを押した時だけ。`_renderSyncState` は DOM を書くだけで、呼ぶのは `updateSyncStatus`・`_onSyncFailed`・`_clearSyncFailure` の3か所。帯の描き直しも DOM の hidden を変えるだけ。保存を余分に呼ぶ経路は足していない。
+
+#### 全件比較（e2e-diff-main・4回目の run）
+
+- 前の run の全件比較は、run が途中で終わった時に一緒に止まった（base の途中・結果なし）。今回は run から切り離して流した（`setsid nohup`）。e2e-diff-main には workers を絞る口が無い（CLI に無い）ので既定のまま流した。新しく落ちたものは3回まで流し直す作り。
+- 18:03:58 開始（load average 40.17）→ 18:18 頃終了。base は origin/main `f9468f8`、work はこの版（HEAD `b405a32`）。途中の負荷は 28〜83（`tmp/657/iso-uptime.txt`）。結果一式は `tmp/657/e2e-diff4/`（出力 `tmp/657/step4-e2e-diff4.txt`）。
+
+| 区分 | E2E (playwright) | Unit (vitest) |
+|---|---|---|
+| 新しく落ちた | **0件** | 0件 |
+| 新しく通った | 5件（下） | 0件 |
+| 両方で落ちた／既存の問題 | 0件 | 0件 |
+
+新しく通った5件（base 側だけで落ちた＝負荷による揺れ。この版の変更が直したものではない）:
+- book-memo-file-lifecycle「長文メモのファイルが取り残されない: GitHub」3件（本を削除すると…・題名を変えると…・使えない文字と空白を含む題名）。前の run でこの版の側だけが落ちた3件と同じテストで、今回は base 側だけが落ちた。
+- duplicate-asin-notice「本の詳細に付け直し案内が出て…」1件。
+- gate/j3-5-many-books「@gate J3-5 913冊・CPU 6倍遅くでも…」1件（時間を測るテスト）。
+
+画像の差分（playwright.visual.config.js・work 側）: 0件 / 54件。
+
+#### 載せ直した後の lint・単体（最後に流した）
+
+- 18:16:02（load average 76.56）に流した。`npm run lint` **12 本中 0 本失敗**。`npm test` 79 files・1181 passed・2 todo。`npm run check:version -- --range=origin/main..HEAD` OK。出力は `tmp/657/step4-lint-final.txt`・`tmp/657/step4-unit-final.txt`。
