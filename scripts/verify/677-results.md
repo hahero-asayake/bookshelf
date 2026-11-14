@@ -287,3 +287,44 @@ S1 の1回目・S2 の2回も、並びは同じで、時刻の差は ±30ms 以�
     - 回路遮断：範囲が広い。
     - 飛ばすだけ：通信が戻っても0個のまま。
   - 補足：ADR-057（2段化）で、手元にデータがある起動は画面を出した後に activate している。activate が起動より後になるのは、新しい種類の時機ではない。ADR-059 の「欠けたら起動時に復元」は、読込が通った時に果たす。
+
+## §5 最新の main への載せ直し・全件比較・設計書（2026-11-14 20:07〜）
+
+### 載せ直し（2回）
+
+- **1回目（20:07・origin/main 95d6f9d）**：#666（起動の読込の失敗の文と「再試行」・GitHub の toast をやめた）・#675・#673 の docs が入っていた。衝突は2か所。
+  - index.html：sync-failure.js は main の値（2026111886）を残した。bookshelf.js の `?v=` は main（2026111890）より新しい **2026111892** にした。
+  - js/bookshelf.js：#666 の `_clearInitLoadFailed()` と新しい `_retryInitLoad()` をそのまま残し、その前に `_runStartupTail()`・`_runStartupTailIfPending()` を入れた（`tmp/677/resolve.mjs`）。
+  - #666 で GitHub の toast が無くなったので、コメントの「toast の「再試行」」を「状態バーと同期欄の「再試行」」に直した（fix の commit に含めた）。
+  - **#666 に合わせた spec の直し**（test 37cae7a）：新しい spec は、ハブ・GitHub とも状態バーの読込の失敗の行 `#app-status-bar [data-load-failure]` で待つ形にした。#666 が boot-load-checking-row.spec.js に入れた待ち方と同じ。基準（失敗の行が出てから2秒・戻った後5秒）は変えていない。
+  - この時点の確認（95d6f9d の上）：
+    - 新しい spec を3回：21 passed。
+    - #666 が触った関係 spec 7ファイル（boot-load-checking-row・boot-load-failure-status・boot-load-failure-message・online-resync・github-sync-resilience・plugin-seed・gate/j8-4）：32 passed。
+    - `npm run lint` 12本中0本失敗・`npm test` 1199 passed。
+  - online-resync.spec.js・boot-load-failure-status.spec.js は、この件では書き換えていないので衝突は無い（②の申し送りの確認）。
+- **2回目（20:12・origin/main fb3f3b9）**：1回目の後に #679 が入った。#679 は、ハブの一覧の控え（ETag の表）を読み直しのたびに取り直す直しで、§4 の sync-conflict-overwrite L76 のハブの上書きの赤の原因を直している。
+  - 全件比較を1回目の base（95d6f9d）の上で流し始めたら、比較の base が fb3f3b9 になった。work だけ #679 が無いと比べ方がずれるので、比較を止めて載せ直した（衝突なし）。
+  - `?v=`：bookshelf.js 2026111892（main の最大 2026111891 より新しい）・plugin-loader.js 2026111880（main は 2026110300）。`check:version --range=origin/main..HEAD` は OK。
+  - `npm run lint` 12本中0本失敗・`npm test` Tests 1201 passed（2 todo）。
+- 載せ直した後の commit（古い順）：253d802（§1）・f828444（§2）・de40638（test）・1cf6e4d（§3）・f6889f2（fix）・4179d77（§4・boot-flow.md）・37cae7a（test・#666 に合わせた待ち方）。
+
+### 設計書（obsidian 80帯・vault commit d1464a21・20:12）
+
+- 05_プラグイン仕様書：読み込みの時機の行を足した（保存先の読込が通った後に1回だけ。失敗した起動では読み込まず、後で読込が通った時に1回。既に有効なものは2回 activate しない・ADR-176）。
+- 03_詳細設計書：VirtualBookshelf の主要メソッドに `_runStartupTail()` / `_runStartupTailIfPending()` の行を足した。BookshelfPluginLoader の要点に `lastListFailed` と `loaded` を飛ばすことを足した。
+- 08_意思決定記録：**ADR-176** を足した（背景・決定・理由・却下した案・確かめ方）。番号は、20:10 の時点で最後だった ADR-175（#675）の次。08 は CRLF のまま書いた。
+- 書き方は #671 と同じで、3ファイルだけを add して commit した（他の staged が無いことを確かめた）。push の後に bookshelf 側の sha が決まるので、vault の commit の題には sha を書かず、イシュー番号で対応させた。
+
+### 全件比較（e2e-diff-main）と代替判定
+
+- `node scripts/verify/e2e-diff-main.mjs --port=8177 --workers=4 --out=tmp/677/e2e-diff` を 20:12 に始めた（8177 は空き・load 1.2）。
+  - **base（origin/main fb3f3b9）の E2E は終わった**：expected 1199・unexpected 0・flaky 0・skipped 592（435秒・`tmp/677/e2e-diff/base.e2e.json`）。
+  - **work 側（fb3f3b9＋この件の7本）の E2E は 20:23 に始まったところで、このステップの待ちの上限（20:32 の5分前）までに終わらない**。20:24 に止めた。仮の worktree は残っていない（`git worktree list` で0件）。
+  - 1回目（95d6f9d の上・20:10）の比較は、base が先に進んだ fb3f3b9 になったので、20:11 に止めた（上の「載せ直し」）。
+- **代替判定**（detail の「その時点の表と、新しい spec・関係する spec の結果で判定」）
+  - base は1199本すべて緑で、落ちるものは無い。
+  - 載せ直した後の tree（fb3f3b9＋この件）で、新しい spec と関係する spec 9ファイルを流した：**43 passed・0 failed**（52秒・`tmp/677/step5-final.txt`）。
+    - 対象は boot-load-failure-tail・boot-load-checking-row・boot-load-failure-status・boot-load-failure-message・online-resync・github-sync-resilience・plugin-seed・gate/j8-4-online-resync・sync-conflict-overwrite。
+    - §4 で赤だった sync-conflict-overwrite L76 のハブの上書きは、#679 の直しが入った後は緑だった。
+  - step4（95d6f9d の前）の関係 spec 17ファイルは、84 passed・1 failed（上の1本・#679 で直った）だった。
+  - **全件の work 側は流せていない**。新しく落ちたものが0件かは、全件では確かめていない。step6 の push の前に、work 側だけの全件（`npm run test:e2e` か e2e-diff の再実行）を流すか、CI の test (e2e) で見るかを②に決めてほしい。
