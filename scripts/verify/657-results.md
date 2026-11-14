@@ -141,3 +141,55 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 - ハブ・GitHub は見えるかの所で止まるので、その後の判定（文・ボタン・正常に戻る）は直す前には届かない。隠れた要素の文が状態バーと同じであることは step1 の実測（§2）で確かめてある。ボタンは同期欄にまだ無い。
 - ローカルの未保存（読込時）は、#639 の `load-conflict-unsaved.spec.js` が同期欄の文を確かめている。「選ぶ」ボタンの確かめは step3 で足すかを決める（このステップでは足していない）。GitHub の書き込み時の未保存（sync-conflict）は足していない（GitHub の衝突は #645 が触る所。読込時の未保存は足した）。
 - e2e の lint（`check-e2e-goto`・`check-e2e-async-wait`・`check-e2e-external`）は通った。
+
+## step3 直して緑にし、関係する spec・lint・単体を通し、画像を撮る
+
+### 直したこと（commit b01cfcc）
+
+- index.html: `#obsidian-sync-status` を、id を変えずにローカルの欄の足元から、保存先の選択のすぐ下の新しい行 `#sync-state-row`（3つの保存先に共通）へ移した。ボタンの入れ物 `#sync-state-actions` も同じ行に置いた。`?v=` は bookshelf.js・bookshelf.css とも 2026111720（origin/main の最大 2026111710 より新しい）。
+- js/bookshelf.js:
+  - `updateSyncStatus` は、名前と文を書く本体（`_applySyncStatus`）を呼んだ後、書いた文を「失敗が解けた時に戻す文」として控え、`_renderSyncState` で状態の行を描く。
+  - `_renderSyncState`（新）: 保存の失敗・書くのを止めている間（`_syncError && _syncFail`）は、状態バーと同じ源から文とボタンを出す。1回目の自動の再試行を待つ間（quiet）と再試行中は `RETRYING_MESSAGE`（警告の色）、尽きた後・止めている間は `_syncErrorMsg || f.message`（危険の色）。ボタンは状態バーと同じ条件で「再試行」（`retry-sync`）と「選ぶ」（`resolve-hold`）。「確認」「ログインし直す」（`open-sync`）は出さない。文が空なら行を隠す。
+  - `_onSyncFailed`・`_clearSyncFailure` の最後で `_renderSyncState` を呼ぶ。
+  - ボタンの動きは、状態バーと同期欄の行で同じ関数（`_runStatusAction`）を通す。
+  - (c) ローカルの保存の失敗（要再接続ではない種類）は「（要再接続）」を付けず、状態バーと同じ文を出す（「「フォルダを選ぶ」を押して…」への読み替えをやめた）。
+- css/bookshelf.css: `.sync-state-row`（折り返す横並び）・`.sync-state-actions`。
+- 文は SyncFailure の文だけを使い、同期欄のための文は足していない。
+
+### 確かめたこと
+
+| 何を | 結果 | 出力（tmp/657/・git には入れない） |
+|---|---|---|
+| 新しい spec（chromium＝広い幅・webkit＝iPhone 13 相当の 390 幅） | 1回目 16 passed・2 skipped（ローカルは webkit で流さない） | step3-after-1.txt |
+| 新しい spec の繰り返し（--repeat-each=2） | 32 passed・4 skipped（1回目と合わせて3回とも緑） | step3-after-repeat.txt |
+| visual（playwright.visual.config.js の「設定の一覧」「設定の1節」） | 12 passed（基準画像は変えていない） | step3-visual.txt |
+| 関係する spec 19本（chromium）: load-conflict-unsaved・save-failure-visible・gate/j6-5・gate/j6-4・gate/j1-3-connect-hub・同期欄を読む13本・publish-article-editor・ux-h-series・standard-ops | 250 passed・1 skipped | step3-related.txt |
+| `npm run lint` | 12 本中 0 本失敗 | step3-lint.txt |
+| `npm test` | 77 files・1156 passed・2 todo | step3-unit.txt |
+| `npm run check:version -- --range=origin/main..HEAD` | OK（変えた js/css はすべて ?v= を上げてある） | – |
+
+- visual は、保存先を決めていない端末の設定の画面で、状態の行は空（隠れる）なので基準画像と同じだった。
+
+### 直した後の画像（`_local/657/shots/`）
+
+広い幅は chromium 1280、390 幅は webkit の iPhone 13 相当（ローカルだけは webkit で流せないので chromium で幅を 390 にした）。撮る前に行の座標を測った（`after-*.json`）: どれも行は保存先の選択の下（選択の下端 ≤ 行の上端）で、右端は 390 幅で 356・広い幅で 1185＝画面の外へはみ出していない。
+
+| 状態 | ハブ | GitHub | ローカル |
+|---|---|---|---|
+| 正常 | after-hub-normal-{wide,390}「〈時刻〉 保存済み」（緑） | after-github-normal-{wide,390} | after-local-normal-{wide,390}「〈時刻〉 同期済み（…）」 |
+| 未保存（読込時） | after-hub-unsaved-{wide,390}「保存先とこの端末の両方が変わっているため、保存先へ保存していません。…」＋「選ぶ」 | after-github-unsaved-{wide,390} 同じ | （#639 の spec で確かめ済み・画像なし） |
+| 保存失敗（再試行が尽きた後） | after-hub-failed-{wide,390}「Asayake ハブに保存できませんでした。…」＋「再試行」 | after-github-failed-{wide,390}「GitHub に保存できませんでした。…」＋「再試行」 | after-local-failed-{wide,390}「フォルダに保存できませんでした。…」＋「再試行」（直す前は「「フォルダを選ぶ」を押して…」＝before-local-failed-*） |
+
+### 「この保存先を使用中です。」の帯（②の申し送り3・この tp で決める）
+
+ハブの保存失敗・未保存の 390 幅で、3つの案を DOM に入れて撮った（アプリの動きではない）。
+- 案1 帯の印を中立にする（band-neutral-hub-{failed,unsaved}-390）: チェックの印を雲の印に替え、使用中の色（is-active）を外した。外すと今ある「未適用」の時の警告の色になる（中立の色の帯は今の部品に無い）。
+- 案2 保存できていない間は帯を出さない（band-hidden-hub-{failed,unsaved}-390）: 使用中であることは、下の「使用中」ボタン（押せない）で分かる。
+- 案3 帯の文を変える（band-text-hub-{failed,unsaved}-390）: 警告の印と「この保存先を使用中です。保存できていない変更があります（上の文を見てください）。」。
+
+推奨は **案2**。上の赤い行が保存の状態のただ1つの文になり、帯と2か所で別の言い方をしなくて済む。使用中であることは「使用中」ボタンで残る。案1は今の部品では警告の色になり、未適用の時の見た目と区別が付かない。案3は上の行と同じことを別の文でもう一度言う（文の決め方が2か所になる）。
+
+### そのほか
+
+- 時刻の書き方（「5:19:46 PM」）は、テストのブラウザの言語のせい。playwright.config.js に locale の指定が無く、Playwright の既定（en-US）で動いている。アプリは `toLocaleTimeString()` を言語の指定なしで呼ぶ（js/bookshelf.js の updateSyncStatus の2か所）ので、日本語の端末では「17:19:46」の形になる。英語の設定の端末では英語の書き方になる作り。起票するかは②の判断に任せる（直していない）。
+- 撮る spec は `tmp/657/zz-shots-sync-section-status.spec.js`（git には入れない。流す時は `tests/e2e/` へ写す。名前に `sync-section-status.spec.js` を含めると webkit の project で流れる）。
