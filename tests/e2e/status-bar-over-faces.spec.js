@@ -487,11 +487,17 @@ async function expectFitsBelowBand(page, rootSel) {
     }, { message: `${rootSel} が帯の下に収まる` }).toBe('ok');
 }
 
-/** 通常の click (force なし) がボタン自身に届く (帯に取られない) */
+/** 通常の click (force なし) がボタン自身に届く (帯に取られない)。押した後に面が閉じても同じ要素を数えるよう印を付ける */
+let clickSeq = 0;
 async function expectClickReaches(page, locator) {
-    await locator.evaluate((el) => { el.__clicks682 = 0; el.addEventListener('click', () => { el.__clicks682 += 1; }, { capture: true }); });
+    const mark = `c682-${++clickSeq}`;
+    await locator.evaluate((el, m) => {
+        el.dataset.click682 = m;
+        el.__clicks682 = 0;
+        if (!el.__clicks682Bound) { el.__clicks682Bound = true; el.addEventListener('click', () => { el.__clicks682 += 1; }, { capture: true }); }
+    }, mark);
     await locator.click();
-    await expect.poll(() => locator.evaluate((el) => el.__clicks682)).toBe(1);
+    await expect.poll(() => page.locator(`[data-click682="${mark}"]`).evaluate((el) => el.__clicks682)).toBe(1);
 }
 
 async function openArticleEditor(page) {
@@ -522,10 +528,12 @@ test.describe('(g) PC 幅 1280×800 (イシュー#682)', () => {
         // 編集状態: 見た目・公開・完了・その他
         await expect(page.locator('#art-mode-done')).toBeVisible();
         await expectFitsBelowBand(page, '#publish-pages-modal');
-        // プレビュー (size full) はブロックが1つ以上ある時だけ開く (_artPreview)。引き出しの「表示中のN冊を追加」で本棚ブロックを作る
+        // プレビュー (size full) はブロックが1つ以上ある時だけ開く (_artPreview)。引き出しの「表示中のN冊を追加」で本棚ブロックを作り、
+        // その他 →「表示幅を切り替えて見る」(#art-width-preview) から開く
         await page.locator('#art-drawer-add-all').click();
         await expect(page.locator('#art-canvas .art-block, #art-blocks .art-block').first()).toBeAttached();
-        await expectClickReaches(page, page.locator('#art-preview'));
+        await expectClickReaches(page, page.locator('#art-more-btn'));
+        await expectClickReaches(page, page.locator('#art-width-preview'));
         await expect(page.locator('#pp-preview-modal')).toBeVisible();
         await expectFitsBelowBand(page, '#pp-preview-modal');
         await expectClickReaches(page, page.locator('#pp-preview-close'));
@@ -548,7 +556,8 @@ test.describe('(g) PC 幅 1280×800 (イシュー#682)', () => {
         await bootHub(page);
         await openArticleEditor(page);
         const b = await fullFaceBox(page, '#publish-pages-modal');
-        expect([b.bandBottom, b.top, b.bottom]).toEqual([0, 0, b.innerHeight]);
+        // webkit の 100dvh は 843.98 のように端数が出る (直す前も同じ) ので 0.5px まで許す
+        expect([b.bandBottom, b.top, Math.abs(b.bottom - b.innerHeight) < 0.5]).toEqual([0, 0, true]);
     });
 });
 
@@ -568,6 +577,7 @@ test.describe('(g) 狭幅 390×844 (イシュー#682)', () => {
         await bootHub(page);
         await openArticleEditor(page);
         const b = await fullFaceBox(page, '#publish-pages-modal');
-        expect([b.bandBottom, b.top, b.bottom]).toEqual([0, 0, b.innerHeight]);
+        // webkit の 100dvh は 843.98 のように端数が出る (直す前も同じ) ので 0.5px まで許す
+        expect([b.bandBottom, b.top, Math.abs(b.bottom - b.innerHeight) < 0.5]).toEqual([0, 0, true]);
     });
 });
