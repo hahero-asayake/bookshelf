@@ -186,6 +186,73 @@
   - #636 が書き換えた #155 のテスト（8537c7c で変えたファイル）も流す。
 - 手元の控えに古い「すべて」本棚がある端末が、起動の直後に揃うこと（控え 3/4 を入れて起動→表示4）を、spec に1行足す。
 
+## §6 step3：直しと回帰 spec（2026-11-14 17:34〜・origin/main=1234cf4 の上に rebase）
+
+### 直し（案B・②承認）
+
+- `js/bookshelf.js`：
+  - `_ensureAllShelf`：既にある「すべての本」の `books` も、呼ばれるたびに `bookOrder.all` と同じ配列にする。`bookOrder.all` が無い時だけ、本棚の `books` から作る（本棚の `books` を空で上書きしない）。
+  - `saveUserData`・`_applyMergedRemote`：端末の控えへ書く前に `_ensureAllShelf()` を通す。
+  - `_onLibraryChanged`：揃え直しは `_ensureAllShelf` に任せる（同じことをしていた2行を外した）。
+- `index.html`：`js/bookshelf.js?v=2026111711 → 2026111712`（origin/main の最大値 2026111711 より新しい）。`sw.js` には bookshelf.js の版を持つ所が無い。
+- 設計書（obsidian）：
+  - 03_詳細設計書：`_ensureAllShelf()` の行に、揃える決まりと呼ぶ所を足した。
+  - 08_意思決定記録：ADR-166 を足した。
+- #622 は main に未着（`git log origin/main --grep "Issue: #622"` は0件）。#622 の spec と worktree には触っていない。**#622 側の R2 の fixme は、#662 の後に（#622 側か後のイシューで）外す。**
+
+### 回帰 spec（`tests/e2e/manual-add-reload-all-shelf.spec.js`）の行
+
+| 行 | 中身 |
+|---|---|
+| E | 手動で追加→待たずに再読込。「すべての本」・端末の控え（本棚 books / bookOrder.all）・フォルダの all.json が4 |
+| G | 2回目の取込で新しい本→待たずに再読込。同上で4 |
+| H | 1冊除外→待たずに再読込。「すべての本」・控えが2。フォルダは見ない（別件） |
+| I | fixme（除外した本が all.json に残る別件のため、前提にできない） |
+| J | 1冊削除→待たずに再読込。2 |
+| D | 手動で追加→待たずに再読込→記事の本の引き出しに、足した本が出る |
+| K | 古い控え（本棚 books 4・bookOrder.all 5）を入れて起動すると、「すべての本」が5 |
+| HUB | ハブの模擬：1回書き出した後に手動で追加→待たずに再読込。冊数と控えが start+2 |
+| GH | GitHub の模擬：同上 |
+
+- 読込時の3択（#622 の R1）は、再読込の少し後に出ることがある。出たら「この端末の内容」を選んでから、フォルダを見る（`expectFolderAll`）。R1 は #622 の範囲。
+
+### 実測
+
+**直す前（`js/bookshelf.js`・`index.html` を HEAD に戻して流した。各2回）**
+
+- E・D・K は、すべての行の全回で赤（計6本）。D は、引き出しに足した本が出なかった。
+- GH は2回とも、1回目の書き出しを待つ所で止まった（`waitForHubStartupForTest` が無かったため。直した後の行で足した）。
+
+**直した後・1回目（--repeat-each=5・GH を除く）**
+
+- 28 passed・7 failed・5 skipped（I）。
+- 「すべての本」の表示と、端末の控え（本棚 / bookOrder.all）は、記録の取れた全回で期待どおりだった。
+  - E 5/5（4・4/4）・G 5/5・H 5/5（2・2/2）・J 5/5
+  - K・HUB は全回緑
+- 7本の赤は、どれも遅れて出た3択（R1）によるもの。
+  - E・G・J の5本は、フォルダの all.json を待つ所で落ちた。3択を選ぶまで書かないため。
+  - D の2本は、3択が引き出しを開くボタンを覆った。
+- これを受けて spec を直した（3択が出たら「この端末の内容」を選んでからフォルダを見る `expectFolderAll`）。
+
+**直した後・2回目（全部の行・--repeat-each=5・workers=6）：40 passed・5 skipped（I の fixme）・0 failed（1.0分）**
+
+| 行 | 回数 | 「すべての本」 | 端末の控え（本棚 books / bookOrder.all） | フォルダ（または保存先） |
+|---|---|---|---|---|
+| E 手動追加 | 5 | 4（5/5） | 4/4（5/5） | all.json 4（5/5） |
+| G 2回目の取込 | 5 | 4（5/5） | 4/4（5/5） | all.json 4（5/5） |
+| H 除外 | 5 | 2（5/5） | 2/2（5/5） | 見ない（別件） |
+| J 削除 | 5 | 2（5/5） | 2/2（5/5） | all.json 2（5/5） |
+| D 記事の本の引き出し | 5 | − | − | 足した本が引き出しに出る（5/5） |
+| K 古い控えで起動 | 5 | 5（5/5） | − | − |
+| HUB ハブの模擬 | 5 | 7（5/5） | 7/7（5/5） | − |
+| GH GitHub の模擬 | 5 | 7（5/5） | 7/7（5/5） | − |
+
+**#636 を壊していないかの確認**
+
+- `tests/e2e/first-run-drawer-before-first-save.spec.js`（#636 の回帰）：--repeat-each=3 で 6 passed。
+- #155 のテスト（`tests/e2e/publish-article-editor.spec.js` の「shelfId 解決」・8537c7c で #636 が書き換えたもの）：5 passed。
+- `npm run lint`：12 本中 0 本失敗。
+
 ### 別件の候補（今回は直さない。②の判断が要る）
 
 1. 除外した本が all.json に残る。
