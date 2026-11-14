@@ -166,3 +166,48 @@
 - 08_意思決定記録：ADR-166 に追補を1行（両方を続けて書き換える経路は1回だけ書く・ADR-172）。末尾に ADR-172（背景・決定・却下した案・教訓・確かめ方）。08 の最後は ADR-171（#669）だった。08 は CRLF の行に合わせて入れた。
 - vault の commit は自動バックアップ（30分ごと）に任せる。vault の差分にある 08 の2071行の書き換えは #668 の編集で、このイシューのものではない。
 - フォルダ・GitHub：同じ読込の関数（js/bookshelf.js `_applyLoadedState` の `bookshelves.forEach(b => { bookOrder[b.id] = b.books; })`・3658行）を通るので、コードの読みで同じ・未実測（②の指示どおり spec は増やさない）。
+
+## §4 検証（step4・2026-11-14 19:14〜19:21・HEAD 21439a9＝origin/main 02772ca の上に自分の5本）
+
+- PORT=8174・`--project=chromium`・`--retries=0`。ログは手元だけ（`tmp/674/s4-*.log`）。
+- 計った時の負荷は高かった（19:19 に load average 57／16CPU。他イシューの全件比較などが同時に走っていた）。
+
+### 当該の spec（3回）
+
+| 流し方 | 対象 | 結果 |
+| --- | --- | --- |
+| `--repeat-each=3`（6並列） | duplicate-asin-notice.spec.js の3本＋duplicate-asin-repoint-hub.spec.js の1本 | **12/12 緑**（:111 も3/3） |
+| `--repeat-each=3 --workers=1` | 同じ | **12/12 緑** |
+
+- §1 の setup の揺れ（cfcd784 の3並列で 2/3 が `TypeError … reading 'bookshelves'`）は、6並列の3回で0件。A-2（setup の待ちに userData）で消えたと見る。
+
+### lint・単体
+
+- `npm run lint`：**12本中0本失敗**。
+- `npm test`（vitest）：Test Files 80 passed・Tests **1194 passed**・2 todo（失敗0）。
+
+### 関連 E2E（1回・8並列）
+
+- 対象24ファイル：`git grep -l -e bookOrder -e setAllShelfBooksForTest -- tests/e2e` と `git grep -l -e edit-original-asin -- tests/e2e`（helpers と duplicate-asin の2本を除く）。#662 の spec（manual-add-reload-all-shelf.spec.js）はこの中に入っている。
+- 結果：283本中 **268 緑・13 skip・2 赤**。
+- 赤の2本は、このイシューの差分の前（origin/main 02772ca）でも同じく赤＝このイシューの変更によるものではない：
+
+| テスト | 自分の HEAD（1並列で流し直し） | origin/main 02772ca（1並列） | 見立て |
+| --- | --- | --- | --- |
+| list-staged-render.spec.js:109 #401 並べ替えの段階描画（913冊）› 途中で1冊を動かす | 赤（DOM の並びの食い違い） | 赤 | main の既存の赤。#668 の 668-results.md §4 でも、CI の main の run 43582903319（9713381）で落ちた3件の1つとして記録されている（ほかの2件は duplicate-asin-notice＝本件で直したもの、sync-conflict-overwrite のハブの1本） |
+| sort-perf-budget.spec.js:390 #397 並び替えの時間上限（913冊・CPUx6） | 赤（許容幅を超えた） | 赤 | 時間の上限の検査で、高負荷（load 57）の下では両方で超える。負荷のせいか main の赤かは切り分けていない |
+
+- ASIN の付け直し（migrateUserData）は、この2本の経路（並べ替え・段階描画）を通らない。
+
+### 全件比較（e2e-diff-main）
+
+- 流していない。負荷が高く（load 57）約8分では終わらない見込みで、run の残り時間にも収まらないため。代わりに上の絞った比較（関連24ファイル・赤の2本は base と並べて流し直し）で判定した。
+
+### push の前に見直したこと
+
+- ADR 番号：08 の ADR-172 はこのイシューの1件だけ。その後ろに他イシューが ADR-173 を足していて、ぶつかっていない。
+- ?v=：origin/main 80e2cc8 の index.html では bookshelf.js が 2026111798（全体の最大も 2026111798）。こちらの 2026111799 の方が新しい。step5 の rebase の後でもう一度見る。
+
+### 判定
+
+- 当該の spec は3回とも全部緑（並列・1並列とも）。lint・vitest も失敗0。関連 E2E の赤2本は、base でも赤＝このイシュー由来ではない。push へ進んでよいと判断する（②の確認の後）。
