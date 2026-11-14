@@ -336,3 +336,13 @@ viewport 1280×800・行の位置 y=0 高さ 59・行の種類 load-conflict・�
     - vitest：79ファイル・1185件が通った。
     - lint：12本中0本失敗。
     - check:version：OK。
+- **さらに2回載せ直した（18:29〜18:33）**
+  - 1回目：origin/main が 6b22a9e（#662）へ進み、bookshelf.js の ?v= が同じ 2026111764 になっていた。
+  - 2回目：続けて ab34c16（#659 の引っぱって更新・js/bookshelf.js の近い所）へ進み、main は 2026111781 になった。
+  - bookshelf.js の ?v= は **2026111782** に付け直した（commit e2dfd44）。
+  - ab34c16 の上で流し直した結果（18:31〜18:33）：
+    - 新しい spec：chromium と gate-webkit の36本すべて通った。
+    - 関係 spec（#659 の pull-to-refresh-drag・load-conflict-unsaved・sync-section-status）：18件すべて通った。
+    - vitest：1185件が通った。
+    - lint：12本中0本失敗。
+    - check:version：OK。
