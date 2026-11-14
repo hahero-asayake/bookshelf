@@ -120,7 +120,7 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 
 ## step2 E2E を足し、直す前の版で赤を取る
 
-- 新しい spec: `tests/e2e/sync-section-status.spec.js`（8本）。期待値は直した後の姿（案A・(a)(b)(c)、②承認 2026-11-14）で書いた。判定は見えている要素で行う（`#obsidian-sync-status` の `toBeVisible()` と、状態バーと同じ文の `toContainText()`）。同期欄の「再試行」「選ぶ」は `#sync-section [data-status-action="retry-sync"|"resolve-hold"]`（状態バーと同じ data-status-action）が見えることと、押すと状態バーのボタンと同じ結果になる（保存される／3択が開き直る）ことを確かめる。
+- 新しい spec: `tests/e2e/sync-section-status.spec.js`（9本）。期待値は直した後の姿（案A・(a)(b)(c)、②承認 2026-11-14）で書いた。判定は見えている要素で行う（`#obsidian-sync-status` の `toBeVisible()` と、状態バーと同じ文の `toContainText()`）。同期欄の「再試行」「選ぶ」は `#sync-section [data-status-action="retry-sync"|"resolve-hold"]`（状態バーと同じ data-status-action）が見えることと、押すと状態バーのボタンと同じ結果になる（保存される／3択が開き直る）ことを確かめる。
 - 保存のきっかけは、設定から本を手で足す操作にした。本棚を足すボタン（`#sidebar-add-bookshelf`）はスマホ幅では横のメニューの中にあり、webkit の1回目は4本がそのクリックの時間切れ（別の理由の赤）になったため（出力は上書き済み）。
 - 390幅は webkit の iPhone 13 相当で流した。`playwright.config.js` の webkit（`BACKNAV_WEBKIT=1` の時だけ足す project）の testMatch にこの spec を足した。ローカルは PC の Chrome/Edge だけ（ADR-046）なので webkit では skip。
 - 流し方: `BACKNAV_WEBKIT=1 PORT=8157 PLAYWRIGHT_BASE_URL=http://localhost:8157 npx playwright test tests/e2e/sync-section-status.spec.js --project=chromium --project=webkit`。出力 `tmp/657/step2-before.txt`（git には入れない）。base は `70ea04a`（アプリのコードは `36eba5e` と同じ）。
@@ -133,10 +133,11 @@ GitHub の未保存は撮っていない（GitHub の欄はどの状態でも状
 | GitHub 保存失敗 | 赤 | 赤 | 同上 |
 | ハブ 未保存・読込時（load-conflict・「選ぶ」→3択→読み込むと正常に戻る） | 赤 | 赤 | 同上 |
 | ハブ 未保存・書き込み時（sync-conflict・端末2つ） | 赤 | 赤 | 同上 |
+| GitHub 未保存・読込時（load-conflict・模擬の library.json を他の端末の更新に書き換えて読み直す） | 赤 | 赤 | 同上（3択が出て状態バーに load-conflict の行が出た後、同期欄が見えない） |
 | ローカル 正常（同期済みが見える） | **緑** | skip | – |
 | ローカル 保存失敗（状態バーと同じ文・「再試行」） | 赤 | skip | 文が違う（受け取った文「「フォルダを選ぶ」を押してフォルダを選び直してください」＝(c)。②の決めでローカルもそろえるので、直す前は赤が正しい） |
 
-- 計13本が赤・1本が緑・2本が skip。赤は全部、見えない（12本）か文が違う（1本）で、別の理由の赤は無い。
+- 計15本が赤・1本が緑・2本が skip。赤は全部、見えない（14本）か文が違う（1本）で、別の理由の赤は無い。GitHub の未保存の2本は後から足して流した（出力 `tmp/657/step2-before-github-unsaved.txt`）。
 - ハブ・GitHub は見えるかの所で止まるので、その後の判定（文・ボタン・正常に戻る）は直す前には届かない。隠れた要素の文が状態バーと同じであることは step1 の実測（§2）で確かめてある。ボタンは同期欄にまだ無い。
-- ローカルの未保存（読込時）は、#639 の `load-conflict-unsaved.spec.js` が同期欄の文を確かめている。「選ぶ」ボタンの確かめは step3 で足すかを決める（このステップでは足していない）。GitHub の未保存も足していない（GitHub の衝突の模擬は #645 が触る所で、step3 で足せるかを確かめる）。
+- ローカルの未保存（読込時）は、#639 の `load-conflict-unsaved.spec.js` が同期欄の文を確かめている。「選ぶ」ボタンの確かめは step3 で足すかを決める（このステップでは足していない）。GitHub の書き込み時の未保存（sync-conflict）は足していない（GitHub の衝突は #645 が触る所。読込時の未保存は足した）。
 - e2e の lint（`check-e2e-goto`・`check-e2e-async-wait`・`check-e2e-external`）は通った。

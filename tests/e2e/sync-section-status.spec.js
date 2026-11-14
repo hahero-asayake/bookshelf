@@ -306,3 +306,57 @@ test.describe('同期欄に保存の状態が見える: ローカルフォルダ
         await expect(page.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
     });
 });
+
+// ===== GitHub の未保存 (読込時の3択・load-conflict) =====
+test.describe('同期欄に保存の状態が見える: GitHub の未保存 (イシュー#657)', () => {
+    test('読込時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、選ぶと正常に戻る', async ({ page }) => {
+        const gh = await installFakeGitHub(page);
+        // 入れるのはこのタブで最初の1回だけ (再読込のたびに入れ直すとアプリが書いた設定を上書きする)
+        await page.addInitScript((cfg) => {
+            if (sessionStorage.getItem('sssGhSeeded')) return;
+            sessionStorage.setItem('sssGhSeeded', '1');
+            localStorage.setItem('bookshelf_sync', JSON.stringify({
+                method: 'github', methodChosen: true,
+                github: { owner: cfg.owner, repo: cfg.repo, branch: cfg.branch, basePath: '', token: 'ght_test' }
+            }));
+        }, FAKE_GITHUB);
+        await page.goto('index.html');
+        await confirmOk(page);
+        await expect.poll(() => gh.has(shelfFile('all'))).toBe(true);
+        await addBook(page, ASIN_A, '書ける間に足した本');
+        await expect.poll(() => remoteAsins(gh)).toContain(ASIN_A);
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'))).toBeNull();
+
+        // 書き込みだけ失敗させて編集し (未反映の印が立つ)、他の端末の更新を入れてから読み直す
+        gh.failNextWrites(1000);
+        await addBook(page, ASIN_B, '書けない間に足した本');
+        await page.waitForTimeout(2000);
+        const cur = gh.files.get('private/library.json');
+        const lib = JSON.parse(cur.content);
+        lib.books.push({ asin: ASIN_C, title: '他の端末で足した本', authors: '', acquiredTime: Date.now(), readStatus: 'UNKNOWN', productImage: '', source: 'manual_add', addedDate: Date.now() });
+        lib.exportDate = new Date(Date.now() + 1000).toISOString();
+        gh.files.set('private/library.json', { sha: 'b657other'.padEnd(40, '0'), content: JSON.stringify(lib) });
+        gh.failNextWrites(0);
+        await page.reload();
+        const dlg = page.locator('#load-conflict-dialog');
+        await expect(dlg).toBeVisible({ timeout: 15_000 });
+        await page.keyboard.press('Escape');
+        await expect(dlg).toBeHidden();
+        await expect(page.locator('#app-status-bar [data-sync-failure="load-conflict"]')).toBeVisible();
+
+        await openSync(page);
+        await expect(syncLine(page), '同期欄の状態の行が見える').toBeVisible();
+        await expect(syncLine(page), '状態バーと同じ文').toContainText(LOAD_HOLD);
+        const choose = syncButton(page, 'resolve-hold');
+        await expect(choose, '同期欄に「選ぶ」が見える').toBeVisible();
+        await choose.click();
+        await expect(dlg).toBeVisible();
+        await dlg.locator('.cfm-remote').click();
+        await expect(dlg).toBeHidden();
+        await expect(page.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
+        if (!(await page.locator('#settings-modal').isVisible())) await openSync(page);
+        await expect(syncLine(page)).toBeVisible();
+        await expect(syncLine(page), '選んだ後は正常の文に戻る').toContainText('保存済み');
+        await expect(syncButton(page, 'resolve-hold')).toHaveCount(0);
+    });
+});
