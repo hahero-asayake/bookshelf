@@ -48,6 +48,22 @@
 - 並べ替えは同じ要素を動かす: js/bookshelf.js:5353（`target.before(dragged)`）
 - 引っぱって更新: js/bookshelf.js:5174-5223
 
+## 直し方と検証（step3・commit d8223b3）
+
+js/bookshelf.js の本のカードの印を、js/ui/reorder.js の口（イシュー#649・`CLICK_SWALLOW_MS = 400`）と同じ決まりにした。#649 は 17:03 JST の時点で main に入っていない。#649 の差分は js/ui/reorder.js だけで、js/bookshelf.js には無い（重なりなし）。
+- 付ける: つまみのドラッグが終わった時（`_cancelBookPointerDrag`＝pointerup・pointercancel の後始末）。押した時点（旧 2501 行）では付けない。長押しで pop を出した時は今のまま付け、400ms は離した時（touchend・touchcancel）から数える。
+- 捨てる: そのカードの click を1回だけ（今のまま）。
+- 外す: 1回捨てた時・次の pointerdown（カードの capture）・400ms の一番早い時。
+- 足したメソッド: `_armCardClickSwallow(el, released)`・`_startCardClickSwallowTimer(el)`・`_disarmCardClickSwallow(el)`。Esc・blur の経路は足していない（②の決め・'Escape' の数は変わらない）。
+- E2E の CDP の場面は「ドラッグの後、カードに届いた最初の click で開く」を見る（タップは最大2回）。1回目で click が届いたのに開かなければ赤にする。直送とマウスは「1回目で開く」のまま（②の決め）。CDP で click 自体が出ない件の原因は未特定。
+
+検証（17:05〜17:11 JST）:
+- 新しい spec: chromium は16本すべて緑。webkit は9本緑・7本 skip（CDP の場面）。
+- 変異検査（js/bookshelf.js だけ 76e7240 に戻す）: chromium は16本中12本赤、webkit は直送の7本が赤（緑は2本）。戻した後は修正後の版に戻した。
+- 関連 E2E（chromium）: touch-reorder・book-detail-shelf-meta・list-staged-render・sort-perf-budget・sort-persist の46本がすべて緑。
+- `npm test`: 76ファイル・1137本が緑（todo 2本）。
+- lint: esc・internal-refs（上限82以内）・e2e-wait・e2e-external・js-color は OK。`check:version --range=origin/main..HEAD` も OK（`js/bookshelf.js?v=2026111700`）。
+
 ## 経過（step1）
 
 - step1 では (c)・(g) を下の本へ運んでいた。本物のタッチで揺れたのは、上の「引っぱって更新」の再読込のためだった。
