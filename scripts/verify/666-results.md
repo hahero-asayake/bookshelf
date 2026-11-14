@@ -251,3 +251,61 @@
 - 直し：tests/e2e/github-sync-resilience.spec.js の L59 のテストを、今の挙動に合わせて書き換えた。状態バーの読込の失敗の行（`#app-status-bar [data-load-failure] .status-msg`）が新しい GitHub の文と完全に一致すること、その行に「再試行」（`data-status-action="retry-load"`）があること、読込の失敗の toast が出ないことを見る。テスト名も「状態バーに「この端末の内容を表示しています」と「再試行」が出る」に変えた。手元のデータの冊数が変わらないことの確認は、そのまま残した。
 - 直した後：github-sync-resilience.spec.js を `--repeat-each=2` で流し、4本すべて緑（2.9s・19:29）。`npm run lint` は 12 本中 0 本失敗。
 - 同じ漏れが他に無いかの確認として、`git grep -n "手元のデータで表示中" -- tests js` を使った。直す前に当たったのはこの spec の2行だけだった。
+
+## step4 やり直し（②の差し戻し 19:30・公開を止める条件を変更前と同じに戻す）
+
+### 差し戻しの中身
+
+ハブの通信の失敗で `_syncError` を立てなくなった。そのため、公開の flush の後の確認（`if (hadPending && this._syncError)`）は、ハブの読込が失敗していても公開を止めなくなっていた。文を直すイシューで、公開を止める条件が黙って緩むのは困る、というのが差し戻しの理由。ハブは変更前と同じに戻し、GitHub は変えない。
+
+### 変更前の挙動をコードで確かめた（d18af26）
+
+- ハブの起動の読込が通信で失敗すると、`_syncError = true` と `_syncErrorMsg` が立っていた。この印は、そのあと保存が1回成功すると `_clearSyncFailure()` で下りる（`_runPendingSync` の成功）。
+- 公開の前の確認は、`flushSync()` の後に `hadPending && this._syncError` を見る。`hadPending` は、メモリの保存待ちか、localStorage の `virtualBookshelf_pendingSync === '1'`（前の回に保存できなかった印）のどちらかがあれば true。
+- ずれが出る場面：前の回に保存できなかった印だけが残っていて、開き直した時に起動の読込が失敗した時。起動の読込が失敗すると、保存待ちを送るのは読めた後（`_applyLoadedState`）なので、flush は何も送らない。変更前は `_syncError` が立ったままなので公開を止めた。step3 の版は止めない。
+- flush の保存が失敗する場面は、`_onSyncFailed` が `_syncError` を立てるので、変更前も step3 の版も止める（違いは無い）。
+
+### 直したこと
+
+- js/bookshelf.js の公開の前の確認を、`if (hadPending && (this._syncError || hubLoadFailed))` にした。`hubLoadFailed = !!this._initLoadFailed && this.syncMethod === 'hub'`。GitHub は変えていない（前から読込の失敗では止めていない）。
+- ②の指定どおり「`_initLoadFailed` が立っていて、方式がハブの時」に止める。変更前は、読込の失敗の後に保存が1回成功すると `_syncError` が下りて公開できた。今の形は、読み直せるまで（`_initLoadFailed` が下りるまで）止める。その場面だけは、変更前より少しきびしい。保存が成功しても読み直しはされていないので、止める方を残した。
+- index.html：`bookshelf.js` と `sync-failure.js` の `?v=` を **2026111886** にした。19:37 の origin/main（703699c）の最大値 2026111878 と、ほかの worktree の最大値 2026111878 より大きい。
+
+### 守りの spec（tests/e2e/publish-conflict-hub.spec.js に1本足した）
+
+- 「ハブの起動の読込が失敗している間は公開を止める (イシュー#666)」。#603 のテストと同じ道具（`bootApp`・`createArticleWithBook`・公開の書き込みの数）を使う。
+  - 流れ：まとめ保存（POST /data/batch）を 500 にして本棚を足し、保存できなかった印を残す。記事を作り、開き直す。開き直した時の起動の読込（GET /data/**）は、通信の失敗にする。記事のファイル（`/publish/` の下）だけは読ませる。そのうえで「公開」を押す。
+  - 見ること：公開を止めた知らせ「保存できていない変更があるため、公開を止めました。保存できてから、もう一度公開してください。」が出る。公開の書き込みが0件。
+- 書いている途中の2回は、テストの作りの誤りで落ちた。1回目はサイドバーの「本棚を足す」が記事の一覧に隠れて押せなかった（#603 と同じ順に並べ替えた）。2回目は、開き直した後に記事の一覧が空だった（GET を全部落としたため。`/publish/` を通した）。
+- 直す前の版（step3 の版＝この差し戻しの前の HEAD）で流した結果：**赤**（見込みどおり）。止める知らせが出なかった（`element(s) not found`）＝公開の前の確認を素通りした。tmp/666/step4b-guard-before.txt。
+- 直した後：`--repeat-each=2` で2回とも緑。このファイルの全体（#603 の既存テストを含む）と、boot-load-failure-message・github-sync-resilience をあわせて流し、16本すべて緑（10.3s）。
+
+### 載せ直し（2回目）
+
+- 19:37 に fetch した。origin/main は 703699c（前の載せ直しの 61a91a2 から44 commit 進んでいた）。rebase でぶつかったのは、前と同じく index.html の `?v=` の行だけ（2つの commit で1回ずつ）。どちらも 2026111886 で解いた。check:version は OK。
+- 61a91a2..703699c の js/bookshelf.js の差分（36行）を読んだ。今回触った所に当たる変更が1つあった。別のイシューが、起動の読込が通信で失敗した時（`_initLoadFailed` が立っている時）に「最新のデータを確認しています…」の行を下ろす処理を足していた。`_initLoadFailed` が立っているかだけを見る作りなので、今回の形（印に文と種類を持たせる）と食い違わない。
+- 載せ直した後の sha：c3830e5（step1 の記録）・c3741b2（test・赤のまま）・2985878（fix・文と出す場所）・1829d88（step3 の記録）・7f6180b（test・github-sync-resilience）・8e2e405（step4 の記録）・df7bf09（fix・公開を止める確認）。
+- 最後の載せ直しの後：`npm run lint` は 12 本中 0 本失敗。`npm test` は 80ファイル・1199 通過・2 todo。
+
+### main との全件比較（2回目・`e2e-diff-main.mjs --port=8166 --out=tmp/666/e2e-diff2`・systemd-run・19:38〜19:48）
+
+- base は origin/main 7e0f386（703699c の後に増えたのは 670-results.md の docs の commit 1件だけ）、work は作業ツリー（HEAD df7bf09）。visual は既定どおりオン。負荷は、始めた時点で load average 0.8 だった。
+- 件数：base は E2E 1122 通過・592 スキップ・1 失敗。work は 1129 通過・592 スキップ・2 失敗。
+
+| 表 | 件数 | 中身 |
+|---|---|---|
+| 新しく落ちた（E2E） | **1** | boot-load-checking-row.spec.js:74「GitHub: 起動の読込が通信で失敗したら、toast が出てから2秒のうちに「最新のデータを確認しています…」が消える」（流し直し3回とも落ちた） |
+| 新しく通った（E2E） | 0 | — |
+| 両方で落ちた（E2E） | 1 | sync-conflict-overwrite.spec.js:76（ハブの書き込み時の衝突の上書き）。base でも落ちた。今回の変更とは別の所 |
+| vitest | 新しく落ちた 0・新しく通った 0・両方で落ちた 0 | — |
+| 画像の差分 | 0 / 54 | — |
+
+- 前の比較で両方で落ちた3本（duplicate-asin-notice・j3-5-many-books・list-staged-render）は、今回は両側とも通った（前回は負荷 37〜47 での揺れだった見込み）。
+- 公開の前の確認の守りの spec（publish-conflict-hub.spec.js の新しい1本）は、work で通った。
+
+#### 新しく落ちた1本の原因と直し
+
+- 原因：boot-load-checking-row.spec.js は、1回目の載せ直しの後に main へ入った別のイシューの spec（7397d15）。GitHub の起動の読込が通信で失敗した時に、toast（`.toast-message` に 'GitHub' を含む）が出るのを待っていた。今回 (b) でこの toast をやめたので、待ちが時間切れになった。
+- 直し：tests/e2e/boot-load-checking-row.spec.js の L74 のテストだけを書き換えた。待つものを、状態バーの読込の失敗の行（`#app-status-bar [data-load-failure]`）に替え、テスト名と知らせの文も合わせた。見ていること（失敗の表示から2秒のうちに「最新のデータを確認しています…」が消える）は変えていない。同じファイルの GitHub の認証切れのテスト（L106）は、今も toast を出すので `githubToast` のまま。
+- 直した後：boot-load-checking-row.spec.js を `--repeat-each=2` で流し、12本すべて緑（7.8s・19:49）。`npm run lint` は 12 本中 0 本失敗。
+- 全件比較は、この1本を直す前の作業ツリーで流したもの。直した後は、このファイルだけを流し直した。
