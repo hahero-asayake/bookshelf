@@ -64,6 +64,12 @@ js/bookshelf.js の本のカードの印を、js/ui/reorder.js の口（イシ�
 - `npm test`: 76ファイル・1137本が緑（todo 2本）。
 - lint: esc・internal-refs（上限82以内）・e2e-wait・e2e-external・js-color は OK。`check:version --range=origin/main..HEAD` も OK（`js/bookshelf.js?v=2026111700`）。
 
+## main へ載せる前の確認（step4・origin/main 16c0a10 に rebase）
+
+- #649（894ed54・js/ui/reorder.js の口）は、この時点で main に入っていた。js/bookshelf.js は重ならず、index.html の `?v=` だけがぶつかった。`js/bookshelf.js?v=2026111711` にした（origin/main は 2026111710）。
+- 新しい spec: chromium は16本緑。webkit は9本緑・7本 skip（CDP の場面）。`npm run lint`（12本中0本失敗）・`npm test`（78ファイル・1176本）・`check:version --range=origin/main..HEAD` は OK。
+- `scripts/verify/e2e-diff-main.mjs --port=8154`（17:14〜17:22 JST）: 新しく落ちたのは0件（フレーク判定の duplicate-asin-notice.spec.js の1件だけ・この変更と関係しない）。vitest も0件。画像の差分は54件中0件。
+
 ## 経過（step1）
 
 - step1 では (c)・(g) を下の本へ運んでいた。本物のタッチで揺れたのは、上の「引っぱって更新」の再読込のためだった。
