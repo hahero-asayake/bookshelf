@@ -379,3 +379,30 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
      - 19:17 の時点では、まだ基準側の E2E を流している（1つ前の回では、基準側だけで約 8.5 分かかった）。
      - **新しく落ちた件数はまだ出ていない**。②の指示どおり、unit は止めずに提出する。
      - 補足：基準の 61a91a2 は、載せ直し先の 02772ca より #668 の6 commit 分だけ新しい。差分は `scripts/verify/e2e-diff-main.mjs` の `--workers` と、`tests/e2e/sync-section-status.spec.js` のテスト1本の追加で、どちらもアプリのコードではない。その1本は基準側にしか無い行として出る見込みで、作業側で落ちた数には入らない。
+
+## §7 step5（2026-11-14 19:18〜）：全件比較の結果と、push しなかった理由
+
+### 7-1 e2e-diff（unit `bookshelf-670-e2e-diff-2`）
+
+- 19:12:45 に始まり、19:26 に終わった（基準 origin/main 61a91a2・作業側 f23070d・port 8170）。報告は `/tmp/670-e2e-diff3/report.md`。
+- 終わった後に unit を stop・reset-failed した。`_worktree-base` は、スクリプトが終わる時に片付け済みだった（`git worktree list` に残り 0）。
+- **E2E の「新しく落ちた」は2件**。ツールはどちらも「flake」と判定した（流し直しでは通った）：
+  1. `gate/j3-5-many-books.spec.js` の @gate J3-5（913冊・CPU 6倍で、並び順と昇順・降順の切替が基準時間内に出る）。時間の上限を測るテストで、#670 が変えた所（冊数の数え方・引き出し）は通らない。
+  2. **`exclude-custom-shelf.spec.js` の 670-F（#670 の新しい spec）**。原因と直しは 7-2。
+- 新しく通った：0件。両方で落ちた：2件（duplicate-asin-notice・list-staged-render。基準側でも落ちる既存の問題）。
+- vitest：新しく落ちた 0件・新しく通った 0件・両方で落ちた 0件。画像の差分：0/54。
+- #668 の差の1本（sync-section-status の基準側にしか無い行）は、新しく落ちたものに入っていない。
+
+### 7-2 670-F が1回目に落ちた理由と直し（bf6afbe）
+
+- 落ちた所：再読込の後に解除した直後の `bookshelf.books` に TARGET が無かった（Expected true / Received false。1回目の実行・5.3 秒）。
+- 理由：再読込の読込が書誌の控え（`_storage.libraryBooks`。除外した本を含む）を作り直す前に、テストが `unexcludeBook` を呼んだ。`unexcludeBook` は書誌を控えから探すので、見つからずに蔵書へ戻せなかった。e2e-diff の高負荷で読込が遅れた時だけ起きる。
+  - これは c-2（フォルダ未接続で再読込した後の解除で本が戻らない・別のイシュー）と同じ形で、**フォルダ接続中でも、読込の途中に解除すると起き得る**。②が起票する別のイシューに、この形も入れてほしい。
+- 直し：テストが、書誌の控えが3冊そろうのを `expect.poll` で待ってから解除する。蔵書に戻ったかも `expect.poll` で待つ。
+- 確かめ：670-F を `--repeat-each=8 --workers=4` で流し 8 passed。spec 全体は 7 passed。`npm run lint` は 12 本中 0 本失敗。`lint:internal-refs` は 82 件（上限 82）。
+
+### 7-3 push しなかった（②の条件）
+
+- ②の条件「新しく落ちたものが1件以上ある時は push せず、step5 を提出して②に返す」に当たる（新しく落ちた 2件・どちらも flake の判定）。そのため、push・設計書の反映・最後の rebase はしていない。
+- 今の HEAD は bf6afbe（origin/main 02772ca の上）。push していない。
+- 19:27 の時点で origin/main は 25 commit 先へ進み、index.html の ?v= の最大は 2026111868。#670 の 2026111799 はそれより古い。次に載せ直す時は、#670 で変えた6ファイルを 2026111868 より新しい値に取り直す必要がある。
