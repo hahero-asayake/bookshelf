@@ -540,6 +540,8 @@ class VirtualBookshelf {
         }
         // 初めての利用者 (手元に「すべての本」が無い) でも、最初から「すべての本」をメモリに置く (イシュー#636)
         this._ensureAllShelf();
+        // 端末の控えに残した除外した本の書誌から、書誌の写しを組み直す (保存先につないでいなくても、再読込の後に除外を取り消せる・イシュー#675)
+        this._restoreLibraryCopy();
 
         // config は「未設定項目の既定値」。ユーザーが保存した設定を上書きしてはいけない
         // (旧: config が後勝ちで、表示形式などが再読み込みのたび既定に戻っていた)
@@ -2896,10 +2898,8 @@ class VirtualBookshelf {
         // 端末の控えへ書く前に「すべての本」の books を bookOrder.all に揃える (イシュー#662)
         this._ensureAllShelf();
         const persisted = { ...this.userData };
-        if (persisted._storage) {
-            const { libraryBooks, ...rest } = persisted._storage;
-            persisted._storage = rest;
-        }
+        // 全書誌の写しは持たず、除外した本の書誌だけ残す (イシュー#675)
+        if (persisted._storage) persisted._storage = this._storageForDevice(persisted._storage);
         try {
             localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
         } catch (e) {
@@ -2999,7 +2999,14 @@ class VirtualBookshelf {
     _keepLocalOverLoaded(state) {
         if (!this.userData._storage) this.userData._storage = {};
         const st = this.userData._storage;
-        st.libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
+        // 手元を採るので、手元の除外した本の書誌は落とさない。保存先が空・保存先に書誌が無い時でも、続く書き出しの
+        // library.json (除外を含む全書誌) に除外した本の書誌が入るようにする (イシュー#675)
+        const loaded = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
+        const excluded = new Set(Array.isArray(st.exclusions) ? st.exclusions : []);
+        const byAsin = new Map(loaded.map(b => [b.asin, b]));
+        [...(Array.isArray(st.excludedBooks) ? st.excludedBooks : []), ...(Array.isArray(st.libraryBooks) ? st.libraryBooks : [])]
+            .forEach(b => { if (b && excluded.has(b.asin) && !byAsin.has(b.asin)) byAsin.set(b.asin, b); });
+        st.libraryBooks = [...byAsin.values()];
         if (!st.allInternalId && state.allBookshelf) st.allInternalId = state.allBookshelf.internalId;
         // 手元に「すべての本」があればその id に揃え、無ければ作る (保存先の空の初期化の後でも引き出し等が本棚を見つける・イシュー#636)
         this._ensureAllShelf();
@@ -3728,11 +3735,10 @@ class VirtualBookshelf {
                 libraryBooks: libraryBooks
             }
         };
-        // libraryBooks は容量大のため localStorage には保存しない
+        // 全書誌の写し libraryBooks は容量大のため localStorage には保存しない (除外した本の書誌だけ残す・イシュー#675)
         {
             const persisted = { ...this.userData };
-            const { libraryBooks: _omit, ...storageRest } = persisted._storage;
-            persisted._storage = storageRest;
+            persisted._storage = this._storageForDevice(persisted._storage);
             try {
                 localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted));
             } catch (e) {
@@ -4162,13 +4168,11 @@ class VirtualBookshelf {
             // 相手の値は「自分の変更」ではないので、更新時刻の控え (ADR-137) にも入れる (次の保存で自分の時刻を付けない)
             if (this._syncedSnap) keys.filter((k) => k !== '_updatedAt').forEach((k) => { this._syncedSnap[k] = JSON.stringify(sm[k]); });
         }
-        // 端末内の控えにも入れる (saveUserData と同じ形。書誌の写し libraryBooks は端末内に持たない・「すべての本」はイシュー#662)
+        // 端末内の控えにも入れる (saveUserData と同じ形。全書誌の写し libraryBooks は端末内に持たず、除外した本の書誌だけ
+        // 残す・イシュー#675。「すべての本」はイシュー#662)
         this._ensureAllShelf();
         const persisted = { ...this.userData };
-        if (persisted._storage) {
-            const { libraryBooks, ...rest } = persisted._storage;
-            persisted._storage = rest;
-        }
+        if (persisted._storage) persisted._storage = this._storageForDevice(persisted._storage);
         try { localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted)); } catch (e) {}
     }
 
@@ -6018,6 +6022,73 @@ class VirtualBookshelf {
     /**
      * all本棚から除外（library.json には残るが表示・操作対象から外れる）
      */
+    // 書誌の写し (_storage.libraryBooks) に入れる1冊の形
+    _libraryRecordOf(b) {
+        return {
+            asin: b.asin,
+            title: b.title || '',
+            authors: b.authors || '',
+            acquiredTime: b.acquiredTime || Date.now(),
+            readStatus: b.readStatus || 'UNKNOWN',
+            productImage: b.productImage || '',
+            source: b.source || 'unknown',
+            addedDate: b.addedDate || Date.now(),
+            ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {}),
+            ...(b.originType ? { originType: b.originType } : {}),
+            ...(b.statusFromPlatformSearch ? { statusFromPlatformSearch: b.statusFromPlatformSearch } : {}),
+            ...(b.lendingType ? { lendingType: b.lendingType } : {}),
+            ...(b.lendingStatus ? { lendingStatus: b.lendingStatus } : {})
+        };
+    }
+
+    // 端末の控え (virtualBookshelf_userData) へ書く _storage (イシュー#675・ADR-175)。全書誌の写し libraryBooks は容量のため
+    // 持たず、除外した本の書誌だけを excludedBooks に残す (exclusions の ASIN に当たる分)。控えに書く3か所 (saveUserData・
+    // _applyLoadedState・_applyMergedRemote) はここを通す。見える本 (virtualBookshelf_library) と合わせると library.json
+    // (除外を含む全書誌) に当たる。保存先へは _storage を丸ごとは送らないので、同期で書くファイルは変わらない
+    _storageForDevice(st) {
+        if (!st) return st;
+        const { libraryBooks, excludedBooks, ...rest } = st;
+        const excluded = new Set(Array.isArray(st.exclusions) ? st.exclusions : []);
+        const byAsin = new Map();
+        [...(Array.isArray(excludedBooks) ? excludedBooks : []), ...(Array.isArray(libraryBooks) ? libraryBooks : [])]
+            .forEach(b => { if (b && excluded.has(b.asin)) byAsin.set(b.asin, b); });
+        if (byAsin.size > 0) rest.excludedBooks = [...byAsin.values()];
+        return rest;
+    }
+
+    // 書誌の写しを「見える本 ∪ 控えに残した除外した本の書誌」で組み直す (イシュー#675)。起動の1段目 (端末の控えを読んだ直後)
+    // と、写しが無いまま除外する時に呼ぶ。保存先につないでいる時は、2段目の _applyLoadedState が library.json で置き換える。
+    // always=false (起動) は、控えに除外した本の書誌がある時だけ作る (除外が無い利用者の写しは今どおり作らない)
+    _restoreLibraryCopy(always = false) {
+        const st = this.userData && this.userData._storage;
+        if (!st || Array.isArray(st.libraryBooks)) return;
+        const kept = Array.isArray(st.excludedBooks) ? st.excludedBooks : [];
+        if (!always && kept.length === 0) return;
+        const visible = this.books || [];
+        const seen = new Set(visible.map(b => b.asin));
+        st.libraryBooks = [...visible.map(b => this._libraryRecordOf(b)), ...kept.filter(b => b && !seen.has(b.asin))];
+    }
+
+    // 取り込むファイルにある除外中の本の書誌を、書誌の写しへ補う (除外は外さない・取り込む本にも入れない・イシュー#675)。
+    // 書誌を失った端末 (この決まりより前に保存先なしで除外して再読込した控え) でも、取込の後は除外を取り消せるようにする。
+    // 補った時だけ保存する (次の保存で端末の控えの excludedBooks に残り、保存先につないでいれば library.json にも入る)
+    async _fillExcludedBooksFrom(books) {
+        const st = this.userData && this.userData._storage;
+        const excluded = new Set((st && st.exclusions) || []);
+        if (excluded.size === 0 || !Array.isArray(books)) return 0;
+        if (!Array.isArray(st.libraryBooks)) this._restoreLibraryCopy(true);
+        const lib = st.libraryBooks;
+        let filled = 0;
+        books.forEach(b => {
+            if (b && excluded.has(b.asin) && !lib.some(x => x.asin === b.asin)) { lib.push(this._libraryRecordOf(b)); filled++; }
+        });
+        if (filled > 0) {
+            await this.saveUserData();
+            this.renderExclusionsList();
+        }
+        return filled;
+    }
+
     /**
      * 除外のコア処理 (確認・保存・再描画なし)。単体/一括の両方から呼ぶ。
      * library.books からの除去と exclusions/_storage の更新まで行う。
@@ -6025,23 +6096,12 @@ class VirtualBookshelf {
     _excludeAsinCore(asin) {
         if (!this.userData._storage) this.userData._storage = {};
         if (!Array.isArray(this.userData._storage.exclusions)) this.userData._storage.exclusions = [];
-        if (!Array.isArray(this.userData._storage.libraryBooks)) {
-            this.userData._storage.libraryBooks = (this.books || []).map(b => ({
-                asin: b.asin,
-                title: b.title || '',
-                authors: b.authors || '',
-                acquiredTime: b.acquiredTime || Date.now(),
-                readStatus: b.readStatus || 'UNKNOWN',
-                productImage: b.productImage || '',
-                source: b.source || 'unknown',
-                addedDate: b.addedDate || Date.now(),
-                ...(b.updatedAsin ? { updatedAsin: b.updatedAsin } : {}),
-                ...(b.originType ? { originType: b.originType } : {}),
-                ...(b.statusFromPlatformSearch ? { statusFromPlatformSearch: b.statusFromPlatformSearch } : {}),
-                ...(b.lendingType ? { lendingType: b.lendingType } : {}),
-                ...(b.lendingStatus ? { lendingStatus: b.lendingStatus } : {})
-            }));
-        }
+        if (!Array.isArray(this.userData._storage.libraryBooks)) this._restoreLibraryCopy(true);
+        // 除外する本の書誌は、除外する直前の蔵書から必ず写しに入れる。写しを作った後に取り込んだ本や、再読込の後に
+        // 組み直した写しにも、除外した本の書誌が欠けないようにする (イシュー#675)。既にある書誌 (library.json 由来) は置き換えない
+        const lib = this.userData._storage.libraryBooks;
+        const current = (this.books || []).find(b => b.asin === asin);
+        if (current && !lib.some(b => b.asin === asin)) lib.push(this._libraryRecordOf(current));
         if (!this.userData._storage.exclusions.includes(asin)) {
             this.userData._storage.exclusions.push(asin);
         }
@@ -6090,27 +6150,33 @@ class VirtualBookshelf {
         if (!this.userData._storage || !Array.isArray(this.userData._storage.exclusions)) return;
         if (!this.userData._storage.exclusions.includes(asin)) return;
 
+        const libraryBooks = this.userData._storage.libraryBooks || [];
+        const book = libraryBooks.find(b => b.asin === asin)
+            || (this.userData._storage.excludedBooks || []).find(b => b && b.asin === asin);
+        if (!book) {
+            // 書誌が端末に無い時 (この決まりより前に、保存先なしで除外して再読込した控え) は、除外を外さずに知らせる。
+            // 外すと除外一覧にも蔵書にも出ない本になる (イシュー#675)。取込で書誌を補うと戻せる (_fillExcludedBooksFrom)
+            toast('この本の書誌が端末に残っていないため、元に戻せません。Kindle の取込で同じ本を読み込むと、元に戻せるようになります。', { type: 'warning' });
+            return;
+        }
+
         this.userData._storage.exclusions = this.userData._storage.exclusions.filter(a => a !== asin);
 
-        const libraryBooks = this.userData._storage.libraryBooks || [];
-        const book = libraryBooks.find(b => b.asin === asin);
-        if (book) {
-            if (!this.bookManager.library.books.some(b => b.asin === asin)) {
-                this.bookManager.library.books.push(book);
-            }
-            this.bookManager.library.metadata.totalBooks = this.bookManager.library.books.length;
-            localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
-            this.books = this.bookManager.getAllBooks();
+        if (!this.bookManager.library.books.some(b => b.asin === asin)) {
+            this.bookManager.library.books.push(book);
+        }
+        this.bookManager.library.metadata.totalBooks = this.bookManager.library.books.length;
+        localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
+        this.books = this.bookManager.getAllBooks();
 
-            if (!this.userData.bookOrder) this.userData.bookOrder = {};
-            if (!Array.isArray(this.userData.bookOrder.all)) this.userData.bookOrder.all = [];
-            if (!this.userData.bookOrder.all.includes(asin)) {
-                this.userData.bookOrder.all.unshift(asin);
-            }
+        if (!this.userData.bookOrder) this.userData.bookOrder = {};
+        if (!Array.isArray(this.userData.bookOrder.all)) this.userData.bookOrder.all = [];
+        if (!this.userData.bookOrder.all.includes(asin)) {
+            this.userData.bookOrder.all.unshift(asin);
         }
 
         await this.saveUserData();
-        if (book && this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...book }, reason: 'unexcluded' });
+        if (this.pluginAPI) this.pluginAPI._emit('book:added', { book: { ...book }, reason: 'unexcluded' });
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();

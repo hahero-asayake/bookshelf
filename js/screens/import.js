@@ -69,6 +69,8 @@ class _ImportMethods {
         const existingASINs = new Set(this.bookManager.getAllBooks().map(book => book.asin));
         // 除外済みの本（ユーザが意図的に除外）も取り込み対象から外す
         const excludedASINs = new Set((this.userData._storage && this.userData._storage.exclusions) || []);
+        // 取り込むファイルにある除外中の本の書誌は、書誌の写しへ補う (除外は外さない・取り込む本にも入れない・イシュー#675)
+        if (excludedASINs.size > 0) this._fillExcludedBooksFrom(books);
 
         // 本のリストを生成（フィルター機能付き）
         this.renderBookList(books, existingASINs, excludedASINs);
