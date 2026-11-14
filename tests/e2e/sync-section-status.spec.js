@@ -11,6 +11,7 @@ import {
 } from './helpers/gate-hub.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { prepareOtherDeviceForTest, closeOtherDeviceForTest } from './helpers/gate-device.js';
+import { createMockGitHubForTest, seedGitHubDataForTest, seedGitHubLoginForTest, mockGitHubForTest, waitForGitHubFileContainsForTest } from './helpers/gate-github.js';
 import { installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder, installLocalWriteFailures, installReloadPermissionPrompt } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
 
@@ -316,7 +317,7 @@ test.describe('同期欄に保存の状態が見える: ローカルフォルダ
     });
 });
 
-// ===== GitHub の未保存 (読込時の3択・load-conflict) =====
+// ===== GitHub の未保存 (読込時の3択・load-conflict と 書き込み時の3択・sync-conflict) =====
 test.describe('同期欄に保存の状態が見える: GitHub の未保存 (イシュー#657)', () => {
     test('読込時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、選ぶと正常に戻る', async ({ page }) => {
         const gh = await installFakeGitHub(page);
@@ -367,6 +368,76 @@ test.describe('同期欄に保存の状態が見える: GitHub の未保存 (イ
         await expect(syncLine(page)).toBeVisible();
         await expect(syncLine(page), '選んだ後は正常の文に戻る').toContainText('保存済み');
         await expect(syncButton(page, 'resolve-hold')).toHaveCount(0);
+    });
+
+    // 書き込み時の3択 (sync-conflict・イシュー#668)。installFakeGitHub では起こせないので、gate-github.js の同じリポジトリを
+    // gate-device.js の別の端末と共有する2台で起こす (#645 の sync-conflict-overwrite.spec.js と同じ起こし方)。
+    // 端末Aが先に書いて保存先の main を進め、端末Bが古い版のまま書くと、Bのまとめ保存が早送りにならず衝突になる。模擬の中身は書き換えない
+    test('書き込み時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、上書きを選ぶと正常に戻る', async ({ page }) => {
+        const BOOK = 'フィクスチャの本 1';
+        const MEMO_A = '#668 端末Aが先に書いた短文メモ';
+        const MEMO_B = '#668 端末Bが古い版のまま書いた短文メモ';
+        const bookButton = (p) => p.getByRole('button', { name: BOOK, exact: true }).first();
+        const memoBox = (p) => p.locator('.note-textarea[data-scope="all"]:visible').first();
+        const savedNote = (p) => p.locator('.save-note-status:visible').first();
+        const gh = createMockGitHubForTest();
+        seedGitHubDataForTest(gh);
+        // 保存先の main が指す notes.json の中身 (読むだけ)
+        const repoNotes = () => {
+            const sha = gh.trees.get(gh.commits.get(gh.head).tree).get('private/notes.json');
+            return sha ? String(gh.blobs.get(sha)) : '';
+        };
+        await seedGitHubLoginForTest(page, gh);
+        await mockGitHubForTest(page, gh);
+        await bootAppForTest(page);
+        await waitForHubStartupForTest(page);
+        const other = await prepareOtherDeviceForTest(page, gh);
+        try {
+            await other.goto('index.html');
+            await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
+            await expect(bookButton(other)).toBeVisible();
+            await bookButton(page).click();
+            await memoBox(page).fill(MEMO_A);
+            await expect(savedNote(page)).toContainText('保存しました');
+            await waitForGitHubFileContainsForTest(gh, 'private/notes.json', MEMO_A);
+            await bookButton(other).click();
+            await memoBox(other).fill(MEMO_B);
+            await expect(savedNote(other)).toContainText('保存しました');
+            const dlg = other.locator('#sync-conflict-dialog');
+            await expect(dlg).toBeVisible({ timeout: 20000 });
+            // 3択が出る (書き込み時の「この端末の内容で保存先を上書き」= .cfm-local はイシュー#645 から)
+            await expect(dlg.getByRole('button')).toHaveCount(3);
+            await expect(dlg.locator('.cfm-local'), '上書きが選べる').toBeVisible();
+            await other.keyboard.press('Escape');
+            await expect(dlg).toBeHidden();
+            const failure = other.locator('#app-status-bar [data-sync-failure="sync-conflict"]');
+            await expect(failure).toBeVisible();
+            await expect(failure).toContainText(SYNC_HOLD);
+            // スマホ幅では本の詳細が前に残るので、詳細の「戻る」で閉じてから設定を開く
+            const detailBack = other.locator('#mobile-detail-back');
+            if (await detailBack.isVisible()) { await detailBack.click(); await other.waitForTimeout(800); }
+
+            await openSync(other);
+            await expect(syncLine(other), '同期欄の状態の行が見える').toBeVisible();
+            await expect(syncLine(other), '状態バーと同じ文').toContainText(SYNC_HOLD);
+            const choose = syncButton(other, 'resolve-hold');
+            await expect(choose, '同期欄に「選ぶ」が見える').toBeVisible();
+            await choose.click();
+            await expect(dlg, '「選ぶ」で3択が開き直る').toBeVisible();
+            await expect(dlg.getByRole('button')).toHaveCount(3);
+            await dlg.locator('.cfm-local').click();
+            await expect(dlg).toBeHidden();
+            // 上書き: 保存先が端末Bの内容になり、端末Aの短文メモは残らない
+            await waitForGitHubFileContainsForTest(gh, 'private/notes.json', MEMO_B);
+            expect(repoNotes()).not.toContain(MEMO_A);
+            await expect(other.locator('#app-status-bar [data-sync-failure]')).toHaveCount(0);
+            if (!(await other.locator('#settings-modal').isVisible())) await openSync(other);
+            await expect(syncLine(other)).toBeVisible();
+            await expect(syncLine(other), '上書きの後は正常の文に戻る').toContainText('保存済み');
+            await expect(syncButton(other, 'resolve-hold')).toHaveCount(0);
+        } finally {
+            await closeOtherDeviceForTest(other);
+        }
     });
 });
 
