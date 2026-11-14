@@ -201,3 +201,49 @@ step2 (読み直しのたびに控えを捨てる＋ref の GET に no-store) �
 
 - E2E・vitest・lint・監査は順番に流した (step2 で、同時に流すと画像の添付が ENOENT で落ちたため)。ログは `_local/645/after3-*.log`・`run-after3.out`。
 - `tests/audit/open.js` の書き込み時の衝突ダイアログの開き方 (`showConflictDialogForTest`) は変えていない (ダイアログの組み方は同じ関数のまま)。
+
+## step4: 390px・1280px の比較画像・lint 一式・リポジトリ内 docs (2026-11-14 17:43〜)
+
+### 1. 比較画像 (commit しない)
+
+- 撮り方: `scripts/verify/635-shots.mjs` の出力先だけを `_local/645` にした写し (`_local/645/645-shots.mjs`)。変更前は土台 `16c0a10` (origin/main・書き込み時はボタン2つ) を `git archive` で取り出して 18145 番で配り、変更後は作業ツリー (`96988a8` の上) を 8145 番で配って撮った。ダイアログは内部の関数で直接出す (見た目を撮るためだけ。動きは step3 の E2E が画面の操作から見る)。
+- 画像:
+  - `_local/645/compare-write-390.png` (左から 変更前の書き込み時・変更後の書き込み時・変更後の読込時)
+  - `_local/645/compare-write-1280.png` (同じ並び・全体) と `_local/645/compare-write-1280-crop.png` (ダイアログの周りを原寸で切り出し)
+  - 1枚ずつ: `_local/645/{before,after}-{write,load}-{390,1280}.png`
+- 座標 (`_local/645/coords.json`・`{before,after}-measure.json`):
+
+| | 場面 | 幅 | 箱 (左〜右) | ボタン (左→右・上→下) | ボタンの右端 | 行数 | 箱からのはみ出し | 最初のフォーカス |
+|---|---|---|---|---|---|---|---|---|
+| 変更前 | 書き込み時 | 390 | 16〜374 | 読み込む／書き出す | 352・352 | 2 | 0 | 書き出す |
+| 変更後 | 書き込み時 | 390 | 16〜374 | 読み込む／上書き／書き出す | 352・352・352 | 3 | 0 | 書き出す |
+| 変更後 | 読込時 | 390 | 16〜374 | 読み込む／上書き／書き出す | 352・352・352 | 3 | 0 | 書き出す |
+| 変更前 | 書き込み時 | 1280 | 340〜940 | 読み込む／書き出す | 721・918 | 1 | 0 | 書き出す |
+| 変更後 | 書き込み時 | 1280 | 340〜940 | 読み込む／上書き／書き出す | 679・918・918 | 2 | 0 | 書き出す |
+| 変更後 | 読込時 | 1280 | 340〜940 | 読み込む／上書き／書き出す | 679・918・918 | 2 | 0 | 書き出す |
+
+- 変更後の書き込み時と読込時は、390・1280 とも題・本文・ボタンの位置が同じになった (座標が一致)。390 は1つずつ3行・右端 352 でそろう。1280 は1行目に「読み込む」「上書き」、2行目に「書き出す」で、行の右端 918 がそろう。どのボタンも箱の内側に収まり、390 幅で切れない。
+- 本文は2つとも「…どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。迷う時は、先にこの端末の内容を書き出してください。」になった (変更前の書き込み時は「保存先の内容を読み込むと、この端末の未保存の編集は消えます。」)。
+
+### 2. lint・vitest・check:version (docs を直した後)
+
+- `npm run lint`: **12本中0本失敗** (copy・terms・css・e2e-goto・e2e-wait・e2e-external・breakpoint・esc・js-color・internal-refs・e2e-gate・known-red)。`_local/645/after4-lint.log`
+- vitest: 78 files・**1180 passed** (2 todo)。`_local/645/after4-vitest.log`
+- `check:version --range=origin/main..HEAD`: commit の後に流した (下の §4)。
+
+### 3. リポジトリ内 docs
+
+| ファイル | 直したところ |
+|---|---|
+| `tests/e2e/gate/README.md` | J6-4 の行のボタンを3つにし、書き込み時の上書きは #645 からと書いた |
+| `docs/ui-standards.md` | §1「衝突の選択ダイアログ」の選べる物を「書き込み時・読込時とも3つ」にし、上書きは読み直してから書く・読み直せない時は書かずに知らせることを書いた。§8 更新履歴に1行 |
+| `docs/char/u0-77-table.md` | E4 の行の選び方に上書きを足した |
+| `docs/char/u0-findings.md` | §8 E4 の確認内容の「`.cfm-local`は出ない」を、上書きのラベルを見ることに直した |
+
+- `docs/char/u5-inventory.md`・`u0-targets.md` の E4 の行は選び方を書いていないので変えていない。`docs/ui-standards.md` §1 の行の名前は変えていないので、`tests/audit/screens.js` の std1 も変えていない。
+
+### 4. tp で見せる物のまとめ
+
+- 比較画像: §1 のパス。座標: §1 の表。
+- (a)〜(d): step2 §4 の表 (GitHub・ハブとも通った。変更前の GitHub は (a)(b) が通らなかった)。step3 では同じことを画面の操作で E2E にした (`tests/e2e/sync-conflict-overwrite.spec.js`)。
+- API の回数 (GitHub の模擬): 起動1回は変更前後とも ref 2・commit 2・tree 1・contents 13 (増えない)。同じページのまま読み直し1回は、変更前 ref 0・commit 0・tree 0・contents 4 (古い中身)、変更後 ref 1・commit 1・tree 1・変わったファイルの contents (最新)。step2 §3 の表。
