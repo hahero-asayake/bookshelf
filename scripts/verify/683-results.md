@@ -347,3 +347,24 @@ spec の中に自前の模擬を持つもの（コードを読んで分類した
 - `npm run lint`（21:05・載せ直した後）：最終行は「12 本中 0 本失敗」。
 - `npm test`（21:15・計測の差分を戻した後）：Test Files  80 passed (80)／Tests  1201 passed | 2 todo (1203)。
   - 21:13 に1回目を流した時は、計測の一時差分を入れたままだった。そのため tests/unit/check-e2e-external.test.js が1本落ちた（計測が helpers で `@playwright/test` を import していることに、lint:e2e-external の検査が当たった）。差分を戻して流し直し、上の結果になった。commit した中身では落ちない。
+
+## §5 push と CI（step5・2026-11-14 21:16〜21:23）
+
+- **載せ直し**：21:16 に `git fetch` した。origin/main は b82ebf9 のままで、載せ直しは要らなかった（a57064b・b985e31・690870a はその上）。b82ebf9 の後に、tests/e2e/ と helpers に他のイシューの変更は入っていない。
+- **push の前（21:17〜21:18・HEAD 690870a）**：
+  - `npm run lint`：12 本中 0 本失敗
+  - `npm test`：Test Files 80 passed（80）・Tests 1201 passed | 2 todo（1203）
+  - 関係 spec（gate-github を使う15ファイル＋新しい spec＋plugin-seed）：86 passed・0 failed・2 skipped（53秒）
+- **push**：21:18:31 に `BOOKSHELF_ISSUE=683 git push origin 690870a:main` で b82ebf9..690870a を送った。pre-push の lint も 12 本中 0 本失敗。
+- **CI**：run 43594163861（head 690870a・https://github.com/hahero-asayake/bookshelf/actions/runs/43594163861）。push から約4分40秒の時点（21:23:10）の状態：
+
+| job | 状態 |
+|---|---|
+| test (char) | **success**（21:21:37 に終わった） |
+| test (e2e) | in_progress。lint の各 step・Version bump check・Unit tests (Vitest) は success。Smoke tests（Playwright・並列）を実行中 |
+| test (webkit) | in_progress |
+| test (audit) | in_progress |
+
+- 最大待ち時間（push から5分）に達したので、ここで見るのをやめた。test (e2e) の緑の確認は、②の完了確認に回す（#677 と同じ扱い）。
+- 未認証の API の使用は、run を探すのに1回、job の状態を見るのに4回の計5回（間は45秒以上空けた・残り 55/60）。
+- この §5 の追記も、同じ手順で push する。
