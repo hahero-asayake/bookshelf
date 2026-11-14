@@ -330,6 +330,10 @@ step2 の終わりに spec 全件（670-A〜F）を1回流した（chromium・�
 - **記事の本の引き出し**：`js/screens/article-editor.js` の `_artDrawerFilteredAsins`・`_artRenderDrawer`（一覧・「表示中のN冊を追加」の N と追加）を `shelfVisibleAsins` に通し、670-E を緑にする。
   - #669 が 18:53 に入ったので、次は origin/main（47505b2 以降）へ rebase してから載せる。
   - #669 の「除外中」の印は、引き出しの行では出なくなる（並ばないため）。キャンバス・全画面の印は残る。
+- 直す所は、origin/main 47505b2（#669 の後）の `js/screens/article-editor.js` で読んで決めた。どちらも `this` は app。
+  - `_artDrawerFilteredAsins`：`const asins = (shelf && shelf.books) || [];` を `this.shelfVisibleAsins(shelf)` にする。
+  - `_artRenderDrawer`：同じ行（空の本棚なら引き出しを畳む判定にも使う）を `this.shelfVisibleAsins(shelf)` にする。
+  - 「すべての本」の経路は `shelfVisibleAsins` が books をそのまま返す（ADR-166）ので、除外が残るのは #664 が閉じる。
 - rebase で衝突しそうな所：
   - `index.html` の ?v=：#669 は 2026111783 を使った。#670 は 2026111797 なので、より新しい値を取り直す。
   - `js/bookshelf.js` の `_bulkExclude`：#669 が確認文に `pubNote` を足した行の近く。
