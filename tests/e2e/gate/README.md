@@ -66,6 +66,7 @@ npm run gate:report -- --collect
 |---|---|
 | 保存先・公開先をハブにする（保存・まとめ書き・公開・公開ページの配信） | `gate-hub.js`：`createHubStateForTest` → `seedHubDataForTest`（ハブに蔵書）→ `seedHubLoginForTest(page, hub, { method: 'hub', library: false })` → `mockHubForTest` → `bootAppForTest` → `waitForHubStartupForTest` |
 | ハブへの書き込みを失敗させる・届くのを待つ | `failHubWritesForTest(hub)`（これ以降ずっと）・`failHubWritesForTest(hub, n)`（次の n 回だけ）・`waitForHubFileContainsForTest` |
+| 保存の失敗の自動の再試行の間隔を短くする（再試行が尽きた後の知らせまで確かめる時。既定は 5秒・15秒・45秒で、尽きるまで約66秒） | `gate-sync-retry.js`：`shortenSyncRetryForTest(page)`（既定 `[300, 300, 300]`。アプリを開く前に呼ぶ・イシュー#632） |
 | ハブの中身・書き込み・削除の要求を読む（保存先3つを同じ形で回す spec 用。門以外の shelf-file-delete・book-memo-file-lifecycle・save-failure-visible が使う） | `hubStoreForTest(hub)`：`has`・`readJSON`・`list`・`writes`・`deleteRequests`・`failNextWrites(n)`・`failuresLeft`（`storage-fakes.js` の GitHub・ローカルの模擬と同じ名前） |
 | 保存先を GitHub にする | `gate-github.js`：`createMockGitHubForTest` → `seedGitHubDataForTest` → `seedGitHubLoginForTest` → `mockGitHubForTest`（届くのを待つのは `waitForGitHubFileContainsForTest`） |
 | 別の端末（2つ目のブラウザコンテキスト）で同じ保存先を開く | `gate-device.js`：`prepareOtherDeviceForTest(page, hub または gh)`・`closeOtherDeviceForTest` |
@@ -76,18 +77,18 @@ npm run gate:report -- --collect
 - ハブと GitHub の保存では「同期済み」の文字が画面に出ない。保存が届いたことは、前提の `wait…FileContainsForTest` で待つ。
 - 公開URLは本番と同じ形（`https://bookshelf.asayake.org/<username>/<publicId>/`）。新しいタブで開いても同じ模擬が答える。
 
-### J5・J6 の網羅（イシュー#588 時点）
+### J5・J6 の網羅（イシュー#588・#632 時点）
 
-赤の3本（J5-1・J6-4・J6-5）は、テストは書いてあるがアプリの不具合で落ちるため、まだ main に入れていない（J6-1 も赤だったが、原因はアプリではなくテストの待ちのヘルパーだったので、直して緑で入れた・#607。J6-4 は不具合を直して緑で入れた・#616）。入れるのは、既知の赤の一覧（docs/gate/known-red.json）が main に入った時（一覧に載せて入れる）か、直すイシューが入った時（緑にして入れる）の早い方。テストの本体は patch `/home/kuroko/kuroko/discord/core/tmp/588-red-specs.patch`（ローカルのブランチ `gate-red-588` にもある）。
+J5・J6 の観測点は、全部 main に入っていて緑（2026-11-14・イシュー#632）。#588 でアプリの不具合のため赤だった4本は、直すイシューが入った後に緑にして入れた（J6-1・#607、J6-4・#616、J5-1・J6-5・#632）。J6-1 の赤の原因は、アプリではなくテストの待ちのヘルパーだった。
 
 | 観測点 | テスト | 状態 |
 |---|---|---|
-| J5-1 | `j5-1-article-create.spec.js` | テストあり・不具合のため未投入（題名を入れてすぐ一覧へ戻ると記事が出ない・#595） |
+| J5-1 | `j5-1-article-create.spec.js` | 投入済み・緑（題名を入れてすぐ一覧へ戻ると記事が出なかった不具合を、#595・#609 で直した後に入れた・#632） |
 | J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
 | J6-1 | `j6-1-local-restart.spec.js` | 投入済み・緑（赤はアプリの不具合ではなく、フォルダへの書き込みを待たずに通るヘルパーのせいだった・#607）。webkit では流さない（ローカルのフォルダ保存は PC の Chrome/Edge 専用・`gate-webkit` の `testIgnore`） |
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
 | J6-4 | `j6-4-sync-conflict.spec.js` | 投入済み・緑（2台の本当の衝突で3択も知らせも出なかった不具合を直して入れた・#616）。ハブと GitHub の2本。GitHub はリポジトリからAの短文メモが消えないことも見る（まとめ保存が古い版で上書きしていた・#616） |
-| J6-5 | `j6-5-sync-failure.spec.js` | テストあり・不具合のため未投入（ハブへの保存の失敗が画面に出ない・#603） |
+| J6-5 | `j6-5-sync-failure.spec.js` | 投入済み・緑（ハブへの保存の失敗が画面に出なかった不具合を #603 で直した後、今の文言と出し方＝ADR-158 に合わせて2本で入れた・#632）。1本目は既定の間隔のまま、状態バーに「保存できていない変更があります。自動で再試行しています。」が出る（約6秒後・15秒まで待つ）。2本目は前提で再試行の間隔を短くし（`gate-sync-retry.js`）、原因の文と「再試行」が出る。範囲はハブの1経路（GitHub・ローカルと直らない種類の失敗は、回帰の `save-failure-visible.spec.js` が見る） |
 
 ## webkit（iPhone 相当）で流す（イシュー#589）
 
