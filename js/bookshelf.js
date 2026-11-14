@@ -3751,9 +3751,10 @@ class VirtualBookshelf {
         this._lastSyncOk = false;
         // 衝突中 (3択でまだ「再読込」を選んでいない) は送らない。読み直した後の新しい版で送ると相手の変更を上書きする (イシュー#616)
         if (SyncConfigManager.conflict()) {
-            this.updateSyncStatus('reconnect', this._syncLabel());
             this._handleSyncConflict(this._syncLabel());
-            return;
+            // 黙って戻ると呼び手 (_runPendingSync) が保存できたとみなして表示を消すので、止めている印のエラーで知らせる。
+            // 同期欄は _onSyncFailed が「要再接続」ではなく理由の文にする (イシュー#639)
+            throw window.SyncFailure.holdError('sync-conflict');
         }
         try {
             // LocalFS 時のみ FS permission を確認 (GitHub Adapter は token ベースなので不要)
@@ -4020,8 +4021,10 @@ class VirtualBookshelf {
             location.reload();
             return;
         }
-        // 選ばずに閉じた (Esc・枠外クリック): 印と未同期の記録は残す (開き直しても送らずに聞き直す)。一定時間後にもう一度知らせる余地を残す
+        // 選ばずに閉じた (Esc・枠外クリック): 印と未同期の記録は残す (開き直しても送らずに聞き直す)。一定時間後にもう一度知らせる余地を残す。
+        // 書いていないことは保存の失敗と同じ1か所で出し続け、状態バーの「選ぶ」から開き直せる (イシュー#639)
         setTimeout(() => { this._conflictNotified = false; }, 60000);
+        this._onSyncFailed(window.SyncFailure.holdError('sync-conflict'));
     }
 
     /** まとめ保存で、相手が同じファイルの別の項目を変えていて、項目ごとに合わせて書いた時 (イシュー#612・ADR-163)。
@@ -4103,9 +4106,10 @@ class VirtualBookshelf {
         if (!pathEl || !status) return;
         // 保存先へ書くのを止めている間 (読込時の3択をまだ選んでいない・イシュー#639) は「同期済み／保存済み」と言わず理由を出す。
         // 読み込んだ後の 'synced' (フォルダを選んだ時・起動時の読み込み) が、止めている表示を上書きしないようにここで受ける
-        if (state === 'synced' && this._loadConflictHold) {
+        const holdReason = this._loadConflictHold ? 'load-conflict' : (SyncConfigManager.conflict() ? 'sync-conflict' : null);
+        if (state === 'synced' && holdReason) {
             state = 'held';
-            detail = window.SyncFailure.classify(window.SyncFailure.holdError('load-conflict'), this.syncMethod).message;
+            detail = window.SyncFailure.classify(window.SyncFailure.holdError(holdReason), this.syncMethod).message;
         }
         if (state === 'held') {
             pathEl.textContent = folderName;
@@ -5081,7 +5085,12 @@ class VirtualBookshelf {
 
     // 状態バーの「選ぶ」: 保存先へ書くのを止めている理由の3択を開き直す (イシュー#639)
     _resolveSyncHold() {
-        if (this._loadConflictHold) this._askLoadConflict();
+        if (this._loadConflictHold) { this._askLoadConflict(); return; }
+        if (SyncConfigManager.conflict()) {
+            // 閉じた後の「1分は聞き直さない」を待たずに開く (利用者が押した時)
+            this._conflictNotified = false;
+            this._handleSyncConflict(this._syncLabel());
+        }
     }
 
     _scheduleSyncRetry(ms) {
@@ -5846,7 +5855,8 @@ class VirtualBookshelf {
         }
         // 保存先へ書くのを止めている間 (読込時の3択をまだ選んでいない) は、保存先に手元の編集が無い＝古い内容を公開しない。
         // 保存の失敗の印 (_syncError) ではなく、止めている状態そのものを見る (印が外れても止める・再読込の後も止める・イシュー#639)
-        if (this._loadConflictHold) {
+        // 書き込み時の3択をまだ選んでいない (衝突中の印) 間も同じく止める
+        if (this._loadConflictHold || SyncConfigManager.conflict()) {
             toast(window.SyncFailure.HOLD_PUBLISH_MESSAGE, { type: 'warn' });
             return { ok: false, reason: 'hold' };
         }

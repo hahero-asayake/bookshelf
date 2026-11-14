@@ -407,10 +407,10 @@ test.describe('Asayake ハブ: 読込時の3択を選ばずに閉じた後 (イ�
     });
 });
 
-// ===== 同じ種類の箇所 (b): 書き込み時の3択 (#sync-conflict-dialog・イシュー#616) を選ばずに閉じた後 =====
-// step1 では見えた物を残すだけ (同じ仕組みに含めるかは step1 の tp で決める)。手順は門の E2E J6-4 と同じ。
-test.describe('同じ種類 (b): 書き込み時の3択を選ばずに閉じた後 (イシュー#639 step1 の記録)', () => {
-    test('2台で同じ本の短文メモを書いて衝突させ、端末Bで3択を Esc で閉じた後の表示を残す', async ({ page }) => {
+// ===== 同じ種類の箇所 (b): 書き込み時の選択 (#sync-conflict-dialog・イシュー#616・#635 で読み込む／書き出すの2つ) を選ばずに閉じた後 =====
+// 手順は門の E2E J6-4 と同じ (2台で同じ本の短文メモを書いて衝突させる)。端末Bで Esc で閉じた後を見る。
+test.describe('同じ種類 (b): 書き込み時の選択を選ばずに閉じた後 (イシュー#639)', () => {
+    test('端末Bで閉じた後に「未保存」が出て、公開が止まり、「選ぶ」から読み込むと消える', async ({ page }) => {
         const BOOK = 'フィクスチャの本 1';
         const bookButton = (p) => p.getByRole('button', { name: BOOK, exact: true }).first();
         const memoBox = (p) => p.locator('.note-textarea[data-scope="all"]:visible').first();
@@ -422,10 +422,14 @@ test.describe('同じ種類 (b): 書き込み時の3択を選ばずに閉じた�
         await bootAppForTest(page);
         await waitForHubStartupForTest(page);
         const other = await prepareOtherDeviceForTest(page, hub);
+        const publishPosts = [];
+        other.on('request', (req) => { if (req.method() === 'POST' && req.url() === `${HUB_BASE}/publish`) publishPosts.push(req.url()); });
         try {
             await other.goto('index.html');
             await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
             await expect(bookButton(other)).toBeVisible();
+            // 端末Bで公開する記事を先に作っておく (書ける間)
+            const articleId = await createArticleWithBook(other, '衝突中の公開の確認');
             await bookButton(page).click();
             await memoBox(page).fill('端末Aが先に書いたメモ');
             await expect(savedNote(page)).toContainText('保存しました');
@@ -439,11 +443,37 @@ test.describe('同じ種類 (b): 書き込み時の3択を選ばずに閉じた�
             await expect(dlg).toBeHidden();
             await other.waitForTimeout(1500);
             const afterClose = await observe(other);
-            const hubHasB = JSON.stringify(hubStoreForTest(hub).readJSON('private/notes.json') || {}).includes('端末Bが古い版のまま書いたメモ');
-            await test.info().attach('記録 (b) 書き込み時の3択を閉じた後', {
-                body: JSON.stringify({ afterClose, hubHasB }, null, 2),
+
+            // ② 公開を押すと止まる
+            await other.evaluate(() => window.bookshelf.openPublishPagesModal());
+            await other.locator(`#art-list [data-id="${articleId}"] [data-act="publish"]`).click();
+            const cfm = other.locator('.cfm-overlay');
+            if (await cfm.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) await cfm.first().locator('.cfm-ok').click();
+            const toastSeen = await other.locator('.toast', { hasText: '公開を止めました' }).first().waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+            await other.waitForTimeout(1500);
+            const posts = publishPosts.length;
+            await closePublishPages(other);
+
+            await test.info().attach('記録 (b) 書き込み時の選択を閉じた後', {
+                body: JSON.stringify({ afterClose, publish: { toastSeen, posts } }, null, 2),
                 contentType: 'application/json'
             });
+            // ① 閉じた後に「未保存」が出る (書き込み時の種類)
+            expect.soft(afterClose.failureKinds, '状態バーに「保存先へ未保存」(書き込み時) の行がある').toContain('sync-conflict');
+            expect.soft(afterClose.syncPath, '同期欄が「要再接続」と言わない').not.toContain('要再接続');
+            expect.soft(toastSeen, '公開を止めた理由が出る').toBe(true);
+            expect.soft(posts, '公開の送信は0件').toBe(0);
+
+            // ③ 状態バーの「選ぶ」から開き直して「保存先の内容を読み込む」を選ぶと、読み直して表示が消える
+            const row = other.locator('#app-status-bar [data-sync-failure="sync-conflict"]');
+            await row.locator('[data-status-action="resolve-hold"]').click();
+            await expect(dlg).toBeVisible();
+            await dlg.locator('.cfm-remote').click();
+            await other.waitForFunction(() => window.bookshelf && window.bookshelf.userData);
+            await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
+            await other.waitForTimeout(1500);
+            await expect(row).toHaveCount(0);
+            await expect(dlg).toHaveCount(0);
         } finally {
             await closeOtherDeviceForTest(other);
         }
