@@ -649,7 +649,6 @@ class _SettingsMethods {
 
             const now = Date.now();
             const merged = SyncConfigManager.load();
-            merged.method = 'github';
             merged.github = {
                 ...(merged.github || {}),
                 token: token.access_token,
@@ -659,7 +658,8 @@ class _SettingsMethods {
                 refreshTokenExpiresAt: token.refresh_token_expires_in ? now + token.refresh_token_expires_in * 1000 : null,
                 login: user ? user.login : null
             };
-            SyncConfigManager.save(merged);
+            // GitHub につないだ = 保存先を GitHub に決めた (決めた印も一緒に立てる・イシュー#596)
+            SyncConfigManager.setMethod('github', merged);
             this._currentDeviceAuth = null;
             this._renderGitHubAuthState();
             toast(`GitHub に接続しました${user ? ` (${user.login})` : ''}。\n下のリストからリポジトリを選んで「この設定で使う」を押してください。`);
@@ -708,7 +708,6 @@ class _SettingsMethods {
         const ok = await window.confirmDialog({ message: 'GitHub との接続を切断しますか？\n接続情報を削除し、保存先を「この端末のフォルダ」に戻します。', danger: true });
         if (!ok) return;
         const merged = SyncConfigManager.load();
-        merged.method = 'local';
         if (merged.github) {
             merged.github = {
                 ...merged.github,
@@ -719,7 +718,8 @@ class _SettingsMethods {
                 login: null
             };
         }
-        SyncConfigManager.save(merged);
+        // 切断して local に戻った = 保存先を決めていない扱いに戻す (決めた印を外す・イシュー#596)
+        SyncConfigManager.resetMethod(merged);
         location.reload();
     }
 
@@ -1391,9 +1391,8 @@ class _SettingsMethods {
         const wasMethod = SyncConfigManager.load().method;
         HubAuth.disconnect();
         if (wasMethod === 'hub') {
-            const after = SyncConfigManager.load();
-            after.method = 'local';
-            SyncConfigManager.save(after);
+            // 切断して local に戻った = 保存先を決めていない扱いに戻す (決めた印を外す・イシュー#596)
+            SyncConfigManager.resetMethod();
         }
         location.reload();
     }
@@ -1450,7 +1449,6 @@ class _SettingsMethods {
             return;
         }
         const merged = SyncConfigManager.load();
-        merged.method = 'github';
         merged.github = {
             ...(merged.github || {}),
             owner: repo.owner,
@@ -1458,7 +1456,8 @@ class _SettingsMethods {
             branch: repo.branch,
             basePath: repo.basePath
         };
-        SyncConfigManager.save(merged);
+        // 「この設定で使う」= 保存先を GitHub に決めた (決めた印も一緒に立てる・イシュー#596)
+        SyncConfigManager.setMethod('github', merged);
         if (status) status.textContent = '保存しました。ページをリロードします...';
         setTimeout(() => location.reload(), 800);
     }

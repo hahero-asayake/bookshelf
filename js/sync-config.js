@@ -7,6 +7,8 @@
 // 設定形式:
 //   {
 //     method: 'local' | 'github' | 'hub',
+//     methodChosen: true,   // 保存先 (method) を本人が決めた印 (イシュー#596)。決める操作 (setMethod) だけが立て、
+//                           // 切断 (resetMethod) で外す。ログイン・公開先・トークン更新などの書き込みは触らない
 //     github: { owner, repo, branch, basePath, token, login,
 //               refreshToken,           // ghr_… (約6ヶ月有効・refresh ごとにローテーション)
 //               tokenExpiresAt,         // access_token の失効時刻 (絶対時刻 ms)
@@ -76,16 +78,41 @@ class SyncConfigManager {
         try { localStorage.removeItem(SYNC_CONFLICT_KEY); } catch (e) {}
     }
 
-    /** 保存先を一度でも自分で決めた (保存した) ことがあるか。未設定なら UI はハブ推し表示にする (ADR-056)。
-     *  3方式とも、つないだ時に method を保存して記録する (ローカルはフォルダを選んだ時・起動時に保存済みのフォルダが見つかった時。イシュー#592) */
+    /** 保存先を自分で決めたか。未設定なら UI はハブ推し表示にする (ADR-056 追補2)。
+     *  決めた印 (methodChosen) があるか、method が hub/github なら決めた扱い。hub/github は決める操作 (setMethod)
+     *  でしか書かれない (既定は local) ので、印が入る前に保存した人もそのまま決めた扱いになる。
+     *  local は印だけで判定する = ハブへのログイン・公開先の選択などで method:'local' のキーが作られただけでは
+     *  未設定のまま (キーの有無では判定しない・イシュー#596)。印の無い local でも、保存済みのフォルダがあれば
+     *  起動時に _recordLocalSyncChoice が印を立てる (イシュー#592 の補正と同じ場所) */
     static isConfigured() {
-        return !!localStorage.getItem(SYNC_CONFIG_KEY);
+        const raw = localStorage.getItem(SYNC_CONFIG_KEY);
+        if (!raw) return false;
+        try {
+            const c = JSON.parse(raw);
+            return !!c && (c.methodChosen === true || c.method === 'hub' || c.method === 'github');
+        } catch (_) {
+            return false;
+        }
     }
 
-    /** 保存先の方式 (method) だけを書き換えて保存する。接続情報など他のフィールドはそのまま残す。
-     * @param {'local'|'github'|'hub'} method */
-    static setMethod(method) {
-        SyncConfigManager.save({ ...SyncConfigManager.load(), method });
+    /** 保存先を決める操作 (保存先セレクトでの切替・「この設定で使う」・GitHub 接続・フォルダが決まった時) 専用の
+     *  書き込み。method と、決めた印 (methodChosen) を一緒に保存する (イシュー#596)。
+     *  base を渡すとそれを土台にする (接続情報と一緒に書く時)。渡さなければ保存済みの設定の method だけを変え、
+     *  接続情報など他のフィールドはそのまま残す。
+     * @param {'local'|'github'|'hub'} method
+     * @param {object} [base] */
+    static setMethod(method, base) {
+        SyncConfigManager.save({ ...(base || SyncConfigManager.load()), method, methodChosen: true });
+    }
+
+    /** 切断で保存先をこの端末のフォルダに戻す時の書き込み。method を local にし、決めた印を外す
+     *  = 保存先を決めていない扱いに戻す (設定の保存先セレクトはハブを最初に見せる・イシュー#596)。
+     *  base を渡すとそれを土台にする (接続情報を消した設定と一緒に書く時)。
+     * @param {object} [base] */
+    static resetMethod(base) {
+        const cfg = { ...(base || SyncConfigManager.load()), method: 'local' };
+        delete cfg.methodChosen;
+        SyncConfigManager.save(cfg);
     }
 
     static defaults() {
