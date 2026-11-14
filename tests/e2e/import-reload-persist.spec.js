@@ -141,11 +141,10 @@ test('ローカル: 本を除外した直後に再読込しても、除外が残
 
 test.fixme('ローカル: 本を除外した直後に再読込しても、「すべての本」の冊数が2冊 (R2・#662 で直す)', async () => {});
 
-// GitHub は fixme: 重い時 (load 75前後) に5回中3回、再読込の後に保存が2本重なって書き込み時の3択が出た (#622 step4 の R3・別イシュー)。
-// その時、保存先と控えは印まで一致していて、読込の決め方は手元を採っていた (読込時の3択ではない)
+// GitHub は、再読込の後に同期と標準機能の補充のまとめ保存が重なり、後の方の ref の更新が 422 になって書き込み時の3択が出ていた
+// (#622 の R3)。保存先への書き込みを1本ずつ流すようにして直した (js/storage.js serialWrite・イシュー#667)
 for (const kind of ['hub', 'github']) {
-    const run = kind === 'github' ? test.fixme : test;
-    run(`${kind === 'hub' ? 'ハブ' : 'GitHub'}: 取込の直後に待たずに再読込しても、取り込んだ本が残り保存先にも入り、衝突の3択が出ない`, async ({ page }) => {
+    test(`${kind === 'hub' ? 'ハブ' : 'GitHub'}: 取込の直後に待たずに再読込しても、取り込んだ本が残り保存先にも入り、衝突の3択が出ない`, async ({ page }) => {
         let waitStored;
         if (kind === 'hub') {
             const hub = createHubStateForTest();
@@ -176,3 +175,61 @@ for (const kind of ['hub', 'github']) {
         await expect(conflictDialogs(page)).toHaveCount(0);
     });
 }
+
+// 負荷に頼らず、重なりを毎回作る (イシュー#667)。再読込の後の同期のまとめ保存の ref の更新 (PATCH) を、標準機能の補充の
+// まとめ保存が ref を進めるまで (最大3秒) 止める。書き込みが1本ずつ流れていなければ、補充が先に ref を進め、
+// 同期の PATCH が 422 になって書き込み時の3択が出る。模擬はディレクトリの一覧に 404 を返すので、補充は起動のたびに走る
+test('GitHub: 再読込の後の同期と標準機能の補充のまとめ保存が重なっても、1本ずつ流れて3択が出ず、両方が保存先に入る', async ({ page }) => {
+    const gh = createMockGitHubForTest();
+    seedGitHubDataForTest(gh, { exportDate: SEED_EXPORT_DATE });
+    await seedGitHubLoginForTest(page, gh);
+    await mockGitHubForTest(page, gh);
+    // commit が親から変えたパス
+    const changed = (sha) => {
+        const c = gh.commits.get(sha);
+        const parent = c && c.parents[0] ? gh.commits.get(c.parents[0]) : null;
+        if (!c || !parent) return [];
+        const now = gh.trees.get(c.tree); const before = gh.trees.get(parent.tree);
+        return [...new Set([...now.keys(), ...before.keys()])].filter((p) => now.get(p) !== before.get(p));
+    };
+    let hold = false;
+    let releaseSync;
+    const seedLanded = new Promise((r) => { releaseSync = r; });
+    const patches = [];
+    await page.context().route('https://api.github.com/**', async (route) => {
+        const req = route.request();
+        if (hold && req.method() === 'PATCH' && /\/git\/refs\/heads\//.test(req.url())) {
+            const paths = changed(JSON.parse(req.postData() || '{}').sha);
+            if (paths.includes('private/library.json')) {
+                await Promise.race([seedLanded, new Promise((r) => setTimeout(r, 3000))]);
+            } else if (paths.some((p) => p.startsWith('plugins/'))) {
+                await route.fallback();
+                setTimeout(releaseSync, 100);
+                return;
+            }
+        }
+        await route.fallback();
+    });
+    page.context().on('response', (res) => {
+        if (hold && res.request().method() === 'PATCH' && res.url().startsWith('https://api.github.com/')) patches.push(res.status());
+    });
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    await expect(allShelf(page)).toBeVisible();
+    const before = Number(await allShelf(page).locator('.bsr-count').textContent());
+    await page.locator('#sidebar-settings').click();
+    await page.locator('#settings-master .settings-cat[data-cat="library-section"]').click();
+    await page.locator('#import-kindle').click();
+    await expect(page.locator('#import-modal')).toHaveClass(/show/);
+    await pasteAndImport(page);
+    hold = true;
+    await page.reload();
+    await waitForHubStartupForTest(page);
+    await expect(allShelf(page).locator('.bsr-count')).toHaveText(String(before + ASINS.length), { timeout: 15000 });
+    for (const asin of ASINS) await waitForGitHubFileContainsForTest(gh, 'private/library.json', asin, 15000);
+    // 補充のまとめ保存も入る (同期の後に流れる)
+    await expect.poll(() => [...gh.trees.get(gh.commits.get(gh.head).tree).keys()].some((p) => p.startsWith('plugins/')), { timeout: 15000 }).toBe(true);
+    await expect.poll(() => patches.length, { timeout: 15000 }).toBeGreaterThanOrEqual(2);
+    expect(patches.filter((s) => s === 422)).toEqual([]);
+    await expect(conflictDialogs(page)).toHaveCount(0);
+});

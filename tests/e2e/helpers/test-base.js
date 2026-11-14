@@ -186,6 +186,16 @@ export const test = base.extend({
         }
         await use();
     }, { auto: true }],
+    // 重い条件で流す (イシュー#667)。E2E_CPU_THROTTLE=<倍率> の時だけ、chromium のページの CPU を CDP で遅くする
+    // (マシン全体は重くしない＝共有マシン)。既定 (未設定) は何もしない
+    page: async ({ page, browserName }, use) => {
+        const rate = Number(process.env.E2E_CPU_THROTTLE || 0);
+        if (rate > 1 && browserName === 'chromium') {
+            const cdp = await page.context().newCDPSession(page);
+            await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+        }
+        await use(page);
+    },
     context: async ({ context }, use, testInfo) => {
         await blockExternalForTest(context);
         await use(context);

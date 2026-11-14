@@ -4000,12 +4000,14 @@ class VirtualBookshelf {
             // 版の印 (イシュー#612)。書く物がある保存のたびに、同じ書き込みで private/sync-stamp.json に書かれる
             const syncStamp = this.storage.newSyncStamp();
             this._noteSyncBaseWriting(libraryExportDate, syncStamp);
-            // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
+            // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)。合わせた分はこの呼び出しの戻り値で受け取る (イシュー#667)
+            let mergedRemote = null;
             try {
-                await this.storage.syncBatch(entries, {
+                ({ merged: mergedRemote } = await this.storage.syncBatch(entries, {
                     message: `chore(bookshelf): sync ${entries.length} file(s)`,
-                    stamp: syncStamp
-                });
+                    stamp: syncStamp,
+                    withMerged: true
+                }));
             } catch (err) {
                 // GitHub と Asayake ハブの衝突 (楽観ロック・中身が他で変わっていた) を同じ3択に合流させる (WP-B2・イシュー#616)。
                 // 外側の catch には落とさない (再試行しても同じ衝突になる)。衝突中の印を残し、選ぶまで送らない
@@ -4022,7 +4024,7 @@ class VirtualBookshelf {
             this.storage.clearBookMemoOps(memoOps.records);
 
             // 相手の変更と項目ごとに合わせて書いた時は、相手の分を手元の状態にも入れる (イシュー#612・ADR-163)
-            this._applyMergedRemote(this.storage.lastMerged);
+            this._applyMergedRemote(mergedRemote);
             this._lastSyncOk = true;
             // 印は「保存先に今ある印」を控える (送る物が無かった保存では印を書かないので、前の印のまま)
             this._writeSyncBase(libraryExportDate, this.storage.syncStamp);

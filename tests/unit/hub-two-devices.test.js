@@ -169,6 +169,24 @@ describe('2台 (A・B) が同じハブに一括保存する', () => {
         expect(remote(NOTES).notes).toEqual({ book1: { memo: 'A1-2' }, book2: { memo: 'B2' } });
     });
 
+    it('同じ端末で2本の syncBatch を同時に呼んでも1本ずつ流れ、合わせた分 (merged) は呼び出しごとに返る (イシュー#667)', async () => {
+        await seed();
+        const A = device('hub-a.test'); const B = device('hub-b.test');
+        await load(A); await load(B);
+        await A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'A1' } } })]);
+        // B は読み直さずに本2を書く (412 → 項目ごとに合わせる) と同時に、設定だけのまとめ保存も呼ぶ
+        const [n, s] = await Promise.all([
+            B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'B2' } } })], { withMerged: true }),
+            B.storage.syncBatch([put(SETTINGS, { version: '2.0', theme: 'b' })], { withMerged: true })
+        ]);
+        expect(n.result).toBe(true);
+        expect(s.result).toBe(true);
+        expect(JSON.parse(n.merged[NOTES].merged).notes).toEqual({ book2: { memo: 'B2' }, book1: { memo: 'A1' } });
+        expect(s.merged).toBeNull();
+        expect(remote(NOTES).notes).toEqual({ book2: { memo: 'B2' }, book1: { memo: 'A1' } });
+        expect(remote(SETTINGS).theme).toBe('b');
+    });
+
     it('項目ごとの合わせ: 設定 (settings.json) も別々のキー・更新時刻の表なら合わせる。同じキーを違う値にしたら止まる', async () => {
         await seed();
         const A = device('hub-a.test'); const B = device('hub-b.test');

@@ -97,6 +97,19 @@ const memoRecordKey = (r) => JSON.stringify(r);
 class BookshelfStorage {
     constructor(adapter) {
         this.adapter = adapter || new LocalFSAdapter();
+        this._writeTail = Promise.resolve();
+    }
+
+    // ===== 保存先への書き込みの待ち行列 (イシュー#667) =====
+    // 保存先への書き込み (まとめ保存・1件ずつの書き込み・公開の commit) は、ここを通して1本ずつ流す。
+    // GitHub は書き込みのたびに ref を楽観ロック (force:false) で進めるため、同じページから2本が重なると後の方が 422 になり、
+    // 1台で使っているのに書き込み時の3択が出た (同期と標準機能の補充の重なり・#622 R3)。
+    // 失敗した書き込みでも行列は止めない (後ろは流れ、失敗は呼び出し元へそのまま返る)。
+    // fn の中から、この行列を通る書き込み (syncBatch・writeJSON 等) を呼ばない＝自分の番を待ち合って止まる。adapter を直接使う
+    serialWrite(fn) {
+        const run = this._writeTail.then(() => fn());
+        this._writeTail = run.then(() => {}, () => {});
+        return run;
     }
 
     // ===== 接続管理 (LocalFSAdapter 互換) =====
@@ -281,23 +294,30 @@ class BookshelfStorage {
             defaultSort: 'addedDate-desc'
         };
 
-        // 一斉書き込み (新構造: 全部 private/ 配下)
-        await this.adapter.writeJSON('private/library.json', newLibrary);
-        await this.adapter.writeJSON('private/exclusions.json', { excludedASINs: [] });
-        await this.adapter.writeJSON('private/notes.json', notesFile);
-        await this.adapter.writeJSON('private/bookshelves.json', bookshelvesMeta);
-        await this.adapter.writeJSON('private/bookshelves/all.json', allBookshelf);
-        for (const { slug, data } of bookshelfFilesToWrite) {
-            await this.adapter.writeJSON(`private/bookshelves/${slug}.json`, data);
-        }
-        await this.adapter.writeJSON('private/settings.json', privateSettings);
-        await this.adapter.writeJSON('private/main.json', privateMain);
+        // 一斉書き込み (新構造: 全部 private/ 配下)。まとめて1回の順番で書く (イシュー#667)
+        await this.serialWrite(async () => {
+            await this.adapter.writeJSON('private/library.json', newLibrary);
+            await this.adapter.writeJSON('private/exclusions.json', { excludedASINs: [] });
+            await this.adapter.writeJSON('private/notes.json', notesFile);
+            await this.adapter.writeJSON('private/bookshelves.json', bookshelvesMeta);
+            await this.adapter.writeJSON('private/bookshelves/all.json', allBookshelf);
+            for (const { slug, data } of bookshelfFilesToWrite) {
+                await this.adapter.writeJSON(`private/bookshelves/${slug}.json`, data);
+            }
+            await this.adapter.writeJSON('private/settings.json', privateSettings);
+            await this.adapter.writeJSON('private/main.json', privateMain);
+        });
 
         return { migrated: true, allInternalId };
     }
 
     // ===== 空状態の初期化 (新構造: 全部 private/ 配下) =====
-    async initEmpty() {
+    // まとめて1回の順番で書く (イシュー#667・本体は adapter を直接使う)
+    initEmpty() {
+        return this.serialWrite(() => this._initEmptyNow());
+    }
+
+    async _initEmptyNow() {
         const allInternalId = generateInternalId();
         await this.adapter.writeJSON('private/library.json', { exportDate: new Date().toISOString(), books: [] });
         await this.adapter.writeJSON('private/exclusions.json', { excludedASINs: [] });
@@ -400,24 +420,25 @@ class BookshelfStorage {
     }
 
     // ===== 個別書き出し (新構造: 全部 private/ 配下) =====
-    writeLibrary(data) { return this.adapter.writeJSON('private/library.json', data); }
-    writeExclusions(data) { return this.adapter.writeJSON('private/exclusions.json', data); }
-    writeBookshelvesMeta(data) { return this.adapter.writeJSON('private/bookshelves.json', data); }
-    writeAllBookshelf(data) { return this.adapter.writeJSON('private/bookshelves/all.json', data); }
-    writeBookshelfFile(slug, data) { return this.adapter.writeJSON(`private/bookshelves/${slug}.json`, data); }
-    writePrivateSettings(data) { return this.adapter.writeJSON('private/settings.json', data); }
-    writePrivateMain(data) { return this.adapter.writeJSON('private/main.json', data); }
+    // 1件ずつの書き込みも待ち行列を通す (イシュー#667。GitHub は1件ごとに commit を作り ref を進める)
+    writeLibrary(data) { return this.writeJSON('private/library.json', data); }
+    writeExclusions(data) { return this.writeJSON('private/exclusions.json', data); }
+    writeBookshelvesMeta(data) { return this.writeJSON('private/bookshelves.json', data); }
+    writeAllBookshelf(data) { return this.writeJSON('private/bookshelves/all.json', data); }
+    writeBookshelfFile(slug, data) { return this.writeJSON(`private/bookshelves/${slug}.json`, data); }
+    writePrivateSettings(data) { return this.writeJSON('private/settings.json', data); }
+    writePrivateMain(data) { return this.writeJSON('private/main.json', data); }
 
     readPublicMain() { return this.adapter.readJSON('public/main.json'); }
     readPublicSettings() { return this.adapter.readJSON('public/settings.json'); }
-    writePublicMain(data) { return this.adapter.writeJSON('public/main.json', data); }
-    writePublicSettings(data) { return this.adapter.writeJSON('public/settings.json', data); }
+    writePublicMain(data) { return this.writeJSON('public/main.json', data); }
+    writePublicSettings(data) { return this.writeJSON('public/settings.json', data); }
 
     readNotes() { return this.adapter.readJSON('private/notes.json'); }
-    writeNotes(data) { return this.adapter.writeJSON('private/notes.json', data); }
+    writeNotes(data) { return this.writeJSON('private/notes.json', data); }
 
     deleteBookshelfFile(slug) {
-        return this.adapter.deleteFile(`private/bookshelves/${slug}.json`);
+        return this.serialWrite(() => this.adapter.deleteFile(`private/bookshelves/${slug}.json`));
     }
 
     // ===== 本棚ファイルの削除待ち (イシュー#587) =====
@@ -452,7 +473,7 @@ class BookshelfStorage {
     listFiles(dirPath) { return this.adapter.listFiles(dirPath); }
     readText(path) { return this.adapter.readText(path); }
     readJSON(path) { return this.adapter.readJSON(path); }
-    writeJSON(path, data) { return this.adapter.writeJSON(path, data); }
+    writeJSON(path, data) { return this.serialWrite(() => this.adapter.writeJSON(path, data)); }
 
     // ===== バッチ書き込み =====
     //
@@ -467,8 +488,16 @@ class BookshelfStorage {
     //   保存先の種類を問わず、照合を付けずに書く (印なので、後から書いた方が勝ちでよい)。
     //   変えたファイルだけ送る adapter (ハブ) は、他に送る物が無ければ印も書かない (addBatchStamp)。
     //   保存先に今ある印は this.syncStamp に覚える (読んだ時は loadAll・書けた時はここ)。
-    async syncBatch(entries, { message, stamp } = {}) {
-        if (!Array.isArray(entries) || entries.length === 0) return;
+    // 待ち行列を通す (イシュー#667)。withMerged=true の時は { result, merged } を返す＝相手の変更と合わせた分は呼び出しごとに受け取る
+    // (this.lastMerged は互換のため残すが、後ろに並んだまとめ保存に上書きされうる)
+    async syncBatch(entries, opts = {}) {
+        if (!Array.isArray(entries) || entries.length === 0) return opts.withMerged ? { result: undefined, merged: null } : undefined;
+        const out = await this.serialWrite(() => this._syncBatchNow(entries, opts));
+        return opts.withMerged ? out : out.result;
+    }
+
+    // 本体。adapter を直接使う (行列の中から行列を通る書き込みを呼ぶと止まるため)
+    async _syncBatchNow(entries, { message, stamp } = {}) {
         const a = this.adapter;
         const stampContent = stamp ? JSON.stringify({ stamp }, null, 2) : null;
         if (typeof a.beginBatch === 'function' && typeof a.commitBatch === 'function') {
@@ -493,8 +522,10 @@ class BookshelfStorage {
                 // 送る物が無くて印も書かなかった時 (adapter が lastBatchWroteStamp=false と言う) は、覚えている印を進めない
                 if (stampContent && a.lastBatchWroteStamp !== false) this.syncStamp = stamp;
                 // 相手の変更と項目ごとに合わせて書いたファイル { path: { local, merged } } (イシュー#612)。呼び出し元が手元へ入れる
-                this.lastMerged = a.lastBatchMerged || null;
-                return res;
+                // 行列の中なので、adapter の lastBatch* は他のまとめ保存に上書きされていない (イシュー#667)
+                const merged = a.lastBatchMerged || null;
+                this.lastMerged = merged;
+                return { result: res, merged };
             } catch (err) {
                 if (typeof a.discardBatch === 'function') a.discardBatch();
                 throw err;
@@ -514,7 +545,7 @@ class BookshelfStorage {
             await a.writeText(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
             this.syncStamp = stamp;
         }
-        return null;
+        return { result: null, merged: null };
     }
 
     // 保存ごとに変わる値 (時刻と乱数)。保存先がこの端末と最後に揃えた後に変わったかを見分ける印に使う (イシュー#612・#602)
@@ -555,7 +586,7 @@ class BookshelfStorage {
     async writeBookMemo(asin, title, content) {
         const fileName = this.bookMemoFileName(asin, title);
         const path = `private/books/${fileName}`;
-        await this.adapter.writeText(path, content);
+        await this.serialWrite(() => this.adapter.writeText(path, content));
         // 移動待ちの to に書いた＝書いた中身が新しい正。その移動は from を消すだけに変える
         const recs = readPendingMemoRecords();
         if (recs.some(r => r.kind === 'memo-move' && r.to === path)) {

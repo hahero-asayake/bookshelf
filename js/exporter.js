@@ -187,7 +187,9 @@ class BookshelfExporter {
         }
         for (const p of deletes) publishAdapter.addBatchDelete(p);
         try {
-            await publishAdapter.commitBatch(`chore(bookshelf): publish ${result.articles.length} article(s)`);
+            // 公開先の adapter は保存先とは別のインスタンスだが、同じ repo・branch なら同じ ref を進める＝保存先への書き込みと同じ行列に並べる (イシュー#667)
+            const commitPublish = () => publishAdapter.commitBatch(`chore(bookshelf): publish ${result.articles.length} article(s)`);
+            await (this.app.storage ? this.app.storage.serialWrite(commitPublish) : commitPublish());
         } catch (err) {
             // 衝突の判定は StorageAdapter.isRemoteConflict 1つに寄せる (イシュー#616)。公開は生成物なので3択にはしない
             if (window.StorageAdapter ? StorageAdapter.isRemoteConflict(err) : (err && err.name === 'GitHubConflictError')) {
