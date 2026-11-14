@@ -2444,10 +2444,14 @@ class VirtualBookshelf {
             dragHandle.addEventListener('pointerdown', (e) => this._onBookPointerDown(e, bookElement));
         }
 
+        // 次の pointerdown で、前のドラッグ・長押しの印を外す (正しいタップを捨てない・イシュー#654)。
+        // capture で受けるので、長押しの口の touchstart の早期 return (pop を出したカードの中) にも左右されない
+        bookElement.addEventListener('pointerdown', () => this._disarmCardClickSwallow(bookElement), true);
+
         bookElement.addEventListener('click', (e) => {
-            // 長押しで pop を出した直後の click は抑制 (詳細を開かない)
+            // つまみのドラッグの後・長押しで pop を出した後の click は1回だけ捨てる (詳細を開かない)
             if (bookElement._suppressClick) {
-                bookElement._suppressClick = false;
+                this._disarmCardClickSwallow(bookElement);
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -2500,7 +2504,6 @@ class VirtualBookshelf {
         this.draggedElement = bookElement;
         this.draggedASIN = bookElement.dataset.asin;
         bookElement.classList.add('dragging');
-        bookElement._suppressClick = true;
 
         // ゴースト: 元要素を fixed clone して pointer に追従させる
         const rect = bookElement.getBoundingClientRect();
@@ -2572,6 +2575,10 @@ class VirtualBookshelf {
     }
 
     _cancelBookPointerDrag() {
+        // ドラッグが終わった (pointerup・pointercancel のどちらもここを通る) 時に、この後の click を1回捨てる印を付ける
+        // (イシュー#654)。押した時点では付けない＝離した時に click が出ない (タッチで動かした・並べ替えた) 時に
+        // 印が残り、次の正しいタップを捨てていた
+        if (this.draggedElement) this._armCardClickSwallow(this.draggedElement);
         if (this.draggedElement) this.draggedElement.classList.remove('dragging');
         if (this._dragGhost) { this._dragGhost.remove(); this._dragGhost = null; }
         if (this._lastDragOverTarget) { this._lastDragOverTarget.style.borderLeft = ''; this._lastDragOverTarget = null; }
@@ -2613,6 +2620,27 @@ class VirtualBookshelf {
 
     _stopBookDragAutoScroll() {
         if (this._dragRAF) { cancelAnimationFrame(this._dragRAF); this._dragRAF = null; }
+    }
+
+    // ===== 本のカードの「ドラッグ・長押しの後の click を1回捨てる」印 (イシュー#654) =====
+    // 決まりは js/ui/reorder.js の口 (イシュー#649) と同じ: 付けるのはドラッグが終わった時 (つまみ)・長押しで pop を
+    // 出した時。捨てるのはそのカードの click を1回だけ。外すのは「1回捨てた時・次の pointerdown・離してから400ms」の
+    // 一番早い時。400ms は Reorder の CLICK_SWALLOW_MS・記事エディタのキャンバスの dragEndAt と同じ長さ。
+    // released=false (長押しを押している間) の時は、離した時に _startCardClickSwallowTimer で400ms を数え始める
+    _armCardClickSwallow(el, released = true) {
+        this._disarmCardClickSwallow(el);
+        el._suppressClick = true;
+        if (released) this._startCardClickSwallowTimer(el);
+    }
+
+    _startCardClickSwallowTimer(el) {
+        if (!el._suppressClick || el._suppressClickTimer) return;
+        el._suppressClickTimer = setTimeout(() => this._disarmCardClickSwallow(el), 400);
+    }
+
+    _disarmCardClickSwallow(el) {
+        el._suppressClick = false;
+        if (el._suppressClickTimer) { clearTimeout(el._suppressClickTimer); el._suppressClickTimer = null; }
     }
 
     // ===== Pointer Events 汎用ドラッグ並べ替え (P4残り, イシュー#337) =====
@@ -4550,10 +4578,15 @@ class VirtualBookshelf {
         if (this._popLongPressBound) return;
         this._popLongPressBound = true;
         const container = document.querySelector('.app-main-pane') || document.body;
-        let timer = null, sx = 0, sy = 0;
+        let timer = null, sx = 0, sy = 0, pressed = null;
         const clearAll = () => document.querySelectorAll('.book-item.show-pop')
             .forEach(el => el.classList.remove('show-pop'));
         const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+        // 離した時: 長押しの印の400ms をここから数える (押している間に切れて、離した後の click で詳細が開かないように・イシュー#654)
+        const release = () => {
+            cancel();
+            if (pressed) { this._startCardClickSwallowTimer(pressed); pressed = null; }
+        };
 
         container.addEventListener('touchstart', (e) => {
             // 既に開いている pop 内の操作 (星タップ等) は素通し
@@ -4562,13 +4595,14 @@ class VirtualBookshelf {
             const item = e.target.closest('.book-item');
             if (!item || !item.querySelector('.card-hover-pop')) return;
             if (document.body.classList.contains('select-mode')) return;
-            item._suppressClick = false;
+            this._disarmCardClickSwallow(item);
             const t = e.touches[0];
             sx = t.clientX; sy = t.clientY;
             timer = setTimeout(() => {
                 timer = null;
                 item.classList.add('show-pop');
-                item._suppressClick = true;   // 直後の click(詳細) を抑制
+                this._armCardClickSwallow(item, false);   // 直後の click(詳細) を抑制 (400ms は離した時から)
+                pressed = item;
             }, 450);
         }, { passive: true });
 
@@ -4578,8 +4612,8 @@ class VirtualBookshelf {
             if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) cancel(); // スクロール
         }, { passive: true });
 
-        container.addEventListener('touchend', cancel, { passive: true });
-        container.addEventListener('touchcancel', cancel, { passive: true });
+        container.addEventListener('touchend', release, { passive: true });
+        container.addEventListener('touchcancel', release, { passive: true });
     }
 
     _togglePane(which) {
