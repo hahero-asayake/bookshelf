@@ -92,6 +92,8 @@ async function takeShots(page, label) {
         for (const [width, height, tag] of [[1280, 800, 'pc'], [390, 844, '390']]) {
             await page.setViewportSize({ width, height });
             await page.waitForTimeout(400);
+            // スマホ幅では本の詳細・横のメニューが状態バーの上に重なるので、閉じてから撮る
+            for (let i = 0; i < 2; i++) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); }
             const bar = test.info().outputPath(`${label}-${tag}-statusbar.png`);
             await page.screenshot({ path: bar });
             files.push(bar);
