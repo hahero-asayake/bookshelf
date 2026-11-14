@@ -235,3 +235,26 @@ GATE_WEBKIT=1 PORT=8198 PLAYWRIGHT_BASE_URL=http://localhost:8198 npx playwright
 
 - 結果の置き場: `/home/kuroko/worktrees/bookshelf/_artifacts/598/e2e-diff/`（base.e2e.json・work.e2e.json・base/work.vitest.json・work.visual.json）と、流し直しの記録 `_artifacts/598/j25-work-{1,2,3}.log`（どれもリポジトリの外）。
 - 止められた時の残り: `_artifacts/598/e2e-diff/_worktree-base` のフォルダ（base 側の一時 worktree の残り。git の worktree の登録は残っていない）。同じ `--out` で流し直す時は邪魔になるので、別の `--out` を使う。
+
+## step5 push の前の確認（2026-11-14・土台 origin/main 762e41b）
+
+- ②の承認（14:06）の後、push の前に fetch すると origin/main が 762e41b へ進んでいた（#596 の8本と #608 の1本）。rebase した（衝突なし）。#596 は移した3 spec の `bootWithLocalFolder`（ローカルの投入に決めた印 `methodChosen: true`）を変えている。`bootWithHub` は変えていない。
+- rebase の後も、`installFakeHub|FAKE_HUB_BASE|fakehub\.test` の grep は scripts/verify 以外で0件。origin/main から HEAD までは自分の commit だけ。
+- 載せ直した状態で、移した3 spec と gate-hub.js を使う spec（gate 8本・billing-portal-return）を chromium と gate-webkit で流した: 83本中 78 passed・4 skipped（既存の fixme）・1 failed。
+  - 落ちた1本は shelf-file-delete の「本棚の削除で保存先の本棚ファイルも消える: GitHub › 子を持つ本棚を削除すると…」（GitHub の模擬の分）。本棚を作った後、保存先の一覧に届くのを待つ5秒の制限に掛かった。この時 load average は約35。同じテスト（:153・保存先3つ分）を3回流し直して、3回とも3本すべて通った = flake。ハブの分ではない。
+- CI と同じ lint と check:version は、rebase の後にもう一度流してすべて exit 0。
+- push と CI の結果は、イシューの完了報告に書く（この記録を足すと、もう1回 push が要るため）。
+
+### 移した spec（ハブの模擬を installFakeHub から gate-hub.js へ）
+
+- tests/e2e/shelf-file-delete.spec.js（#587・ハブを使うテスト6本）
+- tests/e2e/book-memo-file-lifecycle.spec.js（#594・8本。うち1本は fixme）
+- tests/e2e/save-failure-visible.spec.js（#603・4本）
+
+### 範囲外の重なり（別イシューの候補・今回は触っていない）
+
+- GitHub の模擬が2本ある: storage-fakes.js の `installFakeGitHub`（3 spec が使う）と、gate-github.js（門の E2E が使う）。
+- ローカルフォルダの模擬が2本ある: storage-fakes.js の `installFakeLocalFolder`・`installLocalWriteFailures` と、gate-local.js。
+- spec の中に自前のハブの模擬を持つファイル（`page.route` でハブの応答を書いている）: plugin-seed（installMockHub）・publish-conflict-hub・publish-article-editor（2か所）・critical-path・char/hub-conflict・char/publish-hub・char/article-ops-count・onboarding-and-prefs。
+- #602 の branch の tests/e2e/sync-offline-reconnect.spec.js（main 未着）は installFakeHub と FAKE_HUB_BASE を使っている。#602 が載せ直す時に gate-hub.js（HUB_BASE・hubStoreForTest）へ替える（②が #602 へ伝える）。
+- gate-hub.js の `state.requests` は状態コードを持たない。模擬に無い道（501）を機械で拾いたい時は、記録に印を付ける小さな変更が要る。
