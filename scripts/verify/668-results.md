@@ -9,7 +9,8 @@
 - **効くか**：#657 の直しの前の版（`e4b10ea`）では、同期欄の所（:421 `#obsidian-sync-status` が hidden）で赤になった（step3）。
 - **関係する spec**：78本（8ファイル）＋ char の3本がすべて緑（step3）。
 - **lint・npm test**（載せ直した後・step5）：`[lint] 12 本中 0 本失敗`。Test Files 80 passed (80)・Tests 1194 passed | 2 todo (1196)。
-- **全件比較**：step4 は負荷（load 32〜40）の中で、base 側の 449/1744 本で playwright がシグナルで終わった。3つの表は作れず、代替判定にした（差分は spec 1本の追加・検証スクリプトの引数・docs だけ、関係する spec はすべて緑）。step5 で load が 8 まで下がったので、`--workers=4` で流し直しを始めた（下の step5 §4）。
+- **全件比較**：step4 は負荷（load 32〜40）の中で、base 側の 449/1744 本で playwright がシグナルで終わった。3つの表は作れず、代替判定にした（差分は spec 1本の追加・検証スクリプトの引数・docs だけ、関係する spec はすべて緑）。step5 で load が 8 まで下がったので、`--workers=4` で流し直しを始めた（下の step5 §4）。しかし step6 で、origin/main への載せ直しのために、終わる前に止めた。push は②の承認どおり代替判定でした（step6）。全件の確認は CI の e2e に任せた。
+- **push**：`02772ca..61a91a2 -> main`（2026-11-14 19:11:42・step6）。
 - **commit**（載せ直した後・origin/main `9713381` の上）：`f5ae137` test（spec）・`3ae2847` docs・`abdc016` chore（e2e-diff-main.mjs の `--workers`）・`12d8425` docs と、この step5 の docs。push はしていない。
 
 ## step1 着手条件の確認・作業場所・base での実測（2026-11-14 18:38〜18:41 JST）
@@ -179,3 +180,29 @@
 3. 2台で書き込み時の衝突を作る手順が、3か所に同じ形で並んでいる。#645 の sync-conflict-overwrite.spec.js の makeWriteConflict、#657 のハブの書き込み時のテスト、本件の1本。共通の部品にするなら別イシュー。
 4. storage-fakes.js の installFakeGitHub では、これからも書き込み時の衝突を起こせない（本件は案B で、口を足していない）。installFakeGitHub を使う spec で書き込み時の衝突が要る時は、gate-github.js と gate-device.js の2台を使う。
 5. 07 の同じ行にある、もう1つの残り（`#obsidian-sync-path` がハブ・GitHub の時もローカルの欄に書かれる）は、本件の範囲外なので変えていない。
+
+## step6 push・CI（2026-11-14 19:10〜 JST）
+
+### 1. push の前（②の承認 19:09:51 の手順どおり）
+
+- 19:10:07 に `tmp/668/step5-e2e-diff.log` を1回だけ見た。`exit=` はまだ付いていなかった（base 側の E2E の途中・load 45.59）。②の指示どおり、全件比較の結果は待たずに push した＝**代替判定で push した**（step4 §3 の (a)(b)）。
+- origin/main が `02772ca` へ15件進んでいた（#663・#664 のアプリの直しと `?v=` の上げ直しを含む）。載せ直しが要るので、先に `systemctl --user stop bs668-e2e-diff2` で全件比較を止めた（19:10:18。19:08:43 から約1分半。base の playwright の log は書かれておらず、終わっていた本数は分からない）。残った `_artifacts/668-e2e-diff3/_worktree-base` は、node_modules の symlink を `_trash/668-e2e-diff3-node_modules-link` へ移してから `git worktree remove --force` で外した。
+- `git rebase origin/main`（衝突なし）。自分の commit は `6be5162`（test）・`66fb1d1`・`9737afc`（chore）・`2a116db`・`71f45fb`・`61a91a2`（docs）。js・css・index.html は変えていないので、`?v=` は触っていない。
+- 載せ直した後の確認（アプリのコードが入れ替わったため流し直した）：新しい1本 **1 passed (7.8s)**（load 46.51）、`npm run lint` **`[lint] 12 本中 0 本失敗`**、`npm test` **Test Files 80 passed (80)・Tests 1194 passed | 2 todo (1196)**（出力 `tmp/668/step6-spec.txt`・`step6-lint.txt`・`step6-vitest.txt`）。
+- 送る commit は自分の6件だけで、6件とも `Issue: #668` がある（`git rev-list origin/main..HEAD` で確かめた）。
+
+### 2. push
+
+- `BOOKSHELF_ISSUE=668 git push origin 61a91a22923f8ab90fe31f2e838163d4c6d78878:main` → **`02772ca..61a91a2  -> main`**（19:11:42）。pre-push の lint も「12 本中 0 本失敗」。
+
+### 3. CI
+
+- CI の run：https://github.com/hahero-asayake/bookshelf/actions/runs/43584102876 （19:11:42 作成）。19:11:57 に API で1回見た時点では in_progress。
+- その後は run の画面の HTML で見た（API の残りが30回だったため）：19:12:38 は「In progress・0/4 jobs completed」、19:14:13 も同じ、19:16:41（push から5分）も「In progress」。**最大待ち時間（5分）では終わらなかった**＝代替判定で、その時点の状態（進行中・上の URL）を書いて提出する。CI の e2e が全件を流した結果は、この run が終わると上の URL で見られる。
+- main の badge（ci.yml）は 19:16 に「failing」だった。本件の run の結果ではない。前に終わった run 43582903319（`9713381`・#669 の docs）の結果。19:16:51 に API で見ると、本件の run・`02772ca`・`585f13a` の3本はまだ in_progress だった。43582903319 で落ちていたのは test (e2e) の step 20「Smoke tests (Playwright, sort-perf-budget以外・並列)」で、annotations では「E2E 失敗 合計3件」：
+  1. `duplicate-asin-notice.spec.js` › 本の詳細に付け直し案内が出て、付け替え直後はもう一方の本に設定が残り(コピー)、その後の新しい変更は伝播しない
+  2. `list-staged-render.spec.js` › #401 並べ替えの段階描画（913冊） › 途中で1冊を動かす（まだ置かれていない本へのドロップ）: 並び順どおりに反映される
+  3. `sync-conflict-overwrite.spec.js` › Asayake ハブ: 書き込みで衝突した時に「この端末の内容で保存先を上書き」を選ぶと…（#645 のハブの1本）
+  - 3件とも本件の push の前から main で落ちている。本件の差分（spec 1本の追加・検証スクリプトの引数・docs）が触る所ではない。3 の sync-conflict-overwrite のハブの1本は、手元では step1・step3 で緑だった。本件の新しい1本（GitHub）は、この一覧に入っていない。本件の run で同じ3件が落ちても、本件の赤ではない。
+- 全件比較の unit：`systemctl --user is-active bs668-e2e-diff2` は inactive（19:10:18 に止めた）。`_artifacts/668-e2e-diff3/_worktree-base` は無い（git worktree list にも無い）。port 8168 も空いている。
+- 設計書（vault）の 07・08 の変更は、19:30 の vault backup で入る見込み。この run の中では確かめていない。
