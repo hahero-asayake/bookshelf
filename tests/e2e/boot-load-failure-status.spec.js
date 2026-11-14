@@ -65,6 +65,10 @@ async function expectSyncField(page, { status, path }) {
     await expect.soft(syncPath(page), 'path').toHaveText(path);
 }
 
+// 自動の再試行の間隔を短くして使い切らせる (E2E 用の口・js/sync-failure.js)。同期欄は、再試行の間は
+// 「保存できていない変更があります。自動で再試行しています。」で、尽きた後に失敗の種類の文になる (#657)
+const useShortRetries = (page) => page.addInitScript(() => localStorage.setItem('bookshelf.flag.syncRetryDelaysMs', '[300,300,300]'));
+
 async function writeMemo(page, memo) {
     await page.getByRole('button', { name: BOOK, exact: true }).first().click();
     await page.locator('.note-textarea[data-scope="all"]:visible').first().fill(memo);
@@ -108,6 +112,7 @@ test('GitHub: 起動の読込が認証切れで失敗した時、同期欄は to
 });
 
 test('守り ハブ: 保存の書き込みが通信で失敗した時は、今までどおり同期欄に「Asayake ハブに保存できませんでした。…」を出す', async ({ page, context }) => {
+    await useShortRetries(page);
     const { cut } = await bootHub(page, context);
     cut.mode = 'net';
     cut.onlyWrites = true;
@@ -117,6 +122,7 @@ test('守り ハブ: 保存の書き込みが通信で失敗した時は、今�
 });
 
 test('守り GitHub: 保存の書き込みが通信で失敗した時は、今までどおり同期欄に「GitHub に保存できませんでした。…」を出す', async ({ page, context }) => {
+    await useShortRetries(page);
     const { gh, cut } = await bootGitHub(page, context);
     cut.mode = 'net';
     cut.onlyWrites = true;
