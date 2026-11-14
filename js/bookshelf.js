@@ -6559,9 +6559,13 @@ class VirtualBookshelf {
             const success = await this.bookManager.updateBook(asin, updateData);
 
             if (success) {
-                // オリジナルASINが変更された場合、ユーザーデータを移行
+                // 本の情報の変更も、ほかの編集と同じ入口 (saveUserData) で未反映の印を立てて保存を予約する。
+                // updateBook は端末の library に書くだけなので、通らないと保存先へ送られず、再読込で保存先の
+                // 古い値に戻る (イシュー#614)。ASIN を変えた時は migrateUserData が最後に saveUserData を通る
                 if (newOriginalAsin !== asin) {
                     this.migrateUserData(asin, newOriginalAsin);
+                } else {
+                    this.saveUserData();
                 }
 
                 // 表示を更新

@@ -95,6 +95,30 @@ const BACKENDS = [
     { name: 'ローカルフォルダ', boot: bootWithLocalFolder }
 ];
 
+// 落ちた時に原因を見るための記録 (本の一覧・未保存ありの印・画面に出ている確認や画面・console・保存先の library.json)。
+// 8b6dab5 で定義だけが消え、呼び出しが ReferenceError になっていたので戻した (イシュー#614)
+let consoleLines = [];
+test.beforeEach(({ page }) => {
+    consoleLines = [];
+    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') consoleLines.push(`${m.type()}: ${m.text().slice(0, 300)}`); });
+    page.on('pageerror', (e) => consoleLines.push(`pageerror: ${e.message.slice(0, 300)}`));
+});
+
+async function attachDiag(page, remote, label) {
+    const app = await page.evaluate(() => ({
+        books: (window.bookshelf.books || []).map((b) => `${b.asin}:${b.title}`),
+        pendingSync: localStorage.getItem('virtualBookshelf_pendingSync'),
+        shown: Array.from(document.querySelectorAll('.cfm-overlay, .modal.show, [role="dialog"], [role="alertdialog"]'))
+            .filter((el) => el.offsetParent !== null || getComputedStyle(el).position === 'fixed')
+            .map((el) => `${el.id || el.className}: ${(el.innerText || '').replace(/\s+/g, ' ').slice(0, 160)}`),
+        status: (document.getElementById('app-status-bar') || {}).innerText || ''
+    })).catch((e) => ({ evaluateError: e.message }));
+    const remoteLibrary = await remote.readJSON('private/library.json');
+    const body = JSON.stringify({ label, app, remoteLibrary, console: consoleLines }, null, 2);
+    console.log(`DIAG ${body}`);
+    await test.info().attach(label, { body, contentType: 'application/json' });
+}
+
 /** 前提づくり: 画面の操作 (設定の「蔵書」→ 手動で追加) で本を1冊足し、保存先の library.json に届くまで待つ
  *  (#587 の E2E と同じく「画面の操作 → 保存先を poll」。手順は dashboard-stats-after-manual-add.spec.js と同じ)。
  *  addBookManually を直接呼ぶと、起動時の読み込みが終わる前に足した本が読み込みで上書きされて消えることがあった
@@ -252,11 +276,11 @@ const NEW_TITLE = '題名を変えた本';
 
 for (const { name, boot } of BACKENDS) {
     test.describe(`長文メモ: 変更してすぐ再読込 ${name} (イシュー#594)`, () => {
-        // fixme: 本の編集が保存前の再読込で戻る件 (別イシュー予定)。題名を変えてすぐ再読込すると、題名の変更そのものが
-        // 古い題名に戻る (「未保存あり」の印が立っている間に再読込しても同じ・594-results.md の step3 の実測)。
-        // 長文メモの側は壊れない (移す記録は「移す先がどの本のものでもない」として捨てられ、メモは古い題名のまま読める)。
-        // その件が直ったら fixme を外す。
-        test.fixme('題名を変えてすぐ再読込しても、新しい名前で読め、次の保存で古いファイルが消える', async ({ page }) => {
+        // 長文メモを移す記録が再読込をまたいで効くことを見る。#602 (未反映の印がある時は手元を採る) の後に fixme を外した。
+        // ただしこの3本は、直前の長文メモの保存の印が残っている間に題名を変えるので、その印への相乗りで緑だった
+        // (題名の編集そのものが印を立てるかは見ていない・614-results.md step1)。題名の編集が戻らないことの回帰は
+        // 下の「本の編集: 前の保存が終わってから題名を変える」(イシュー#614) が本来のもの
+        test('題名を変えてすぐ再読込しても、新しい名前で読め、次の保存で古いファイルが消える', async ({ page }) => {
             const remote = await boot(page);
             await addBook(page, remote, ASIN, TITLE);
             await writeMemo(page, remote, ASIN, TITLE);
@@ -265,8 +289,7 @@ for (const { name, boot } of BACKENDS) {
             // アプリに新しい題名が入り、移す記録が端末に残った所で、保存先への保存が終わるのを待たずに再読込する
             await expect.poll(() => page.evaluate((a) => (window.bookshelf.books.find((b) => b.asin === a) || {}).title, ASIN), { message: 'アプリに新しい題名が入る' }).toBe(NEW_TITLE);
             await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingShelfDeletes') || ''), { message: '移す記録が端末に残る' }).toContain('memo-move');
-            // 端末に「未保存あり」の印 (_scheduleSync が立て、保存の成功で外す) が立っている間に再読込する。
-            // 印が立つ前に再読込すると、題名の変更そのものが保存先の古い内容で戻る (アプリ側の既存の動き・594-results.md)
+            // 端末に「未保存あり」の印 (saveUserData が立て、保存の成功で外す) が立っている間に再読込する
             await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync')), { message: '未保存ありの印が立つ' }).toBe('1');
             await page.reload();
 
@@ -283,6 +306,48 @@ for (const { name, boot } of BACKENDS) {
                 expect.soft(await openMemoFromDetail(page, ASIN), '再読込の後も新しい題名で本文が出る').toContain(BODY);
             } finally {
                 await attachRemoteState(remote);
+            }
+        });
+    });
+}
+
+// 題名の編集そのものが未反映の印を立て、保存先へ送られること (イシュー#614)。前の保存が終わって印が消えてから
+// 編集する (直前の保存の印に相乗りしない)。修正前は3保存先とも、再読込しないと保存先へ送られず、すぐ再読込すると
+// アプリも保存先も古い題名に戻った (614-results.md step1 の実測2)
+for (const { name, boot } of BACKENDS) {
+    test.describe(`本の編集: 前の保存が終わってから題名を変える ${name} (イシュー#614)`, () => {
+        async function editAfterSaved(page, remote) {
+            await addBook(page, remote, ASIN, TITLE);
+            await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync')), {
+                timeout: 15_000, message: '前の保存が終わり、未反映の印が消える'
+            }).toBeNull();
+            await editBook(page, ASIN, { title: NEW_TITLE });
+        }
+
+        test('再読込しなくても、題名の変更が保存先に届く', async ({ page }) => {
+            const remote = await boot(page);
+            await editAfterSaved(page, remote);
+            try {
+                await expect.poll(async () => (await remoteBooks(remote))[ASIN], { timeout: 15_000, message: '新しい題名が保存先に届く' }).toBe(NEW_TITLE);
+            } catch (e) {
+                await attachDiag(page, remote, '題名の変更が保存先に届かない');
+                throw e;
+            }
+        });
+
+        test('編集を終えてすぐ再読込しても、題名が戻らず保存先にも届く', async ({ page }) => {
+            const remote = await boot(page);
+            await editAfterSaved(page, remote);
+            // 「編集を終える」の直後に、印も保存も待たずに再読込する
+            await page.reload();
+            try {
+                await expect.poll(async () => (await remoteBooks(remote))[ASIN], { timeout: 15_000, message: '再読込の後に新しい題名が保存先に届く' }).toBe(NEW_TITLE);
+                await expect.poll(() => page.evaluate((a) => ((window.bookshelf && window.bookshelf.books) || []).find((b) => b.asin === a)?.title, ASIN), {
+                    timeout: 15_000, message: '再読込の後のアプリの題名が新しい題名'
+                }).toBe(NEW_TITLE);
+            } catch (e) {
+                await attachDiag(page, remote, '再読込の後に題名が戻った');
+                throw e;
             }
         });
     });
