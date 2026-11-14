@@ -153,3 +153,55 @@ step2 で気をつけること
 - ②が要ると判断した場合は、step2 で P3 の probe の型（`route.abort` → 再読込 → 'online'）を使って1件足す。
 
 ## §3 直した後（step2〜3 で書く）
+
+### step2：spec の赤→緑と直し
+
+- 18:43 に origin/main 2072774 へ rebase した（step1 の docs 2件は 7765101・58d687e になった）。
+- spec は `tests/e2e/shelf-reload-removed.spec.js`（ケース1・2 × PC 幅・390 幅）。
+  - 別の端末での削除は画面から行う（ツリーの「…」→ 削除 → 確認）。ハブに届くまで `expect.poll` で待ってから、端末Aを再読込する。ハブの中身を直接消す代わりの手は使っていない。
+  - 判定は画面で行う（見出し・URL・ツリーの選択・一覧の件数・history.length）。currentBookshelf は、失敗した時の添付だけにした。
+  - 見本の「すべて」の本棚の名前は「すべての本」にした（fixture-userdata.json と同じ）。
+- **直す前（56bedc7 の時点）**：ケース1は 1280・390 とも赤だった（見出しが `"本棚X"` で、期待の `"すべての本"` と違う）。ケース2は 1280・390 とも緑。
+- 直し（cdc0e8a・`js/bookshelf.js` の `_applyLoadedState` の末尾）：
+  - `rebuildReverseIndex()` の後で、読み込む前の手元（`_priorLocal.bookshelves`）にあって読み込んだ後の `bookshelves` に無い本棚を、`bookshelfManager._keyOf` で突き合わせて集める。
+  - それを `_leaveRemovedShelf(removed)` に渡す。Promise は待たず、`.catch` で `console.error` に出す。
+  - 消えたかの判定と、履歴の置き換え（replace）は #634 の関数のまま。別に書いていない。
+  - `index.html` の `js/bookshelf.js?v=` は 2026111795 → 2026111796 にした（origin/main の最大値は 2026111795）。`check:version --range=origin/main..HEAD` は OK。
+- **直した後**：新しい spec は4件とも緑（9.8秒）。ケース1では5つの点をすべて確かめている。
+  - 見出しが「すべての本」
+  - URL が `#/bookshelf/all`
+  - ツリーで「すべて」の行だけが選ばれている（1行）
+  - 一覧が5冊（全件）
+  - history.length が再読込の前と同じ
+  - 判定は、起動の読込が済んだ後（`waitForHubStartupForTest`。呼び出し元の `updateDisplay` まで済んだ後）に、自動でやり直す expect で行う。呼び出し元の描き直しが、切り替えの後の一覧（5冊）を古い中身（2冊）で上書きしていないことも、この判定で確かめた。
+
+### 直す前と後（step1 の probe を直した後に流し直した値・chromium・18:48:05〜18:48:21）
+
+probe の見本では「すべて」の本棚の名前が「すべて」なので、見出しは「すべて」と出る。
+
+| 経路・幅 | 消した本棚 | 見出し（前→後） | URL（前→後） | ツリーの選択（前→後） | 一覧（前→後） | currentBookshelf（前→後） | history.length（後） |
+|---|---|---|---|---|---|---|---|
+| P1・1280 | X（開いている） | 本棚X → すべて | `#/bookshelf/p663-x` → `#/bookshelf/all` | なし → all | 2冊 → 5冊（全件） | p663-x → all | 3 → 3 |
+| P1・390 | X（開いている） | 本棚X → すべて | 同上 | なし → all（ドロワーでも all） | 2冊 → 5冊（全件） | p663-x → all | 3 → 3 |
+| P1・1280 | Y（対照） | 本棚X → 本棚X | 変わらず | p663-x → p663-x | 2冊 → 2冊 | p663-x → p663-x | 3 → 3 |
+| P1・390 | Y（対照） | 本棚X → 本棚X | 変わらず | p663-x → p663-x | 2冊 → 2冊 | p663-x → p663-x | 3 → 3 |
+| P3・1280 | X（開いたまま、電波が戻る） | 本棚X → すべて | `#/bookshelf/p663-x` → `#/bookshelf/all` | なし → all | 2冊 → 5冊（全件） | p663-x → all | 3 → 3 |
+| P3・1280 | X（ホームにいて、電波が戻る） | （ホームのまま） | `''` → `''` | — | — | **p663-x → all** | 3 → 3 |
+
+- **ホームから読み直した時の currentBookshelf：直す前は `p663-x`（消えた本棚）、直した後は `all`**。画面はホームのまま動かない（`app-view-main`・hash `''`）。
+  - 同じ時、隠れているツリーでは「すべて」の行に is-active が付いていた（1280 ではツリーが見える）。これは、読み直しの後の描き直しで、ツリーが currentBookshelf を元に描き直されるため。ホームでのツリーの選択の見た目は、今回は変えていない（#634 の関数の、ホームにいる時の分岐のまま）。
+- P2（衝突で「保存先」）は未実測のまま。コードの読みでは、P1 と同じ見込み（adoptRemote でも `_applyLoadedState` の末尾まで来る）。
+
+### step2 の検証（直した後・cdc0e8a）
+
+- E2E（chromium・PORT=8163・4 workers・18:45:59〜18:47:27）：**89件すべて緑（1.5分）**。流した spec は次のとおり。
+  - 新しい spec：shelf-reload-removed
+  - #634 の spec：shelf-delete-open-descendant
+  - 本棚まわり：bookshelf-open-paths・shelf-file-delete・shelf-structure-home-refresh・tree-drop-stays-home・per-shelf-memo
+  - 読み直しまわり：load-conflict-unsaved・sync-offline-reconnect・gate/j6-3-hub-other-device・gate/j6-4-sync-conflict・gate/j8-4-online-resync・sort-persist
+- `npm test`（vitest）：80ファイル・1192件が通った（todo 2）。exit 0。
+- 設計書：03_詳細設計書の主要メソッド表を更新した。
+  - `loadData()` / `_applyLoadedState` の行（L86）に、保存先を採った後に `_leaveRemovedShelf` で「すべての本」へ移すことを足した。
+  - `_leaveRemovedShelf` の行（L153）の「呼ぶのは」に、`_applyLoadedState` の末尾を足した。
+  - obsidian 側の commit はしていない（自動バックアップに任せる）。
+- probe 2本（`tests/e2e/probe-663-*.spec.js`）は commit せず、`_trash/663-probe/` へ移した。
