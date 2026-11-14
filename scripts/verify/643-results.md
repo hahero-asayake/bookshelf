@@ -192,3 +192,9 @@
 - 一時の spec（`tmp/643/zz-643-variant-probe.ran.spec.js`・commit しない）：手元に見本の蔵書（5冊・「すべての本」の id `fixall001`＝別の保存先の id）がある状態で空のハブにつなぎ、初期化の確認で OK → 落ち着くまで待つ → 本物の操作で1冊足す → 開き直す。数えたのは模擬のハブの中身だけ（出力 `tmp/643/variant-probe.txt`・1 passed）
 - 結果：初期化が書いた id は `lfa5frdq` の1つ（初期化は1回）。最初の保存の後、保存先の3か所（bookshelves.json・all.json・main.json）は**3つとも手元の `fixall001` に揃った**（#612 の「変えたファイルだけ送る」でも main.json は中身が違うので送られた）。1冊足した後・開き直した後も3か所とも `fixall001`・library と all は6冊・足した本あり・確認と3択は0件・画面の蔵書数は6
 - 結論：この形でも、保存先のファイル同士・保存先と手元の食い違いは**残らない**。案D の範囲を広げる必要は無い
+
+## step5 push の前の載せ直し（origin/main 25b9472）
+
+- push の前に fetch すると、origin/main が 25b9472（#614 本の詳細の保存の入口・#640 lint:e2e-wait・#642）まで進んでいたので rebase した。衝突は index.html の bookshelf.js の ?v= の1行だけ（#614 が 2026111661 にしていた）。main と作業中の worktree の最大値 2026111681 より新しい **2026111682** にした。js/bookshelf.js は衝突なし（#614 の変更は saveUserData で、印と待ちの場所とは重ならない）
+- 載せ直した後（25b9472 の上・PORT=8143）：lint 一式 13本（check:version・css・e2e-goto・e2e-wait（#640 で変わった版）・e2e-external・breakpoint・esc・js-color・internal-refs・e2e-gate --strict-coverage・copy・terms・known-red）すべて exit 0（`tmp/643/lint-all-step5.txt`）・新しい spec --repeat-each=3 で 3 passed（`tmp/643/green-step5-repeat3.txt`）・関係する spec 4本 17 passed（`tmp/643/related4-step5.txt`）
+- push の直前にもう一度 fetch して、origin/main が 25b9472 のまま・push する範囲が自分の commit だけ（すべて Issue: #643）・?v= 2026111682 を使う他の worktree が無いことを確かめた
