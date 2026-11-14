@@ -313,3 +313,58 @@
 
 1. `buildManyBooksFixtures` で、「すべて」本棚の `books` と一緒に `bookOrder.all` も800冊にする（見本を、アプリが作る形に揃える。試験の中身は変えない）。同じ作りの見本9か所も、同じ形に揃える（今は緑でも、`bookOrder.all` を正とする決まりに合わせる）。揃える部品を helper に1つ置き、新しい見本が同じ間違いをしないようにする案もある。
 2. 負荷が下がってから、全件比較（`e2e-diff-main.mjs`・全件）と回帰 spec --repeat-each=5 を流し直し、新しく落ちたもの0件を確かめてから push する。
+
+## §8 step4（続き・②の指示）：本物のデータで本を落とさないか・安全側の決まり・流し直し（2026-11-14 18:05〜）
+
+### 安全側の決まり（②の指示 2）
+
+- `_ensureAllShelf` で「すべての本」の books を bookOrder.all に揃える前に、蔵書（`bookManager.library.books`）にあって bookOrder.all に無い本を、蔵書の並びのまま bookOrder.all の末尾に足すようにした。足すだけで、bookOrder.all から本を減らすことはしない。
+- 除外した本は `_excludeAsinCore` が蔵書から外すので、足されない。
+- ADR-166 に「bookOrder.all は順序の正で、冊数を減らす正ではない」と1行足した（obsidian 08。commit は自動バックアップに任せる）。
+- 本を足す経路（手動追加・取込・除外の取り消し）は、蔵書に入れた後、`_ensureAllShelf` を通る前に bookOrder.all の先頭へ入れる。このため、新しい本が末尾へ回ることはない。`js/book-manager.js` は `saveUserData`・`_ensureAllShelf` を呼ばない（grep 0件）。
+- 起動時は `bookManager.initialize()`（510）が蔵書を読んだ後に `_ensureAllShelf()`（538）を通るので、起動の時点で足される。
+
+### bookOrder.all が無い・短い・古いデータの入口（②の指示 1）
+
+| 入口 | コードの場所 | 「すべての本」の books と bookOrder.all | 安全側の決まりの後の結果 |
+|---|---|---|---|
+| 古い版の localStorage（bookOrder.all が無い） | 起動 `js/bookshelf.js:526-538`（JSON.parse → `_ensureAllShelf`） | 無い時は、本棚の books から bookOrder.all を作る | 落ちない（本棚の books がそのまま正になる） |
+| 古い版の localStorage（bookOrder.all が短い・古い。例：800冊の見本） | 同上。蔵書は `bookManager.initialize()`（510）で先に読まれる | 蔵書にあって bookOrder.all に無い本を末尾に足す | 落ちない（#59・#133 の見本で確かめる＝下の実測） |
+| 旧形式の保存先（フォルダ・ハブ・GitHub。bookOrder を持たない） | 読込 `_applyLoadedState` → `bookOrder[b.id] = b.books`・`bookOrder.all = state.allBookshelf.books`（3615-3617 付近） | 保存先の all.json が正。all.json が無い・短い時は、次に `_ensureAllShelf` を通る時（保存・揃え直し）に蔵書の残りが足される。書き出し（3870-3880 付近）も「bookOrder.all ∩ 蔵書＋蔵書の残り」で all.json を作る | 落ちない。この入口は今回の変更の前と同じ |
+| 旧フラット・旧 library.json の移行 | `js/storage.js` の移行（118-133 の判定、147- の変換。all は `allBooks`、利用者の本棚は `legacy.bookOrder[bs.id]` か `bs.books`） | 移行で all.json を作ってから、上の読込を通る | 落ちない（上と同じ） |
+| 書き出しファイル | `exportUnifiedData`（7172）は書き出すだけ。書き出しファイルを読み込んで userData を置き換える入口は、grep で見つからなかった | − | 該当なし |
+| 手元を採る道（#656 の「自分の書きかけ」・3択の「この端末」・`'held'`） | `_decideLoadedState` → `_keepLocalOverLoaded`（2970 付近）→ `_ensureAllShelf` | 手元の bookOrder.all に、手元の蔵書の残りを足して揃える | 落ちない |
+| 書き込み時の衝突を合わせた後 | `_applyMergedRemote`（4100 付近）→ `_ensureAllShelf` → 控えへ書く | 同上 | 落ちない |
+
+- 結論：この決まりなら、bookOrder.all が短い・古いデータでも、蔵書にある本は「すべての本」から落ちない。
+
+### 見本の揃え（②の指示 2 の後半）
+
+- `tests/e2e/helpers/all-shelf.js` に `setAllShelfBooksForTest(userData, asins)` を置いた。「すべての本」の books と bookOrder.all を、同じ並びで書く部品。
+- 片側だけを書いていた見本8か所（7ファイル）をこの部品に揃えた。
+  - `bookshelf-clip-373`（2か所）
+  - `bookshelf-clip-385`
+  - `cover-cache-sw`
+  - `github-sync-resilience`
+  - `dashboard-recent-books`
+  - `publish-article-editor`（`buildManyBooksFixtures`）
+  - `library-count-refresh`
+- 残りの2か所は、もとから両方を書いていたので変えていない。
+  - `shelf-structure-home-refresh`（`addInitScript` の中で bookOrder.all も書いている）
+  - `dashboard-stats-after-manual-add`（`bookOrder = { all: [] }`）
+- 見本を揃えたのは、安全側の決まりの代わりではない。決まりの確かめは、見本を揃える前に流した（下の表）。
+
+### 流し直し（origin/main=`f9468f8` へ rebase。衝突なし）
+
+| 流したもの | 結果 |
+|---|---|
+| `npm run lint`（見本を揃えた後にも流した） | 12 本中 0 本失敗 |
+| `npm test`（vitest） | 79 files・1181 passed・2 todo |
+| `npm run check:version -- --range=origin/main..HEAD` | OK（`js/bookshelf.js?v=2026111722`。origin/main の最大値は 2026111721） |
+| 回帰 spec `manual-add-reload-all-shelf.spec.js` --repeat-each=5 | 40 passed・5 skipped（I の fixme）・0 failed |
+| 見本10か所の9 spec＋#636 の spec。**見本を揃える前・安全側の決まりだけ**。#59 の2本・#133 を含む | 160本中 147 passed・13 skipped・**0 failed** |
+| 範囲を広げた比較（`e2e-diff-main.mjs`・`--no-visual`・`--skip-vitest`・下の grep）。base=origin/main `36cf113`、work=作業ツリー（見本の揃えを含む） | base 338 passed・0 failed・197 skipped。work 346 passed・0 failed・198 skipped。**新しく落ちた 0件**・新しく通った 0件・両方で落ちた 0件 |
+
+- grep：前回の語（`662-|すべての本|取込|再読込|引き出し|shelfId|J2-|J6-1|J1-4|初めての利用者`）に、②の指示の `記事エディタ|公開|本棚の一覧|本棚一覧|まとめて追加` を足した。さらに、見本を揃えた spec の題（`#373|#385|#389|SW許可|最近追加した本|GitHub読み込みの耐性|冊数が変わる操作|評価・本棚の所属`）も足した。
+- 全件比較（全件）は流していない。load average が 72 前後のままで、前回は base 側だけで6分を過ぎても終わらなかったため。②の指示どおり、範囲を広げた比較で判定し、push の後の step5 で CI の test (e2e) が緑かを必ず確かめる。
+- origin/main は比較の間に `36cf113` へ進んだ（こちらは `f9468f8` の上）。push の前にもう一度 rebase が要る。
