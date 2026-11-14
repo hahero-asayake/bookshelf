@@ -309,3 +309,30 @@
 - 直し：tests/e2e/boot-load-checking-row.spec.js の L74 のテストだけを書き換えた。待つものを、状態バーの読込の失敗の行（`#app-status-bar [data-load-failure]`）に替え、テスト名と知らせの文も合わせた。見ていること（失敗の表示から2秒のうちに「最新のデータを確認しています…」が消える）は変えていない。同じファイルの GitHub の認証切れのテスト（L106）は、今も toast を出すので `githubToast` のまま。
 - 直した後：boot-load-checking-row.spec.js を `--repeat-each=2` で流し、12本すべて緑（7.8s・19:49）。`npm run lint` は 12 本中 0 本失敗。
 - 全件比較は、この1本を直す前の作業ツリーで流したもの。直した後は、このファイルだけを流し直した。
+
+## step5 push・CI・ノート（2026-11-14 19:50〜）
+
+### push の前
+
+- 19:50 に fetch した。origin/main は 33eda9e（前の載せ直しの 703699c の後に、7e0f386・33eda9e の docs の commit が2件増えていた。変わったのは 670-results.md と 672-results.md だけ）。`git rebase origin/main` はぶつからずに済んだ。
+- `?v=`：sync-failure.js・bookshelf.js とも 2026111886（origin/main の最大は 2026111878）。`npm run check:version -- --range=origin/main..HEAD` は OK。ほかの開いている worktree の値は 2026111880（#679）・2026111890（#675）で、同じ値は無い。
+- 最後の載せ直しの後：`npm run lint` は 12 本中 0 本失敗。`npm test` は 80ファイル・1199 通過・2 todo。
+- push する9件の commit は、すべて本文末に `Issue: #666` がある。
+
+### push
+
+- 19:51:21 に `BOOKSHELF_ISSUE=666 git push origin 3a3dd2b:main` を実行した。結果は `33eda9e..3a3dd2b  3a3dd2b -> main`。pre-push の lint は 12 本中 0 本失敗。fetch し直して、3a3dd2b が origin/main にあることを確かめた。
+- push した commit（古い順）：eb9ad3d（step1 の記録）・4154846（test・赤のまま）・bada567（fix・文と出す場所）・b5f1975（step3 の記録）・8cb6b7d（test・github-sync-resilience）・d855adb（step4 の記録）・c23499c（fix・公開を止める確認）・67cbb01（test・boot-load-checking-row）・3a3dd2b（step4 やり直しの記録）。
+
+### CI（run 43587242068・https://github.com/hahero-asayake/bookshelf/actions/runs/43587242068）
+
+- API は使わず、run の画面の部分 HTML（`/actions/runs/<id>/graph/matrix/…`）の job 名とアイコンで見た。見張りのスクリプトは tmp/666/ci-watch.mjs。push から最大5分、50秒おきに見た。
+- 見た時刻と状態（push は 19:51:21）：
+  - 19:53:04・19:54:00：4つの job（test (audit)・test (char)・test (e2e)・test (webkit)）とも実行中。
+  - 19:54:51：**test (char) が成功**。ほかの3つは実行中。
+  - 19:55:41・19:56:31（push から5分）：test (char) は成功のまま。**test (e2e)・test (audit)・test (webkit) は実行中**。
+- 5分の時点で、全部は終わっていない。決めた代わりの判定どおり、その時点の状態を書いた。失敗した job は、この時点では無い。e2e・audit・webkit の結論は、上の run の URL で見る。
+
+### ノート
+
+- append_project_note で1件足した。中身は、起動の読込の通信の失敗の文は SyncFailure.loadFailure の1か所で決めること、出す場所（状態バーの行と同期欄・toast は出さない）、再試行の手段（retry-load → _retryInitLoad・二重に走らない）、自動の読み直しの条件、公開の前の確認（ハブは読込の失敗中は止める・変更前より少しきびしい点）、E2E の作り方と落とし穴。
