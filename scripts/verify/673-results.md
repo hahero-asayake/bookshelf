@@ -73,3 +73,54 @@
 - `tmp/673/<chromium|gate-webkit>/<pc|narrow>-art-more-menu-before.png`（2回目の実測。3回目は本棚ブロックを置いた後で「その他」が見えなくなったので、測った値は2回目）
 - `tmp/673/<chromium|gate-webkit>/<pc|narrow>-art-drawer-shelf-popover-before.png`（3回目＝狭幅はシートを開いた状態）
 - 測った値の JSON：`tmp/673/<project>/measure-<pc|narrow>.json`（3回目）
+
+### 1-6 測り方の場所（spec からは外した）
+
+- 測るだけの describe「(f) アンカー付きメニューと帯 (イシュー#673)」は、step1 の commit（題「test: 帯を出したまま記事エディタのアンカー付きメニューを開き、位置と帯の下端を測る（直す前の実測・重なりは出ず）」）で `tests/e2e/status-bar-over-faces.spec.js` の末尾に足した。step1 時点の sha は ca258e0、載せ直し後は ccc5b2d（載せ直すと sha は変わる＝題で探す）。
+  - 中身：`seedShelves673`（保存先の見本に本棚を足す）・`setupSaveFailure673`（PC 幅では「戻る」を押さない）・`measureMenu673`（メニュー・アンカー・帯の rect、`--status-urgent-h`、is-up、z、最初の項目の中心の elementFromPoint）。
+  - 再現：`git show <その commit> -- tests/e2e/status-bar-over-faces.spec.js | git apply` で戻し、`GATE_WEBKIT=1 PORT=8173 npx playwright test tests/e2e/status-bar-over-faces.spec.js --project=chromium --project=gate-webkit --grep 673` を流す。
+- 外した理由（②の判断・step2 承認）：assert が無いことと、PC 幅で帯の下にあって押せないボタンをネイティブの click で迂回して測っていることから、守りにならない。外した commit は題「test: 帯を出したまま記事エディタのメニューを測るだけの describe (f) を外す…」で、外した後の spec は origin/main と同じ（差分0行）。
+
+## §2 直す（step2）：該当なし
+
+- step1 の判定 (a) を②が採った（2026-11-14 19:58）。`_placeAnchoredMenu`・単体テスト・?v= は変えていない。
+
+## §3 回帰の確認（step3）：該当なし
+
+- アプリのコード（js・css・index.html・sw.js）に差分が無いので、e2e-diff-main は流していない。
+
+## §4 設計書の更新と push 前の最終確認（step4・2026-11-14）
+
+### 4-1 結論（§1-3 の要約）
+
+- 帯が出ている時、上向きに開いたアンカー付きメニューは、利用者の操作で届く位置では帯と重ならない（直さずに終える）。
+- 重なる条件：メニューの高さ h ＞ (画面の高さ − アンカーの高さ − 帯の高さ − 8) / 2。
+  - 390×664・帯 78px・アンカー 27〜36px：約 271〜275px。1280×800・帯 59px：約 349〜353px。帯が4行（約 150px）でも 390×664 で約 235px。
+- 今のメニューはこれより低いか、上向きに開かない。
+  - 上向きに開きうるもの：ブロックの⋯（4項目・同じ作りの「その他」が 146px）、ブロック追加（3項目・今の画面ではボタンが見えない）、吹き出し（小さい）。
+  - 高いのは引き出しの本棚の選択（60vh＝398 / 480px）だけで、アンカーが引き出しの見出し（PC y=143・狭幅 y=299）にあるので上向きにならない。
+- (c)（帯と画面の下端の間に収まらない高さ）にも当たらない：本棚の選択の 60vh（398 / 480px）は、画面の高さ − 帯の高さ − 16（570 / 725px）より低い。
+
+### 4-2 別件として見つけたこと（起票は②の判断）
+
+1. **PC 幅で、帯が記事エディタの見出しのボタンを覆って押せない**（chromium・gate-webkit とも）。
+   - 1280×800 で「編集」#art-mode-edit・「その他」#art-more-btn の上端 34 が帯の下端 59 より上にあり、click は状態バーの行（`.status-row[data-sync-failure]`）が受け取る。
+   - #660/#671 の「帯の分だけ面を下げる」が、PC 幅の記事エディタに効いていない見込み（原因は未確認）。
+   - 画像：`tmp/673/chromium/pc-art-more-menu-before.png`（worktree issue-673 の中。帯の下に見出しのボタンの下端だけが見える）。
+2. **狭幅で、引き出しのシートの中の本棚の選択が、計算した位置より下に出て切れる**（chromium・gate-webkit とも）。
+   - シート .art-side は開いている間も transform（translateY(0)）と overflow:hidden を持つので、中の position:fixed の基準がシートになる。`_placeAnchoredMenu` が書く top 257.6 に対し、実際の上端はシートの上端 235 の分だけ下の 494、下端 892 は画面（664）の外。
+   - ui-standards §2-12 の「祖先に transform 等がある時はポータルが要る」に当たる所。
+   - 画像：`tmp/673/chromium/narrow-art-drawer-shelf-popover-before.png`（worktree issue-673 の中）。
+- 計画どおりの候補（未実測）：メニューを開いた後で帯が出入りすると、外枠の padding-top でアンカーだけが動き、fixed のメニューとずれる。
+
+### 4-3 設計書の更新
+
+- `docs/ui-standards.md` §2-12 に、上向きで帯に重なる条件と、今のメニューが閾値より低いこと（#673 で実測）を1行足し、§8 更新履歴に1行足した。
+- vault・ADR・07 は触っていない（②の指示）。
+
+### 4-4 最終確認（origin/main 27df129 へ載せ直した後）
+
+- 載せ直しは衝突なし。js・css・index.html・sw.js の差分は0行なので、?v= の確かめは要らない（変えていない）。
+- `npm test`（vitest）：80 files・1199 passed・2 todo・exit 0。
+- `npm run lint`（全 lint:*・docs の追記の後）：12 本中 0 本失敗・exit 0。
+- spec は origin/main と同じに戻した（差分0行）ので、status-bar-over-faces の流し直しは要らない（②の組み替え：lint と vitest）。
