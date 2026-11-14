@@ -275,3 +275,33 @@ lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:internal-refs（上限 
    - 流し直し（新しい spec・#643 の first-run-save-during-init-empty・#639 の load-conflict-unsaved・save-failure-visible・first-run-add-article-drawer）：**22 passed・失敗0**（57秒・`tmp/648/step5-specs-on639.txt`）。
    - `npm run check:version -- --range=origin/main..HEAD`：OK。`git diff --stat` は自分の5ファイルだけ（+475/-4）。
 3. いまの土台（985e770）の上では、全件比較（e2e-diff）は流し直していない（1回目に約10分かかり、この run の時間に入らないため）。push の前に main がさらに進んでいれば、step6 でもう一度載せ直しが要る。
+
+### ②の判断（2026-11-14 16:55）
+
+全件比較は 985e770 の上で流し直さなくてよい（push の後の CI を最後の確認とする）。push の前に book-memo-file-lifecycle:253（GitHub）を単独で1回流して緑を確かめる。main が進んでいたら載せ直す。
+
+## step6 push・CI の確認（2026-11-14 16:55〜）
+
+### push の前の確かめ（土台 985e770 のまま・main は進んでいなかった）
+
+- book-memo-file-lifecycle.spec.js:253 の GitHub を単独（1並列）で1回：**2 passed**（GitHub・GitHub の使えない時の2種・10.2s・`tmp/648/step6-bookmemo-github.txt`）。
+- `npm run lint`（全 lint:* の集約・#619）：**12 本中 0 本失敗**。`npm test`（vitest）：**Test Files 77 passed・Tests 1156 passed / 2 todo**。`npm run check:version -- --range=origin/main..HEAD`：OK。
+- push の直前に fetch し直して、origin/main が 985e770 のまま（早送りで送れる）こと、送る6つの commit すべてに `Issue: #648` があることを確かめた。
+
+### push
+
+- `BOOKSHELF_ISSUE=648 git push origin 36eba5e:main` → `985e770..36eba5e`（16:57:24）。pre-push の lint は 12 本中 0 本失敗。
+- main に入った commit：711ab46（step1 の記録）・b6a9490（step2 の記録）・04c0055（E2E）・2a06379（直し）・d8eb4b4（step4 の記録）・36eba5e（step5 の記録）。
+
+### CI（push した 36eba5e・check-runs を50秒おきに読んだ・`tmp/648/step6-ci.txt`）
+
+| 時刻 | test (char) | test (e2e) | test (webkit) | test (audit) | build | deploy | report-build-status |
+|---|---|---|---|---|---|---|---|
+| 16:58:13 | 実行中 | 実行中 | 実行中 | 実行中 | 実行中 | – | – |
+| 16:59:03 | 実行中 | 実行中 | 実行中 | 実行中 | 成功 | 成功 | 成功 |
+| 17:00:44 | **成功** | 実行中 | 実行中 | 実行中 | 成功 | 成功 | 成功 |
+| 17:01:34（push から約4分10秒・最後の読み） | 成功 | 実行中 | 実行中 | 実行中 | 成功 | 成功 | 成功 |
+
+- 判定（最大5分の代替判定）：**失敗0件**。成功4件（test (char)・build・deploy・report-build-status）。**終わっていない job は3件**（test (e2e)・test (webkit)・test (audit)）。次の読みは5分の上限（17:02:24）を越えるので、ここで止めた。
+- 赤が無いので、自分の push より前の commit との比べ（②の指示4）は要らなかった。
+- run：https://github.com/hahero-asayake/bookshelf/actions/runs/43573488028（test 系）・43573487054（build）。
