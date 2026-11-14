@@ -126,3 +126,43 @@
 1. 直す方：アプリ（案A）でよいか。
 2. 範囲：保存先（ハブ・フォルダ・GitHub）から読んだ自作の本棚の崩れも今回直すか（推奨：直す。E2E はハブで1本）。
 3. A-2（spec の setup の待ちに userData を足す）を入れてよいか。
+
+## §3 直したこと（step3・2026-11-14 19:09〜19:14）
+
+- 起点：origin/main 02772ca（#663・#664 の着地の後）。§1・§2 の docs 2本を rebase した（衝突なし）。
+
+### 直す前の赤（test の commit 22e8adc の時点＝fix の前）
+
+- `tests/e2e/duplicate-asin-repoint-hub.spec.js:50`（新規）：赤。79行 `expect(after.fictionBooks).toContain(DUP_ASIN)` で、受け取った値は `["BNEWASIN01","B0SOLO0001","BNEWASIN01"]`（下巻が「フィクション」から外れ、NEW が2回）。
+- `tests/e2e/duplicate-asin-notice.spec.js:111`：赤。150行で Expected 1 / Received 2。
+- 同じファイルのほかの2本（:90・:187）は緑。ログは `tmp/674/before-fix.log`（手元だけ）。
+
+### 足した・変えた test（22e8adc）
+
+- 新規 `tests/e2e/duplicate-asin-repoint-hub.spec.js`：
+  - ハブの模擬（tests/e2e/helpers/gate-hub.js）に、蔵書（上巻・下巻＝同じ DUP・単独の本）と本棚2つ（「すべての本」・自作の「フィクション」＝DUP と SOLO）を置き、ハブから読む起動（method: 'hub'・端末の控え無し）にする。
+  - 前提として、「フィクション」と「すべての本」が books === bookOrder[本棚] であることを確かめる。そのうえで、duplicate-asin-notice.spec.js と同じ画面操作で上巻を付け直す。
+  - 確かめる数：「フィクション」に DUP が残り、NEW は1件、全部で3件。bookOrder.fiction の NEW は1件。bookOrder.all は蔵書と同じ3件で、NEW 1件・DUP 1件。「すべての本」の books は bookOrder.all と同じ配列のまま。メモは両方に残る。pageerror は0件。
+- `tests/e2e/duplicate-asin-notice.spec.js`：
+  - 61行（setup の待ち）に `window.bookshelf.userData` を足した（A-2）。同じ行の中で直したので、:111 の行番号は変わらない。
+  - :111 のテストに `expect(afterMigrate.bookOrderAll.length).toBe(books.length)`（並びは蔵書と同じ5件）を足した（②の「数で確かめる」）。期待は緩めていない。
+
+### 直したこと（fix の commit 4fbbc7d）
+
+- `js/bookshelf.js` の `migrateUserData`：
+  - 本棚ループで「すべての本」（isSpecial）を書かない。並びは bookOrder.all の置き換え（重複の1件だけ）で足り、最後の saveUserData で _ensureAllShelf が books を揃える。
+  - 本棚ループで書いた本棚の配列を `shelfArraysWritten`（Set）に覚え、bookOrder ループで同じ配列を書き直さない（所属のコピーを優先する）。
+  - 本棚の books と bookOrder が別の配列の時（端末の控えから読む起動の自作の本棚）の動きは変えない。
+- `index.html`：bookshelf.js の ?v= を 2026111798 → 2026111799（origin/main 02772ca の最大 2026111798 の次）。`check:version --range=origin/main..HEAD` は OK。
+
+### 直した後
+
+- 2つの spec（4本）を1回流して 4 passed（`tmp/674/after-fix.log`）。3回・3並列は step4。
+- `npm run lint`：12本中0本失敗（`tmp/674/lint-step3.log`）。
+
+### 設計書（vault・スクリプトで編集した＝パスをツールの引数に書かない）
+
+- 03_詳細設計書：VirtualBookshelf の主要メソッド表で、`saveUserData(opts)` の行の直後に `migrateUserData(oldAsin, newAsin)` の行を足した（これまで行が無かった）。
+- 08_意思決定記録：ADR-166 に追補を1行（両方を続けて書き換える経路は1回だけ書く・ADR-172）。末尾に ADR-172（背景・決定・却下した案・教訓・確かめ方）。08 の最後は ADR-171（#669）だった。08 は CRLF の行に合わせて入れた。
+- vault の commit は自動バックアップ（30分ごと）に任せる。vault の差分にある 08 の2071行の書き換えは #668 の編集で、このイシューのものではない。
+- フォルダ・GitHub：同じ読込の関数（js/bookshelf.js `_applyLoadedState` の `bookshelves.forEach(b => { bookOrder[b.id] = b.books; })`・3658行）を通るので、コードの読みで同じ・未実測（②の指示どおり spec は増やさない）。
