@@ -1,0 +1,64 @@
+// 記録用 (イシュー#662 step2・commit しない。写しを scripts/verify/662-probe-hub.spec.js.txt に置く)
+// ハブ (模擬) で E と同じ型：1回書き出した後に手動で追加→待たずに再読込。
+import { appendFileSync } from 'node:fs';
+import { test, expect } from './helpers/test-base.js';
+import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, waitForHubFileContainsForTest } from './helpers/gate-hub.js';
+import { bootAppForTest } from './helpers/gate-setup.js';
+
+const OUT = '/tmp/i662/probe-hub.jsonl';
+const allShelf = (page) => page.locator('#sidebar-bookshelf-tree [data-bookshelf-id="all"]');
+test.use({ viewport: { width: 1280, height: 800 } });
+
+const snap = (page) => page.evaluate(() => {
+    const out = {};
+    try {
+        const u = JSON.parse(localStorage.getItem('virtualBookshelf_userData') || 'null');
+        out.lsOrder = u.bookOrder.all.length;
+        out.lsShelf = (u.bookshelves.find((b) => b.isSpecial) || {}).books?.length ?? null;
+    } catch (e) { out.lsErr = true; }
+    const ud = window.bookshelf && window.bookshelf.userData;
+    if (ud) {
+        const sh = (ud.bookshelves || []).find((b) => b.isSpecial);
+        out.memShelf = sh && sh.books ? sh.books.length : null;
+        out.memOrder = ud.bookOrder && ud.bookOrder.all ? ud.bookOrder.all.length : null;
+        out.memSame = !!(sh && ud.bookOrder && sh.books === ud.bookOrder.all);
+    }
+    out.pending = localStorage.getItem('virtualBookshelf_pendingSync');
+    return out;
+});
+
+async function addByHand(page, asin) {
+    await page.locator('#sidebar-settings').click();
+    await page.locator('#settings-master .settings-cat[data-cat="library-section"]').click();
+    await page.locator('#add-book-manually').click();
+    await page.locator('#manual-asin').fill(asin);
+    await page.locator('#manual-title').fill('手動追加の本 ' + asin);
+    await page.locator('#add-manually').click();
+    await expect(page.locator('#add-book-results')).toContainText('書籍を追加しました');
+}
+
+test('662 probe hub', async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
+    const hub = createHubStateForTest();
+    seedHubDataForTest(hub);
+    await seedHubLoginForTest(page, hub, { method: 'hub', library: false });
+    await mockHubForTest(page, hub);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    const rec = { n: testInfo.repeatEachIndex };
+    rec.start = { count: await allShelf(page).locator('.bsr-count').textContent(), ...(await snap(page)) };
+    await addByHand(page, 'B0M662HUB1');
+    await waitForHubFileContainsForTest(hub, 'private/bookshelves/all.json', 'B0M662HUB1');
+    await page.waitForTimeout(500);
+    await page.locator('#add-book-modal-close').click();
+    await page.keyboard.press('Escape');
+    rec.afterFirstWrite = { count: await allShelf(page).locator('.bsr-count').textContent(), ...(await snap(page)) };
+    await addByHand(page, 'B0M662HUB2');
+    rec.afterAdd2 = await snap(page);
+    await page.reload();
+    await waitForHubStartupForTest(page);
+    const counts = [];
+    for (let i = 0; i < 12; i++) { counts.push(await allShelf(page).locator('.bsr-count').textContent().catch(() => '?')); await page.waitForTimeout(250); }
+    rec.reload = { counts: [...new Set(counts)].join('>'), dialog: await page.locator('#load-conflict-dialog').filter({ visible: true }).count(), ...(await snap(page)) };
+    appendFileSync(OUT, JSON.stringify(rec) + '\n');
+});
