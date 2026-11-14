@@ -44,6 +44,17 @@
 // stopPropagation し、重なった画面を閉じる Surface の Esc (X1 の決まり) まで届かせない
 // (②指示2026-11-03・設定やプラグインの一覧など、重なった画面の中でも並べ替えを使うため)。
 // ドラッグしていない時は何もしないので、Surface の Esc はそのまま効く。
+//
+// ドラッグの後の click を1回捨てる (イシュー#649): 掴んだ要素に pointer capture を付けるため、
+// 離した直後にブラウザが出す click は、掴んだ要素 (かその祖先) に届く。ツリーなら行の click の
+// 処理が掴んだ本棚の一覧を開き、ホームを離れていた (落とす・外へ落とす・Esc の後に離す、のどれでも)。
+// そこで、ドラッグが本当に始まった時 (beginDrag を通った時) だけ、終わる時 (finishDrag の全経路) に
+// 「次の click を1回だけ捨てる口」を window の capture に付ける。捨てるのは、container か掴んだ要素の
+// 中の click だけ。口は「1回捨てた時・次の pointerdown・離してから400ms」の一番早い時に外す。
+// 400ms は記事エディタのキャンバスの dragEndAt と同じ長さ (実測ではドラッグの click は離してから
+// 0〜14ms で出る)。正しいクリックは必ず pointerdown から始まり、その時に口が外れるので捨てない。
+// Esc・blur などでボタンを押したまま終わった時は、離した時 (pointerup) から400ms を数える。
+// 6px 未満で離した普通のクリック・長押しが成立する前のタップには、口を付けない。
 (function () {
     'use strict';
 
@@ -52,9 +63,40 @@
         container._pointerReorderBound = true;
         const MOVE_THRESHOLD = 6;
         const LONG_PRESS_MS = 450;
+        const CLICK_SWALLOW_MS = 400;
         let drag = null;
         let pending = null;
         let scrollRAF = null;
+        let swallow = null;
+
+        // ドラッグの後の click を捨てる口 (イシュー#649・先頭のコメント参照)
+        const disarmSwallow = () => {
+            if (!swallow) return;
+            window.removeEventListener('click', swallow.onClick, true);
+            window.removeEventListener('pointerdown', swallow.onDown, true);
+            window.removeEventListener('pointerup', swallow.onRelease, true);
+            if (swallow.timer) clearTimeout(swallow.timer);
+            swallow = null;
+        };
+        const armSwallow = (itemEl, released) => {
+            disarmSwallow();
+            const startTimer = () => {
+                if (swallow && !swallow.timer) swallow.timer = setTimeout(disarmSwallow, CLICK_SWALLOW_MS);
+            };
+            const onClick = (ev) => {
+                const t = ev.target;
+                if (!(t instanceof Node) || !(container.contains(t) || itemEl.contains(t))) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                ev.stopImmediatePropagation();
+                disarmSwallow();
+            };
+            swallow = { onClick, onDown: disarmSwallow, onRelease: startTimer, timer: null };
+            window.addEventListener('click', onClick, true);
+            window.addEventListener('pointerdown', disarmSwallow, true);
+            if (released) startTimer();
+            else window.addEventListener('pointerup', startTimer, true);
+        };
 
         const clearPending = () => {
             if (!pending) return;
@@ -144,7 +186,9 @@
             }
         };
 
-        const finishDrag = () => {
+        // released: 離した (pointerup・pointercancel) 時は true。Esc・blur・visibilitychange でボタンを
+        // 押したまま終えた時は false (捨てる口の400ms を、離した時から数える)
+        const finishDrag = (released = false) => {
             if (!drag) return;
             clearPending(); // 取り消し経路で万一pendingが残っていても片付ける (防御的)
             drag.itemEl.classList.remove(opts.dragClass);
@@ -158,6 +202,8 @@
             document.removeEventListener('pointerup', onUp);
             document.removeEventListener('pointercancel', onCancel);
             stopAutoScroll();
+            // ドラッグが始まった時だけここへ来る＝この後の click を1回捨てる口を付ける (イシュー#649)
+            armSwallow(drag.itemEl, released);
             drag = null;
         };
 
@@ -171,9 +217,9 @@
             } else if (lastHole && opts.onDropHole) {
                 opts.onDropHole(dragKey, lastHole);
             }
-            finishDrag();
+            finishDrag(true);
         };
-        const onCancel = () => finishDrag();
+        const onCancel = () => finishDrag(true);
         const preventSelectDuringDrag = (ev) => ev.preventDefault();
 
         const beginDrag = (e, itemEl) => {
