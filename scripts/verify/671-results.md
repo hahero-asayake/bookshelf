@@ -58,3 +58,49 @@
 | import.js の bs-import-panel・ドラッグのゴースト | 対象外 | アプリ外のページ用・一時要素 |
 
 - 別の型：アンカー付きのメニュー（`_placeAnchoredMenu` が上端を画面の 8px で留め、帯の下端を見ない）。②の判断で、この件では直さない（②が別に扱う）。
+
+## §2 直した後（step2・2026-11-14）
+
+### 実装
+
+- **js/overlay-manager.js**：open() の spec に `belowNotice` を足した。
+  - 既定は「kind が modal か sheet で、layer≠false」。#660 の規則 `[data-layer][data-ov-kind=modal|sheet]` と同じ集合なので、既存の面の挙動は変わらない。
+  - `_applyLayers` で、data-layer と一緒に `data-ov-below-notice` を書く。close() で、data-layer と一緒に消す。
+  - layer:false の面（記事の面など）には、belowNotice:true でも書かない（data-layer を持たない面は対象外。#660 と同じ）。
+- **css/bookshelf.css**：#660 の2つの kind セレクタを `body.has-status-urgent [data-ov-below-notice]` の1つに置き換えた。宣言（top・bottom:0・height:auto）は同じ。
+  - 狭幅の `.app-detail` の規則は、そのまま残した。重なり管理役のスタックの外（940）にあり、PC では列（fixed ではない）のため。理由はコメントに書いた。
+- **js/dashboard.js** `_openWidgetPicker`：overlays.open に `belowNotice: true` を足した。kind 'popover' のままなので、closeOthers・背後の inert なし・背面を押すと閉じる、は変わらない。
+- **tests/unit/overlay-manager.test.js**：3件を足した。
+  - 既定で modal・sheet にだけ付く。
+  - popover＋belowNotice:true には付く。layer:false の面と、modal＋belowNotice:false には付かない。
+  - close で消え、開き直すと付く。
+- **index.html の ?v=**：bookshelf.css・overlay-manager.js・dashboard.js を 2026111798 にした。origin/main 47505b2 と作業中の worktree の最大値（2026111797）の次。
+
+### (e) の座標（直した後・18:51〜18:54）
+
+| project/帯の行数 | --status-urgent-h | 帯の下端 | 重ねの上端 | panel の上端 | panel の下端 | 隙間 | × が一番上 | 「再試行」が一番上 | panel が画面内 | 印 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| chromium/1行 | 60px | 59.4 | 60 | 139.7 | 604.5 | 80.3 | ○ | ○ | ○ | あり |
+| chromium/2行 | 60px | 59.4 | 60 | 139.7 | 604.5 | 80.3 | ○ | ○ | ○ | あり |
+| chromium/3行 | 79px | 78.4 | 79 | 158.7 | 623.5 | 80.3 | ○ | ○ | ○ | あり |
+| chromium/4行 | 100px | 99.4 | 100 | 179.7 | 644.5 | 80.3 | ○ | ○ | ○ | あり |
+| gate-webkit/1行 | 60px | 59.4 | 60 | 139.7 | 604.5 | 80.3 | ○ | ○ | ○ | あり |
+| gate-webkit/2行 | 60px | 59.4 | 60 | 139.7 | 604.5 | 80.3 | ○ | ○ | ○ | あり |
+| gate-webkit/3行 | 79px | 78.3 | 79 | 158.7 | 623.5 | 80.4 | ○ | ○ | ○ | あり |
+| gate-webkit/4行 | 100px | 99.3 | 100 | 179.7 | 644.5 | 80.4 | ○ | ○ | ○ | あり |
+
+- 重ねの上端が帯の高さ（--status-urgent-h）に一致する。panel の上端は、帯の高さ＋79.7（12vh）になった。
+- 隙間は、1〜4行のすべてで +80.3〜80.4。直す前は 3行で +1.3、4行で −19.7 だった。
+- **panel の下端**：4行でも 644.5 で、画面（664）に収まる。そのため、panel の高さ（.cmdk と揃えた 70vh）は変えていない。
+- 「再試行」は、どの行数でも押せる。click trial と実際の click の後、行が消えて短文メモがハブへ届いた。
+- 画像：`tmp/671/<chromium|gate-webkit>/<1〜4>line-after.png`（直す前は `-before.png`）。
+  - webkit の 3行の画像：帯・iOS の「ホーム画面に追加」の案内（帯の下・重ねの背面で暗くなる）・panel が、この順に並ぶ。panel の見出しと × は帯から離れて見える。
+
+### 流したもの（すべて PORT=8171）
+
+- **status-bar-over-faces.spec.js と load-conflict-unsaved.spec.js**：chromium と gate-webkit で **47件すべて通過**（2.8分）。
+  - 内訳は、status-bar-over-faces が project ごとに22件（#660 の (a)〜(d) の18件＋(e) の4件）×2、load-conflict-unsaved が chromium の3件。
+  - (e) の4行（直す前の赤）も通った。
+- **char の widgets.spec.js と x2-widgets.spec.js**：6端末で **74件通過・10件 skipped**（34.3秒・CI の test (char) と同じ project）。
+- **vitest 全件**：80ファイル・1195件通過（2件は todo）。overlay-manager は12件。
+- **npm run lint**：12本中0本失敗。

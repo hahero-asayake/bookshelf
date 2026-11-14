@@ -55,6 +55,9 @@
          *   owner      … 'core'|'plugin:<id>'
          *   showClass  … root に付けるクラス (既定 'show'。null で付けない = 動的生成の .cfm-overlay 等)
          *   layer      … false なら data-layer/--layer を書かない (既定 true・イシュー#509)
+         *   belowNotice… 保存の失敗・未保存の帯 (#app-status-bar .status-urgent) が出ている間、帯の下から始める全画面の面か。
+         *                true なら data-layer と一緒に data-ov-below-notice を書く (css が top を帯の高さだけ下げる・イシュー#671)。
+         *                既定: modal/sheet で layer≠false の面。全画面の popover (ホームのウィジェット選択) は true を明示する
          *   sizeTarget … .ov-* を付ける要素 (既定: root 内の .modal-content / .cfm-box、無ければ root)
          */
         open(elOrId, spec) {
@@ -86,6 +89,8 @@
                 showClass: s.showClass === undefined ? 'show' : s.showClass,
                 // layer:false = data-layer/--layer を書かない (自前の z-index を持つ面をスタックに載せるだけ・イシュー#509 U3 で記事の面の重なり順を変えないため)
                 layer: s.layer !== false,
+                // イシュー#671: 帯の下から始める面か (data-ov-below-notice)。既定は #660 の対象 (modal/sheet) と同じ。layer:false の面には書かない
+                belowNotice: s.layer !== false && (typeof s.belowNotice === 'boolean' ? s.belowNotice : (kind === 'modal' || kind === 'sheet')),
                 // イシュー#568: 開いている間、背後を inert にする面か (Tab が背後へ漏れない)。既定 = modal/dialog。
                 // sheet (引き出し・記事エディタの引き出し/メニュー) と popover/menu は対象外 = 背後のスクリムのタップで閉じる今の操作を変えない
                 trap: typeof s.trap === 'boolean' ? s.trap : (kind === 'modal' || kind === 'dialog'),
@@ -137,6 +142,7 @@
             this.stack.splice(i, 1);
             if (face.showClass) face.el.classList.remove(face.showClass);
             delete face.el.dataset.layer;
+            delete face.el.dataset.ovBelowNotice;
             face.el.style.removeProperty('--layer');
             this._applyLayers();
             if (face.onClose) { try { face.onClose(reason); } catch (e) { console.error('[overlays] onClose', e); } }
@@ -213,13 +219,15 @@
         // 背後の inert を今の DOM で付け直す。面より前に出す帯 ([data-ov-above]) を出し入れ・作り直した時に呼ぶ (イシュー#660)
         refreshInert() { this._applyInert(); }
 
-        // スタック内の位置 n を data-layer と --layer (CSS 変数) に書く。z-index は CSS 側が calc(帯 + n) で決める
+        // スタック内の位置 n を data-layer と --layer (CSS 変数) に書く。z-index は CSS 側が calc(帯 + n) で決める。
+        // 帯の下から始める面には data-ov-below-notice も書く (data-layer と同じ時に書き、close で一緒に消す・イシュー#671)
         _applyLayers() {
             let n = 0; // layer:false の面は数えない = 他の面の data-layer を載せ替え前と同じ値に保つ (イシュー#509)
             this.stack.forEach((f) => {
                 if (f.layer === false) return;
                 f.el.dataset.layer = String(n);
                 f.el.style.setProperty('--layer', String(n));
+                if (f.belowNotice) f.el.dataset.ovBelowNotice = '';
                 n++;
             });
             this._applyInert();

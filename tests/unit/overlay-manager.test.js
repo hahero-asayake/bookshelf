@@ -135,4 +135,42 @@ describe('OverlayManager', () => {
         expect(a.dataset.ovSize).toBe('lg');   // root の data-ov-size を既定に使う
         expect(a.dataset.ovKind).toBe('modal');
     });
+
+    // イシュー#671: 保存の失敗・未保存の帯の下から始める面の印 (data-ov-below-notice・css が top を帯の高さだけ下げる)。
+    // 既定は #660 の対象 (data-layer を持つ modal/sheet) と同じ集合。全画面の popover は belowNotice:true を明示する
+    it('帯の下から始める印は、既定で modal/sheet に付き、popover/menu/dialog には付かない', () => {
+        const kinds = ['modal', 'sheet', 'popover', 'menu', 'dialog'];
+        const els = kinds.map((k) => el(`k-${k}`));
+        kinds.forEach((k, i) => ov.open(els[i], { kind: k, onOpen: 'stack' }));
+        const marked = kinds.filter((k, i) => 'ovBelowNotice' in els[i].dataset);
+        expect(marked).toEqual(['modal', 'sheet']);
+    });
+
+    it('belowNotice:true の popover には印が付き、layer:false の面と belowNotice:false の modal には付かない', () => {
+        const picker = el('picker');
+        const artSheet = el('art-sheet');
+        const plain = el('plain');
+        ov.open(picker, { kind: 'popover', size: 'none', belowNotice: true });
+        ov.open(artSheet, { kind: 'sheet', layer: false, belowNotice: true });
+        ov.open(plain, { kind: 'modal', belowNotice: false });
+        expect('ovBelowNotice' in picker.dataset).toBe(true);
+        expect(picker.dataset.layer).toBe('0');
+        expect('ovBelowNotice' in artSheet.dataset).toBe(false);   // data-layer を持たない面は対象外 (#660 と同じ)
+        expect('layer' in artSheet.dataset).toBe(false);
+        expect('ovBelowNotice' in plain.dataset).toBe(false);
+    });
+
+    it('閉じると印は data-layer と一緒に消え、開き直すと付く', () => {
+        const a = el('a');
+        const picker = el('picker');
+        ov.open(a, { kind: 'modal' });
+        ov.open(picker, { kind: 'popover', size: 'none', belowNotice: true, onOpen: 'stack' });
+        ov.close('picker');
+        ov.close('a');
+        expect('ovBelowNotice' in a.dataset).toBe(false);
+        expect('layer' in a.dataset).toBe(false);
+        expect('ovBelowNotice' in picker.dataset).toBe(false);
+        ov.open(a, { kind: 'modal' });
+        expect('ovBelowNotice' in a.dataset).toBe(true);
+    });
 });
