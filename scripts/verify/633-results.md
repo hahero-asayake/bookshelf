@@ -1,5 +1,23 @@
 # #633 本を足した直後に記事の引き出しが0件になるかの切り分け
 
+## まとめ（step5 で仕上げ）
+
+- **原因：アプリの不具合だった（canary が処理を直接呼ぶことは原因ではない）。** 空の保存先で「新規データで初期化しますか？」の OK を押してから、初期化の書き込み→読込が終わるまでの間に足した本を、後から届いた空の読込（`_applyLoadedState`）が消していた。引き出しが0件になり、保存先にも残らない。この間、画面の操作は塞がれていない（step1）。
+  - 足し方（直接呼ぶ／本物の操作）では分かれず、読込との前後だけで分かれた。遅延0ではこの間が0.2〜0.5秒しか無く、直接呼ぶ canary だけが間に合っていた。本番に近い遅延なら本物の操作でも3回中3回再現（step1）。
+  - 条件を1つだけ変えると結果が逆になる実験を2つ行った（足す時機・アプリの版。step2）。
+- **直したもの：** アプリは #602 の **029bf88**（読込の時、保存先が空で手元にデータがあれば手元を採る）で直っていた。このイシューではアプリも canary も変えていない。
+- **このイシューで足したもの：** この場面を固定する E2E 1本（`tests/e2e/first-run-add-article-drawer.spec.js`）。直す前の版（f6dd65a）で赤・main で緑（step3）。
+- **直す前後の比較：**
+  - 直す前は、空の保存先からの1回目が毎回 pick-book（公開）・edit-memo（保存）で落ちていた。
+  - 直した後は、観測を足していない canary が、遅延0・本番に近い遅延の両方で1回目に通った（step4）。
+  - #626 の模擬検証は全件 50/50 OK（step4）。
+- **回帰の結果：** regression 0件（新しい spec 3回・関係する spec 3本・lint 11本・vitest。step5 の節）。
+- **直していないもの・別件：**
+  - 最初の保存の前に記事の画面を開くと、引き出しが空のまま戻らない（main でも起きる・step3）。
+  - 初期化が2回走る（step1）。
+  - 初期化の間、状態の欄が「保存できませんでした」のまま（step1）。
+  - 後ろの2つは②が別に起票する。1つ目の扱いは②の判断。
+
 ## step1 再現と切り分け（2026-11-14 14:47〜14:55）
 
 コードは変えていない。本番への通信は0（CANARY_OFFLINE=1・アプリとハブの向き先は localhost だけ）。#626 の worktree のファイルには触れていない。
@@ -287,3 +305,22 @@
 - アプリ：CANARY_MOCK_APP_ROOT＝`tmp/633/app-0300351`（main の最新）。
 - 結果：**50/50 OK**（`tmp/633/mock-check-step4.log`）。#626 step2-report の 50/50 と同じ。
 - 1回目は 49/50 だった（`tmp/633/mock-check-step4-run1-missing-datacheck.log`）。NG の1件「データ確認 (状態ファイルの目印と一致) は exit 0」は、写しに `tools/bookshelf-canary-datacheck.mjs` を入れ忘れたため（実行役のファイルが無く、node が読み込みで止まって exit 1）。アプリとは関係ない。写しに足して全件を流し直した。
+
+## step5 回帰の確認（2026-11-14 15:19〜）
+
+②の指示（step3 承認時）で、e2e-diff-main は流さず、次の3つで判定した。アプリは変えていない（足したのは spec 1本と、この記録だけ）。
+
+- 確かめた形：自分の2つの commit を origin/main の最新 **0300351** の上へ rebase した後（8d59a83・77e4c94）。この worktree を PORT 8133 で配信した（playwright.config.js の webServer と同じ `python3 -m http.server`）。流し方は `node tmp/633/run-step5.mjs`。
+
+| 確かめたもの | 結果 | 記録 |
+|---|---|---|
+| 新しい spec を3回（first-run-add-article-drawer） | **3 passed** | `tmp/633/step5-new-x3.log` |
+| sync-offline-reconnect（単独） | **13 passed (1.0m)** | `tmp/633/step5-sync-offline-reconnect.log` |
+| boot-confirm-dialog（単独） | **2 passed** | `tmp/633/step5-boot-confirm-dialog.log` |
+| dashboard-stats-after-manual-add（単独） | **1 passed** | `tmp/633/step5-dashboard-stats-after-manual-add.log` |
+| lint 11本（copy・terms・css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・e2e-gate・known-red） | **すべて exit 0**（internal-refs は「OK: 上限(82)以内」） | `tmp/633/step5-lint-*.log` |
+| check:version `--range=origin/main..HEAD` | exit 0（js/css の変更なし＝スキップ） | `tmp/633/step5-check-version.log` |
+| vitest（npm test） | **74 files passed・1099 passed・2 todo** | `tmp/633/step5-vitest.log` |
+
+- regression：**0件**（流したものはすべて緑。落ちて流し直したものは無い）。
+- 流していないもの：e2e-diff-main（E2E 全件・画像比較。②の指示で省いた）。webkit の project では流していない（足した spec は chromium の project に入る）。
