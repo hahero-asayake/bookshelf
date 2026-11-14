@@ -142,6 +142,10 @@ const chip = (page, slug) => page.locator(`#current-bookshelves-${ASIN} .bd-chip
 const chips = (page) => page.locator(`#current-bookshelves-${ASIN} .bd-chip`);
 const option = (page, slug) => page.locator(`#book-detail-pane .bookshelf-select option[value="${slug}"]`);
 const optionByName = (page, name) => page.locator('#book-detail-pane .bookshelf-select option', { hasText: name });
+// チップの並び (data-bookshelf-id の順) と、本1が入っている本棚の本棚の並び (userData.bookshelves の順) (イシュー#638)
+const chipOrder = (page) => chips(page).evaluateAll((els) => els.map((el) => el.dataset.bookshelfId));
+const memberOrder = (page) => page.evaluate((a) => window.bookshelf.userData.bookshelves
+    .filter((b) => !b.isSpecial && (b.books || []).includes(a)).map((b) => b.id), ASIN);
 
 // 詳細が閉じていない・未保存の書名が残っている (edit の時だけ)
 async function expectDetailKept(page, edit) {
@@ -311,6 +315,67 @@ test.describe('PC 幅・ツリーのドラッグ', () => {
         await expect.soft(chips(page)).toHaveCount(4);
         await expect.soft(option(page, 'e2e-other')).toHaveCount(0);
         await expectDetailKept(page, true);
+    });
+
+    // 同じ親の中での並べ替え (イシュー#638)。チップは本棚の並び (userData.bookshelves の順) で描くので、並べ替えた順にすぐ並び直す。
+    // 行の上の端 (高さの0.3より上) へ落とすと前へ、下の端 (0.7より下) へ落とすと後ろへの並べ替え (親は変わらず、確認ダイアログは出ない)
+    for (const [label, edit] of [['閲覧モード', false], ['編集モード', true]]) {
+        test(`(k) ${label}: 同じ親の中で本棚を前へ並べ替えると、すぐにチップがその順に並び直す`, async ({ page }) => {
+            await bootApp(page);
+            await openFromHome(page, { edit });
+            await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
+
+            await expandTree(page);
+            const from = await treeNode(page, 'e2e-parent').boundingBox();
+            const to = await treeNode(page, 'fixshelf').boundingBox();
+            await mouseDrag(page, from, { x: to.x + to.width / 2, y: to.y + to.height * 0.15 });
+            await expect.poll(() => memberOrder(page)).toEqual(['e2e-parent', 'fixshelf', 'e2e-child']);
+            await expect.soft(page.locator('.cfm-overlay')).toHaveCount(0);
+            await expectDetailKept(page, edit);
+
+            await expect.poll(() => chipOrder(page)).toEqual(['e2e-parent', 'fixshelf', 'e2e-child']);
+        });
+    }
+
+    test('(k-2) 同じ親の最後の本棚の後ろへ並べ替えると、すぐにチップがその順に並び直す', async ({ page }) => {
+        await bootApp(page);
+        await openFromHome(page, { edit: true });
+        await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
+
+        await expandTree(page);
+        // 隣の行から落とす。ドラッグは元の行の上で 6px 以上動いた時に始まり、mouseDrag の2歩目は2行先だと元の行の外に出て始まらない
+        const from = await treeNode(page, 'e2e-parent').boundingBox();
+        const to = await treeNode(page, 'e2e-other').boundingBox();
+        // 同じ親の最後の本棚の下の端へ落とす = 本棚の並びの最後へ動く
+        await mouseDrag(page, from, { x: to.x + to.width / 2, y: to.y + to.height * 0.85 });
+        await expect.poll(() => memberOrder(page)).toEqual(['fixshelf', 'e2e-child', 'e2e-parent']);
+        await expect.soft(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expectDetailKept(page, true);
+
+        await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-child', 'e2e-parent']);
+    });
+
+    // 本棚管理のモーダル (⌘K の「本棚を管理」) のドラッグも、ツリーと同じ並べ替えを通る
+    test('(l) 本棚管理のモーダルで同じ親の中で前へ並べ替えると、すぐにチップがその順に並び直す', async ({ page }) => {
+        await bootApp(page);
+        await openFromHome(page, { edit: true });
+        await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
+
+        await page.keyboard.press('Control+k');
+        await page.locator('#cmdk-input').fill('本棚を管理');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('#bookshelf-modal')).toHaveClass(/show/);
+        await expect(page.locator('body')).toHaveClass(/book-detail-pinned/);
+
+        const item = (key) => page.locator(`#bookshelf-modal .bookshelf-item[data-internal-id="${key}"]`);
+        const from = await item('e2eparent01').locator('.bookshelf-drag-handle').boundingBox();
+        const to = await item('fixshelf01').boundingBox();
+        await mouseDrag(page, from, { x: to.x + to.width / 2, y: to.y + to.height * 0.15 });
+        await expect.poll(() => memberOrder(page)).toEqual(['e2e-parent', 'fixshelf', 'e2e-child']);
+        await expect.soft(page.locator('.cfm-overlay')).toHaveCount(0);
+        await expectDetailKept(page, true);
+
+        await expect.poll(() => chipOrder(page)).toEqual(['e2e-parent', 'fixshelf', 'e2e-child']);
     });
 });
 
