@@ -306,9 +306,12 @@ test('670-F フォルダにつないだまま除外して書き出しても、�
     await expandTree(page, ['all']);
     await expect(treeCount(page, 'e670f')).toHaveText('0');
 
+    // 解除は、再読込の読込が書誌の控え (_storage.libraryBooks・除外した本を含む3冊) を作り直した後に行う。
+    // 作り直す前に解除すると書誌が見つからず蔵書に戻らない (フォルダ未接続の c-2 と同じ形・別イシュー)。e2e-diff の高負荷で1回落ちた
+    await expect.poll(() => page.evaluate(() => (((window.bookshelf.userData || {})._storage || {}).libraryBooks || []).length), { timeout: 20000, message: '書誌の控えの読み直し' }).toBe(3);
     await callApp(page, 'unexcludeBook', TARGET);
     await exported(page, dirName, false);
-    expect(await page.evaluate((t) => window.bookshelf.books.some(b => b.asin === t), TARGET)).toBe(true);
+    await expect.poll(() => page.evaluate((t) => window.bookshelf.books.some(b => b.asin === t), TARGET)).toBe(true);
     await expandTree(page, ['all']);
     await expect(treeCount(page, 'e670f')).toHaveText('1');
     expect((await readFolder(page, dirName)).shelves['e670f.json']).toEqual([TARGET]);
