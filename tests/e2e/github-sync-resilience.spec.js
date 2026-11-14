@@ -56,7 +56,8 @@ test.describe('GitHub読み込みの耐性 (遅延・失敗時も手元データ
         expect(itemCountEarly).toBeGreaterThan(0);
     });
 
-    test('GitHub からの読み込みが失敗すると「手元のデータで表示中・再試行」が出て、再試行で回復できる', async ({ page, context }) => {
+    // イシュー#666: GitHub も toast をやめ、状態バーの読込の失敗の行に「この端末の内容を表示しています」と「再試行」を出す (ハブと同じ)
+    test('GitHub からの読み込みが失敗すると、状態バーに「この端末の内容を表示しています」と「再試行」が出る', async ({ page, context }) => {
         await primeLocalData(page, 5);
         let failCount = 0;
         await context.route('https://api.github.com/**', async (route) => {
@@ -81,13 +82,16 @@ test.describe('GitHub読み込みの耐性 (遅延・失敗時も手元データ
             const before = document.querySelectorAll('.book-item').length;
             await bs.initGitHubSync();
             await new Promise((r) => setTimeout(r, 50));
+            const row = document.querySelector('#app-status-bar [data-load-failure]');
+            const msgEl = row && row.querySelector('.status-msg');
+            const retryBtn = row && row.querySelector('[data-status-action="retry-load"]');
             const toastEl = document.querySelector('.toast-error .toast-message');
-            const retryBtn = document.querySelector('.toast-action');
             const after = document.querySelectorAll('.book-item').length;
-            return { before, after, toastText: toastEl ? toastEl.textContent : null, hasRetry: !!retryBtn };
+            return { before, after, barText: msgEl ? msgEl.textContent : null, toastText: toastEl ? toastEl.textContent : null, hasRetry: !!retryBtn };
         });
         expect(toastInfo.before).toBe(toastInfo.after); // 手元データが維持されている
-        expect(toastInfo.toastText).toContain('手元のデータで表示中');
+        expect(toastInfo.barText).toBe('GitHub から読み込めませんでした。この端末の内容を表示しています。通信が戻ったら「再試行」を押してください。');
         expect(toastInfo.hasRetry).toBe(true);
+        expect(toastInfo.toastText, '読込の失敗の toast は出さない').toBeNull();
     });
 });
