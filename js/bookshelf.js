@@ -5715,7 +5715,8 @@ class VirtualBookshelf {
         if (document.body.classList.contains('drawer-open')) {
             await new Promise((resolve) => {
                 const done = () => { clearTimeout(timer); window.removeEventListener('popstate', done); resolve(); };
-                const timer = setTimeout(done, 1000); // 戻るが起きない時の保険 (段を積まない設定の時など)
+                // #259 の方針 (時間で待たない) の例外: 主は popstate の着地で、1秒は戻るが起きない時 (段を積まない設定など) に止まらないための保険。当たっても同じ切り替えを1回するだけ
+                const timer = setTimeout(done, 1000);
                 window.addEventListener('popstate', done);
                 this._closeDrawer();
             });
