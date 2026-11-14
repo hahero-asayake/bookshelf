@@ -287,3 +287,7 @@ push はしていない。②の判断で止まる。
   - 直し（d715292・test だけ）：save-failure-visible.spec.js と同じく `bookshelf.flag.syncRetryDelaysMs` で再試行を [300,300,300] に縮め、尽きた後の文を見るようにした。確かめる文は変えていない。
 - 直した後：新しい spec と online-resync で **13 passed**（50.8s・`tmp/653/step5-after-rebase2.txt`）。lint:e2e-goto・e2e-wait・e2e-external・internal-refs（上限82以内）・e2e-gate は OK。
 - 最後の載せ直しの後の `npm run lint` は **12 本中 0 本失敗**、`npm test` は Test Files 79 passed・Tests 1185 passed | 2 todo。
+- その後、origin/main が ab34c16 に進んだ（#659：並べ替えのドラッグの直しで、bookshelf.js の ?v= が 2026111781 になった。直した catch とは別の場所）。もう一度載せ直し、?v= を **2026111791** にした（他のイシュー #660 2026111782・#667 2026111780・#669 2026111769 とも重ならない）。check:version は OK。載せ直した後の結果は次のとおり。
+  - 新しい spec と online-resync：**13 passed**（43.6s・`tmp/653/step5-after-rebase3.txt`）
+  - `npm run lint`：**12 本中 0 本失敗**
+  - `npm test`：Test Files 79 passed・Tests 1185 passed | 2 todo
