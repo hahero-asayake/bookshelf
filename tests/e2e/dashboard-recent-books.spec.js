@@ -3,6 +3,7 @@
 // 幅を変えても .widget-book-row の合計セル幅がコンテナ幅を超え続け、overflow-x:auto の
 // 横スクロールに任せられることを実測する。
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -31,8 +32,7 @@ function buildManyBooksFixtures(count) {
     }
     library.books = books;
     library.metadata = { ...library.metadata, totalBooks: books.length };
-    const allShelf = userData.bookshelves.find((s) => s.isSpecial);
-    allShelf.books = asins;
+    setAllShelfBooksForTest(userData, asins);
     return { userData: JSON.stringify(userData), library: JSON.stringify(library) };
 }
 

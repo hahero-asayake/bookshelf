@@ -23,6 +23,7 @@
 // 無変更のため?v=バンプ不要)。
 import { test, expect } from '@playwright/test';
 import { blockExternalForTest } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
@@ -104,7 +105,7 @@ test('SW許可下で、3回目のロードでは表紙画像(別オリジン)の
         return { asin, title: `本${n}`, authors: 'a', acquiredTime: 1700000000000 + n, readStatus: 'READ', productImage: `http://127.0.0.1:${imgPort}/cover/${asin}.jpg`, source: 'fixture', addedDate: 1700000000000 + n };
     });
     const userData = JSON.parse(JSON.stringify(fixtureUserData));
-    const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+    const allShelf = setAllShelfBooksForTest(userData, books.map((b) => b.asin)).bookshelves.find((s) => s.isSpecial);
     userData.notes = {}; userData.settings = { ...(userData.settings || {}), coverSize: 'medium', defaultView: 'covers' };
     const libraryStr = JSON.stringify({ books, metadata: { totalBooks: books.length } });
     const userDataStr = JSON.stringify(userData);

@@ -1,5 +1,6 @@
 // 記事エディタ (公開v2 S3, ADR-058 §11) の基本操作・プレビュー・公開結線を経路で検証する。
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { canvas, addBlock, flushArtSave, flushArtRemoteNow, flushArtSaveAndRemote, getArtEditingId, getArtDraft, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, openArtPreview as openPreview, setArtPreviewStallMs, setArtPreviewHardDeadlineMs, runArtRenderList, runArtRenderPublishPanel, spyOnArtPublish, wasArtPublishCalled, openArtEditor, editArtBlockViaMenu, openArtSheet, closeArtSheet, openArtPublishPanelReopen, createArticlesAndRenderList } from './helpers/art-editor.js';
 import { openBookMemoInAppEditor, hasBookMemoEditor, getBookMemoEditorContext } from './helpers/book-memo.js';
 import { mockSyncReady, stubScheduleSync } from './helpers/sync.js';
@@ -156,8 +157,7 @@ function buildManyBooksFixtures(count) {
     }
     library.books = books;
     library.metadata = { ...library.metadata, totalBooks: books.length };
-    const allShelf = userData.bookshelves.find(s => s.isSpecial);
-    allShelf.books = asins;
+    setAllShelfBooksForTest(userData, asins);
     return { userData: JSON.stringify(userData), library: JSON.stringify(library) };
 }
 

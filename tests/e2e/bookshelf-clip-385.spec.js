@@ -9,6 +9,7 @@
 // chromium(既定project)とwebkit(BACKNAV_WEBKIT=1)の両方で実行する。list表示は列数の対象外なので
 // 従来どおりWebKit限定の見切れ回帰確認に残す。
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { navigateToMainInternal } from './helpers/app-misc.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 
@@ -32,7 +33,7 @@ async function setupFixture(page, context, count = 40) {
         return { asin, title: `見切れ検証用の本 ${n} ${'長めの書名'.repeat(n % 3)}`, authors: `著者${n % 11}`, acquiredTime: 1700000000000 + n * 1000, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000 + n * 1000 };
     });
     const userData = JSON.parse(JSON.stringify(fixtureUserData));
-    const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+    const allShelf = setAllShelfBooksForTest(userData, books.map((b) => b.asin)).bookshelves.find((s) => s.isSpecial);
     userData.notes = {};
     const libraryStr = JSON.stringify({ books, metadata: { totalBooks: books.length } });
     const userDataStr = JSON.stringify(userData);

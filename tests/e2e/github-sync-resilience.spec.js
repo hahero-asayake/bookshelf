@@ -11,6 +11,7 @@
 // ため、ローカル・本番どちらでも同じ画面に着地する(実機確認: scripts/verify/396-prod-resilience-probe*.mjs)。
 // イシュー#637: test-base から import する (@playwright/test の直 import だと表紙・AdSense の遮断が効かず、本物の Amazon へ5件出ていた)
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { readFileSync } from 'node:fs';
 
 const fixtureUserData = JSON.parse(readFileSync('tests/fixtures/fixture-userdata.json', 'utf-8'));
@@ -21,7 +22,7 @@ function makeFixture(n) {
         return { asin, title: `手元の本${idx}`, authors: 'a', acquiredTime: 1700000000000 + idx, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000 + idx };
     });
     const userData = JSON.parse(JSON.stringify(fixtureUserData));
-    const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+    const allShelf = setAllShelfBooksForTest(userData, books.map((b) => b.asin)).bookshelves.find((s) => s.isSpecial);
     userData.notes = {};
     userData.settings = { ...(userData.settings || {}), coverSize: 'medium', defaultView: 'covers' };
     return {

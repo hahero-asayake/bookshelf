@@ -6,6 +6,7 @@
 // 修正前のアーカイブ(content-visibility:hidden のまま)を配信したサーバーを BASE_URL に渡すと落ち、
 // 修正後(working tree / 本テスト対象コミット)では通ることを tmp/373/e2e-before.log・e2e-after.log に残す。
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { navigateToMainInternal } from './helpers/app-misc.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -24,7 +25,7 @@ test.describe('#373 本棚一覧の見切れ (WebKit・高速スクロール)', 
             return { asin, title: `計測用の本 ${n} ${'長めの書名'.repeat(n % 3)}`, authors: `著者${n % 37}`, acquiredTime: 1700000000000 + n * 1000, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000 + n * 1000 };
         });
         const userData = JSON.parse(JSON.stringify(fixtureUserData));
-        const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+        const allShelf = setAllShelfBooksForTest(userData, books.map((b) => b.asin)).bookshelves.find((s) => s.isSpecial);
         userData.notes = {};
         const libraryStr = JSON.stringify({ books, metadata: { totalBooks: books.length } });
         const userDataStr = JSON.stringify(userData);
@@ -113,7 +114,7 @@ test.describe('#373 案D: ホーム表示中は一覧に Tab フォーカスが�
             return { asin, title: `計測用の本 ${n}`, authors: `著者${n}`, acquiredTime: 1700000000000 + n * 1000, readStatus: 'READ', productImage: '', source: 'fixture', addedDate: 1700000000000 + n * 1000 };
         });
         const userData = JSON.parse(JSON.stringify(fixtureUserData));
-        const allShelf = userData.bookshelves.find((s) => s.isSpecial); allShelf.books = books.map((b) => b.asin);
+        const allShelf = setAllShelfBooksForTest(userData, books.map((b) => b.asin)).bookshelves.find((s) => s.isSpecial);
         userData.notes = {};
         const libraryStr = JSON.stringify({ books, metadata: { totalBooks: books.length } });
         const userDataStr = JSON.stringify(userData);

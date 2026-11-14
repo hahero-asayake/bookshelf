@@ -7,6 +7,7 @@
 // 見えているので、ホームの評価分布・未評価・本棚別 Top5 は詳細を開いたままで、左ツリーの本棚の冊数は詳細を閉じた後に見る。
 // ホームを描き直しても、横に送っていた「最近追加した本」の位置が先頭へ戻らないことも見る (位置は描き直しの中で戻す)。
 import { test, expect } from './helpers/test-base.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -32,8 +33,7 @@ function buildEmptyFixtures({ emptyShelves = false } = {}) {
     const library = JSON.parse(JSON.stringify(fixtureLibrary));
     library.books = [];
     library.metadata = { ...library.metadata, totalBooks: 0 };
-    const allShelf = userData.bookshelves.find((s) => s.isSpecial);
-    if (allShelf) allShelf.books = [];
+    setAllShelfBooksForTest(userData, []);
     if (emptyShelves) {
         for (const s of userData.bookshelves) s.books = [];
         userData.notes = {};
