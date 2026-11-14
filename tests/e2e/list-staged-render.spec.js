@@ -5,6 +5,7 @@
 //   3. 途中の状態で並べ替え・1冊移動・クリックが来ても壊れない（重複・欠け・順序ずれ・例外が無い）
 import { test, expect } from './helpers/test-base.js';
 import { waitForListStaged, getOrderedBooksToRender } from './helpers/app-misc.js';
+import { setAllShelfBooksForTest } from './helpers/all-shelf.js';
 
 const N = 913;
 const books = Array.from({ length: N }, (_, i) => {
@@ -16,10 +17,12 @@ const books = Array.from({ length: N }, (_, i) => {
     };
 });
 const library = { books, metadata: { totalBooks: books.length } };
-const userData = {
-    bookshelves: [{ id: 'all', internalId: 'fixall401', name: 'すべての本', iconName: 'library', isSpecial: true, books: books.map((b) => b.asin), notes: {} }],
+// 「すべての本」の books と bookOrder.all は同じ並びで書く (イシュー#662 の決まり)。この並びは取得日の順と違うので、
+// カスタム順へ切り替えると並びが大きく変わり、段階描画になる (イシュー#676)
+const userData = setAllShelfBooksForTest({
+    bookshelves: [{ id: 'all', internalId: 'fixall401', name: 'すべての本', iconName: 'library', isSpecial: true, books: [], notes: {} }],
     notes: {}, settings: { sortOrder: 'acquiredTime', sortDirection: 'desc' }, bookOrder: {}, stats: {}, version: '2.0',
-};
+}, books.map((b) => b.asin));
 
 async function setup(page) {
     const errors = [];
@@ -106,20 +109,31 @@ test.describe('#401 並べ替えの段階描画（913冊）', () => {
         expect(errors).toEqual([]);
     });
 
-    test('途中で1冊を動かす（まだ置かれていない本へのドロップ）: 並び順どおりに反映される', async ({ page }) => {
+    // 手で本を動かせるのはカスタム順のときだけ (ADR-010・_onBookPointerDown の先頭のガード。tests/e2e/custom-order-only-drag.spec.js)。
+    // 旧版は取得日の順のまま reorderBooks を直に呼んでいた。これは UI では作れない状態で、#662 で bookOrder.all がいつも
+    // 埋まるようになってから、起点 (保存済みの並び) と DOM (画面の並び) が食い違って落ちた (イシュー#676)。
+    // #401 で確かめたいこと (段階描画の途中に1冊移動が来ても、置き終えた DOM が描くべき並びと一致する) は、
+    // カスタム順へ切り替えた直後の段階描画で確かめる。
+    test('途中で1冊を動かす（カスタム順へ切り替えた直後・まだ置かれていない本へのドロップ）: 並び順どおりに反映される', async ({ page }) => {
         const errors = await setup(page);
         const r = await page.evaluate(() => {
             const bs = window.bookshelf;
-            document.getElementById('sort-direction').click(); // 段階描画が始まる
+            const sel = document.getElementById('sort-order');
+            sel.value = 'custom'; // カスタム順へ切り替える＝段階描画が始まる
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            const sortOrder = bs.sortOrder;
             const order = bs._orderedBooksToRender().map((b) => b.asin);
             const placed = document.querySelectorAll('#bookshelf > .book-item').length;
             const dragged = order[0];
             const target = order[order.length - 5]; // まだ DOM に無い位置
             const targetInDom = !!document.querySelector(`#bookshelf > .book-item[data-asin="${target}"]`);
             bs.reorderBooks(dragged, target);
-            return { placed, targetInDom, dragged, target };
+            return { sortOrder, placed, targetInDom, dragged, target };
         });
+        expect(r.sortOrder).toBe('custom');
+        expect(r.placed, '段階描画の経路を通っていない（同期で全件置いた）').toBeLessThan(N);
         expect(r.targetInDom, 'ドロップ先がすでに置かれていた（途中状態を作れていない）').toBe(false);
+        await waitForListStaged(page);
         await page.waitForTimeout(300);
         await expectDomMatchesOrder(page);
         const pos = await page.evaluate(([d, t]) => {
@@ -127,6 +141,12 @@ test.describe('#401 並べ替えの段階描画（913冊）', () => {
             return { d: dom.indexOf(d), t: dom.indexOf(t) };
         }, [r.dragged, r.target]);
         expect(pos.d, '動かした本がドロップ先の直前に入っていない').toBe(pos.t - 1);
+        // bookOrder.all は順序の正で、冊数を減らさない (イシュー#662)
+        const saved = await page.evaluate(() => {
+            const all = window.bookshelf.userData.bookOrder.all;
+            return { len: all.length, uniq: new Set(all).size };
+        });
+        expect(saved).toEqual({ len: N, uniq: N });
         expect(errors).toEqual([]);
     });
 
