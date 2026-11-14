@@ -191,3 +191,47 @@ GATE_WEBKIT=1 PORT=8198 PLAYWRIGHT_BASE_URL=http://localhost:8198 npx playwright
 | shelf-file-delete | 本棚ファイルの削除待ち: Asayake ハブ (イシュー#587) › 削除待ちの slug で作り直した本棚のファイルは消えない | 通った | 通った |
 
 残りの33本（GitHub・ローカルの分と、GitHub だけのテスト）も、step1 と同じ（30 passed・3 skipped）。
+
+## step4 main と比べて新しく落ちたテストが無いか（2026-11-14・base origin/main bd610ea・work 0ff68f4）
+
+- 始める前に origin/main bd610ea（#590 の J2-2・J2-5 の投入）へ rebase した（衝突なし）。自分の commit は5本（3f5bc69・8c21dae・db5c57e・9de9552・0ff68f4）。rebase の後も、外した名前の grep は scripts/verify 以外で0件。main に入った `gate/j6-4-sync-conflict.spec.js`（#616）が gate-hub.js を使っている（gate-hub.js の呼び出し元が1本増えた）。
+- 流したもの: `GATE_WEBKIT=1 node scripts/verify/e2e-diff-main.mjs --port=8198 --out=<_artifacts/598/e2e-diff>`（13:38 開始）。
+- スクリプトは最後まで終わらなかった。base・work の E2E（各1560本）、vitest（両側）、画像比較（work）までは終わり、「新しく落ちた1件を work 側で3回流し直す」の途中（13:49 ごろ）で、実行役のセッションごと止められた（exit 137）。report.md は出ていない。
+  - 再開後（13:51）、HEAD（0ff68f4）と origin/main（bd610ea）が止まる前と同じことを確かめた。残っていた結果（base/work の json）から、スクリプトと同じ分類（scripts/verify/e2e-diff-lib.mjs の `categorize`）で3つの表を作った。
+  - 途中だった流し直しは、スクリプトと同じ引数（`test gate/j2-5-import-no-duplicate.spec.js:17 --project chromium`）で、手で3回流した。
+
+### E2E（1側 1560本: chromium 756・gate-webkit 30・char 6端末 × 129）
+
+| | base（bd610ea） | work（0ff68f4） |
+|---|---|---|
+| 通った | 954 | 959 |
+| skip | 599 | 599 |
+| 落ちた | 7（すべて chromium） | 2（すべて chromium） |
+
+| 表 | 件数 | 中身 |
+|---|---|---|
+| 新しく落ちた | 1（chromium 1・gate-webkit 0・char 0） | `gate/j2-5-import-no-duplicate`「@gate J2-5 「選択した本を取り込む」の二度押しと、同じデータの再取込で、冊数が N=3 のまま (重複0件)」 |
+| 新しく通った | 6（すべて chromium） | `book-memo-file-lifecycle`「GitHub・使えない文字と空白を含む題名 › 本を削除すると…」1本・`list-staged-render` 2本・`reimport-diff` 3本 |
+| 両方で落ちた | 1（chromium） | `gate/j2-2-import-paste`「@gate J2-2 J2-6 取込データを貼って取り込むと…」 |
+
+- 新しく落ちた1件（J2-5）を work 側で3回流し直した結果: 通った・落ちた・通った。スクリプトの決まり（1回でも通れば flake）で flake。**regression は0件**。
+  - J2-5 と J2-2 は既知の赤（docs/gate/known-red.json・#622「取り込んだ直後（1秒以内）に再読込すると冊数が 0 になる」）。どちらの spec も、今回変えた gate-hub.js・storage-fakes.js を読み込んでいない。
+- 新しく通った6件は、base 側だけで落ちたもの。base 側を流している間は、他のイシューの E2E と重なって負荷が高かった（16コアで load average 約50。work 側の間は約20〜35）。
+- gate-webkit: 30本。両側とも落ちたテストは0 = 新しく落ちた0件。step2 で1回だけ落ちた billing-portal-return（WebKit・保存先 local）は、両側とも通った。
+- 今回変えたヘルパーを読み込む spec だけを取り出した結果（移した3 spec・gate-hub.js を使う gate spec 8本（j5-4・j5-5・j5-6・j6-2・j6-3・j6-4・j7-account-delete・j7-billing）・billing-portal-return）: chromium 67本・gate-webkit 16本の計83本。新しく落ちたものは0。base と違うのは book-memo の GitHub の1本（base で落ち、work で通った）だけ。
+  - j6-4 のハブの衝突（2台で衝突 → 3択）は、If-Match の比べ方を変えた後の gate-hub.js で初めて流れた。両側・両 project で通った。
+
+### vitest・画像比較・lint
+
+| 何を | 結果 |
+|---|---|
+| vitest（スクリプトが両側で流した分） | 両側とも 1078本中 1076 passed・2 todo・失敗0。3つの表は 0件・0件・0件 |
+| 画像比較（work 側） | 54本すべて一致（失敗0） |
+| CI と同じ lint（check:version・lint:css・e2e-goto・e2e-wait・breakpoint・esc・js-color・internal-refs・e2e-gate・copy・terms・known-red） | すべて exit 0（check:version は「js/css の変更なし」。e2e-gate は @gate 34本・違反0。known-red は既知の赤2件・違反0） |
+
+### 判定
+
+新しく落ちたテスト（regression）は、chromium・gate-webkit とも0件。push してよいかは②の判断を待つ。
+
+- 結果の置き場: `/home/kuroko/worktrees/bookshelf/_artifacts/598/e2e-diff/`（base.e2e.json・work.e2e.json・base/work.vitest.json・work.visual.json）と、流し直しの記録 `_artifacts/598/j25-work-{1,2,3}.log`（どれもリポジトリの外）。
+- 止められた時の残り: `_artifacts/598/e2e-diff/_worktree-base` のフォルダ（base 側の一時 worktree の残り。git の worktree の登録は残っていない）。同じ `--out` で流し直す時は邪魔になるので、別の `--out` を使う。
