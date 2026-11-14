@@ -48,7 +48,7 @@
 - `tests/e2e/sync-conflict.spec.js`は`window.bookshelf._handleSyncConflict()`を直接呼ぶ単体テストだったため、`tests/e2e/char/hub-conflict.spec.js`では実際のHTTP応答経路を通して固定した。
 - 経路：`sync.method='hub'`で起動→`_scheduleSync()`→`_runPendingSync()`→`_syncWithAuthRetry()`→`syncToObsidianFolder()`→`storage.syncBatch()`→`hub-adapter.commitBatch()`（HEAD→POST `/data/batch`）→412応答→`_recoverBatchConflictAndRetry()`（`conflicts`詳細が応答に無い＝js/hub-adapter.js:291-296の「個別判定できないので安全側に倒す」経路）→即座に`HubConflictError`→js/bookshelf.js:5936-5938でキャッチ→`_handleSyncConflict('Asayake ハブ')`→`#sync-conflict-dialog`（O27）表示。
 - `_handleSyncConflict`はダイアログで選択されるまでPromiseが解決しない設計のため、トリガー呼び出し（`page.evaluate`）自体はawaitせず、ダイアログの出現をPlaywrightのlocator自動待ちで確認する形にした。
-- 確認内容：ダイアログの`.cfm-message`に同期元名（「Asayake ハブ」）が入ること、3択（`.cfm-cancel`「何もしない」/`.cfm-export`「編集内容をJSONで書き出す」/`.cfm-ok`「再読込して最新版を取得」）のラベル、「何もしない」でダイアログが閉じることを確認した（今の振る舞い）。
+- 確認内容：ダイアログの`.cfm-message`に同期元名（「Asayake ハブ」）が入ること、選び方（`.cfm-remote`「保存先の内容を読み込む」/`.cfm-export`「この端末の内容を書き出す」・`.cfm-local`は出ない）のラベル、Escで選ばずに閉じることを確認する。イシュー#635で読込時の選択と同じ定義（`CONFLICT_DIALOG`）に寄せた（以前は3択＝`.cfm-cancel`「何もしない」/`.cfm-export`「編集内容をJSONで書き出す」/`.cfm-ok`「再読込して最新版を取得」で、「何もしない」で閉じることを確認していた）。
 
 ## 5. このstepで測れなかったものの全体像
 

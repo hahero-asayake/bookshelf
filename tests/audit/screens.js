@@ -47,7 +47,7 @@ export const SCREENS = [
     { id: 'publish-settings', title: '公開の設定', group: 'publish', surfaces: ['publish-settings-modal'] },
     { id: 'report', title: '記事の通報', group: 'dialogs', surfaces: ['report-modal'], std1: ['記事の通報ダイアログ'] },
     { id: 'confirm', title: '確認ダイアログ（2択）', group: 'dialogs', std1: ['confirmDialog'] },
-    { id: 'sync-conflict', title: '同期衝突ダイアログ（3択）', group: 'dialogs', std1: ['同期衝突ダイアログ'] },
+    { id: 'sync-conflict', title: '衝突の選択ダイアログ（書き込み時）', group: 'dialogs', std1: ['衝突の選択ダイアログ'] },
     { id: 'usage-alert', scope: true, title: '容量アラートバナー', group: 'dialogs', std1: ['容量アラートバナー'] },
     { id: 'mobile-setup-banner', scope: true, title: 'スマホの設定案内バナー', group: 'dialogs' },
 ];
@@ -55,7 +55,7 @@ export const SCREENS = [
 // 巡回の対象外 (理由つき)
 export const EXCLUDED = [
     { name: 'プラグインの面', std1: ['プラグインの面'], reason: '中身はプラグインごとに違う。標準プラグインがこの面を使う場合は SCREENS へ移す' },
-    { name: '読込時の衝突ダイアログ (3択)', std1: ['読込時の衝突ダイアログ'], reason: '保存先とこの端末の両方が変わった時だけ出る。再現に保存先の模擬と未接続が要るため、巡回には未投入。動きと既定のボタンは tests/e2e/sync-offline-reconnect.spec.js で見る (イシュー#602)' },
+    { name: '読込時の衝突ダイアログ (3択)', reason: '書き込み時 (sync-conflict) と同じ定義 (js/bookshelf.js CONFLICT_DIALOG) から出る (イシュー#635・ui-standards §1 は「衝突の選択ダイアログ」の1行)。保存先とこの端末の両方が変わった時だけ出る。再現に保存先の模擬と未接続が要るため、巡回には未投入。動きと既定のボタンは tests/e2e/sync-offline-reconnect.spec.js で見る (イシュー#602)' },
     { name: 'トースト', reason: '数秒で消える表示。文言は抽出 (scripts/extract-ui-strings.mjs) で見る' },
     {
         name: 'プラグインの一覧 (plugins-modal)',

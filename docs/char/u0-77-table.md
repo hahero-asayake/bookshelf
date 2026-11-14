@@ -44,7 +44,7 @@
 | I4 | 390/768/1024 | **測れた**(3幅共通) | I4。`openReportModal()`はhub未ログインだとログイン案内に分岐する(実測)。hubログイン済み相当に注入して通報モーダルの開閉を確認。 |
 | E2 | 390/768/1024 | **測れた**(3幅共通) | E2。"all"は本棚自身のbooks配列ではなくlibrary.booksをそのまま映す(実測)。library側も空にして空状態(`.bookshelf-empty`)を確認。 |
 | E3 | 390/768/1024 | **測れた**(3幅共通) | E3。`context.setOffline(true)`で短文メモを保存してもトーストは出ない(専用の扱いが無い、step1 §4と整合)。 |
-| E4 | 390/768/1024 | **測れた**(3幅共通・U0c#506) | `hub-conflict.spec.js` E4。`sync.method='hub'`で起動し、POST `/data/batch`が412(conflicts詳細なし)を返す経路(`_scheduleSync→_runPendingSync→syncToObsidianFolder→hub-adapter.commitBatch`)を通し、`HubConflictError`→`_handleSyncConflict('Asayake ハブ')`→`#sync-conflict-dialog`(O27)の3択(何もしない／JSONで書き出す／再読込)が出て選べることを確認。`tests/e2e/sync-conflict.spec.js`は`_handleSyncConflict()`の直接呼びだったが、ここでは実際のHTTP応答経路を通した。 |
+| E4 | 390/768/1024 | **測れた**(3幅共通・U0c#506) | `hub-conflict.spec.js` E4。`sync.method='hub'`で起動し、POST `/data/batch`が412(conflicts詳細なし)を返す経路(`_scheduleSync→_runPendingSync→syncToObsidianFolder→hub-adapter.commitBatch`)を通し、`HubConflictError`→`_handleSyncConflict('Asayake ハブ')`→`#sync-conflict-dialog`(O27)の選択(保存先の内容を読み込む／この端末の内容を書き出す。Escで選ばずに閉じる)が出て選べることを確認(イシュー#635で読込時と同じ定義に寄せた。以前は3択=何もしない／JSONで書き出す／再読込)。`tests/e2e/sync-conflict.spec.js`は`_handleSyncConflict()`の直接呼びだったが、ここでは実際のHTTP応答経路を通した。 |
 | E5 | 390/768/1024 | **測れた**(3幅共通) | E5。使用率96%→`#usage-alert-banner`表示・upgrade導線あり。実装中に`page.addInitScript`のクロージャの罠を発見・修正した(下記参照)。 |
 | E6 | 390/768/1024/1440/1920 | **測れなかった**(技術上の理由) | ウィジェットのrender例外は`js/dashboard.js`の`entry.render.call(...)`のtry/catch(282〜285行)でのみ発生する。確認した範囲のwidget(`counter-total`等)はrender内でネットワーク呼び出しやlocalStorage読み込み失敗で例外を投げる分岐を持たず、UI操作や`context.route`/`setOffline`のような外側からの入力では例外を誘発できない。 |
 

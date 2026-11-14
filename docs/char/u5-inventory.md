@@ -67,7 +67,7 @@ u0-77-table.md E2/E3/E5/E6 と 499-step1-inventory.md §4 の記載に沿って�
 | 記事ブロック内「本を選ぶ」空状態 | bookshelf.js:10698 | `pp-empty pp-empty-btn` |
 | 本棚ブロックの本0 | bookshelf.js:10954 | `art-shelf-add-empty pp-empty pp-empty-btn` |
 | ウィジェットの描画失敗 | dashboard.js:280（`entry.render.call`のtry/catch、282-285行） | 赤字の本文（色直接指定・トークン規約から外れている） |
-| 同期の衝突（O27） | bookshelf.js:5771-5823 | `#sync-conflict-dialog`（E4で固定済み） |
+| 同期の衝突（O27） | bookshelf.js `_showConflictDialog`→`_showConflictChoiceDialog`（定義は `CONFLICT_DIALOG`・読込時の `#load-conflict-dialog` と共通・イシュー#635） | `#sync-conflict-dialog`（E4で固定済み） |
 | 容量の超過（usage-alert） | bookshelf.js:4759-4793 | `usage-alert-banner`系（E5で固定済み） |
 
 **備考**：上記は「代表クラスでの実測」であり、依頼文の「約28か所」の厳密な数え方（1タグ=1か所／1関数=1か所等）は未確認のまま。EmptyState実装時（step2/3）に、同種のクラス（`pp-empty`系・`-empty`系・`cmdk-empty`・`tree-empty`）を対象に置き換え漏れがないか再度grepする。
