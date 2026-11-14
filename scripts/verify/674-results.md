@@ -52,3 +52,77 @@
 ### 別の揺れ（150行の赤とは別・step4 で見る）
 
 - spec の setup（61行）は `window.bookshelf.books.length > 0` だけを待ち、userData を待たない。cfcd784 の3並列で 2/3 がここで落ちた。9713381 の3並列では3本とも setup を通った（150行で落ちた）。今の main でも起きるかは、直した後に step4 で3並列と1並列の両方で見る。
+
+## §2 原因の見極め・横展開・直し方（step2・2026-11-14 19:03〜）
+
+### 判定：アプリの不具合（spec の前提は古くない）
+
+- 物差し1（#484 の約束・spec 冒頭コメント）：付け替えた直後も、もう一方の本（旧ASINのまま）にメモ・除外・非表示・本棚所属が残る。bookOrder は重複2件のうち1件だけが新ASINに置き換わる。
+- 物差し2（ADR-166）：bookOrder.all は順序の正で、「すべての本」の books は bookOrder.all と同じ配列。
+- 今の main（9713381）で付け直すと、bookOrder.all（＝「すべての本」の books）が `[NEW, DUP, SELF, SELF, SOLO, NEW]` になる。新ASINの本が並び順に2回入り、蔵書は5冊なのに並びは6件。物差し1の「1件だけ置き換わる」に反し、データが崩れる。spec の150行はこの崩れを正しく捕まえている＝spec を緩める理由は無い。
+- 原因：migrateUserData（js/bookshelf.js 6947行〜）は「本棚の books」と「bookOrder の配列」が別の配列だと決めてかかっている。本棚ループで push（コピー）、bookOrder ループ（7005行）で置き換えを、それぞれその場で書き換える。#662 e71239b で「すべての本」が起動の直後から同じ配列になったので、端末の控えから読む起動でも、付け直すたびに起きるようになった。
+
+### 保存先から読んだ本棚でも起きる（ハブで E2E 実測・#662 より前から）
+
+- 確かめ方：確かめ用の spec を書いて流した（commit しない・`tmp/674/zz-674-probe.spec.js` へ移した・ログは `tmp/674/probe-hub*.log`）。
+  - ハブの模擬（tests/e2e/helpers/gate-hub.js）に、上巻・下巻（同じ DUP）・単独の本（SOLO）と、自作の本棚「フィクション」（DUP と SOLO）を置く。
+  - ハブから読む起動（method: 'hub'・端末の控え無し）の後、spec と同じ画面操作で上巻を NEW に付け直す。
+- 結果（9713381 と、#662 の前の cfcd784 で同じ）：
+  - 読んだ直後：「フィクション」の books === bookOrder.fiction、「すべての本」の books === bookOrder.all（どちらも true）。
+  - 付け直した後：「フィクション」＝`[NEW, SOLO, NEW]`＝**下巻（DUPのまま）が「フィクション」から外れ**、NEW が2回入る。「すべての本」＝`[NEW, DUP, SOLO, NEW]`（NEW が2回）。
+- 保存先から読む起動の読込（js/bookshelf.js 3657〜3658行 `bookshelves.forEach(b => { bookOrder[b.id] = b.books; })`・ad7f393・2026-05-24）は、全部の本棚で books と bookOrder[id] を同じ配列にしている。そのため #484 で付け直しを「コピー」にした 53b1e1a（2026-11-02）の時から、この崩れは起きていた。#484 の spec は端末の控えから読む起動（別々の配列）だけを見ていたので捕まらなかった。
+- #662 の前の親 cfcd784 でも同じ結果＝#662 が作った崩れではない。#662 は「すべての本」の分を端末の控えからの起動にも広げ、spec に見えるようにした。
+- フォルダ・GitHub も同じ読込の関数を通る（コードの読み・未実測）。
+
+### 横展開の表
+
+同じ配列になる所：
+
+| # | 所 | 場所 | 何が同じ配列になるか |
+| --- | --- | --- | --- |
+| S1 | `_ensureAllShelf()` | js/bookshelf.js 4333〜（`if (shelf) shelf.books = ud.bookOrder.all;`） | 「すべての本」の books と bookOrder.all（#662 e71239b から、既にある本棚も呼ばれるたびに。起動・saveUserData・_onLibraryChanged から呼ぶ） |
+| S2 | 保存先からの読込 | js/bookshelf.js 3657〜3660行 | 全部の本棚の books と bookOrder[b.id]（ad7f393・2026-05-24） |
+| S3 | 読込の並び順のマージ | js/bookshelf.js 3689〜3690行 | 手元の並びが新しい本棚は、作り直した shelf.books を bookOrder[shelf.id] にも入れる（5f6f05f・2026-10-28） |
+
+両方を同じ流れで書き換える経路（同じ配列の時に二重に効くか）：
+
+| # | 経路 | 場所 | 書き方 | 判定 |
+| --- | --- | --- | --- | --- |
+| W1 | ASIN の付け直し `migrateUserData` | js/bookshelf.js 6947〜（本棚ループ・bookOrder ループ 7005〜） | 本棚：push（コピー）か置き換え／bookOrder：indexOf で置き換え。どちらもその場で書き換える | **二重に効く**（すべての本：新ASINが2回／保存先から読んだ自作の本棚：もう一方の本が外れ、新ASINが2回・実測） |
+| W2 | 本棚へ足す `addBookToBookshelf` | js/bookshelf-manager.js 362〜384 | books.push の後、bookOrder[id] に無い時だけ unshift | 効かない（push の後は includes が真＝1回だけ） |
+| W3 | 本棚から外す `removeBookFromBookshelf` | js/bookshelf-manager.js 389〜405 | books も bookOrder[id] も filter で新しい配列にする | 効かない（冪等。以後は別の配列になるだけ） |
+| W4 | 本の削除 | js/bookshelf.js 6783・6798行付近 | 各本棚の books と bookOrder.all を filter | 効かない（冪等） |
+| W5 | 除外 | js/bookshelf.js 5997〜6000行 | 蔵書と bookOrder.all を filter（本棚の books は書かない） | 効かない |
+| W6 | 除外の取り消し | js/bookshelf.js 6054〜6057行 | bookOrder.all に無い時だけ unshift | 効かない |
+| W7 | 手で追加 | js/bookshelf.js 7291〜7294行 | bookOrder.all.unshift | 効かない（1回だけ） |
+| W8 | 取込 | js/screens/import.js 239〜244行 | bookOrder.all.unshift | 効かない（1回だけ） |
+| W9 | 並べ替えの保存 | js/bookshelf.js 1607〜1608行 | bookOrder[key] に新しい配列を入れる | 効かない（置き換え） |
+| W10 | 並べ替え（ドラッグ） | js/bookshelf.js 2703〜2704行 | shelf.books と bookOrder[id] に別々の写しを入れる | 効かない |
+| W11 | 子の本棚を作る | js/bookshelf-manager.js 169〜172行 | 親の books の写し・bookOrder[slug] も写し | 効かない |
+| W12 | slug を変える | js/bookshelf-manager.js 313行 | bookOrder[newSlug] = bookOrder[oldSlug]（参照を移すだけ） | 効かない |
+| W13 | 書き出し（#664 が触る所） | js/bookshelf.js 3922〜3923行 | bookOrder.all に新しい配列を入れる（後で S1 が揃え直す） | 効かない |
+
+- 二重に効くのは W1 だけ。ほかの経路は「includes で守る」か「filter・写しで新しい配列にする」のどちらか。
+- W1 は e71239b より前でも、端末の控えから読む起動で `_onLibraryChanged()`（取込・手で追加・除外 等の後）が一度走った後なら、「すべての本」が同じ配列になっていた＝同じ崩れが起きていたはず（コードの読み・未実測）。
+
+### 直し方の案
+
+| | A：本棚の種類を見て1回だけ書く（推奨） | B：書いた配列を Set で覚えて2回目を飛ばす | C：spec の期待を直す |
+| --- | --- | --- | --- |
+| やり方 | migrateUserData の本棚ループで「すべての本」（isSpecial）を飛ばす（中身は蔵書そのもの＝並びは bookOrder.all の置き換えで足り、最後の saveUserData で S1 が揃える）。bookOrder ループでは、本棚ループで書いた自作の本棚の books と同じ配列（===）を飛ばす（所属のコピーを優先） | 本棚ループで書いた配列を Set に入れ、bookOrder ループで同じ配列を飛ばす（本棚の種類は見ない） | 150・151行の期待を「新ASINが2件」に変える |
+| #484 の約束 | 守る（すべての本は NEW 1・DUP 1。自作の本棚は DUP と NEW の両方が残る） | すべての本で破る（コピーが勝って DUP が2件残り、5冊なのに並びは6件）。順を逆にすると、今度は自作の本棚で置き換えが勝ち、下巻が外れる | 破る（新ASINの2件を認める） |
+| ADR-166 | 整合（bookOrder.all が正・本棚の books は同じ配列のまま） | 同じ配列のままだが、中身が崩れる | 崩れたまま |
+| 保存先から読んだ自作の本棚（実測した崩れ） | 直る（`[DUP, SOLO, NEW]`） | 直る | 直らない |
+| 差分の大きさ | js/bookshelf.js の migrateUserData だけ（10行前後）＋index.html の ?v=＋E2E 1本（ハブから読んで付け直す） | 同じくらい | spec 2行 |
+| 横展開 | 要らない（二重に効く経路は W1 だけ） | 同じ | — |
+
+- **推奨は A**。B は、本棚の種類を見ないので「すべての本」か自作の本棚のどちらかで約束を破る。C は実測で崩れが確かめられた＝「データが崩れない」と言える根拠が無いので採らない。
+- 範囲の推奨：**保存先から読んだ自作の本棚も今回直す**。同じ関数の同じ所（bookOrder ループの1条件）で直り、足す差分は数行。別イシューに切ると、同じ関数を2回直すことになる。
+- 端末の控えから読む起動で、自作の本棚が別々の配列の時の A の動き：今と同じ（books はコピー・bookOrder[id] は置き換え）。spec の他の期待は変えない。
+- あわせて A-2（spec の待ち）：spec の setup（61行）の待ちに `window.bookshelf.userData` を足す。cfcd784 の3並列で 2/3 が setup で落ちた揺れ（§1）を消すため。期待は緩めない。
+
+### ②に仰ぐこと
+
+1. 直す方：アプリ（案A）でよいか。
+2. 範囲：保存先（ハブ・フォルダ・GitHub）から読んだ自作の本棚の崩れも今回直すか（推奨：直す。E2E はハブで1本）。
+3. A-2（spec の setup の待ちに userData を足す）を入れてよいか。
