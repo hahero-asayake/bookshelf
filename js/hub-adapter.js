@@ -226,6 +226,7 @@ class HubStorageAdapter extends StorageAdapter {
         const batch = this._batch;
         this._batch = null;
         this.lastBatchWroteStamp = false;
+        this.lastBatchMerged = null;
         const stamps = batch.filter((e) => e.stamp);
         const entries = await this._prepareBatchEntries(this._dropUnchanged(batch.filter((e) => !e.stamp)));
         // 版の印は、他に送る物がある時だけ、照合なし (ifMatch 無し) で一緒に送る。何も変えない保存では印も書かない
@@ -334,6 +335,7 @@ class HubStorageAdapter extends StorageAdapter {
         }
         const conflictPaths = new Set(conflicts.map(c => c.path));
         const retry = [];
+        const mergedOut = {}; // 項目ごとに合わせて送ったファイル { path: { local, merged } } (イシュー#612)
         for (const e of entries) {
             if (!conflictPaths.has(e.path)) { retry.push(e); continue; }
             console.warn(`[HubStorageAdapter] batch 412 on ${e.path}: etag を破棄して最新状態を取り直します`);
@@ -364,6 +366,20 @@ class HubStorageAdapter extends StorageAdapter {
                 retry.push(e);
                 continue;
             }
+            // 相手が同じファイルの別の項目を変えていた → 項目ごとに合わせて送り直す (イシュー#612・ADR-163)。
+            // 同じ項目を両方が違う値に変えていたら合わせられない＝今までどおり上書きせず止める
+            // 無いと思って新しく作ろうとした (ifNoneMatch:'*') ファイルを相手が先に作っていた時は、空を土台にして合わせる
+            const baseContent = knownContent !== undefined ? knownContent : (e.ifNoneMatch === '*' ? '{}' : undefined);
+            const merged = (e.op === 'put' && latestContent !== null && baseContent !== undefined)
+                ? StorageAdapter.mergeRemoteChange(e.path, baseContent, wantContent, latestContent) : null;
+            if (merged !== null) {
+                const next = { ...e, content: merged, ifMatch: latestEtag };
+                delete next.ifNoneMatch;
+                if (!next.ifMatch) delete next.ifMatch;
+                retry.push(next);
+                mergedOut[e.path] = { local: wantContent, merged };
+                continue;
+            }
             console.error(`[HubStorageAdapter] ${e.path} はリモートで内容が変わっている。上書きせず中断します`);
             throw new HubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
         }
@@ -377,6 +393,8 @@ class HubStorageAdapter extends StorageAdapter {
         }
         if (!res2.ok) throw this._err(res2, 'POST data/batch (retry)');
         this._rememberBatchResult(retry, res2);
+        // 合わせた結果は、呼び出し元が手元の状態にも入れる (入れないと、次の保存で相手の変更を消す)
+        if (Object.keys(mergedOut).length > 0) this.lastBatchMerged = mergedOut;
         return true;
     }
 

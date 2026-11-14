@@ -8,7 +8,7 @@ import worker from '../../cf-worker/asayake-hub.js';
 await import('../../js/storage-adapter.js');
 await import('../../js/hub-adapter.js');
 await import('../../js/storage.js');
-const { HubStorageAdapter, HubRemoteChangedError } = globalThis;
+const { HubStorageAdapter, HubRemoteChangedError, StorageAdapter } = globalThis;
 const BookshelfStorage = window.BookshelfStorage;
 
 const KEY = 'hk_abc123';
@@ -139,17 +139,56 @@ describe('2台 (A・B) が同じハブに一括保存する', () => {
         expect(remote(SETTINGS).theme).toBe('b');
     });
 
-    it('Bが自分で書いた notes.json を、Aが間に変えていたら、2回目以降の保存でも止まる (上書きしない)', async () => {
+    it('Bが自分で書いた notes.json の同じ本の短文メモを、Aが間に変えていたら、2回目以降の保存でも止まる (上書きしない)', async () => {
         await seed();
         const A = device('hub-a.test'); const B = device('hub-b.test');
         await load(B);
         await B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'B1' } } })]);          // B の1回目 (本2に書く)
         await load(A);                                                                           // A は B1 を読む
-        await A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'Aのメモ' }, book2: { memo: 'B1' } } })]);
-        // B の2回目 (読み直さない・本2を書き直す)。ifMatch は「B が最後に書いた版」＝今の版と違うので 412 → 中身が他で変わっている
+        await A.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'Aが書き直した' } } })]);
+        // B の2回目 (読み直さない・同じ本2を書き直す)。412 → 同じ項目を両方が違う値に変えた＝合わせられない
         await expect(B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'B2' } } })]))
             .rejects.toBeInstanceOf(HubRemoteChangedError);
-        expect(remote(NOTES).notes).toEqual({ book1: { memo: 'Aのメモ' }, book2: { memo: 'B1' } });
+        expect(remote(NOTES).notes).toEqual({ book2: { memo: 'Aが書き直した' } });
+    });
+
+    it('項目ごとの合わせ: 2台が別々の本の短文メモを交互に保存しても止まらず、両方残る。合わせた分は lastMerged で返る', async () => {
+        await seed();
+        const A = device('hub-a.test'); const B = device('hub-b.test');
+        await load(A); await load(B);
+        await A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'A1' } } })]);
+        expect(A.storage.lastMerged).toBeNull();
+        // B は読み直さずに本2へ書く → 412 → 項目ごとに合わせて送り直す (3択にならない)
+        await expect(B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'B2' } } })])).resolves.toBe(true);
+        expect(remote(NOTES).notes).toEqual({ book2: { memo: 'B2' }, book1: { memo: 'A1' } });
+        const m = B.storage.lastMerged[NOTES];
+        expect(JSON.parse(m.local).notes).toEqual({ book2: { memo: 'B2' } });
+        expect(JSON.parse(m.merged).notes).toEqual({ book2: { memo: 'B2' }, book1: { memo: 'A1' } });
+        // A も読み直さずに本1を書き直す → B の本2は消えない
+        await expect(A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'A1-2' } } })])).resolves.toBe(true);
+        expect(remote(NOTES).notes).toEqual({ book1: { memo: 'A1-2' }, book2: { memo: 'B2' } });
+    });
+
+    it('項目ごとの合わせ: 設定 (settings.json) も別々のキー・更新時刻の表なら合わせる。同じキーを違う値にしたら止まる', async () => {
+        await seed();
+        const A = device('hub-a.test'); const B = device('hub-b.test');
+        const a0 = await load(A); const b0 = await load(B);
+        await A.storage.syncBatch([put(SETTINGS, { ...a0.settings, theme: 'dark', _updatedAt: { theme: 10 } })]);
+        await B.storage.syncBatch([put(SETTINGS, { ...b0.settings, fontSize: 'l', _updatedAt: { fontSize: 20 } })]);
+        expect(remote(SETTINGS)).toEqual({ version: '2.0', theme: 'dark', fontSize: 'l', _updatedAt: { fontSize: 20, theme: 10 } });
+        // A が (読み直さずに) theme を変え、B も (読み直さずに) 同じ theme を違う値に → B は止まる
+        await A.storage.syncBatch([put(SETTINGS, { ...a0.settings, theme: 'light', _updatedAt: { theme: 40 } })]);
+        expect(remote(SETTINGS)).toEqual({ version: '2.0', theme: 'light', _updatedAt: { theme: 40, fontSize: 20 }, fontSize: 'l' });
+        await expect(B.storage.syncBatch([put(SETTINGS, { ...b0.settings, theme: 'sepia', fontSize: 'l', _updatedAt: { fontSize: 20, theme: 50 } })]))
+            .rejects.toBeInstanceOf(HubRemoteChangedError);
+        expect(remote(SETTINGS).theme).toBe('light');
+    });
+
+    it('項目ごとの合わせは対象のファイルだけ (library.json などは今までどおり止まる)', () => {
+        const base = JSON.stringify({ a: 1 }); const local = JSON.stringify({ a: 1, b: 2 }); const remote = JSON.stringify({ a: 1, c: 3 });
+        expect(StorageAdapter.mergeRemoteChange('private/library.json', base, local, remote)).toBeNull();
+        expect(JSON.parse(StorageAdapter.mergeRemoteChange(NOTES, base, local, remote))).toEqual({ a: 1, b: 2, c: 3 });
+        expect(StorageAdapter.mergeRemoteChange(NOTES, base, 'not json', remote)).toBeNull();
     });
 
     it('何も変えない保存は、ハブに何も送らず、R2 にも書かない', async () => {
@@ -186,7 +225,7 @@ describe('2台 (A・B) が同じハブに一括保存する', () => {
         await load(A);
         await A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'Aのメモ' } } })]);
         expect(await B.adapter.fileExists(NOTES)).toBe(true);           // 保存のたびに呼ばれる存在の確認 (js/storage.js)
-        await expect(B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'Bのメモ' } } })]))
+        await expect(B.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'Bのメモ' } } })]))
             .rejects.toBeInstanceOf(HubRemoteChangedError);
         expect(remote(NOTES).notes).toEqual({ book1: { memo: 'Aのメモ' } });
     });
@@ -200,7 +239,7 @@ describe('2台 (A・B) が同じハブに一括保存する', () => {
         await load(A);
         await A.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'Aのメモ' } } })]);
         // B の最初の保存 (読み直さない・同じ notes.json を変える) → 止まる。Aの短文メモは残る
-        await expect(B.storage.syncBatch([put(NOTES, { notes: { book2: { memo: 'Bのメモ' } } })]))
+        await expect(B.storage.syncBatch([put(NOTES, { notes: { book1: { memo: 'Bのメモ' } } })]))
             .rejects.toBeInstanceOf(HubRemoteChangedError);
         expect(remote(NOTES).notes).toEqual({ book1: { memo: 'Aのメモ' } });
     });

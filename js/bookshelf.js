@@ -3895,6 +3895,8 @@ class VirtualBookshelf {
             this.storage.clearBookshelfFileDeletes(shelfDeletes.slugs);
             this.storage.clearBookMemoOps(memoOps.records);
 
+            // 相手の変更と項目ごとに合わせて書いた時は、相手の分を手元の状態にも入れる (イシュー#612・ADR-163)
+            this._applyMergedRemote(this.storage.lastMerged);
             this._lastSyncOk = true;
             // 印は「保存先に今ある印」を控える (送る物が無かった保存では印を書かないので、前の印のまま)
             this._writeSyncBase(libraryExportDate, this.storage.syncStamp);
@@ -3943,6 +3945,48 @@ class VirtualBookshelf {
     /** 3択に出す保存先の名前 (イシュー#616) */
     _syncConflictSource() {
         return this.syncMethod === 'hub' ? 'Asayake ハブ' : 'GitHub';
+    }
+
+    /** まとめ保存で、相手が同じファイルの別の項目を変えていて、項目ごとに合わせて書いた時 (イシュー#612・ADR-163)。
+     *  合わせた結果のうち、自分が送ろうとした中身と違う項目 (＝相手の変更) だけを手元の状態へ入れる。
+     *  入れないと、次の保存で手元の古い状態を書き、相手の変更を消してしまう。保存の間にした手元の編集は触らない。
+     *  @param {Object<string,{local:string,merged:string}>|null} merged storage.lastMerged */
+    _applyMergedRemote(merged) {
+        if (!merged || !this.userData) return;
+        const parse = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };
+        const changedKeys = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])]
+            .filter((k) => JSON.stringify((a || {})[k]) !== JSON.stringify((b || {})[k]));
+        const notes = merged['private/notes.json'];
+        const nm = notes && parse(notes.merged);
+        const nl = notes && parse(notes.local);
+        if (nm && nl) {
+            if (!this.userData.notes) this.userData.notes = {};
+            changedKeys(nm.notes, nl.notes).forEach((asin) => {
+                const v = (nm.notes || {})[asin];
+                const next = { ...(this.userData.notes[asin] || {}) };
+                // notes.json に書く項目だけを相手の値にする (書かない項目は手元のまま)
+                ['memo', 'rating', 'hasDetailMemo'].forEach((f) => { if (v && v[f] !== undefined) next[f] = v[f]; else delete next[f]; });
+                this.userData.notes[asin] = next;
+            });
+            this._refreshOpenDetailMemo();
+        }
+        const settings = merged['private/settings.json'];
+        const sm = settings && parse(settings.merged);
+        const sl = settings && parse(settings.local);
+        if (sm && sl) {
+            if (!this.userData.settings) this.userData.settings = {};
+            const keys = changedKeys(sm, sl).filter((k) => k !== 'version');
+            keys.forEach((k) => { if (sm[k] === undefined) delete this.userData.settings[k]; else this.userData.settings[k] = sm[k]; });
+            // 相手の値は「自分の変更」ではないので、更新時刻の控え (ADR-137) にも入れる (次の保存で自分の時刻を付けない)
+            if (this._syncedSnap) keys.filter((k) => k !== '_updatedAt').forEach((k) => { this._syncedSnap[k] = JSON.stringify(sm[k]); });
+        }
+        // 端末内の控えにも入れる (saveUserData と同じ形。書誌の写し libraryBooks は端末内に持たない)
+        const persisted = { ...this.userData };
+        if (persisted._storage) {
+            const { libraryBooks, ...rest } = persisted._storage;
+            persisted._storage = rest;
+        }
+        try { localStorage.setItem('virtualBookshelf_userData', JSON.stringify(persisted)); } catch (e) {}
     }
 
     /** 読み直した短文メモを、開いたままの本の詳細の欄へ反映する (入力中の欄は触らない・イシュー#616)。

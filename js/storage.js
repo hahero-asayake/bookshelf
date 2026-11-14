@@ -484,9 +484,12 @@ class BookshelfStorage {
                     if (typeof a.addBatchStamp === 'function') a.addBatchStamp(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
                     else a.addBatchEntry(BookshelfStorage.SYNC_STAMP_PATH, stampContent);
                 }
+                this.lastMerged = null;
                 const res = await a.commitBatch(message);
                 // 送る物が無くて印も書かなかった時 (adapter が lastBatchWroteStamp=false と言う) は、覚えている印を進めない
                 if (stampContent && a.lastBatchWroteStamp !== false) this.syncStamp = stamp;
+                // 相手の変更と項目ごとに合わせて書いたファイル { path: { local, merged } } (イシュー#612)。呼び出し元が手元へ入れる
+                this.lastMerged = a.lastBatchMerged || null;
                 return res;
             } catch (err) {
                 if (typeof a.discardBatch === 'function') a.discardBatch();

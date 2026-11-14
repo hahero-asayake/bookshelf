@@ -228,6 +228,42 @@ class StorageAdapter {
         return name === 'GitHubRemoteChangedError' || name === 'HubRemoteChangedError';
     }
 
+    /**
+     * 同じファイルを相手が別の項目で変えていた時に、項目ごとに3者で合わせる (イシュー#612・ADR-163)。判定はここ1か所
+     * (ハブのまとめ保存から使う。GitHub からも同じ形で呼べる)。対象は StorageAdapter.MERGEABLE_PATHS のファイルだけ。
+     *   base = 自分が最後に読んだ・書いた中身 / local = これから書く中身 / remote = 保存先の今の中身 (どれも JSON の文字列)
+     * 項目 (入れ子のオブジェクトのキー) ごとに、片方だけが変えていればその値を、両方が同じ値にしていればその値を採る。
+     * 両方が同じ項目を違う値に変えていたら合わせられない＝null (呼び出し元は今までどおり衝突として扱う)。配列は1つの値として比べる。
+     * @returns {string|null} 合わせた JSON (JSON.stringify(v, null, 2))。合わせられない・対象外なら null
+     */
+    static mergeRemoteChange(path, base, local, remote) {
+        if (!StorageAdapter.MERGEABLE_PATHS.includes(path)) return null;
+        if (typeof base !== 'string' || typeof local !== 'string' || typeof remote !== 'string') return null;
+        let b, l, r;
+        try { b = JSON.parse(base); l = JSON.parse(local); r = JSON.parse(remote); } catch (_) { return null; }
+        const m = StorageAdapter._merge3(b, l, r);
+        return m.ok ? JSON.stringify(m.value, null, 2) : null;
+    }
+
+    static _merge3(b, l, r) {
+        const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+        if (same(l, r)) return { ok: true, value: l };
+        if (same(l, b)) return { ok: true, value: r };
+        if (same(r, b)) return { ok: true, value: l };
+        const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+        if (!isObj(l) || !isObj(r) || (b !== undefined && !isObj(b))) return { ok: false };
+        const bb = b || {};
+        const out = {};
+        // 並びは手元 (local) の順、相手だけが持つ項目は後ろに足す (次の保存で手元から作る中身と同じ並びにするため)
+        const keys = [...Object.keys(l), ...Object.keys(r).filter((k) => !Object.prototype.hasOwnProperty.call(l, k))];
+        for (const k of keys) {
+            const m = StorageAdapter._merge3(bb[k], l[k], r[k]);
+            if (!m.ok) return m;
+            if (m.value !== undefined) out[k] = m.value;
+        }
+        return { ok: true, value: out };
+    }
+
     static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError }) {
         const latest = await getLatest();
         const latestContent = latest ? latest.content : null;
@@ -327,5 +363,7 @@ class VersionCache {
     }
 }
 
+// 項目ごとに合わせてよいファイル (イシュー#612・ADR-163)。短文メモ・評価 (本ごと) と、共通の設定 (キーごと・更新時刻の表)
+StorageAdapter.MERGEABLE_PATHS = ['private/notes.json', 'private/settings.json'];
 window.StorageAdapter = StorageAdapter;
 window.VersionCache = VersionCache;
