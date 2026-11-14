@@ -269,3 +269,42 @@ viewport 1280×800・行の位置 y=0 高さ 59・行の種類 load-conflict・�
     - save-failure-visible の GitHub の3件は、`createShelf` で保存先へ新しい本棚が5秒以内に届かない待ちで落ちた。単独に近い流し直し（17:47）では14件すべて通った。並行の重い時（17:52）には別の2件（136:9・241:1）が同じ待ちで落ちた。
   - webkit の load-conflict-unsaved：2件通過・1件は対象外（ローカルフォルダは PC だけ）。#639 の回避を外した形で通った。
   - lint：e2e-wait・e2e-goto・internal-refs（上限82以内）・css・esc・js-color・e2e-external は通った。vitest は 78ファイル・1176件が通った。
+
+
+---
+
+# step4 回帰の確認（2026-11-14）
+
+- **載せ直し**：origin/main が f9468f8（#656・#622 等）へ進んでいたので、`git rebase origin/main` をした。
+  - 衝突は index.html の `js/bookshelf.js?v=` の1行だけ。main は 2026111721、こちらは 2026111762 で、大きい方（こちら）を残した。
+  - css・overlay-manager の ?v=（2026111760・2026111761）は、main（2026111601・2026111330）より新しい。
+  - 載せ直した後の commit は 5b0a765。
+- **e2e-diff**：`node scripts/verify/e2e-diff-main.mjs --port=8160 --out=tmp/660/e2e-diff`（visual は既定でオン。--init-storage・--grep は使っていない）。
+  - 1回目（17:55〜）は、base（origin/main f9468f8）の E2E 全件（1683件・8 workers・5.7分・`tmp/660/e2e-diff/base.e2e.json`）まで済んだ。work 側の途中で、run の区切りで打ち切られた（負荷の平均 53〜62）。
+  - origin/main は同じ f9468f8 のままだったので、base はこの結果を使った。work 側だけを e2e-diff と同じ条件で流した（`PORT=8160 PLAYWRIGHT_JSON_OUTPUT_NAME=... playwright test --reporter=json --grep-invert sort-perf-budget`・1701件・7分・`work.e2e.json`）。
+  - 3表への分け方は `tmp/660/compare-e2e.mjs`（e2e-diff と同じく spec・題・project ごとに見る）。
+- **3表**（`tmp/660/e2e-diff/compare.md`）
+  - base：1683件（expected 1087・unexpected 3・skipped 593）。work：1701件（expected 1102・unexpected 6・skipped 593）。
+  - **新しく落ちた：6件 → 流し直すと全部通った（新しく落ちたものは実質0件）**。
+    - 対象：book-memo-file-lifecycle の GitHub 3件・focus-trap-deeplink の PC「設定を開いて Tab 20回」・gate/j4-memo・list-staged-render（913冊の段階描画）。
+    - 4つの spec ファイルを丸ごと流し直し（18:11・4 workers）、48件すべて通った。全件を8 workers で流した時の負荷による揺れと判断した。
+  - **新しく通った：3件**（gate/j3-5-many-books・gate/j6-1-local-restart・sync-offline-reconnect の GitHub）。base 側で落ちていたもので、今回の変更とは関係しない（時間の測定・ローカルフォルダ・GitHub の再ログイン）。
+  - **両方で落ちた：0件**。
+  - work だけにある：18件（新しい status-bar-over-faces.spec.js の chromium 分）。すべて expected。
+- **見た目（visual・`playwright.visual.config.js`）**：54件すべて基準画像と一致した（18:04）。**基準画像の更新は無し**。帯は保存の失敗・未保存の時だけ出て、基準画像にはその状態が無いため。
+- **単体（vitest・載せ直し後）**：79ファイル・1181件が通った（2件は todo）。
+- **ホームのウィジェット選択（step3 の申し送り）**：
+  - `.widget-picker-overlay` は kind 'popover'（data-layer あり・inset 0）なので、面を下げる規則（modal・sheet）の対象外。
+  - 中身の `.widget-picker-panel` は `margin-top: 12vh` で、390×844 では 101px から出るので、帯（78px）より下になる。ただし iPhone 13 の高さ（664px）では 80px で、帯との差が 2px しかない。
+  - 帯の文が3行になる時は、上端が重なるおそれがある。popover を下げる対象に入れるかは、step5 の tp で決める。
+- **2回目の載せ直し（18:14）**：記録の途中で、origin/main が 36cf113（#645 の、書き込み時の衝突で上書きを選べる・GitHub の読み直し）へ進んだ。
+  - 衝突は index.html の `js/bookshelf.js?v=` の1行だけ。main は 2026111746、こちらは 2026111762 で、大きい方を残した。check:version は OK。
+  - 載せ直した後の commit は 5ecb97b（fix）とこの docs。
+  - 入った spec と関係 spec を流し直した。
+    - chromium（18:19）：sync-conflict-overwrite・sync-conflict・gate/j6-4・load-conflict-unsaved・status-bar-over-faces・save-failure-visible の40件のうち36件が通り、4件が落ちた。落ちたのは save-failure-visible の GitHub 3件と、新 spec の (b) 記事エディタ1件。
+    - 落ちた4件を流し直すと、6件すべて通った（18:20。記事エディタの (a)(b) と GitHub の3件を含む）。
+    - origin/main（36cf113）単独でも、save-failure-visible は11件すべて通った（18:20・別の番号）。
+    - webkit（gate-webkit・18:19）：status-bar-over-faces と gate/j6-4 の20件すべてが通った。
+  - **save-failure-visible の GitHub 系（createShelf の5秒の待ち）**は、ほかの run と並行で重い時だけ落ちる。
+    - これまでの記録：17:44 で3件・17:52 で2件・18:19 で3件落ち、単独ではいつも通る（17:54 で11/11・18:20 で3/3）。
+    - origin/main 単独でも通る。並行の重い時の origin/main とは比べられていない（未確認）。
