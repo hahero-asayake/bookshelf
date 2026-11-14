@@ -1573,12 +1573,34 @@ class VirtualBookshelf {
         localStorage.setItem('virtualBookshelf_library', JSON.stringify(this.bookManager.library));
         this.books = this.bookManager.getAllBooks();
         await this.saveUserData();
+        // 1冊ずつの除外 (excludeBook) と同じく、1冊ごとに知らせる (イシュー#670・一括だけ出していなかった)
+        if (this.pluginAPI) asins.forEach(asin => this.pluginAPI._emit('book:removed', { asin, reason: 'excluded' }));
         this._clearSelection();
         this.applyFilters();
         this.updateDisplay();
         this.updateStats();
         this._onLibraryChanged();
         toast(`${asins.length} 冊を除外しました`);
+    }
+
+    /**
+     * 本棚の「見える本」の ASIN を、所属 (shelf.books) の並びのまま返す (イシュー#670)。
+     * 見える本 = 所属 ∩ 蔵書 (this.books = library − exclusions)。本棚を開いた一覧 (applyFilters) と同じ式。
+     * 除外しても所属は消さない (解除すると元の本棚に戻る)。冊数 (ツリー・管理一覧・ホームのカード・読書統計) と
+     * プラグインへ渡す本棚の写しは、ここを通して数える・渡す。「すべての本」は books をそのまま返す (ADR-166)。
+     */
+    shelfVisibleAsins(shelf) {
+        if (!shelf) return [];
+        const members = Array.isArray(shelf.books) ? shelf.books : [];
+        if (shelf.isSpecial) return members.slice();
+        const books = this.books || [];
+        // 本棚の数だけ呼ばれるので、蔵書の ASIN の集合は蔵書の配列が替わった時だけ作り直す
+        if (this._visibleAsinSetOf !== books || this._visibleAsinSetLen !== books.length) {
+            this._visibleAsinSet = new Set(books.map(b => b.asin));
+            this._visibleAsinSetOf = books;
+            this._visibleAsinSetLen = books.length;
+        }
+        return members.filter(a => this._visibleAsinSet.has(a));
     }
 
     /** 現在の本棚の全メンバー ASIN を「表示順 (custom order を尊重)」で返す */

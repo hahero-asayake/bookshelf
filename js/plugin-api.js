@@ -10,7 +10,8 @@
 // イベント名一覧:
 //   book:added       { book }
 //   book:updated     { book, prev }
-//   book:removed     { asin }
+//   book:removed     { asin, reason }         reason: 'deleted' | 'excluded' (除外は1冊ずつ・一括とも1冊ごと)。除外した本は
+//                                             getBookshelves の books からも消える (所属は残り、解除の book:added で戻る・#670)
 //   books:changed    {}                       同期完了などで蔵書配列が差し替わった
 //   bookshelf:created { meta }
 //   bookshelf:updated { meta, prev }
@@ -263,20 +264,27 @@ class BookshelfPluginAPI {
     }
 
     // ===== 本棚アクセス（読み取り） =====
+    // 本棚の写しの books は見える本だけ (除外した本を含まない・イシュー#670)。所属そのものは本体に残り、
+    // 除外を解除すると戻る。プラグインに本棚へ書く口は無いので、写しを絞っても所属は消えない。
+    _shelfCopy(b) {
+        const copy = { ...b };
+        if (Array.isArray(b.books) && typeof this._app.shelfVisibleAsins === 'function') copy.books = this._app.shelfVisibleAsins(b);
+        return copy;
+    }
     getBookshelves() {
         if (!this._app.bookshelfManager) return [];
-        return this._app.bookshelfManager.getBookshelves().map(b => ({ ...b }));
+        return this._app.bookshelfManager.getBookshelves().map(b => this._shelfCopy(b));
     }
     getBookshelf(internalId) {
         if (!this._app.bookshelfManager) return null;
         // getById は internalId→slug フォールバック付き (getByInternalId は BookshelfManager に未定義)
         const b = this._app.bookshelfManager.getById(internalId);
-        return b ? { ...b } : null;
+        return b ? this._shelfCopy(b) : null;
     }
     getBookshelfBySlug(slug) {
         if (!this._app.bookshelfManager) return null;
         const b = this._app.bookshelfManager.getBySlug(slug);
-        return b ? { ...b } : null;
+        return b ? this._shelfCopy(b) : null;
     }
     // 現在表示中の本棚 (live state の純加算 READ。ADR-043。slug は返り値の .id)
     getCurrentBookshelf() {

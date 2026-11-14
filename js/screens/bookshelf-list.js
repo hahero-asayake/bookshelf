@@ -53,7 +53,7 @@ class _BookshelfListMethods {
             const children = byParent.get(nodeKey) || [];
             const hasChildren = children.length > 0;
             const isExpanded = expanded.has(nodeKey);
-            const bookCount = (bs.books && bs.books.length) || 0;
+            const bookCount = this.shelfVisibleAsins(bs).length; // 見える本だけ数える (除外した本は所属に残る・イシュー#670)
             const isActive = this.currentBookshelf && (bs.id === this.currentBookshelf || bs.internalId === this.currentBookshelf);
 
             const node = document.createElement('div');
@@ -303,7 +303,7 @@ class _BookshelfListMethods {
 
         let html = '';
         rows.forEach(({ bs: bookshelf, depth }) => {
-            const bookCount = bookshelf.books ? bookshelf.books.length : 0;
+            const bookCount = this.shelfVisibleAsins(bookshelf).length; // 見える本だけ数える (イシュー#670)
             const isSpecial = bookshelf.isSpecial || false;
             const specialBadge = isSpecial
                 ? `<span class="special-badge"><span class="h-icon">${window.renderIcon('lock', { size: 12 })}</span>特殊</span>`

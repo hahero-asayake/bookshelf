@@ -1047,7 +1047,7 @@ class BookshelfDashboard {
 
         // 本棚別 Top5 (特殊本棚 ALL は除外)
         const shelfTop = shelves.filter(s => !s.isSpecial)
-            .map(s => ({ name: s.name, count: (s.books || []).length }))
+            .map(s => ({ name: s.name, count: app.shelfVisibleAsins(s).length })) // 見える本だけ数える (イシュー#670)
             .sort((a, b) => b.count - a.count).slice(0, 5);
 
         const esc = (s) => BookshelfEscape.escapeHtml(s);

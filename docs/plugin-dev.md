@@ -88,8 +88,8 @@ manifest.json が JSON として読めない場合、そのプラグインは一
 | `getBook(asin)` | Book \| null | ASIN で 1 冊取得 |
 | `getNotes()` | { asin: Note } | 短文メモ・評価（notes）のコピー |
 | `getNote(asin)` | Note \| null | 1 冊分の Note（`rating` / `memo`） |
-| `getBookshelves()` | Bookshelf[] | 全本棚（浅コピー） |
-| `getBookshelf(internalId)` | Bookshelf \| null | internalId で取得（slug フォールバックあり） |
+| `getBookshelves()` | Bookshelf[] | 全本棚（浅コピー）。`books` は見える本だけ（除外した本を含まない。所属は本体に残り、除外を解除すると戻る） |
+| `getBookshelf(internalId)` | Bookshelf \| null | internalId で取得（slug フォールバックあり）。`books` は `getBookshelves()` と同じく見える本だけ |
 | `getBookshelfBySlug(slug)` | Bookshelf \| null | slug で取得 |
 | `getCurrentBookshelf()` | Bookshelf \| null | 現在表示中の本棚。ホーム・検索時は null |
 | `getAmazonUrl(bookOrAsin, affiliateId?)` | string \| null | Amazon 商品 URL。`affiliateId` 省略時はユーザー設定を自動付与、`null` 明示で無タグ |
@@ -191,7 +191,7 @@ api.registerSettings((host) => {
 | イベント | payload | 発火タイミング |
 |---|---|---|
 | `book:added` | `{ book, reason? }` | 手動追加（reason なし）/ 除外解除（`reason: 'unexcluded'`） |
-| `book:removed` | `{ asin, reason }` | 削除（`'deleted'`）/ 除外（`'excluded'`） |
+| `book:removed` | `{ asin, reason }` | 削除（`'deleted'`）/ 除外（`'excluded'`・1冊ずつ・一括とも1冊ごとに出る）。除外した本は本棚の `books` からも見えなくなる（所属は残り、解除の `book:added {reason:'unexcluded'}` で戻る。`bookshelf:updated` は出ない） |
 | `book:updated` | `{ book, prev }` | 予約済み。現在は発火しない（評価・メモは `note:updated` を使う） |
 | `books:changed` | `{}` | 同期完了などで蔵書配列が差し替わったとき |
 | `bookshelf:created` | `{ meta }` | 本棚の作成（保存確定後） |

@@ -102,7 +102,7 @@ class _BookshelfCardMethods {
         if (isSpecial) {
             previewAsins = (this.books || []).map(b => b.asin);
         } else if (Array.isArray(bookshelf.books)) {
-            previewAsins = bookshelf.books.slice();
+            previewAsins = this.shelfVisibleAsins(bookshelf); // 見える本だけ (除外した本は数えない・イシュー#670)
         }
         const bookCount = previewAsins.length;
 
