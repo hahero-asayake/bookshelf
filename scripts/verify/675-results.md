@@ -276,3 +276,19 @@
 - 判定不能：0件。フレークの流し直し：なし（新しく落ちたものが無いため）。
 - 画像の差分（playwright.visual.config.js・作業側のみ）：**0件 / 54件**。
 - 結果一式は `work/675-e2e-diff/`（未追跡・add しない）。
+
+### §5-3 push の前の載せ直し（19:59〜20:01）
+
+- e2e-diff の間に origin/main が 27df129 へ進んだ（#666 が入った：c23499c fix ほか）。`git rebase origin/main` で、index.html の `?v=` の行だけが衝突した。#666 は `sync-failure.js`・`bookshelf.js` を 2026111886 にしていた。解き方は、`sync-failure.js` を main の 2026111886 のまま、`bookshelf.js` をこちらの 2026111890 にした。`screens/import.js` の 2026111890 は衝突なしで残った。origin/main 27df129 の index.html の最大は 2026111886 で、こちらの 2026111890 はそれより新しい。
+- 載せ直した後の自分の commit は5つ：7c4ae70（test）・af8f86e（docs）・36c3446（fix）・489ef37（docs）・3c0d5a4（docs §5-1・§5-2）。その上にこの節の docs を足す。
+- 流し直し（27df129 の上）：
+
+| 項目 | 結果 |
+|---|---|
+| `npm run check:version -- --range=origin/main..HEAD` | OK（変更した js はすべて ?v= を上げてある） |
+| `npm run lint` | 12 本中 0 本失敗 |
+| `npx vitest run` | Test Files 80 passed (80)・Tests 1199 passed・2 todo |
+| 新 spec と除外まわりの spec（chromium）：exclude-local-reload-unexclude・exclude-custom-shelf（#670）・exclude-export-all-shelf（#664）・exclude-article-publish（#669） | 21 passed（39.3 秒） |
+
+- e2e-diff は 33eda9e の上で流したもの。27df129 までに入った #666 の js の差分は、c23499c の js/bookshelf.js の4行だけ（`git show --stat c23499c`）。中身は公開の前の確認で、ハブの起動の読込が通信で失敗したままの間に保存できていない変更があれば、公開を止める（`_initLoadFailed`）。もう1つは spec の publish-conflict-hub だけ。除外と書誌の写しには触れていないので、全件比較は流し直さず、上の4つで確かめた。
+- push はまだしない（ここで②のレビュー）。push する時は `BOOKSHELF_ISSUE=675 git push origin <この節の docs の commit>:main`。
