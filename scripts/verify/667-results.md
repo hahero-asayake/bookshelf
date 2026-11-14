@@ -244,3 +244,34 @@ OLD (再読込の前の文書) の要求で、取込の後に出たものは次�
   - `failNextWrites` を、本棚のファイルのパスを含む書き込みだけに当てる。
   - 起動時の補充が済むのを待ってから `failNextWrites` を立てる。
   - どちらにするか・このイシューで行うか、別イシューにするかは②が決める。
+
+## step4：push の前の載せ直しとフレークの直し・push・CI (2026-11-14 18:36〜)
+
+### push の前に済ませたこと (②の申し送り)
+
+1. **フレーク判定の1件を直した** (テストだけ。アプリの js は触っていない)。commit は `2072774`。
+   - 何をしたか：`tests/e2e/helpers/storage-fakes.js` の偽の GitHub の `failNextWrites(n, { status, path })` に `path` を足した。path を渡すと、そのパスを書く要求にだけ失敗を当てる。対象は、まとめ保存の ref の更新 (commit が今の中身から変えるパスで見る) と、Contents API の PUT/DELETE。省略時の動きは今までどおり。
+   - `tests/e2e/shelf-file-delete.spec.js` の「保存先にまだ無い本棚ファイルの削除が混ざっても…」(GitHub) は、`failNextWrites(1, { path: shelfFile('bookshelf2') })` で、作る本棚のファイルにだけ失敗を当てる形にした。
+   - 確かめた結果：`shelf-file-delete.spec.js --repeat-each=5` で 80/80 緑 (直した直後)。
+2. **載せ直した**。origin/main は `c34be0a` まで進んでいた (#660・#662・#659 ほか)。
+   - 衝突は `index.html` の `js/bookshelf.js` の `?v=` の1行だけ。
+   - main の最大値が 2026111791 になっていたので、`js/storage.js`・`js/exporter.js`・`js/bookshelf.js` を 2026111795 にした。origin/main との index.html の差は、この3行だけ。
+   - rebase の後の commit：`fb319f2` (fix・本体) と `2072774` (test・フレークの直し)。origin/main..HEAD はこの2件だけ。
+
+| 検証 (載せ直した後) | 結果 |
+|---|---|
+| `npm run check:version -- --range=origin/main..HEAD` | OK |
+| `npm run lint` | 12本中0本失敗 |
+| `npx vitest run` | 80ファイル・1192本緑 (todo 2) |
+| `import-reload-persist.spec.js` と `shelf-file-delete.spec.js` の GitHub の行 `--repeat-each=5` | 40/40 緑 (47.7秒) |
+
+### push
+
+- `BOOKSHELF_ISSUE=667 git push origin 2072774:main` → `c34be0a..2072774`。pre-push の lint は 12本中0本失敗。
+- `git branch -r --contains fb319f2`・`--contains 2072774` は、どちらも origin/main。
+- 設計書 03/08 (BookshelfStorage の表の `serialWrite`・`syncBatch` の `withMerged`、ADR-169) は、obsidian の自動バックアップ `8f166482 vault backup: 2026-11-14 18:30:07` で commit されている (`git log -S` で確かめた)。
+- 07_残検討事項には、R3 にあたる行は無かった (直す行なし)。
+- CI (run 43581625365・https://github.com/hahero-asayake/bookshelf/actions/runs/43581625365)：push から5分の時点では、まだ流れ終わっていなかった。
+  - 18:41 (API)：4ジョブ (test (e2e)・test (char)・test (webkit)・test (audit)) とも進行中。失敗した step は0。test (e2e) は、lint・check:version・Unit までの step を終えて、ブラウザの導入中だった。
+  - 18:44:47 (run 画面の HTML。API は回数の上限に当たった)：4ジョブとも「currently running」。
+  - 緑・赤の判定は、この時点では出ていない。
