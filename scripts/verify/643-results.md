@@ -127,3 +127,19 @@
 - docs/char/boot-flow.md §1-5：起動の読込の間（確認が出ている間も含む）は保存が入口で待つ、という段落を足した
 - obsidian 03_詳細設計書：L87 の `initSync()` の行（同期方式別の初期化）に、`_beginBootLoad()`・`_waitBootLoads()` で読込の間は保存が待つ（2回目の initEmpty を呼ばない）ことを書き足した。1行の書き換えで、行数は変わっていない（609 行のまま）
 - obsidian 07_残検討事項：該当する行は無かった（「#643」「initEmpty が2回」「初期化が2回」で0件）＝更新していない
+
+### #612 の上に載せ直した後（origin/main 18ede16）
+
+- step3 の途中で #612（ハブの一括保存は変えたファイルだけ送る・ETag の照合・項目ごとの合わせ）が origin/main に入ったので、その上に rebase した（77b514d test・729b084 fix・8a5254f docs・9f56975 docs）
+- 衝突は index.html の bookshelf.js の ?v= の1行だけ（#612 が 2026111651 にしていた）。main と他の作業中の worktree の最大値 2026111651 より新しい **2026111652** にした。前の ?v= だけの commit（2026111651 にしたもの）は不要になったので、rebase で外した
+- js/bookshelf.js は衝突なし。待ち（`_waitBootLoads()`）は #612 の後も syncToObsidianFolder の先頭（`_isSyncReady()` の直後・`_loadConflictHold` の判定より前）にある。initEmpty を呼ぶ所は4か所のまま（起動側3・保存側1）
+- 流し直した結果（すべて 18ede16 の上・PORT=8143）：
+
+| 確かめたこと | 結果 | 出力 |
+|---|---|---|
+| 新しい spec（--repeat-each=3） | 3 passed・初期化の7ファイルへの PUT は各1回 | `tmp/643/green-after-612-repeat3.txt` |
+| 関係する spec（上と同じ22ファイル） | 63 passed・赤0件 | `tmp/643/related-specs-after-612.txt` |
+| lint 一式（12本） | すべて exit 0（check:version も OK・e2e-gate は観測点 37/37） | `tmp/643/lint-all-after-612.txt` |
+| vitest | Test Files 75 passed・Tests 1114 passed・2 todo | `tmp/643/vitest-after-612.txt` |
+
+- 「起動前から手元に別の保存先の allInternalId が残っている形」は、#612 が入ったので数える条件はそろったが、この step では測っていない（未実測のまま・step4 で数える）
