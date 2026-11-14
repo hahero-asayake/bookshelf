@@ -167,7 +167,8 @@
 
 ### 4. 全件比較の流し直し（step4 の続き・②の判断の材料）
 
-- load が下がった（19:06:36 に 7.98, 23.31, 27.26）ので、run が終わっても止まらない形で流し直しを始めた：`systemd-run --user --unit=bs668-e2e-diff` で `timeout -s TERM 2700 node scripts/verify/e2e-diff-main.mjs --workers=4 --base=9713381 --port=8168 --out=/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff2`。ログは `tmp/668/step5-e2e-diff.log`（終わると exit= と end の時刻と uptime が付く）、結果の表は `/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff2/report.md`。
+- load が下がった（19:06:36 に 7.98, 23.31, 27.26）ので、run が終わっても止まらない形で流し直しを始めた。最初は `systemd-run --user --unit=bs668-e2e-diff` で上限45分（`timeout -s TERM 2700`）にした。ところが 19:08 に load が 33 へ戻り、45分では流しきれないおそれが出たので、2分で止めた（`systemctl --user stop`）。止めた後に残った一時の worktree（`_artifacts/668-e2e-diff2/_worktree-base`）は、node_modules の symlink を `_trash/668-e2e-diff2-node_modules-link` へ移してから `git worktree remove --force` で外した。
+- 19:08:43（load 28.31, 26.92, 28.11）から、上限90分で流し直している：`systemd-run --user --unit=bs668-e2e-diff2` で `timeout -s TERM 5400 node scripts/verify/e2e-diff-main.mjs --workers=4 --base=9713381 --port=8168 --out=/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff3`。ログは `tmp/668/step5-e2e-diff.log`（終わると exit= と end の時刻と uptime が付く）、結果の表は `/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff3/report.md`。
 - base は `9713381`（載せ直した後の origin/main）、work はこの作業ツリー（HEAD `12d8425`）。base との差分は step4 と同じ3ファイル。
 - この run の中で終わらなければ、結果は step6（push の前）で読む。新しく落ちたものが本件の1本以外にあれば、push せずに②へ返す。動いている間は、作業ツリーのテストのファイルを変えない（work 側がこの作業ツリーを読むため）。
 
