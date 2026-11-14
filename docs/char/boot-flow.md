@@ -40,6 +40,8 @@
 
 同期欄（`#obsidian-sync-status`）は、confirmを待つ間と`initEmpty()`→`loadAll()`の間も`'loading'`（「読み込み中...」）のままで、読込の後に`'synced'`（「HH:MM:SS 保存済み」）になる。失敗の表示（`'reconnect'`＝「保存できませんでした」・「… (空)（要再接続）」）はconfirmでキャンセルした時だけ出す。confirmの前に出すと、読込が終わるまで「保存できませんでした」が残っていた（イシュー#648・`tests/e2e/first-run-init-status.spec.js`）。
 
+起動の読込が失敗した時（catch）、同期欄には保存の失敗の既定の文（「保存できませんでした」）ではなく、同じ失敗で状態バー（ハブ）・toast（GitHub）に出す読込の失敗の文を渡す（ハブ「Asayake ハブ からの読み込みに失敗しました。」／「Asayake ハブ の認証が切れました。設定から再接続してください。」、GitHub「GitHub からの読み込みに失敗しました。」／「GitHub との接続に失敗しました。「切断」してから、もう一度「GitHub に接続」をお試しください。」）。path の「（要再接続）」は認証切れの時だけ（`'reconnect'`）付け、通信の失敗は`'failed'`にする。通信の失敗は電波が戻れば`_markInitLoadFailed`の印で読み直すので、つなぎ直しは要らない（イシュー#653・`tests/e2e/boot-load-failure-status.spec.js`）。
+
 ## 2. #518 attempt1で8件落ちた原因（実機再現で確定。推測ではない）
 
 ### 2-1. 再現条件と手順

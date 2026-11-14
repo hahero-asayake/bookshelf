@@ -3258,12 +3258,14 @@ class VirtualBookshelf {
             if (method === 'hub') this._refreshHubUsage().catch(() => {});
         } catch (e) {
             console.error(`initCloudSync(${method}):`, e);
-            this.updateSyncStatus('reconnect', label);
             this._syncError = true;
             const isAuthErr = (e && e.name === 'HubAuthError');
             this._syncErrorMsg = isAuthErr
                 ? `${svc} の認証が切れました。設定から再接続してください。`
                 : `${svc} からの読み込みに失敗しました。`;
+            // 同期欄にも状態バーと同じ読込の失敗の文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
+            // 「（要再接続）」は認証切れの時だけ。通信の失敗は電波が戻れば読み直す (下の _markInitLoadFailed・イシュー#653)
+            this.updateSyncStatus(isAuthErr ? 'reconnect' : 'failed', label, this._syncErrorMsg);
             this._updateStatusBar();
             // ログイン切れ以外 (通信の失敗など) は、電波が戻った時に読み直す (イシュー#617)
             if (!isAuthErr) this._markInitLoadFailed(this._syncErrorMsg);
@@ -3389,9 +3391,14 @@ class VirtualBookshelf {
             this.updateSyncStatus('synced', label);
         } catch (e) {
             console.error('initGitHubSync:', e);
-            this.updateSyncStatus('reconnect', label);
-            if (e instanceof GitHubAuthError) {
-                toast('GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。');
+            // 同期欄にも toast と同じ読込の失敗の文を出す (渡さないと保存の失敗の「保存できませんでした」になる)。
+            // 「（要再接続）」は認証切れの時だけ。通信の失敗は電波が戻れば読み直す (下の _markInitLoadFailed・イシュー#653)
+            const authErr = e instanceof GitHubAuthError;
+            const authMsg = 'GitHub との接続に失敗しました。\n「切断」してから、もう一度「GitHub に接続」をお試しください。';
+            this.updateSyncStatus(authErr ? 'reconnect' : 'failed', label,
+                authErr ? authMsg.replace('\n', '') : 'GitHub からの読み込みに失敗しました。');
+            if (authErr) {
+                toast(authMsg);
             } else {
                 // 失敗しても画面は直前の手元データのまま(起動2段化・C-277、loadData()が先に描画済み)。
                 // エラー文言だけだと「表示が壊れているのでは」という不安を招くため、「今表示しているのは
