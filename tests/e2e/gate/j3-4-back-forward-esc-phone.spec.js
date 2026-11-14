@@ -6,6 +6,7 @@ import { seedLibraryForTest, bootAppForTest, stubStorageForTest } from '../helpe
 
 const listItems = (page) => page.locator('#bookshelf .book-item');
 const detail = (page) => page.locator('#book-detail-pane');
+const drawer = (page) => page.locator('#app-sidebar');
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -16,9 +17,21 @@ test('@gate J3-4 390幅で本棚→本の詳細→戻る→進む と操作し�
         await stubStorageForTest(page);
     });
 
-    await test.step('操作: 下のナビの「本棚」→「すべての本」→「フィクスチャの本 3」をタップする', async () => {
+    await test.step('操作: 下のナビの「本棚」→「すべての本」をタップする', async () => {
         await page.locator('[data-mobile-nav="shelves"]').tap();
         await page.locator('#sidebar-bookshelf-tree [data-bookshelf-id="all"] .bsr-label').tap();
+    });
+
+    // 引き出しは閉じる動き (0.25秒) の間も押す操作を受ける。閉じ切る前に本を押すと、本を押す操作が
+    // 引き出しとぶつかる (イシュー#628 で実測)。URL と冊数は押した直後に変わるので、それだけでは待てない。
+    // 閉じた後も右の境界線が 0.1px 画面に残るため、ratio を付けて「ほぼ画面の外」を待つ
+    await test.step('確認: 本棚の一覧に本が並び、引き出しが画面の外へ閉じる', async () => {
+        await expect(page).toHaveURL(/#\/bookshelf\/all$/);
+        await expect(listItems(page)).toHaveCount(5);
+        await expect(drawer(page)).not.toBeInViewport({ ratio: 0.01 });
+    });
+
+    await test.step('操作: 一覧の「フィクスチャの本 3」をタップする', async () => {
         await listItems(page).filter({ hasText: 'フィクスチャの本 3' }).tap();
     });
 

@@ -101,6 +101,7 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 - **workers を絞る**（`--workers=1`）。並列の負荷の下では、起動や画面の切り替えが既定の待ち（5秒）に収まらず揺れる（#589 step4 で実測）。待ち時間を伸ばして通さない。
 - spec で viewport を決めていないと、chromium は PC 幅・webkit はスマホ幅で流れる。入口が幅で変わる操作（設定は PC が `#sidebar-settings`、スマホが `[data-mobile-nav="settings"]`）は、spec で幅を決める。
 - 下のナビは起動の前から見えている。起動が済む前に押しても何も起きないので、再読込や画面の移動の後は、起動が済んだ印（ホームに書名が出る等）を待ってから押す。
+- 引き出し（スマホの本棚の一覧）の項目を押した後に、その下の画面を押す時は、引き出しが画面の外へ出たのを確かめてから押す（`expect(page.locator('#app-sidebar')).not.toBeInViewport({ ratio: 0.01 })`）。引き出しは閉じる動き（0.25秒）の間も押す操作を受け、URL や件数は押した直後に変わるので、それだけでは待てない。閉じた後も右の境界線が 0.1px 画面に残るため、ratio を付ける（#628）。
 - 外部の模擬は `helpers/gate-hub.js`（ハブ・決済・Google のログイン）。Service Worker を止めた実行（既定）なら、webkit でも `page.route` の模擬が効く。
 
 ## Service Worker を動かす（J8 オフライン・イシュー#589）
