@@ -149,7 +149,7 @@ lint:copy・lint:terms は直さずに通った。
 - 最初は base を origin/main にしたが、origin/main が進んでいた (J5-1・J6-5 の投入、#631 の修正、J3-4 の待ちの修正など6 commit) ので、今回の変更だけを比べるため base を作業の土台 `6dc2c04` にして流し直した (`--base=6dc2c04 --port=8135`)。
 - 12分の上限で打ち切った (他のイシューの全件比較と重なり、base 側の E2E だけで5分半かかった)。**base 側は完走、work 側の E2E は途中、vitest と画像比較 (visual) は流れていない**。work 側の結果は JSON の書き出しが最後なので残っていない。
 - base 側 (変更前): 991 passed・2 failed・594 skipped。落ちた2本は `book-memo-file-lifecycle.spec.js`「題名を変えると、長文メモが新しい名前で読め、古いファイルが残らない」(GitHub) と `save-failure-visible.spec.js`「再試行が尽きた失敗は…」(GitHub)。
-- この2本の spec を work 側で単独に流し直した (監査の6並列と同時): 3 failed・28 passed。落ちたのは上の2本と `save-failure-visible.spec.js:136`「1回目の自動の再試行で直る失敗は、何も出さない」(GitHub)。3本とも `expect.poll` の5秒の時間切れ。保存の失敗 (500) の再試行と長文メモの題名の変更の spec で、衝突の経路 (`_handleSyncConflict`・`_showConflictChoiceDialog`) は通らない。今回の変更で動きが変わるのは衝突した時だけなので、負荷による揺れと見ている (base でも同じ spec が落ちている)。
+- この2本の spec を work 側で単独に流し直した (監査の6並列と同時): 3 failed・28 passed。落ちたのは上の2本と `save-failure-visible.spec.js:136`「1回目の自動の再試行で直る失敗は、何も出さない」(GitHub)。3本とも `expect.poll` の5秒の時間切れ。保存の失敗 (500) の再試行と長文メモの題名の変更の spec で、衝突の経路 (`_handleSyncConflict`・`_showConflictChoiceDialog`) は通らない。今回の変更で動きが変わるのは衝突した時だけなので、負荷による揺れと見ている (base でも同じ spec が落ちている)。監査が終わった後 (負荷が下がった時) に同じ2つの spec を work 側で流し直すと **31 passed・落ち0** (`_local/635/s3-basefail-rerun2.log`)。
 - 衝突まわりの spec は step2 で単独に緑を確かめてある (chromium 46・gate-webkit の J6-4 2・D03c 1・char hub-conflict 3)。
 - visual: 衝突ダイアログの基準画像は無い。全件比較の中の画像比較は流れなかったので、他の画面に差分が出ないことは確かめていない。CSS の変更は、2つの id を並べたセレクタを1つのクラスに置き換えただけ (値は同じ)。
 
