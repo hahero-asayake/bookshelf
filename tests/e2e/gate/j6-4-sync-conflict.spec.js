@@ -1,7 +1,8 @@
 // 門のE2E (イシュー#588)。観測点 J6-4「衝突した時に選べて失われない」(G-3)。
 // 2台 (端末Aと別の端末B) で同じハブを開き、Aが先に短文メモを書いてハブに届いたあと、Bが古い版のまま同じ本の短文メモを
-// 書くと、Bに「同期の衝突」の3択が出ること、「編集内容をJSONで書き出す」で書き出したファイルにBの短文メモが入って
-// いること、「再読込して最新版を取得」のあとAの短文メモが見えることを、利用者の操作だけで確かめる (②判断 (d))。
+// 書くと、Bに「保存先とこの端末の両方が変わっています」の選択が出て最初は「この端末の内容を書き出す」にフォーカスがあること、
+// 「この端末の内容を書き出す」で書き出したファイルにBの短文メモが入っていること、「保存先の内容を読み込む」のあとAの短文メモが
+// 見えることを、利用者の操作だけで確かめる (②判断 (d))。ダイアログの文言は読込時の選択と同じ定義から出る (イシュー#635)。
 // 衝突はハブの模擬 (tests/e2e/helpers/gate-hub.js) の ETag 照合が 412 を返して起きる。内部からの注入はしない。
 // GitHub (tests/e2e/helpers/gate-github.js の模擬) でも同じ4点を確かめ、加えてリポジトリからAの短文メモが消えないことを見る
 // (まとめ保存が最新の head を土台にして古い版で上書きし、Aの短文メモが消えていた・イシュー#616)。
@@ -62,17 +63,17 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
         await expect(savedNote(other)).toContainText('保存しました');
     });
 
-    await test.step('確認: 端末Bに「同期の衝突」が出て、3つの選び方が見える', async () => {
+    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、2つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
         await expect(conflictDialog(other)).toBeVisible({ timeout: 20000 });
-        await expect(conflictDialog(other)).toContainText('同期の衝突');
-        await expect(conflictDialog(other).getByRole('button', { name: '何もしない' })).toBeVisible();
-        await expect(conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' })).toBeVisible();
-        await expect(conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' })).toBeVisible();
+        await expect(conflictDialog(other)).toContainText('保存先とこの端末の両方が変わっています');
+        await expect(conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' })).toBeFocused();
+        await expect(conflictDialog(other).getByRole('button')).toHaveCount(2);
     });
 
-    await test.step('操作: 「編集内容をJSONで書き出す」を押し、書き出されたファイルを受け取る', async () => {
+    await test.step('操作: 「この端末の内容を書き出す」を押し、書き出されたファイルを受け取る', async () => {
         const download = other.waitForEvent('download');
-        await conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' }).click();
+        await conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' }).click();
         exported = await download;
     });
 
@@ -80,10 +81,10 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
         expect(readFileSync(await exported.path(), 'utf-8')).toContain(MEMO_B);
     });
 
-    await test.step('操作: もう一度出た「同期の衝突」で「再読込して最新版を取得」を押し、読み込みが終わってから本を開く', async () => {
+    await test.step('操作: もう一度出たダイアログで「保存先の内容を読み込む」を押し、読み込みが終わってから本を開く', async () => {
         await expect(conflictDialog(other)).toBeVisible();
         const reloaded = other.waitForEvent('load');
-        await conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' }).click();
+        await conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' }).click();
         await reloaded;
         await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
         await expect(other.getByText('最新のデータを確認しています…')).toHaveCount(0, { timeout: 15000 });
@@ -142,21 +143,21 @@ test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突す�
         await expect(savedNote(other)).toContainText('保存しました');
     });
 
-    await test.step('確認: 端末Bに「同期の衝突」が出て、3つの選び方が見える', async () => {
+    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、2つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
         await expect(conflictDialog(other)).toBeVisible({ timeout: 20000 });
-        await expect(conflictDialog(other)).toContainText('同期の衝突');
-        await expect(conflictDialog(other).getByRole('button', { name: '何もしない' })).toBeVisible();
-        await expect(conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' })).toBeVisible();
-        await expect(conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' })).toBeVisible();
+        await expect(conflictDialog(other)).toContainText('保存先とこの端末の両方が変わっています');
+        await expect(conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' })).toBeFocused();
+        await expect(conflictDialog(other).getByRole('button')).toHaveCount(2);
     });
 
     await test.step('確認: リポジトリの短文メモは端末Aのまま (端末Bの古い版で上書きされていない)', async () => {
         await expect(waitForGitHubFileContainsForTest(gh, 'private/notes.json', MEMO_A)).resolves.toBeUndefined();
     });
 
-    await test.step('操作: 「編集内容をJSONで書き出す」を押し、書き出されたファイルを受け取る', async () => {
+    await test.step('操作: 「この端末の内容を書き出す」を押し、書き出されたファイルを受け取る', async () => {
         const download = other.waitForEvent('download');
-        await conflictDialog(other).getByRole('button', { name: '編集内容をJSONで書き出す' }).click();
+        await conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' }).click();
         exported = await download;
     });
 
@@ -164,10 +165,10 @@ test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突す�
         expect(readFileSync(await exported.path(), 'utf-8')).toContain(MEMO_B);
     });
 
-    await test.step('操作: もう一度出た「同期の衝突」で「再読込して最新版を取得」を押し、読み込みが終わってから本を開く', async () => {
+    await test.step('操作: もう一度出たダイアログで「保存先の内容を読み込む」を押し、読み込みが終わってから本を開く', async () => {
         await expect(conflictDialog(other)).toBeVisible();
         const reloaded = other.waitForEvent('load');
-        await conflictDialog(other).getByRole('button', { name: '再読込して最新版を取得' }).click();
+        await conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' }).click();
         await reloaded;
         await expect(other.locator('#loading')).toBeHidden({ timeout: 15000 });
         await expect(other.getByText('最新のデータを確認しています…')).toHaveCount(0, { timeout: 15000 });

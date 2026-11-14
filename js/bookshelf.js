@@ -16,6 +16,26 @@ const ART_REMOTE_FLUSH_DEBOUNCE_MS = 10000;
 const DEVICE_SETTING_KEYS = ['sortOrder', 'sortDirection', 'defaultView', 'coverSize', 'booksPerPage', 'paneState', 'memoVisibility', 'starOverlay', 'starVisibility', 'detailSectionOrder', 'hiddenPluginButtons', 'bookMemoOpenWith', 'kindleOpenWith'];
 const DEVICE_SETTINGS_STORAGE_KEY = 'virtualBookshelf_deviceSettings';
 const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
+// 保存先とこの端末の両方が変わった時の選択ダイアログの定義 (イシュー#635)。気づいた場面 (読込時＝#load-conflict-dialog・
+// 書き込み時＝#sync-conflict-dialog) によらず、題・本文・ボタン・並び・最初のフォーカスはここから出す (_showConflictChoiceDialog)。
+// 読み込む・上書きはどちらも片方の変更を消すので危険な操作の見た目。最初のフォーカス (Enter) は何も消えない「書き出す」。
+// Esc・枠外クリックは選ばずに閉じる。本文の後半は、上書きを選べる時 (読込時) と選べない時 (書き込み時) で変える
+const CONFLICT_DIALOG = Object.freeze({
+    title: '保存先とこの端末の両方が変わっています',
+    message: (source, canKeepLocal) =>
+        `${source ? `保存先（${source}）` : '保存先'}の内容が、別の端末などで更新されています。この端末にも、まだ保存先に入っていない編集があります。` +
+        (canKeepLocal
+            ? 'どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。'
+            : '保存先の内容を読み込むと、この端末の未保存の編集は消えます。') +
+        '迷う時は、先にこの端末の内容を書き出してください。',
+    choices: Object.freeze([
+        { value: 'remote', cls: 'cfm-remote', variant: 'btn-danger', label: '保存先の内容を読み込む' },
+        { value: 'local', cls: 'cfm-local', variant: 'btn-danger', label: 'この端末の内容で保存先を上書き' },
+        { value: 'export', cls: 'cfm-export', variant: 'btn-primary', label: 'この端末の内容を書き出す' }
+    ]),
+    first: 'export',
+    exported: 'この端末の内容を書き出しました。'
+});
 
 // 本の引き出し (900px超) をユーザーが畳んだかどうかの記憶キー (イシュー#168)。
 // 900px以下は毎回閉じたボトムシートから始まる設計のため対象外 (_artIsDrawerNarrow 参照)。
@@ -2941,7 +2961,7 @@ class VirtualBookshelf {
         try { choice = await this._showLoadConflictDialog(this._syncLabel()); }
         finally { this._loadConflictAsking = false; }
         if (choice === 'export') {
-            try { this.exportUnifiedData(); toast('この端末の内容を書き出しました。', { type: 'success' }); }
+            try { this.exportUnifiedData(); toast(CONFLICT_DIALOG.exported, { type: 'success' }); }
             catch (e) { toast(`書き出しに失敗しました: ${e.message}`, { type: 'error' }); }
             return this._askLoadConflict();
         }
@@ -2970,44 +2990,52 @@ class VirtualBookshelf {
         this._loadConflictAskedAt = Date.now();
     }
 
-    // 両方が変わった時の3択。上書きと読み込みはどちらも片方の変更を消すので危険な操作の見た目にし、
-    // 既定 (最初のフォーカス) は何も消えない「書き出す」。Esc・枠外は選ばずに閉じる
+    // 読込で両方が変わったと分かった時の選択 (イシュー#602)。選べるのは読み込む・上書き・書き出すの3つ
     _showLoadConflictDialog(source) {
+        return this._showConflictChoiceDialog('load-conflict-dialog', source, ['remote', 'local', 'export']);
+    }
+
+    // 衝突の選択ダイアログを組む (イシュー#635)。題・本文・ボタン・並び・最初のフォーカスは CONFLICT_DIALOG の1つから出す。
+    // id はどの場面で出たか (#load-conflict-dialog＝読込時 / #sync-conflict-dialog＝書き込み時)。choices は出す選択肢の value。
+    // 選んだ value か、選ばずに閉じた時 (Esc・枠外クリック) は 'cancel' で解決する
+    _showConflictChoiceDialog(id, source, choices) {
+        const def = CONFLICT_DIALOG;
         return new Promise((resolve) => {
             const overlay = document.createElement('div');
             overlay.className = 'cfm-overlay';
             const box = document.createElement('div');
-            box.className = 'cfm-box';
+            box.className = 'cfm-box conflict-dialog';
             box.setAttribute('role', 'dialog');
             box.setAttribute('aria-modal', 'true');
-            box.id = 'load-conflict-dialog';
+            box.id = id;
             box.innerHTML = `
                 <div class="cfm-title"></div>
                 <div class="cfm-message"></div>
-                <div class="cfm-actions">
-                    <button type="button" class="btn btn-danger cfm-remote"></button>
-                    <button type="button" class="btn btn-danger cfm-local"></button>
-                    <button type="button" class="btn btn-primary cfm-export"></button>
-                </div>`;
-            box.querySelector('.cfm-title').textContent = '保存先とこの端末の両方が変わっています';
-            box.querySelector('.cfm-message').textContent =
-                `${source} の内容が、この端末で最後に保存した後に、別の端末などで更新されています。この端末にも、まだ保存していない編集があります。` +
-                'どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。迷う時は、先にこの端末の内容を書き出してください。';
-            box.querySelector('.cfm-remote').textContent = '保存先の内容を読み込む';
-            box.querySelector('.cfm-local').textContent = 'この端末の内容で保存先を上書き';
-            box.querySelector('.cfm-export').textContent = 'この端末の内容を書き出す';
+                <div class="cfm-actions"></div>`;
+            box.querySelector('.cfm-title').textContent = def.title;
+            box.querySelector('.cfm-message').textContent = def.message(source, choices.includes('local'));
             let ov = null;
             const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
             const onKey = (e) => { if (window.Surface.isEsc(e)) { e.stopPropagation(); done('cancel'); } };
-            box.querySelector('.cfm-remote').addEventListener('click', () => done('remote'));
-            box.querySelector('.cfm-local').addEventListener('click', () => done('local'));
-            box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
+            const actions = box.querySelector('.cfm-actions');
+            let first = null;
+            for (const c of def.choices) {
+                if (!choices.includes(c.value)) continue;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `btn ${c.variant} ${c.cls}`;
+                btn.textContent = c.label;
+                btn.addEventListener('click', () => done(c.value));
+                actions.appendChild(btn);
+                if (c.value === def.first) first = btn;
+            }
             overlay.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, overlay)) done('cancel'); });
             document.addEventListener('keydown', onKey, true);
             overlay.appendChild(box);
             document.body.appendChild(overlay);
-            if (window.overlays) ov = window.overlays.open(overlay, { id: 'load-conflict-dialog', kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
-            box.querySelector('.cfm-export').focus();
+            // 重なり管理役 (イシュー#367): ダイアログ帯・小 (sm)。履歴には積まない (D04)
+            if (window.overlays) ov = window.overlays.open(overlay, { id, kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
+            if (first) first.focus();
         });
     }
 
@@ -3670,7 +3698,7 @@ class VirtualBookshelf {
         // 衝突中 (3択でまだ「再読込」を選んでいない) は送らない。読み直した後の新しい版で送ると相手の変更を上書きする (イシュー#616)
         if (SyncConfigManager.conflict()) {
             this.updateSyncStatus('reconnect', this._syncLabel());
-            this._handleSyncConflict(this._syncConflictSource());
+            this._handleSyncConflict(this._syncLabel());
             return;
         }
         try {
@@ -3887,7 +3915,7 @@ class VirtualBookshelf {
                     console.warn('同期の衝突:', err);
                     SyncConfigManager.markConflict();
                     this.updateSyncStatus('reconnect', this._syncLabel());
-                    this._handleSyncConflict(this._syncConflictSource());
+                    this._handleSyncConflict(this._syncLabel());
                     return;
                 }
                 throw err;
@@ -3916,18 +3944,18 @@ class VirtualBookshelf {
         }
     }
 
-    async _handleSyncConflict(source = 'GitHub') {
+    async _handleSyncConflict(source = this._syncLabel()) {
         if (this._conflictNotified) return;
         this._conflictNotified = true;
         const choice = await this._showConflictDialog(source);
         if (choice === 'export') {
             // リロード前のローカル状態を JSON で退避 (データ破壊防止・WP-B2)。退避後は改めて選び直せる
-            try { this.exportUnifiedData(); toast('現在の編集内容を書き出しました。', { type: 'success' }); }
+            try { this.exportUnifiedData(); toast(CONFLICT_DIALOG.exported, { type: 'success' }); }
             catch (e) { toast(`書き出しに失敗しました: ${e.message}`, { type: 'error' }); }
             this._conflictNotified = false;
             return this._handleSyncConflict(source);
         }
-        if (choice === 'reload') {
+        if (choice === 'remote') {
             // 保存先の最新版を採る (端末内の編集は書き出しで先に退避できる)。印と未同期の記録を消してから読み直す
             // = 起動時に端末内を優先して送り直し、相手の変更を上書きしない (イシュー#616)
             // 離脱時の送り出し (flushOnLeave・visibilitychange) で古い版を送らないよう、予約も止める
@@ -3938,13 +3966,8 @@ class VirtualBookshelf {
             location.reload();
             return;
         }
-        // 何もしない: 印と未同期の記録は残す (開き直しても送らずに3択を出し直す)。一定時間後にもう一度知らせる余地を残す
+        // 選ばずに閉じた (Esc・枠外クリック): 印と未同期の記録は残す (開き直しても送らずに聞き直す)。一定時間後にもう一度知らせる余地を残す
         setTimeout(() => { this._conflictNotified = false; }, 60000);
-    }
-
-    /** 3択に出す保存先の名前 (イシュー#616) */
-    _syncConflictSource() {
-        return this.syncMethod === 'hub' ? 'Asayake ハブ' : 'GitHub';
     }
 
     /** まとめ保存で、相手が同じファイルの別の項目を変えていて、項目ごとに合わせて書いた時 (イシュー#612・ADR-163)。
@@ -4002,45 +4025,10 @@ class VirtualBookshelf {
         });
     }
 
-    // 衝突時の3択ダイアログ (confirmDialog は2択専用のため cfm-* スタイルを流用して自前構築)
+    // 書き込みで衝突した時の選択 (イシュー#616)。選べるのは読み込む・書き出すの2つ。上書きは出さない
+    // (GitHub は同じページのまま読み直しても起動時の版が返り、上書きが通らない。イシュー#635 で実測・scripts/verify/635-results.md)
     _showConflictDialog(source) {
-        return new Promise((resolve) => {
-            const overlay = document.createElement('div');
-            overlay.className = 'cfm-overlay';
-            const box = document.createElement('div');
-            box.className = 'cfm-box';
-            box.setAttribute('role', 'dialog');
-            box.setAttribute('aria-modal', 'true');
-            box.id = 'sync-conflict-dialog';
-            box.innerHTML = `
-                <div class="cfm-title"></div>
-                <div class="cfm-message"></div>
-                <div class="cfm-actions">
-                    <button type="button" class="btn btn-secondary cfm-cancel"></button>
-                    <button type="button" class="btn btn-secondary cfm-export"></button>
-                    <button type="button" class="btn btn-primary cfm-ok"></button>
-                </div>`;
-            box.querySelector('.cfm-title').textContent = '同期の衝突';
-            box.querySelector('.cfm-message').textContent =
-                `同期先（${source}）のデータが他の場所から更新されています。このセッションの直近の編集はまだ同期先に反映されていません。` +
-                '「再読込」を選ぶと最新版を取得しますが、未反映の編集は失われます。心配なときは先に「編集内容を書き出す」で退避してください。';
-            box.querySelector('.cfm-cancel').textContent = '何もしない';
-            box.querySelector('.cfm-export').textContent = '編集内容をJSONで書き出す';
-            box.querySelector('.cfm-ok').textContent = '再読込して最新版を取得';
-            // 重なり管理役 (イシュー#367): ダイアログ帯・小 (sm)。履歴には積まない (D04)
-            let ov = null;
-            const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
-            const onKey = (e) => { if (window.Surface.isEsc(e)) { e.stopPropagation(); done('cancel'); } };
-            box.querySelector('.cfm-ok').addEventListener('click', () => done('reload'));
-            box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
-            box.querySelector('.cfm-cancel').addEventListener('click', () => done('cancel'));
-            overlay.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, overlay)) done('cancel'); });
-            document.addEventListener('keydown', onKey, true);
-            overlay.appendChild(box);
-            document.body.appendChild(overlay);
-            if (window.overlays) ov = window.overlays.open(overlay, { id: 'sync-conflict-dialog', kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
-            box.querySelector('.cfm-ok').focus();
-        });
+        return this._showConflictChoiceDialog('sync-conflict-dialog', source, ['remote', 'export']);
     }
 
     _syncLabel() {

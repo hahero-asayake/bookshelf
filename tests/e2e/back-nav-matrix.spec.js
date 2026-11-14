@@ -1409,7 +1409,7 @@ const openReport = (page) => page.evaluate(() => {
         expect.soft(s.menus.confirm).toBe(false);
         expect.soft(s.stack).toEqual(['publish-pages-modal', 'art-viewing']);
     }));
-    test('D03c 同期衝突ダイアログ→戻る＝「何もしない」で閉じる (D04)・下の面は残る', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r) => {
+    test('D03c 同期衝突ダイアログ→戻る＝選ばずに閉じる (D04)・下の面は残る', async ({ page }, ti) => caseRun(page, ti, 'D03c', async (r) => {
         // 確認ダイアログは履歴に積まない規則 (②決裁)。下に面 (ここではドロワー) がある時、戻る＝確認だけキャンセルで下は残る
         await openDrawerTap(page);
         await showConflictDialogForTest(page, 'GitHub');

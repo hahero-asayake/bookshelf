@@ -80,12 +80,13 @@ test.describe('E4: ハブの412(同期の衝突)でO27(衝突ダイアログ)が
             const dlg = page.locator('#sync-conflict-dialog');
             await expect(dlg).toBeVisible({ timeout: 10_000 });
             await expect(dlg.locator('.cfm-message')).toContainText('Asayake ハブ');
-            await expect(dlg.locator('.cfm-cancel')).toHaveText('何もしない');
-            await expect(dlg.locator('.cfm-export')).toHaveText('編集内容をJSONで書き出す');
-            await expect(dlg.locator('.cfm-ok')).toHaveText('再読込して最新版を取得');
+            await expect(dlg.locator('.cfm-title')).toHaveText('保存先とこの端末の両方が変わっています');
+            await expect(dlg.locator('.cfm-remote')).toHaveText('保存先の内容を読み込む');
+            await expect(dlg.locator('.cfm-export')).toHaveText('この端末の内容を書き出す');
+            await expect(dlg.locator('.cfm-local')).toHaveCount(0);
 
-            // 「何もしない」を選べる(今の振る舞い): ダイアログが閉じる
-            await dlg.locator('.cfm-cancel').click();
+            // 選ばずに閉じられる(イシュー#635で「何もしない」のボタンを無くし、Esc・枠外クリックに寄せた): ダイアログが閉じる
+            await page.keyboard.press('Escape');
             await expect(dlg).toBeHidden();
         });
     }

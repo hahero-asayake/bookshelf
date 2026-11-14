@@ -62,7 +62,7 @@ test('ESC: 設定・取込モーダルが閉じる (PC)', async ({ page }) => {
     expect(errors).toEqual([]);
 });
 
-test('ESC/枠外クリック: 衝突ダイアログは「何もしない」で閉じる (破壊選択を既定にしない)', async ({ page }) => {
+test('ESC/枠外クリック: 衝突ダイアログは選ばずに閉じる (破壊選択を既定にしない)', async ({ page }) => {
     const errors = await bootApp(page);
     await triggerSyncConflict(page, 'GitHub');
     await expect(page.locator('#sync-conflict-dialog')).toBeVisible();
