@@ -41,15 +41,34 @@ async function openFromHome(page, { edit }) {
     }
 }
 
-// ツリーの「…」を開く。子の本棚は、上の本棚 (ancestors に上から順に書く) が畳まれていれば展開してから
-async function openTreeMenu(page, slug, ancestors = []) {
-    const tree = page.locator('#sidebar-bookshelf-tree');
+const treeNode = (page, slug) => page.locator(`#sidebar-bookshelf-tree .tree-node[data-bookshelf-id="${slug}"]`);
+
+// ツリーの「すべての本」と、渡した本棚 (上から順に書く) が畳まれていれば展開する
+async function expandTree(page, ancestors = []) {
     for (const key of ['all', ...ancestors]) {
-        const toggle = tree.locator(`.tree-node[data-bookshelf-id="${key}"] .tree-toggle`);
+        const toggle = treeNode(page, key).locator('.tree-toggle');
         await expect(toggle).toBeVisible();
         if (await toggle.getAttribute('title') === '展開') await toggle.click();
     }
-    const node = tree.locator(`.tree-node[data-bookshelf-id="${slug}"]`);
+}
+
+// マウスのドラッグ (tests/e2e/touch-reorder.spec.js の mouseDrag と同じ手順。最後に同じ座標へもう1回動かして落ち着かせる)
+async function mouseDrag(page, fromBox, toPoint) {
+    const x0 = fromBox.x + fromBox.width / 2, y0 = fromBox.y + fromBox.height / 2;
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x0, y0 + 5, { steps: 3 });
+    await page.mouse.move(toPoint.x, toPoint.y, { steps: 5 });
+    await page.waitForTimeout(100);
+    await page.mouse.move(toPoint.x, toPoint.y);
+    await page.waitForTimeout(80);
+    await page.mouse.up();
+}
+
+// ツリーの「…」を開く。子の本棚は、上の本棚 (ancestors に上から順に書く) が畳まれていれば展開してから
+async function openTreeMenu(page, slug, ancestors = []) {
+    await expandTree(page, ancestors);
+    const node = treeNode(page, slug);
     await expect(node).toBeVisible();
     await node.hover();
     await node.locator('.tree-more').click();
@@ -268,6 +287,30 @@ test.describe('PC 幅・いま開いている本棚', () => {
         await expect.soft(chips(page)).toHaveCount(2);
         await expect.soft(page.locator(`#current-bookshelves-${ASIN} .bd-chip.is-context`)).toHaveCount(0);
         await expectDetailKept(page, false);
+    });
+});
+
+// ツリーのドラッグ (マウス) で親を付け替える経路。本棚フォームでの付け替え (f) と同じく、補充された本棚のチップがすぐに出る
+test.describe('PC 幅・ツリーのドラッグ', () => {
+    test.use({ viewport: { width: 1280, height: 900 } });
+
+    test('(j) 子の本棚を、本が入っていない本棚の上へドラッグして付け替えると、補充された本棚のチップがすぐに出て選択肢から消える', async ({ page }) => {
+        await bootApp(page);
+        await openFromHome(page, { edit: true });
+        await expect(chip(page, 'e2e-other')).toHaveCount(0);
+
+        await expandTree(page, ['e2e-parent']);
+        const from = await treeNode(page, 'e2e-child').boundingBox();
+        const to = await treeNode(page, 'e2e-other').boundingBox();
+        // 行の真ん中へ落とす = その本棚の子にする (確認ダイアログが出る)
+        await mouseDrag(page, from, { x: to.x + to.width / 2, y: to.y + to.height / 2 });
+        await page.locator('.cfm-overlay .cfm-ok').click();
+        await expect.poll(() => memberOf(page, 'e2e-other')).toBe(true);
+
+        await expect.soft(chip(page, 'e2e-other')).toHaveCount(1);
+        await expect.soft(chips(page)).toHaveCount(4);
+        await expect.soft(option(page, 'e2e-other')).toHaveCount(0);
+        await expectDetailKept(page, true);
     });
 });
 

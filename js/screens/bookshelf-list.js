@@ -194,6 +194,8 @@ class _BookshelfListMethods {
         if (bsModal && bsModal.classList.contains('show') && typeof this.renderBookshelfList === 'function') {
             this.renderBookshelfList();
         }
+        // 親を付け替えた時は、その本棚と子の本棚の本が新しい親へ補充される。開いている詳細の本棚のチップと選択肢へ反映する (イシュー#623)
+        if (!sameParent) this._applyShelfChangeToDetail([dragged, ...bm.getDescendants(draggedId)]);
     }
 
     /**
