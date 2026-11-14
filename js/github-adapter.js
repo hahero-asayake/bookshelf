@@ -95,41 +95,63 @@ class GitHubAdapter extends StorageAdapter {
         this._shaCacheEnabled = true;
         this._remoteShaMap = null; // path(フルパス) -> sha。null=tree未取得。Map取得後は空でも{}を置く
         this._treeFetchPromise = null; // 同時に複数readJSONが呼ばれても tree 取得は1回にまとめる
+        this._remoteListingGen = 0; // forgetRemoteListing() の回数。捨てる前に始まった tree 取得の結果を控えに入れないため
         this._versionCache = new VersionCache(
             `virtualBookshelf_ghShaCache_${this.owner}/${this.repo}/${this.branch}${this.basePath ? '/' + this.basePath : ''}`
         );
     }
 
     // tree 一括取得 (ref→commit→tree recursive=1、実測: 本物のリポジトリで各0.3〜0.7秒・3本直列)。
-    // 失敗したら諦めて _remoteShaMap=null のまま返す (呼び出し側は個別取得にフォールバックする)。
+    // 失敗したら諦めて _remoteShaMap={} を返す (呼び出し側は個別取得にフォールバックする)。
+    // ref の GET は no-store (イシュー#645)。GitHub の ref の GET は max-age=60 で返り、ブラウザに残った古い ref から
+    // tree を作ると、開き直し・読み直しでも他の端末が書く前の中身 (VersionCache) が返る。commit・tree は sha で
+    // 指す中身が変わらないのでキャッシュのままでよい
     async _ensureRemoteShaMap() {
         if (this._remoteShaMap) return this._remoteShaMap;
         if (this._treeFetchPromise) return this._treeFetchPromise;
-        this._treeFetchPromise = (async () => {
+        const gen = this._remoteListingGen;
+        const promise = (async () => {
+            let map = {};
             try {
                 const refUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${encodeURIComponent(this.branch)}`;
-                const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers() }, 5000);
-                if (!refRes.ok) { this._remoteShaMap = {}; return this._remoteShaMap; }
-                const commitSha = refRes.json.object.sha;
-                const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${commitSha}`;
-                const commitRes = await StorageAdapter.fetchJSON(commitUrl, { headers: this._headers() }, 5000);
-                if (!commitRes.ok) { this._remoteShaMap = {}; return this._remoteShaMap; }
-                const treeSha = commitRes.json.tree.sha;
-                const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${treeSha}?recursive=1`;
-                const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers() }, 5000);
-                if (!treeRes.ok || !treeRes.json || !Array.isArray(treeRes.json.tree)) { this._remoteShaMap = {}; return this._remoteShaMap; }
-                const map = {};
-                for (const entry of treeRes.json.tree) {
-                    if (entry.type === 'blob') map[entry.path] = entry.sha;
+                const refRes = await StorageAdapter.fetchJSON(refUrl, { headers: this._headers(), cache: 'no-store' }, 5000);
+                if (refRes.ok) {
+                    const commitSha = refRes.json.object.sha;
+                    const commitUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/commits/${commitSha}`;
+                    const commitRes = await StorageAdapter.fetchJSON(commitUrl, { headers: this._headers() }, 5000);
+                    if (commitRes.ok) {
+                        const treeSha = commitRes.json.tree.sha;
+                        const treeUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/git/trees/${treeSha}?recursive=1`;
+                        const treeRes = await StorageAdapter.fetchJSON(treeUrl, { headers: this._headers() }, 5000);
+                        if (treeRes.ok && treeRes.json && Array.isArray(treeRes.json.tree)) {
+                            for (const entry of treeRes.json.tree) {
+                                if (entry.type === 'blob') map[entry.path] = entry.sha;
+                            }
+                        }
+                    }
                 }
-                this._remoteShaMap = map;
             } catch (_) {
                 // ネットワーク不調等。tree取得を諦めて個別取得(contents API)にフォールバックする。
-                this._remoteShaMap = {};
+                map = {};
             }
-            return this._remoteShaMap;
+            // 取得の途中で控えを捨てられた (forgetRemoteListing) 時は、古いかもしれないので控えには入れない
+            if (gen === this._remoteListingGen) this._remoteShaMap = map;
+            return map;
         })();
-        return this._treeFetchPromise;
+        this._treeFetchPromise = promise;
+        return promise;
+    }
+
+    /**
+     * tree の sha の控えを捨てる (イシュー#645)。次の読みで ref→commit→tree を取り直す。
+     * 読み直し (BookshelfStorage.loadAll) の入口で呼ばれる。控えを持ち続けると、同じページのまま読み直しても
+     * 控えにあるファイルは起動した時の中身 (VersionCache) が返り、控えに無いファイルだけ最新になって混ざる。
+     * 中身は今までどおり sha が変わったファイルだけ contents API で取る。_shaCache (書き込みの照合の版) は触らない
+     */
+    forgetRemoteListing() {
+        this._remoteShaMap = null;
+        this._treeFetchPromise = null;
+        this._remoteListingGen++;
     }
 
     _notifyWriteStatus(path, status) {

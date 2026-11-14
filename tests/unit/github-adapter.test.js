@@ -5,7 +5,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/storage-adapter.js');
 await import('../../js/github-adapter.js');
-const { GitHubAdapter, GitHubConflictError, GitHubValidationError, GitHubRemoteChangedError } = globalThis;
+await import('../../js/storage.js');
+const { GitHubAdapter, GitHubConflictError, GitHubValidationError, GitHubRemoteChangedError, BookshelfStorage } = globalThis;
 
 const OWNER = 'o';
 const REPO = 'r';
@@ -402,6 +403,102 @@ describe('R: tree一括sha取得による差分のみ取得 (イシュー#391・
         const other = new GitHubAdapter({ owner: 'o2', repo: 'r2', branch: 'dev', token: TOKEN });
         expect(adapter._versionCache.ns).toBe(`virtualBookshelf_ghShaCache_${OWNER}/${REPO}/main`);
         expect(other._versionCache.ns).toBe('virtualBookshelf_ghShaCache_o2/r2/dev');
+    });
+});
+
+describe('読み直し (loadAll) のたびに tree の控えを取り直す (イシュー#645)', () => {
+    const LIB = 'private/library.json';
+    const NOTES = 'private/notes.json';
+    const notesText = (memo) => JSON.stringify({ notes: { A1: { memo } } });
+
+    // 中身が変わるリポジトリの模擬。commit ごとに tree の版を残す。ref の GET は、no-store でない時は
+    // 最初に返した ref を返し続ける (本物の GitHub の ref の GET は max-age=60 でブラウザに残る・#645 step1 で実測)
+    function fakeRepo(initial) {
+        const files = new Map(); // path -> { text, sha }
+        const trees = new Map(); // treeSha -> tree の一覧
+        let n = 0;
+        const put = (path, text) => files.set(path, { text, sha: `${path}#${n + 1}` });
+        const snap = () => { n++; trees.set(`t${n}`, [...files].map(([path, f]) => ({ path, type: 'blob', sha: f.sha }))); };
+        for (const [p, t] of Object.entries(initial)) put(p, t);
+        snap();
+        const cachedRef = new Map();
+        const calls = [];
+        globalThis.fetch = vi.fn(async (url, init = {}) => {
+            const method = (init.method || 'GET').toUpperCase();
+            const rest = new URL(url).pathname.replace(`/repos/${OWNER}/${REPO}`, '');
+            calls.push({ method, rest, cache: init.cache || null });
+            if (method !== 'GET') throw new Error(`unexpected ${method} ${rest}`);
+            if (rest === '/git/refs/heads/main') {
+                const fresh = { object: { sha: `c${n}` } };
+                if (init.cache !== 'no-store') {
+                    if (!cachedRef.has(url)) cachedRef.set(url, fresh);
+                    return new Response(JSON.stringify(cachedRef.get(url)), { status: 200 });
+                }
+                return new Response(JSON.stringify(fresh), { status: 200 });
+            }
+            if (rest.startsWith('/git/commits/c')) return new Response(JSON.stringify({ tree: { sha: `t${rest.slice('/git/commits/c'.length)}` } }), { status: 200 });
+            if (rest.startsWith('/git/trees/')) return new Response(JSON.stringify({ tree: trees.get(rest.slice('/git/trees/'.length)) }), { status: 200 });
+            if (rest.startsWith('/contents/')) {
+                const f = files.get(decodeURIComponent(rest.slice('/contents/'.length)));
+                return f ? contentRes(f.text, f.sha) : new Response('{"message":"Not Found"}', { status: 404 });
+            }
+            throw new Error(`unexpected ${rest}`);
+        });
+        return {
+            commit(path, text) { put(path, text); snap(); },
+            take() { return calls.splice(0, calls.length); },
+        };
+    }
+
+    it('他の端末が書いた後に loadAll で読み直すと最新の中身が返り、変わっていないファイルは本文を取らない', async () => {
+        const repo = fakeRepo({ [LIB]: JSON.stringify({ books: [], exportDate: 'd1' }), [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        expect((await storage.loadAll()).notes.A1.memo).toBe('最初');
+        repo.take();
+
+        repo.commit(NOTES, notesText('別の端末')); // 他の端末が notes.json だけを書いた
+        const state = await storage.loadAll();
+
+        expect(state.notes.A1.memo).toBe('別の端末');
+        const calls = repo.take();
+        expect(calls.filter(c => c.rest.startsWith('/git/refs/')).length).toBe(1);
+        expect(calls.filter(c => c.rest.startsWith('/git/trees/')).length).toBe(1);
+        expect(calls.some(c => c.rest === `/contents/${NOTES}`)).toBe(true);
+        expect(calls.some(c => c.rest === `/contents/${LIB}`)).toBe(false); // sha が同じ＝端末に残した中身を使う
+        // 書き込みの照合に使う版も最新になる (上書きを選んだ後の次のまとめ保存が古い版の照合で止まらない)
+        expect(adapter.getCachedSha(NOTES)).toBe(`${NOTES}#2`);
+    });
+
+    it('ref の GET は no-store で、ブラウザに残った古い ref からは読まない', async () => {
+        const repo = fakeRepo({ [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        await storage.loadAll();
+        repo.commit(NOTES, notesText('別の端末'));
+        const state = await storage.loadAll();
+        // 古い ref (c1) を使うと tree も古くなり、端末に残した「最初」が返る
+        expect(state.notes.A1.memo).toBe('別の端末');
+        const refGets = globalThis.fetch.mock.calls.filter(([url, init]) => url.includes('/git/refs/heads/') && ((init && init.method) || 'GET').toUpperCase() === 'GET');
+        expect(refGets.length).toBe(2);
+        for (const [, init] of refGets) expect(init.cache).toBe('no-store');
+    });
+
+    it('loadAll の外の読み (長文メモ等) は控えを使い回し、tree を取り直さない', async () => {
+        const repo = fakeRepo({ [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        await storage.loadAll();
+        repo.take();
+        await adapter.readJSON(NOTES);
+        expect(repo.take().filter(c => c.rest.startsWith('/git/')).length).toBe(0);
+    });
+
+    it('控えを捨てても、書き込みの照合に使う版 (sha) は残す (イシュー#616 の決まりを変えない)', async () => {
+        fakeRepo({ [NOTES]: notesText('最初') });
+        const storage = new BookshelfStorage(adapter);
+        await storage.loadAll();
+        const before = adapter.getCachedSha(NOTES);
+        adapter.forgetRemoteListing();
+        expect(before).toBe(`${NOTES}#1`);
+        expect(adapter.getCachedSha(NOTES)).toBe(before);
     });
 });
 

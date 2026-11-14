@@ -90,3 +90,62 @@ step2 (読み直しのたびに控えを捨てる＋ref の GET に no-store) �
 | `tests/unit/github-adapter.test.js` | vitest | 28 passed |
 
 落ちは0件。ログは `_local/645/before-*.log`。`load-conflict-unsaved.spec.js` は計画の一覧に無かったが、#639 で書き込み時の衝突ダイアログを使う spec が足されていたので加えた (step3 で一緒に直す spec に入る)。
+
+## step2: 読み直しのたびに tree の控えを取り直す (案A) (2026-11-14 17:23〜)
+
+### 1. 入れたもの
+
+- `js/github-adapter.js`
+  - 控えを捨てる口 `forgetRemoteListing()` を足した。`_remoteShaMap`・`_treeFetchPromise` を捨て、世代 (`_remoteListingGen`) を1つ進める。`_shaCache`・`_lastKnownContent` (書き込みの照合の版) は触らない。
+  - `_ensureRemoteShaMap` の ref の GET に `cache: 'no-store'` を付けた (step1 §4 (iv): ref は max-age=60 でブラウザに残る)。commit・tree は sha で指すので今のまま。
+  - 取得の途中で控えを捨てられた時は、その結果を控えに入れない (世代を比べる)。取得に失敗した時に `{}` を置いて contents API に落ちる動きは変えていない。
+- `js/storage.js`: `BookshelfStorage.loadAll()` の先頭で、adapter に `forgetRemoteListing` があれば呼ぶ (コアは adapter を名指ししない。ハブは一覧の控えを3秒で切っているので口を持たない)。
+- `?v=`: `github-adapter.js`・`storage.js` を 2026111651 → **2026111745** (origin/main の最大値 2026111711 より新しい)。
+- 変えていないもの: `clearShaCache()`、`_assertBatchNotStale` (照合で最新を見つけても `_shaCache`・`_lastKnownContent` を更新しない・#616)、loadAll の外の個別の読み (長文メモ等は控えを使い回す)。
+
+### 2. 単体テスト (`tests/unit/github-adapter.test.js` に4本・BookshelfStorage の loadAll を通す)
+
+中身が変わるリポジトリの模擬を置いた。ref の GET は no-store でない時は最初に返した ref を返し続ける (ブラウザに残った ref の模擬)。
+
+1. 他の端末が書いた後に loadAll で読み直すと最新の中身が返る。ref・tree は1本ずつ、本文を取るのは変わった notes.json だけ (library.json は取らない)。書き込みの照合の版 (`getCachedSha`) も最新になる。
+2. ref の GET は2回とも no-store。古い ref (c1) を使うと「最初」が返る状況で「別の端末」が返る。
+3. loadAll の外の読み (`readJSON`) は tree を取り直さない (要求を増やさない)。
+4. 控えを捨てても書き込みの照合の版は残る。
+
+### 3. 要求の数 (変更前後・GitHub の模擬・step1 と同じ数え方)
+
+| 場面 | 変更前 | 変更後 |
+|---|---|---|
+| 起動1回 | ref 2・commit 2・tree 1・contents 13 (+ /user/installations 1・まとめ保存 blobs 15 ほか) | **同じ** (ref 2・commit 2・tree 1・contents 13・installations 1・blobs 15 ほか) |
+| 同じページのまま読み直し1回 | ref 0・commit 0・tree 0・contents 4 (古い中身) | ref 1・commit 1・tree 1・contents 9 (最新・下の (a) の時) |
+
+- 起動では tree を2回取らない: 起動の読込は loadAll の1回だけで、その前に tree を取る読みが無い (起動の最初の要求は `contents/private/bookshelves/all.json` と `/user/installations`)。
+- 読み直しの contents 9本は、前に読んだ時から sha が変わったファイル (端末Aの起動のまとめ保存・端末Bの保存で書かれた分) と、リポジトリに無いファイル (404)。sha が同じファイルは本文を取らない。
+- 読み直し1回あたり +3本 (ref・commit・tree)。計画の比較 (案A) どおり。
+
+### 4. (a)〜(d) (使い捨ての probe `_local/645/zz-probe-645b.spec.js`・結果 `_local/645/probe-{github,hub}-abcd.json`)
+
+手順: 模擬の保存先に蔵書を置き、端末Aで開く → 端末Bで短文メモを書いて届くのを待つ → 端末Aで同じ本に短文メモを書いて書き込みの衝突を起こし、Esc で閉じる (衝突中の印・未反映の印が残る) → (d) 保存先への通信を落として上書きの道 (`storage.loadAll()` → `SyncConfigManager.clearConflict()` → `_writeSyncBase(exportDate, syncStamp)` → `_keepLocalOverLoaded`) を通す → 通信を戻してもう一度通す → 続けて短文メモを書く → 端末Aを開き直す。
+
+| | GitHub (変更前・#635 step1) | GitHub (変更後) | ハブ (変更後) |
+|---|---|---|---|
+| (d) 読み直しの失敗 | ✓ | Failed to fetch。衝突中の印・未反映の印が残り、書き込み0 ✓ | 同じ ✓ |
+| (a) 次のまとめ保存 | また衝突する ✗ | 衝突せずに通る。印が消え、ダイアログは出ない ✓ | 同じ ✓ |
+| (b) 保存先が手元の内容になる | notes.json は端末Bのまま ✗ | notes.json が端末Aの短文メモ ✓ | ✓ |
+| (c) 混ざらない | — | 端末Bの短文メモは残らない。commit 1つ ✓ | 端末Bの短文メモは残らない。batch 1回 ✓ |
+| 続けて書く | 届かない ✗ | 届く・衝突しない ✓ | ✓ |
+| 端末Aを開き直す | — | 続けて書いた短文メモが入る ✓ | ✓ |
+
+- 上書きの道の `_writeSyncBase` には、#612 で足された版の印 (`state.syncStamp`) も渡した (読込時の上書きと同じ)。step3 の `_handleSyncConflict` の 'local' も同じにする。
+
+### 5. 確認 (変更後・PORT=8145)
+
+| 確認 | 結果 |
+|---|---|
+| vitest (全件) | 78 files・**1180 passed** (2 todo)。`github-adapter.test.js` は 28→32 |
+| chromium: J6-4 (2)・sync-conflict (3)・sync-offline-reconnect (13)・J1-4 GitHub (1)・load-conflict-unsaved (3) | 21 passed・1 failed → 落ちた1本を単独で流し直して **3 passed** (下) |
+| gate-webkit: J6-4 | **2 passed** |
+| `npm run lint` | 12本中11本 OK。`lint:internal-refs` だけ 84/82 で落ちたが、probe (`app._` 2件) を作業ツリーに置いたままだったため。probe を `_local/645/` へ移すと 82/82 で OK |
+
+- 落ちた1本は `load-conflict-unsaved.spec.js:178` (ローカルフォルダ・読込時の選択を閉じた後)。中身の判定ではなく、画像の添付のコピーが ENOENT (`test.info().attach` の時に `test-results/` の画像が無かった)。同じ時刻に vitest 全件と lint 一式を同じ作業ツリーで流していた。ローカルフォルダの adapter は `forgetRemoteListing` を持たないので、今回の変更が通らない道。単独で流し直すと3本とも通った (`_local/645/after2-A2-load-conflict-unsaved-rerun.log`)。
+- ログ: `_local/645/after2-A-chromium.log`・`after2-B-webkit.log`・`after2-lint.log`・`probe-abcd.log`。
