@@ -4767,7 +4767,7 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
 /* イシュー#430 (②承認): 「全画面を避け過ぎ」指摘により、編集状態は既定で全画面にする
    (旧 max-width: 1080px を撤廃)。901px以上の専用ルール (旧 min(1240px,...)) も合わせて撤廃。
    本文欄+プレビューの可読性は内側 (.art-wrap 以下) の max-width で別途確保する。 */
-.art-modal-content.art-editing { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
+.art-modal-content.art-editing { width: 100vw; max-width: none; max-height: none; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
 .art-modal-content.art-editing > .modal-header { display: none; } /* 全画面では独自ヘッダー(art-fs-hd/art-hd)が戻る/完了を持つため、モーダル既定ヘッダーは隠す (イシュー#430) */
 .art-modal-content.art-editing > .modal-close { display: none; } /* ×はヘッダーの「完了」等と重複するため隠す (旧600px以下限定ルールをPC/モバイル共通に・イシュー#430) */
 .publish-pages-content > #art-list-view,
@@ -7314,6 +7314,8 @@ input.art-shelf-select-all.is-mixed::after {
    overlay-manager が data-ov-above で外す)。外枠 (body) と全画面の面は、帯の高さ (--status-urgent-h・_syncStatusUrgent が測る)
    だけ下げて、面の見出し (戻る・×) を隠さない。面を下げる規則は面ごとに書かない = overlay-manager が書く印
    data-ov-below-notice (既定は modal・sheet。全画面の popover は open の belowNotice:true・イシュー#671) で全部の面に効かせる。
+   全画面の段階 (.ov-full・記事エディタ・長文メモ・プレビュー) は中身の高さも箱に合わせる (100dvh のままだと箱からはみ出し、
+   PC は中央寄せで上へ出て見出しが帯の下に入り、狭幅は下端が画面の外に出る・イシュー#682)。
    下から出す sheet を data-layer 付きで足す時は top が当たるので確かめること */
 .app-status-bar .status-urgent {
     position: fixed;
@@ -7328,6 +7330,8 @@ input.art-shelf-select-all.is-mixed::after {
 body.has-status-urgent { padding-top: var(--status-urgent-h, 0px); box-sizing: border-box; }
 /* 上端を下げた分だけ下端がはみ出さないよう、下端は 0 に留めて高さは自動にする (.modal・.app-detail は height:100% を持つ) */
 body.has-status-urgent [data-ov-below-notice] { top: var(--status-urgent-h, 0px); bottom: 0; height: auto; }
+/* 全画面の段階の中身 (.ov-full の 100dvh) は、下げた箱 (帯の下端〜画面の下端) に合わせる。面ごとの高さは書かない (イシュー#682) */
+body.has-status-urgent [data-ov-below-notice] > .ov-full { height: 100%; }
 /* 狭幅の本の詳細は印に寄せない: overlay-manager のスタックの外 (常設クロームの帯 940) にあり、PC では列 (fixed ではない)
    なので、狭幅だけの規則のまま残す (イシュー#671) */
 @media (max-width: 900px) {
@@ -8264,7 +8268,7 @@ body.select-mode .drag-handle { display: none; }
 #art-edit-view[data-art-mode="form"] .art-block-del { display: none; }
 /* スマホ: 記事エディタは全画面 (モーダルの余白なし)。キャンバス幅=画面幅＝公開ページと同じ幅で描く (②決裁 step3) */
 @media (max-width: 600px) {
-    #publish-pages-modal .art-modal-content.art-editing { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0;
+    #publish-pages-modal .art-modal-content.art-editing { width: 100vw; max-width: none; max-height: none; margin: 0;
         border-radius: 0; padding: 0; }
     #publish-pages-modal .art-modal-content.art-editing .modal-header { display: none; }
     #publish-pages-modal .art-modal-content.art-editing #art-edit-view .art-hd,
