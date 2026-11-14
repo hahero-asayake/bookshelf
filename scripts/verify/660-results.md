@@ -308,3 +308,31 @@ viewport 1280×800・行の位置 y=0 高さ 59・行の種類 load-conflict・�
   - **save-failure-visible の GitHub 系（createShelf の5秒の待ち）**は、ほかの run と並行で重い時だけ落ちる。
     - これまでの記録：17:44 で3件・17:52 で2件・18:19 で3件落ち、単独ではいつも通る（17:54 で11/11・18:20 で3/3）。
     - origin/main 単独でも通る。並行の重い時の origin/main とは比べられていない（未確認）。
+
+---
+
+# step5 設計書の更新と push 前の最終確認（2026-11-14）
+
+- **設計書**：vault のパスはスクリプト（`tmp/660/docs/write.mjs`）の中に持って書いた。
+  - 04_画面設計書：「上部ステータスバー」の段に「面を開いている間の保存の失敗・未保存の帯」（出す行・面を下げる規則・背後の inert）を足した。「重なる画面の重なり順」の表の後に `--ov-z-notice` の帯を足した。
+  - 08_意思決定記録：ADR-168 を末尾に足した（その時点の最大は ADR-167＝#645）。
+  - 07_残検討事項：この件の行は無かったので、触っていない。
+- **最後の確認**：origin/main は 36cf113 のままで、載せ直しは無し。
+  - `npm run lint`：12本中0本失敗。
+  - vitest：79ファイル・1185件が通った（2件は todo）。
+  - check:version --range=origin/main..HEAD：OK。
+  - 新しい spec（status-bar-over-faces）：chromium と gate-webkit の36本すべて通った（18:22〜18:25・2.7分）。
+- **画像**（`tmp/660/step5-images/`）
+  - 390幅：`390-chromium-detail-bottom.png`・`390-gate-webkit-detail-bottom.png`（本の詳細を開いたまま、帯と下端の操作）、`390-*-settings-bottom.png`（設定）。
+  - PC 幅：`pc-1280-detail.png`（帯は全幅に出て、サイドバー・中央・詳細がそろって帯の分だけ下がる。崩れは無い）。
+- **最後の載せ直し（18:26）**：確認の途中で、origin/main が 492ed66 へ進んだ（#657 の同期欄の保存の状態・#634 の本棚の削除）。
+  - 衝突は index.html の2行だけ。
+    - css：main は 2026111720、こちらは 2026111760 で、こちらを残した。
+    - bookshelf.js：main が 2026111763 で、こちらの 2026111762 より新しかった。そこで main の最大より新しい **2026111764** に付け直した。
+  - #657 の変更（js/bookshelf.js・css/bookshelf.css の同じ辺り）は自動で合わさり、相手の変更をそのまま残した。
+  - 載せ直した後に流し直した結果（18:26〜18:29）：
+    - 新しい spec：chromium と gate-webkit の36本すべて通った。
+    - 関係 spec（#657 の sync-section-status・load-conflict-unsaved・save-failure-visible）：24件すべて通った。
+    - vitest：79ファイル・1185件が通った。
+    - lint：12本中0本失敗。
+    - check:version：OK。
