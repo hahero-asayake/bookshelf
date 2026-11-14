@@ -142,7 +142,7 @@
 | lint 一式（12本） | すべて exit 0（check:version も OK・e2e-gate は観測点 37/37） | `tmp/643/lint-all-after-612.txt` |
 | vitest | Test Files 75 passed・Tests 1114 passed・2 todo | `tmp/643/vitest-after-612.txt` |
 
-- 「起動前から手元に別の保存先の allInternalId が残っている形」は、#612 が入ったので数える条件はそろったが、この step では測っていない（未実測のまま・step4 で数える）
+- 「起動前から手元に別の保存先の allInternalId が残っている形」は step4 で数えた（下の step4 の節）
 
 ## step4 origin/main と全件比較（push の前）
 
@@ -186,3 +186,9 @@
 
 - 自分の commit 5本だけ・5本とも trailer `Issue: #643`：f6696eb test・83018ea fix・3058e2f docs・6ed51b7 docs・f6bf371 docs（＋この記録の commit）
 - 全件比較の後に origin/main が 3a0d720 まで進んだ（2本・js/ と index.html は変わっていない・main の bookshelf.js の ?v= は 2026111660 のまま）。push の前（step5）に、もう一度 rebase して lint（lint:e2e-wait が変わっている）と新しい spec を流し直す
+
+### 起動前から手元に別の保存先の allInternalId が残っている形（#612 が入った後の版・直した後・1回だけ）
+
+- 一時の spec（`tmp/643/zz-643-variant-probe.ran.spec.js`・commit しない）：手元に見本の蔵書（5冊・「すべての本」の id `fixall001`＝別の保存先の id）がある状態で空のハブにつなぎ、初期化の確認で OK → 落ち着くまで待つ → 本物の操作で1冊足す → 開き直す。数えたのは模擬のハブの中身だけ（出力 `tmp/643/variant-probe.txt`・1 passed）
+- 結果：初期化が書いた id は `lfa5frdq` の1つ（初期化は1回）。最初の保存の後、保存先の3か所（bookshelves.json・all.json・main.json）は**3つとも手元の `fixall001` に揃った**（#612 の「変えたファイルだけ送る」でも main.json は中身が違うので送られた）。1冊足した後・開き直した後も3か所とも `fixall001`・library と all は6冊・足した本あり・確認と3択は0件・画面の蔵書数は6
+- 結論：この形でも、保存先のファイル同士・保存先と手元の食い違いは**残らない**。案D の範囲を広げる必要は無い
