@@ -441,3 +441,126 @@ test.describe('(e) ホームのウィジェット選択 (390×664・イシュー
         });
     }
 });
+
+// ---- (f) アンカー付きメニュー (_placeAnchoredMenu) と帯 (イシュー#673) ----
+// 帯を出したまま記事エディタを開き、_placeAnchoredMenu で置くメニューの高さ・z・位置と帯の下端を測る。
+// 引き出しの本棚の選択 (max-height 60vh) を高くするため、保存先の見本に本棚を足す (データの用意だけ・位置は DOM で書き換えない)。
+function seedShelves673(hub, n) {
+    const put = (path, data) => { hub.seq += 1; hub.files.set(path, { content: JSON.stringify(data), etag: `"v${hub.seq}"` }); };
+    const shelves = [{ internalId: 'fixall001', slug: 'all', name: 'すべて', isSpecial: true }];
+    for (let i = 1; i <= n; i++) {
+        shelves.push({ internalId: `s673x${i}`, slug: `s673-${i}`, name: `本棚${i}` });
+        put(`private/bookshelves/s673-${i}.json`, { books: [] });
+    }
+    put('private/bookshelves.json', { bookshelves: shelves });
+}
+
+// setupSaveFailure と同じ手順。PC 幅では詳細が列なので「戻る」が無い時は押さない
+async function setupSaveFailure673(page, shelves) {
+    const hub = createHubStateForTest();
+    await shortenSyncRetryForTest(page);
+    seedHubDataForTest(hub);
+    if (shelves) seedShelves673(hub, shelves);
+    await seedHubLoginForTest(page, hub, { method: 'hub', library: false });
+    await mockHubForTest(page, hub);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    failHubWritesForTest(hub);
+    await openDetail(page);
+    await page.locator('.note-textarea[data-scope="all"]:visible').first().fill(MEMO);
+    await expect(rowButton(page, '再試行')).toHaveCount(1, { timeout: 15000 });
+    const back = page.locator('#mobile-detail-back');
+    if (await back.isVisible()) {
+        await back.click();
+        await expect.poll(() => page.evaluate(() => document.body.classList.contains('book-detail-pinned'))).toBe(false);
+    }
+    return hub;
+}
+
+const measureMenu673 = (page, menuSel, anchorSel) => page.evaluate(([m, a]) => {
+    const menu = document.querySelector(m);
+    const anchor = a ? document.querySelector(a) : null;
+    const band = document.querySelector('#app-status-bar .status-urgent');
+    const r = (el) => {
+        if (!el) return null;
+        const x = el.getBoundingClientRect();
+        return { top: Math.round(x.top), bottom: Math.round(x.bottom), left: Math.round(x.left), width: Math.round(x.width), height: Math.round(x.height) };
+    };
+    const mr = r(menu);
+    const first = menu ? [...menu.querySelectorAll('button, [role="option"], [role="menuitem"]')].find((el) => el.getBoundingClientRect().height > 0) : null;
+    let firstHit = null;
+    if (first) {
+        const fr = first.getBoundingClientRect();
+        const el = document.elementFromPoint(fr.left + fr.width / 2, fr.top + fr.height / 2);
+        firstHit = !el ? null : el.closest('#app-status-bar') ? 'band' : menu.contains(el) ? 'item' : (el.id || String(el.className) || el.tagName);
+    }
+    return {
+        visible: !!menu && !menu.hidden && !!mr && mr.height > 0,
+        menu: mr, anchor: r(anchor), isUp: menu ? menu.classList.contains('is-up') : null,
+        z: menu ? getComputedStyle(menu).zIndex : null, scrollH: menu ? menu.scrollHeight : null, styleTop: menu ? menu.style.top : null,
+        band: r(band), bandVar: getComputedStyle(document.documentElement).getPropertyValue('--status-urgent-h').trim(),
+        hasUrgent: document.body.classList.contains('has-status-urgent'),
+        innerW: innerWidth, innerH: innerHeight, firstHit,
+    };
+}, [menuSel, anchorSel]);
+
+test.describe('(f) アンカー付きメニューと帯 (イシュー#673)', () => {
+    for (const vp of [{ tag: 'pc', width: 1280, height: 800 }, { tag: 'narrow', width: 390, height: 664 }]) {
+        test.describe(`${vp.width}×${vp.height}`, () => {
+            test.use({ viewport: { width: vp.width, height: vp.height } });
+
+            test(`(f) 測る: 記事エディタのアンカー付きメニューの高さ・z・位置と帯の下端 (${vp.tag})`, async ({ page }, testInfo) => {
+                test.setTimeout(120_000);
+                await setupSaveFailure673(page, 24);
+                await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+                await page.click('#art-new');
+                await expect(page.locator('#art-edit-view')).toBeVisible();
+                const out = { vp, project: testInfo.project.name, menus: {} };
+                // 押せない時 (帯などが前にある) は理由を残し、アプリのハンドラをネイティブ click で呼んで測りを続ける
+                const press = async (sel) => {
+                    const loc = page.locator(sel).first();
+                    try { await loc.click({ timeout: 4000 }); return 'click'; } catch (e) {
+                        const why = (String(e).match(/<[^>]+> from <[^>]+> subtree intercepts pointer events|<[^>]+> intercepts pointer events/) || [String(e).slice(0, 100)])[0];
+                        await page.evaluate((s) => document.querySelector(s).click(), sel);
+                        return `native (${why})`;
+                    }
+                };
+                const edit = page.locator('#art-mode-edit');
+                if (await edit.isVisible()) out.editButton = await press('#art-mode-edit');
+                await page.waitForTimeout(500);
+                // 本棚ブロックを置くと引き出しが開く (狭幅は下から出るシート .art-side・_artOpenSheet)。入口はキャンバスの＋
+                try {
+                    await page.frameLocator('#art-canvas-frame').locator('.art-cv-ins-btn').first().click({ timeout: 5000 });
+                    out.addShelf = await press('#art-add-sheet [data-block-type="shelf"]');
+                    await page.waitForTimeout(800);
+                } catch (e) { out.addShelf = `失敗 ${String(e).slice(0, 100)}`; }
+                out.sheet = await page.evaluate(() => {
+                    const s = document.querySelector('.art-side');
+                    if (!s) return null;
+                    const r = s.getBoundingClientRect();
+                    const cs = getComputedStyle(s);
+                    return { open: s.classList.contains('is-open'), top: Math.round(r.top), bottom: Math.round(r.bottom), transform: cs.transform, overflow: cs.overflow };
+                });
+                const dir = `tmp/673/${testInfo.project.name}`;
+                fs.mkdirSync(dir, { recursive: true });
+                const cases = [
+                    { name: 'art-more-menu', btn: '#art-more-btn', menu: '#art-more-menu' },
+                    { name: 'art-drawer-shelf-popover', btn: '#art-drawer-shelf-btn', menu: '#art-drawer-shelf-popover' },
+                    { name: 'art-add-menu', btn: '#art-blocks .art-add-btn', menu: '#art-blocks .art-add-menu', anchor: '#art-blocks .art-add' },
+                ];
+                for (const c of cases) {
+                    const btn = page.locator(c.btn).first();
+                    if (!(await btn.isVisible().catch(() => false))) { out.menus[c.name] = { opened: false, reason: 'ボタンが見えない' }; continue; }
+                    const via = await press(c.btn);
+                    await page.waitForTimeout(300);
+                    out.menus[c.name] = { opened: true, via, ...(await measureMenu673(page, c.menu, c.anchor || c.btn)) };
+                    await page.screenshot({ path: `${dir}/${vp.tag}-${c.name}-before.png` });
+                    await page.evaluate((s) => document.querySelector(s).click(), c.btn).catch(() => {});
+                    await page.waitForTimeout(200);
+                }
+                fs.writeFileSync(`${dir}/measure-${vp.tag}.json`, JSON.stringify(out, null, 2));
+                console.log(`[673-measure] ${JSON.stringify(out)}`);
+            });
+        });
+    }
+});
