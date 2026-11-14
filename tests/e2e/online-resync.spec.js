@@ -5,6 +5,7 @@
 import { test, expect } from './helpers/test-base.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { HUB_BASE, createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest } from './helpers/gate-hub.js';
+import { createMockGitHubForTest, seedGitHubDataForTest, seedGitHubLoginForTest, mockGitHubForTest, waitForGitHubFileContainsForTest } from './helpers/gate-github.js';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -96,4 +97,188 @@ test('最後の自動の再試行の送信中に電波が戻っても、その�
     await expect.poll(() => hubHas(hub, MEMO), { timeout: 10000 }).toBe(true);
     await expect(statusBar(page)).toBeHidden();
     expect(net.attempts).toBe(4); // 落とした送信は4回だけ = 電波が戻った後の送り直しは1回で届いた
+});
+
+test('GitHub でも、電波なしのまま開き直した端末は、電波が戻ると読み直して、前の回に書いた短文メモを届ける (イシュー#617 穴1)', async ({ page, context }) => {
+    const MEMO = 'GitHub で電波なしの間に書いて、開き直した短文メモ';
+    const gh = createMockGitHubForTest();
+    seedGitHubDataForTest(gh);
+    await seedGitHubLoginForTest(page, gh);
+    await mockGitHubForTest(page, gh);
+    const cut = { on: false, dropped: 0 };
+    await context.route('https://api.github.com/**', (route) => {
+        if (!cut.on) return route.fallback();
+        cut.dropped += 1;
+        return route.abort('internetdisconnected');
+    });
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+
+    // 電波なしの間に書く (GitHub に届かない)
+    cut.on = true;
+    await context.setOffline(true);
+    await writeMemo(page, MEMO);
+    await expect.poll(() => cut.dropped, { timeout: 5000 }).toBeGreaterThan(0);
+
+    // 電波なしのまま開き直す (ハブの時と同じ作り方: ブラウザの電波だけ一時的に戻し、GitHub への通信は落としたまま)
+    await context.setOffline(false);
+    await page.reload();
+    await expect(page.getByText('GitHub からの読み込みに失敗しました')).toBeVisible({ timeout: 15000 });
+    await context.setOffline(true);
+    await expect(memoBox(page)).toHaveValue(MEMO); // 手元には残っている
+
+    // 電波が戻る (ほかには何もしない)
+    cut.on = false;
+    await context.setOffline(false);
+    await waitForGitHubFileContainsForTest(gh, NOTES, MEMO, 10000);
+});
+
+// ===== 二重に送らない・保存中に重ならない (イシュー#617 step3) =====
+
+const failureRow = (page) => page.locator('#app-status-bar .status-row[data-sync-failure]');
+const pendingFlag = (page) => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'));
+// ハブの模擬まで届いた、読み込み以外の通信の数 (保存の1回は HEAD で始まり、まとめ書きの POST が続く)
+const hubSends = (hub) => hub.requests.filter((r) => r.method !== 'GET').length;
+// 保存の予約 (800ms) と、短くした自動の再試行の番をまたいで、落ち着くまで待つ
+const settle = (page, ms = 2500) => page.waitForTimeout(ms);
+
+// 自動の再試行の間隔を差し替える (E2E 用の口・js/sync-failure.js)。1回目の再試行はすぐ、その後の番は60秒後にする =
+// 知らせが出た後に電波が戻った時、10秒以内に届くのは 'online' の送り直しだけになる
+const useRetryDelays = (page, delays = [300, 60000, 60000]) => page.addInitScript((d) => {
+    localStorage.setItem('bookshelf.flag.syncRetryDelaysMs', d);
+}, JSON.stringify(delays));
+
+// ハブの模擬の手前に置く見張り。cut の間は通信を落とす。texts のどれかを本文に持つ書き込みは、ハブへ届いた回数
+// (delivered) と、同時に流れている数の最大 (maxInFlight) を数え、delayMs があればその分だけ遅らせる
+async function watchHub(context, page, texts) {
+    const w = { cut: false, dropped: 0, delayMs: 0, inFlight: 0, maxInFlight: 0, delivered: Object.fromEntries(texts.map((t) => [t, 0])) };
+    const carried = (req) => { const body = req.postData() || ''; return texts.filter((t) => body.includes(t)); };
+    await context.route(`${HUB_BASE}/**`, async (route) => {
+        const hit = w.cut ? [] : carried(route.request());
+        if (hit.length && w.delayMs) await new Promise((resolve) => setTimeout(resolve, w.delayMs));
+        if (w.cut) { w.dropped += 1; return route.abort('internetdisconnected'); }
+        hit.forEach((t) => { w.delivered[t] += 1; });
+        return route.fallback();
+    });
+    const carries = (req) => req.url().startsWith(HUB_BASE) && carried(req).length > 0;
+    page.on('request', (req) => { if (carries(req)) { w.inFlight += 1; w.maxInFlight = Math.max(w.maxInFlight, w.inFlight); } });
+    const done = (req) => { if (carries(req)) w.inFlight -= 1; };
+    page.on('requestfinished', done);
+    page.on('requestfailed', done);
+    return w;
+}
+
+// 電波なしの間に短文メモを書き、1回目の自動の再試行も失敗して、知らせが出るところまで進める
+async function writeMemoOffline(page, context, w, memo) {
+    w.cut = true;
+    await context.setOffline(true);
+    await writeMemo(page, memo);
+    await expect(failureRow(page)).toBeVisible({ timeout: 10000 });
+    expect(await pendingFlag(page)).toBe('1');
+}
+
+async function expectSettledClean(page) {
+    await expect(statusBar(page)).toBeHidden();
+    await expect.poll(() => pendingFlag(page), { timeout: 10000 }).toBe(null);
+}
+
+test('(a) 電波なしの間に書いた短文メモは、電波が戻ると1回だけ送られ、知らせと保存待ちの印が消える', async ({ page, context }) => {
+    const MEMO = '二重に送らないことを見る短文メモ';
+    await useRetryDelays(page);
+    const hub = await prepareHub(page);
+    const w = await watchHub(context, page, [MEMO]);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    await writeMemoOffline(page, context, w, MEMO);
+
+    w.cut = false;
+    await context.setOffline(false);
+    await expect.poll(() => hubHas(hub, MEMO), { timeout: 10000 }).toBe(true);
+    await expectSettledClean(page);
+
+    await settle(page);
+    expect(w.delivered[MEMO]).toBe(1);
+});
+
+test('(b) 電波の切り替えが短い間に2回続いても、送るのは1回だけ', async ({ page, context }) => {
+    const MEMO = '切り替えが2回続いた時の短文メモ';
+    await useRetryDelays(page);
+    const hub = await prepareHub(page);
+    const w = await watchHub(context, page, [MEMO]);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    await writeMemoOffline(page, context, w, MEMO);
+
+    // 戻る → 切れる → 戻る、を間を置かずに行う
+    w.cut = false;
+    await context.setOffline(false);
+    w.cut = true;
+    await context.setOffline(true);
+    w.cut = false;
+    await context.setOffline(false);
+    await expect.poll(() => hubHas(hub, MEMO), { timeout: 10000 }).toBe(true);
+    await expectSettledClean(page);
+
+    await settle(page);
+    expect(w.delivered[MEMO]).toBe(1);
+});
+
+test('(c) 送信中に電波が戻っても同時には送らず、終わった後に、送信中に書き直した分を1回だけ送る', async ({ page, context }) => {
+    const FIRST = '送信中の確認で先に書いた短文メモ';
+    const SECOND = '送信中の確認で書き直した短文メモ';
+    await useRetryDelays(page);
+    const hub = await prepareHub(page);
+    const w = await watchHub(context, page, [FIRST, SECOND]);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+    await writeMemoOffline(page, context, w, FIRST);
+
+    // 電波が戻る。短文メモを運ぶ送信は 2.5秒かかる
+    w.delayMs = 2500;
+    w.cut = false;
+    await context.setOffline(false);
+    await expect.poll(() => w.inFlight, { timeout: 10000 }).toBe(1);
+
+    // その送信中に、もう一度 電波が切れて戻り (ハブには届く)、短文メモを書き直す
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await memoBox(page).fill(SECOND);
+    await expect.poll(() => hubHas(hub, SECOND), { timeout: 15000 }).toBe(true);
+    await expectSettledClean(page);
+
+    await settle(page, 4000);
+    expect(w.maxInFlight).toBe(1);
+    expect(w.delivered[FIRST]).toBe(1);
+    expect(w.delivered[SECOND]).toBe(1);
+});
+
+test('(d) 保存待ちが無い時は、電波が戻っても何も送らない', async ({ page, context }) => {
+    const MEMO = '保存待ちが無い時の確認の短文メモ';
+    await useRetryDelays(page);
+    const hub = await prepareHub(page);
+    const w = await watchHub(context, page, [MEMO]);
+    await bootAppForTest(page);
+    await waitForHubStartupForTest(page);
+
+    // まだ一度も保存に失敗していない端末
+    await settle(page);
+    let before = hubSends(hub);
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await settle(page);
+    expect(hubSends(hub)).toBe(before);
+
+    // 電波なしの間の分を、電波が戻って送り終えた後
+    await writeMemoOffline(page, context, w, MEMO);
+    w.cut = false;
+    await context.setOffline(false);
+    await expect.poll(() => hubHas(hub, MEMO), { timeout: 10000 }).toBe(true);
+    await expectSettledClean(page);
+    await settle(page);
+    before = hubSends(hub);
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await settle(page);
+    expect(hubSends(hub)).toBe(before);
+    expect(w.delivered[MEMO]).toBe(1);
 });
