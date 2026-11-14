@@ -128,3 +128,48 @@
     - 直した CSS と直す前の CSS で結果が同じ＝本件の CSS は関係しない。本件は js を変えていない。
   - 原因の見立て：この1本は #679（「sync-conflict-overwrite.spec.js のハブの1本が main の CI で赤」）が扱った揺れ。#679 は、ハブの一覧の控え（ETag の表）の3秒の境目が原因と特定し、7ce3837 fix・49bb4b0 test で直した。どちらも base 95d6f9d より後に origin/main へ入っている（`merge-base --is-ancestor 6539649 95d6f9d` は no、origin/main には有り）。base 側の1回が通ったのは境目の揺れによる。
   - 扱い：本件では直さない。step4 で origin/main へ載せ直すと #679 の直しが入るので、載せ直した後にこの spec をもう一度流して確かめる。
+
+## §4 設計書・before/after・載せ直し（step4・2026-11-14）
+
+### 4-1 設計書（docs/ui-standards.md・14094b8）
+
+- §2-11 の下（「再発事例: 公開記事ストアの…」の次）に1行足した：保存の失敗・未保存の帯が出ている間、面は帯の下から始める（印 `data-ov-below-notice`・#660/#671）。全画面の面（size full＝記事エディタ〈PC 幅を含む〉・長文メモ・プレビュー）も対象で、中身の高さは画面ではなく下げた箱に合わせる（`.ov-full` を `height: 100%` にする規則を css の帯の節に1つ置く。面ごとに高さを書かない）。100dvh のままだと PC 幅は見出しのボタンが帯の下に入って押せず、狭幅は下端が画面の外に出ていた（守りは status-bar-over-faces.spec.js の (g)）。
+- 末尾の変更履歴に1行足した：「2026-11-14 §2-11 に、保存の失敗・未保存の帯が出ている間は全画面の面（記事エディタの PC 幅を含む・長文メモ・プレビュー）も帯の下から始め、中身の高さを下げた箱に合わせることを追記（イシュー#682）。」
+
+### 4-2 before/after（記事エディタ・閲覧状態。after は載せ直した後の 14094b8 で測り直した・`tmp/682/after-rebased/<project>/*.json`）
+
+| 幅・帯 | before（95d6f9d） | after（載せ直し後） | 通常の click（その他・編集） |
+|---|---|---|---|
+| 1280×800・帯あり（下端 59.4） | 中身 30–830（800）・ボタン上端 34・中心は帯の行 | 中身 60–800（740）・上端 64・中心はボタン自身 | before NG（timeout）→ after OK |
+| 1280×800・帯なし | 中身 0–800（800）・上端 4 | 同じ（0–800・上端 4） | OK → OK |
+| 390×844・帯あり（下端 78.4） | 中身 79–923（844）＝下端が 79px 外 | 中身 79–844（765）・上端 91 | OK → OK |
+| 390×844・帯なし | 中身 0–844（webkit 843.98）・上端 12 | 同じ | OK → OK |
+
+- chromium と gate-webkit で同じ値（帯の下端だけ 78.4 / 78.3）。step2 の after（830d178）とも同じ値。
+
+### 4-3 比較画像（before と after を横に並べたもの・tmp は gitignore）
+
+- `tmp/682/compare-pc-chromium.png`・`tmp/682/compare-pc-gate-webkit.png`（PC・帯あり：直す前は見出しが帯の下で編集ボタンの下端だけが見える／直した後は ← 記事の一覧・題・編集・⋯ が帯の下に全部出る）
+- `tmp/682/compare-pc-noband-chromium.png`・`…-gate-webkit.png`（PC・帯なし：直す前と直した後で同じ見た目）
+- `tmp/682/compare-narrow-chromium.png`・`…-gate-webkit.png`（狭幅・帯あり）
+- 作り方：`tmp/682/compare.mjs`（Playwright で2枚を並べたページを撮る・サーバは使わない）。元の画像は `tmp/682/<project>/*-before*.png` と `tmp/682/after/<project>/*-after.png`。編集状態の before は `tmp/682/<project>/pc-art-editor-band-before-editmode.png`。
+
+### 4-4 載せ直しと最終の確かめ
+
+- origin/main 9b25e4c へ載せ直した（95d6f9d から16 commit 先・衝突なし・本件の commit 7 本は 7e33db3〜14094b8）。間に入ったコードは #677（f6889f2）・#679（7ce3837）の js と index.html の ?v= だけで、css/bookshelf.css は変わっていない。
+- `?v=`：bookshelf.css は 2026111893 のまま。origin/main の最大 2026111892、走っている worktree の最大 2026111892 より新しい。`check:version --range=origin/main..HEAD` は OK。
+- 14094b8 で流した（20:41〜20:44）：`npm run lint` 12 本中 0 本失敗、`npm test` 1201 passed・2 todo、status-bar-over-faces.spec.js（chromium・gate-webkit）54 passed。
+- sync-conflict-overwrite.spec.js（chromium・`--repeat-each=3`）は 12 passed。§3 で落ちたハブの回は、#679 の直しが入った後は通る。
+
+### 4-5 obsidian の差分案（vault は編集していない・②の判断を待つ）
+
+- **04_画面設計書（L340「帯が出ている間は、外枠 (`body`) と全画面の面 (…) を帯の高さ (`--status-urgent-h`) だけ下げ、下端は画面の下に留める。」の直後に1文足す）**：
+  - 案：「全画面の段階 (size full＝記事エディタ (PC 幅を含む)・長文メモ・プレビュー) は、中身 (`.ov-full`) の高さも下げた箱に合わせる (`height: 100%`。帯が無い時は 100dvh のまま)。」
+- **08_意思決定記録（ADR を1つ足す・番号は書く時点の最大＋1＝今は ADR-177）**：
+  - 見出し：「ADR-177 帯の分だけ下げた全画面の面は、中身 (.ov-full) の高さも下げた箱に合わせる。面ごとに高さを書かない (2026-11-14・イシュー#682・②承認)」
+  - 背景：ADR-168/173 は帯が出ている間に面の箱 (印 data-ov-below-notice) を帯の下へ下げた。しかし全画面の段階の中身は `.ov-full` と記事エディタ固有の規則で 100dvh のまま、箱からはみ出した。PC 幅は `.modal.show` が中央寄せなので、上へ 30px (1280×800・帯 60px) はみ出し、記事エディタの見出しのボタン (編集・公開・完了・その他) が帯の下に入って click が帯の行に取られた。狭幅は stretch なので、下端が帯の分 (390×844 で 79px) 画面の外に出た。守りの E2E は 390×844 だけで、PC 幅を測っていなかった。
+  - 決定：(1) 帯の節に `body.has-status-urgent [data-ov-below-notice] > .ov-full { height: 100%; }` を1つ置く。帯が無い時は 100dvh のまま。(2) 記事エディタ固有の `height: 100dvh` (`.art-modal-content.art-editing`・≤600px の `#publish-pages-modal …`) は `.ov-full` と重複しているので外し、段階の規則に寄せる (`.art-editing` と setSize full は同時に付く)。
+  - 理由：中身の高さを面ごとに書くと、帯の規則に勝つための詳細度の競り合い (≤600px の ID 付きの規則) が面ごとに起きる。段階の1か所で箱に合わせれば、長文メモ・プレビューも同じ規則で直り、これから足す全画面の面も setSize full だけで済む。
+  - 却下した案：(B) 各所の高さを `calc(100dvh - var(--status-urgent-h, 0px))` にする (4か所に書く＝面ごとに書く形に近い)。(C) 全画面の時だけ PC の `.modal.show` を stretch にする (見出しは出るが、下端が帯の分だけ画面の外に出る)。
+  - 確かめ方：`tests/e2e/status-bar-over-faces.spec.js` の (g) (1280×800 と 390×844・chromium と gate-webkit)。記録は `scripts/verify/682-results.md`。
+- 03_詳細設計書：クラス・メソッドの変更が無いので更新は不要と考える。
