@@ -69,6 +69,7 @@ npm run gate:report -- --collect
 | 保存の失敗の自動の再試行の間隔を短くする（再試行が尽きた後の知らせまで確かめる時。既定は 5秒・15秒・45秒で、尽きるまで約66秒） | `gate-sync-retry.js`：`shortenSyncRetryForTest(page)`（既定 `[300, 300, 300]`。アプリを開く前に呼ぶ・イシュー#632） |
 | ハブの中身・書き込み・削除の要求を読む（保存先3つを同じ形で回す spec 用。門以外の shelf-file-delete・book-memo-file-lifecycle・save-failure-visible が使う） | `hubStoreForTest(hub)`：`has`・`readJSON`・`list`・`writes`・`deleteRequests`・`failNextWrites(n)`・`failuresLeft`（`storage-fakes.js` の GitHub・ローカルの模擬と同じ名前） |
 | 保存先を GitHub にする | `gate-github.js`：`createMockGitHubForTest` → `seedGitHubDataForTest` → `seedGitHubLoginForTest` → `mockGitHubForTest`（届くのを待つのは `waitForGitHubFileContainsForTest`） |
+| 接続を画面の操作で通す（初回の J1-3・J1-4・イシュー#629） | ハブ：`createHubStateForTest`（同じ worker で繰り返すなら `resetHubStateForTest`）→ `mockHubForTest` → `mockHubSessionForTest` → `mockGoogleSignInForTest` → `bootAppForTest`（`seedHubLoginForTest` は使わない）。GitHub：`createMockGitHubForTest` → `seedGitHubDataForTest` → `mockGitHubForTest` → `mockGitHubConnectForTest` → `bootAppForTest`（`seedGitHubLoginForTest` は使わない。`mockGitHubDeviceFlowForTest` とは併用しない） |
 | 別の端末（2つ目のブラウザコンテキスト）で同じ保存先を開く | `gate-device.js`：`prepareOtherDeviceForTest(page, hub または gh)`・`closeOtherDeviceForTest` |
 | 保存先をローカルのフォルダにする（ブラウザの中の OPFS） | `gate-local.js`：`stubFolderPickerForTest`・`seedLocalLibraryOnceForTest`・`seedLocalFolderForTest`・`waitForLocalFileContainsForTest`・`clearLocalCacheForTest` |
 
@@ -142,18 +143,20 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 - `npm run lint:known-red`（CI の e2e レグ）が、各件のイシュー番号・観測点ID・テスト名の実在を確かめる。
 - 直すイシューが入ったら、そのイシューの側で一覧から消す。
 
-## 網羅（イシュー#590 の J1〜J4 の分・2026-11-14）
+## 網羅（イシュー#590 の J1〜J4 の分・#629 で J1-3・J1-4 のハブと GitHub・J3-5 を足した・2026-11-14）
 
 | 観測点 | テスト | 状態 |
 |---|---|---|
 | J1-1 | `j1-1-first-run-guide.spec.js` | 投入済み・緑 |
 | J1-2 | `j1-2-storage-choice-pc`・`j1-2-storage-choice-phone` | 投入済み・緑（PC と iPhone 相当） |
-| J1-3 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-github`（Device Flow） | 投入済み・緑。ハブの分は未達（ハブのログインの模擬がまだ無い） |
-| J1-4 | `j1-3-connect-local`（フォルダ） | 投入済み・緑。GitHub の分は**未達・GitHub の状態を持つ模擬が要る**。ハブの分は未達 |
+| J1-3 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-github`（Device Flow）・`j1-3-connect-hub`（ハブのログイン） | 投入済み・緑。ハブの分は chromium・webkit とも緑 |
+| J1-4 | `j1-3-connect-local`（フォルダ）・`j1-3-connect-hub`（ハブ）・`j1-4-github-save-reload`（GitHub） | 投入済み・緑。保存先として使っていることは、選択肢ではなく画面の「この保存先を使用中です。」（ハブ）・選択肢の「GitHub」とリポジトリの蔵書（GitHub）で確かめる（保存先を決めていない端末でも、選択肢は「ハブ」を表示するため）。GitHub の分は PC 幅なので webkit では流さない |
 | J2-1・J2-3・J2-4 | `j2-1-import-entry`・`j2-3-import-file`・`j2-4-import-bookmarklet` | 投入済み・緑 |
 | J2-2・J2-5・J2-6 | `j2-2-import-paste`・`j2-5-import-no-duplicate` | 投入済み・既知の赤（#622・取込の直後すぐ再読込すると冊数が 0 になる。3秒待つと通る。2026-11-14 #590 で実測） |
 | J3-1〜J3-4 | `j3-1-shelf-to-detail`〜`j3-4-back-forward-esc-pc`・`-phone` | 投入済み・緑 |
-| J3-5 | `j3-5-many-books.spec.js` | テストあり・測り方の仕上げ待ちのため未投入（ページの中で測る形＝案A を仕上げてから入れる。途中の版は kuroko の core/tmp/590-j3-5.patch） |
+| J3-5 | `j3-5-many-books.spec.js` | 投入済み・緑。913冊・390×844・CPU 6倍で、ページの中で測った時間（`recordInPageTimingsForTest`）を sort-perf-budget と同じ基準（並び順 380／直後の本 420、昇降 340／直後の本 320ms）と比べる。記録が済むのは `toHaveCount` で待つ（`expect(…).toHaveAttribute` で待つと、その問い合わせがページを数秒塞ぎ、測る値が遅れる・#629）。chromium だけ（CPU を遅くするのに CDP を使う） |
 | J4-1〜J4-3 | `j4-memo.spec.js` | 投入済み・緑（#611 の症状＝「完了」のあともボタンが「長文メモを書く」のまま、は #620 の本の詳細の更新の修正で出なくなった。2026-11-14 に3回とも緑） |
 
 webkit（gate-webkit）で流さない分と理由は、playwright.config.js の GATE_WEBKIT_IGNORE に1行ずつ書いてある。
+
+観測点37のうち、未達は J5-1・J6-5 の2点（2026-11-14 #629 時点の `npm run lint:e2e-gate`）。どちらもテストの本体は上の「J5・J6 の網羅」の patch にあり、直す側のイシュー（#595・#603）の commit は main に入っているが、テストはまだ入っていない。37点がそろうまで、CI の `--strict-coverage` は付けない。
