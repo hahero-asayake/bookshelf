@@ -5282,6 +5282,7 @@ class VirtualBookshelf {
         };
 
         let _emitCreated = null, _emitUpdated = null;
+        let _reparented = false;
         try {
             if (this.currentEditingBookshelf) {
                 const editing = this.currentEditingBookshelf;
@@ -5296,7 +5297,7 @@ class VirtualBookshelf {
                 const curParent = this._normalizeParentKey(editing.parent);
                 const newParent = this._normalizeParentKey(parentId);
                 if (newParent !== curParent) {
-                    await this._applyReparentWithConfirm(editKey, newParent);
+                    _reparented = await this._applyReparentWithConfirm(editKey, newParent);
                     // キャンセル時は親のみ据え置き (他フィールドは保存済み)
                 }
                 // slug 変更があれば rename（ファイル削除も走る）
@@ -5325,7 +5326,26 @@ class VirtualBookshelf {
         this.renderBookshelfList();        // 本棚管理モーダル
         this.renderBookshelfOverview();    // ホーム本棚カード
         this._updateBookshelfViewTitle();  // 現在開いている本棚のタイトル
+        // 開いている詳細の本棚のチップと選択肢 (イシュー#623)。親を付け替えた時は、子の本棚の本まで新しい親へ補充される
+        const changed = _emitUpdated
+            ? (this.bookshelfManager.getBySlug(slug) || this.bookshelfManager.getById(_emitUpdated.key))
+            : _emitCreated;
+        const changedShelves = changed ? [changed] : [];
+        if (changed && _reparented) changedShelves.push(...this.bookshelfManager.getDescendants(this.bookshelfManager._keyOf(changed)));
+        this._applyShelfChangeToDetail(changedShelves);
         this.closeBookshelfForm();
+    }
+
+    // 本棚そのものの変更 (名前・アイコンの変更・作成・親の付け替え・削除) を、開いている本の詳細の本棚セクションへ反映する
+    // (イシュー#623)。渡す本は、変わった本棚に入っている本と、開いている詳細の本。所属ではなく本棚そのものが変わるので、
+    // 開いている本がその本棚に入っていなくても書き換える (編集モードの「本棚を追加...」の選択肢には、入っていない本棚が並ぶ)。
+    _applyShelfChangeToDetail(shelves) {
+        const asins = [];
+        for (const bs of shelves) {
+            for (const asin of (bs.books || [])) asins.push(asin);
+        }
+        if (this._lastDetailBook) asins.push(this._lastDetailBook.asin);
+        this._applyDetailShelvesEverywhere(asins);
     }
 
     _generateDefaultSlug() {
@@ -5358,9 +5378,10 @@ class VirtualBookshelf {
         if (!result) return;
 
         await this.saveUserData();
-        // プラグイン通知: 削除された本棚 (カスケード分も含む)
+        // 削除された本棚 (カスケード分も含む)。消す前に受け取った本棚なので、入っていた本 (books) はそのまま残っている
+        const removed = _removedTargets.length ? _removedTargets : [bookshelf];
+        // プラグイン通知
         if (this.pluginAPI) {
-            const removed = _removedTargets.length ? _removedTargets : [bookshelf];
             for (const t of removed) {
                 this.pluginAPI._emit('bookshelf:removed', { internalId: t.internalId, meta: { ...t } });
             }
@@ -5372,6 +5393,8 @@ class VirtualBookshelf {
             this.currentBookshelf = 'all';
             this.applyFilters();
         }
+        // 開いている詳細の本棚のチップと選択肢 (イシュー#623)。開いている本棚を切り替えた後に呼ぶ (チップの強調を今の本棚に合わせる)
+        this._applyShelfChangeToDetail(removed);
     }
 
     async addBookToBookshelf(asin) {
