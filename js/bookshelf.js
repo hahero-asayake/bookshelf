@@ -2865,6 +2865,8 @@ class VirtualBookshelf {
             DEVICE_SETTING_KEYS.forEach(k => { if (this.userData.settings && this.userData.settings[k] !== undefined) dev[k] = this.userData.settings[k]; });
             localStorage.setItem(DEVICE_SETTINGS_STORAGE_KEY, JSON.stringify(dev));
         } catch (e) {}
+        // 端末の控えへ書く前に「すべての本」の books を bookOrder.all に揃える (イシュー#662)
+        this._ensureAllShelf();
         const persisted = { ...this.userData };
         if (persisted._storage) {
             const { libraryBooks, ...rest } = persisted._storage;
@@ -4113,7 +4115,8 @@ class VirtualBookshelf {
             // 相手の値は「自分の変更」ではないので、更新時刻の控え (ADR-137) にも入れる (次の保存で自分の時刻を付けない)
             if (this._syncedSnap) keys.filter((k) => k !== '_updatedAt').forEach((k) => { this._syncedSnap[k] = JSON.stringify(sm[k]); });
         }
-        // 端末内の控えにも入れる (saveUserData と同じ形。書誌の写し libraryBooks は端末内に持たない)
+        // 端末内の控えにも入れる (saveUserData と同じ形。書誌の写し libraryBooks は端末内に持たない・「すべての本」はイシュー#662)
+        this._ensureAllShelf();
         const persisted = { ...this.userData };
         if (persisted._storage) {
             const { libraryBooks, ...rest } = persisted._storage;
@@ -4299,12 +4302,10 @@ class VirtualBookshelf {
     // 未評価・本棚別 Top5 と左ツリーの本棚の冊数は、ここを通さないと再読込まで古いまま残る。
     // (1) all 本棚の books を bookOrder.all と同じ配列に揃え直す。除外・削除は bookOrder.all を filter で別の配列に
     //     置き換えるため、揃えないと左ツリーの「すべての本」が除外・削除した本まで数えたまま残る
-    //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚は _ensureAllShelf が必ず置く (イシュー#636)。
+    //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚を置くのも揃えるのも _ensureAllShelf (イシュー#636・#662)。
     // (2) 左ツリーと、ホーム表示中ならダッシュボード (蔵書 N 冊・蔵書数・蔵書0の案内) を描き直す。
     _onLibraryChanged() {
-        const allShelf = this._ensureAllShelf();
-        const order = this.userData && this.userData.bookOrder && this.userData.bookOrder.all;
-        if (allShelf && Array.isArray(order)) allShelf.books = order;
+        this._ensureAllShelf();
         this.updateBookshelfSelector();
     }
 
@@ -4315,13 +4316,18 @@ class VirtualBookshelf {
     // 作る時の books は bookOrder.all と同じ配列にする。id は、本棚がある時はその id を _storage.allInternalId に揃える
     // (書き出しは all.json に _storage.allInternalId、bookshelves.json にメモリの本棚の id を書くため、揃えないと食い違う)。
     // _storage が無い時 (保存先へまだ書いていない) は作らない。
+    // 既にある本棚の books も、呼ばれるたびに bookOrder.all と同じ配列に揃える (正本は all.json に書く bookOrder.all・イシュー#662)。
+    // 起動時の JSON.parse と書き出しの bookOrder.all の置き換えで別の配列になり、本を足す・除外する経路は bookOrder.all だけを
+    // 変えるため、揃えないとツリーの冊数・記事の引き出しと、saveUserData が端末へ書く控えが古いまま残っていた。
     _ensureAllShelf() {
         const ud = this.userData;
         if (!ud) return null;
         if (!Array.isArray(ud.bookshelves)) ud.bookshelves = [];
         if (!ud.bookOrder) ud.bookOrder = {};
-        if (!Array.isArray(ud.bookOrder.all)) ud.bookOrder.all = [];
         let shelf = ud.bookshelves.find(b => b.isSpecial);
+        // bookOrder.all が無い時だけ、本棚の books から作る (本棚の books を空で上書きしない)
+        if (!Array.isArray(ud.bookOrder.all)) ud.bookOrder.all = (shelf && Array.isArray(shelf.books)) ? shelf.books : [];
+        if (shelf) shelf.books = ud.bookOrder.all;
         if (!shelf) {
             shelf = {
                 id: 'all',
