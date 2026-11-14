@@ -80,3 +80,50 @@
 - 一時の spec（`tmp/643/zz-643-memo-probe.spec.js`・commit しない）：PUT を1件3秒に遅らせ、初期化の途中に本を足し、その本の詳細の短文メモに書く（書いた時点で all.json も notes.json もまだ保存先に無い）→ 落ち着くまで待つ → 開き直す
 - 結果（出力 `tmp/643/memo-probe-after.txt`）：notes.json への PUT 1回・settings.json への PUT 1回。保存先の notes.json にメモがある（最初の保存の後・開き直した後とも）。開き直した後の本の詳細にもメモが出る。確認・3択は0件
 - 新しい spec には足さない：直す前の害（2回目の初期化が notes.json・settings.json を既定値で書き直す）は、新しい spec の「7ファイルへの PUT が各1回」で捕まえている。直す前の版ではこの一時の spec を流していない（メモが消えるかは未実測）
+
+## step3 関係する spec・vitest・lint 一式・設計書
+
+### 基にした版
+
+- origin/main が e7f5e0d（bookshelf-list.js の ?v= の更新）まで進んでいたので、その上に rebase した（28d7967 test・4ccde67 fix・a47d3ca docs）。#612 はまだ入っていない
+- rebase で、main の ?v= の最大値が 2026111650 になっていた。bookshelf.js の ?v= を、main と他の作業中の worktree の最大値（2026111650）より新しい 2026111651 にした（commit を分けた）
+
+### 関係する spec（chromium・PORT=8143・workers=4・出力 `tmp/643/related-specs.txt`）
+
+- 対象：依頼の3本（sync-offline-reconnect・boot-confirm-dialog・dashboard-stats-after-manual-add）、#633 の first-run-add-article-drawer（main に入ったので、そのまま流した）、新しい spec、tests/e2e と tests/e2e/gate でファイル名に sync・boot・first-run・hub・conflict・offline を含むもの（計22ファイル）
+- 結果：**63件すべて緑**（63 passed・1.3分・赤0件）。新しい赤が無いので、origin/main との突き合わせはしていない
+
+| ファイル | 件数 |
+|---|---|
+| boot-confirm-dialog・dashboard-stats-after-manual-add・first-run-add-article-drawer・first-run-save-during-init-empty・sync-offline-reconnect | 依頼の分（すべて緑） |
+| gate/j1-1・j1-3 ハブ/GitHub・j1-4・j6-2・j6-3・j6-4・j6-5・j8-4・j8-offline | 門の分（すべて緑） |
+| github-sync-resilience・online-resync・publish-conflict-hub・startup-background-sync・sync-chosen-mark・sync-conflict・sync-first-connect | 保存・起動まわり（すべて緑） |
+
+### vitest（出力 `tmp/643/vitest.txt`）
+
+- Test Files 74 passed（74）・Tests 1099 passed・2 todo。exit 0
+
+### lint 一式（CI と同じ並び・出力 `tmp/643/lint-all.txt`）
+
+| lint | 結果 |
+|---|---|
+| check:version --range=origin/main..HEAD | OK（変更した js はすべて ?v= を上げてある） |
+| lint:css | OK（exit 0） |
+| lint:e2e-goto | OK（146ファイルで0件） |
+| lint:e2e-wait | OK（147ファイルで0件） |
+| lint:breakpoint | OK |
+| lint:esc | OK |
+| lint:js-color | OK |
+| lint:internal-refs | OK（上限82以内） |
+| lint:e2e-gate | OK（@gate 41本・違反0件・観測点 37/37） |
+| lint:copy | OK（119/119） |
+| lint:terms | OK |
+| lint:known-red | OK（既知の赤 2件・違反0件） |
+
+- 上の lint・spec・vitest は e7f5e0d の上（?v= 2026111651）で流した。その後、origin/main が #612 の取り込み（76e122c）まで進み、#612 も bookshelf.js の ?v= を同じ 2026111651 にしていたので、check:version を流し直すと「js/bookshelf.js の ?v= が更新されていない」で落ちた → 下の「#612 の上に載せ直した後」で直して流し直した
+
+### 設計の記述
+
+- docs/char/boot-flow.md §1-5：起動の読込の間（確認が出ている間も含む）は保存が入口で待つ、という段落を足した
+- obsidian 03_詳細設計書：L87 の `initSync()` の行（同期方式別の初期化）に、`_beginBootLoad()`・`_waitBootLoads()` で読込の間は保存が待つ（2回目の initEmpty を呼ばない）ことを書き足した。1行の書き換えで、行数は変わっていない（609 行のまま）
+- obsidian 07_残検討事項：該当する行は無かった（「#643」「initEmpty が2回」「初期化が2回」で0件）＝更新していない

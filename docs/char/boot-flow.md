@@ -36,6 +36,8 @@
 
 両関数とも同じ構造：`updateSyncStatus('loading')` → `detectFormat()` (await、ネットワークI/O) → **`format === 'empty'`の時だけconfirm** → `initEmpty()`/`loadAll()` (await) → 描画更新。confirmは`detectFormat()`の結果を待った後、同期本体処理の手前に出る。
 
+この読込の間 (confirmが出ている間も含む) は `_beginBootLoad()` で印を立て、保存 (`syncToObsidianFolder()`) は入口の `_waitBootLoads()` で読込が終わるまで待つ (ローカルの`selectObsidianFolder`も同じ)。初期化の途中に本を足しても、保存が保存先を「空」と見て2回目の `initEmpty()` を呼ばない (イシュー#643)。
+
 ## 2. #518 attempt1で8件落ちた原因（実機再現で確定。推測ではない）
 
 ### 2-1. 再現条件と手順
