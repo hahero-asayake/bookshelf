@@ -238,3 +238,40 @@ step1 の案A＋(1) を作業ツリーに一時的に当てて流した（`node 
 
 - #657（作業中・step4）が、設定の同期欄に `#sync-state-row`（3つの保存先に共通の状態の行で、ハブ・GitHub でも見える）を足している。updateSyncStatus は、`_applySyncStatus`（今の本体）と `_renderSyncState` に分けている。2つの catch には触れていないので、文字がぶつかるのは index.html の ?v= の行だけの見込み。vault の 04_画面設計書は、もう #657 の中身（状態の行はハブ・GitHub でも見える）になっている。
 - #657 が先に入ったら、step4 で新しい spec と online-resync を流し直し、同期欄の文と path が同じかを確かめる。#657 で同期欄が見えるようになると、この直しは画面にも出る。
+
+## step4 載せ直し・main との全件比較（2026-11-14 18:13〜18:30・push の前に止まる）
+
+### 載せ直し
+
+- `git fetch` の後、origin/main 36cf113 へ rebase した。1c99d78 から8件入っていた（#645 5件・#622 2件・#656 1件）。#657 はまだ入っていない。
+- ぶつかったのは、見込みどおり index.html の `js/bookshelf.js?v=` の1行だけ（origin/main は 2026111746）。2026111753 を残した。origin/main の最大は 2026111746 で、開いている他のイシューの値（#634 2026111734・#657 2026111720/30・#660 2026111760〜62・#662 2026111722・#665 2026111763・#667 2026111780）とも重ならない。js/bookshelf.js は手を入れずに載った。2つの catch は L3266（ハブ）・L3396（GitHub）。
+- `npm run check:version -- --range=origin/main..HEAD` は OK。
+- 載せ直した後の sha：1971863（step1 docs）・e844987（test）・6cb8c63（fix）・7ffde72（online-resync の待ち）・fd11479（step3 docs）。
+
+### 載せ直した後の流し直し
+
+- 新しい spec と online-resync.spec.js：**13 passed**（1.1m・`tmp/653/step4-after-rebase.txt`）。
+- step3 の関係する spec（13ファイル）は、下の全件比較の work 側に全部入っている。新しく落ちたものは無い。
+
+### origin/main との全件比較（`node scripts/verify/e2e-diff-main.mjs --port=8153 --out=tmp/653/e2e-diff`・18:15〜18:29）
+
+base は origin/main 36cf113、work は作業ツリー（HEAD fd11479）。E2E は base 1634本・work 1640本で、work は新しい spec の6本だけ多い。除外は既定の sort-perf-budget だけ。
+
+| | 新しく落ちた | 新しく通った | 両方で落ちた |
+|---|---|---|---|
+| E2E（playwright） | **0件** | 5件 | 2件 |
+| Unit（vitest） | **0件** | 0件 | 0件 |
+
+- 新しく通った5件は、どれも base 側で落ちたもの。今回の直しが触る起動の読込の失敗は通らない。
+  - book-memo-file-lifecycle（GitHub・使えない文字と空白を含む題名）
+  - focus-trap-deeplink（パレットの Tab 20回）
+  - reimport-diff 2件
+  - save-failure-visible（GitHub・再試行が尽きた失敗）
+  - step3 でも、同じ時刻に他のイシューの全件が流れていると、この種類（保存が届かない・時間の掛かるもの）が揺れた。base 側の揺れと見る。
+- 両方で落ちた2件は、913冊を使う重いテスト。負荷で時間の基準を超える種類で、base でも落ちている既存の問題。
+  - gate/j3-5-many-books（@gate J3-5）
+  - list-staged-render（#401 並べ替えの段階描画 913冊）
+- 画像の差分（work 側のみ）：**0件 / 54件**。
+- 結果一式は `tmp/653/e2e-diff/`（report.md・report.json・base/work の JSON。commit しない）。
+
+push はしていない。②の判断で止まる。
