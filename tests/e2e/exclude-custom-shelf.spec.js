@@ -7,6 +7,10 @@
 // 再読込で見本を入れ直さないよう、入れたら印を立てる。1冊ずつの除外は window.bookshelf.excludeBook を呼び、確認の窓は
 // 画面で押す (除外ボタンは編集モードの本の詳細にしか無い・#622 の 662-H と同じ入口の取り方)。一括の除外は選択モードから画面で行う。
 import { test, expect } from './helpers/test-base.js';
+import { addBlock, getArtBlocks } from './helpers/art-editor.js';
+import { mockSyncReady } from './helpers/sync.js';
+import { bootAppForTest } from './helpers/gate-setup.js';
+import { stubFolderPickerForTest, connectLocalFolderForTest } from './helpers/gate-local.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -185,6 +189,37 @@ test.describe('#670 除外した本と自作の本棚', () => {
         expect.soft(manager.c, '管理一覧の子の本棚の冊数が、並ぶ冊数 (1冊) と合う').toBe('1冊');
     });
 
+    test('670-E 1冊除外した後、記事の本の引き出しで子の本棚を選ぶと、除外した本はどう出るか', async ({ page }) => {
+        await bootApp(page);
+        const p = page.evaluate((x) => window.bookshelf.excludeBook(x), X);
+        await confirmOk(page);
+        await p;
+        await expect.poll(() => page.evaluate((x) => window.bookshelf.books.some(b => b.asin === x), X)).toBe(false);
+        // 記事の保存先だけメモリに差し替え、接続済み相当にする (tests/e2e/publish-article-editor.spec.js の bootApp と同じ)
+        await page.evaluate(() => {
+            window.HubAuth.renderSignInButton = () => {};
+            const mem = new Map();
+            const adapter = window.bookshelf.storage.adapter;
+            adapter.readJSON = async (path) => (mem.has(path) ? JSON.parse(JSON.stringify(mem.get(path))) : null);
+            adapter.writeJSON = async (path, data) => { mem.set(path, JSON.parse(JSON.stringify(data))); };
+        });
+        await mockSyncReady(page, true);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first'); // 本の引き出しは本棚の全画面編集で出る (#268)
+        await page.click('#art-drawer-shelf-btn');
+        await page.locator('#art-drawer-shelf-popover [data-shelf-internal="e2ec0001"]').click();
+        await expect(page.locator('#art-drawer-shelf-label')).toHaveText('親の本棚 / 子の本棚');
+        const rows = await page.locator('#art-drawer-list .art-drawer-item').evaluateAll(els => els.map(e => ({ asin: e.getAttribute('data-asin'), text: e.textContent.replace(/\s+/g, ' ').trim() })));
+        log('E1 drawer-rows', rows);
+        const addAll = page.locator('#art-drawer-add-all');
+        log('E1 add-all', { hidden: await addAll.isHidden(), text: (await addAll.textContent() || '').trim() });
+        await addAll.click();
+        await page.waitForTimeout(300); // 計測用: 追加の後のブロックを読む
+        log('E1 blocks', JSON.stringify(await getArtBlocks(page)).slice(0, 800));
+        expect.soft(rows.map(r => r.asin), '引き出しに除外した本が並ばない').not.toContain(X);
+    });
+
     test('670-B 一括で除外すると、book:removed は出るか・自作の本棚の books はどうなるか', async ({ page }) => {
         await bootApp(page);
         // 一括の除外は画面から: 「すべての本」を開き、選択モードで Y を選んで「すべての本から除外」
@@ -208,4 +243,88 @@ test.describe('#670 除外した本と自作の本棚', () => {
         expect.soft(after.ev.filter(e => e.ev === 'book:removed' && e.asin === Y), '一括の除外も book:removed を1回出す').toHaveLength(1);
         expect.soft(String(treeB1.treeC), 'ツリーの子の本棚の冊数が、並ぶ冊数と合う').toBe(String(shownC.length));
     });
+});
+
+// ── フォルダの保存先 (#664 の tests/e2e/exclude-export-all-shelf.spec.js と同じ作り方) ──
+const EXPORT_JSON = readFileSync(join(here, '../fixtures/gate-kindle-export.json'), 'utf-8');
+const TARGET = 'B0GATEIMP3';
+
+async function pasteImport(page, json) {
+    await page.locator('[data-import-action="open-paste"]').click();
+    await page.locator('#kindle-paste-input').fill(json);
+    await page.locator('#import-from-paste').click();
+    await expect(page.locator('#book-selection')).toBeVisible();
+    await page.locator('#select-all-books').click();
+    await page.locator('#import-selected-books').click();
+    await expect(page.locator('#import-results')).toContainText('取込結果');
+}
+
+// フォルダの private/ の中身 (library・exclusions・bookshelves/*.json の books) と未反映の印を読む
+const readFolder = (page, dirName) => page.evaluate(async (name) => {
+    const out = { shelves: {} };
+    const readJson = async (dir, file) => JSON.parse(await (await (await dir.getFileHandle(file)).getFile()).text());
+    try {
+        let dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+        dir = await dir.getDirectoryHandle('private');
+        try { out.lib = ((await readJson(dir, 'library.json')).books || []).map((b) => b.asin); } catch (e) { out.lib = null; }
+        try { out.excl = (await readJson(dir, 'exclusions.json')).excludedASINs || []; } catch (e) { out.excl = null; }
+        try { out.shelvesJson = ((await readJson(dir, 'bookshelves.json')).bookshelves || []).map(b => ({ id: b.id, books: b.books })); } catch (e) { out.shelvesJson = null; }
+        try {
+            const sh = await dir.getDirectoryHandle('bookshelves');
+            for await (const [fname] of sh.entries()) {
+                try { out.shelves[fname] = (await readJson(sh, fname)).books || null; } catch (e) { out.shelves[fname] = 'unreadable'; }
+            }
+        } catch (e) { out.shelves = null; }
+    } catch (e) { out.err = String(e && e.name); }
+    out.pending = localStorage.getItem('virtualBookshelf_pendingSync');
+    return out;
+}, dirName);
+
+const callApp = (page, method, asin) => page.evaluate(async ({ method, asin }) => {
+    window.confirmDialog = async () => true;
+    await window.bookshelf[method](asin);
+}, { method, asin });
+
+test('670-F フォルダにつないだまま、自作の本棚に入れた本を除外して書き出し、再読込の後に取り消す', async ({ page, browserName }, testInfo) => {
+    test.skip(browserName !== 'chromium', '実測は chromium だけで取る');
+    const dirName = `e670-F-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+    await stubFolderPickerForTest(page, dirName);
+    await bootAppForTest(page);
+    await connectLocalFolderForTest(page);
+    await page.locator('#dashboard-welcome button[data-dw="import"]').click();
+    await expect(page.locator('#import-modal')).toHaveClass(/show/);
+    await pasteImport(page, EXPORT_JSON);
+    await expect.poll(async () => ((await readFolder(page, dirName)).lib || []).length, { timeout: 20000 }).toBe(3);
+    await page.keyboard.press('Escape');
+    // 自作の本棚を1つ足して TARGET を入れる (入口だけ直に足して保存する)
+    await page.evaluate(async (t) => {
+        const ud = window.bookshelf.userData;
+        const all = ud.bookshelves.find(b => b.isSpecial);
+        ud.bookshelves.push({ id: 'e670f', internalId: 'e670f0001', name: '自作の本棚F', iconName: 'library', books: [t], isSpecial: false, parent: all.internalId });
+        await window.bookshelf.saveUserData();
+    }, TARGET);
+    await expect.poll(async () => ((await readFolder(page, dirName)).shelves || {})['e670f.json'] || null, { timeout: 20000 }).toEqual([TARGET]);
+    log('F0 before-exclude', await readFolder(page, dirName));
+
+    await callApp(page, 'excludeBook', TARGET);
+    await expect.poll(async () => { const s = await readFolder(page, dirName); return Array.isArray(s.excl) && s.excl.includes(TARGET) && s.pending !== '1'; }, { timeout: 20000 }).toBe(true);
+    await page.waitForTimeout(500); // 計測用: 書き出しの残りを待つ (#664 の waitExported と同じ)
+    log('F1 exported', await readFolder(page, dirName));
+
+    await page.reload();
+    await expect(page.locator('#sidebar-bookshelf-tree [data-bookshelf-id="all"]')).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(1000); // 計測用: 起動の読込の後に読む
+    log('F2 after-reload', await page.evaluate((t) => {
+        const st = window.bookshelf.userData._storage || {};
+        const shelf = (window.bookshelf.userData.bookshelves || []).find(b => b.id === 'e670f');
+        return { libraryBooks: Array.isArray(st.libraryBooks) ? st.libraryBooks.length : null, exclusions: st.exclusions || null, shelfBooks: shelf ? shelf.books : null, inBooks: window.bookshelf.books.some(b => b.asin === t) };
+    }, TARGET));
+
+    await callApp(page, 'unexcludeBook', TARGET);
+    await expect.poll(async () => { const s = await readFolder(page, dirName); return Array.isArray(s.excl) && !s.excl.includes(TARGET) && s.pending !== '1'; }, { timeout: 20000 }).toBe(true);
+    await page.waitForTimeout(500); // 計測用
+    const undone = await readFolder(page, dirName);
+    const inBooks = await page.evaluate((t) => window.bookshelf.books.some(b => b.asin === t), TARGET);
+    log('F3 after-unexclude', { ...undone, inBooks });
+    expect.soft(inBooks, '再読込の後に取り消すと、蔵書に戻る').toBe(true);
 });
