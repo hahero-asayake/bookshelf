@@ -156,3 +156,34 @@ Received: 1
   - lint:internal-refs（上限 82 以内）
   - lint:e2e-gate（@gate 41本・違反0件）
   - lint:known-red（0件）
+
+## step3 直して緑にする（2026-11-14 19:05〜19:08・push はしていない）
+
+### 直したもの（案 (b)）
+
+- js/bookshelf.js の finishStartup（L433-）：`await this.initSync()` の直後に1行足した。`this._initLoadFailed && this._syncChecking` の時、`_syncChecking` を下ろして `_updateStatusBar()` を呼ぶ。
+  - `_initLoadFailed` は #617 の印。起動の読込が通信で失敗した時に、2つの catch が `_markInitLoadFailed` で立てる。
+  - 端末にデータが無い起動では `_syncChecking` を立てないので、何もしない。
+  - L497 の `finishStartup().finally` はそのまま残した。成功の起動は、今までどおりそこで下ろす。
+- 触っていないもの：2つの catch（#666）、`_updateStatusBar`、読込の失敗の文言、gate-hub.js の `waitForHubStartupForTest`（step2 の洗い出しで、合わせる必要なし）。
+- index.html：bookshelf.js の `?v=` を 2026111796 → **2026111799** にした。origin/main の最大は 2026111796。開いている他のイシューの worktree では、最大が 2026111798（issue-671）、#666 は 2026111795。
+- docs/char/boot-flow.md L24「データ有り」の行に、通信の失敗の時は `initSync()` が返った直後に下ろすことを書き足した。
+
+### 直した後の出力
+
+- tests/e2e/boot-load-checking-row.spec.js：2回とも **6 passed**（5.6s・5.4s。`tmp/672/step3-after.txt`・`step3-after-run2.txt`）。直す前に赤だった #1（GitHub・通信の失敗）も緑。
+- 関連する spec 6ファイル（boot-load-failure-status・online-resync・startup-background-sync・gate/j1-3-connect-hub・gate/j6-4-sync-conflict・sync-conflict-overwrite）：**21 passed**（45.9s。`tmp/672/step3-related.txt`）。
+- `npm test`：Test Files 80 passed (80)・Tests 1194 passed | 2 todo（`tmp/672/step3-npm-test.txt`）。
+- step1 の probe を、直した版でもう1回流した（7 passed・24.8s。`tmp/672/step3-probe.txt`）。直す前の json は `tmp/672/runs-before/` に写してから流した。
+
+| 場面 | 失敗の表示（成功は「保存済み」） | 確認中の行が消えた | 失敗の表示から消えるまで（直す前の2回） |
+|---|---|---|---|
+| GitHub・通信の失敗 | 2750 | 2751 | **0.00 秒**（6.23・6.09 秒） |
+| ハブ・通信の失敗 | 342 | 342 | 0.00 秒（0.42・0.13 秒） |
+| ハブ・401 | 227 | 295 | 0.07 秒（0.26・0.42 秒） |
+| GitHub・401 | 224 | 302 | 0.08 秒（0.11・0.23 秒） |
+| 参考：ハブ・成功 | 108 | 171 | 0.06 秒（1.11・0.53 秒） |
+| 参考：GitHub・成功 | 397 | 805 | 0.41 秒（0.74・0.64 秒） |
+| 参考：GitHub・通信の失敗で toast の「再試行」 | 2146 | 2146 | 0.00 秒（2.38・2.15 秒） |
+
+- 通信の失敗の2場面は、失敗の表示と同時に消えるようになった。401 と成功の起動は、今までどおり finally で下ろしている（1回だけの値なので、直す前との差は揺れの範囲）。

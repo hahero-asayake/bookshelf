@@ -433,6 +433,10 @@ class VirtualBookshelf {
             const finishStartup = async () => {
                 try {
                     await this.initSync();
+                    // 起動の読込が通信で失敗した時 (_initLoadFailed・イシュー#617) は、ここで「最新のデータを確認しています…」を下ろす。
+                    // この後の公開記事の移行とプラグインの読み込みは、同じ通信の失敗をそれぞれ2秒待って読み直すので、下の finally まで
+                    // 待つと、失敗を知らせた後も約6秒「確認中」が残る (GitHub・イシュー#672)。成功の起動は今までどおり finally で下ろす
+                    if (this._initLoadFailed && this._syncChecking) { this._syncChecking = false; this._updateStatusBar(); }
                 } catch (e) {
                     // initSync 内で拾えなかった想定外エラー。裏実行時も全画面エラーにはせず帯で知らせる
                     console.error('initSync:', e);

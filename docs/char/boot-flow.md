@@ -21,7 +21,7 @@
 
 | ケース | 順番 | ローディング | confirmが出る瞬間の画面状態 |
 |---|---|---|---|
-| **データ有り**（467-474） | `startRouter()`→`hideLoading()`→（裏で）`finishStartup()`→(finally)`_syncChecking=false` | 即座に消える（確認を待たない） | 画面は通常表示済み・router起動済み。confirmDialogは通常操作中に割り込むモーダルと同じ見え方 |
+| **データ有り**（467-474） | `startRouter()`→`hideLoading()`→（裏で）`finishStartup()`→(finally)`_syncChecking=false`。ただし起動の読込が通信で失敗した時（`_initLoadFailed`）は、`initSync()` が返った直後に `_syncChecking=false`（公開記事の移行・プラグインの読み込みを待たない・イシュー#672） | 即座に消える（確認を待たない） | 画面は通常表示済み・router起動済み。confirmDialogは通常操作中に割り込むモーダルと同じ見え方 |
 | **データ無し**（475-478） | `await finishStartup()`→`startRouter()`→`hideLoading()` | **finishStartup完了まで表示されたまま** | ローディング表示の最中にconfirmDialogが出る（router未起動・プラグイン未読込） |
 
 ### 1-4. `finishStartup`（413-454）内の時系列
