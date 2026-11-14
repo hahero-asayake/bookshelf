@@ -103,7 +103,7 @@ const isInert = (page, sel) => page.evaluate((s) => {
 }, sel);
 
 // ---- (a) 保存の失敗 (J6-5 の2本目と同じ手順) ----
-async function setupSaveFailure(page) {
+async function bootHub(page) {
     const hub = createHubStateForTest();
     await shortenSyncRetryForTest(page);
     seedHubDataForTest(hub);
@@ -111,10 +111,17 @@ async function setupSaveFailure(page) {
     await mockHubForTest(page, hub);
     await bootAppForTest(page);
     await waitForHubStartupForTest(page);
+    return hub;
+}
+
+async function setupSaveFailure(page) {
+    const hub = await bootHub(page);
     failHubWritesForTest(hub);
     await openDetail(page);
     await page.locator('.note-textarea[data-scope="all"]:visible').first().fill(MEMO);
     await expect(rowButton(page, '再試行')).toHaveCount(1, { timeout: 15000 });
+    // PC 幅 (901px 以上) の詳細は面ではなく列なので閉じない ((g)・イシュー#682)
+    if (page.viewportSize().width > 900) return hub;
     // 詳細の「戻る」は帯の下に出る (帯が見出しを隠さない)。押して詳細を閉じ、面ごとの確かめを同じ形で始める
     await page.locator('#mobile-detail-back').click();
     await expect.poll(() => page.evaluate(() => document.body.classList.contains('book-detail-pinned'))).toBe(false);
@@ -440,4 +447,127 @@ test.describe('(e) ホームのウィジェット選択 (390×664・イシュー
             await expect.poll(() => hubHasMemo(hub), { message: '短文メモが保存先 (ハブ) へ届く', timeout: 15000 }).toBe(true);
         });
     }
+});
+
+// ---- (g) 全画面の面 (size full) の中身を帯の下の箱に合わせる (イシュー#682) ----
+// 帯の印 (data-ov-below-notice) は面の箱を帯の下へ下げるが、直す前は中身 (.ov-full) が 100dvh のままはみ出した。
+// PC 幅は .modal.show が中央寄せなので上へ 30px 出て、記事エディタの見出しのボタン (編集・公開・完了・その他) が帯の下に入り、
+// click が帯の行に取られた。狭幅は上端が揃う代わりに下端が帯の分だけ画面の外へ出た (scripts/verify/682-results.md §1)。
+// 押せるかは通常の click (force なし) で確かめ、ボタン自身に届いたかを capture の数で見る。Escape は面ごと閉じるので使わない。
+
+/** 面の中身 (.ov-full) の箱と、中の見えている操作部品の上端の最小 */
+function fullFaceBox(page, rootSel) {
+    return page.evaluate((s) => {
+        const root = document.querySelector(s);
+        const content = root && root.querySelector(':scope > .ov-full');
+        const band = document.querySelector('#app-status-bar .status-urgent');
+        const bandRect = band ? band.getBoundingClientRect() : null;
+        const r = content ? content.getBoundingClientRect() : null;
+        const tops = root ? [...root.querySelectorAll('button, a[href], input, select, textarea')]
+            .map((el) => el.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0).map((b) => b.top) : [];
+        return {
+            bandBottom: bandRect && bandRect.height > 0 ? bandRect.bottom : 0,
+            top: r ? r.top : null,
+            bottom: r ? r.bottom : null,
+            minControlTop: tops.length ? Math.min(...tops) : null,
+            innerHeight: window.innerHeight
+        };
+    }, rootSel);
+}
+
+/** 中身が帯の下端から画面の下端までに収まり、見えている操作部品が帯の下に入っていない */
+async function expectFitsBelowBand(page, rootSel) {
+    await expect.poll(async () => {
+        const b = await fullFaceBox(page, rootSel);
+        if (b.top === null) return '中身が無い';
+        if (b.top < b.bandBottom - 0.5) return `中身の上端 ${b.top} が帯の下端 ${b.bandBottom} より上`;
+        if (b.minControlTop < b.bandBottom - 0.5) return `操作部品の上端 ${b.minControlTop} が帯の下端 ${b.bandBottom} より上`;
+        if (b.bottom > b.innerHeight + 0.5) return `中身の下端 ${b.bottom} が画面の下端 ${b.innerHeight} より下`;
+        return 'ok';
+    }, { message: `${rootSel} が帯の下に収まる` }).toBe('ok');
+}
+
+/** 通常の click (force なし) がボタン自身に届く (帯に取られない) */
+async function expectClickReaches(page, locator) {
+    await locator.evaluate((el) => { el.__clicks682 = 0; el.addEventListener('click', () => { el.__clicks682 += 1; }, { capture: true }); });
+    await locator.click();
+    await expect.poll(() => locator.evaluate((el) => el.__clicks682)).toBe(1);
+}
+
+async function openArticleEditor(page) {
+    await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+    await page.locator('#art-new').click();
+    await expect(page.locator('#art-title')).toBeVisible();
+}
+
+async function openBookMemo(page) {
+    const asin = await page.evaluate(() => document.querySelector('#bookshelf > .book-item').dataset.asin);
+    await page.evaluate((a) => window.bookshelf.openOrCreateBookMemo(a), asin);
+    await expect(page.locator('#book-memo-modal .art-fs-hd')).toBeVisible();
+}
+
+test.describe('(g) PC 幅 1280×800 (イシュー#682)', () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test('(g) 帯が出ている間も、記事エディタの見出しのボタンは帯の下端より下にあり、通常の click で押せる (閲覧状態・編集状態・プレビュー)', async ({ page }) => {
+        await setupSaveFailure(page);
+        await openArticleEditor(page);
+        // 閲覧状態: 編集・その他
+        await expectFitsBelowBand(page, '#publish-pages-modal');
+        await expectClickReaches(page, page.locator('#art-more-btn'));
+        await expect(page.locator('#art-more-menu')).toBeVisible();
+        await page.locator('#art-more-btn').click();
+        await expect(page.locator('#art-more-menu')).toBeHidden();
+        await expectClickReaches(page, page.locator('#art-mode-edit'));
+        // 編集状態: 見た目・公開・完了・その他
+        await expect(page.locator('#art-mode-done')).toBeVisible();
+        await expectFitsBelowBand(page, '#publish-pages-modal');
+        // プレビュー (size full) はブロックが1つ以上ある時だけ開く (_artPreview)。引き出しの「表示中のN冊を追加」で本棚ブロックを作る
+        await page.locator('#art-drawer-add-all').click();
+        await expect(page.locator('#art-canvas .art-block, #art-blocks .art-block').first()).toBeAttached();
+        await expectClickReaches(page, page.locator('#art-preview'));
+        await expect(page.locator('#pp-preview-modal')).toBeVisible();
+        await expectFitsBelowBand(page, '#pp-preview-modal');
+        await expectClickReaches(page, page.locator('#pp-preview-close'));
+        await expect(page.locator('#pp-preview-modal')).toBeHidden();
+        await expectClickReaches(page, page.locator('#art-mode-done'));
+        await expect(page.locator('#art-mode-edit')).toBeVisible();
+        await expectClickReaches(page, page.locator('#art-mode-edit'));
+        // 公開は最後に押す (公開の画面が開く)
+        await expectClickReaches(page, page.locator('#art-publish-header'));
+    });
+
+    test('(g) 帯が出ている間も、長文メモの見出しは帯の下端より下にあり、通常の click で押せる', async ({ page }) => {
+        await setupSaveFailure(page);
+        await openBookMemo(page);
+        await expectFitsBelowBand(page, '#book-memo-modal');
+        await expectClickReaches(page, page.locator('#book-memo-modal .art-fs-hd button:visible').first());
+    });
+
+    test('(g) 帯が無い時は、記事エディタの中身の箱が画面と同じ (0〜innerHeight・見た目は変えない)', async ({ page }) => {
+        await bootHub(page);
+        await openArticleEditor(page);
+        const b = await fullFaceBox(page, '#publish-pages-modal');
+        expect([b.bandBottom, b.top, b.bottom]).toEqual([0, 0, b.innerHeight]);
+    });
+});
+
+test.describe('(g) 狭幅 390×844 (イシュー#682)', () => {
+    test('(g) 帯が出ている間、記事エディタと長文メモの中身の下端が画面の下端を越えない', async ({ page }) => {
+        await setupSaveFailure(page);
+        await openArticleEditor(page);
+        await expectFitsBelowBand(page, '#publish-pages-modal');
+        await page.locator('#art-back').click();
+        await expect(page.locator('#art-title')).toBeHidden();
+        await page.evaluate(() => window.overlays.close('publish-pages-modal', { reason: 'button' }));
+        await openBookMemo(page);
+        await expectFitsBelowBand(page, '#book-memo-modal');
+    });
+
+    test('(g) 帯が無い時は、記事エディタの中身の箱が画面と同じ (0〜innerHeight・見た目は変えない)', async ({ page }) => {
+        await bootHub(page);
+        await openArticleEditor(page);
+        const b = await fullFaceBox(page, '#publish-pages-modal');
+        expect([b.bandBottom, b.top, b.bottom]).toEqual([0, 0, b.innerHeight]);
+    });
 });
