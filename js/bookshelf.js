@@ -6985,8 +6985,15 @@ class VirtualBookshelf {
         }
 
         // 本棚情報
+        // イシュー#674: 本棚の books と bookOrder[本棚] は同じ配列のことがある (「すべての本」は _ensureAllShelf で bookOrder.all と
+        // 同じ配列・ADR-166。保存先から読んだ本棚は、読込で全部の本棚が同じ配列)。同じ配列に本棚のコピー (push) と bookOrder の
+        // 置き換えを両方かけると、新ASINが2回入り、もう一方の本が本棚から外れる。「すべての本」は蔵書そのもの＝本棚ループでは
+        // 書かず、下の bookOrder.all の置き換えだけにする (最後の saveUserData で _ensureAllShelf が books を揃える)。
+        // ここで書いた本棚の配列は覚えておき、bookOrder ループで同じ配列を2回書かない (所属のコピーを優先する)。
+        const shelfArraysWritten = new Set();
         if (this.userData.bookshelves) {
             Object.values(this.userData.bookshelves).forEach(bookshelf => {
+                if (bookshelf.isSpecial) return;
                 if (bookshelf.books && bookshelf.books.includes(oldAsin)) {
                     if (oldAsinStillUsed) {
                         if (!bookshelf.books.includes(newAsin)) bookshelf.books.push(newAsin);
@@ -6994,6 +7001,7 @@ class VirtualBookshelf {
                         const index = bookshelf.books.indexOf(oldAsin);
                         bookshelf.books[index] = newAsin;
                     }
+                    shelfArraysWritten.add(bookshelf.books);
                 }
             });
         }
@@ -7015,6 +7023,8 @@ class VirtualBookshelf {
         // この方式のままで「もう一方の本」のエントリはそのまま残る。
         if (this.userData.bookOrder) {
             Object.values(this.userData.bookOrder).forEach(order => {
+                // 上の本棚ループで書いた本棚の books と同じ配列は、ここで書き直さない (イシュー#674)
+                if (shelfArraysWritten.has(order)) return;
                 if (Array.isArray(order) && order.includes(oldAsin)) {
                     const index = order.indexOf(oldAsin);
                     order[index] = newAsin;
