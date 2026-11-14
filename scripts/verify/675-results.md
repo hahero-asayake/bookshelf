@@ -292,3 +292,39 @@
 
 - e2e-diff は 33eda9e の上で流したもの。27df129 までに入った #666 の js の差分は、c23499c の js/bookshelf.js の4行だけ（`git show --stat c23499c`）。中身は公開の前の確認で、ハブの起動の読込が通信で失敗したままの間に保存できていない変更があれば、公開を止める（`_initLoadFailed`）。もう1つは spec の publish-conflict-hub だけ。除外と書誌の写しには触れていないので、全件比較は流し直さず、上の4つで確かめた。
 - push はまだしない（ここで②のレビュー）。push する時は `BOOKSHELF_ISSUE=675 git push origin <この節の docs の commit>:main`。
+
+## §6 push と CI（2026-11-14 20:03〜・step5）
+
+### §6-1 push の直前の載せ直し
+
+- `git fetch` の後の origin/main は 5e0048b。#673 の3つ（ccc5b2d・68f2c2b test、5e0048b docs）が入っていた。差分は docs/ui-standards.md と 673-results.md だけで、js と index.html は変わっていない。`git rebase origin/main` は衝突なし。
+- 5e0048b の index.html の `?v=` の最大は 2026111886。こちらの bookshelf.js・screens/import.js の 2026111890 はそれより新しい。
+- 流し直し（5e0048b の上）：
+  - `npm run check:version -- --range=origin/main..HEAD`：OK。
+  - `npm run lint`：12 本中 0 本失敗。
+  - `npx vitest run`：80 files・1199 passed・2 todo。
+  - 新 spec（chromium）：7 passed（9.0 秒）。
+- origin/main の上の commit は6つで、どれも `Issue: #675`：990b898（test）・0d053f1（docs §3）・a080fc3（fix）・ed94c8d（docs §4）・da2d134（docs §5）・95d6f9d（docs §5-3）。他のイシューの commit は混ざっていない。
+
+### §6-2 push
+
+- `BOOKSHELF_ISSUE=675 git push origin 95d6f9d:main` → `5e0048b..95d6f9d`（20:04:03）。pre-push の lint は 12 本中 0 本失敗。
+- 直し（fix）の commit は **a080fc3**。設計書は vault の 02・03・06・08（ADR-175）で、19:51 に書いた。
+
+### §6-3 CI（95d6f9d・API の check-runs で見た・未認証・45 秒以上空けた）
+
+| 時刻 | build | test (webkit) | test (char) | test (e2e) | test (audit) |
+|---|---|---|---|---|---|
+| 20:04:19 | 実行中 | 実行中 | 実行中 | 実行中 | 実行中 |
+| 20:04:51 | 実行中 | 実行中 | 実行中 | 実行中 | 実行中 |
+| 20:05:12 | **成功**（11:04:35Z） | 実行中 | 実行中 | 実行中 | 実行中 |
+| 20:07:08 | 成功 | 実行中 | **成功**（11:06:52Z） | 実行中 | 実行中 |
+| **20:09:03（push から5分）** | 成功 | 実行中 | 成功 | 実行中 | 実行中 |
+
+- 他に deploy（11:04:49Z）・report-build-status（11:04:40Z）も成功。
+- 最大待ち時間（5分）で打ち切った（代替判定）。5分の時点で、成功は build・deploy・report-build-status・test (char)。失敗は0。test (webkit)・test (e2e)・test (audit) は実行中で、結果は見ていない。
+
+### §6-4 プロジェクトノート・07
+
+- `append_project_note` で bookshelf の新着に1行を足した（「除外・取り消し・取込・端末の控え(_storage)を触る時、書誌の写し(libraryBooks)の読み手を足す時 → excludedBooksの決まりを読む(#675)」）。detail に、保つ所5つ・書誌の無い除外の扱い・落とし穴（675-E）・spec・未実測の F・E2E の作法を書いた。
+- `07_残検討事項.md` には、このイシューに当たる行が無かった（除外・libraryBooks で grep。保存先なしの除外の書誌の件は #670 の実測で新しく見つかったもので、07 には載っていない）。更新していない。
