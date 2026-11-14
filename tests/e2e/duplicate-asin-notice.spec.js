@@ -58,7 +58,7 @@ async function setup(page) {
         localStorage.setItem('bookshelf_sync', JSON.stringify({ method: 'local' }));
     }, [JSON.stringify(userData), JSON.stringify(library)]);
     await page.goto('index.html');
-    await page.waitForFunction(() => window.bookshelf && window.bookshelf.books && window.bookshelf.books.length > 0, null, { timeout: 60000 });
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && window.bookshelf.books && window.bookshelf.books.length > 0, null, { timeout: 60000 }); // userData も待つ (books だけだと起動の途中の null の userData で switchBookshelf が落ちることがある・イシュー#674)
     await page.evaluate(() => {
         window.bookshelf.saveUserData = async () => {};
         // 除外は confirmDialog (カスタムUI・ADR-131 overlays.open経由) の承諾が要る。
@@ -149,6 +149,7 @@ test('本の詳細に付け直し案内が出て、付け替え直後はもう�
     // bookOrder: ②指示どおり現状の実装のまま(重複2件のうち1件だけが新ASINに置き換わる・コピーではない)
     expect(afterMigrate.bookOrderAll.filter((a) => a === NEW_ASIN).length).toBe(1);
     expect(afterMigrate.bookOrderAll.filter((a) => a === DUP_ASIN).length).toBe(1);
+    expect(afterMigrate.bookOrderAll.length).toBe(books.length); // 並びは蔵書と同じ5件 (新ASINを2回入れない・イシュー#674)
 
     // 4. もう一方の本(下巻・旧ASINのまま)を開く。下巻はもうDUP_ASINを使う本が1件だけになった
     //    (上巻は新ASINへ移った)ので重複ではなくなり案内は出ない。ただしメモは「コピー」された
