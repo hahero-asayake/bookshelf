@@ -82,7 +82,8 @@ async function closeSettings(page) {
 /** 画面に見えている物を集める: 状態バー (表示・文・失敗の種類)・設定の同期欄 (文)・未反映の印 */
 async function observe(page) {
     const bar = page.locator('#app-status-bar');
-    const barVisible = await bar.isVisible();
+    // 行が見えるかで見る (保存の失敗・未保存の行は面より前の帯 = fixed に出るので、#app-status-bar 自体は高さ0になりうる・イシュー#660)
+    const barVisible = await bar.locator('.status-row').first().isVisible();
     const barText = barVisible ? (await bar.innerText()).replace(/\s+/g, ' ').trim() : '';
     const failureKinds = await bar.locator('[data-sync-failure]').evaluateAll((els) => els.map((e) => e.getAttribute('data-sync-failure')));
     if (!(await page.locator('#settings-modal').isVisible())) await openSettingsByClick(page, 'sync-section');
@@ -101,7 +102,8 @@ async function takeShots(page, label) {
         for (const [width, height, tag] of [[1280, 800, 'pc'], [390, 844, '390']]) {
             await page.setViewportSize({ width, height });
             await page.waitForTimeout(400);
-            // スマホ幅では本の詳細・横のメニューが状態バーの上に重なるので、閉じてから撮る
+            // 開いている面を閉じて、画面の素の姿で撮る (「未保存」の帯は面を開いたままでも前に出る＝イシュー#660。
+            // 面の上の帯は tests/e2e/status-bar-over-faces.spec.js が確かめる)
             for (let i = 0; i < 2; i++) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); }
             const bar = test.info().outputPath(`${label}-${tag}-statusbar.png`);
             await page.screenshot({ path: bar });
@@ -474,9 +476,8 @@ test.describe('同じ種類 (b): 書き込み時の選択を選ばずに閉じ�
 
             // ③ 状態バーの「選ぶ」から開き直して「保存先の内容を読み込む」を選ぶと、読み直して表示が消える
             const row = other.locator('#app-status-bar [data-sync-failure="sync-conflict"]');
-            // スマホ幅では本の詳細が状態バーに重なるので、詳細の「戻る」で閉じてから押す (PC 幅では出ない)
-            const detailBack = other.locator('#mobile-detail-back');
-            if (await detailBack.isVisible()) { await detailBack.click(); await other.waitForTimeout(800); } // 詳細は画面の外へ動くだけで要素は残る
+            // スマホ幅で本の詳細を開いたままでも、「未保存」の行は面より前の帯に出るので、そのまま押す (イシュー#660。
+            // 以前は詳細の下に隠れたので「戻る」で閉じてから押していた)
             await row.locator('[data-status-action="resolve-hold"]').click();
             await expect(dlg).toBeVisible();
             await dlg.locator('.cfm-remote').click();

@@ -7309,6 +7309,28 @@ input.art-shelf-select-all.is-mixed::after {
     flex-direction: column;
 }
 .app-status-bar[hidden] { display: none; }
+/* 保存の失敗・未保存の帯 (イシュー#660): data-sync-failure の行だけを、面 (詳細 940・横のメニューやモーダル 1000+n) より前、
+   確認ダイアログ (1800) より下の帯 (--ov-z-notice) に固定する。面を開いたままでも見えて押せる (背後の inert からは
+   overlay-manager が data-ov-above で外す)。外枠 (body) と全画面の面は、帯の高さ (--status-urgent-h・_syncStatusUrgent が測る)
+   だけ下げて、面の見出し (戻る・×) を隠さない。面を下げる規則は面ごとに書かない = overlay-manager が書く data-layer と
+   data-ov-kind (modal・sheet) で全部の面に効かせる。下から出す sheet を data-layer 付きで足す時は top が当たるので確かめること */
+.app-status-bar .status-urgent {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--ov-z-notice);
+    padding-top: env(safe-area-inset-top);
+    background: var(--bg-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+body.has-status-urgent { padding-top: var(--status-urgent-h, 0px); box-sizing: border-box; }
+/* 上端を下げた分だけ下端がはみ出さないよう、下端は 0 に留めて高さは自動にする (.modal・.app-detail は height:100% を持つ) */
+body.has-status-urgent [data-layer][data-ov-kind="modal"],
+body.has-status-urgent [data-layer][data-ov-kind="sheet"] { top: var(--status-urgent-h, 0px); bottom: 0; height: auto; }
+@media (max-width: 900px) {
+    body.has-status-urgent .app-detail { top: var(--status-urgent-h, 0px); bottom: 0; height: auto; }
+}
 .status-row {
     display: flex;
     align-items: center;
@@ -8002,8 +8024,9 @@ body.select-mode .drag-handle { display: none; }
     }
     .modal-content > .modal-close {
         position: fixed;
-        /* 基底の .modal-close と同じ 20px 基準 (#225 P2・イシュー#232 step2) */
-        top: calc(20px + env(safe-area-inset-top));
+        /* 基底の .modal-close と同じ 20px 基準 (#225 P2・イシュー#232 step2)。保存の失敗・未保存の帯が出ている間は
+           帯の高さだけ下げる (--status-urgent-h・帯が無い時は 0px・イシュー#660) */
+        top: calc(20px + env(safe-area-inset-top) + var(--status-urgent-h, 0px));
         right: 14px;
         z-index: 7;
     }
@@ -8393,6 +8416,7 @@ body.select-mode .drag-handle { display: none; }
     --z-chrome: 900;        /* 常設 UI (SP 下部ナビ・ドロワーのスクリム等)。面は常にこれより上 */
     --ov-z-base: 1000;      /* 面のスタック (modal・sheet・popover・menu): 1000 + data-layer。未移行の .modal も移行期の
                                橋渡し (overlay-manager.js installLegacyBridge) でスタックに載るので、開いた順 = 重なり順 */
+    --ov-z-notice: 1700;    /* 保存の失敗・未保存の帯 (#app-status-bar .status-urgent・イシュー#660): 面より上・確認ダイアログより下 */
     --ov-z-dialog: 1800;    /* 確認ダイアログ・同期衝突 (履歴に積まない・常に面より上): 1800 + data-layer */
     --ov-z-toast: 1900;     /* toast・バナー */
 }

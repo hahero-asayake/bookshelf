@@ -5358,9 +5358,46 @@ class VirtualBookshelf {
             const msg = this._syncErrorMsg || '同期でエラーが発生しました。変更が保存できていない可能性があります。';
             rows.push(`<div class="status-row status-warn">${ico('alert-triangle')}<span class="status-msg">${BookshelfEscape.escapeHtml(msg)}</span><button class="status-btn" data-status-action="open-sync" type="button">確認</button></div>`);
         }
-        if (rows.length === 0) { bar.hidden = true; bar.innerHTML = ''; return; }
-        bar.innerHTML = rows.join('');
-        bar.hidden = false;
+        const html = rows.join('');
+        if (bar._statusHtml !== html) {
+            // 中身が変わった時だけ作り直す (30秒ごと・focus の再評価で、開いている面の背後の inert や帯を作り直さない)
+            bar._statusHtml = html;
+            bar.innerHTML = html;
+            // 保存の失敗・未保存の行 (data-sync-failure の有無だけで決める・イシュー#660) は、面より前の帯にまとめる
+            const urgent = bar.querySelectorAll(':scope > .status-row[data-sync-failure]');
+            if (urgent.length) {
+                const wrap = document.createElement('div');
+                wrap.className = 'status-urgent';
+                wrap.setAttribute('data-ov-above', '');
+                urgent.forEach((r) => wrap.appendChild(r));
+                bar.prepend(wrap);
+            }
+        }
+        bar.hidden = rows.length === 0;
+        this._syncStatusUrgent(bar);
+    }
+
+    // 保存の失敗・未保存の帯 (イシュー#660): 帯の高さを --status-urgent-h へ書き (外枠と全画面の面を下げる・css)、
+    // 背後の inert を付け直す (帯は data-ov-above で inert から外れる・overlay-manager)。帯の幅が変わって高さが変わる時も測り直す
+    _syncStatusUrgent(bar) {
+        const el = bar && !bar.hidden ? bar.querySelector('.status-urgent') : null;
+        const setHeight = () => {
+            const h = el && el.isConnected ? Math.ceil(el.getBoundingClientRect().height) : 0;
+            document.documentElement.style.setProperty('--status-urgent-h', `${h}px`);
+        };
+        setHeight();
+        if (this._statusUrgentEl !== el) {
+            if (this._statusUrgentRO) this._statusUrgentRO.disconnect();
+            this._statusUrgentRO = null;
+            if (el && typeof ResizeObserver === 'function') {
+                this._statusUrgentRO = new ResizeObserver(setHeight);
+                this._statusUrgentRO.observe(el);
+            }
+            this._statusUrgentEl = el;
+        }
+        document.body.classList.toggle('has-status-urgent', !!el);
+        const ov = window.overlays;
+        if (ov && typeof ov.refreshInert === 'function') ov.refreshInert();
     }
 
     // ===== PWA 更新 (#5) =====

@@ -210,6 +210,8 @@
         has(id) { return this.stack.some((f) => f.id === id); }
         get(id) { return this.stack.find((f) => f.id === id) || null; }
         stackInfo() { return this.stack.map((f, n) => ({ id: f.id, kind: f.kind, size: f.size, layer: n, owner: f.owner })); }
+        // 背後の inert を今の DOM で付け直す。面より前に出す帯 ([data-ov-above]) を出し入れ・作り直した時に呼ぶ (イシュー#660)
+        refreshInert() { this._applyInert(); }
 
         // スタック内の位置 n を data-layer と --layer (CSS 変数) に書く。z-index は CSS 側が calc(帯 + n) で決める
         _applyLayers() {
@@ -238,6 +240,9 @@
             const top = this.stack[ti];
             if (!top.el || !top.el.isConnected) return;
             const keep = [top.el, document.getElementById('toast-container')];
+            // 面より前に出す帯 ([data-ov-above]・保存の失敗/未保存の行・イシュー#660) も残す。最前面が確認ダイアログの時は残さない
+            // (ダイアログの背後は全部押せない = ダイアログで選ぶのが先)
+            if (top.kind !== 'dialog') document.querySelectorAll('[data-ov-above]').forEach((el) => keep.push(el));
             this.stack.slice(ti + 1).forEach((f) => keep.push(f.el));
             if (typeof this.hooks.inertKeep === 'function') {
                 try { (this.hooks.inertKeep(top.id) || []).forEach((el) => keep.push(el)); } catch (e) { console.error('[overlays] hooks.inertKeep', e); }

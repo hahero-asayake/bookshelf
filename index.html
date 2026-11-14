@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026111720">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026111760">
     <!-- 起動に必須で、js が fetch で読むファイル。sw.js の install はこの index.html から先読みの一覧を作るため、
          ここに載せておくと1回開いただけの端末でも電波なしで起動できる (イシュー#597)。
          rel="bookshelf-precache" はブラウザが取得しない印 (sw.js だけが読む)。rel="preload" にすると WebKit は
@@ -1483,7 +1483,7 @@
          dashboard.js・bookshelf.jsが使うため、両方より前に読む。 -->
     <script defer src="js/ui/viewport.js?v=2026110301"></script>
     <script defer src="js/icons.js?v=2026111324"></script>
-    <script defer src="js/overlay-manager.js?v=2026111330"></script>
+    <script defer src="js/overlay-manager.js?v=2026111761"></script>
     <!-- イシュー#509: 出口と重なりの部品 (overlays と NavState を束ねる)。bookshelf.js より前に読む -->
     <script defer src="js/ui/surface.js?v=2026110400"></script>
     <!-- イシュー#517: 並べ替えの部品 (ドラッグでの並べ替え)。dashboard.js・bookshelf.jsより前に読む -->
