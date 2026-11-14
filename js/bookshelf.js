@@ -19,14 +19,12 @@ const ART_LOCAL_DRAFT_PREFIX = 'bookshelf_art_draft_';
 // 保存先とこの端末の両方が変わった時の選択ダイアログの定義 (イシュー#635)。気づいた場面 (読込時＝#load-conflict-dialog・
 // 書き込み時＝#sync-conflict-dialog) によらず、題・本文・ボタン・並び・最初のフォーカスはここから出す (_showConflictChoiceDialog)。
 // 読み込む・上書きはどちらも片方の変更を消すので危険な操作の見た目。最初のフォーカス (Enter) は何も消えない「書き出す」。
-// Esc・枠外クリックは選ばずに閉じる。本文の後半は、上書きを選べる時 (読込時) と選べない時 (書き込み時) で変える
+// Esc・枠外クリックは選ばずに閉じる。読込時・書き込み時とも同じ3つを出す (書き込み時の上書きはイシュー#645 から)
 const CONFLICT_DIALOG = Object.freeze({
     title: '保存先とこの端末の両方が変わっています',
-    message: (source, canKeepLocal) =>
+    message: (source) =>
         `${source ? `保存先（${source}）` : '保存先'}の内容が、別の端末などで更新されています。この端末にも、まだ保存先に入っていない編集があります。` +
-        (canKeepLocal
-            ? 'どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。'
-            : '保存先の内容を読み込むと、この端末の未保存の編集は消えます。') +
+        'どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。' +
         '迷う時は、先にこの端末の内容を書き出してください。',
     choices: Object.freeze([
         { value: 'remote', cls: 'cfm-remote', variant: 'btn-danger', label: '保存先の内容を読み込む' },
@@ -34,7 +32,9 @@ const CONFLICT_DIALOG = Object.freeze({
         { value: 'export', cls: 'cfm-export', variant: 'btn-primary', label: 'この端末の内容を書き出す' }
     ]),
     first: 'export',
-    exported: 'この端末の内容を書き出しました。'
+    exported: 'この端末の内容を書き出しました。',
+    // 書き込み時に上書きを選んだが、保存先を読み直せなかった時 (何も書いていない・選び直せる)
+    overwriteFailed: '保存先を読み込めなかったので、上書きしていません。通信が戻ったら、もう一度選んでください。'
 });
 
 // 本の引き出し (900px超) をユーザーが畳んだかどうかの記憶キー (イシュー#168)。
@@ -3056,7 +3056,7 @@ class VirtualBookshelf {
                 <div class="cfm-message"></div>
                 <div class="cfm-actions"></div>`;
             box.querySelector('.cfm-title').textContent = def.title;
-            box.querySelector('.cfm-message').textContent = def.message(source, choices.includes('local'));
+            box.querySelector('.cfm-message').textContent = def.message(source);
             let ov = null;
             const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
             const onKey = (e) => { if (window.Surface.isEsc(e)) { e.stopPropagation(); done('cancel'); } };
@@ -4055,6 +4055,25 @@ class VirtualBookshelf {
             location.reload();
             return;
         }
+        if (choice === 'local') {
+            // この端末の内容で保存先を上書きする (イシュー#645)。読込時の上書き (_askLoadConflict の 'local') と同じ道:
+            // 保存先を読み直し、読んだ版 (日時と版の印) を見たことにして、手元を丸ごと採って送り直す。
+            // 読み直しに失敗した時は、衝突中の印と未同期の記録を残して何も書かず、知らせてから選び直せるようにする
+            let state;
+            try {
+                state = await this.storage.loadAll();
+            } catch (e) {
+                console.warn('上書きの前の読み直しに失敗:', e);
+                toast(CONFLICT_DIALOG.overwriteFailed, { type: 'error' });
+                this._conflictNotified = false;
+                return this._handleSyncConflict(source);
+            }
+            SyncConfigManager.clearConflict();
+            this._conflictNotified = false;
+            this._writeSyncBase(state.library && state.library.exportDate, state.syncStamp);
+            this._keepLocalOverLoaded(state);
+            return;
+        }
         // 選ばずに閉じた (Esc・枠外クリック): 印と未同期の記録は残す (開き直しても送らずに聞き直す)。一定時間後にもう一度知らせる余地を残す。
         // 書いていないことは保存の失敗と同じ1か所で出し続け、状態バーの「選ぶ」から開き直せる (イシュー#639)
         setTimeout(() => { this._conflictNotified = false; }, 60000);
@@ -4116,10 +4135,10 @@ class VirtualBookshelf {
         });
     }
 
-    // 書き込みで衝突した時の選択 (イシュー#616)。選べるのは読み込む・書き出すの2つ。上書きは出さない
-    // (GitHub は同じページのまま読み直しても起動時の版が返り、上書きが通らない。イシュー#635 で実測・scripts/verify/635-results.md)
+    // 書き込みで衝突した時の選択 (イシュー#616)。読込時と同じく、読み込む・上書き・書き出すの3つ (保存先の種類によらない)。
+    // 上書きは同じページのまま保存先を読み直してから書く。GitHub は読み直しのたびに tree の控えを取り直す (イシュー#645)
     _showConflictDialog(source) {
-        return this._showConflictChoiceDialog('sync-conflict-dialog', source, ['remote', 'export']);
+        return this._showConflictChoiceDialog('sync-conflict-dialog', source, ['remote', 'local', 'export']);
     }
 
     _syncLabel() {

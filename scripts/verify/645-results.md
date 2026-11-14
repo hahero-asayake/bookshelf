@@ -149,3 +149,55 @@ step2 (読み直しのたびに控えを捨てる＋ref の GET に no-store) �
 
 - 落ちた1本は `load-conflict-unsaved.spec.js:178` (ローカルフォルダ・読込時の選択を閉じた後)。中身の判定ではなく、画像の添付のコピーが ENOENT (`test.info().attach` の時に `test-results/` の画像が無かった)。同じ時刻に vitest 全件と lint 一式を同じ作業ツリーで流していた。ローカルフォルダの adapter は `forgetRemoteListing` を持たないので、今回の変更が通らない道。単独で流し直すと3本とも通った (`_local/645/after2-A2-load-conflict-unsaved-rerun.log`)。
 - ログ: `_local/645/after2-A-chromium.log`・`after2-B-webkit.log`・`after2-lint.log`・`probe-abcd.log`。
+
+## step3: 書き込み時の衝突の選択に「この端末の内容で保存先を上書き」を出す (2026-11-14 17:31〜)
+
+### 1. 入れたもの (`js/bookshelf.js`)
+
+- `_showConflictDialog` の選択肢を `['remote', 'export']` → **`['remote', 'local', 'export']`** にした。読込時 (`_showLoadConflictDialog`) と同じ3つ。保存先の種類で分けない (ハブ・GitHub 共通)。
+- `CONFLICT_DIALOG.message` は、上書きを選べない時の文 (「保存先の内容を読み込むと、この端末の未保存の編集は消えます。」) を使う所が無くなったので、2つ目の引数ごと消した。2つのダイアログの本文はどちらも「どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。」になる。
+- `_handleSyncConflict` に `'local'` の道を足した (step2 の probe と同じ順・読込時の上書きと同じ道):
+  1. `storage.loadAll()` で保存先を読み直す (GitHub は tree の控えも取り直す・step2)。
+  2. 成功した時だけ `SyncConfigManager.clearConflict()`・`_conflictNotified=false`。
+  3. `_writeSyncBase(state.library.exportDate, state.syncStamp)` (#612 の版の印も渡す)。
+  4. `_keepLocalOverLoaded(state)` (手元を丸ごと採り、送り直しを予約する)。
+  - 読み直しに失敗した時: 衝突中の印・未反映の記録を残して何も書かず、知らせ (`CONFLICT_DIALOG.overwriteFailed`「保存先を読み込めなかったので、上書きしていません。通信が戻ったら、もう一度選んでください。」) を出して、同じ選択をもう一度出す (書き出した後と同じ戻り方)。
+- `'remote'` (location.reload) と `'cancel'` (#639 の止めている間の表示) は変えていない。
+- `?v=`: `bookshelf.js` 2026111710 → **2026111746**。
+
+### 2. E2E (`tests/e2e/sync-conflict-overwrite.spec.js`・3本・利用者の操作だけ)
+
+| テスト | 見ること |
+|---|---|
+| GitHub: 上書きを選ぶ | 2台で衝突 → 端末Bに3つ出る (最初のフォーカスは書き出す・本文は読込時と同じ) → 「この端末の内容で保存先を上書き」→ リポジトリの notes.json が端末Bの短文メモになり端末Aの分は残らない → 続けて書いた短文メモも届き、ダイアログは出ない → 端末Bを開き直しても続けて書いた短文メモが入る |
+| Asayake ハブ: 上書きを選ぶ | 同じ (ハブの模擬) |
+| GitHub: 読み直せない時 (d) | 端末Bから api.github.com への通信を落として上書きを押す → 知らせが出て、同じ選択がもう一度出る。衝突中の印・未反映の印が残り、リポジトリの head は変わらず (書き込み0・端末Bから GET 以外の要求0)。通信を戻して選び直すと上書きされる |
+
+- 3本とも通った (`_local/645/s3-new-spec.log`・3 passed)。
+- 赤になることの確認: step2 の `loadAll` の入口の `forgetRemoteListing()` 呼び出しだけを一時的に外して「GitHub: 上書きを選ぶ」を流すと、**落ちた** (上書きの後の保存がまた衝突し、リポジトリに端末Bの短文メモが20秒届かない・`_local/645/s3-red-check.log`)。外した行は戻した (`git diff HEAD -- js/storage.js` が空)。
+
+### 3. 一緒に直した spec
+
+| spec | 直したところ |
+|---|---|
+| `tests/e2e/gate/j6-4-sync-conflict.spec.js` (門) | ボタンの数 2→3、「この端末の内容で保存先を上書き」が見えること、手順の名前「2つの選び方」→「3つの選び方」(ハブ・GitHub の2本) |
+| `tests/e2e/sync-conflict.spec.js` | 冒頭の説明、テスト名「2つ」→「3つ」、`.cfm-local` の文言と見た目 (btn-danger)、ボタンの数 2→3 |
+| `tests/e2e/char/hub-conflict.spec.js` (E4) | `.cfm-local` が無いこと → 「この端末の内容で保存先を上書き」があること |
+| `tests/e2e/load-conflict-unsaved.spec.js` | 書き込み時の選択の説明コメントだけ (判定は変えていない) |
+
+- `standard-ops.spec.js`・`back-nav-matrix.spec.js` D03c・`helpers/sync.js` はボタンの数・文言を見ていないので変えていない (流して確かめる)。
+
+### 4. 確認
+
+| 確認 | 結果 |
+|---|---|
+| chromium: 新しい spec (3)・J6-4 (2)・sync-conflict (3)・sync-offline-reconnect (13)・standard-ops (28)・J1-4 GitHub (1)・load-conflict-unsaved (3) | **53 passed** |
+| gate-webkit: J6-4 | **2 passed** |
+| chromium: back-nav-matrix D03c | **1 passed** |
+| char: hub-conflict (E4) | **3 passed**・15 skipped |
+| vitest (全件) | 78 files・**1180 passed** (2 todo) |
+| `npm run lint` | **12本中0本失敗** (lint:copy・lint:terms は新しい知らせの文言込みで通った) |
+| 監査 `npm run audit:buttons` (6端末・204本) | 通った。ボタン名の揺れ **variants 8/8** (変わらず)。`check-audit.mjs buttons --update` で書き直しても `tests/audit/findings/buttons.json`・`baseline.json` の差分は0 (増減0)。新しい「この端末の内容で保存先を上書き」は巡回の記録に入っている (std の閉じる・戻る・キャンセルの揺れの対象ではない) |
+
+- E2E・vitest・lint・監査は順番に流した (step2 で、同時に流すと画像の添付が ENOENT で落ちたため)。ログは `_local/645/after3-*.log`・`run-after3.out`。
+- `tests/audit/open.js` の書き込み時の衝突ダイアログの開き方 (`showConflictDialogForTest`) は変えていない (ダイアログの組み方は同じ関数のまま)。

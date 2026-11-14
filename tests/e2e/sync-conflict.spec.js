@@ -1,5 +1,6 @@
 // 同期衝突ダイアログ (WP-B2) の回帰テスト
-//  書き込み時の選択 (保存先の内容を読み込む / この端末の内容を書き出す。イシュー#635 で読込時の選択と同じ定義に寄せた)
+//  書き込み時の選択 (保存先の内容を読み込む / この端末の内容で保存先を上書き / この端末の内容を書き出す。イシュー#635 で読込時の選択と
+//  同じ定義に寄せ、#645 で上書きも出すようにした)
 //  + 書き出し後に選び直せること + 最初のフォーカスと Enter・390幅の枠外クリックで何も消えないこと
 import { test, expect } from './helpers/test-base.js';
 import { triggerSyncConflict } from './helpers/sync.js';
@@ -28,7 +29,7 @@ async function bootApp(page) {
     return errors;
 }
 
-test('衝突ダイアログに2つの選び方が出て、同期元名が入る (ハブ)', async ({ page }) => {
+test('衝突ダイアログに3つの選び方が出て、同期元名が入る (ハブ)', async ({ page }) => {
     const errors = await bootApp(page);
     await triggerSyncConflict(page, 'Asayake ハブ');
     const dlg = page.locator('#sync-conflict-dialog');
@@ -37,10 +38,12 @@ test('衝突ダイアログに2つの選び方が出て、同期元名が入る 
     await expect(dlg.locator('.cfm-message')).toContainText('保存先（Asayake ハブ）の内容が');
     await expect(dlg.locator('.cfm-remote')).toHaveText('保存先の内容を読み込む');
     await expect(dlg.locator('.cfm-remote')).toHaveClass(/btn-danger/);
+    await expect(dlg.locator('.cfm-local')).toHaveText('この端末の内容で保存先を上書き');
+    await expect(dlg.locator('.cfm-local')).toHaveClass(/btn-danger/);
     await expect(dlg.locator('.cfm-export')).toHaveText('この端末の内容を書き出す');
     await expect(dlg.locator('.cfm-export')).toHaveClass(/btn-primary/);
-    // 書き込み時は上書きを出さない。「何もしない」のボタンも無い (Esc・枠外クリックで選ばずに閉じる)
-    await expect(dlg.locator('button')).toHaveCount(2);
+    // 読込時と同じ3つ (イシュー#645)。「何もしない」のボタンは無い (Esc・枠外クリックで選ばずに閉じる)
+    await expect(dlg.locator('button')).toHaveCount(3);
     await page.keyboard.press('Escape');
     await expect(dlg).toBeHidden();
     expect(errors).toEqual([]);

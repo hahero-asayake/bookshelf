@@ -83,7 +83,7 @@ test.describe('E4: ハブの412(同期の衝突)でO27(衝突ダイアログ)が
             await expect(dlg.locator('.cfm-title')).toHaveText('保存先とこの端末の両方が変わっています');
             await expect(dlg.locator('.cfm-remote')).toHaveText('保存先の内容を読み込む');
             await expect(dlg.locator('.cfm-export')).toHaveText('この端末の内容を書き出す');
-            await expect(dlg.locator('.cfm-local')).toHaveCount(0);
+            await expect(dlg.locator('.cfm-local')).toHaveText('この端末の内容で保存先を上書き');
 
             // 選ばずに閉じられる(イシュー#635で「何もしない」のボタンを無くし、Esc・枠外クリックに寄せた): ダイアログが閉じる
             await page.keyboard.press('Escape');

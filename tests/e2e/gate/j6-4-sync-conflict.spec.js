@@ -63,12 +63,13 @@ test('@gate J6-4 ハブ：2台で同じ本の短文メモを書いて衝突す�
         await expect(savedNote(other)).toContainText('保存しました');
     });
 
-    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、2つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
+    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、3つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
         await expect(conflictDialog(other)).toBeVisible({ timeout: 20000 });
         await expect(conflictDialog(other)).toContainText('保存先とこの端末の両方が変わっています');
         await expect(conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容で保存先を上書き' })).toBeVisible();
         await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' })).toBeFocused();
-        await expect(conflictDialog(other).getByRole('button')).toHaveCount(2);
+        await expect(conflictDialog(other).getByRole('button')).toHaveCount(3);
     });
 
     await test.step('操作: 「この端末の内容を書き出す」を押し、書き出されたファイルを受け取る', async () => {
@@ -143,12 +144,13 @@ test('@gate J6-4 GitHub：2台で同じ本の短文メモを書いて衝突す�
         await expect(savedNote(other)).toContainText('保存しました');
     });
 
-    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、2つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
+    await test.step('確認: 端末Bに「保存先とこの端末の両方が変わっています」が出て、3つの選び方が見え、最初は「この端末の内容を書き出す」にフォーカスがある', async () => {
         await expect(conflictDialog(other)).toBeVisible({ timeout: 20000 });
         await expect(conflictDialog(other)).toContainText('保存先とこの端末の両方が変わっています');
         await expect(conflictDialog(other).getByRole('button', { name: '保存先の内容を読み込む' })).toBeVisible();
+        await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容で保存先を上書き' })).toBeVisible();
         await expect(conflictDialog(other).getByRole('button', { name: 'この端末の内容を書き出す' })).toBeFocused();
-        await expect(conflictDialog(other).getByRole('button')).toHaveCount(2);
+        await expect(conflictDialog(other).getByRole('button')).toHaveCount(3);
     });
 
     await test.step('確認: リポジトリの短文メモは端末Aのまま (端末Bの古い版で上書きされていない)', async () => {
