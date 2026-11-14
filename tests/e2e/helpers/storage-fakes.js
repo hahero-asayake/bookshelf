@@ -62,10 +62,21 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
     commitFiles(); // 空のリポジトリ (最初の commit だけある状態)
     state.commitCount = 0;
 
-    const shouldFailWrite = () => {
+    // paths = その要求が書く (変える・消す) パス。failNextWrites に path を渡した時は、そのパスを書く要求にだけ失敗を当てる
+    // (標準機能の補充など、同じ時に流れる別の書き込みに当たって前提が崩れないように・イシュー#667)
+    const shouldFailWrite = (paths = []) => {
         if (state.failWrites <= 0) return false;
+        if (state.failPath && !paths.includes(state.failPath)) return false;
         state.failWrites--;
         return true;
+    };
+    // まとめ保存の commit が、今の中身から変えるパス
+    const changedPaths = (commit) => {
+        const next = commit ? trees.get(commit.tree) : null;
+        if (!next) return [];
+        const out = [...files.keys()].filter((p) => !next.has(p));
+        for (const [p, blobSha] of next) { const cur = files.get(p); if (!cur || cur.sha !== blobSha) out.push(p); }
+        return out;
     };
     const b64 = (text) => Buffer.from(text, 'utf8').toString('base64');
     const unb64 = (s) => Buffer.from(String(s || ''), 'base64').toString('utf8');
@@ -90,9 +101,9 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
         if (rel === `git/refs/heads/${branch}`) {
             if (method === 'GET') return json(200, { ref: `refs/heads/${branch}`, object: { type: 'commit', sha: state.head } });
             if (method === 'PATCH') {
-                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
                 const { sha } = body();
                 const commit = commits.get(sha);
+                if (shouldFailWrite(changedPaths(commit))) return json(state.failStatus, { message: 'injected write failure' });
                 if (!commit) return json(422, { message: 'Object does not exist' });
                 // force:false = 早送りだけ許す (他の端末が先に進めていたら 422)
                 if (!commit.parents.includes(state.head)) return json(422, { message: 'Update is not a fast forward' });
@@ -187,7 +198,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
                 return json(200, [...seen.values()]);
             }
             if (method === 'PUT') {
-                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
+                if (shouldFailWrite([path])) return json(state.failStatus, { message: 'injected write failure' });
                 const b = body();
                 const cur = files.get(path);
                 if (cur && !b.sha) return json(422, { message: `Invalid request.\n\n"sha" wasn't supplied.` });
@@ -202,7 +213,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
                 return json(cur ? 200 : 201, { content: { name: path.split('/').pop(), path, sha }, commit: { sha: state.head } });
             }
             if (method === 'DELETE') {
-                if (shouldFailWrite()) return json(state.failStatus, { message: 'injected write failure' });
+                if (shouldFailWrite([path])) return json(state.failStatus, { message: 'injected write failure' });
                 const b = body();
                 const cur = files.get(path);
                 deleteRequests.push({ path, via: 'single', existed: !!cur });
@@ -233,7 +244,8 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
         },
         commitCount: () => state.commitCount,
         // opts.status = 失敗で返す状態コード (既定 500。401 = トークン失効・イシュー#603)
-        failNextWrites: (n = 1, { status = 500 } = {}) => { state.failWrites = n; state.failStatus = status; },
+        // opts.path = そのパスを書く要求にだけ失敗を当てる (省略時は、次の書き込みなら何でも・イシュー#667)
+        failNextWrites: (n = 1, { status = 500, path = null } = {}) => { state.failWrites = n; state.failStatus = status; state.failPath = path; },
         // 注入した失敗のうち、まだ起きていない回数 (0 になったら失敗が起きた)
         failuresLeft: () => state.failWrites
     };

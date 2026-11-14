@@ -221,14 +221,16 @@ for (const { name, boot } of BACKENDS.filter((b) => b.name !== 'ローカルフ�
             const remote = await boot(page);
             const keeper = await createShelf(page, remote, '残す本棚'); // bookshelf1 (削除した slug が作り直しで再利用されないように先に埋める)
 
-            remote.failNextWrites(1); // 次の本棚は保存先に届かない
+            const ghost = 'bookshelf2';
+            // 次の本棚は保存先に届かない。失敗は、その本棚のファイルを書く要求にだけ当てる
+            // (同じ時に流れる標準機能の補充などの書き込みに当たると、本棚の保存が通って前提が崩れる・イシュー#667)
+            remote.failNextWrites(1, { path: shelfFile(ghost) });
             await page.locator('#sidebar-add-bookshelf').click();
             await page.locator('#bookshelf-name').fill('届かない本棚');
             await page.locator('#save-bookshelf-form').click();
             await expect(page.locator('#bookshelf-form-modal')).not.toHaveClass(/show/);
             await expect.poll(() => remote.failuresLeft(), { message: '作成後の保存が失敗する' }).toBe(0);
             await page.waitForTimeout(1500);
-            const ghost = 'bookshelf2';
             expect(remote.has(shelfFile(ghost)), '保存先にはまだ無い').toBe(false);
 
             await deleteShelf(page, ghost); // 保存先に無いファイルの削除が次の保存に載る
