@@ -133,7 +133,8 @@ test('GitHub でも、電波なしのまま開き直した端末は、電波が�
     // 電波なしのまま開き直す (ハブの時と同じ作り方: ブラウザの電波だけ一時的に戻し、GitHub への通信は落としたまま)
     await context.setOffline(false);
     await page.reload();
-    await expect(page.getByText('GitHub からの読み込みに失敗しました')).toBeVisible({ timeout: 15000 });
+    // toast の文で待つ (設定の同期欄にも同じ文が入る＝ページ全体の getByText は2つに当たる・イシュー#653)
+    await expect(page.locator('.toast-message', { hasText: 'GitHub からの読み込みに失敗しました' })).toBeVisible({ timeout: 15000 });
     await context.setOffline(true);
     await expect(memoBox(page)).toHaveValue(MEMO); // 手元には残っている
 
