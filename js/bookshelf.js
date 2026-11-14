@@ -2947,6 +2947,10 @@ class VirtualBookshelf {
         const remoteDate = state.library && state.library.exportDate;
         // 保存先にあるのが自分の書きかけた版なら、他の端末は変えていない
         if (base && pending && remoteDate && this._sameSyncVersion(base.writing, state)) return 'local';
+        // 1ファイルずつ書く保存先 (ローカル) で、library.json の後・版の印の前に切れた自分の書きかけ (イシュー#656)。
+        // exportDate はこの端末が書く直前に作った時刻で他の端末とは重ならず、他の端末が書けば版の印も前の版から変わる
+        if (base && pending && remoteDate && base.writing && (base.writing.exportDate || null) === remoteDate
+            && (base.stamp || null) === (state.syncStamp || null)) return 'local';
         if (!base || !base.exportDate) {
             const localHasData = (this.books || []).length > 0
                 || (prior.bookshelves || []).some(b => !b.isSpecial)

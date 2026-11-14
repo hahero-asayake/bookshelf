@@ -353,6 +353,86 @@ for (const { name, boot } of BACKENDS) {
     });
 }
 
+// ローカルの保存は1ファイルずつ書き、library.json が先・版の印 (sync-stamp.json) が最後 (js/storage.js syncBatch)。
+// 保存が library.json の後で切れたまま再読込すると、読込の決め方が自分の書きかけを「他の端末の更新」と見誤り、
+// 読込時の3択が出て保存が止まっていた (イシュー#656。上の「変更してすぐ再読込 ローカルフォルダ」が負荷のある時に落ちた原因)。
+// 決まった形で起こす: 印が立っている間、library.json 以外のファイルの書き込み・削除を返さない (保存が library.json の後で
+// 止まる)。印は window に置く＝再読込で外れる
+async function installLocalWriteStopAfterLibrary(page) {
+    await page.addInitScript(() => {
+        const never = () => new Promise(() => {});
+        const stop = (name) => window.__e2eStopAfterLibrary === true && name !== 'library.json';
+        const cw = FileSystemFileHandle.prototype.createWritable;
+        FileSystemFileHandle.prototype.createWritable = function (...a) {
+            if (stop(this.name)) { window.__e2eStopped = (window.__e2eStopped || 0) + 1; return never(); }
+            return cw.apply(this, a);
+        };
+        const re = FileSystemDirectoryHandle.prototype.removeEntry;
+        FileSystemDirectoryHandle.prototype.removeEntry = function (name, ...a) {
+            if (stop(name)) { window.__e2eStopped = (window.__e2eStopped || 0) + 1; return never(); }
+            return re.call(this, name, ...a);
+        };
+    });
+}
+
+test.describe('ローカルの保存が library.json の後で切れたまま再読込 (イシュー#656)', () => {
+    /** 前の保存が終わってから印を立てて題名を変え、保存が library.json を書いて止まった所で再読込する。止める前の版の印を返す */
+    async function editAndCutAfterLibrary(page, local) {
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync')), {
+            timeout: 15_000, message: '前の保存が終わり、未反映の印が消える'
+        }).toBeNull();
+        const stampBefore = await local.readJSON('private/sync-stamp.json');
+        await page.evaluate(() => { window.__e2eStopAfterLibrary = true; });
+        await editBook(page, ASIN, { title: NEW_TITLE });
+        await expect.poll(async () => (await remoteBooks(local))[ASIN], { timeout: 15_000, message: '保存が library.json (新しい題名) を書く' }).toBe(NEW_TITLE);
+        await expect.poll(() => page.evaluate(() => window.__e2eStopped || 0), { message: '次のファイルで保存が止まる' }).toBeGreaterThan(0);
+        expect(await local.readJSON('private/sync-stamp.json'), '止めた時点では版の印は前のまま').toEqual(stampBefore);
+        await page.reload();
+        return stampBefore;
+    }
+
+    test('長文メモ: 3択が出ず、再読込の後の保存で新しい名前へ移って古いファイルが消える', async ({ page }) => {
+        await installLocalWriteStopAfterLibrary(page);
+        const local = await bootWithLocalFolder(page);
+        await addBook(page, local, ASIN, TITLE);
+        await writeMemo(page, local, ASIN, TITLE);
+        await editAndCutAfterLibrary(page, local);
+        try {
+            await expect.poll(() => local.has(memoPath(ASIN, NEW_TITLE)), { timeout: 15_000, message: '再読込の後の保存で新しい名前へ移る' }).toBe(true);
+            await expect.poll(() => local.has(memoPath(ASIN, TITLE)), { message: '古い名前が残らない' }).toBe(false);
+            await expect(page.locator('#load-conflict-dialog'), '自分の書きかけで読込時の3択が出ない').toHaveCount(0);
+        } catch (e) {
+            await attachDiag(page, local, '切れた保存の後の再読込で長文メモが移らない');
+            throw e;
+        } finally {
+            await attachRemoteState(local);
+        }
+    });
+
+    test('長文メモ以外 (題名だけ): 3択が出ず、再読込の後の保存で版の印まで届く', async ({ page }) => {
+        await installLocalWriteStopAfterLibrary(page);
+        const local = await bootWithLocalFolder(page);
+        await addBook(page, local, ASIN, TITLE);
+        const stampBefore = await editAndCutAfterLibrary(page, local);
+        try {
+            await expect.poll(async () => JSON.stringify(await local.readJSON('private/sync-stamp.json')), {
+                timeout: 15_000, message: '再読込の後の保存が最後 (版の印) まで書ける'
+            }).not.toBe(JSON.stringify(stampBefore));
+            await expect.poll(() => page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync')), {
+                timeout: 15_000, message: '未反映の印が消える'
+            }).toBeNull();
+            await expect(page.locator('#load-conflict-dialog'), '自分の書きかけで読込時の3択が出ない').toHaveCount(0);
+            expect((await remoteBooks(local))[ASIN], '保存先の題名は新しい題名').toBe(NEW_TITLE);
+            await expect.poll(() => page.evaluate((a) => (window.bookshelf.books.find((b) => b.asin === a) || {}).title, ASIN), {
+                message: 'アプリの題名も新しい題名'
+            }).toBe(NEW_TITLE);
+        } catch (e) {
+            await attachDiag(page, local, '切れた保存の後の再読込で最後まで届かない');
+            throw e;
+        }
+    });
+});
+
 for (const { name, boot } of FAILABLE) {
     test.describe(`長文メモ: 保存先に書けない間の変更 ${name} (イシュー#594)`, () => {
         test('書けない間に題名を変えても、記録が残り、次の保存で新しい名前へ移って古いファイルが消える', async ({ page }) => {
