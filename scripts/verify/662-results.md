@@ -261,3 +261,55 @@
    - 起動で保存先を採った時、「すべての本」に除外した本が数えられるかは未確認。
    - H・I の期待値はこの決まり次第。step3 では、H の期待を「再読込の前後で表示と控えが揃う」に直す。
 2. #622 の R1（3択）は、E 6/8・G 7/8・J 5/8 で出た。#622 で直る前提とする。
+
+## §7 step4：rebase と検証一式（2026-11-14 17:44〜）
+
+### rebase
+
+- origin/main = `fa4f41f`（#656 の4件が入った。`1ec581d` は「ローカルの保存が library.json の後で切れたまま再読込しても、自分の書きかけと見て3択を出さない」直しで、#622 の R1 と同じ穴を塞ぐもの）。
+- 衝突は `index.html` の `js/bookshelf.js?v=` の1行だけだった。main 側は #656 の `2026111721`、こちらは `2026111712`。main の最大値より新しい `2026111722` にして合わせた。
+- `js/bookshelf.js` は自動で合わさった（#656 の `_decideLoadedState` まわりの変更と、こちらの `_ensureAllShelf`・`saveUserData`・`_applyMergedRemote`・`_onLibraryChanged` は重ならない）。
+- 設計書（obsidian）：08 の ADR の番号は、166 が他と重なっていない（160〜166 を確認）。03・08 の変更は未 commit のまま。obsidian の自動バックアップに任せる（同じファイルに他のイシューの未 commit の変更もあるため、こちらで部分 commit はしない）。
+- #622 はまだ main に無い（`git log origin/main --grep "Issue: #622"` は0件）。
+
+### 検証の結果（rebase の後・HEAD=`e123065`）
+
+- `npm run lint`：12 本中 0 本失敗。
+- `npm test`（vitest）：79 files・1181 passed・2 todo。
+- `npm run check:version -- --range=origin/main..HEAD`：OK（`2026111722` は origin/main の最大値 `2026111721` より新しい）。
+- 全件比較（`e2e-diff-main.mjs`・全件）：**中止**。
+  - 機械の負荷が高く（load average 73）、base 側の E2E だけで6分を過ぎても終わらなかった。run の締切までに終わらない見込みのため止めた（一時 worktree・port 8162 の片付けは確認済み）。
+- 代わりに、関係する試験に絞った比較を流した（`--grep="662-|すべての本|取込|再読込|引き出し|shelfId|J2-|J6-1|J1-4|初めての利用者"`・`--no-visual`・`--skip-vitest`・base は origin/main `f9468f8`）。
+  - **新しく落ちた2件（regression 判定・3回流し直しても全回赤）**：
+    - `publish-article-editor.spec.js`「記事エディタ: 新規作成直後がビューポートに収まる (実データ相当800冊, イシュー#59)」の 1280x720
+    - 同じ試験の 1024x600
+  - 新しく通った 0件・両方で落ちた 0件。
+
+### 新しく落ちた2件の原因：試験の見本が、「すべて」本棚の books だけを書き換えている
+
+- 見本を作る `buildManyBooksFixtures`（`tests/e2e/publish-article-editor.spec.js`）は、蔵書を800冊にして「すべて」本棚の `books` だけを800冊に書き換える。`bookOrder.all` は見本ファイル（`fixture-userdata.json`）の5冊のまま残る。
+- ADR-166 で `bookOrder.all` を正とした。このため、起動の `_ensureAllShelf` が「すべて」本棚の `books` を5冊（蔵書に無い本）にする。その結果、引き出しに本が出ず、内側のスクロールが無くなって落ちる。
+- アプリ自身は、本を変える経路で必ず `bookOrder.all` を先に変える。この食い違いは、見本が片側だけを書き換えた時にしか起きない。
+- 同じ作り（「すべて」本棚の `books` だけを書き換え、`bookOrder.all` はそのまま）の見本は、ほかにも9か所ある。
+  - `bookshelf-clip-373.spec.js`（2か所）
+  - `bookshelf-clip-385.spec.js`
+  - `cover-cache-sw.spec.js`
+  - `dashboard-recent-books.spec.js`
+  - `shelf-structure-home-refresh.spec.js`
+  - `github-sync-resilience.spec.js`
+  - `dashboard-stats-after-manual-add.spec.js`（`books = []`）
+  - `library-count-refresh.spec.js`（`books = []`）
+- 全件比較が流れていれば、ここでも新しい落ちが出た見込み。下に、今の作業ツリーで流した結果を書く。
+
+**同じ作りの見本を使う9本の spec を、今の作業ツリーで流した結果（chromium・1回）：158本中 142 passed・13 skipped・3 failed**
+
+- 赤は3本とも `publish-article-editor.spec.js` で、どれも `buildManyBooksFixtures`（800冊）を使う試験だった。
+  - #59 の2本（上の新しく落ちた2件）
+  - #133「まとめて追加: 実データ相当(800冊)で閾値(50冊)超」
+- ほかの8本（clip-373・clip-385・cover-cache-sw・dashboard-recent-books・shelf-structure-home-refresh・github-sync-resilience・dashboard-stats-after-manual-add・library-count-refresh）は緑だった。これらの見本は、「すべて」本棚の books に頼らない試験か、bookOrder.all と食い違っても結果が変わらない試験とみる。
+- 回帰 spec の --repeat-each=5 は、rebase の後には流していない（時間切れ）。rebase の前（step3）は 40 passed。比較を絞った流しでは、work 側で1回ずつ緑だった。
+
+### push の前に要ること（提案）
+
+1. `buildManyBooksFixtures` で、「すべて」本棚の `books` と一緒に `bookOrder.all` も800冊にする（見本を、アプリが作る形に揃える。試験の中身は変えない）。同じ作りの見本9か所も、同じ形に揃える（今は緑でも、`bookOrder.all` を正とする決まりに合わせる）。揃える部品を helper に1つ置き、新しい見本が同じ間違いをしないようにする案もある。
+2. 負荷が下がってから、全件比較（`e2e-diff-main.mjs`・全件）と回帰 spec --repeat-each=5 を流し直し、新しく落ちたもの0件を確かめてから push する。
