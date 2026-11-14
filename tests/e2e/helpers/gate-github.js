@@ -94,9 +94,13 @@ async function routeGitHub(route, state) {
     state.requests.push({ method, path: path + url.search });
     const body = () => { try { return JSON.parse(req.postData() || '{}'); } catch (_) { return {}; } };
     if (path === '/user') return route.fulfill({ json: { login: state.login } });
+    // 接続の道 (インストール先とリポジトリの一覧・ブランチ)。mockGitHubConnectForTest を呼んだ時だけ答える (イシュー#629)
+    if (state.connect && path === '/user/installations') return route.fulfill({ json: { total_count: 1, installations: [{ id: 1, account: { login: state.owner } }] } });
+    if (state.connect && path === '/user/installations/1/repositories') return route.fulfill({ json: { total_count: 1, repositories: [installedRepoOf(state)] } });
     const base = `/repos/${state.owner}/${state.repo}`;
     if (!path.startsWith(base)) return route.fulfill({ status: 404, json: { message: 'Not Found' } });
     const rest = path.slice(base.length);
+    if (state.connect && rest === '/branches' && method === 'GET') return route.fulfill({ json: [{ name: state.branch, protected: false }] });
     if (rest === '' && method === 'GET') {
         return route.fulfill({ json: { name: state.repo, full_name: `${state.owner}/${state.repo}`, default_branch: state.branch, private: true, permissions: { push: true } } });
     }
@@ -215,4 +219,44 @@ export async function mockGitHubDeviceFlowForTest(page, { login = 'gate-user', r
         if (path === `/repos/${fullName}/branches`) return fulfillDeviceFlowJson(route, 200, [{ name: 'main', protected: false }]);
         return fulfillDeviceFlowJson(route, 404, { message: 'Not Found' });
     });
+}
+
+// ---- イシュー#629 (門のE2E J1-4 の GitHub の分) で足した分：接続の操作から、状態を持つ模擬へつなぐ ----
+// mockGitHubForTest (状態を持つ・api.github.com に1本) と一緒に使う。api.github.com には route を足さない:
+// 接続の道 (インストール先とリポジトリの一覧・ブランチ) は、routeGitHub が state.connect のある時だけ答える。
+// ここで掛けるのは OAuth の2ホスト (Worker の proxy と github.com/login) だけ。mockGitHubDeviceFlowForTest とは併用しない。
+
+// GitHub App が入っているリポジトリ (一覧の1件)。アプリが読む項目は js/screens/settings.js の _loadGitHubRepos
+function installedRepoOf(state) {
+    return {
+        id: 1, name: state.repo, full_name: `${state.owner}/${state.repo}`, owner: { login: state.owner }, private: true,
+        default_branch: state.branch, updated_at: '2026-11-01T00:00:00Z', permissions: { admin: true, push: true, pull: true }
+    };
+}
+
+/** 「GitHub に接続」を押すと、コード (userCode) が出て、すぐ承認された扱いになり、state.login でつながるようにする。
+ * GitHub App は state のリポジトリ1つにだけ入っている扱い。リポジトリを選んで「この設定で使う」を押した後の読み書きは、
+ * そのまま mockGitHubForTest の状態 (seedGitHubDataForTest で置いた中身) に届く。mockGitHubForTest と一緒に、
+ * アプリを開く前に呼ぶ。
+ * @param {import('@playwright/test').Page} page
+ * @param {ReturnType<typeof createMockGitHubForTest>} state
+ * @param {{ userCode?: string }} [opts] */
+export async function mockGitHubConnectForTest(page, state, { userCode = 'GATE-0002' } = {}) {
+    state.connect = { userCode };
+    const oauth = async (route) => {
+        const req = route.request();
+        state.requests.push({ method: req.method(), path: `oauth:${new URL(req.url()).pathname}` });
+        if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: DEVICE_FLOW_CORS });
+        const path = new URL(req.url()).pathname;
+        if (path.endsWith('/login/device/code')) {
+            return fulfillDeviceFlowJson(route, 200, { device_code: 'gate-device-code', user_code: userCode, verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 });
+        }
+        if (path.endsWith('/login/oauth/access_token')) {
+            return fulfillDeviceFlowJson(route, 200, { access_token: state.token, token_type: 'bearer', scope: '' });
+        }
+        return fulfillDeviceFlowJson(route, 404, { error: 'not_found' });
+    };
+    const context = page.context();
+    await context.route('https://bookshelf-oauth-proxy.asayake-hahero.workers.dev/**', oauth);
+    await context.route('https://github.com/login/**', oauth);
 }

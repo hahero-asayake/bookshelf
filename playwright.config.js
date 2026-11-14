@@ -15,6 +15,7 @@ const GATE_WEBKIT_IGNORE = [
     /tests[\\/]e2e[\\/]gate[\\/]j1-2-storage-choice-pc\.spec\.js$/,      // PC (フォルダを選べる端末) の選択肢を見る。iPhone 相当は j1-2-storage-choice-phone が受け持つ
     /tests[\\/]e2e[\\/]gate[\\/]j1-3-connect-local\.spec\.js$/,          // 保存先「この端末のフォルダ」は PC 専用 (iPhone では選べない)
     /tests[\\/]e2e[\\/]gate[\\/]j1-3-connect-github\.spec\.js$/,         // 1280幅の PC の設定画面で操作する (iPhone の UA では別の画面になる)
+    /tests[\\/]e2e[\\/]gate[\\/]j1-4-github-save-reload\.spec\.js$/,     // 同上 (1280幅の PC の設定画面で GitHub につなぐ。iPhone 相当のハブの分は j1-3-connect-hub)
     /tests[\\/]e2e[\\/]gate[\\/]j2-[1-5]-[a-z-]+\.spec\.js$/,             // 取込は PC 専用 (C-248・iPhone では「PCで取り込んでください」の案内だけ)
     /tests[\\/]e2e[\\/]gate[\\/]j3-[1-3]-[a-z-]+\.spec\.js$/,             // 1280幅の PC の左ペイン (本棚ツリー・表示) で操作する
     /tests[\\/]e2e[\\/]gate[\\/]j3-4-back-forward-esc-pc\.spec\.js$/,    // PC の Esc で詳細を閉じる (スマホに Esc キーは無い・390幅は j3-4-…-phone)
