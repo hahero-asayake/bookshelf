@@ -4,8 +4,8 @@
 //           (c) 除外を取り消すと本棚に並び直すか
 //           (d) プラグインのイベント (book:removed / bookshelf:updated / book:added) の回数
 // 起動は tests/e2e/shelf-delete-open-descendant.spec.js と同じ型 (fixture を localStorage に入れる)。
-// 再読込で見本を入れ直さないよう、入れたら印を立てる。除外の入口は window.bookshelf の excludeBook / _bulkExclude を呼び、
-// 確認の窓は画面で押す (除外ボタンは編集モードの本の詳細にしか無い・#622 の 662-H と同じ入口の取り方)。
+// 再読込で見本を入れ直さないよう、入れたら印を立てる。1冊ずつの除外は window.bookshelf.excludeBook を呼び、確認の窓は
+// 画面で押す (除外ボタンは編集モードの本の詳細にしか無い・#622 の 662-H と同じ入口の取り方)。一括の除外は選択モードから画面で行う。
 import { test, expect } from './helpers/test-base.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -157,9 +157,16 @@ test.describe('#670 除外した本と自作の本棚', () => {
 
     test('670-B 一括で除外すると、book:removed は出るか・自作の本棚の books はどうなるか', async ({ page }) => {
         await bootApp(page);
-        const p = page.evaluate((y) => { window.bookshelf.selectedAsins = new Set([y]); return window.bookshelf._bulkExclude(); }, Y);
+        // 一括の除外は画面から: 「すべての本」を開き、選択モードで Y を選んで「すべての本から除外」
+        await expandTree(page, []);
+        await treeNode(page, 'all').click();
+        await expect(page).toHaveURL(/#\/bookshelf\/all$/);
+        await page.locator('#toggle-select-mode').click();
+        await page.locator(`#bookshelf .book-item[data-asin="${Y}"]`).first().click();
+        await page.locator('#bulk-exclude').click();
         await confirmOk(page);
-        await p;
+        await expect(page.locator('.toast-success', { hasText: '冊を除外しました' })).toBeVisible();
+        await page.locator('#toggle-select-mode').click();
         await expect.poll(() => page.evaluate((y) => window.bookshelf.books.some(b => b.asin === y), Y)).toBe(false);
         const after = await snapshot(page);
         log('B1 after-bulk-exclude', after);
