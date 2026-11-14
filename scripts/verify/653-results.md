@@ -184,3 +184,57 @@ step1 の案A＋(1) を作業ツリーに一時的に当てて流した（`node 
 - lint:e2e-external：遮断を通らない context が0件。
 - lint:internal-refs：上限82以内。
 - lint:e2e-gate：@gate 41本・違反0件。
+
+## step3 直して緑にし、既存の spec・lint・設計の記述を揃える（2026-11-14 18:00〜18:13）
+
+前の run は 18:02 に、関係する spec を流している途中で止められた（exit 137。同じ時刻に #634 が E2E 全件を流していて、こちらは worker 4本だった）。直しは作業ツリーに未コミットのまま残っていたので、その続きから進めた。関係する spec は worker を2本に減らして流し直した。
+
+### ②の指示3：state を 'failed' に変えても、読み直しと「再試行」は state に頼っていない（コードで確かめた）
+
+- updateSyncStatus（js/bookshelf.js 4137-）は、同期欄の DOM（#obsidian-sync-path・#obsidian-sync-status）を書くだけで、state を this のどこにも残さない。同期欄を読む所は、js/ 全体で updateSyncStatus の中だけだった（`grep -rn obsidian-sync-status js/ index.html`）。
+- 自動の読み直し（#617）が見るのは、catch で `_markInitLoadFailed()` が立てる `this._initLoadFailed` と、電波の状態（OnlineWatcher）だけ（`_watchSyncRecovery` の kick → `_retryInitLoad`）。印を立てる条件は、ハブは `!isAuthErr`、GitHub は認証切れ以外の分岐で、どちらも state とは別。直しでもここは変えていない。
+- GitHub の toast の「再試行」は `onClick: () => this.initGitHubSync()` で、state を見ない。
+- online-resync.spec.js は、直した後に丸ごと流して緑（新しい spec と合わせて 13 passed・44.3s・`tmp/653/step3-online-resync.txt`）。ただし1か所、待つ所を toast に絞った（下の「既存の spec を揃えた所」）。
+
+### 直したこと（commit e34343e）
+
+- js/bookshelf.js（+12/-5）
+  - ハブ（_initCloudSyncLoad の catch）：`_syncErrorMsg` を決めた後に `updateSyncStatus(isAuthErr ? 'reconnect' : 'failed', label, this._syncErrorMsg)` を呼ぶ。
+  - GitHub（_initGitHubSyncLoad の catch）：認証切れの文を toast と同じ定数 `authMsg` に置き、同期欄には改行を除いたものを 'reconnect' で渡す。通信の失敗は 'failed' と「GitHub からの読み込みに失敗しました。」を渡す。toast はそのまま。
+  - 次のものは変えていない：updateSyncStatus の本体と既定の文、保存の失敗（failure.message）・衝突・#648 のキャンセルの後の呼び出し。
+- index.html：`js/bookshelf.js?v=2026111721` を `2026111753` にした。origin/main（f9468f8）の最大は 2026111721。開いている他のイシューの値（#634 2026111734・#645 2026111745/46・#657 2026111720/30・#660 2026111760〜62・#662 2026111722）とも重ならない。`npm run check:version -- --range=origin/main..HEAD` は OK。
+- docs/char/boot-flow.md §1-5：起動の読込が失敗した時に同期欄へ出す文と、「（要再接続）」の付け方を1段足した。
+- 設計書（vault）：04_画面設計書の「設定の同期欄の起動の読込」の行（#648 が足した行）の次に、「設定の同期欄の起動の読込の失敗」の行を足した（333行目）。vault の commit は自動バックアップに任せた。対応づけは、bookshelf の fix の commit の題「(設計: 04_画面設計書 2026-11-14 更新)」。
+
+### 新しい spec：直す前と直した後
+
+| # | テスト | 直す前（step2・a390783） | 直した後（e34343e） |
+|---|---|---|---|
+| 1 | ハブ・通信の失敗 | **赤**（同期欄 "保存できませんでした"・path "Asayake ハブ（要再接続）"） | **緑** |
+| 2 | ハブ・認証切れ | **赤**（同期欄 "保存できませんでした"） | **緑** |
+| 3 | GitHub・通信の失敗 | **赤**（同期欄 "保存できませんでした"・path "taro/bookshelf-data@main（要再接続）"） | **緑** |
+| 4 | GitHub・認証切れ | **赤**（同期欄 "保存できませんでした"） | **緑** |
+| 5 | 守り ハブ・保存の失敗（「Asayake ハブに保存できませんでした。…」） | 緑 | 緑 |
+| 6 | 守り GitHub・保存の失敗（「GitHub に保存できませんでした。…」） | 緑 | 緑 |
+
+直した後の出力（`tmp/653/step3-after.txt`）：6 passed（12.1s）。online-resync.spec.js と一緒に流した2回目も、6本とも緑だった。
+
+### 関係する spec（13ファイル・chromium・worker 2本）
+
+対象は、step の detail の7ファイルに、`git grep -l -e obsidian-sync-status -e 読み込みに失敗 -- tests/e2e` で出たファイルを足したもの。book-memo-file-lifecycle・first-run-init-status・first-run-save-during-init-empty・gate/j1-3-connect-local・gate/j6-1-local-restart・gate/j6-3-hub-other-device・gate/j6-5-sync-failure・load-conflict-unsaved・online-resync・save-failure-visible・shelf-file-delete・sync-first-connect・sync-offline-reconnect。
+
+- 1回目（`tmp/653/step3-related.txt`）：**93 passed・6 failed**（6.0m）。
+  - online-resync.spec.js:110（GitHub）は **直しのせいで落ちた**。`strict mode violation: getByText('GitHub からの読み込みに失敗しました') resolved to 2 elements`。同期欄にも toast と同じ文が入ったので、ページ全体の getByText が2つに当たった。アプリの誤りではなく、spec の待つ所が広すぎた。
+  - 残りの5本は、GitHub・ローカルへの保存が届かないか、設定が開かない、という落ち方。book-memo-file-lifecycle.spec.js:253・203・234 は「本 B0MEMO5941 が保存先に届く」が Received undefined か、#settings-modal の待ちの時間切れ。save-failure-visible.spec.js:149（GitHub）は not.toBeNull に null。shelf-file-delete.spec.js:135（GitHub）は「本棚「消す本棚」が保存先の一覧に届く」に null。どれも起動の読込の失敗を通らない。
+- 既存の spec を揃えた所（commit f96fb9d）：online-resync.spec.js L136 の待ちを `page.locator('.toast-message', { hasText: 'GitHub からの読み込みに失敗しました' })` に絞った。確かめる中身は変えていない。
+- 流し直し（`tmp/653/step3-rerun-fix.txt`）：落ちた6か所を行で指定して流した。同じ行の3つの保存先の版も一緒に走り、**25 passed**（1.1m）。online-resync:110 は絞った後で緑。残りの5本は流し直すと緑なので、1回目は負荷による揺れと見た（同じ時刻に #634 が E2E 全件を流していた）。
+
+### vitest・lint
+
+- `npm test`：Test Files 79 passed（79）・Tests 1181 passed | 2 todo。
+- `npm run lint`：**12 本中 0 本失敗**。中身は lint:copy・lint:terms・lint:css・lint:e2e-goto・lint:e2e-wait・lint:e2e-external・lint:breakpoint・lint:esc・lint:js-color・lint:internal-refs（上限82以内）・lint:e2e-gate・lint:known-red。
+
+### step4（載せ直し）で見ること
+
+- #657（作業中・step4）が、設定の同期欄に `#sync-state-row`（3つの保存先に共通の状態の行で、ハブ・GitHub でも見える）を足している。updateSyncStatus は、`_applySyncStatus`（今の本体）と `_renderSyncState` に分けている。2つの catch には触れていないので、文字がぶつかるのは index.html の ?v= の行だけの見込み。vault の 04_画面設計書は、もう #657 の中身（状態の行はハブ・GitHub でも見える）になっている。
+- #657 が先に入ったら、step4 で新しい spec と online-resync を流し直し、同期欄の文と path が同じかを確かめる。#657 で同期欄が見えるようになると、この直しは画面にも出る。
