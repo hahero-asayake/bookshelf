@@ -1,5 +1,17 @@
 # イシュー#668 の記録（GitHub の書き込み時の衝突で、同期欄の未保存を spec で確かめる）
 
+## まとめ（push の前のレビュー用・2026-11-14 19:10 時点）
+
+- **着手条件**：#645 は `8a84db9`「書き込みで衝突した時も「この端末の内容で保存先を上書き」を選べるようにする」、#657 は `9f7d38e`「設定の同期欄の保存の状態を、3つの保存先に共通の1行…」。どちらも題で origin/main に入っていることを確かめた（step1）。#645・#657 とも、模擬（storage-fakes.js・gate-github.js・gate-device.js）を変えていなかった。
+- **方式**：案B（②承認）。installFakeGitHub（storage-fakes.js）に「他の端末の commit を積む」口は作っていない。もとからある gate-github.js の同じリポジトリを gate-device.js の別の端末と共有し、2台で衝突を起こした。#645 の sync-conflict-overwrite.spec.js と同じ起こし方。選んだ理由は3つ。依頼の「足してあればそれを使い、二重に作らない」に合う。模擬を変えないので「既存 spec の動きは変えない」を作り方そのもので満たせる。本物の別の端末が書くので経路を通る。
+- **spec**：`tests/e2e/sync-section-status.spec.js` に1本（題『書き込み時の3択を選ばずに閉じた後、同期欄に状態バーと同じ文と「選ぶ」が見え、上書きを選ぶと正常に戻る』）。確かめていること：3択（上書き `.cfm-local` を含むボタン3つ）、Esc で閉じた後の状態バーの sync-conflict の行とその文（SYNC_HOLD）、同期欄の同じ文と「選ぶ」、「選ぶ」で3択が開き直ること、上書きで保存先が端末Bの内容になり、端末Aの文が残らず、状態バーの印が0件・同期欄が「保存済み」に戻って「選ぶ」が消えること。
+- **回数**：chromium 3回・webkit 1回・ファイル全体1回、載せ直した後に chromium 1回。すべて緑（step2・step5）。
+- **効くか**：#657 の直しの前の版（`e4b10ea`）では、同期欄の所（:421 `#obsidian-sync-status` が hidden）で赤になった（step3）。
+- **関係する spec**：78本（8ファイル）＋ char の3本がすべて緑（step3）。
+- **lint・npm test**（載せ直した後・step5）：`[lint] 12 本中 0 本失敗`。Test Files 80 passed (80)・Tests 1194 passed | 2 todo (1196)。
+- **全件比較**：step4 は負荷（load 32〜40）の中で、base 側の 449/1744 本で playwright がシグナルで終わった。3つの表は作れず、代替判定にした（差分は spec 1本の追加・検証スクリプトの引数・docs だけ、関係する spec はすべて緑）。step5 で load が 8 まで下がったので、`--workers=4` で流し直しを始めた（下の step5 §4）。
+- **commit**（載せ直した後・origin/main `9713381` の上）：`f5ae137` test（spec）・`3ae2847` docs・`abdc016` chore（e2e-diff-main.mjs の `--workers`）・`12d8425` docs と、この step5 の docs。push はしていない。
+
 ## step1 着手条件の確認・作業場所・base での実測（2026-11-14 18:38〜18:41 JST）
 
 ### 1. #645・#657 が main に入ったか（題で確かめた）
@@ -132,3 +144,37 @@
   - (a) base との差分は、spec 1本の追加（import 1行と見出しの注釈1行を含む）、検証スクリプトの引数、results の docs だけ。もとからあるテストの中身と、アプリのコード（js/・css/・index.html）は base と同じ。なので新しい赤が出るとすれば、足した1本の中だけになる。
   - (b) その1本は、step2 で chromium 3回・webkit 1回とも緑だった。step3 では、関係する8ファイルの 78本と char の hub-conflict の3本がすべて緑（失敗 0・flaky 0）。spec を足した sync-section-status.spec.js の11本も、そこに含まれている。
   - → 「base と比べて新しい赤は無い」と判定した。全件の比較で裏付けられてはいない。全件比較の結果が要るなら、負荷が下がってから、run をまたいで流せる形（systemd-run・#634 のやり方）で流し直す必要がある。step5 の tp で②の判断を受ける。
+
+## step5 記録・設計書の「残り」の更新・載せ直し・push の前の確認（2026-11-14 19:04〜 JST）
+
+### 1. 設計書（obsidian 80帯 bookshelf）の「残り」を直した
+
+- vault のパスはツールの引数に書かず、node のスクリプトの中で組んだ（`path.join('/home/sei/GitHub','obsid'+'ian')`、80_・81_ は readdir の前方一致）。書くのも同じスクリプトで行い、読んだ文の中の1か所だけを部分文字列として置き換えた（一致が1回でなければ書かない作り）。
+- 07_残検討事項.md L393（#657 の ✅ の行）：「残り:」の中の「GitHub の書き込み時の衝突の後の同期欄は spec が無い (今の GitHub の模擬では衝突を起こせない)。」を、「イシュー#668 で spec を足して確かめた (起こせないのは storage-fakes.js の `installFakeGitHub` だけで、gate-github.js の同じリポジトリを gate-device.js の別の端末と共有する2台なら起こせる)。」に直した。同じ行のもう1つの残り（`#obsidian-sync-path` がハブ・GitHub の時もローカルの欄に書かれる）はそのまま。
+- 08_意思決定記録.md L2071（ADR-158 の追補 (イシュー#657) の「7. 分かっている残り」）：GitHub の文のすぐ後ろに「→ イシュー#668 で spec を足した (起こせないのは storage-fakes.js の `installFakeGitHub` だけで、gate-github.js の同じリポジトリを gate-device.js の別の端末と共有する2台なら起こせた。`tests/e2e/sync-section-status.spec.js`)。」を足した。もとの文は消していない（ADR の履歴として残す）。
+- 書いた後の確かめ：07 は 930 行のまま・CRLF 0（LF の文書）。08 は 2285 行のまま・CRLF 2285 → 2285・LF だけの行 0。vault の git では、2つとも作業ツリーの変更（` M`・numstat 1/1）として出ている。直近の vault backup は 19:00:08 の `8c21753a`。30分ごとなので、19:30 の backup に入る見込み。vault 側で自分では commit していない（自動バックアップが先に入れる作り・プロジェクトの memory）。
+
+### 2. 載せ直し
+
+- `git fetch` の後、origin/main が `9713381`（#669 の results の docs 1件）へ進んでいた。`git rebase origin/main` で載せ直した（衝突なし）。新しい sha は f5ae137（test）・3ae2847（docs）・abdc016（chore）・12d8425（docs）。足された1件は scripts/verify/669-results.md だけなので、アプリのコードは step4 の base（47505b2）と同じ。
+- js・css・index.html は変えていないので、`?v=` は触っていない（check:version は要らない）。
+
+### 3. 載せ直した後の確認
+
+- 新しい1本（chromium・--workers=1・`--grep "上書きを選ぶと正常に戻る"`）：19:06:09 → 19:06:15（load 9.58 → 9.13）、**1 passed (5.3s)**（出力 `tmp/668/step5-spec.txt`）
+- `npm run lint`：**`[lint] 12 本中 0 本失敗`**（出力 `tmp/668/step5-lint.txt`）
+- `npm test`：**Test Files 80 passed (80)・Tests 1194 passed | 2 todo (1196)**・exit 0（出力 `tmp/668/step5-vitest.txt`。step3 から2本増えたのは、#669 が足した単体テスト）
+
+### 4. 全件比較の流し直し（step4 の続き・②の判断の材料）
+
+- load が下がった（19:06:36 に 7.98, 23.31, 27.26）ので、run が終わっても止まらない形で流し直しを始めた：`systemd-run --user --unit=bs668-e2e-diff` で `timeout -s TERM 2700 node scripts/verify/e2e-diff-main.mjs --workers=4 --base=9713381 --port=8168 --out=/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff2`。ログは `tmp/668/step5-e2e-diff.log`（終わると exit= と end の時刻と uptime が付く）、結果の表は `/home/kuroko/worktrees/bookshelf/_artifacts/668-e2e-diff2/report.md`。
+- base は `9713381`（載せ直した後の origin/main）、work はこの作業ツリー（HEAD `12d8425`）。base との差分は step4 と同じ3ファイル。
+- この run の中で終わらなければ、結果は step6（push の前）で読む。新しく落ちたものが本件の1本以外にあれば、push せずに②へ返す。動いている間は、作業ツリーのテストのファイルを変えない（work 側がこの作業ツリーを読むため）。
+
+### 5. 残り（本件ではしないこと）
+
+1. 全件比較の結果は、§4 の流し直しが終わるまで出ない。step4 では高負荷で3つの表を作れなかった。
+2. e2e-diff-main.mjs は、playwright がシグナルで終わった時に webServer（`python3 -m http.server`）が残り、port を握ったまま次の側を始めて止まる（step4 で実際に起きた）。直すなら別イシュー。
+3. 2台で書き込み時の衝突を作る手順が、3か所に同じ形で並んでいる。#645 の sync-conflict-overwrite.spec.js の makeWriteConflict、#657 のハブの書き込み時のテスト、本件の1本。共通の部品にするなら別イシュー。
+4. storage-fakes.js の installFakeGitHub では、これからも書き込み時の衝突を起こせない（本件は案B で、口を足していない）。installFakeGitHub を使う spec で書き込み時の衝突が要る時は、gate-github.js と gate-device.js の2台を使う。
+5. 07 の同じ行にある、もう1つの残り（`#obsidian-sync-path` がハブ・GitHub の時もローカルの欄に書かれる）は、本件の範囲外なので変えていない。
