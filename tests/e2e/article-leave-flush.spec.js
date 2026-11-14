@@ -1,9 +1,11 @@
 // イシュー#595: 記事エディタで入力して 600ms 以内 (保存の予約が発火する前) に画面を離れても、
 // 記事が一覧・保存先・下書きに残ること。離れる経路ごとに1本ずつ (H1〜H6・step1 の穴の一覧)。
 // 新規作成は閲覧状態で開き、題名はそのまま打てる (J5-1 と同じ入口)。
+// イシュー#609 (H8): 本棚ブロックの本の短文メモは 300ms の予約で保存する。予約が発火する前にタブが閉じても残ること。
 import { test, expect } from './helpers/test-base.js';
 import { seedLibraryForTest, bootAppForTest, stubStorageForTest } from './helpers/gate-setup.js';
 import { mockSyncReady } from './helpers/sync.js';
+import { addBlock, openArtSheet, closeArtSheet } from './helpers/art-editor.js';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -125,4 +127,73 @@ test('H6 保存先に送れない時は←でその場にとどまり、閉じ�
     // 開き直しても、まだ送れていない記事を保存先から読み直して捨てない
     await openArticleList(page, { drawerOpen: true });
     await expect(articleRow(page, 'H6 送れない記事')).toHaveCount(1);
+});
+
+// --- イシュー#609 (H8): 本棚ブロックの本の短文メモ ---
+
+// 本棚ブロックを足し、引き出しから本を1冊入れて、その本の短文メモの入力欄を返す
+async function addShelfBlockWithBook(page) {
+    await addBlock(page, 'shelf', 'first');
+    await openArtSheet(page);
+    await page.locator('#art-drawer-list .art-drawer-item').first().tap();
+    await closeArtSheet(page);
+    const memo = page.locator('.art-fs-memo').first();
+    await expect(memo).toBeVisible();
+    return { memo, asin: await memo.getAttribute('data-asin') };
+}
+
+// stubStorageForTest は saveUserData を空の関数に差し替える (端末への書き込みも止まる)。メモが端末に残るかを見る
+// テストでは、その差し替えだけを外して本来の保存に戻す (保存先の読み書きは模擬のまま)
+const restoreUserDataSave = (page) => page.evaluate(() => { delete window.bookshelf.saveUserData; });
+
+// 端末 (localStorage の利用者データ) に残っている、その本の短文メモ
+const memoOnDevice = (page, asin) => page.evaluate((a) => {
+    try { return ((JSON.parse(localStorage.getItem('virtualBookshelf_userData') || '{}').notes || {})[a] || {}).memo ?? null; } catch (_) { return null; }
+}, asin);
+
+// タブを閉じる時に来るイベントを出す。発火の前後 (同じ処理の中) の端末のメモと、発火の間に利用者データを端末へ
+// 書いた回数を返す
+const leaveAndReadMemo = (page, asin) => page.evaluate((a) => {
+    const KEY = 'virtualBookshelf_userData';
+    const read = () => {
+        try { return ((JSON.parse(localStorage.getItem(KEY) || '{}').notes || {})[a] || {}).memo ?? null; } catch (_) { return null; }
+    };
+    const before = read();
+    const setItem = Storage.prototype.setItem;
+    let writes = 0;
+    Storage.prototype.setItem = function (k, v) { if (this === localStorage && k === KEY) writes++; return setItem.call(this, k, v); };
+    try { window.dispatchEvent(new Event('pagehide')); } finally { Storage.prototype.setItem = setItem; }
+    return { before, after: read(), writes };
+}, asin);
+
+test('H8 本の短文メモを入れてすぐタブが閉じても、その時点でメモが端末に残る', async ({ page }) => {
+    const MEMO = 'H8 すぐ閉じるメモ';
+    await bootWithStorage(page);
+    await openArticleList(page);
+    await newArticleWithTitle(page, 'H8 メモを書く記事');
+    const { memo, asin } = await addShelfBlockWithBook(page);
+    await restoreUserDataSave(page);
+    await memo.fill(MEMO);
+    // 入力の直後に、タブを閉じる時に来るイベントを出す
+    const saved = await leaveAndReadMemo(page, asin);
+    // 前提: イベントを出す前はまだ保存されていない (300ms の予約が先に発火していたら、このテストは何も確かめていない)
+    expect(saved.before, '300ms 以内にイベントを出せなかった (メモの保存の予約が先に発火した)').not.toBe(MEMO);
+    expect(saved.after).toBe(MEMO);
+    expect(saved.writes).toBe(1);
+});
+
+test('H8\' 短文メモの保存が済んだ後は、タブが閉じても端末の利用者データを書き直さない', async ({ page }) => {
+    const MEMO = 'H8d 保存が済んだメモ';
+    await bootWithStorage(page);
+    await openArticleList(page);
+    await newArticleWithTitle(page, 'H8d メモを書く記事');
+    const { memo, asin } = await addShelfBlockWithBook(page);
+    await restoreUserDataSave(page);
+    await memo.fill(MEMO);
+    // 300ms の予約が発火して、保存が済むのを待つ
+    await expect.poll(() => memoOnDevice(page, asin)).toBe(MEMO);
+    const saved = await leaveAndReadMemo(page, asin);
+    // 予約が残っていない時は何も保存しない (同じ数え方で、予約が残っている H8 は1回になる)
+    expect(saved.writes).toBe(0);
+    expect(saved.after).toBe(MEMO);
 });

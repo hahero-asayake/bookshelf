@@ -139,7 +139,8 @@ class _ArticleEditorMethods {
         }
         // イシュー#595: 閲覧状態で題名などを打ってすぐ閉じた時も、保留中の保存を確定してすぐ送る
         // (閉じるのはawaitしない=行き先は変えない。送れなかった時の知らせは_artFlushRemoteが出す)
-        if (this._artSaveTimer) this._artSettlePendingSave().then(() => this._artFlushRemoteNow()).catch(() => {});
+        // (イシュー#609: 本のメモの予約だけが残っている時も確定する=予約の有無は _artHasPendingSave で見る)
+        if (this._artHasPendingSave()) this._artSettlePendingSave().then(() => this._artFlushRemoteNow()).catch(() => {});
         // イシュー#279: ×ボタンは閲覧状態からでも押せるため、残っている履歴段を先に畳む
         // (段を残したまま閉じると、次に開いた時や次回の戻る操作で不整合になる・②指示「段を残さない」)。
         this._artMode = 'view';
@@ -1206,7 +1207,8 @@ class _ArticleEditorMethods {
     // commit=false (キャンセル) は全画面を開いた時点のブロックへ戻す。変更があれば確認を出す
     // (C・イシュー#276: P21 対応)。「編集に戻る」を選んだら閉じず false を返す (popstate 経由の
     // 呼び出しなら汎用モーダル履歴ハンドラ (6210行台) が history を積み直す)。短文メモ (.art-fs-memo)
-    // はこのスナップショットに含まれず saveNote() で都度即保存される別経路のため、確認の対象外
+    // はこのスナップショットに含まれず、300ms の予約で saveNote() する別経路 (画面を離れる時は
+    // _artSettlePendingSave が確定する・イシュー#609) のため、確認の対象外
     // (ここで戻すのはブロック自体の並び・追加・削除・表示トグルのみ・決めたルールは04へ記載)。
     async _artCloseBlockFs(commit, { fromHistory = false } = {}) {
         if (this._artMode !== 'form') return;
@@ -1961,11 +1963,7 @@ class _ArticleEditorMethods {
             }));
         }
         el.querySelectorAll('.art-fs-memo').forEach(inp => {
-            let t = null;
-            inp.addEventListener('input', () => {
-                if (t) clearTimeout(t);
-                t = setTimeout(() => { this.saveNote(inp.dataset.asin, inp.value); this._artQueueCanvas(); }, 300);
-            });
+            inp.addEventListener('input', () => this._artScheduleMemoSave(inp.dataset.asin, inp.value));
         });
     }
 
@@ -2904,10 +2902,44 @@ class _ArticleEditorMethods {
         this._artSaveTimer = setTimeout(() => this._artFlushSave(), 600);
     }
 
+    // イシュー#609: 本棚の全画面の短文メモ(.art-fs-memo)の保存予約(300ms)。本ごとに1つ持ち、確定に要る値も持つ
+    // (本の詳細の _noteAutoSaveTimers と同じ形)。画面を離れる時は _artSettlePendingSave がまとめて確定する
+    _artScheduleMemoSave(asin, value) {
+        if (!this._artMemoTimers) this._artMemoTimers = new Map();
+        const pending = this._artMemoTimers.get(asin);
+        if (pending) clearTimeout(pending.timer);
+        const timer = setTimeout(() => this._artSettlePendingMemos(asin), 300);
+        this._artMemoTimers.set(asin, { timer, value });
+    }
+
+    // イシュー#609: 本のメモの保存予約を今すぐ確定する(asin を渡すとその本だけ=予約の発火・渡さなければ全部)。
+    // saveNote は最初の await より前にメモリと localStorage へ書くので、タブを閉じる時に呼んでも端末に残る。
+    // 予約が無い時は何もしない=無変更で saveNote を呼ばない
+    _artSettlePendingMemos(onlyAsin) {
+        const timers = this._artMemoTimers;
+        if (!timers || !timers.size) return;
+        const asins = onlyAsin === undefined ? [...timers.keys()] : [onlyAsin].filter(a => timers.has(a));
+        if (!asins.length) return;
+        asins.forEach(asin => {
+            const { timer, value } = timers.get(asin);
+            clearTimeout(timer);
+            timers.delete(asin);
+            this.saveNote(asin, value);
+        });
+        this._artQueueCanvas();
+    }
+
+    // イシュー#609: 確定が要る保存予約(記事の _artSaveTimer・本のメモの _artMemoTimers)が残っているか
+    _artHasPendingSave() {
+        return !!this._artSaveTimer || !!(this._artMemoTimers && this._artMemoTimers.size);
+    }
+
     // イシュー#595: 保留中の保存予約(_artSaveTimer)を今すぐ確定する。画面を離れる経路(←・×/Esc・戻る・
     // 別の記事を開く・タブを閉じる)はここを通す。予約が無い時は何もしない=無変更で update() を呼ばない
     // (呼ぶと updatedAt が進み、公開済みの記事が「公開中・未反映の変更あり」に化ける。#384/#511 A-d の罠)
+    // イシュー#609: 本のメモの予約も同じ決まりでここで確定する(await の前に同期で行う)
     async _artSettlePendingSave() {
+        this._artSettlePendingMemos();
         if (!this._artSaveTimer) return;
         await this._artFlushSave();
     }
@@ -2915,9 +2947,12 @@ class _ArticleEditorMethods {
     // イシュー#595: タブを閉じる・裏に回る時(pagehide/beforeunload/visibilitychange=hidden)。await できないので、
     // 先に localStorage へ下書きを同期で書いてから、メモリ反映とリモート送信を走らせる(届けば下書きは消える)
     _artSettleOnLeave() {
-        if (this._artSaveTimer) {
-            this._artSaveDraftToLocalStorage();
+        if (this._artHasPendingSave()) {
+            const memoPending = !!(this._artMemoTimers && this._artMemoTimers.size);
+            if (this._artSaveTimer) this._artSaveDraftToLocalStorage(); // 記事の下書きは、記事の予約がある時だけ書く
             this._artSettlePendingSave().then(() => this._artFlushRemoteNow()).catch(() => {});
+            // イシュー#609: 本のメモは利用者データの同期で送る。同期の予約(800ms)を待たずに、すぐ送る
+            if (memoPending) this.flushSync().catch(() => {});
         } else if (this._artRemoteFlushTimer) {
             this._artFlushRemoteNow();
         }
