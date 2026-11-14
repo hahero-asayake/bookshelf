@@ -263,3 +263,32 @@ Received: 1
 
 - 直しが無い main でも同じ場所が同じメッセージで落ちる。なので、このイシューの直しが持ち込んだ赤ではなく、main にもとからある不安定さ（負荷が高い時にハブへの書き込みが20秒で届かない）と見る。step4 の全件比較（base 02772ca）では、この spec は落ちていなかった。
 - ②の指示（関連する spec が赤になったら push せずに報告）に従い、**push はしていない**。一時 worktree は `_trash/672-base-4fa0d72` へ退避し、`git worktree prune` した。
+
+## step5（続き）push・CI（2026-11-14 19:30〜・②の判断：sync-conflict-overwrite のハブの上書きは、もとからある不安定さとして push を止める理由にしない）
+
+### 最後の載せ直しと push
+
+- 19:30 に fetch すると、origin/main は def8437（4fa0d72 から6進み、#676 の docs・test だけ）だった。rebase は衝突なし。
+- lint は12本中0本失敗。npm test は1197 passed。
+- 新しい spec と関連する6 spec は 1 failed / 26 passed（`tmp/672/step5b-specs.txt`）。
+  - 新しい spec の6本は全部通った。
+  - 落ちたのは、前回と同じ sync-conflict-overwrite.spec.js:76（Asayake ハブの上書き）。メッセージも同じ「private/notes.json に…が 20000ms 以内に届かなかった」。②の判断どおり、push を止める理由にしていない。
+- 19:32 の1回目の push は non-fast-forward で弾かれた。直前に #674 の docs（3489a77）が入っていた。
+  - 3489a77 は docs だけだったので、もう1回 rebase した（衝突なし）。
+  - lint（12本中0本失敗）と npm test（1197 passed）を流し直してから push した。
+- **push した範囲：3489a77..5f27297**（19:32:53）。pre-push の lint も12本中0本失敗。
+  - 自分の commit：9f359d1（docs・step1）・7397d15（test・新しい spec）・**9944d6b（fix）**・d541095（docs・step4）・5f27297（docs・step5）。
+  - bookshelf.js の `?v=` は 2026111877（main の最大は 2026111868 だった）。
+
+### CI（run 43585797912・head 5f27297）
+
+API は使わず、commit の checks の画面（`/commit/5f27297…/checks`）の HTML を、push の後5分まで約50秒おきに読んだ。ジョブ名の前のアイコンの class で判定した。
+
+| 時刻 | test (e2e) | test (char) |
+|---|---|---|
+| 19:34:43 | 実行中（dot-fill・attention） | 実行中（dot-fill・attention） |
+| 19:38:19〜26（push から5分・最大待ち時間） | **実行中** | **成功**（check・success） |
+
+- 最大待ち時間（5分）までに test (e2e) は終わらなかった。代替判定として、その時点の状態（test (e2e) は実行中・test (char) は成功）を書く。失敗したジョブは無い。
+- workflow の badge（`ci.yml/badge.svg?branch=main`）は 19:33 に「failing」だった。これは 5f27297 の run が終わる前の、main の最後に終わった run の結果で、この push の結果ではない。
+- test (e2e) が後で赤になった場合は、このように切り分ける。sync-conflict-overwrite のハブの上書き（L76）なら、もとからある不安定さ（step5 の切り分けの表）。新しい spec（boot-load-checking-row）やその他なら、別に見る。
