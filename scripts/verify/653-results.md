@@ -113,3 +113,74 @@
 
 1. 起動の読込が通信で失敗した時の文に「次にどうすればよいか」が無い（ui-standards §2-11）。ハブの状態バー「Asayake ハブ からの読み込みに失敗しました。」が該当する。GitHub の toast には「再試行」のボタンがある。直すなら、状態バー・toast・状態の欄の文を1か所で決める形にする（保存の失敗の js/sync-failure.js と同じ形）。
 2. GitHub の起動の読込が失敗した後も、状態バーの「最新のデータを確認しています…」が残っていた（上の注2・未確認）。
+
+### ②の決定（2026-11-14 17:53）
+
+- 文言は案A。同じ catch が状態バー・toast にもう出している文を、そのまま状態の欄へ detail で渡す（上の表の4つの文）。
+- path は (1)。認証切れの時だけ 'reconnect'、通信の失敗は 'failed' にして「（要再接続）」を付けない。
+- (1) で state が 'reconnect' から 'failed' に変わる。そこで step3 では、自動の読み直し（#617）と toast の「再試行」が state の値に頼っていないかをコードで確かめる。online-resync の spec が直した後も緑であることを、ここに書く。頼っていたら、直す前に止めて報告する。
+- step2 の spec は6本（4場面と守りの2本）。
+
+## step2 E2E を足し、直す前の版で赤を取る（2026-11-14 17:54〜17:59）
+
+新しい spec：`tests/e2e/boot-load-failure-status.spec.js`（6本）。
+
+- 作り方は online-resync.spec.js（#617）と同じ。1回ふつうに起動し、同期欄が「保存済み」になるのを待つ。その後、模擬より手前の `context.route` で、通信を落とすか 401 を返す形にしてから開き直す。
+  - ハブ・通信の失敗：`${HUB_BASE}/**` を `route.abort('internetdisconnected')` で落とす。
+  - ハブ・認証切れ：模擬に `hub.deleted = true` を立てる。gate-hub.js の模擬が 401 `{ error: 'invalid key' }` を返す。
+  - GitHub・通信の失敗：`https://api.github.com/**` を abort で落とす。
+  - GitHub・認証切れ：同じ口で 401 `{ message: 'Bad credentials' }` を返す。gate-github.js の模擬には 401 を返す口が無いので、模擬より手前の route で返した（storage-fakes.js L235 の opts.status は、別の模擬 installFakeGitHub 用）。
+  - 守り：同じ口で、読み込み（GET）は通して書き込み（GET 以外）だけを abort で落とす。本の短文メモを書いて保存させる（書き方は online-resync.spec.js と同じ）。
+- 見るのは画面だけ：#obsidian-sync-status・#obsidian-sync-path・#app-status-bar・toast の .toast-message。bookshelf._* は読まない。待つのは expect(locator) だけにした。
+- 失敗の場面では3つを確かめる：同期欄に「保存できませんでした」が無いこと、決めた文と同じであること、path。expect.soft で並べ、赤の時にどれが違うかを1回で全部出すようにした。
+
+| # | テスト | 確かめること（textContent） | 直す前（a390783＝1c99d78＋docs） |
+|---|---|---|---|
+| 1 | ハブ・通信の失敗 | 同期欄＝「Asayake ハブ からの読み込みに失敗しました。」・path＝「Asayake ハブ」 | **赤** |
+| 2 | ハブ・認証切れ | 同期欄＝「Asayake ハブ の認証が切れました。設定から再接続してください。」・path＝「Asayake ハブ（要再接続）」 | **赤** |
+| 3 | GitHub・通信の失敗 | 同期欄＝「GitHub からの読み込みに失敗しました。」・path＝「taro/bookshelf-data@main」 | **赤** |
+| 4 | GitHub・認証切れ | 同期欄＝「GitHub との接続に失敗しました。「切断」してから、もう一度「GitHub に接続」をお試しください。」・path＝「taro/bookshelf-data@main（要再接続）」 | **赤** |
+| 5 | 守り ハブ・保存の失敗 | 同期欄＝「Asayake ハブに保存できませんでした。通信が戻ったら「再試行」を押してください。」・path＝「Asayake ハブ」 | 緑 |
+| 6 | 守り GitHub・保存の失敗 | 同期欄＝「GitHub に保存できませんでした。通信が戻ったら「再試行」を押してください。」・path＝「taro/bookshelf-data@main」 | 緑 |
+
+### 直す前の出力（2回流して同じ。`tmp/653/step2-before.txt` は2回目、1回目は `step2-before-run1.txt`。commit しない）
+
+流し方：`PORT=8153 npx playwright test tests/e2e/boot-load-failure-status.spec.js --project=chromium --workers=3`
+
+```
+✘ 1 ハブ: 起動の読込が通信で失敗した時、同期欄は状態バーと同じ読込の失敗の文を出し、path に「（要再接続）」を付けない (16.8s)
+✘ 2 ハブ: 起動の読込が認証切れで失敗した時、同期欄は状態バーと同じ認証切れの文を出し、path に「（要再接続）」を付ける (11.6s)
+✘ 3 GitHub: 起動の読込が通信で失敗した時、同期欄は toast と同じ読込の失敗の文を出し、path に「（要再接続）」を付けない (19.1s)
+✘ 4 GitHub: 起動の読込が認証切れで失敗した時、同期欄は toast と同じ認証切れの文を出し、path に「（要再接続）」を付ける (11.4s)
+✓ 5 守り ハブ: 保存の書き込みが通信で失敗した時は、今までどおり同期欄に「Asayake ハブに保存できませんでした。…」を出す (2.4s)
+✓ 6 守り GitHub: 保存の書き込みが通信で失敗した時は、今までどおり同期欄に「GitHub に保存できませんでした。…」を出す (2.8s)
+4 failed / 2 passed (1.1m)
+```
+
+1回目も 4 failed / 2 passed（1.3m）で、赤になったテストと赤の理由は2回目と同じだった。
+
+赤の理由（受け取った値）：
+
+- 1 ハブ・通信：同期欄の `not.toContainText("保存できませんでした")` と `toHaveText("Asayake ハブ からの読み込みに失敗しました。")` が、どちらも Received "保存できませんでした"。path の `toHaveText("Asayake ハブ")` が Received "Asayake ハブ（要再接続）"。
+- 2 ハブ・認証切れ：同期欄の2つが Received "保存できませんでした"。path は「Asayake ハブ（要再接続）」で合っている（認証切れは今も 'reconnect'）。
+- 3 GitHub・通信：同期欄の2つが Received "保存できませんでした"。path が Received "taro/bookshelf-data@main（要再接続）"。
+- 4 GitHub・認証切れ：同期欄の2つが Received "保存できませんでした"。path は合っている。
+
+### 直した後に緑になるかの下見（テストの側に誤りが無いかを見るため）
+
+step1 の案A＋(1) を作業ツリーに一時的に当てて流した（`node tmp/653/trial.mjs A`）。当てた中身は次のとおり。
+
+- ハブ：`_syncErrorMsg` を決めた後に `updateSyncStatus(isAuthErr ? 'reconnect' : 'failed', label, this._syncErrorMsg)` を呼ぶ。
+- GitHub：認証切れなら 'reconnect' と toast の文から改行を除いたもの、それ以外は 'failed' と「GitHub からの読み込みに失敗しました。」を渡す。
+
+結果は **6本とも緑**（6 passed・15.1s・`tmp/653/step2-trial-fix.txt`）。流した後に `git checkout -- js/bookshelf.js` で戻し、退避した写しと `cmp` で一致することを確かめた。この commit には直しを入れていない（直すのは step3）。
+
+### lint（新しい spec を足した後）
+
+次の5本は、すべて OK だった。
+
+- lint:e2e-goto：先頭スラッシュ付きの goto が0件。
+- lint:e2e-wait：async の waitForFunction・ページ全体を写す待ちが0件。
+- lint:e2e-external：遮断を通らない context が0件。
+- lint:internal-refs：上限82以内。
+- lint:e2e-gate：@gate 41本・違反0件。
