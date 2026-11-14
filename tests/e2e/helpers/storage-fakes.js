@@ -1,22 +1,11 @@
-// 模擬の保存先 (イシュー#587)。
+// 模擬の保存先 (イシュー#587): GitHub とローカルフォルダ。
 //
-// 保存先 (Asayake ハブ) の私的データ API を Node 側の Map で再現し、テストから
-// 「いまどのファイルが残っているか」「どんな削除要求が来たか」を読めるようにする。
-// 状態が Node 側にあるので、ページを再読込しても残る。
+// 保存先を再現し、テストから「いまどのファイルが残っているか」「どんな削除要求が来たか」を読めるようにする。
+// GitHub の状態は Node 側にあるので、ページを再読込しても残る。
 //
-// 応答の形は cf-worker/asayake-hub.js (handleData / putObject / listDir / handleBatch) に合わせる:
-//   GET|HEAD /data/<path>          → 200 + ETag / 無ければ 404
-//   GET      /data/<dir>?list=1    → 200 { files, dirs, entries:[{name,etag}], truncated:false }
-//   PUT      /data/<path>          → 200 + ETag / If-Match が合わなければ 412
-//   DELETE   /data/<path>          → 204 (無くても 204)
-//   POST     /data/batch           → ifMatch/ifNoneMatch を先に全件確かめ、1件でも合わなければ
-//                                    412 { conflicts:[{path,etag}] } で何も書かない。通れば全件を適用して 200
-//   GET      /usage                → 200 { plan, usedBytes, quotaBytes }
-//
-// tests/e2e/plugin-seed.spec.js の installMockHub は ETag を照合しない簡易版。こちらは削除の確認に
-// 要る分 (ETag の照合・削除要求の記録・書き込み失敗の注入) を足している。
-
-export const FAKE_HUB_BASE = 'https://fakehub.test';
+// ハブ (Asayake ハブ) の模擬はここには無い。tests/e2e/helpers/gate-hub.js の1本にまとめた (イシュー#598)。
+// 保存先3つを同じ形で回す spec は、ハブの分を gate-hub.js の hubStoreForTest で読む
+// (has / readJSON / list / writes / deleteRequests / failNextWrites / failuresLeft。installFakeGitHub の返り値と同じ名前)。
 
 const CORS = {
     'access-control-allow-origin': '*',
@@ -24,149 +13,6 @@ const CORS = {
     'access-control-allow-methods': 'GET,PUT,POST,DELETE,HEAD,OPTIONS',
     'access-control-expose-headers': 'ETag'
 };
-
-// クライアントが送る ETag はクォート付き ("abc")。Worker の normalizeEtag と同じく外して比べる。
-const normEtag = (v) => (v ? String(v).replace(/^W\//, '').replace(/^"(.*)"$/, '$1') : null);
-
-/**
- * ハブの私的データ API の模擬を page に取り付ける。
- * @param {import('@playwright/test').Page} page
- * @param {{ apiBase?: string }} [opts]
- * @returns {Promise<{
- *   apiBase: string,
- *   store: Map<string, string>,
- *   writes: Array<{ op: 'put'|'delete', path: string, via: 'single'|'batch' }>,
- *   deleteRequests: Array<{ path: string, via: 'single'|'batch', existed: boolean }>,
- *   has: (path: string) => boolean,
- *   readJSON: (path: string) => any,
- *   list: (dir: string) => string[],
- *   failNextWrites: (n?: number) => void
- * }>}
- */
-export async function installFakeHub(page, { apiBase = FAKE_HUB_BASE } = {}) {
-    const store = new Map();          // path → 本文
-    const etags = new Map();          // path → '"eN"'
-    const writes = [];                // 実際に保存先が変わった書き込み (put/delete)
-    const deleteRequests = [];        // 届いた削除要求 (対象が無かったものも含む)
-    const state = { seq: 0, failWrites: 0 };
-
-    const put = (path, text, via) => {
-        store.set(path, text);
-        etags.set(path, `"e${++state.seq}"`);
-        writes.push({ op: 'put', path, via });
-    };
-    const del = (path, via) => {
-        const existed = store.has(path);
-        deleteRequests.push({ path, via, existed });
-        if (!existed) return;
-        store.delete(path);
-        etags.delete(path);
-        writes.push({ op: 'delete', path, via });
-    };
-    // 書き込み失敗の注入: failNextWrites(n) の後、n 回ぶんの書き込み要求 (PUT/DELETE/batch) を 500 にする
-    const shouldFailWrite = () => {
-        if (state.failWrites <= 0) return false;
-        state.failWrites--;
-        return true;
-    };
-
-    await page.route(`${apiBase}/**`, async (route) => {
-        const req = route.request();
-        const method = req.method();
-        const url = new URL(req.url());
-        const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-        const json = (status, body) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) });
-
-        if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
-        if (rel === 'usage') return json(200, { plan: 'free', usedBytes: 0, quotaBytes: 100 * 1048576 });
-
-        if (rel === 'data/batch' && method === 'POST') {
-            if (shouldFailWrite()) return json(500, { error: 'injected write failure' });
-            const entries = (JSON.parse(req.postData() || '{}').entries) || [];
-            const conflicts = [];
-            for (const e of entries) {
-                const want = normEtag(e.ifMatch);
-                const wantAbsent = e.ifNoneMatch === '*';
-                if (!want && !wantAbsent) continue;
-                const cur = store.has(e.path) ? normEtag(etags.get(e.path)) : null;
-                if (wantAbsent) {
-                    if (cur !== null) conflicts.push({ path: e.path, etag: cur });
-                } else if (cur === null || cur !== want) {
-                    conflicts.push({ path: e.path, etag: cur });
-                }
-            }
-            if (conflicts.length > 0) return json(412, { error: 'etag mismatch', conflicts });
-            for (const e of entries) {
-                if (e.op === 'delete') del(e.path, 'batch'); else put(e.path, e.content || '', 'batch');
-            }
-            return route.fulfill({ status: 200, headers: CORS, body: '' });
-        }
-
-        if (rel.startsWith('data/')) {
-            const path = rel.slice('data/'.length);
-            if ((method === 'GET' || method === 'HEAD') && url.searchParams.get('list') === '1') {
-                const prefix = path ? `${path.replace(/\/+$/, '')}/` : '';
-                const out = { files: [], dirs: [], entries: [], truncated: false };
-                const dirs = new Set();
-                for (const p of store.keys()) {
-                    if (!p.startsWith(prefix)) continue;
-                    const rest = p.slice(prefix.length);
-                    const i = rest.indexOf('/');
-                    if (i < 0) {
-                        out.files.push(rest);
-                        out.entries.push({ name: rest, etag: etags.get(p), size: store.get(p).length });
-                    } else {
-                        dirs.add(rest.slice(0, i));
-                    }
-                }
-                out.dirs = [...dirs];
-                return json(200, out);
-            }
-            if (method === 'GET' || method === 'HEAD') {
-                if (!store.has(path)) return route.fulfill({ status: 404, headers: CORS, body: '' });
-                return route.fulfill({
-                    status: 200,
-                    headers: { ...CORS, ETag: etags.get(path), 'content-type': 'text/plain; charset=utf-8' },
-                    body: method === 'HEAD' ? '' : store.get(path)
-                });
-            }
-            if (method === 'PUT') {
-                if (shouldFailWrite()) return json(500, { error: 'injected write failure' });
-                const want = normEtag(req.headers()['if-match']);
-                const cur = store.has(path) ? normEtag(etags.get(path)) : null;
-                if (want && cur !== want) return json(412, { error: 'etag mismatch' });
-                put(path, req.postData() || '', 'single');
-                return route.fulfill({ status: 200, headers: { ...CORS, ETag: etags.get(path) }, body: '' });
-            }
-            if (method === 'DELETE') {
-                if (shouldFailWrite()) return json(500, { error: 'injected write failure' });
-                del(path, 'single');
-                return route.fulfill({ status: 204, headers: CORS });
-            }
-        }
-        return route.fulfill({ status: 404, headers: CORS, body: '' });
-    });
-
-    return {
-        apiBase,
-        store,
-        writes,
-        deleteRequests,
-        has: (path) => store.has(path),
-        readJSON: (path) => (store.has(path) ? JSON.parse(store.get(path)) : null),
-        // dir 直下のファイル名 (並びは名前順)
-        list: (dir) => {
-            const prefix = `${String(dir).replace(/\/+$/, '')}/`;
-            return [...store.keys()]
-                .filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
-                .map((p) => p.slice(prefix.length))
-                .sort();
-        },
-        failNextWrites: (n = 1) => { state.failWrites = n; },
-        // 注入した失敗のうち、まだ起きていない回数 (0 になったら失敗が起きた)
-        failuresLeft: () => state.failWrites
-    };
-}
 
 // ===== GitHub =====
 //
@@ -188,7 +34,7 @@ export async function installFakeHub(page, { apiBase = FAKE_HUB_BASE } = {}) {
 export const FAKE_GITHUB = { owner: 'fake-owner', repo: 'fake-bookshelf-data', branch: 'main' };
 
 /**
- * GitHub API の模擬を page に取り付ける。返り値の読み口は installFakeHub と同じ
+ * GitHub API の模擬を page に取り付ける。返り値の読み口はハブの模擬 (gate-hub.js の hubStoreForTest) と同じ
  * (has / readJSON / list / writes / deleteRequests / failNextWrites)。加えて commitCount() で commit 数を読める。
  * @param {import('@playwright/test').Page} page
  * @param {{ owner?: string, repo?: string, branch?: string }} [opts]
@@ -399,7 +245,7 @@ export async function installFakeGitHub(page, { owner = FAKE_GITHUB.owner, repo 
 // E2E では OS のフォルダ選択を出せないので、showDirectoryPicker だけを「ブラウザ内蔵の専用フォルダ
 // (navigator.storage.getDirectory()) の下のフォルダを返す関数」に差し替える。返るのは本物の
 // FileSystemDirectoryHandle なので、実物の LocalFSAdapter がそのまま読み書き・削除する。
-// 読み口は installFakeHub と同じ名前 (has / readJSON / list) だが、ブラウザの中を読むので Promise を返す。
+// 読み口はハブの模擬 (gate-hub.js の hubStoreForTest) と同じ名前 (has / readJSON / list) だが、ブラウザの中を読むので Promise を返す。
 
 /**
  * @param {import('@playwright/test').Page} page

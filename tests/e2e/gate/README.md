@@ -65,7 +65,8 @@ npm run gate:report -- --collect
 | やりたいこと | ヘルパー |
 |---|---|
 | 保存先・公開先をハブにする（保存・まとめ書き・公開・公開ページの配信） | `gate-hub.js`：`createHubStateForTest` → `seedHubDataForTest`（ハブに蔵書）→ `seedHubLoginForTest(page, hub, { method: 'hub', library: false })` → `mockHubForTest` → `bootAppForTest` → `waitForHubStartupForTest` |
-| ハブへの書き込みを失敗させる・届くのを待つ | `failHubWritesForTest`・`waitForHubFileContainsForTest` |
+| ハブへの書き込みを失敗させる・届くのを待つ | `failHubWritesForTest(hub)`（これ以降ずっと）・`failHubWritesForTest(hub, n)`（次の n 回だけ）・`waitForHubFileContainsForTest` |
+| ハブの中身・書き込み・削除の要求を読む（保存先3つを同じ形で回す spec 用。門以外の shelf-file-delete・book-memo-file-lifecycle・save-failure-visible が使う） | `hubStoreForTest(hub)`：`has`・`readJSON`・`list`・`writes`・`deleteRequests`・`failNextWrites(n)`・`failuresLeft`（`storage-fakes.js` の GitHub・ローカルの模擬と同じ名前） |
 | 保存先を GitHub にする | `gate-github.js`：`createMockGitHubForTest` → `seedGitHubDataForTest` → `seedGitHubLoginForTest` → `mockGitHubForTest`（届くのを待つのは `waitForGitHubFileContainsForTest`） |
 | 別の端末（2つ目のブラウザコンテキスト）で同じ保存先を開く | `gate-device.js`：`prepareOtherDeviceForTest(page, hub または gh)`・`closeOtherDeviceForTest` |
 | 保存先をローカルのフォルダにする（ブラウザの中の OPFS） | `gate-local.js`：`stubFolderPickerForTest`・`seedLocalLibraryOnceForTest`・`seedLocalFolderForTest`・`waitForLocalFileContainsForTest`・`clearLocalCacheForTest` |

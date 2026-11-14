@@ -4,10 +4,11 @@
 //
 // 関数の直呼びでは「画面の削除 → 保存 → 保存先」の経路が切れていても通ってしまうので、
 // 画面の操作 (ツリーの「…」メニュー → 削除 → 確認ダイアログ) だけで行い、保存先の模擬
-// (tests/e2e/helpers/storage-fakes.js・状態は Node 側) に残ったファイルを見る。
+// (ハブは tests/e2e/helpers/gate-hub.js、GitHub とローカルは storage-fakes.js・状態は Node 側) に残ったファイルを見る。
 // 本棚も画面から作る＝保存先のファイルはアプリ自身が書いた形のまま。
 import { test, expect } from './helpers/test-base.js';
-import { installFakeHub, FAKE_HUB_BASE, installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder } from './helpers/storage-fakes.js';
+import { createHubStateForTest, seedHubLoginForTest, mockHubForTest, hubStoreForTest } from './helpers/gate-hub.js';
+import { installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
 
 // 画面の操作が詰まった時に、テスト全体の制限時間 (60秒) まで待たずに落とす
@@ -30,13 +31,10 @@ const confirmOk = async (page) => {
 
 /** ハブ接続済みで起動する。空のハブでは「新規データで初期化しますか？」が出るので OK で進める */
 async function bootWithHub(page) {
-    const hub = await installFakeHub(page);
-    await page.addInitScript((apiBase) => {
-        localStorage.setItem('bookshelf_sync', JSON.stringify({
-            method: 'hub',
-            hub: { apiBase, key: 'hk_test', uid: 'u1', email: 'shelf-delete@example.com' }
-        }));
-    }, FAKE_HUB_BASE);
+    const state = createHubStateForTest({ usedBytes: 0, email: 'shelf-delete@example.com' });
+    await seedHubLoginForTest(page, state, { method: 'hub', library: false });
+    await mockHubForTest(page, state);
+    const hub = hubStoreForTest(state);
     await page.goto('index.html');
     await confirmOk(page);
     await expect.poll(() => hub.has(shelfFile('all'))).toBe(true);

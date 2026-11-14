@@ -3,13 +3,14 @@
 // 3つの保存先 (Asayake ハブ・GitHub・ローカルフォルダ) で同じ3操作を流す回帰テスト
 // (門の E2E には数えない。確認の対象が画面ではなく保存先の中身のため)。
 //
-// 保存先の模擬は tests/e2e/helpers/storage-fakes.js (イシュー#587)。状態は Node 側にあり、
+// 保存先の模擬は、ハブが tests/e2e/helpers/gate-hub.js、GitHub とローカルが storage-fakes.js (イシュー#587)。状態は Node 側にあり、
 // ページを再読込しても残る。題名・ASIN の変更とメモの読み書きは画面の操作で行う。
 // 本の追加 (前提づくり) も画面の操作 (設定の「蔵書」→ 手動で追加)。例外は本の削除で、アプリの処理 (deleteBook) を呼ぶ。
 // 本の削除は、origin/main (66d9ac4) の画面に押せるボタンが無いため (js/screens/book-detail.js:393 の
 // .delete-btn を描く箇所が無い)。deleteBook 自身の確認ダイアログ (confirm) は画面と同じく通す。
 import { test, expect } from './helpers/test-base.js';
-import { installFakeHub, FAKE_HUB_BASE, installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder } from './helpers/storage-fakes.js';
+import { createHubStateForTest, seedHubLoginForTest, mockHubForTest, hubStoreForTest } from './helpers/gate-hub.js';
+import { installFakeGitHub, FAKE_GITHUB, installFakeLocalFolder } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
 import { waitForBookMemoEditor, setBookMemoValue, getBookMemoValue } from './helpers/book-memo.js';
 
@@ -49,13 +50,10 @@ const remoteMemoFiles = async (remote) => (await remote.list('private/books')) |
 
 // 起動の手順は tests/e2e/shelf-file-delete.spec.js (イシュー#587) と同じ
 async function bootWithHub(page) {
-    const hub = await installFakeHub(page);
-    await page.addInitScript((apiBase) => {
-        localStorage.setItem('bookshelf_sync', JSON.stringify({
-            method: 'hub',
-            hub: { apiBase, key: 'hk_test', uid: 'u1', email: 'memo-file@example.com' }
-        }));
-    }, FAKE_HUB_BASE);
+    const state = createHubStateForTest({ usedBytes: 0, email: 'memo-file@example.com' });
+    await seedHubLoginForTest(page, state, { method: 'hub', library: false });
+    await mockHubForTest(page, state);
+    const hub = hubStoreForTest(state);
     await page.goto('index.html');
     await confirmOk(page);
     await expect.poll(() => hub.has('private/bookshelves/all.json')).toBe(true);

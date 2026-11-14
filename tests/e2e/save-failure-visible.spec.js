@@ -4,12 +4,13 @@
 //   - 再試行が尽きたら状態バーに原因別の文言と「再試行」を出す。次の保存・「再試行」で消える
 //   - 直らない種類 (ログイン切れ・フォルダが見つからない等) は再試行せず、すぐ出す
 //   - ネットにつながった時に再試行する
-// 失敗は保存先の模擬 (tests/e2e/helpers/storage-fakes.js) で注入し、操作は画面からだけ行う。
+// 失敗は保存先の模擬 (ハブは tests/e2e/helpers/gate-hub.js、GitHub とローカルは storage-fakes.js) で注入し、操作は画面からだけ行う。
 // 再試行の間隔は E2E 用のフラグ (bookshelf.flag.syncRetryDelaysMs) で短くする。
 import fs from 'node:fs';
 import { test, expect } from './helpers/test-base.js';
+import { createHubStateForTest, seedHubLoginForTest, mockHubForTest, hubStoreForTest } from './helpers/gate-hub.js';
 import {
-    installFakeHub, FAKE_HUB_BASE, installFakeGitHub, FAKE_GITHUB,
+    installFakeGitHub, FAKE_GITHUB,
     installFakeLocalFolder, installLocalWriteFailures
 } from './helpers/storage-fakes.js';
 import { openSettingsByClick } from './helpers/settings.js';
@@ -35,13 +36,10 @@ const retryDelays = (page, delays) => page.addInitScript((d) => {
 }, JSON.stringify(delays));
 
 async function bootWithHub(page) {
-    const hub = await installFakeHub(page);
-    await page.addInitScript((apiBase) => {
-        localStorage.setItem('bookshelf_sync', JSON.stringify({
-            method: 'hub',
-            hub: { apiBase, key: 'hk_test', uid: 'u1', email: 'save-failure@example.com' }
-        }));
-    }, FAKE_HUB_BASE);
+    const state = createHubStateForTest({ usedBytes: 0, email: 'save-failure@example.com' });
+    await seedHubLoginForTest(page, state, { method: 'hub', library: false });
+    await mockHubForTest(page, state);
+    const hub = hubStoreForTest(state);
     await page.goto('index.html');
     await confirmOk(page);
     await expect.poll(() => hub.has(shelfFile('all'))).toBe(true);

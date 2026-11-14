@@ -1,7 +1,7 @@
 // 門のE2E (テスト名に `@gate` と観測点ID) の「前提」で使う、ハブ (Asayake ハブの Worker と公開ページの配信) の模擬
 // (イシュー#589 が作り、#588 で保存のまとめ書き・一覧・公開・公開ページの配信・書き込み失敗を足した。#598 で、
-// tests/e2e/helpers/storage-fakes.js の installFakeHub にしか無かった一覧の entries・If-Match の正規化・回数を決めた
-// 書き込みの失敗・書き込みと削除要求の記録・読み口 (hubStoreForTest) を足した)。
+// tests/e2e/helpers/storage-fakes.js にあったもう1本のハブの模擬をここへ寄せ、そちらにしか無かった一覧の entries・
+// If-Match の正規化・回数を決めた書き込みの失敗・書き込みと削除要求の記録・読み口 (hubStoreForTest) を足した)。
 // 書き方の決まりは tests/e2e/gate/README.md。外部 (ハブ・公開ページの配信) への通信だけを差し替え、アプリ自身の
 // ファイル (index.html・js/・css/・sw.js) は差し替えない = 本物のコードを通す。
 //
