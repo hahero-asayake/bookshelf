@@ -187,3 +187,53 @@ Received: 1
 | 参考：GitHub・通信の失敗で toast の「再試行」 | 2146 | 2146 | 0.00 秒（2.38・2.15 秒） |
 
 - 通信の失敗の2場面は、失敗の表示と同時に消えるようになった。401 と成功の起動は、今までどおり finally で下ろしている（1回だけの値なので、直す前との差は揺れの範囲）。
+
+## step4 最新の main に載せ直し、main と全件を比べる（2026-11-14 19:08〜・push はしていない）
+
+### 載せ直し
+
+- 19:08 に `git fetch` した。origin/main は 585f13a で、土台の 47505b2 から9つ進んでいた（#664 の fix・test・docs、#669 の docs、585f13a「bookshelf.js の ?v= を main の値 (2026111796) より新しくする」）。
+- #666 はまだ入っていない（`git log origin/main --grep='Issue: #666'` が0件）。なので #666 の spec（boot-load-failure-message.spec.js）は main に無く、流し直すものは無い。`_initLoadFailed` を立てる2つの catch も、GitHub の toast も、origin/main で変わっていない。
+- `git rebase origin/main` で、衝突は index.html の bookshelf.js の `?v=` の1行だけ（main は 2026111797・こちらは 2026111799）。新しい方の 2026111799 にした。origin/main の最大は 2026111797。開いている他の worktree の最大は、step3 で見た 2026111798。
+- 載せ直した後の commit：22d3571（docs）・9f42306（test）・7e14e96（fix）。`git diff origin/main --stat` は、5ファイル・321 行足し・2 行消し（docs/char/boot-flow.md・index.html・js/bookshelf.js・672-results.md・新しい spec）。
+- `npm run check:version -- --range=origin/main..HEAD`：OK。
+
+### lint・単体
+
+- `npm run lint`：**12 本中 0 本失敗**（`tmp/672/step4-lint.txt`）。
+- `npm test`：Test Files 80 passed (80)・Tests 1194 passed | 2 todo（`tmp/672/step4-npm-test.txt`）。
+
+### main との全件比較（e2e-diff-main）
+
+- 流し方：`node scripts/verify/e2e-diff-main.mjs --port=8172`。19:09 に始め、19:23 に終わった（14分。負荷平均は約55で、ほかのイシューの E2E と重なっていた）。出力は `tmp/672/step4-e2e-diff.txt`、結果一式は `/home/kuroko/worktrees/bookshelf/_artifacts/e2e-diff-20261114-190939-1269863`。
+- **土台が食い違っている**：base は、スクリプトが取った時点の origin/main **02772ca**。work は、585f13a に載せた作業ツリー（HEAD 7e14e96）。02772ca には、585f13a の後に入った #663 の fix と test（605825f・775750f。js/bookshelf.js の読み直しの後に「すべての本」へ切り替える所と ?v=2026111798）があり、work には無い。#663 の test は work 側に無いので、「新しく落ちた」には出ない。
+- 本数：work は expected 1158・unexpected 6、base は expected 1160・unexpected 2（どちらも skipped 592）。work の unexpected 6 は、下の「新しく落ちた」4（流し直しで通った）と「両方で落ちた」2。
+
+**E2E・新しく落ちた（4件・どれもフレーク判定＝3回の流し直しで通った）**
+
+| file | テスト | 判定 |
+|---|---|---|
+| gate/j3-5-many-books.spec.js | J3-5 913冊・CPU 6倍遅くで、並べ替えと直後の本の詳細が基準時間内に出る | flake |
+| publish-article-editor.spec.js | プレビューの長文メモ読込が多数冊の合計経過でストールと見なされない | flake |
+| shelf-file-delete.spec.js | ローカルフォルダで本棚を1つ削除すると、保存先から本棚のファイルが消える | flake |
+| sync-section-status.spec.js | ローカルフォルダで保存の再試行が尽きた後、同期欄に状態バーと同じ文と「再試行」が見える | flake |
+
+- 4件とも時間に弱いもの、またはローカルフォルダの経路。今回の直しはハブ・GitHub で `_syncChecking` を立てた時だけ働き、ローカルフォルダでは `_syncChecking` を立てない。なので、直しとは関係ないと見る（流し直しで通った）。
+
+**E2E・新しく通った（0件）**
+
+**E2E・両方で落ちた／既存の問題（2件）**
+
+| file | テスト |
+|---|---|
+| duplicate-asin-notice.spec.js | 本の詳細に付け直し案内が出て、付け替え直後はもう一方の本に設定が残り、その後の新しい変更は伝播する |
+| list-staged-render.spec.js | #401 並べ替えの段階描画（913冊）・途中で1冊を動かす |
+
+- vitest：新しく落ちた0・新しく通った0・両方で落ちた0。
+- 画像の差分（work 側のみ）：0件／54件。
+- 新しいテスト（boot-load-checking-row.spec.js の6本）は work 側だけにあり、6本とも通った（unexpected 6 に入っていない）。
+
+### push の前に残ること（step5 で行う）
+
+- 19:19 の時点で、origin/main は 80e2cc8 まで進んでいた（585f13a から14進み、#663・#668 が入った）。#663 は js/bookshelf.js（読み直しの後の本棚の切り替え。こちらの finishStartup とは別の箇所）と index.html の bookshelf.js の `?v=`（2026111798）を変えている。
+- なので、push の前にもう1回 rebase が要る。index.html の `?v=` は、こちらの 2026111799 がまだ新しい（衝突したら 99 を採る）。rebase の後に lint・npm test・新しい spec・関連する spec を流し直してから push する。
