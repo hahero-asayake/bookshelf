@@ -161,3 +161,67 @@
   - 公開ガードは `SyncConfigManager.conflict()` も見る。
   - 同期欄の 'synced' の読み替えに衝突中も足す。
 - (b) の spec も step4 で、直した後の姿を期待値にした合否つきに直す。中身は、閉じた後に状態バーへ出る・公開が止まる・選ぶと消える、の3つ。
+
+## step3: E2E の3点・全件比較・画像 (2026-11-14 16:05〜)
+
+- 着手時に origin/main へ載せ直した。#635 の commit (5c733d9 ほか・ADR-164) は origin/main に入っていた。
+  - 衝突は index.html の `?v=` だけ。origin/main の最大 (2026111660) より新しくした: sync-failure.js 2026111671・bookshelf.js 2026111672・screens/settings.js 2026111673。
+  - js/bookshelf.js は自動で合わさった。#635 の後もダイアログの id とボタンの class (`.cfm-remote`・`.cfm-local`・`.cfm-export`) は同じなので、spec のセレクタは直していない。
+  - 載せ直した後の commit: `5aa8362` fix・`1c110d7` docs・`6b60ee2` test・`e1f134e` test (画像の撮り方)。
+
+### 1. E2E (tests/e2e/load-conflict-unsaved.spec.js)
+
+画面の操作だけで確かめる。関数の直呼びは、記事を作る手順と状態を読む所だけで使う。
+
+| | ローカルフォルダ | ハブ |
+|---|---|---|
+| ① 閉じた後に「未保存」が出る | 状態バーの行 `data-sync-failure="load-conflict"` と、同期欄の文 | 状態バーの行 (同期欄の文は DOM で確かめる。ハブの設定画面には同期欄の文の欄が出ない。下の 4. を参照) |
+| ① 自動の再試行をしない | 再試行の間隔を 300ms に縮めても、行は `status-warn` のまま。「再試行」のボタンも無い | ― |
+| 閉じた後に編集しても消えない | 短文メモを書いた後も出る | 本を足した後も出る |
+| ② 公開が止まる | ― (ローカルを保存先にしていても、公開はハブか GitHub を使うため) | 送信0件・止めた理由の toast・記事は published=false |
+| 再読込でもう一度聞かれる | 再読込で3択が出る。閉じるとまた出る | 同じ |
+| 再読込をまたいでも公開が止まる (②の指示) | ― | 再読込→閉じた後の公開も、送信0件・toast あり |
+| ③ 状態バーの「選ぶ」から選ぶと消える | 「この端末の内容で保存先を上書き」→ 行が消え、フォルダに本Bが届き、同期欄は「同期済み」 | 「保存先の内容を読み込む」→ 行が消え、同期欄は「保存済み」、他の端末の本Cが入る |
+
+3本目 (書き込み時の3択を閉じた後・(b)) は、まだ記録だけ。step4 で (b) をつなぎ、合否つきに直す。
+
+### 2. 3回続けて緑
+
+| ブラウザ | 結果 |
+|---|---|
+| chromium (`--repeat-each=3`) | **6/6 passed** (ローカル3・ハブ3)。全件比較を同時に流している負荷の中でも通った |
+| webkit (iPhone 13・`--repeat-each=3`) | **ハブ 3/3 passed**。ローカルの3回は skip (ローカルフォルダは PC の Chrome/Edge だけで選べる・ADR-046。spec に skip の理由を書いた) |
+
+- webkit について: playwright.config.js の webkit の project は、決まった spec だけを流す設定になっている。そこで `_local/639/pw-webkit639.config.mjs` (git に入らない一時の設定) で、この spec だけを iPhone 13 相当で流した。
+- 画像の撮り方を直した後 (`e1f134e`) に、ローカル (chromium) とハブ (webkit) をもう1回ずつ流して、どちらも passed。
+
+### 3. 全件比較
+
+`node scripts/verify/e2e-diff-main.mjs --port=18139 --out=_local/639/e2e-diff2` (16:13〜16:26)。比較相手は origin/main `51f29dd` (#635 入り)、作業側は `6b60ee2` の作業ツリー。
+- 前の run で始めた全件比較は、比較相手の側を流している途中で run と一緒に止まった。残っていた一時の worktree は `_trash/639-e2e-diff-stopped-1613` へ退避し、流し直した。
+
+| 対象 | 比較相手 (origin/main) | 作業側 | 新しく落ちた |
+|---|---|---|---|
+| E2E (playwright・visual 以外) | 1020 passed・594 skipped・1 failed | 1020 passed・594 skipped・4 failed (新しい spec の3本は通った) | **0件**。作業側だけで落ちた3件は、流し直して通ったので flake と判定 (icons-vendor の未 inline の Lucide 名・save-failure-visible の GitHub 401 の保存し直し・shelf-file-delete の GitHub の削除待ち) |
+| 両方で落ちた | save-failure-visible「GitHub: トークンを更新しても 401 なら…」 | 同じ | ― (main でも落ちる既存のもの。step2 の関係 E2E では通っていたので、負荷で揺れる候補) |
+| 単体 (vitest) | 失敗0 | 失敗0 | **0件** |
+| 画像の差分 (visual・作業側) | ― | **54件中0件** | ― |
+
+flake の3件のうち save-failure-visible の 401 の保存し直しは、今回変えた所に近い (保存の失敗の1か所)。ただし通る道は `_syncWithAuthRetry` で、今回変えたのは保留の印のエラーの扱いだけなので、この道は通らない。step2 の関係 E2E (119 passed) でも、この spec は全部通っている。
+
+### 4. 画像 (`_local/639/shots/`・push 前の tp で見せる)
+
+| ファイル | 中身 |
+|---|---|
+| local-unsaved-pc-statusbar.png | PC 幅。状態バーの上に「保存先とこの端末の両方が変わっているため、保存先へ保存していません。…」と「選ぶ」 |
+| local-unsaved-pc-sync.png | PC 幅。設定 → 同期の保存フォルダの欄に、同じ文が赤字で出る (以前は「同期済み」) |
+| local-unsaved-390-statusbar.png | 390 幅。本棚の一覧の上に同じ行と「選ぶ」 |
+| local-unsaved-390-sync.png | 390 幅。同期の画面の保存フォルダの欄に、同じ文が赤字で出る |
+| hub-unsaved-pc-statusbar.png・hub-unsaved-390-statusbar.png | ハブ (webkit・iPhone 13)。ホームの上に同じ行と「選ぶ」。390 幅では Safari の「ホーム画面に追加」の案内の下に出る |
+| hub-unsaved-pc-sync.png・hub-unsaved-390-sync.png | ハブの同期の画面。「この保存先を使用中です。」とログイン中の表示だけで、保存の状態の文の欄は無い (#obsidian-sync-status はローカルフォルダの欄の中にあり、ハブでは出ない) |
+
+画像で分かったこと (step4 の tp で②に見てほしい点):
+- **ハブ・GitHub では、設定の同期の画面に保存の状態が出ない**。これはこのイシューで変えたことではなく、もとからの作りで、「保存済み」「保存できませんでした」も出ていなかった。
+  - 「未保存」が見えるのは状態バーだけになる。状態バーには出ているので、完了条件は満たす。
+  - ただ、同期の画面は「この保存先を使用中です。」とだけ出るので、保存できていると読める。ここに保存の状態を出すかは、別の行として 07 に起こすか、②に判断してほしい。
+- スマホ幅で本の詳細や横のメニューを開いている間は、状態バーがその下に隠れる。保存の失敗 (#603) でも同じで、もとからの作り。
