@@ -3052,6 +3052,12 @@ class VirtualBookshelf {
                 // 同期が成功し、保留も無くなったので未同期フラグを解除
                 try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
             }
+            // 保存中に「電波が戻った・タブに戻った」が来ていたら、ここで1回だけ送り直す (イシュー#617)。
+            // 今の保存が失敗で終わり、次の予約 (上の _scheduleSync) も無い時だけ = 二重には送らない
+            if (this._recoveryKickQueued) {
+                this._recoveryKickQueued = false;
+                if (this._syncFail && this._syncFail.retryable && !this._pendingSync) this._retrySyncNow();
+            }
         }
     }
 
@@ -3098,6 +3104,7 @@ class VirtualBookshelf {
         }
         const label = 'Asayake ハブ';
         const svc = 'Asayake ハブ';
+        this._initLoadFailed = null; // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -3146,6 +3153,8 @@ class VirtualBookshelf {
                 ? `${svc} の認証が切れました。設定から再接続してください。`
                 : `${svc} からの読み込みに失敗しました。`;
             this._updateStatusBar();
+            // ログイン切れ以外 (通信の失敗など) は、電波が戻った時に読み直す (イシュー#617)
+            if (!isAuthErr) this._markInitLoadFailed(this._syncErrorMsg);
         }
     }
 
@@ -3224,6 +3233,7 @@ class VirtualBookshelf {
         }
         await this._ensureFreshGitHubToken();
         const label = `${adapter.owner}/${adapter.repo}@${adapter.branch}`;
+        this._initLoadFailed = null; // 読み込みをやり直すたびに印を下ろす (失敗したら立て直す・イシュー#617)
         this.updateSyncStatus('loading', label);
         try {
             const format = await this.storage.detectFormat();
@@ -3267,6 +3277,8 @@ class VirtualBookshelf {
                     action: { label: '再試行', onClick: () => this.initGitHubSync() },
                     duration: 10000
                 });
+                // 電波が戻った時にも読み直す (イシュー#617)
+                this._markInitLoadFailed();
             }
         }
     }
@@ -4953,10 +4965,40 @@ class VirtualBookshelf {
         if (this._syncRecoveryWatch) return;
         this._syncRecoveryWatch = true;
         const kick = () => {
-            if (this._syncFail && this._syncFail.retryable && !this._syncInProgress) this._retrySyncNow();
+            // 起動時の読み込みが失敗したままなら、先に読み直す (イシュー#617)。保存待ちはその後に _applyLoadedState が送る
+            if (this._initLoadFailed) {
+                // 電波なしと分かっている間 (タブに戻っただけ) は試さない = 失敗の知らせを出し直すだけになるため
+                if (window.OnlineWatcher && !window.OnlineWatcher.isOnline()) return;
+                this._retryInitLoad();
+                return;
+            }
+            // 保存中に来た分は捨てず、その保存が終わった時に拾う (_runPendingSync の finally・イシュー#617)
+            if (this._syncInProgress) { this._recoveryKickQueued = true; return; }
+            if (this._syncFail && this._syncFail.retryable) this._retrySyncNow();
         };
         if (window.OnlineWatcher) window.OnlineWatcher.onChange((online) => { if (online) kick(); });
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kick(); });
+    }
+
+    // 起動時の同期先 (ハブ/GitHub) からの読み込みが、ログイン切れ以外で失敗した印 (イシュー#617)。
+    // 電波なしのまま開いた端末は、ここで見張りを登録しておき、電波が戻った時・タブに戻った時に読み直す。
+    // barMsg は、この失敗で状態バーに出した文 (読み直す時に下ろす)。
+    _markInitLoadFailed(barMsg = '') {
+        this._initLoadFailed = { barMsg };
+        this._watchSyncRecovery();
+    }
+
+    // 起動時の読み込みをやり直す。読めたら、前の回の保存待ち (virtualBookshelf_pendingSync) は
+    // _applyLoadedState が手元を優先して取り込み、送り直す。また失敗したら initSync が印と知らせを立て直す。
+    async _retryInitLoad() {
+        const failed = this._initLoadFailed;
+        if (!failed || this._initLoadRetrying) return;
+        this._initLoadRetrying = true;
+        this._initLoadFailed = null;
+        if (failed.barMsg && this._syncErrorMsg === failed.barMsg && !this._syncFail) {
+            this._syncError = false; this._syncErrorMsg = ''; this._updateStatusBar();
+        }
+        try { await this.initSync(); } catch (e) { console.error('initSync (読み直し):', e); } finally { this._initLoadRetrying = false; }
     }
 
     _syncFailureRow(f) {
