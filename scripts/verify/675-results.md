@@ -245,3 +245,34 @@
 - F（#669 の `_artBookState` で記事の除外中の本の題が出るか）は、この step でも画面では測っていない（②の step3 の完了条件には無い）。`_artBookState` は写しを引き、A で再読込の後の写しに X があることは測った。この step の関連 spec（§4-3）で、#669 の spec（exclude-article-publish・保存先あり）が緑のことは確かめた。保存先なしの再読込の後の題の画面の行は、要れば step4 で足す。
 - 設計書（02 D-1・D-7・06・03・08）は step4 で書く。ADR の番号は、#670 が ADR-174 を取ったので **ADR-175** になる見込み（step4 で最新を見て取り直す。コードのコメントには ADR-175 と書いた）。
 - `?v=` は、step4 の載せ直しで origin/main の最大より新しいか取り直す。
+
+## §5 回帰の全件比較・設計書の更新・push 前の載せ直し（2026-11-14 19:50〜・step4）
+
+### §5-1 設計書の更新（obsidian・19:51 に書いた。vault の commit は自動バックアップに任せる）
+
+| 文書 | 書いたこと |
+|---|---|
+| 02_基本設計書 D-1 | 「保存先につないでいない時は、端末の控えが書誌の正本になる」の1行を足した。見える本は `virtualBookshelf_library`、除外した本の書誌は `_storage.excludedBooks` に持つ。2つを合わせたものが library.json（除外を含む全書誌）に当たる。全書誌の写しは控えに持たず、起動時に組み直す（ADR-175） |
+| 02_基本設計書 D-7 | 取り消しの1行を足した。写しから蔵書へ戻す（保存先なし・再読込の後でも同じ）。書誌が無い時は止めて取込を促す。取込で除外中の本の書誌を補う（除外は外さない・ADR-175） |
+| 03_詳細設計書 | `excludeBook` / `_excludeAsinCore` の行に、除外する本の書誌を写しへ必ず入れることを足した。`unexcludeBook`・`_storageForDevice`・`_restoreLibraryCopy` / `_libraryRecordOf`・`_fillExcludedBooksFrom` の4行を足した。`_keepLocalOverLoaded` の行に、手元の除外した本の書誌を落とさずに合わせることを足した |
+| 06_データ仕様書「その他のキー」 | `virtualBookshelf_library` を「見える本 (library − exclusions) のキャッシュ。除外した本は入れない」にした。`virtualBookshelf_userData` に、`_storage` の exclusions と `excludedBooks`（除外した本の書誌だけ）を持ち、`libraryBooks` は持たないことを書いた |
+| 08_意思決定記録 ADR-175 | 末尾に足した（ADR-173 は #671、ADR-174 は #670 が使っていた）。背景・決定（承認の後に足した `_keepLocalOverLoaded` の1行を含む）・理由・却下した案・確かめ方 |
+
+- 書き方：vault のパスはコマンドの文字列に出さず、`node` の中で組んだ（編集ロック回避）。どの文書も、1か所だけ当たる文を目印にして、その後ろに足すか置き換えた（目印が1か所でなければ書かずに止める作り）。08 は CRLF のファイルなので CRLF で足した（書いた後も LF 2329・CRLF 2329 で一致）。
+- 書く前の vault には、01_要件定義書・02_基本設計書に他の変更が未 commit で残っていた（#670 の設計書の更新と見られる）。そこには触れず、目印の後ろに足しただけ。
+- bookshelf 側の対応：この step の docs の commit の題に「設計: 02/03/06/08 ADR-175」と書く。
+
+### §5-2 回帰の全件比較（e2e-diff-main・19:50〜19:58）
+
+- `node scripts/verify/e2e-diff-main.mjs --base=33eda9e --port=8175 --out=work/675-e2e-diff`（基準＝載せた先の 33eda9e、作業側＝HEAD 7dcb724。作業側に未 commit の差分は results のこの節だけ）。約8分で終わった（timeout 15分の内）。
+- 除外したテスト：`sort-perf-budget`（ci.yml:142 で CI でも別に流す・負荷で揺れる）だけ。
+
+| 表 | E2E（playwright） | Unit（vitest） |
+|---|---|---|
+| 新しく落ちた | **0件** | **0件** |
+| 新しく通った | 0件 | 0件 |
+| 両方で落ちた（既存の問題） | 0件 | 0件 |
+
+- 判定不能：0件。フレークの流し直し：なし（新しく落ちたものが無いため）。
+- 画像の差分（playwright.visual.config.js・作業側のみ）：**0件 / 54件**。
+- 結果一式は `work/675-e2e-diff/`（未追跡・add しない）。
