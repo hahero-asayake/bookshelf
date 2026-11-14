@@ -4090,6 +4090,8 @@ class VirtualBookshelf {
 
     // 蔵書の中身 (冊数) が変わった後に呼ぶ共通の描き直し (イシュー#605)。取込・手で追加・除外・除外の取り消し・
     // 一括除外・削除の最後から呼ぶ。並べ替え・絞り込みの経路 (updateStats) には入れない。
+    // 評価の変更と、本の詳細からの本棚への追加・本棚から外す操作の最後からも呼ぶ (イシュー#615)。ホームの評価分布・
+    // 未評価・本棚別 Top5 と左ツリーの本棚の冊数は、ここを通さないと再読込まで古いまま残る。
     // (1) all 本棚の books を bookOrder.all と同じ配列に揃え直す。除外・削除は bookOrder.all を filter で別の配列に
     //     置き換えるため、揃えないと左ツリーの「すべての本」が除外・削除した本まで数えたまま残る
     //     (読込時も bookOrder[shelf.id] = shelf.books で同じ配列にしている)。all 本棚が無い時 (保存先なし) は飛ばす。
@@ -5417,6 +5419,8 @@ class VirtualBookshelf {
         // 開いている詳細の本棚のチップと選択肢だけを書き換える (イシュー#620)。以前の showBookDetail(book, true) は
         // 同じ本・同じモードだと #330 のガードで止まって描き直さず、保存を待つ間に閉じた・別の本へ移った時は元の本を開き直していた
         this._applyDetailShelvesEverywhere([asin]);
+        // 左ツリーの本棚の冊数と、ホームの本棚別 Top5 を描き直す (本の詳細を開いたままでもホームは隣に見えている・イシュー#615)
+        this._onLibraryChanged();
 
         const ancestorMsg = ancestorsToAdd.length > 0
             ? `\n（祖先にも自動追加: ${ancestorsToAdd.map(a => a.name).join('、')}）`
@@ -5529,6 +5533,8 @@ class VirtualBookshelf {
             this.applyFilters();
             this.updateDisplay();
         }
+        // 左ツリーの本棚の冊数と、ホームの本棚別 Top5 を描き直す (イシュー#615)
+        this._onLibraryChanged();
 
         toast(`「${bookTitle}」を「${bookshelf.name}」から除外しました`);
         this.closeModal();
@@ -6988,6 +6994,8 @@ class VirtualBookshelf {
         // 評価フィルタ適用中に評価を変えたら、絞り込み条件と表示の食い違いを防ぐため再フィルタする
         // (一覧カード・本詳細の両方の星がこの共通メソッドを通るため一箇所で両経路に効く)
         if (this.ratingFilter && this.ratingFilter.size > 0) this.applyFilters();
+        // ホームの評価分布・未評価も描き直す (本の詳細を開いたままでもホームは隣に見えている・イシュー#615)
+        this._onLibraryChanged();
     }
     
     saveRating(asin, rating) {

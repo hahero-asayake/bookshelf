@@ -257,6 +257,12 @@ class BookshelfDashboard {
             live.setAttribute('aria-live', 'polite');
             host.appendChild(live);
         }
+        // 作り直す前に、横に流せる行 (最近追加した本) の位置を部品ごとに覚えておき、作り直した後に戻す。評価・本棚の
+        // 所属の変更でも描き直すので、戻さないと読んでいた位置が先頭へ飛ぶ (イシュー#615)
+        const rowLefts = new Map();
+        grid.querySelectorAll('.dashboard-widget .widget-book-row').forEach(r => {
+            if (r.scrollLeft > 0) rowLefts.set(r.closest('.dashboard-widget').dataset.widgetId, r.scrollLeft);
+        });
         grid.innerHTML = '';
         // イシュー#521 X2 (G3): 編集モードの時だけ、流し方で残る穴に「＋ここに追加」の枠を出す。
         // 枠は穴の幅ぴったりなので、差し込んでも他の部品の位置は変わらない。穴の位置は保存しない。
@@ -318,6 +324,11 @@ class BookshelfDashboard {
             addCard.innerHTML = `${window.renderIcon('plus', { size: 18 })}<span>ここにウィジェットを追加 (${total} 種)</span>`;
             grid.appendChild(addCard);
         }
+
+        rowLefts.forEach((left, uid) => {
+            const r = grid.querySelector(`.dashboard-widget[data-widget-id="${CSS.escape(uid)}"] .widget-book-row`);
+            if (r) r.scrollLeft = left;
+        });
 
         this._bindEvents();
     }
