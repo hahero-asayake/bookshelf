@@ -55,6 +55,7 @@ export const SCREENS = [
 // 巡回の対象外 (理由つき)
 export const EXCLUDED = [
     { name: 'プラグインの面', std1: ['プラグインの面'], reason: '中身はプラグインごとに違う。標準プラグインがこの面を使う場合は SCREENS へ移す' },
+    { name: '読込時の衝突ダイアログ (3択)', std1: ['読込時の衝突ダイアログ'], reason: '保存先とこの端末の両方が変わった時だけ出る。再現に保存先の模擬と未接続が要るため、巡回には未投入。動きと既定のボタンは tests/e2e/sync-offline-reconnect.spec.js で見る (イシュー#602)' },
     { name: 'トースト', reason: '数秒で消える表示。文言は抽出 (scripts/extract-ui-strings.mjs) で見る' },
     {
         name: 'プラグインの一覧 (plugins-modal)',

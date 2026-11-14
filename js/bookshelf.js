@@ -2828,7 +2828,177 @@ class VirtualBookshelf {
         if (opts.deviceOnly) return;
         if (this._isSyncReady()) {
             this._scheduleSync();
+        } else {
+            // 書けない間 (フォルダの権限待ち・ハブ/GitHub の未ログイン等) の編集も「未反映の編集あり」を残す。
+            // 次に保存先を読んだ時に、手元を黙って捨てずに _decideLoadedState で決めるため (イシュー#602)
+            this._markPendingLocal();
         }
+    }
+
+    _markPendingLocal() {
+        try { localStorage.setItem('virtualBookshelf_pendingSync', '1'); } catch (e) {}
+    }
+
+    // ===== 読込の決め方 (イシュー#602) =====
+    // 手元に保存先へ未反映の編集があるか (L = virtualBookshelf_pendingSync) と、保存先がこの端末と最後に
+    // 揃えた後に変わったか (R = library.json の exportDate が控えと違う) で、読んだ内容をどう扱うかを決める。
+    //   L 無し → 保存先を採る (従来どおり) / L あり・R 無し → 手元を丸ごと採って書き戻す /
+    //   L あり・R あり → 利用者に選ばせる。控えが無い (初めて揃える保存先) 時は、保存先が空なら手元を書き、
+    //   保存先にデータがあり L ありなら選ばせる。控えは保存先ごと (別の保存先の控えは使わない)
+
+    _syncBaseTarget() {
+        // 保存先を見分ける鍵は衝突中の印 (イシュー#616) と同じもの。ローカルは選んだフォルダの名前も足す
+        const key = SyncConfigManager.destinationKey({ ...(this.syncConfig || {}), method: this.syncMethod });
+        if (this.syncMethod === 'github' || this.syncMethod === 'hub') return key;
+        return `${key}:${this.obsidianDirHandle ? this.obsidianDirHandle.name : ''}`;
+    }
+
+    _readSyncBase() {
+        try {
+            const b = JSON.parse(localStorage.getItem('virtualBookshelf_syncBase') || 'null');
+            return b && b.target === this._syncBaseTarget() ? b : null;
+        } catch (e) { return null; }
+    }
+
+    _writeSyncBase(exportDate) {
+        try {
+            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ target: this._syncBaseTarget(), exportDate: exportDate || null }));
+        } catch (e) {}
+    }
+
+    // これから書く版を控える。保存の途中で閉じた・再読込した時、保存先に届いていた自分の書き込みを
+    // 「他の端末の更新」と見誤らないため (門の E2E J4-1 で実測: メモを保存してすぐ再読込すると3択が出た)
+    _noteSyncBaseWriting(exportDate) {
+        try {
+            const b = this._readSyncBase() || { target: this._syncBaseTarget(), exportDate: null };
+            localStorage.setItem('virtualBookshelf_syncBase', JSON.stringify({ ...b, writing: exportDate }));
+        } catch (e) {}
+    }
+
+    /** @returns {'remote'|'local'|'ask'|'held'} */
+    _decideLoadedState(state) {
+        const prior = this.userData;
+        if (!prior) return 'remote';
+        // 書き込みで衝突し、3択でまだ選んでいない (イシュー#616): 手元のまま、送らずに3択を出し直す
+        if (SyncConfigManager.conflict()) return 'held';
+        let pending = false;
+        try { pending = localStorage.getItem('virtualBookshelf_pendingSync') === '1'; } catch (e) {}
+        const base = this._readSyncBase();
+        const remoteDate = state.library && state.library.exportDate;
+        // 保存先にあるのが自分の書きかけた版なら、他の端末は変えていない
+        if (base && pending && remoteDate && remoteDate === base.writing) return 'local';
+        if (!base || !base.exportDate) {
+            const localHasData = (this.books || []).length > 0
+                || (prior.bookshelves || []).some(b => !b.isSpecial)
+                || Object.keys(prior.notes || {}).length > 0;
+            const remoteEmpty = ((state.library && state.library.books) || []).length === 0
+                && ((state.bookshelvesMeta && state.bookshelvesMeta.bookshelves) || []).every(b => b.slug === 'all')
+                && Object.keys(state.notes || {}).length === 0;
+            if (remoteEmpty) return localHasData ? 'local' : 'remote';
+            return (pending && localHasData) ? 'ask' : 'remote';
+        }
+        if (!pending) return 'remote';
+        return remoteDate && remoteDate === base.exportDate ? 'local' : 'ask';
+    }
+
+    // 手元を丸ごと採る。保存先からは、手元に持たない値 (除外した本の書誌・main.json・all の internalId) だけを受け取る
+    _keepLocalOverLoaded(state) {
+        if (!this.userData._storage) this.userData._storage = {};
+        const st = this.userData._storage;
+        st.libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
+        if (!st.allInternalId && state.allBookshelf) st.allInternalId = state.allBookshelf.internalId;
+        if (!st.main && state.privateMain) st.main = state.privateMain;
+        this._snapshotSyncedState();
+        if (this._isSyncReady()) this._scheduleSync();
+        else this._markPendingLocal();
+        return true;
+    }
+
+    // 両方が変わった: 選ぶまでは手元を表示したまま、保存先へは書かない (syncToObsidianFolder の入口で止める)。
+    // 印は端末に残さない＝次に開いた時は _decideLoadedState がもう一度 'ask' と判定して聞き直す
+    _holdForLoadConflict(state) {
+        this._loadConflictHold = state;
+        if (this._syncDebounceTimer) { clearTimeout(this._syncDebounceTimer); this._syncDebounceTimer = null; }
+        this._pendingSync = false;
+        this._askLoadConflict();
+    }
+
+    async _askLoadConflict() {
+        const state = this._loadConflictHold;
+        if (!state || this._loadConflictAsking) return;
+        this._loadConflictAsking = true;
+        let choice;
+        try { choice = await this._showLoadConflictDialog(this._syncLabel()); }
+        finally { this._loadConflictAsking = false; }
+        if (choice === 'export') {
+            try { this.exportUnifiedData(); toast('この端末の内容を書き出しました。', { type: 'success' }); }
+            catch (e) { toast(`書き出しに失敗しました: ${e.message}`, { type: 'error' }); }
+            return this._askLoadConflict();
+        }
+        if (choice === 'remote') {
+            this._loadConflictHold = null;
+            this._pendingSync = false;
+            try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
+            // 手元で消した本棚・長文メモの削除待ちは、次の保存の時に「いまある本棚・本のファイルは消さない」で外れる
+            // (takeBookshelfFileDeletes の keepSlugs・takeBookMemoOps の keepPaths)
+            this._applyLoadedState(state, { adoptRemote: true });
+            this.updateDisplay();
+            this.updateStats();
+            this.updateBookshelfSelector();
+            this.renderBookshelfOverview();
+            this._refreshOpenDetailMemo();
+            return;
+        }
+        if (choice === 'local') {
+            this._loadConflictHold = null;
+            // 読んだ保存先を見たことにして、手元で上書きする
+            this._writeSyncBase(state.library && state.library.exportDate);
+            this._keepLocalOverLoaded(state);
+            return;
+        }
+        // 選ばずに閉じた: 手元の表示のまま保存先へは書かない。次に保存しようとした時 (1分は空ける)・次に開いた時に聞き直す
+        this._loadConflictAskedAt = Date.now();
+    }
+
+    // 両方が変わった時の3択。上書きと読み込みはどちらも片方の変更を消すので危険な操作の見た目にし、
+    // 既定 (最初のフォーカス) は何も消えない「書き出す」。Esc・枠外は選ばずに閉じる
+    _showLoadConflictDialog(source) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'cfm-overlay';
+            const box = document.createElement('div');
+            box.className = 'cfm-box';
+            box.setAttribute('role', 'dialog');
+            box.setAttribute('aria-modal', 'true');
+            box.id = 'load-conflict-dialog';
+            box.innerHTML = `
+                <div class="cfm-title"></div>
+                <div class="cfm-message"></div>
+                <div class="cfm-actions">
+                    <button type="button" class="btn btn-danger cfm-remote"></button>
+                    <button type="button" class="btn btn-danger cfm-local"></button>
+                    <button type="button" class="btn btn-primary cfm-export"></button>
+                </div>`;
+            box.querySelector('.cfm-title').textContent = '保存先とこの端末の両方が変わっています';
+            box.querySelector('.cfm-message').textContent =
+                `${source} の内容が、この端末で最後に保存した後に、別の端末などで更新されています。この端末にも、まだ保存していない編集があります。` +
+                'どちらの内容を使うか選んでください。選ばなかった方の変更は消えます。迷う時は、先にこの端末の内容を書き出してください。';
+            box.querySelector('.cfm-remote').textContent = '保存先の内容を読み込む';
+            box.querySelector('.cfm-local').textContent = 'この端末の内容で保存先を上書き';
+            box.querySelector('.cfm-export').textContent = 'この端末の内容を書き出す';
+            let ov = null;
+            const done = (r) => { document.removeEventListener('keydown', onKey, true); if (ov) ov.close(r === 'cancel' ? 'cancel' : 'button'); overlay.remove(); resolve(r); };
+            const onKey = (e) => { if (window.Surface.isEsc(e)) { e.stopPropagation(); done('cancel'); } };
+            box.querySelector('.cfm-remote').addEventListener('click', () => done('remote'));
+            box.querySelector('.cfm-local').addEventListener('click', () => done('local'));
+            box.querySelector('.cfm-export').addEventListener('click', () => done('export'));
+            overlay.addEventListener('click', (e) => { if (window.Surface.isBackdrop(e, overlay)) done('cancel'); });
+            document.addEventListener('keydown', onKey, true);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            if (window.overlays) ov = window.overlays.open(overlay, { id: 'load-conflict-dialog', kind: 'dialog', size: 'sm', hist: false, showClass: null, sizeTarget: box });
+            box.querySelector('.cfm-export').focus();
+        });
     }
 
     /** 同期方式に応じて「書き込み可能か」を返す (LocalFS=handle 有り / GitHub・ハブ=adapter 接続済み) */
@@ -3208,8 +3378,11 @@ class VirtualBookshelf {
                 this.updateSyncStatus('synced', handle.name);
                 if (format === 'empty') {
                     toast(`「${handle.name}」に新ファイル構造で初期化しました。`);
-                } else {
+                } else if (this._lastLoadDecision === 'remote') {
                     toast(`「${handle.name}」から ${this.books.length} 冊を読み込みました。`);
+                } else if (this._lastLoadDecision === 'local') {
+                    // この端末の未保存の編集を残してつないだ (フォルダの内容は読み込んでいない・イシュー#602)
+                    toast(`「${handle.name}」につなぎました。この端末の編集をフォルダに保存します。`);
                 }
             } else {
                 // load 失敗時は同期フォルダの既存データを上書きしないため、ここでは何もしない
@@ -3251,19 +3424,20 @@ class VirtualBookshelf {
         }
     }
 
-    _applyLoadedState(state) {
+    // opts.adoptRemote: 利用者が「保存先の内容を読み込む」を選んだ時 (決め方を通さずに保存先を採る)
+    _applyLoadedState(state, opts = {}) {
         if (!state.allBookshelf) return false;
-        // 未同期ローカル編集の保護:
-        // 直近の編集 (並び替え等) が同期先 (GitHub) に未反映のまま再読込されると、
-        // 古いリモート断面で localStorage が上書きされ巻き戻ってしまう。
-        // pendingSync フラグが立っていれば、本棚の順序/所属とメモはローカルを優先採用し、
-        // 読込後に再 push して確定させる。
+        // 手元に未反映の編集がある時は、ここで保存先の内容を採らない (イシュー#602)。
+        // 以前は未反映の印がある時だけ本棚の並び/所属とメモを手元優先にしていたが、本の追加・本棚の作成/削除・
+        // 除外は保存先に戻っていた。手元を丸ごと採るか、利用者に選ばせる
+        if (!opts.adoptRemote) {
+            const decision = this._decideLoadedState(state);
+            this._lastLoadDecision = decision;
+            if (decision === 'local' || decision === 'held') return this._keepLocalOverLoaded(state);
+            if (decision === 'ask') { this._holdForLoadConflict(state); return true; }
+        }
+        this._lastLoadDecision = 'remote';
         const _priorLocal = this.userData;
-        let _hasPendingLocal = false;
-        try {
-            _hasPendingLocal = localStorage.getItem('virtualBookshelf_pendingSync') === '1'
-                && !!(_priorLocal && Array.isArray(_priorLocal.bookshelves) && _priorLocal.bookshelves.length);
-        } catch (e) { _hasPendingLocal = false; }
         // library.json が無くても allBookshelf があれば空 library として続行
         const libraryBooks = (state.library && Array.isArray(state.library.books)) ? state.library.books : [];
         const excluded = new Set(state.exclusions.excludedASINs || []);
@@ -3332,43 +3506,14 @@ class VirtualBookshelf {
         // 既存コードとの互換のため 'all' キーも維持（本棚 slug='all' と一致）
         if (!bookOrder.all) bookOrder.all = state.allBookshelf.books || [];
 
-        // 未同期ローカル編集があれば、本棚の順序/所属はローカルを優先（リモートの古い断面で潰さない）
-        if (_hasPendingLocal) {
-            const validAsin = new Set(libraryAsins);
-            bookshelves.forEach(shelf => {
-                const local = _priorLocal.bookshelves.find(b => b.id === shelf.id);
-                if (!local) return;
-                // 他の端末がこの本棚をあとから並べ替えていたら、そちらを採る (イシュー#387)
-                const _ok = 'bookOrder:' + shelf.id;
-                if ((((state.privateSettings || {})._updatedAt || {})[_ok] || 0) > (((_priorLocal.settings || {})._updatedAt || {})[_ok] || 0)) return;
-                const localOrder = (_priorLocal.bookOrder && Array.isArray(_priorLocal.bookOrder[shelf.id]))
-                    ? _priorLocal.bookOrder[shelf.id]
-                    : (Array.isArray(local.books) ? local.books : null);
-                if (!localOrder) return;
-                if (shelf.isSpecial) {
-                    // ALL: メンバーは library-exclusions で確定済み。順序のみローカルを尊重
-                    const memberSet = new Set(shelf.books);
-                    shelf.books = [
-                        ...localOrder.filter(a => memberSet.has(a)),
-                        ...shelf.books.filter(a => !localOrder.includes(a))
-                    ];
-                } else {
-                    // 通常本棚: ローカルの所属+順序を採用（無効 ASIN は除外）
-                    shelf.books = localOrder.filter(a => validAsin.has(a));
-                }
-                bookOrder[shelf.id] = shelf.books;
-            });
-            // メモ/評価もローカル優先マージ
-            Object.entries(_priorLocal.notes || {}).forEach(([asin, n]) => { if (n) notes[asin] = n; });
-        }
-
         // 設定のマージ (イシュー#387・ADR-137):
         //   端末ごとの見た目の好み → 常に手元 (同期先の値は使わない)
         //   共通設定 → キーごとの更新時刻 (_updatedAt) で新しい方。時刻が同じ/無い時は同期先 (従来どおり)
         let _localWon = false;
         const currentSettings = this.userData?.settings || {};
         const remoteSettings = this._commonSettings(state.privateSettings || {});
-        const localTs = currentSettings._updatedAt || {};
+        // 利用者が「保存先の内容を読み込む」を選んだ時は、手元の方が新しい項目も採らない (イシュー#602)
+        const localTs = opts.adoptRemote ? {} : (currentSettings._updatedAt || {});
         const remoteTs = remoteSettings._updatedAt || {};
         const mergedSettings = { ...currentSettings, ...remoteSettings };
         Object.keys(localTs).forEach(k => {
@@ -3419,11 +3564,15 @@ class VirtualBookshelf {
         }
 
         this._snapshotSyncedState();
-        // 未同期ローカル編集・手元の方が新しい項目を採用した場合は、読込後に同期先へ再 push して確定させる
-        // (GitHub は閉じる時に送り切れないため、次に開いた時のこの再送で保証する)
-        // 衝突中の印があれば、送らずに3択を出し直す (syncToObsidianFolder の入口で止まる・イシュー#616)
-        if ((_hasPendingLocal || _localWon || SyncConfigManager.conflict()) && this._isSyncReady()) {
+        // 保存先と揃えた印を控える (イシュー#602)
+        this._writeSyncBase(state.library && state.library.exportDate);
+        // 手元の方が新しい設定・並び順を採用した場合は、読込後に同期先へ再 push して確定させる
+        if (_localWon && this._isSyncReady()) {
             this._scheduleSync();
+        } else if (!_localWon && !this._pendingSync && !this._syncInProgress) {
+            // 保存先を丸ごと採り、手元に送る物が残っていない＝未反映の印を残さない
+            // (残すと、次に他の端末が更新した時に「両方が変わった」と見誤る・イシュー#602)
+            try { localStorage.removeItem('virtualBookshelf_pendingSync'); } catch (e) {}
         }
 
         if (this.pluginAPI) this.pluginAPI._emit('books:changed', {});
@@ -3485,6 +3634,13 @@ class VirtualBookshelf {
     // 同期先への書き出し (LocalFS / GitHub Adapter 等、storage の adapter に委譲)
     async syncToObsidianFolder() {
         if (!this._isSyncReady()) return;
+        // 読込で「両方が変わった」と分かり、利用者がまだ選んでいない間は書かない (イシュー#602)。
+        // _lastSyncOk を偽にして、未反映の印を残す
+        if (this._loadConflictHold) {
+            this._lastSyncOk = false;
+            if (Date.now() - (this._loadConflictAskedAt || 0) > 60000) this._askLoadConflict();
+            return;
+        }
         await this._ensureFreshGitHubToken();
         this._lastSyncOk = false;
         // 衝突中 (3択でまだ「再読込」を選んでいない) は送らない。読み直した後の新しい版で送ると相手の変更を上書きする (イシュー#616)
@@ -3552,8 +3708,10 @@ class VirtualBookshelf {
                 ...excludedCache.map(normalize)
             ];
             this.userData._storage.libraryBooks = libraryBooks;
+            // exportDate は保存のたびに変わる＝保存先と揃えた印にも使う (イシュー#602・_writeSyncBase)
+            const libraryExportDate = new Date().toISOString();
             entries.push({ op: 'put', path: 'private/library.json', data: {
-                exportDate: new Date().toISOString(),
+                exportDate: libraryExportDate,
                 books: libraryBooks
             }});
 
@@ -3674,6 +3832,7 @@ class VirtualBookshelf {
             );
             entries.push(...memoOps.entries);
 
+            this._noteSyncBaseWriting(libraryExportDate);
             // バッチ書き込み (GitHub なら Trees API で 1 commit にまとめる)
             try {
                 await this.storage.syncBatch(entries, {
@@ -3695,6 +3854,7 @@ class VirtualBookshelf {
             this.storage.clearBookMemoOps(memoOps.records);
 
             this._lastSyncOk = true;
+            this._writeSyncBase(libraryExportDate);
             this.updateSyncStatus('synced', this._syncLabel());
             if (this.pluginAPI) this.pluginAPI._emit('sync:completed', {});
         } catch (e) {

@@ -326,3 +326,40 @@ export async function installLocalWriteFailures(page, { error = 'NoModificationA
         failuresLeft: () => page.evaluate(() => window.__e2eLocalFailWrites)
     };
 }
+
+// ===== ローカルフォルダ: 再読込後の権限待ち (イシュー#602) =====
+//
+// 実ブラウザでは、選んだフォルダへの書き込みの許可が再読込で「確認待ち (prompt)」に戻ることがある。
+// アプリは「要再接続」になり、「フォルダを選ぶ」で選び直すまでフォルダに書けない (この間が「未接続」)。
+// 印 (localStorage の __e2e_perm_prompt) が立っている間だけ queryPermission / requestPermission が
+// 'prompt' を返し、フォルダ選択 (showDirectoryPicker) が呼ばれたら印を消す (選び直すと許可される)。
+// installFakeLocalFolder の後に呼ぶ (フォルダ選択の差し替えを包むため)。installFakeLocalFolder の動きは変えない。
+
+/**
+ * @param {import('@playwright/test').Page} page
+ */
+export async function installReloadPermissionPrompt(page) {
+    await page.addInitScript(() => {
+        const FLAG = '__e2e_perm_prompt';
+        const prompting = () => localStorage.getItem(FLAG) === '1';
+        const proto = FileSystemHandle.prototype;
+        const origQuery = proto.queryPermission;
+        const origRequest = proto.requestPermission;
+        proto.queryPermission = function (...args) {
+            return prompting() ? Promise.resolve('prompt') : origQuery.apply(this, args);
+        };
+        proto.requestPermission = function (...args) {
+            if (prompting()) return Promise.resolve('prompt');
+            return origRequest ? origRequest.apply(this, args) : Promise.resolve('granted');
+        };
+        const pick = window.showDirectoryPicker;
+        window.showDirectoryPicker = async (...args) => {
+            localStorage.removeItem(FLAG);
+            return pick.apply(window, args);
+        };
+    });
+    return {
+        // 次の再読込から、フォルダを選び直すまで許可が「確認待ち」になる
+        promptOnNextReload: () => page.evaluate(() => localStorage.setItem('__e2e_perm_prompt', '1'))
+    };
+}
