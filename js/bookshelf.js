@@ -3185,9 +3185,11 @@ class VirtualBookshelf {
                 // (GitHub と対称。誤って既存アカウントを空データで上書きする事故を防ぐ)。
                 // イシュー#519: confirmDialog は overlay-manager のダイアログ帯 (--ov-z-dialog) に
                 // 載るため、起動中のローディング表示より常に前面に出る (z-index実測・docs/char/boot-flow.md §2)。
-                this.updateSyncStatus('reconnect', `${label} (空)`);
+                // 確認を待つ間と初期化の間は、同期欄を「読み込み中...」のままにする。失敗の表示 (reconnect) は
+                // キャンセルした時だけ出す (確認の前に出すと、読込が終わるまで「保存できませんでした」が残る・イシュー#648)
                 const ok = await window.confirmDialog({ message: `${label} には保存データがありません。\n新規データで初期化しますか？\n（別の端末・アカウントのデータがある場合はキャンセルし、ログイン先を確認してください）` });
                 if (!ok) {
+                    this.updateSyncStatus('reconnect', `${label} (空)`);
                     // 初期化せず中断。接続済みのまま放置すると次回 save で手元の古いデータが
                     // 空ハブへ上書きされる恐れがあるため、目立つ警告を出して状態を error にする。
                     this._syncError = true;
@@ -3322,9 +3324,12 @@ class VirtualBookshelf {
             if (format === 'empty') {
                 // イシュー#519: confirmDialog は overlay-manager のダイアログ帯 (--ov-z-dialog) に
                 // 載るため、起動中のローディング表示より常に前面に出る (z-index実測・docs/char/boot-flow.md §2)。
-                this.updateSyncStatus('reconnect', `${label} (空)`);
+                // 同期欄の失敗の表示はキャンセルした時だけ (ハブと同じ・イシュー#648)
                 const ok = await window.confirmDialog({ message: `GitHub リポジトリ ${label} は空です。\n新規データで初期化しますか？` });
-                if (!ok) return;
+                if (!ok) {
+                    this.updateSyncStatus('reconnect', `${label} (空)`);
+                    return;
+                }
                 await this.storage.initEmpty();
             } else if (format === 'pre-notes-split') {
                 await this.storage.migrateNotesSplit();

@@ -38,6 +38,8 @@
 
 この読込の間 (confirmが出ている間も含む) は `_beginBootLoad()` で印を立て、保存 (`syncToObsidianFolder()`) は入口の `_waitBootLoads()` で読込が終わるまで待つ (ローカルの`selectObsidianFolder`も同じ)。初期化の途中に本を足しても、保存が保存先を「空」と見て2回目の `initEmpty()` を呼ばない (イシュー#643)。
 
+同期欄（`#obsidian-sync-status`）は、confirmを待つ間と`initEmpty()`→`loadAll()`の間も`'loading'`（「読み込み中...」）のままで、読込の後に`'synced'`（「HH:MM:SS 保存済み」）になる。失敗の表示（`'reconnect'`＝「保存できませんでした」・「… (空)（要再接続）」）はconfirmでキャンセルした時だけ出す。confirmの前に出すと、読込が終わるまで「保存できませんでした」が残っていた（イシュー#648・`tests/e2e/first-run-init-status.spec.js`）。
+
 ## 2. #518 attempt1で8件落ちた原因（実機再現で確定。推測ではない）
 
 ### 2-1. 再現条件と手順
