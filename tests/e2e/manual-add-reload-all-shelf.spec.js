@@ -139,17 +139,28 @@ test.describe('ローカル (フォルダ)', () => {
         await expectFolderAll(page, dirName, 4);
     });
 
-    // フォルダの all.json は見ない：除外した本は all.json に残る作り (書き出しが library の全部の本から作る・別件)
-    test('662-H 1冊除外した直後に再読込しても、すべての本と端末の控えの冊数が合う', async ({ page }, testInfo) => {
+    // フォルダの all.json も見る：書き出しは除外した本を all.json に入れない (イシュー#664)
+    test('662-H 1冊除外した直後に再読込しても、すべての本・端末の控え・フォルダの冊数が合う', async ({ page }, testInfo) => {
         const dirName = `i662-H-${testInfo.repeatEachIndex}-${testInfo.retry}`;
         await connectAndImportThree(page, dirName);
         await page.evaluate(async () => { window.confirmDialog = async () => true; await window.bookshelf.excludeBook('B0GATEIMP3'); });
         const conflict = await reloadNow(page);
-        await expectAllShelf(page, 2, { label: 'H', conflict });
+        await expectAllShelf(page, 2, { dirName, label: 'H', conflict });
+        await expectFolderAll(page, dirName, 2);
     });
 
-    // 除外した本が all.json に残るため (別件)、「除外の保存がフォルダに届いた (all.json が2冊)」を前提にできない
-    test.fixme('662-I 除外を取り消した直後に再読込しても、すべての本と端末の控えの冊数が合う', async () => {});
+    // 除外の保存がフォルダに届いた (all.json が2冊・イシュー#664) のを待ってから取り消し、待たずに再読込する
+    test('662-I 除外を取り消した直後に再読込しても、すべての本・端末の控え・フォルダの冊数が合う', async ({ page }, testInfo) => {
+        const dirName = `i662-I-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+        await connectAndImportThree(page, dirName);
+        await page.evaluate(async () => { window.confirmDialog = async () => true; await window.bookshelf.excludeBook('B0GATEIMP3'); });
+        await expectFolderAll(page, dirName, 2);
+        await page.waitForTimeout(500);
+        await page.evaluate(async () => { await window.bookshelf.unexcludeBook('B0GATEIMP3'); });
+        const conflict = await reloadNow(page);
+        await expectAllShelf(page, 3, { dirName, label: 'I', conflict });
+        await expectFolderAll(page, dirName, 3);
+    });
 
     test('662-J 1冊削除した直後に再読込しても、すべての本・端末の控え・フォルダの冊数が合う', async ({ page }, testInfo) => {
         const dirName = `i662-J-${testInfo.repeatEachIndex}-${testInfo.retry}`;

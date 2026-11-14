@@ -3910,14 +3910,17 @@ class VirtualBookshelf {
             entries.push({ op: 'put', path: 'private/notes.json', data: { notes: notesPayload } });
 
             // bookshelves/all.json: 本棚メタ + books のみ
+            // books と bookOrder.all は library − exclusions (06_データ仕様書・イシュー#664)。library.json (上) は除外した本も
+            // 含む全書誌なので、そのまま使うと除外した本が all.json と bookOrder.all に入り、「すべての本」の冊数と記事の引き出しに出る
             const orderedAll = (this.userData.bookOrder && Array.isArray(this.userData.bookOrder.all))
                 ? this.userData.bookOrder.all
                 : [];
-            const libraryAsins = libraryBooks.map(b => b.asin);
+            const visibleAsins = libraryBooks.map(b => b.asin).filter(a => !exclusionsSet.has(a));
+            const visibleSet = new Set(visibleAsins);
             const orderedSet = new Set(orderedAll);
             const allBooksList = [
-                ...orderedAll.filter(a => libraryAsins.includes(a)),
-                ...libraryAsins.filter(a => !orderedSet.has(a))
+                ...orderedAll.filter(a => visibleSet.has(a)),
+                ...visibleAsins.filter(a => !orderedSet.has(a))
             ];
             this.userData.bookOrder = this.userData.bookOrder || {};
             this.userData.bookOrder.all = allBooksList;

@@ -1,9 +1,11 @@
-// イシュー#664：フォルダにつないだまま本を除外して書き出すと、除外した本が all.json の books に残る (#662 で発見)。
+// イシュー#664：フォルダにつないだまま本を除外して書き出しても、除外した本が all.json の books・bookOrder.all・
+// 「すべての本」の冊数・記事の本の引き出しに入らないこと (直す前は書き出しが除外した本を all.json と bookOrder.all に入れていた)。
 // 決まり (設計書 06_データ仕様書「all.json の books = library − exclusions」・02_基本設計書「書誌の正本 = library.json」)：
 //   library.json は除外した本も含む全書誌 (3)・exclusions.json に除外した ASIN・all.json の books と bookOrder.all は除外を引いた 2。
-// R は書き出しの完了を待ってから再読込 (保存先を採る想定)、L は待たずに再読込 (手元を採る想定)、
+// R は書き出しの完了を待ってから再読込 (保存先を採る想定・書き出しの後の描き直しも見る)、L は待たずに再読込 (手元を採る想定)、
 // S は書き出しの後にもう一度保存してから待たずに再読込 (書き出しで置き換わった bookOrder.all が端末の控えへ入る経路)、
-// U は除外を取り消して書き出す (all.json が 3 に戻り重複しない)。
+// U は除外を取り消して書き出す (all.json が 3 に戻り重複しない)、D は記事の本の引き出し、
+// K は直す前の版が残した控え (bookOrder.all に除外した本) で起動し、最初の書き出しで2に戻ること。
 // 入口は window.bookshelf の除外・取り消し (確認の窓は通す)。S の2回目の保存は saveUserData を直接呼ぶ (次の編集の保存の代わり)。
 // E664_OUT を付けると1回ごとの記録を JSONL で残す。
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
@@ -55,7 +57,6 @@ const readState = (page, dirName) => page.evaluate(async (name) => {
         out.memOrderAll = ud && ud.bookOrder && Array.isArray(ud.bookOrder.all) ? [...ud.bookOrder.all] : null;
         out.memShelfBooks = sh && Array.isArray(sh.books) ? [...sh.books] : null;
         out.memSameArray = !!(sh && ud.bookOrder && sh.books === ud.bookOrder.all);
-        out.decision = window.bookshelf ? (window.bookshelf._lastLoadDecision || null) : null;
     } catch (e) { out.memErr = true; }
     out.pending = localStorage.getItem('virtualBookshelf_pendingSync');
     return out;
@@ -85,7 +86,7 @@ const brief = (s) => ({
     allJsonDup: Array.isArray(s.allJson) ? s.allJson.length - new Set(s.allJson).size : null,
     ctrlOrderAll: n(s.ctrlOrderAll), ctrlOrderAllHas: hasTarget(s.ctrlOrderAll), ctrlShelfBooks: n(s.ctrlShelfBooks),
     memOrderAll: n(s.memOrderAll), memOrderAllHas: hasTarget(s.memOrderAll), memShelfBooks: n(s.memShelfBooks),
-    memSameArray: s.memSameArray, decision: s.decision, pending: s.pending
+    memSameArray: s.memSameArray, pending: s.pending
 });
 
 const SCENARIOS = [
@@ -95,24 +96,34 @@ const SCENARIOS = [
     { id: 'U', title: '除外を書き出してから取り消して書き出す' },
 ];
 
+// 接続→取込3冊→フォルダの all.json が3冊になるまで待つ (1回目の書き出しを済ませる)
+async function connectAndImportThree(page, dirName) {
+    await stubFolderPickerForTest(page, dirName);
+    await bootAppForTest(page);
+    await connectLocalFolderForTest(page);
+    await page.locator('#dashboard-welcome button[data-dw="import"]').click();
+    await expect(page.locator('#import-modal')).toHaveClass(/show/);
+    await pasteImport(page, EXPORT_JSON);
+    await expect.poll(async () => n((await readState(page, dirName)).allJson), { timeout: 20000 }).toBe(3);
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape');
+}
+
 for (const sc of SCENARIOS) {
     test(`664-${sc.id} フォルダにつないだまま${sc.title}と、除外した本は all.json・控え・すべての本に入らない`, async ({ page }, testInfo) => {
         const dirName = `e664-${sc.id}-${testInfo.repeatEachIndex}-${testInfo.retry}`;
-        await stubFolderPickerForTest(page, dirName);
-        await bootAppForTest(page);
-        await connectLocalFolderForTest(page);
-        await page.locator('#dashboard-welcome button[data-dw="import"]').click();
-        await expect(page.locator('#import-modal')).toHaveClass(/show/);
-        await pasteImport(page, EXPORT_JSON);
-        await expect.poll(async () => n((await readState(page, dirName)).allJson), { timeout: 20000 }).toBe(3);
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
+        await connectAndImportThree(page, dirName);
 
         await callApp(page, 'excludeBook', TARGET);
         const rec = { sc: sc.id, n: testInfo.repeatEachIndex };
         if (sc.id !== 'L') {
             await waitExported(page, dirName, true);
             rec.exported = { ...brief(await readState(page, dirName)), tree: await treeCount(page) };
+            // 書き出しの後に左ツリーを描き直しても、除外した本を数えない (描き直しの入口は updateBookshelfSelector を直接呼ぶ)
+            await page.evaluate(() => window.bookshelf.updateBookshelfSelector());
+            rec.redrawTree = await treeCount(page);
+            expect.soft(rec.exported.memShelfBooks, '書き出し後のメモリの「すべて」本棚 books').toBe(2);
+            expect.soft(rec.redrawTree, '書き出しの後に描き直した すべての本 の冊数').toBe('2');
         }
         if (sc.id === 'S') {
             await page.evaluate(async () => { await window.bookshelf.saveUserData(); });
@@ -150,7 +161,7 @@ for (const sc of SCENARIOS) {
         rec.settled = { ...brief(settled), tree: await treeCount(page) };
         if (OUT) { mkdirSync(dirname(OUT), { recursive: true }); appendFileSync(OUT, JSON.stringify(rec) + '\n'); }
 
-        // 決まりどおりの期待 (直す前は赤になる見込みの行がある)
+        // 決まりどおりの期待
         if (rec.exported) {
             expect.soft(rec.exported.lib, '書き出し後の library.json (除外した本も含む全書誌)').toBe(3);
             expect.soft(rec.exported.allJson, '書き出し後の all.json の books').toBe(2);
@@ -162,3 +173,67 @@ for (const sc of SCENARIOS) {
         if (!rec.dialog) expect.soft(n(settled.allJson), '再読込の後のフォルダの all.json の books').toBe(2);
     });
 }
+
+// 記事の本の引き出しは「すべて」本棚の books を並べ、蔵書に無い ASIN も題の代わりに ASIN で出す。書き出しの後に除外した本が出ないこと
+test('664-D フォルダにつないだまま除外を書き出した後、記事の本の引き出しに除外した本が出ない', async ({ page }, testInfo) => {
+    const dirName = `e664-D-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+    await connectAndImportThree(page, dirName);
+    await callApp(page, 'excludeBook', TARGET);
+    await waitExported(page, dirName, true);
+    await page.locator('#sidebar-publish').click();
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    await page.locator('#art-new').click();
+    await expect(page.locator('#art-edit-view')).toBeVisible();
+    const formDone = page.locator('#art-fs-done');
+    if (await formDone.isVisible()) await formDone.click();
+    const toEdit = page.locator('#art-mode-edit');
+    if (await toEdit.isVisible()) await toEdit.click();
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    await expect(page.locator('.art-drawer-item[data-asin="B0GATEIMP1"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.art-drawer-item')).toHaveCount(2);
+    await expect(page.locator(`.art-drawer-item[data-asin="${TARGET}"]`)).toHaveCount(0);
+});
+
+// 案A の弱い点 (イシュー#664 §2-3)：直す前の版が端末の控えの bookOrder.all に除外した本を残していると、起動してから最初の書き出しまでは
+// それを数える。手元を採る起動の後の書き出しで、メモリ・フォルダ・ツリーが2に戻ること (起動の直後の冊数は記録だけ)
+test('664-K 端末の控えの bookOrder.all に除外した本が残っていても、手元を採る起動の後の書き出しで2に戻る', async ({ page }, testInfo) => {
+    const dirName = `e664-K-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+    await connectAndImportThree(page, dirName);
+    await callApp(page, 'excludeBook', TARGET);
+    await waitExported(page, dirName, true);
+    // 直す前の版が残した控えを作る：bookOrder.all と「すべて」本棚 books に除外した本を戻し、未反映の印を立てて手元を採らせる
+    await page.evaluate((asin) => {
+        const u = JSON.parse(localStorage.getItem('virtualBookshelf_userData'));
+        if (!u.bookOrder.all.includes(asin)) u.bookOrder.all.push(asin);
+        const sh = u.bookshelves.find((b) => b.isSpecial);
+        if (!sh.books.includes(asin)) sh.books.push(asin);
+        localStorage.setItem('virtualBookshelf_userData', JSON.stringify(u));
+        localStorage.setItem('virtualBookshelf_pendingSync', '1');
+    }, TARGET);
+    const seeded = brief(await readState(page, dirName));
+    await page.reload();
+    await expect(allShelf(page)).toBeVisible({ timeout: 20000 });
+    const counts = [];
+    for (let i = 0; i < 16; i++) {
+        counts.push(await treeCount(page));
+        await page.waitForTimeout(250);
+    }
+    const dialog = await page.locator('#load-conflict-dialog, #sync-conflict-dialog').filter({ visible: true }).count();
+    await expect.poll(async () => (await readState(page, dirName)).pending !== '1', { timeout: 15000 }).toBe(true);
+    await page.waitForTimeout(500);
+    const settled = await readState(page, dirName);
+    const settledTree = await treeCount(page);
+    await page.evaluate(() => window.bookshelf.updateBookshelfSelector());
+    const redrawTree = await treeCount(page);
+    if (OUT) {
+        mkdirSync(dirname(OUT), { recursive: true });
+        appendFileSync(OUT, JSON.stringify({ sc: 'K', n: testInfo.repeatEachIndex, seeded, counts: [...new Set(counts)].join('>'), dialog, settled: { ...brief(settled), tree: settledTree }, redrawTree }) + '\n');
+    }
+    expect(seeded.ctrlOrderAllHas, '控えに除外した本を入れられた').toBe(true);
+    // 手元を採ったことは、起動の直後の冊数 (counts に控えの3が出る) で JSONL に残す (読込の決め方は内部の値なので読まない)
+    expect(dialog, '読込の3択が出ない').toBe(0);
+    expect(n(settled.memOrderAll), '書き出しの後のメモリの bookOrder.all').toBe(2);
+    expect(n(settled.memShelfBooks), '書き出しの後のメモリの「すべて」本棚 books').toBe(2);
+    expect(n(settled.allJson), '書き出しの後のフォルダの all.json の books').toBe(2);
+    expect(redrawTree, '書き出しの後に描き直した すべての本 の冊数').toBe('2');
+});
