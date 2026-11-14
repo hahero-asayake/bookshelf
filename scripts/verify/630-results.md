@@ -288,4 +288,12 @@
 - 4f1a19b に載せ直した後: GitHub と保存先の決め方に関わる spec (門の j1-4-github-save-reload・j1-3-connect-github・j1-3-connect-hub・
   sync-github-disconnect・sync-chosen-mark) を流して 16 passed。#629 が足した J1-4 GitHub (接続→リポジトリを選んで「この設定で使う」→再読込) も、
   案B (保存先を決めるのは「この設定で使う」) のまま通る。
-- CI: push の直後に checks のページの HTML を読んだ結果は、提出の報告に書く (5分の待ちの範囲・残りは②の確認)。
+- 記録の commit b62b45b も push した (d43320d..b62b45b・15:50)。
+- CI (`/commit/<フルsha>/checks` の HTML を60秒おきに読んだ・API は使っていない。②の指示で待ちは5分まで):
+  | 読んだ時刻 | d43320d (コードの最後) | b62b45b (記録) |
+  |---|---|---|
+  | 15:51 | e2e・char・audit・webkit とも実行中 | 同じ |
+  | 15:53 | char 成功・ほかは実行中 | 同じ |
+  | 15:54 | char・webkit 成功・e2e・audit は実行中 | char 成功・ほかは実行中 |
+  | 15:55 | char・webkit 成功・e2e・audit は実行中 | char・webkit 成功・e2e・audit は実行中 |
+  - 5分の時点で落ちた job は無い。test (e2e)・test (audit) の結論は②の確認に回す。
