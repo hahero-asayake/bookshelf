@@ -158,3 +158,29 @@ lint:copy・lint:terms は直さずに通った。
 - 3検査とも exit 0 (a11y・buttons・layout)。
 - buttons (ボタン名の揺れ): 前回の一覧から「`variants|confirm:cancel|何もしない`」が消えた (書き込み時の衝突ダイアログから「何もしない」のボタンを無くしたため)。増えたものは0。`node scripts/check-audit.mjs buttons --from=test-results-audit/all --update` で一覧 (`tests/audit/findings/buttons.json`) と基準値 (`tests/audit/baseline.json` の buttons.variants 9→8) を書き直した。
 - layout: clip が1件減った (`shelf` の char-390 の表紙の代わりの表示)。衝突ダイアログとは関係ないので、基準値は書き直していない (69/70 のまま上限以内)。a11y は前回と同じ。
+
+## step4: 設計書の更新・載せ直し・push 前の確認 (2026-11-14 15:48〜)
+
+### 1. 設計書 (obsidian の bookshelf・2026-11-14 更新)
+
+- 07: 「衝突の3択が2種類ある」を ✅ 実装 (イシュー#635・ADR-164) にした。「書き込みで衝突した時に『この端末の内容で保存先を上書き』が選べない」を別の行 (➡️) で足した (GitHub アダプタの tree の控えを捨てる口が要る)。382行の選択ダイアログの説明と、389行の「初めてつなぐ時に合わない本文」(今回直った) を現状に合わせた。
+- 04: 2つのダイアログの説明を「衝突の選択ダイアログ」の1つの節にした (定義・2つの id・並び・本文の後半の出し分け・読み込む/閉じた時の動き・幅)。小 (sm) の幅の行も `.conflict-dialog` に直した。
+- 03: `_syncConflictSource()` を消したことと、`_showConflictChoiceDialog`／`_showConflictDialog` の行を足した。読込時の行に共通の関数を書いた。
+- 06: `virtualBookshelf_syncConflict` の行のボタンの名前 (「保存先の内容を読み込む」) を直した。
+- 08: ADR-164 を足した (ADR-159 の決定3・ADR-162 の決定4 の文言・並びの部分を置き換える。両方の該当行に置き換えの印を付けた)。08 は CRLF のまま (素の LF 0件)。
+
+### 2. 載せ直し
+
+- origin/main が2回進んだので2回載せ直した (1回目 4f1a19b、2回目 b62b45b)。
+  - 1回目の衝突: `index.html` の `bookshelf.js?v=` (main は 2026111632) → 自分の値を **2026111635** にした。`tests/e2e/gate/README.md` の J6-4・J6-5 の行 → J6-4 は自分の行、J6-5 は main の行 (投入済み) を採った。
+  - 2回目は衝突なし。
+- #612 はまだ main に入っていない (`git log origin/main --grep='Issue: #612'` が0件)。案2 で書き込み時に「上書き」の道を作っていないので、step1 の (a)〜(d) のやり直しはしていない。
+
+### 3. 載せ直した後の確認 (b62b45b の上)
+
+- E2E: chromium (J6-4・sync-conflict・standard-ops・sync-offline-reconnect) **46 passed**、gate-webkit の J6-4 **2 passed**、back-nav-matrix D03c **1 passed**、char hub-conflict **3 passed** (15 skipped)。落ち0。
+- lint は package.json の11本すべて OK。vitest 74 files・**1099 passed**。
+- `check:version --range=origin/main..HEAD`: OK。`bookshelf.js?v=` は origin/main の 2026111632 より新しい 2026111635、`bookshelf.css?v=` は 2026111600 より新しい 2026111601。
+- 画像 (載せ直した後の版): `_local/635/final-{write,load}-{390,1280}.png`。ボタンの座標は step2 と同じ (書き込み時 390 の右端 352・352、1280 は1行。どのボタンも箱からはみ出さない)。
+- J6-4 と char の E4 のテスト名に残っていた「3択」を「選び方」に直した (門の ID は名前の @gate J6-4 で取るので集計は変わらない)。
+- 全件比較 (e2e-diff-main) は流していない (step3 で12分の上限で打ち切った。この step では時間が無かった)。
