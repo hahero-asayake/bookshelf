@@ -547,3 +547,6 @@ commit：a4b6849
 - origin/main との差分は、単体テスト（tests/unit の11ファイル）・vitest.config.js・この記録だけ。E2E が読むもの（tests/e2e・playwright の設定・js・css・index.html・sw.js・plugins-sample）の差分は0。＝ base と work の E2E は同じコードを流す。新しく落ちたものが出れば、それは揺れ。
 - 1回目（06:13〜・--workers=4）：base 側の E2E の途中で run が切れて止まった（load average が23前後）。結果は無い。
 - 2回目（06:20〜・--workers=3・上限12分）：結果は下に追記する。
+- 2回目の結果：**全件の比較は未完**。base 側（origin/main cadc8bf）の E2E は最後まで流れ、1,213本 expected・unexpected 0・flaky 0（skipped 592＝webkit・char などの対象外の組・577秒）。work 側の E2E の途中で上限（12分）に達して止まった。
+- 判断の材料：work 側は base 側と同じ E2E のコードを流す（E2E が読むものの差分0）。このイシューで足した spec は無い（3番は未着手）。新しく落ちるものが出る作りの差は無い。push の可否は②が決める。
+- e2e-diff-main の一時の worktree は、スクリプトの片付けで git worktree からは外れている（`git worktree list` に出ない）。
