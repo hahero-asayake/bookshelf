@@ -36,6 +36,6 @@
     "stylelint": "^16.26.1",
     "textlint": "^15.7.1",
     "textlint-rule-preset-jtf-style": "^3.0.3",
-    "vitest": "^2.1.0"
+    "vitest": "^5.1.1"
   }
 }
