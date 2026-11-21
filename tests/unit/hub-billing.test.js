@@ -814,3 +814,75 @@ describe('Plus の出どころ (planSource): comp/stale の区別 (イシュー#
         });
     });
 });
+
+// ===== 支払いの後に戻る先の URL の検査 (safeReturnUrl・テスト監査 #690 の2番・イシュー#701) =====
+// safeReturnUrl は export されていないので、入口 (支払いの開始 handleCheckout・管理画面 handleBillingPortal) を通し、
+// Stripe へ送る中身 (success_url・cancel_url・return_url) で確かめる。許可した場所 (APP_ORIGIN) 以外へ利用者を送らない。
+describe('支払いの後に戻る先の URL は APP_ORIGIN の許可リストで検査する (safeReturnUrl・イシュー#701)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const KV0 = () => makeKV({ 'key:hk_ab1': { uid: 'u1', siteId: 's1' }, 'uid:u1': { email: 'e@x' }, 'plan:u1': { plan: 'plus', quotaBytes: PLUS_QUOTA, stripeCustomerId: 'cus_1' } });
+    const rEnv = (KV, appOrigin) => ({ KV, STRIPE_SECRET_KEY: 'sk_test', STRIPE_PRICE_MONTHLY: 'price_m', STRIPE_PRICE_YEARLY: 'price_y', APP_ORIGIN: appOrigin });
+    const req = (path, body) => new Request('https://hub.example' + path, {
+        method: 'POST', headers: { 'Authorization': 'Bearer hk_ab1', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    function stubStripe() {
+        const sent = [];
+        vi.stubGlobal('fetch', async (url, opts) => {
+            sent.push({ url, form: opts.body });
+            return new Response(JSON.stringify({ url: 'https://stripe.example/s' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+        return sent;
+    }
+    // 支払いの開始で Stripe へ送った success_url から、戻る先 (?billing=success を除いた部分) を取り出す
+    async function checkoutReturn(appOrigin, returnUrl) {
+        const sent = stubStripe();
+        const body = { plan: 'monthly' };
+        if (returnUrl !== undefined) body.returnUrl = returnUrl;
+        await handleCheckout(req('/billing/checkout', body), rEnv(KV0(), appOrigin));
+        const form = sent[0].form;
+        const ok = form.get('success_url');
+        expect(ok.endsWith('?billing=success')).toBe(true);
+        expect(form.get('cancel_url')).toBe(ok.replace(/\?billing=success$/, '?billing=cancel'));
+        return ok.replace(/\?billing=success$/, '');
+    }
+    async function portalReturn(appOrigin, returnUrl) {
+        const sent = stubStripe();
+        await handleBillingPortal(req('/billing/portal', { returnUrl }), rEnv(KV0(), appOrigin));
+        expect(sent[0].url).toBe('https://api.stripe.com/v1/billing_portal/sessions');
+        return sent[0].form.get('return_url');
+    }
+
+    it('許可した場所はそのまま返し、クエリとハッシュは落とす', async () => {
+        expect(await checkoutReturn('https://app.example', 'https://app.example/bookshelf/shelf/?q=1&x=2#top')).toBe('https://app.example/bookshelf/shelf/');
+        expect(await portalReturn('https://app.example', 'https://app.example/bookshelf/settings?tab=a#b')).toBe('https://app.example/bookshelf/settings');
+    });
+
+    it('許可していない場所は、先頭の許可した場所の /bookshelf/ に戻す (別のホスト・同じホストの http・別の番号)', async () => {
+        for (const bad of ['https://evil.example/bookshelf/', 'http://app.example/bookshelf/', 'https://app.example:8443/bookshelf/', 'https://app.example.evil.example/']) {
+            expect(await checkoutReturn('https://app.example', bad)).toBe('https://app.example/bookshelf/');
+            expect(await portalReturn('https://app.example', bad)).toBe('https://app.example/bookshelf/');
+        }
+    });
+
+    it('壊れた URL・空・指定なしは、先頭の許可した場所の /bookshelf/ に戻す', async () => {
+        for (const bad of ['not a url', '', 'javascript:alert(1)', '//evil.example/x']) {
+            expect(await checkoutReturn('https://app.example', bad)).toBe('https://app.example/bookshelf/');
+        }
+        expect(await checkoutReturn('https://app.example', undefined)).toBe('https://app.example/bookshelf/');
+        expect(await portalReturn('https://app.example', undefined)).toBe('https://app.example/bookshelf/');
+    });
+
+    it('APP_ORIGIN が複数・空白入り・空の項目入りでも、各場所を許可し、既定は空でない先頭の場所', async () => {
+        const origins = ' , https://a.example , https://b.example:8080 ,';
+        expect(await checkoutReturn(origins, 'https://b.example:8080/bookshelf/x?y=1')).toBe('https://b.example:8080/bookshelf/x');
+        expect(await checkoutReturn(origins, 'https://a.example/bookshelf/')).toBe('https://a.example/bookshelf/');
+        expect(await checkoutReturn(origins, 'https://b.example/bookshelf/')).toBe('https://a.example/bookshelf/');
+        expect(await portalReturn(origins, 'https://c.example/')).toBe('https://a.example/bookshelf/');
+    });
+
+    it('APP_ORIGIN が無い時は、どの URL も許可せず /bookshelf/ に戻す', async () => {
+        expect(await checkoutReturn(undefined, 'https://app.example/bookshelf/')).toBe('/bookshelf/');
+        expect(await portalReturn('', 'https://app.example/bookshelf/')).toBe('/bookshelf/');
+    });
+});
