@@ -43,6 +43,10 @@ describe('_exchange (/session)', () => {
         const [url, init] = globalThis.fetch.mock.calls[0];
         expect(url).toMatch(/\/session$/);
         expect(JSON.parse(init.body)).toEqual({ idToken: 'idtok' });
+        // 方式と、本文が JSON であることのヘッダー (イシュー#701・テスト監査 #690 の8番)
+        expect(init.method).toBe('POST');
+        expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
         // 設定へ保存
         expect(hub.key).toBe('hk_abc');
         expect(hub.siteId).toBe('sid-1');

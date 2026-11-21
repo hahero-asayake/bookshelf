@@ -26,6 +26,17 @@ function fakeGitHub() {
         await new Promise((r) => setTimeout(r, 2));
         const method = (init.method || 'GET').toUpperCase();
         const body = init.body ? JSON.parse(init.body) : null;
+        // 受け取った中身の確認 (イシュー#701・テスト監査 #690 の8番): 本物の GitHub と同じく、認証と版のヘッダーが無い要求は断る。
+        // 本文のある要求 (POST・PATCH・PUT) は JSON として送ること
+        const h = init.headers || {};
+        if (h.Authorization !== 'Bearer t' || h.Accept !== 'application/vnd.github+json' || h['X-GitHub-Api-Version'] !== '2022-11-28') {
+            st.log.push(`${method} 401`);
+            return new Response(JSON.stringify({ message: 'Requires authentication' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (init.body && h['Content-Type'] !== 'application/json') {
+            st.log.push(`${method} 415`);
+            return new Response(JSON.stringify({ message: 'Unsupported Media Type' }), { status: 415, headers: { 'Content-Type': 'application/json' } });
+        }
         const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json' } });
         const p = new URL(url).pathname.replace(/^\/repos\/o\/r/, '');
         if (st.fail && st.fail(method, p, body)) { st.log.push(`${method} ${p} 500`); return json({ message: 'boom' }, 500); }
