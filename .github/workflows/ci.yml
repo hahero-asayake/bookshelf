@@ -7,7 +7,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    # OS は版で固定する (ubuntu-latest だと OS が上がった時に不意に赤になる・#713)。上げる時はこの行と visual.yml を揃えて変える。
+    runs-on: ubuntu-26.04
     # イシュー#508: tests/e2e/char(#501で追加・6端末)が既存E2Eと同じジョブ・同じホストで
     # 並列実行されると、ホストCPU(4コア)の奪い合いが増え、時間依存の既存テスト
     # (publish-article-editor.spec.js:619等)が不安定になっていた(scripts/verify/

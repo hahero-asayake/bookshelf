@@ -20,7 +20,8 @@ on:
 
 jobs:
   visual:
-    runs-on: ubuntu-24.04
+    # OS は版で固定する (ci.yml と同じ・#713)。
+    runs-on: ubuntu-26.04
     # ジョブ全体の失敗をワークフローの最終結果に昇格させない(試験段階・②へ数字を出すのが目的)。
     continue-on-error: true
     steps:
