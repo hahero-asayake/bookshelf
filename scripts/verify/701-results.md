@@ -416,3 +416,18 @@ commit：a4b6849
 - storage-serial-write.test.js の模擬の GitHub：本物と同じく、Authorization（Bearer）・Accept・X-GitHub-Api-Version の無い要求は 401、本文のある要求で Content-Type が JSON でなければ 415 を返す。このファイルの全テスト（まとめ保存・単発の書き込み・版の確認）に一度に効く。
 - hub-auth.test.js：/session への交換が POST で、`Content-Type: application/json` を付け、1回だけ呼ぶこと。
 - 単体テストの数：81ファイル・1,240本（1,238 passed・2 todo）・失敗0（06:00 の npm test）。
+
+### 7番・8番：見逃しの前後（mutator の --only・33秒）
+
+| 番号 | 関数 | 前（落ちない） | 後（落ちない） |
+|---|---|---|---|
+| 8 | js/github-adapter.js:_headers | 5 | 0 |
+| 8 | js/github-adapter.js:commitBatch | 39 | 30 |
+| 8 | js/hub-auth.js:_exchange | 36 | 33 |
+| 7 | js/book-manager.js:importSelectedBooks | 35 | 16 |
+| 7 | js/book-manager.js:addBookManually | 33 | 9 |
+| 合計 | | 148 | 88 |
+
+- 名指しの id は全部気づくようになった：17af71tmlqw・q0ocbfsjkb（手動追加の番号と重複）・1y9tcf6hu48（再取込）・13pdkts28nm（件数）・1ewuzrkl8lv（監査が「43本のテストが通るのに落ちない」とした認証のヘッダー）。
+- 残りの判断（関数ごと）：commitBatch の30件と _exchange の33件は、送る中身の作り（tree・commit の本文・保存する設定の項目）とエラーの分かれ道の確認が足りない。importSelectedBooks・addBookManually の残りは、ログ・エラーの文と、既定の値の細部。どれも「テストが足りない」側で、step6 のファイル単位の数と合わせて次の候補として残す。
+- ファイル単位（js/book-manager.js・js/hub-auth.js・js/github-adapter.js）の数は、時間が足りず step6 でまとめて取る。
