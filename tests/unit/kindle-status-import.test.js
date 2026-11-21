@@ -132,3 +132,60 @@ describe('addBookManually: 新フィールドは既定で未設定のまま (イ
         expect(book.originType).toBe('Purchase');
     });
 });
+
+// イシュー#701 (テスト監査 #690 の7番): 手動追加が不正な番号と重複を断ること、取り込みの再取込で更新する項目・保存する項目。
+// 入口は BookManager の公開メソッド (addBookManually・importSelectedBooks)。
+describe('addBookManually: 不正な番号と重複を断る (イシュー#701)', () => {
+    it('ASIN が無い・10桁の英大文字と数字でない時は断り、蔵書に入れない', async () => {
+        for (const asin of [undefined, '', 'B00000000', 'B0000000001', 'b000000001', 'B00000000-', 'B00000000 ']) {
+            await expect(bm.addBookManually({ asin, title: '本' })).rejects.toThrow('有効なASINが必要です');
+        }
+        expect(bm.library.books).toHaveLength(0);
+    });
+
+    it('同じ ASIN が既にあれば断り、蔵書は1冊のまま', async () => {
+        await bm.addBookManually({ asin: 'B000000009', title: '最初' });
+        await expect(bm.addBookManually({ asin: 'B000000009', title: '二度目' })).rejects.toThrow('既に蔵書に追加されています');
+        expect(bm.library.books.map((b) => b.title)).toEqual(['最初']);
+    });
+
+    it('足した本は manual_add として保存し、省いた項目は既定の値で埋め、件数を数え直す', async () => {
+        const before = Date.now();
+        const book = await bm.addBookManually({ asin: 'B000000009' });
+        expect(book).toMatchObject({
+            asin: 'B000000009', title: 'タイトル未設定', authors: '著者未設定', readStatus: 'UNKNOWN', source: 'manual_add',
+            productImage: 'https://images-na.ssl-images-amazon.com/images/P/B000000009.01.L.jpg'
+        });
+        expect(book.addedDate).toBeGreaterThanOrEqual(before);
+        expect(bm.library.metadata).toMatchObject({ totalBooks: 1, manuallyAdded: 1 });
+    });
+});
+
+describe('importSelectedBooks: 再取込で更新する項目と、新しく足す本 (イシュー#701)', () => {
+    it('再取込はステータス系だけを Amazon の値で更新する。値が空なら消し、項目そのものが無ければ触らない。書誌は変えない', async () => {
+        await bm.importSelectedBooks([makePayloadBook({ originType: 'Purchase', lendingType: 'Lend', lendingStatus: 'Active', statusFromPlatformSearch: 'S0' })]);
+        const res = await bm.importSelectedBooks([makePayloadBook({ title: '題名を変えた', originType: 'KindleUnlimited', lendingStatus: '' })]);
+        expect(res).toMatchObject({ total: 1, added: 0, updated: 1, skipped: 0 });
+        const b = bm.library.books[0];
+        expect(b.title).toBe('テスト本');
+        expect(b.originType).toBe('KindleUnlimited');
+        expect('lendingStatus' in b).toBe(false);
+        expect(b.lendingType).toBe('Lend');
+        expect(b.statusFromPlatformSearch).toBe('S0');
+    });
+
+    it('ステータスが同じ再取込は更新に数えず、既に在るとして飛ばす', async () => {
+        await bm.importSelectedBooks([makePayloadBook({ originType: 'Purchase' })]);
+        const res = await bm.importSelectedBooks([makePayloadBook({ originType: 'Purchase' })]);
+        expect(res).toMatchObject({ added: 0, updated: 0, skipped: 1 });
+        expect(res.duplicates).toEqual([{ title: 'テスト本', asin: 'B000000001', reason: '既に存在' }]);
+    });
+
+    it('新しい本は kindle_import として足し、件数 (全体・手動・取り込み) を数え直す', async () => {
+        await bm.addBookManually({ asin: 'B000000009', title: '手動' });
+        const res = await bm.importSelectedBooks([makePayloadBook(), makePayloadBook({ asin: 'B000000002', title: '二冊目' })]);
+        expect(res).toMatchObject({ total: 2, added: 2, updated: 0, skipped: 0 });
+        expect(res.imported.map((b) => [b.asin, b.source])).toEqual([['B000000001', 'kindle_import'], ['B000000002', 'kindle_import']]);
+        expect(bm.library.metadata).toMatchObject({ totalBooks: 3, manuallyAdded: 1, importedFromKindle: 2 });
+    });
+});
