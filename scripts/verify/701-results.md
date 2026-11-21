@@ -550,3 +550,4 @@ commit：a4b6849
 - 2回目の結果：**全件の比較は未完**。base 側（origin/main cadc8bf）の E2E は最後まで流れ、1,213本 expected・unexpected 0・flaky 0（skipped 592＝webkit・char などの対象外の組・577秒）。work 側の E2E の途中で上限（12分）に達して止まった。
 - 判断の材料：work 側は base 側と同じ E2E のコードを流す（E2E が読むものの差分0）。このイシューで足した spec は無い（3番は未着手）。新しく落ちるものが出る作りの差は無い。push の可否は②が決める。
 - e2e-diff-main の一時の worktree は、スクリプトの片付けで git worktree からは外れている（`git worktree list` に出ない）。
+- ②の決定（step8 の承認・06:35）：push は可（E2E が読むファイルの差分0・base 側は全部緑。E2E の全件は push の後の CI で確かめる）。**3番（読み直しの並び順の E2E）は、このイシューでは扱わず別のイシューへ**。共有の node_modules は決めることなし（既に 5.1.1・#714 の照合が守る）。
