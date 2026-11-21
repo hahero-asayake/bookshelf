@@ -551,3 +551,11 @@ commit：a4b6849
 - 判断の材料：work 側は base 側と同じ E2E のコードを流す（E2E が読むものの差分0）。このイシューで足した spec は無い（3番は未着手）。新しく落ちるものが出る作りの差は無い。push の可否は②が決める。
 - e2e-diff-main の一時の worktree は、スクリプトの片付けで git worktree からは外れている（`git worktree list` に出ない）。
 - ②の決定（step8 の承認・06:35）：push は可（E2E が読むファイルの差分0・base 側は全部緑。E2E の全件は push の後の CI で確かめる）。**3番（読み直しの並び順の E2E）は、このイシューでは扱わず別のイシューへ**。共有の node_modules は決めることなし（既に 5.1.1・#714 の照合が守る）。
+
+## §10 step8：push と CI
+
+- push の前に：origin/main は #713（Playwright 1.60.0 → 1.65.1）と #714 の後に動いていた（548af83）。載せ直し（衝突なし）→ `npm ci --ignore-scripts`（lock に揃え直し・mutator は外れた）→ `npm run lint` 12本中0本失敗 → `npm test` 照合は一致・84ファイル・1,260本・失敗0。
+- ②の前提（push の直前に main の先頭の CI の単体テストが緑か）：548af83 の run 44951618298 は、単体テストの step が成功（char・audit・webkit も成功・e2e は実行中）。
+- push：`BOOKSHELF_ISSUE=701 git push origin 014ebea:main`（548af83..014ebea・22件・2026-11-22 06:37:03〜06:37:09 JST）。pre-push の lint は12本中0本失敗。
+- CI の結論は、この記録の commit の後に読む（提出に書く）。
+- プロジェクトノートへ追記した（単体テストの外への接続の準備・CI の注記・Vitest 5 と node_modules・mutator の前後の取り方・E2E が書き換えに気づくか）。vault の監査メモ（60/63/bookshelf/テスト監査_20261122.md）の末尾に、日付つきの見出しで結果を追記した。
