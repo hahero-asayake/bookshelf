@@ -366,3 +366,39 @@ describe('認証', () => {
         expect(res.status).toBe(401);
     });
 });
+
+// イシュー#701 (テスト監査 #690 の4番・ハブ側 putObject): 単発 PUT /data の版の確認。
+// R2 の put({onlyIf}) も版を見るが、ハブはその前に自分で版を確かめ、版が違えば容量の判定より先に 412 で断る。
+describe('単発 PUT /data の版の確認 (putObject・イシュー#701)', () => {
+    const put = (path, body, headers = {}) => worker.fetch(new Request('https://hub.test/data/' + path, {
+        method: 'PUT', headers: { Authorization: `Bearer ${KEY}`, ...headers }, body
+    }), env, {});
+
+    it('If-Match が今の版と一致すれば書き、新しい ETag を返して使った量を増やす', async () => {
+        await R2.put('data/u1/p.txt', 'v1');
+        const head = await R2.head('data/u1/p.txt');
+        const before = await usedBytes();
+        const res = await put('p.txt', 'v2-xx', { 'If-Match': `"${head.etag}"` });
+        expect(res.status).toBe(200);
+        expect(R2.store.get('data/u1/p.txt').body).toBe('v2-xx');
+        expect(res.headers.get('ETag')).toBe(`"${R2.store.get('data/u1/p.txt').etag}"`);
+        expect(await usedBytes()).toBe(before + 3);
+    });
+
+    it('If-Match が古い版なら 412 で書かない。容量が上限でも、容量の判定 (413) より先に版で断る', async () => {
+        await R2.put('data/u1/p.txt', 'v1');
+        env.QUOTA_BYTES = '2';
+        await KV.put(`usage:${UID}`, '2');
+        const res = await put('p.txt', 'v2-longer', { 'If-Match': '"stale"' });
+        expect(res.status).toBe(412);
+        expect(R2.store.get('data/u1/p.txt').body).toBe('v1');
+        expect(await usedBytes()).toBe(2);
+    });
+
+    it('If-Match 付きで、まだ無いファイルは 412 で作らない', async () => {
+        const res = await put('none.txt', 'x', { 'If-Match': '"e1"' });
+        expect(res.status).toBe(412);
+        expect(R2.store.has('data/u1/none.txt')).toBe(false);
+        expect(await usedBytes()).toBe(0);
+    });
+});

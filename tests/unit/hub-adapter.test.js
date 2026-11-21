@@ -659,3 +659,80 @@ describe('認証・安全性', () => {
         await adapter.readJSON('private/x.json');
     });
 });
+
+// イシュー#701 (テスト監査 #690 の4番): まとめ保存の 412 の回復 (_recoverBatchConflictAndRetry) が、
+// 衝突したファイルだけを読み直すこと・その控え (ETag) を捨てること・やり直しで送る中身を、送った中身と結果で確かめる。
+describe('batch: 412 の回復は衝突したファイルだけを扱う (イシュー#701)', () => {
+    async function readBoth() {
+        mockFetch({
+            'GET /data/private/k.json': () => res('{"v":0}', 200, { ETag: '"k0"' }),
+            'GET /data/private/m.json': () => res('{"m":0}', 200, { ETag: '"m0"' })
+        });
+        await adapter.readJSON('private/k.json');
+        await adapter.readJSON('private/m.json');
+    }
+
+    it('衝突していないファイルは読み直さず、1回目と同じ条件のままやり直しに入れる。衝突したファイルは新しい ETag で送る', async () => {
+        await readBoth();
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/k.json', '{"v":1}');
+        adapter.addBatchEntry('private/m.json', '{"m":1}');
+        const gets = [];
+        const posts = [];
+        mockFetch({
+            'POST /data/batch': ({ init }) => {
+                posts.push(JSON.parse(init.body).entries);
+                return posts.length === 1 ? res(JSON.stringify({ conflicts: [{ path: 'private/k.json', etag: '"k1"' }] }), 412) : res(null, 200);
+            },
+            // m.json は読み直さない (この模擬に m.json の GET は無い＝読めば失敗する)
+            'GET /data/private/k.json': () => { gets.push('k'); return res('{"v":0}', 200, { ETag: '"k1"' }); }
+        });
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(gets).toEqual(['k']);
+        expect(posts).toHaveLength(2);
+        expect(posts[0]).toEqual([
+            { op: 'put', path: 'private/k.json', content: '{"v":1}', ifMatch: '"k0"' },
+            { op: 'put', path: 'private/m.json', content: '{"m":1}', ifMatch: '"m0"' }
+        ]);
+        expect(posts[1]).toEqual([
+            { op: 'put', path: 'private/k.json', content: '{"v":1}', ifMatch: '"k1"' },
+            { op: 'put', path: 'private/m.json', content: '{"m":1}', ifMatch: '"m0"' }
+        ]);
+    });
+
+    it('衝突したファイルの控え (ETag) は捨てる: 他の端末の変更で止まった後の単発の書き込みは、古い ETag を使わず取り直す', async () => {
+        await readBoth();
+        adapter.beginBatch();
+        adapter.addBatchEntry('private/k.json', '{"v":1}');
+        mockFetch({
+            'POST /data/batch': () => res(JSON.stringify({ conflicts: [{ path: 'private/k.json', etag: '"k9"' }] }), 412),
+            'GET /data/private/k.json': () => res('{"v":999}', 200, { ETag: '"k9"' }) // 他の端末が中身を変えた
+        });
+        await expect(adapter.commitBatch()).rejects.toBeInstanceOf(HubRemoteChangedError);
+        const sent = [];
+        mockFetch({
+            'HEAD /data/private/k.json': () => { sent.push('HEAD'); return res(null, 200, { ETag: '"k9"' }); },
+            'PUT /data/private/k.json': ({ init }) => { sent.push(`PUT ${init.headers['If-Match']}`); return res(null, 200, { ETag: '"k10"' }); }
+        });
+        await adapter.writeText('private/k.json', '{"v":2}');
+        expect(sent).toEqual(['HEAD', 'PUT "k9"']);
+    });
+
+    it('消す指示が衝突し、保存先で既に無い (404) 時は、済んだものとしてやり直しに入れない', async () => {
+        await readBoth();
+        adapter.beginBatch();
+        adapter.addBatchDelete('private/k.json');
+        adapter.addBatchEntry('private/m.json', '{"m":1}');
+        const posts = [];
+        mockFetch({
+            'POST /data/batch': ({ init }) => {
+                posts.push(JSON.parse(init.body).entries);
+                return posts.length === 1 ? res(JSON.stringify({ conflicts: [{ path: 'private/k.json', etag: null }] }), 412) : res(null, 200);
+            },
+            'GET /data/private/k.json': () => res('', 404)
+        });
+        await expect(adapter.commitBatch()).resolves.toBe(true);
+        expect(posts).toHaveLength(2);
+        expect(posts[1].map((e) => e.path)).toEqual(['private/m.json']);
+    });
+});

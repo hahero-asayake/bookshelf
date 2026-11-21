@@ -144,3 +144,45 @@ describe('保存先への書き込みの待ち行列 (イシュー#667・GitHub)
         expect(gh.read('private/main.json')).toEqual({ a: 1 });
     });
 });
+
+// イシュー#701 (テスト監査 #690 の4番): まとめ保存の土台の版の確認 (GitHubAdapter._assertBatchNotStale)。
+// 決まり (js/github-adapter.js の注): 対象は、put するパスのうち sha を覚えているもの (読んだ・書いたことのあるもの)。
+// 読んだ後に他の端末が中身を変えていれば、上書きせず止める。読んだことの無いパスは見分けられないので見ない。
+describe('まとめ保存の土台の版の確認 (_assertBatchNotStale・イシュー#701)', () => {
+    let gh;
+    beforeEach(() => { localStorage.clear(); gh = fakeGitHub(); });
+    const device = () => new GitHubAdapter({ owner: 'o', repo: 'r', token: 't' });
+
+    it('読んだ後に他の端末が中身を変えたファイルは、上書きせず止め、保存先は他の端末の中身のまま', async () => {
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['v0'] })], { message: 'seed' });
+        const mine = device();
+        expect(await mine.readJSON(A)).toEqual({ books: ['v0'] });
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['other'] })], { message: 'other device' });
+        await expect(new BookshelfStorage(mine).syncBatch([put(A, { books: ['mine'] })], { message: 'mine' }))
+            .rejects.toThrow('他の場所で更新されています');
+        expect(gh.read(A)).toEqual({ books: ['other'] });
+    });
+
+    it('読んだ後に変わっていなければ、そのまま書く', async () => {
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['v0'] })], { message: 'seed' });
+        const mine = device();
+        await mine.readJSON(A);
+        await new BookshelfStorage(mine).syncBatch([put(A, { books: ['mine'] })], { message: 'mine' });
+        expect(gh.read(A)).toEqual({ books: ['mine'] });
+    });
+
+    it('読んだことの無いファイルへの put は確かめずに書く (見分けられない)', async () => {
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['other'] })], { message: 'other device' });
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['mine'] })], { message: 'mine' });
+        expect(gh.read(A)).toEqual({ books: ['mine'] });
+    });
+
+    it('他の端末が、こちらの書こうとした中身と同じ中身を先に書いていれば、止めずに書く', async () => {
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['v0'] })], { message: 'seed' });
+        const mine = device();
+        await mine.readJSON(A);
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['same'] })], { message: 'other device' });
+        await new BookshelfStorage(mine).syncBatch([put(A, { books: ['same'] })], { message: 'mine' });
+        expect(gh.read(A)).toEqual({ books: ['same'] });
+    });
+});
