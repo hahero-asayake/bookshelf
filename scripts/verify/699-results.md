@@ -287,3 +287,21 @@ origin/main cf0655e の上に、自分の commit を積んだ HEAD（このス�
 - `81_🚀development/bookshelf/08_意思決定記録.md`：ADR-178 を末尾に追記。
 - `63_🐙project/bookshelf/公開前最終テスト設計.md`：§2 の J5 に「7 公開した記事の本から Amazon へ移れる」を足し、37点を38点に（§2 の見出し・合格の行・§3・門(a) の行）。
 - `07_残検討事項.md` は変えていない（このイシューで閉じる行は無い）。`cf-worker/HUB-SETUP.md` の実績行と確認項目は step5。
+
+## §5 記録の仕上げ（step5・2026-11-22 05:42〜）
+
+### 5-1 HUB-SETUP.md
+
+- 「デプロイ運用」に #699 の実績を1行足した（bookshelf-cdn `ae515fab`・直前 `3edb7418`・HEAD c0e99c2・hub は未変更・確かめた事と戻し方）。
+- 確認項目6（アフィリンク /go）を今の作りに合わせた：リンクは `/go/<siteId>/<asin>` の相対パスで配信元のオリジンで解決される／新URLの記事では bookshelf の `/go` が 302 で hub の `/go` を指し、hub が 302 で Amazon を指す／リダイレクトは追わず Location で確かめる／`699-prod-codes.mjs` でまとめて見られる。
+
+### 5-2 main の CI（未認証の API・05:42〜）
+
+| run | sha | 中身 | test (e2e) | test (char) | test (webkit) | test (audit) |
+|---|---|---|---|---|---|---|
+| 419 | cf0655e | #701（Vitest 5.1.1） | 失敗（Install Playwright browser） | 失敗（同） | 失敗（同） | 失敗（同） |
+| 420 | dd0ccd9 | CI を ubuntu-24.04 に固定 | 実行中・**Unit tests (Vitest) が失敗** | 成功 | 成功 | 成功 |
+| 421 | c0e99c2 | #699（この push） | 実行中・**Unit tests (Vitest) が失敗** | 成功 | 実行中 | 実行中 |
+
+- 単体テストの失敗は、#699 の前の run 420（dd0ccd9）でも同じ step で起きている＝#699 で入ったものではない。#701 で Vitest を 5.1.1 に上げた後、CI で単体テストが落ちている（419 は Playwright のブラウザの取得で先に落ちていて、単体テストまで届いていない）。
+- 手元では、Vitest 2.1.9（共有の node_modules）と 5.1.1（#701 の node_modules）のどちらでも 1210 件・0 失敗だった（§3-2）。CI の Node は 22（setup-node）で、Vitest 5.1.1 の要件（^22.12.0）は満たす見込み。落ちたテストの名前は、注記（annotation）がまだ0件で読めていない（ジョブが実行中）。
