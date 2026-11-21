@@ -492,3 +492,52 @@ commit：a4b6849
 - 6ファイルとも、届いた分のスコアは上がった（js/storage.js 65.4%→78.0%・js/book-manager.js 61.6%→81.9%・js/github-adapter.js 68.0%→72.5%・js/hub-adapter.js 70.3%→71.5%・js/hub-auth.js 56.5%→58.0%・cf-worker/asayake-hub.js 72.6%→73.7%）。
 - not reached は js/storage.js で 352→102（9番の移行と判定・5番の初期化に単体が届くようになった）。
 - 記録：`~/kuroko/_vault-work/701/mutation/files-after-step6/mutation.json`・`gaps-after-step6.json`（関数ごと）。
+
+## §9 step7：最新の main への載せ直しと最終の確かめ
+
+### 載せ直し
+
+- `git rebase origin/main`（cadc8bf の上へ・18 commit）。分岐点は dd0ccd9 だった。その後に main へ入ったのは #699 の commit・bd4aa3b（CI の時だけ github-actions の報告）・cadc8bf（#714：テストの前に node_modules の版を package-lock.json と照合する pretest）。
+- 衝突は vitest.config.js の1か所だけ：bd4aa3b の `reporters` の行と、こちらの 90690d4（10番）の `setupFiles` の行。両方を残した。
+- 載せ直しの後の HEAD は d0b12ea（この §9 の commit の前）。push する commit は全部 `Issue: #701` の trailer つき。
+
+### 最終の確かめ
+
+| 確かめたこと | 結果 |
+|---|---|
+| `npm run lint` | 12本中0本失敗 |
+| `npm test`（#714 の pretest の照合つき） | 照合は「node_modules は package-lock.json と一致（直接の依存 9 件）」。84ファイル・1,260本（1,258 passed・2 todo）・失敗0 |
+| 単体テストの本数 | 80ファイル・1,203本（#690 の時点）→ 84ファイル・1,260本（このイシューで足した分＋ #699・#714 が足した分）。#699・#714 が足したテストも、10番の準備（差し替えていない fetch は失敗）で落ちなかった |
+| 本体コードの差分（`git diff origin/main --stat -- js cf-worker css index.html`） | 0行 |
+| add していないもの | `.mutator/` は untracked のまま。mutator は package.json・lock に無い。測定用の設定・node_modules は add していない |
+| E2E の全件比較（e2e-diff-main） | 下に記載 |
+
+### 共有の node_modules（②の申し送りの「Vitest 2.1.9 でも通るか」）
+
+- 共有の /home/sei/GitHub/bookshelf/node_modules は、もう Vitest 5.1.1 だった（node_modules/vitest/package.json と .package-lock.json の時刻は 2026-11-22 05:53）。#714 の照合（pretest）が入った時期と同じで、共有の側は lock に揃えられている。
+- そのため「2.1.9 でも通るか」は確かめられない（2.1.9 の node_modules が手元に無い）。代わりに、node_modules を持たない一時の worktree（親フォルダの node_modules＝共有への symlink を使う）で単体テストを流した：84ファイル・1,260本のうち 1,256 passed・2 failed。
+- 落ちた2本は tests/unit/audit-ui-copy.test.js（lint:copy の件数の上限）で、理由は「textlint の出力を読めない」＝一時の worktree に node_modules が無く、テストが起動する textlint を見つけられないため。作業ツリー（node_modules あり）では通る。このイシューのテストとは関係しない。
+- 一時の worktree は `_trash/tmp-701-vitest2` へ移し、`git worktree prune` で片付けた。
+
+### 完了条件ごとの対応
+
+| 完了条件 | 状態 | 根拠 |
+|---|---|---|
+| Vitest 5 で CI が緑（単体・E2E とも） | 一部未確定 | 版上げ（cf0655e）の後、ubuntu-latest の Ubuntu 26.04 化で E2E が全部赤 → runs-on を固定（dd0ccd9）。その後、単体テストの step が2回赤・2回緑（揺れの見込み・落ちたテストは未特定）。最新の bd4aa3b の run は単体が緑。最終の CI は step8 の push で確かめる |
+| npm audit の件数を前後で記録 | 済み | 26件（critical 3・high 12・moderate 11）→ 17件（1・8・8）（§1） |
+| 足したテストで見逃しが消えたことを mutator の対象ファイル限定で示す | 済み | 名指しの id は mutator で測れる番号（2・4〜8番）で全部気づく。関数ごとの落ちない数の前→後と、6ファイルのファイル単位の数（§8） |
+| 4〜7番は足す前に E2E で気づくかを確かめ、判断理由を残す | 済み | 4番（§6・4件とも気づかない）・5・6番（§4・6件中3件気づく）・7番（§7・4件中1件気づく）。どれも単体を足した理由を記録 |
+| 10番は外部へ接続しない形に直す | 済み | 外向きの接続 2→0（§3）。差し替えていない fetch は失敗させる準備を setupFiles に入れた |
+| テストのみの変更・本体の挙動は変えない | 済み | 本体コードの差分0行。テスト以外の変更は、CI の設定（runs-on の固定・②の案A）と vitest.config.js（注記の報告・②の案A／10番の準備） |
+| 本体のバグが見つかったら tp で報告 | 該当なし | 本体のバグは見つかっていない |
+| main へ push まで（CI 緑を確認）・ハヘロ向けに数行 | step8 | — |
+| 1〜8番・10番を扱う | 3番だけ未着手 | 3番（読み直しの並び順の E2E）は step4 で時間切れ、step5 は②の決まり（main の単体が赤の間は3番に進まない）と7番・8番で使い切った |
+| 9番：残りうる・分からないなら消さずにテストを足す | 済み | 結論「分からない」（§2）→ テストを足した（§8） |
+
+### 確かめられなかったこと
+
+- 3番（読み直しの並び順の E2E）：未着手。
+- CI の単体テストの揺れ：どのテストが落ちたかは未特定（落ちた2回は注記を出す前・ログは未認証では読めない）。bd4aa3b 以降は、落ちれば注記に出る。
+- CI で使われた node の正確な版：ログが読めないので未確認。runner image の告知では ubuntu-24.04 の Node.js 22 は 22.23.5。
+- Vitest 2.1.9 でも足したテストが通るか：共有の node_modules が既に 5.1.1 で、2.1.9 の環境が無いので未確認。足したテストは Vitest 5 だけの API を使っていない。
+- mutator で測れないもの：js/bookshelf.js（1番・3番）と E2E。1番は書き換えを手で入れて確かめた。
