@@ -65,23 +65,21 @@ try {
         const context = await browser.newContext(t.ctx);
         const pg = await context.newPage();
         for (const [pagePath, pageLabel] of [['/hahero/x/', 'no-referrer(本番と同じ)'], ['/default/x/', '対照:指定なし']]) {
-        await pg.goto(P + pagePath);
-        for (const id of ['chain', 'relay', 'direct']) {
-            const before = seen.length;
-            const hitsBefore = hits.length;
-            const hops = [];
-            const onResp = (r) => { if (r.status() >= 300 && r.status() < 400) hops.push(new URL(r.url()).origin + ' ' + r.status()); };
-            context.on('response', onResp);
-            const popupP = context.waitForEvent('page', { timeout: 8000 }).catch(() => null);
-            if (t.touch) await pg.locator('#' + id).tap(); else await pg.locator('#' + id).click();
-            const popup = await popupP;
-            if (popup) { await popup.waitForLoadState('load', { timeout: 8000 }).catch(() => {}); }
-            context.off('response', onResp);
-            const got = seen.slice(before);
-            const chain = hits.slice(hitsBefore);
-            console.log(`${t.name} ページ=${pageLabel} ${id}: 着いた先=${popup ? new URL(popup.url()).origin : '-'} リダイレクト=${chain.length}回 [${chain.join('→')}→A] Amazon役へ届いた Referer=${JSON.stringify(got.map(g => g.referer))}`);
-            if (popup) await popup.close();
-        }
+            await pg.goto(P + pagePath);
+            for (const id of ['chain', 'relay', 'direct']) {
+                const before = seen.length;
+                const hitsBefore = hits.length;
+                const popupP = context.waitForEvent('page', { timeout: 8000 }).catch(() => null);
+                if (t.touch) await pg.locator('#' + id).tap(); else await pg.locator('#' + id).click();
+                const popup = await popupP;
+                if (popup) { await popup.waitForLoadState('load', { timeout: 8000 }).catch(() => {}); }
+                const got = seen.slice(before);
+                // リダイレクトの回数はサーバー側 (P と H に届いた要求) で数える。WebKit は新しいタブの最初の応答を
+                // Playwright の response イベントに出さないことがあり、ブラウザ側で数えると1回少なく出た
+                const chain = hits.slice(hitsBefore);
+                console.log(`${t.name} ページ=${pageLabel} ${id}: 着いた先=${popup ? new URL(popup.url()).origin : '-'} リダイレクト=${chain.length}回 [${chain.join('→')}→A] Amazon役へ届いた Referer=${JSON.stringify(got.map(g => g.referer))}`);
+                if (popup) await popup.close();
+            }
         }
         await browser.close();
     }
