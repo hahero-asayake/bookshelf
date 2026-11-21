@@ -20,7 +20,7 @@ on:
 
 jobs:
   visual:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # ジョブ全体の失敗をワークフローの最終結果に昇格させない(試験段階・②へ数字を出すのが目的)。
     continue-on-error: true
     steps:
