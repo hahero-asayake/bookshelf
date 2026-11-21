@@ -367,6 +367,52 @@ commit：a4b6849
 
 - ファイル単位は 808ea49 の前の木で流した（版の印の1本は入っていない）。cf-worker/asayake-hub.js（3,470件）のファイル単位は、時間が足りず step6 で取る。
 
-### 3番（読み直しの並び順の E2E）：このステップでは手を付けていない
+### 3番（読み直しの並び順の E2E）：step4 では手を付けていない
 
 - run の時間（30分）が、4番の E2E の確認と単体テストで尽きた。3番は次のステップ（step5）の前半で行う。やること：sort-persist の「PC と交互に変更」が 10hv83ghzyg で落ちなかった理由を調べる → spec を1本足す → 10hv83ghzyg を手で入れて落ち、戻して通る → chromium で3回続けて通る。
+
+## §7 step5：CI の単体テストの赤の確かめと、7番・8番
+
+### CI の単体テストの赤（②の申し送りの順に確かめた）
+
+1. `git log cf0655e..dd0ccd9`：dd0ccd9 の1件だけで、差分は ci.yml・visual.yml の `runs-on` の2行。10番の準備（no-network.setup.js・setupFiles）は main に入っていない（origin/main の vitest.config.js に setupFiles は無い）。dd0ccd9 は、手元の未 push の commit を混ぜないよう origin/main の上に直接作って push したため。②の見立て（準備が CI で落としている）は当たらない。
+2. 手元で `CI=true GITHUB_ACTIONS=true npm test`：81ファイル・1,234本・失敗0（10番の準備を入れた木）。#699 も同じ条件（`TZ=UTC`・HEAD 8604cf1）で0失敗を記録している。
+3. 案Aの1 commit を push した：bd4aa3b（vitest.config.js に、GITHUB_ACTIONS の時だけ `reporters: ['default', 'github-actions']`。05:56:58 JST・eaa470c..bd4aa3b）。push の前に、Vitest 5.1.1 で github-actions の報告が動くことを手元で確かめた。
+4. その CI（run 44948945585）の単体テストの step は成功（24秒）。#699 の記録では、8604cf1 の run 422 でも成功していた。
+
+| run | commit | 単体テストの step |
+|---|---|---|
+| 420 | dd0ccd9 | 失敗 |
+| 421 | c0e99c2（#699） | 失敗 |
+| 422 | 8604cf1（#699 の記録） | 成功 |
+| 44948945585 | bd4aa3b（注記の追加） | 成功 |
+
+- 同じテストの中身で成功と失敗が分かれる＝揺れる単体テストがある見込み。Vitest 2.1.9 の時の CI では見ていない。落ちたテストの名前は、まだ分からない（落ちた2回は注記を出す前）。次に落ちた時は、check-run の注記に名前と行が出る。
+- 今の main の単体テストは緑（直近2回）。②の(5)の「Vitest 5 と ubuntu-24.04 の組み合わせ」とは示せていないので、request_review はしていない。
+
+### 7番：足す前に E2E で気づくか
+
+- 選び方（結果を見る前に 05:57 に固定・`tools/e2e-precheck-7.mjs`）：名指しの3件＋importSelectedBooks の標本1件（id の昇順・文字列だけの書き換えを除く・別の行＝13pdkts28nm）。
+- spec の組（取り込み・手動追加の11ファイル）：gate/j2-1〜j2-5・import-paste・import-reload-persist・kindle-reimport-merge・reimport-diff・manual-add-reload-all-shelf・dashboard-stats-after-manual-add。書き換えなしで36本緑（26.1秒）。
+- 途中で run が切れ、js/book-manager.js に 17af71tmlqw が入ったまま残っていた。次の run の最初に見つけて戻し（`git checkout`）、続きから流し直した。
+
+| id | 書き換え | E2E |
+|---|---|---|
+| 17af71tmlqw | addBookManually L376 `!asin \|\| !this.isValidASIN(asin)` → false（番号を確かめない） | 気づかなかった |
+| q0ocbfsjkb | addBookManually L381 重複の確認 → false（重複を断らない） | 気づかなかった |
+| 1y9tcf6hu48 | importSelectedBooks L88 `!(key in book)` → false（項目そのものが無い時も消す） | 気づいた（kindle-reimport-merge「ステータス系フィールドを持たない取込ソース」。戻すと緑） |
+| 13pdkts28nm | importSelectedBooks L139 手動追加の件数の数え方を逆に | 気づかなかった |
+
+- 判断：番号の検査・重複の検査・件数は E2E が気づかないので、単体を足す。1y9tcf6hu48 は E2E が気づくが、単体なら再取込の項目ごとの扱い（空なら消す・無ければ触らない）を数行で直接確かめられるので、step3 の物差しどおり足す。
+
+### 7番：足したテスト（commit bbcb58b・tests/unit/kindle-status-import.test.js・6本）
+
+- addBookManually：ASIN が無い・10桁の英大文字と数字でない（9桁・11桁・小文字・記号・空白）時は断り、蔵書を変えない。同じ ASIN が既にあれば断り、1冊のまま。足した本は manual_add として既定の値（題名・著者・既読の状態・表紙の URL）で埋め、件数（全体・手動）を数え直す。
+- importSelectedBooks：再取込はステータス系だけを更新し、値が空なら消し、項目そのものが無ければ触らず、書誌は変えない。同じなら既に在るとして飛ばす（理由つき）。新しい本は kindle_import として足し、全体・手動・取り込みの件数を数え直す。
+
+### 8番：模擬の通信が受け取った中身を確かめる（commit 8712074）
+
+- 比べた結果：見逃しの時に通っていたテストの模擬は、ファイルごとに作りが違い（storage-serial-write の GitHub の模擬・github-adapter の mockFetch・hub-auth の vi.fn）、共通の部品へ寄せるとその3ファイルの書き換えになる。(a) 各ファイルの模擬に確認を足す方が小さいので (a) を採った（2ファイル・15行）。
+- storage-serial-write.test.js の模擬の GitHub：本物と同じく、Authorization（Bearer）・Accept・X-GitHub-Api-Version の無い要求は 401、本文のある要求で Content-Type が JSON でなければ 415 を返す。このファイルの全テスト（まとめ保存・単発の書き込み・版の確認）に一度に効く。
+- hub-auth.test.js：/session への交換が POST で、`Content-Type: application/json` を付け、1回だけ呼ぶこと。
+- 単体テストの数：81ファイル・1,240本（1,238 passed・2 todo）・失敗0（06:00 の npm test）。
