@@ -105,30 +105,48 @@ describe('markdownToHtml: 閉じない強調記号のO(n^2)劣化ガード (回�
         return unit.repeat(times).slice(0, targetBytes);
     }
     const UNCLOSED_MARKS_UNIT = '**閉じない強調 __閉じないアンダー `閉じないコード [閉じないリンク(';
-    const SIZES = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB
+    const SIZES = [131072, 262144, 524288, 1048576]; // 128KB, 256KB, 512KB, 1MB (従テスト用)
+    // 主テスト用 (イシュー#731): 32KB, 64KB, 128KB, 256KB (8倍幅・合計480KB)。
+    // 主テストは時間で判定しないが、本体は同期の変換なので所要は既定timeout(5000ms)の対象になる。
+    // Vitest 2.1.9 は同期テストを何秒かかっても時間切れにできなかった (Promise.race と setTimeout だけ)。
+    // Vitest 3.2 以降 (今の 5.1.1) は終了時に上限超えを見て落とす (vitest-dev/vitest#2920)。
+    // そのため、旧サイズ (128KB〜1MB・合計約1.9MB・手元約1.5秒) で以前からCIで5秒前後かかっていたのが、
+    // 版上げ (ec3bdf4) の後に TestTimeoutError として見えた (CI run #419〜#432 の14本中6本)。
+    // 安全弁ONの回数は64KB以上で1400回に頭打ち (32KBは1224回)、OFFはサイズに比例
+    // (32KB 1224・64KB 2443・128KB 4885・256KB 9764) するため、このサイズでも下の両方の判定で二乗劣化を検出できる。
+    // 1MBの完走は従テスト(下)が見続ける。
+    const MAIN_SIZES = [32768, 65536, 131072, 262144];
 
-    it('(主・時間を使わない) 重い探索(emStrongの対応デリミタ探索)への実dispatch回数は、安全弁が効いて入力サイズに関わらず頭打ちになる', () => {
+    it('(主・時間を使わない) 重い探索(emStrongの対応デリミタ探索)への実dispatch回数は、安全弁が効いて入力サイズに関わらず頭打ちになる', async ({ annotate }) => {
         // opts.onHeavyEmStrongCall (イシュー#520で追加・onDegradedと同型の省略可コールバック) は、
         // 安全弁がまだ効いていない間に「重い探索(originalEmStrong)」へ実際にdispatchした回数だけを
         // 数える。安全弁(_EM_STRONG_LDELIM_LIMIT=800)が効いていれば、この回数は入力サイズに関わらず
         // ほぼ一定になる(実測: 128KB〜1MBのいずれも1400回程度・入力が同じ単位の繰り返しのため安全弁
         // が効く位置が先頭付近の同じ場所に揃う)。安全弁を外す(わざと二乗にする)と、サイズにほぼ
         // 正比例して増え続ける(実測: 128KBで4885→1MBで39046)。時間を一切使わないため、CIランナーの
-        // 負荷揺れの影響を原理的に受けない。
-        const heavyCallsBySize = SIZES.map((size) => {
+        // 負荷揺れの影響を原理的に受けない(ただし所要は既定timeoutの対象・イシュー#731)。
+        const elapsedBySize = [];
+        const heavyCallsBySize = MAIN_SIZES.map((size) => {
             const input = repeatToSize(UNCLOSED_MARKS_UNIT, size);
             let heavy = 0;
+            const t0 = performance.now();
             const html = PublishArticleGenerator.markdownToHtml(input, { onHeavyEmStrongCall: () => { heavy++; } });
+            elapsedBySize.push(Math.round(performance.now() - t0));
             expect(html.length).toBeGreaterThan(0); // 実際に完了すること(旧・1MB8秒未満テストの「動作完了」部分を継承)
             return heavy;
         });
+        if (process.env.GITHUB_ACTIONS) {
+            // CIでだけ所要を check-run の注記に出す (手元とCIの比を読むため・イシュー#731)
+            const total = elapsedBySize.reduce((a, b) => a + b, 0);
+            await annotate(`#731 主テストの変換の所要 ${total}ms (上限5000ms) / サイズ別 ${MAIN_SIZES.map((s, i) => `${s / 1024}KB=${elapsedBySize[i]}ms`).join(' ')} / 重い探索の回数 ${heavyCallsBySize.join(',')}`, 'notice');
+        }
         for (const heavy of heavyCallsBySize) {
-            // 実測(安全弁ON)は全サイズ1400回程度。安全弁OFFは最小サイズ(128KB)でも4885回に達するため、
-            // 余裕を持たせた2000でも二乗劣化は確実に検出できる(stepP2実測)。
+            // 実測(安全弁ON)は64KB以上で1400回・32KBで1224回。安全弁OFFは64KBで2443回・256KBで9764回に
+            // 達するため、余裕を持たせた2000でも二乗劣化は確実に検出できる(#520 stepP2・#731実測)。
             expect(heavy).toBeLessThan(2000);
         }
-        // サイズを8倍(128KB→1MB)にしても回数がほぼ変わらないこと(線形化できていれば比~1倍、
-        // O(n^2)ならこの入力では比~8倍前後になる)。
+        // サイズを8倍(32KB→256KB)にしても回数がほぼ変わらないこと(安全弁ONは実測1.14倍、
+        // O(n^2)ならこの入力では比~8倍前後になる・安全弁OFFは実測7.98倍)。
         const growthRatio = heavyCallsBySize[heavyCallsBySize.length - 1] / Math.max(heavyCallsBySize[0], 1);
         expect(growthRatio).toBeLessThan(2);
     });
