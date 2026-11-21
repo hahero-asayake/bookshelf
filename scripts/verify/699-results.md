@@ -181,3 +181,49 @@
 | `08_意思決定記録.md` | ADR を1つ追記（番号は step4 で採番） | 決定：`bookshelf-cdn` が `/go` を hub へ 302 で送る。理由：既存の記事が再公開なしで直る・タグの判断を1か所に保つ・最小権限を変えない。採らなかった案：生成器が絶対URLで出す（既存の記事が直らない）・Cloudflare の route・fetch での中継（Referer に差が無く、往復が1回減るだけ）。教訓：配信元を移す時は、ページの中の相対リンクの行き先を全部洗う。生成器・配信元・中継を順に通すテストを置く |
 | `60_🐙claude/63_🐙project/bookshelf/公開前最終テスト設計.md` §2 | J5 の観測点 | J5-7「公開した記事の本から Amazon へ移れる」を足し、37点を38点にする |
 | `cf-worker/HUB-SETUP.md` L97（repo の中・step5） | 確認項目6 | 今の作りに合わせる：公開ページの Amazon リンクは `/go/<siteId>/<asin>`。`curl -sI https://bookshelf.asayake.org/go/<siteId>/<asin>` が 302 で hub の同じ道を指し、hub が 302 で Amazon を指す |
+
+## §3 本番へ出す前の確認（step3・2026-11-22 05:16〜・push も deploy もしていない）
+
+### 3-1 載せ直し
+
+origin/main が cf0655e に進んでいた（#701 の2 commit：Vitest を 2.1.9 から 5.1.1 へ上げた `package.json`・`package-lock.json` と、701-results.md）。自分の5 commit とのファイルの重なりは0件で、`git rebase origin/main` は衝突なしで通った（HEAD e1ce322）。`?v=` は触っていない（アプリの js・css・index.html を変えていない）。
+
+### 3-2 結果の表
+
+| 確認 | 結果 |
+|---|---|
+| `npm test`（共有の node_modules＝Vitest 2.1.9） | 81 ファイル・1210 件 0 失敗（todo 2） |
+| `npm test` を Vitest 5.1.1 で（CI と同じ版。#701 の worktree の node_modules を一時の worktree から借りて流した・読むだけ） | 81 ファイル・1210 件 0 失敗（todo 2） |
+| `npm run lint` | （3-4 に書く） |
+| e2e-diff-main（base＝origin/main cf0655e・work＝HEAD e1ce322・E2E 全件＋vitest＋画像比較） | （3-4 に書く） |
+| 門のE2E を gate-webkit で | （3-4 に書く） |
+
+- 共有の node_modules（`/home/sei/GitHub/bookshelf/node_modules`）はまだ Vitest 2.1.9 のまま。package.json は 5.1.1 なので、CI（`npm ci`）は 5.1.1 で流れる。両方の版で通ることを確かめた。
+
+### 3-3 本番へ出す範囲（読み取りだけ・`scripts/verify/699-cf-compare.mjs`）
+
+本番の `bookshelf-cdn` の中身（Cloudflare API `workers/scripts/bookshelf-cdn/content/v2` の1番目の part）と、ローカルの `wrangler deploy --dry-run` の出力を sha256 で比べた。
+
+| 比べた物 | バイト数 | sha256 | 本番と |
+|---|---|---|---|
+| 本番の `bookshelf-cdn.js` | 46170 | `b48fbc36…41edc7d` | — |
+| origin/main（cf0655e）の cf-worker の dry-run | 46170 | `b48fbc36…41edc7d` | **一致** |
+| HEAD（e1ce322）の cf-worker の dry-run | 46747 | `cfc8cc6e…0fff591` | 不一致（差は下の15行だけ） |
+
+- 本番は origin/main の cf-worker とバイト単位で同じ。**今回の deploy で一緒に出る未 deploy の変更は無い**（②の申し送りの条件を満たす）。
+- 本番 → HEAD の差は、`/go` の分岐の15行（`if (username === "go") { … 302 … }`）だけ。
+- `wrangler deploy --dry-run -c wrangler.bookshelf.toml` は origin/main・HEAD とも exit 0（Total Upload 45.09 KiB → 45.65 KiB）。
+- 今動いている版（`scripts/verify/699-cf-deployments.mjs`・一覧の末尾）：`3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe`（2026-11-13T18:54:43Z＝#584 の deploy。HUB-SETUP.md の実績行と同じ）。これが戻し先。
+- 生の記録：`/home/kuroko/kuroko/_vault-work/699/cf-compare.log`・`cf-deployments-before.log`（トークンの値・Author のメールアドレスは出していない）。
+
+### 3-5 step4 の手順（②の承認の後だけ）
+
+1. push：`git fetch` → origin/main が進んでいれば載せ直して `npm run lint` と `npm test` を流し直す → `BOOKSHELF_ISSUE=699 git push origin <自分の最後の sha>:main`。
+2. 設計書：§2-8 の差分案を obsidian の 09・08・公開前最終テスト設計へ反映する（Read/Edit で1回。commit は自動バックアップに任せる）。
+3. deploy（`bookshelf-cdn` だけ。hub・既定の wrangler.toml・他の Worker には触らない）：
+   1. `node scripts/verify/699-cf-deployments.mjs 3` で、末尾が `3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe` のままか確かめる（変わっていたら、その版を戻し先にする）。
+   2. 作業ツリーが clean で、HEAD が push した sha であることを確かめる。`699-cf-compare.mjs` をもう一度流し、本番＝origin/main の旧版のままであることを確かめる。
+   3. cf-worker で `wrangler deploy -c wrangler.bookshelf.toml`（トークンは実行時にファイルから環境変数へ。値は出さない）。
+   4. `699-cf-compare.mjs` を流し、本番＝HEAD の dry-run（`cfc8cc6e…`）になったことを確かめる。
+4. 本番の確認（読むだけ）：`curl -sI https://bookshelf.asayake.org/go/31b0fe39-…/B087JKL1JH` が 302・Location `https://hub.asayake.org/go/31b0fe39-…/B087JKL1JH`、hub の側が 302 で Amazon を指す（追わない）。記事2本・`/hahero/`・`/top`・`/report`・`/robots.txt`・無い username・形が違う `/go` が deploy の前と同じ応答コード。`node scripts/verify/699-prod-check.mjs /home/kuroko/kuroko/_vault-work/699 after` で、WebKit 390 と Chromium の表紙・題名の8回とも「/go の先」が Amazon の商品ページの URL で止まること。
+5. 戻し方：`wrangler rollback 3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe -c wrangler.bookshelf.toml -m "<理由>" --yes`（cf-worker で・トークンは同じ渡し方）。公開ページの配信（deploy の前に 200 だった URL）が悪くなった時だけ戻す。`/go` だけが期待と違う時は戻さず、応答と版 ID を書いて②へ返す（deploy の前も 404 なので悪くはなっていない）。
