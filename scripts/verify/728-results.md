@@ -132,3 +132,49 @@
 1. **採る案**：推奨は (a)。
 2. **「同じ commit で2回」の取り方**：re-run と workflow_dispatch は認証が要り、③は使えない。そこで visual.yml の job に `strategy.matrix: { attempt: [1, 2] }` を足し、同じ commit を別のランナーで2本流す案を出す。完了条件を満たした後に1本へ戻すかは、step4 の tp で決める。
 3. **paths を足すか**：今は visual.yml だけ（L14-18）。推奨は `tests/visual/**` と `playwright.visual.config.js` を足すこと。基準画像やテストを変えた push でも CI で確かめられるようにするため。アプリの UI のファイル（js/・css/）は足さない（continue-on-error を外すかと一緒に step4 で決める）。
+
+## §3 step3：(a) を実装し、手元で確かめた（2026-11-22 07:14〜07:18 JST・push していない）
+
+②の決定（07:14）：(a) を採る。2回は matrix attempt [1, 2] で取る。paths に tests/visual/** と playwright.visual.config.js を足す。1文字を拾えないことを README に書く。
+着手の時、#713 は done（DB）。origin/main（6e7ac8d）へ rebase した。
+
+### 3-1 変えたもの（commit を3つに分けた）
+
+1. b5896b7 `ci(visual): …`（仕組み・5ファイル）
+   - `.github/workflows/visual.yml`
+     - job に `container: mcr.microsoft.com/playwright:v1.65.1-resolute`（options `--user 1001 --ipc=host`）を足した。
+     - `playwright install --with-deps` と fonts-noto-cjk の apt を外した。フォント確認は、コンテナの中の `fc-match` 1行にした。
+     - `strategy.matrix.attempt: [1, 2]` を足した。artifact 名は `visual-results-<attempt>`。
+     - paths に `tests/visual/**`・`playwright.visual.config.js` を足した。
+   - `scripts/verify/visual-image.mjs`（新規）：イメージ名を package-lock.json の @playwright/test の版から決める。
+   - `scripts/verify/visual-docker.mjs`（新規）：手元で、画像比較をコンテナの中で流す。
+     - 作業ツリー・node_modules の実体・JSON の出力先を同じパスで mount し、`--user <自分>`・`--network host` で流す。
+     - docker かイメージが無い時は、1行の警告（`docker pull <イメージ>` つき）を出し、終了コード 3 で終わる。自動では pull しない。
+   - `scripts/verify/e2e-diff-main.mjs`：visual を visual-docker.mjs で流す。終了コード 3 の時は警告を出し、report の「画像の差分」に「スキップ（…）」と書く。
+   - `tests/unit/visual-image.test.js`（新規）：次の2つを検査する。
+     - package.json の範囲（^1.65.1）の版と lock の版（1.65.1）が同じ。
+     - visual.yml の image が `visualImage()` と同じ。
+2. 6f79748 `test(visual): 基準画像66枚を Playwright 公式コンテナ v1.65.1-resolute で撮り直す（画像だけ）`：PNG 66 枚だけ（PNG 以外は 0 件）。
+3. docs（この節・tests/visual/README.md）：
+   - 冒頭の説明と実行例を、visual-docker.mjs に変えた。
+   - 「CIの扱い」を今の形に直し、閾値 0.1% の限界（1文字は拾えない）を1行書いた。
+   - e2e-diff-main の節に、スキップの振る舞いを足した。
+   - 「基準画像の更新手順」を1段落で書き直した。
+
+アプリのコード（js/・css/・index.html）と playwright.visual.config.js・screens.spec.js は変えていない。
+
+### 3-2 手元で確かめた
+
+| 確かめ | 結果 |
+|---|---|
+| visual-docker.mjs `--update-snapshots`（撮り直し） | 54 passed・66 枚を書き換え |
+| 同じコンテナで3回続けて流した | **54 passed・54 passed・54 passed**（全画面 54 件と、同じテストの中の見出し 12 枚を含む） |
+| 見逃しの確かめ（40×24px の四角・一時の spec を当てて流し、戻した） | 16/54 で拾えた（step2 と同じ） |
+| `e2e-diff-main.mjs --skip-e2e --skip-vitest --port=8128` | report「画像の差分」＝**0件 / 54件** |
+| 同じものを docker の無い PATH で流した | 1行の警告「[visual] 警告: 画像比較をスキップする（docker が無い。取得は docker pull mcr.microsoft.com/playwright:v1.65.1-resolute）」が出て、report に「スキップ（…）」と書かれた。終了コードは 0 |
+| visual-docker.mjs を docker の無い PATH で流した | 同じ1行の警告・終了コード 3 |
+| `npm run lint` | 12 本中 0 本失敗 |
+| `npm test` | 85 ファイル・1,261 件通過・0 件失敗（2 todo） |
+
+- 記録は `_local/728/s3/`（drive.log・run{1,2,3}.log・e2ediff/report.md・e2ediff-nodocker/report.md・lint.log・test.log）。
+- CI で同じになるかは step4 で確かめる。見込みは2本とも 0/54。

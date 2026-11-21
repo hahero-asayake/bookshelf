@@ -2,8 +2,9 @@
 
 `playwright.visual.config.js`（リポジトリ直下）＋ `tests/visual/screens.spec.js` の組。
 9画面×6端末(`tests/char-devices.js`)の全画面スクリーンショット比較。`npm run test:e2e`
-や CI には入らない、手動実行のみのスタンドアロン設定（ランナーごとのフォント描画ゆれを
-まだ検証していないため・イシュー#512 で CI 投入は見送り）。
+には入らないスタンドアロン設定。**基準画像は Playwright 公式コンテナ
+（`scripts/verify/visual-image.mjs` のイメージ）の中で撮り、手元も CI もそのコンテナの中で比べる**
+（イシュー#728。素の環境では日本語の書体が機械ごとに違い、54件とも差分になる）。
 
 push前確認に使う `scripts/verify/e2e-diff-main.mjs` では、イシュー#526 により **既定で
 visual も走る**（約8秒・54件、work側単独の基準画像比較。付けない限り外せないので、
@@ -13,7 +14,7 @@ UI変更時の付け忘れが構造的に起きない）。外す場合は `--no
 実行例:
 
 ```
-PORT=8112 PLAYWRIGHT_BASE_URL=http://localhost:8112 npx playwright test -c playwright.visual.config.js
+PORT=8112 node scripts/verify/visual-docker.mjs
 ```
 
 ## 閾値とイシュー#512（見出し帯の小さな変化を拾えない問題）
@@ -42,14 +43,18 @@ PORT=8112 PLAYWRIGHT_BASE_URL=http://localhost:8112 npx playwright test -c playw
 
 ## CIの扱い
 
-visual は CI(`.github/workflows/ci.yml`)に入れていない（既存CIは壊れないことの確認にとどめる）。
-完了確認は**ローカルで3回連続緑**（既存の全画面＋locator比較すべて含む）。CI投入はランナーごとの
-フォント描画ゆれを別途調べてから検討する（イシュー#512の範囲外・#526でも評価のみで見送り、
-別イシュー化を推奨）。
+visual は `ci.yml` には入れず、別のワークフロー `.github/workflows/visual.yml`（試験ジョブ・
+`continue-on-error`）で流す（イシュー#527・#728）。
+
+- 走る時：main への push のうち、`visual.yml`・`tests/visual/**`・`playwright.visual.config.js` を変えた時だけ。
+- 流し方：job の `container` に、手元と同じ公式コンテナを使う。同じ commit を `matrix.attempt: [1, 2]` で
+  別のランナーで2本流す（re-run は未認証では使えないため）。
+- 件数：run 画面の annotation「visual 集計: 差分N/54件」で読む。
+- 閾値の限界：全画面の閾値は 0.1% なので、1文字（約100px）の変化は拾えない（#728 の確かめで 0/54）。
+  40×24px の四角でも、拾えたのは 390・768 幅だけ。小さな変化は locator の比較（上）で見る。
 
 push前のローカル確認(`scripts/verify/e2e-diff-main.mjs`)は#526で既定visualオンになったため、
-「push前にローカルでvisualを含めて確認する」こと自体はCI投入が無くても担保される。CIは
-「ローカル確認をすり抜けた場合の保険」という位置づけで、優先度は#526時点では高くない。
+「push前にローカルでvisualを含めて確認する」こと自体はCIが無くても担保される。
 
 ## e2e-diff-main.mjs での扱い（#526）
 
@@ -58,6 +63,9 @@ push前のローカル確認(`scripts/verify/e2e-diff-main.mjs`)は#526で既定
 付け忘れによって検出されないまま push された（下の「UI変更時の基準画像の扱い（#524）」参照）。
 
 - 既定のまま実行すれば visual も含めて走る（work側単独・base比較はしない・実測約8秒/54件）。
+- イシュー#728 から、visual は `scripts/verify/visual-docker.mjs` で公式コンテナの中で流す。
+  docker かイメージが無い時は、1行の警告（取得のコマンド `docker pull <イメージ>` つき）を出し、
+  `report.md` の「画像の差分」節に「スキップ（…）」と書く。イメージは自動では取ってこない（約3.8GB）。
 - 外したい時（UI に一切触れない調査中など、速さを優先したい場合）だけ `--no-visual` を付ける。
   外した場合は `report.md` の「画像の差分」節に「スキップ（--no-visual 指定）」と明記される
   （外したこと自体が記録に残る）。
@@ -68,15 +76,13 @@ push前のローカル確認(`scripts/verify/e2e-diff-main.mjs`)は#526で既定
 
 ## 基準画像の更新手順
 
-見た目を意図して変えたら、該当テストだけ対象に絞って `--update-snapshots` で再生成する。
-
-```
-PORT=8112 PLAYWRIGHT_BASE_URL=http://localhost:8112 \
-  npx playwright test -c playwright.visual.config.js -g "<テスト名>" --update-snapshots
-```
-
-その後、差分が意図した変更だけか（`git diff --stat` で更新枚数を見る）を必ず確認してから
-commit する。
+見た目を意図して変えたら、リポジトリ直下で、公式コンテナの中で該当テストだけ撮り直す：
+`PORT=8112 node scripts/verify/visual-docker.mjs -g "<テスト名>" --update-snapshots`
+（イメージが無ければ先に `docker pull mcr.microsoft.com/playwright:v<@playwright/test の版>-resolute`）。
+手元の素の `npx playwright test` で撮らないこと（書体が違い、CI と全件が差分になる）。
+撮り直したら、差分が意図した変更だけか（`git diff --stat` で枚数を見る）を確かめてから commit する。
+Playwright の版を上げた時は、`.github/workflows/visual.yml` の `container.image` を同じ版に書き換え
+（ずれは `tests/unit/visual-image.test.js` が落とす）、66枚を全部撮り直して、画像だけの commit にする。
 
 ## UI変更時の基準画像の扱い（#524）
 
