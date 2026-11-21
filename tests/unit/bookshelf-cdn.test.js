@@ -349,3 +349,56 @@ describe('一覧に出さない印 (uname:<username>.unlisted)', () => {
         expect(body).not.toContain(PID_B);
     });
 });
+
+// 公開ページの本のリンクは /go/<siteId>/<asin> (先頭が / の相対パス)。記事はこの Worker が配信するので、リンクは
+// bookshelf.asayake.org/go/… に届く。行き先 (プランとタグ) を決めるのはハブの /go だけにして、ここは送るだけ (イシュー#699)。
+describe('/go/<siteId>/<asin> (公開ページの本のリンクをハブの /go へ送る・イシュー#699)', () => {
+    const HUB = 'https://hub.asayake.org';
+    const go = (path, { method = 'GET', KV = makeKV({}), extra = { HUB_API_ORIGIN: HUB } } = {}) =>
+        worker.fetch(new Request(`https://bookshelf.asayake.org${path}`, { method }), { ...env(KV, makeBucket()), ...extra }, ctx);
+
+    it('ハブの同じ道へ 302 で送る (Amazon の URL もタグもここでは作らない)。キャッシュさせず、Referrer-Policy はハブの /go と同じ', async () => {
+        const res = await go('/go/site1/B000000001');
+        expect(res.status).toBe(302);
+        expect(res.headers.get('Location')).toBe(`${HUB}/go/site1/B000000001`);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    });
+
+    it('HEAD も同じ 302。HUB_API_ORIGIN が未設定でも本番のハブへ送る', async () => {
+        const head = await go('/go/site1/B000000001', { method: 'HEAD' });
+        expect(head.status).toBe(302);
+        expect(head.headers.get('Location')).toBe(`${HUB}/go/site1/B000000001`);
+        const noVar = await go('/go/site1/B000000001', { extra: {} });
+        expect(noVar.headers.get('Location')).toBe(`${HUB}/go/site1/B000000001`);
+    });
+
+    it('KV を読まない (username の解決も、プランやタグの判断もしない)', async () => {
+        const KV = makeKV({});
+        KV.get = async () => { throw new Error('KV should not be read for /go'); };
+        expect((await go('/go/site1/B000000001', { KV })).status).toBe(302);
+    });
+
+    it('siteId は URL の1区切りとして送る (記号はエンコードする)', async () => {
+        const res = await go('/go/31b0fe39-a3f1-475e-85ab-eee336368355/B087JKL1JH');
+        expect(res.headers.get('Location')).toBe(`${HUB}/go/31b0fe39-a3f1-475e-85ab-eee336368355/B087JKL1JH`);
+        const odd = await go('/go/a%3Fb%23c/B000000001');
+        expect(odd.headers.get('Location')).toBe(`${HUB}/go/a%3Fb%23c/B000000001`);
+    });
+
+    it('形が違う /go は今までどおり 404 (siteId が無い・asin が英数字8〜14桁でない・階層が余分)', async () => {
+        for (const path of ['/go', '/go/', '/go/B000000001', '/go/site1/', '/go/site1/short', '/go/site1/TOOLONGASIN12345',
+            '/go/site1/B00000000-1', '/go/site1/B000000001/extra', '/go/site1/B00000000%2F1']) {
+            const res = await go(path);
+            expect(res.status, path).toBe(404);
+            expect(res.headers.get('X-Robots-Tag'), path).toBe('noindex');
+        }
+    });
+
+    it('他の予約語・除外パス (/me・/js・/about) の 404 は変わらない。POST は 405', async () => {
+        for (const path of ['/me/site1/B000000001', '/js/site1/B000000001', '/about/site1/B000000001']) {
+            expect((await go(path)).status, path).toBe(404);
+        }
+        expect((await go('/go/site1/B000000001', { method: 'POST' })).status).toBe(405);
+    });
+});

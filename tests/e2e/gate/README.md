@@ -1,6 +1,6 @@
 # 門のE2E（`@gate`）の書き方
 
-公開前品質の門(a)。観測点37（`jobs.json`）を、**利用者と同じ操作で、画面に見える結果を確かめる** E2E で埋める。内部を呼んで通したテストは「ボタンが壊れていても緑」になりうる（#580）ので、門には数えない。設計の正本は obsidian `60_🐙claude/63_🐙project/bookshelf/公開前最終テスト設計.md` §2・§3。
+公開前品質の門(a)。観測点38（`jobs.json`）を、**利用者と同じ操作で、画面に見える結果を確かめる** E2E で埋める。内部を呼んで通したテストは「ボタンが壊れていても緑」になりうる（#580）ので、門には数えない。設計の正本は obsidian `60_🐙claude/63_🐙project/bookshelf/公開前最終テスト設計.md` §2・§3。
 
 - 見本：`j5-2-shelf-block-tap.spec.js`（J5-2）
 - 前提の置き場：`../helpers/gate-setup.js`
@@ -56,7 +56,7 @@ PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 PLAYWRIGHT_JSON_OUTPUT_NAME=
 npm run gate:report -- --collect
 ```
 
-観測点37は全部そろったので、`npm run lint:e2e-gate` は `--strict-coverage` 付きで流れ、未達も失敗にする（package.json・#629・#658）。`npm run lint`・pre-push・CI はどれもこの1行を流すので、同じ判定になる。
+観測点は全部そろっているので、`npm run lint:e2e-gate` は `--strict-coverage` 付きで流れ、未達も失敗にする（package.json・#629・#658）。`npm run lint`・pre-push・CI はどれもこの1行を流すので、同じ判定になる。
 
 ## 保存先と別の端末の前提（公開・同期の観測点・イシュー#588）
 
@@ -86,6 +86,7 @@ J5・J6 の観測点は、全部 main に入っていて緑（2026-11-14・イ�
 |---|---|---|
 | J5-1 | `j5-1-article-create.spec.js` | 投入済み・緑（題名を入れてすぐ一覧へ戻ると記事が出なかった不具合を、#595・#609 で直した後に入れた・#632） |
 | J5-2〜J5-6 | `j5-2-shelf-block-tap`・`j5-3-article-preview`・`j5-4-publish-read-url`・`j5-5-publish-update`・`j5-6-unpublish-delete` | 投入済み・緑 |
+| J5-7 | `j5-7-article-amazon-link.spec.js` | 投入済み・緑（2026-11-22・イシュー#699 で足した観測点）。公開URLのページで本の表紙と題名を押し、新しいタブが Amazon の商品ページ（`https://www.amazon.co.jp/dp/<ASIN>`）になることを見る。本のリンクは `/go/<siteId>/<ASIN>` で、公開ページの配信元（`bookshelf.asayake.org`）→ ハブの `/go` → Amazon と送られる。配信元に `/go` の道が無く、新しいタブが 404 になっていた不具合を直して入れた。模擬の `/go` は、302 の代わりに同じ行き先へすぐ移るページを返す（Playwright の route は 3xx を返せない。`gate-hub.js` の `redirectForTest`）。Amazon の商品ページは `gate-amazon.js` の `mockAmazonProductPageForTest` |
 | J6-1 | `j6-1-local-restart.spec.js` | 投入済み・緑（赤はアプリの不具合ではなく、フォルダへの書き込みを待たずに通るヘルパーのせいだった・#607）。webkit では流さない（ローカルのフォルダ保存は PC の Chrome/Edge 専用・`gate-webkit` の `testIgnore`） |
 | J6-2・J6-3 | `j6-2-github-other-device`・`j6-3-hub-other-device` | 投入済み・緑 |
 | J6-4 | `j6-4-sync-conflict.spec.js` | 投入済み・緑（2台の本当の衝突で3択も知らせも出なかった不具合を直して入れた・#616）。ハブと GitHub の2本。GitHub はリポジトリからAの短文メモが消えないことも見る（まとめ保存が古い版で上書きしていた・#616）。ダイアログは読込時の選択と同じ定義から出る（題「保存先とこの端末の両方が変わっています」・ボタン「保存先の内容を読み込む」「この端末の内容で保存先を上書き」「この端末の内容を書き出す」の3つ・最初のフォーカスは書き出す・#635。書き込み時の上書きは #645 から） |
@@ -159,4 +160,4 @@ GATE_WEBKIT=1 PORT=8183 PLAYWRIGHT_BASE_URL=http://localhost:8183 \
 
 webkit（gate-webkit）で流さない分と理由は、playwright.config.js の GATE_WEBKIT_IGNORE に1行ずつ書いてある。
 
-観測点37は全部そろった（2026-11-14・#632 の J5-1・J6-5 と #629 の J3-5 で。`npm run lint:e2e-gate` は「網羅 37/37」）。`npm run lint:e2e-gate` は `--strict-coverage` 付き（package.json・#658）＝`npm run lint`・pre-push・CI で同じ判定。
+観測点37は全部そろった（2026-11-14・#632 の J5-1・J6-5 と #629 の J3-5 で）。2026-11-22 に J5-7（公開した記事の本から Amazon へ移れる・イシュー#699）を足して38点になり、`npm run lint:e2e-gate` は「網羅 38/38」。`npm run lint:e2e-gate` は `--strict-coverage` 付き（package.json・#658）＝`npm run lint`・pre-push・CI で同じ判定。

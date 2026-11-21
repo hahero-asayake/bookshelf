@@ -50,6 +50,7 @@ function initialHubState(overrides) {
         interval: null, currentPeriodEnd: null, cancelAtPeriodEnd: false,
         usedBytes: 10 * MB,
         username: 'hahero',    // 公開の名義。公開URL は https://bookshelf.asayake.org/<username>/<publicId>/
+        affiliateTag: '',      // 本人の Amazon のタグ (公開の時にアプリが送る。/go が Plus の時だけ使う)
         deleted: false,        // DELETE /account (退会) を受けたか
         files: new Map(),      // /data/<path> の中身 (path → { content, etag })
         site: new Map(),       // 公開サイト sites/<siteId>/ の中身 (path → { body, contentType })
@@ -462,8 +463,46 @@ function runPublish(state, body) {
         state.site.set(path, { body: buf, contentType: contentTypeOf(path) });
     }
     if (body.deleteMissing) for (const path of [...state.site.keys()]) if (!keep.has(path)) state.site.delete(path);
+    // 本人のタグは uid のレコードに残す (cf-worker/asayake-hub.js:821-824 と同じ: 前後の空白を落とし32字まで・英数字と _ - だけ)
+    if (typeof body.affiliateTag === 'string') {
+        const t = body.affiliateTag.trim().slice(0, 32);
+        if (/^[A-Za-z0-9_-]*$/.test(t)) state.affiliateTag = t;
+    }
     const siteUrl = publicBaseOf(state) || `${HUB_BASE}/public/${state.siteId}/`;
     return { ok: true, siteId: state.siteId, siteUrl, published: files.length, indexed: 0 };
+}
+
+/** 模擬のハブが /go で付ける運営のタグ (本物は cf-worker/wrangler.hub.toml の OPERATOR_AFFILIATE_TAG)。 */
+export const OPERATOR_TAG_FOR_TEST = 'gate-operator-22';
+// 本物の配信 Worker (bookshelf-cdn) が /go を送る先 (cf-worker/wrangler.bookshelf.toml の HUB_API_ORIGIN)
+const HUB_GO_ORIGIN = 'https://hub.asayake.org';
+
+// 本物の /go は 302 を返すが、Playwright の route は 3xx を返せない (WebKit は "Cannot fulfill with redirect status" で
+// 落ちる・イシュー#699 で実測)。同じ行き先へすぐ移るページで代える = 新しいタブの最後の URL は本物と同じになる。
+// 移った先の要求は新しい読み込みなので、行き先のホストの模擬 (route) がそのまま答える。
+function redirectForTest(route, location) {
+    return route.fulfill({
+        status: 200, contentType: 'text/html; charset=utf-8',
+        body: `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${location}"><title>移動中 (模擬)</title>`
+    });
+}
+
+// /go/<siteId>/<asin> の形の検査 (cf-worker/asayake-hub.js の handleGo・200-205 行と同じ: siteId が空でない・asin は英数字8〜14桁)
+function parseGoPath(pathname) {
+    const rest = decodeURIComponent(pathname.slice('/go/'.length));
+    const slash = rest.indexOf('/');
+    const siteId = slash < 0 ? '' : rest.slice(0, slash);
+    const asin = slash < 0 ? rest : rest.slice(slash + 1);
+    return (siteId && /^[A-Za-z0-9]{8,14}$/.test(asin)) ? { siteId, asin } : null;
+}
+
+// ハブの GET /go/<siteId>/<asin> (cf-worker/asayake-hub.js の handleGo・198-228 行と同じ約束): 形が違えば 400。
+// Free と、知らない siteId は運営のタグ、Plus は本人のタグ (空なら付けない) で Amazon の商品ページへ送る
+function fulfillGo(route, state, pathname) {
+    const go = parseGoPath(pathname);
+    if (!go) return route.fulfill({ status: 400, contentType: 'text/plain', body: 'bad path' });
+    const tag = (go.siteId === state.siteId && state.plan === 'plus') ? state.affiliateTag : OPERATOR_TAG_FOR_TEST;
+    return redirectForTest(route, `https://www.amazon.co.jp/dp/${go.asin}` + (tag ? `?tag=${encodeURIComponent(tag)}` : ''));
 }
 
 // 公開サイトの中身を返す (cf-worker/bookshelf-cdn.js:132-133 と同じ: 末尾 / なら index.html。無ければ 404)
@@ -479,7 +518,8 @@ function fulfillSite(route, state, sub) {
  * route はそのページのコンテキストに1本ずつ掛ける (新しいタブにも効く)。
  * 今ある道: GET /usage・POST /billing/checkout・POST /billing/portal・DELETE /account・/data/<path> の GET/HEAD/PUT/DELETE・
  * POST /data/batch・GET /data/<dir>?list=1 (entries・truncated つき)・POST /publish・GET /public/<siteId>/<path> (旧URL)・
- * GET https://bookshelf.asayake.org/<username>/<path>。
+ * GET https://bookshelf.asayake.org/<username>/<path>・GET /go/<siteId>/<asin> (公開ページの本のリンクの中継。公開ページの
+ * 配信元 → 本物のハブのホスト https://hub.asayake.org → Amazon と送る。旧URL のページからは HUB_BASE の /go に届く)。
  * If-Match (単発の PUT・まとめ書き) は本物と同じく W/ と引用符を外して比べる。書き込みの失敗は failHubWritesForTest で注入し、
  * 中身が変わった書き込みと届いた削除の要求は state.writes・state.deleteRequests に残る (読むのは hubStoreForTest)。
  * /billing/checkout・/billing/portal は決済の模擬のページ (BILLING_BASE) の URL を返す = 押した後まで通すなら
@@ -495,6 +535,8 @@ export async function mockHubForTest(page, state) {
         const url = new URL(req.url());
         const path = url.pathname;
         state.requests.push({ method, path: path + url.search });
+        // /go は接続キーが要らない (本物は API の認証より前で振り分ける・cf-worker/asayake-hub.js:88)
+        if (path.startsWith('/go/') && method === 'GET') return fulfillGo(route, state, path);
         if (path === '/usage' && method === 'GET') return route.fulfill({ json: usageOf(state) });
         if (path === '/billing/checkout' && method === 'POST') {
             // 本物 (cf-worker/asayake-hub.js の handleCheckout) は Stripe Checkout のページの URL を返し、支払いが済むと
@@ -541,9 +583,18 @@ export async function mockHubForTest(page, state) {
         if (path.startsWith(old) && method === 'GET') return fulfillSite(route, state, decodeURIComponent(path.slice(old.length)));
         return route.fulfill({ status: 501, json: { error: `gate-hub.js の模擬に無い道: ${method} ${path}${url.search}` } });
     });
+    // 本物のハブのホストの /go (公開ページの配信 Worker が送ってくる先)。ログインの模擬 (mockHubSessionForTest の /session) とは別の道
+    await context.route(`${HUB_GO_ORIGIN}/go/**`, async (route) => {
+        const url = new URL(route.request().url());
+        state.requests.push({ method: route.request().method(), path: url.href });
+        return fulfillGo(route, state, url.pathname);
+    });
     await context.route('https://bookshelf.asayake.org/**', async (route) => {
         const url = new URL(route.request().url());
         state.requests.push({ method: route.request().method(), path: url.href });
+        // 記事の中の本のリンク /go/<siteId>/<asin> は、ハブの同じ道へ送る (cf-worker/bookshelf-cdn.js の /go の分岐と同じ約束・
+        // イシュー#699)。形が違えば、他の予約語と同じく下の 404 に落ちる
+        if (url.pathname.startsWith('/go/') && parseGoPath(url.pathname)) return redirectForTest(route, `${HUB_GO_ORIGIN}${url.pathname}`);
         const own = state.username ? `/${state.username}/` : null;
         if (!own || !url.pathname.startsWith(own)) return route.fulfill({ status: 404, contentType: 'text/html; charset=utf-8', body: '<!doctype html><h1>404 Not Found</h1>' });
         return fulfillSite(route, state, decodeURIComponent(url.pathname.slice(own.length)));

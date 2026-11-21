@@ -91,14 +91,14 @@ describe('条件1・6: 重さ(致命0・高0・中0。2026-11-14 ハヘロ決裁
 });
 
 describe('条件2: 観測点が緑の @gate でそろい、3回流して揺れ0', () => {
-    it('37点のうち1点だけ緑 → 不合格で、未達の36点を列挙する', () => {
+    it('38点のうち1点だけ緑 → 不合格で、未達の37点を列挙する', () => {
         const c = cond({ ...passing(), gateLint: lintJson(['J5-2']), gateE2e: [gateRuns(['J5-2'])] }, 2);
         expect(c.verdict).toBe(FAIL);
         // 「結果○回分」は @gate の分だけを数える(一緒に渡した E2E 全件の結果 = passing() の smoke 1回は数えない)
-        expect(c.evidence).toBe('緑 1/37点（@gate 1本・書き方の違反 0件・結果 3回分）');
+        expect(c.evidence).toBe('緑 1/38点（@gate 1本・書き方の違反 0件・結果 3回分）');
         expect(c.gaps).toHaveLength(1);
-        expect(c.gaps[0]).toContain('@gate が無い 36点');
-        expect(c.gaps[0].match(/J\d+-\d+/g)).toHaveLength(36);
+        expect(c.gaps[0]).toContain('@gate が無い 37点');
+        expect(c.gaps[0].match(/J\d+-\d+/g)).toHaveLength(37);
         expect(c.gaps[0]).not.toContain('J5-2');
     });
     it('3回のうち1回でも失敗・揺れがある → 不合格', () => {
@@ -235,13 +235,13 @@ describe('入口(node scripts/gate-report.mjs)を通す', () => {
         expect(r.stdout).toContain('総合: **合格**（合格 8・不合格 0・未実施 0）');
         expect(readFileSync(out, 'utf-8')).toBe(r.stdout);
     });
-    it('見本の @gate 1本だけの置き場 → 条件2が不合格で未達36点を出す', () => {
+    it('見本の @gate 1本だけの置き場 → 条件2が不合格で未達37点を出す', () => {
         const dir = mkdtempSync(join(tmpdir(), 'gate-report-one-'));
         writeAll(dir, { ...passing(), gateLint: lintJson(['J5-2']), gateE2e: [gateRuns(['J5-2'])] });
         const r = run(dir, `--human=${join(dir, 'human.md')}`);
         expect(r.status).toBe(1);
-        expect(r.stdout).toContain('| 不合格 | 緑 1/37点');
-        expect(r.stdout).toContain('@gate が無い 36点: J1-1 J1-2');
+        expect(r.stdout).toContain('| 不合格 | 緑 1/38点');
+        expect(r.stdout).toContain('@gate が無い 37点: J1-1 J1-2');
     });
     it('壊れた結果ファイルは「読めない」で不合格にする(未実施と区別する)', () => {
         const dir = mkdtempSync(join(tmpdir(), 'gate-report-broken-'));

@@ -10,6 +10,7 @@
 //   GET https://bookshelf.asayake.org/<username>/              → R2 sites/<siteId>/index.html (プロフィール/一覧)
 //
 //   GET https://bookshelf.asayake.org/top                       → 全ユーザー横断の公開記事一覧 (SSR・S7・イシュー#269)
+//   GET https://bookshelf.asayake.org/go/<siteId>/<asin>        → hub の同じ道へ 302 (記事の中の本のリンク・イシュー#699)
 //
 // env バインディング (wrangler.bookshelf.toml, read-only 運用):
 //   BUCKET   R2 bucket (asayake-hub と同一。sites/ のみ参照)
@@ -88,6 +89,26 @@ export default {
                     'Cache-Control': 'public, max-age=3600'
                 }
             });
+        }
+
+        // /go/<siteId>/<asin> (公開ページの本のリンク・イシュー#699): 記事はこの Worker が配信するので、記事の中の
+        // 本のリンク (先頭が / の相対パス) はこのオリジンに届く。行き先 (プランとタグ) を決めるのは hub の /go
+        // (asayake-hub.js handleGo) だけにして、ここは同じ道へ 302 で送るだけにする = KV を読まない・タグを持たない
+        // (冒頭の最小権限のとおり)。形の検査と応答のヘッダは handleGo と同じ。形が違えば下の予約語の 404 に落ちる。
+        if (username === 'go') {
+            const cut = sub.indexOf('/');
+            const siteId = cut < 0 ? '' : sub.slice(0, cut);
+            const asin = cut < 0 ? sub : sub.slice(cut + 1);
+            if (siteId && /^[A-Za-z0-9]{8,14}$/.test(asin)) {
+                return new Response(null, {
+                    status: 302,
+                    headers: {
+                        'Location': `${env.HUB_API_ORIGIN || 'https://hub.asayake.org'}/go/${encodeURIComponent(siteId)}/${asin}`,
+                        'Cache-Control': 'no-store',
+                        'Referrer-Policy': 'strict-origin-when-cross-origin'
+                    }
+                });
+            }
         }
 
         if (!username) return new Response('Not found', { status: 404, headers: noindexHeaders('text/plain') });

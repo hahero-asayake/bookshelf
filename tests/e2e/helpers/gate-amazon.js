@@ -35,3 +35,18 @@ export async function mockAmazonLibraryForTest(page, items) {
         return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found (gate mock)' });
     });
 }
+
+/** Amazon の商品ページ (https://www.amazon.co.jp/dp/<ASIN>) を模擬する。公開した記事の本のリンクの行き先
+ * (イシュー#699 J5-7)。ページには「Amazon の商品ページ (模擬)」と ASIN を出す。それ以外の道は 404。
+ * 開いた新しいタブにも効くよう、コンテキストに掛ける。mockAmazonLibraryForTest とは同じコンテキストで一緒に使わない
+ * (同じホストの route の取り合いになる)。アプリを開く前でも後でもよい。
+ * @param {import('@playwright/test').Page} page アプリのページ */
+export async function mockAmazonProductPageForTest(page) {
+    await page.context().route(`${AMAZON_ORIGIN}/**`, async (route) => {
+        const m = new URL(route.request().url()).pathname.match(/^\/dp\/([A-Za-z0-9]{8,14})$/);
+        if (!m) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found (gate mock)' });
+        const body = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>Amazon の商品ページ (模擬)</title></head>
+<body><h1>Amazon の商品ページ (模擬)</h1><p>ASIN: ${m[1]}</p></body></html>`;
+        return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
+    });
+}

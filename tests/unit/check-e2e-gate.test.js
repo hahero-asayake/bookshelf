@@ -22,13 +22,13 @@ const count = (result, rule) => rules(result).filter((r) => r === rule).length;
 
 describe('観測点表 tests/e2e/gate/jobs.json', () => {
     const jobs = loadJobs(JOBS);
-    it('J1〜J8 の 37点で、仕事ごとの点数が設計書 §2 と同じ', () => {
+    it('J1〜J8 の 38点で、仕事ごとの点数が設計書 §2 と同じ', () => {
         expect(jobs.jobs.map((j) => j.id)).toEqual(['J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7', 'J8']);
-        expect(jobs.jobs.map((j) => j.points.length)).toEqual([4, 6, 5, 3, 6, 5, 4, 4]);
-        expect(jobs.ids).toHaveLength(37);
+        expect(jobs.jobs.map((j) => j.points.length)).toEqual([4, 6, 5, 3, 7, 5, 4, 4]);
+        expect(jobs.ids).toHaveLength(38);
     });
     it('ID は重複が無く、仕事のIDと連番でできている', () => {
-        expect(new Set(jobs.ids).size).toBe(37);
+        expect(new Set(jobs.ids).size).toBe(38);
         for (const job of jobs.jobs) {
             expect(job.points.map((p) => p.id)).toEqual(job.points.map((_, i) => `${job.id}-${i + 1}`));
             for (const p of job.points) expect(p.desc.length).toBeGreaterThan(0);
@@ -46,7 +46,7 @@ describe('正しい見本', () => {
         expect(result.tests).toHaveLength(1);
         expect(result.tests[0].ids).toEqual(['J5-2']);
         expect(result.coverage['J5-2']).toHaveLength(1);
-        expect(result.missing).toHaveLength(36);
+        expect(result.missing).toHaveLength(37);
         expect(result.missing).not.toContain('J5-2');
     });
 });
@@ -137,14 +137,14 @@ describe('入口(node scripts/check-e2e-gate.mjs)を通す', () => {
     it('正しい見本だけなら終了コード0で、未達を警告として出す', () => {
         const r = run('--only=good.spec.js');
         expect(r.status).toBe(0);
-        expect(r.stdout).toContain('警告: 観測点の未達 36/37点');
-        expect(r.stdout).toContain('OK: @gate 1本・違反0件・観測点の網羅 1/37');
+        expect(r.stdout).toContain('警告: 観測点の未達 37/38点');
+        expect(r.stdout).toContain('OK: @gate 1本・違反0件・観測点の網羅 1/38');
     });
     it('GitHub Actions では未達を ::warning:: で出す', () => {
         const r = spawnSync(process.execPath, [SCRIPT, `--e2e-dir=${FIX}`, `--helpers-dir=${join(FIX, 'helpers')}`, '--only=good.spec.js'],
             { encoding: 'utf-8', env: { ...process.env, GITHUB_ACTIONS: 'true' } });
         expect(r.status).toBe(0);
-        expect(r.stdout).toContain('::warning title=lint:e2e-gate::観測点の未達 36/37点');
+        expect(r.stdout).toContain('::warning title=lint:e2e-gate::観測点の未達 37/38点');
     });
     it('--strict-coverage を付けると未達で終了コード1', () => {
         expect(run('--only=good.spec.js', '--strict-coverage').status).toBe(1);
@@ -159,9 +159,9 @@ describe('入口(node scripts/check-e2e-gate.mjs)を通す', () => {
         const out = join(mkdtempSync(join(tmpdir(), 'gate-lint-')), 'gate-lint.json');
         expect(run('--only=good.spec.js', `--json=${out}`).status).toBe(0);
         const json = JSON.parse(readFileSync(out, 'utf-8'));
-        expect(json.jobsTotal).toBe(37);
+        expect(json.jobsTotal).toBe(38);
         expect(json.tests.map((t) => t.ids)).toEqual([['J5-2']]);
-        expect(json.missing).toHaveLength(36);
+        expect(json.missing).toHaveLength(37);
         expect(json.violations).toEqual([]);
     });
 });
