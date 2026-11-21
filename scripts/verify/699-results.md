@@ -231,3 +231,59 @@ origin/main cf0655e の上に、自分の commit を積んだ HEAD（このス�
    4. `699-cf-compare.mjs` を流し、本番＝HEAD の dry-run（`cfc8cc6e…`）になったことを確かめる。
 4. 本番の確認（読むだけ）：`curl -sI https://bookshelf.asayake.org/go/31b0fe39-…/B087JKL1JH` が 302・Location `https://hub.asayake.org/go/31b0fe39-…/B087JKL1JH`、hub の側が 302 で Amazon を指す（追わない）。記事2本・`/hahero/`・`/top`・`/report`・`/robots.txt`・無い username・形が違う `/go` が deploy の前と同じ応答コード。`node scripts/verify/699-prod-check.mjs /home/kuroko/kuroko/_vault-work/699 after` で、WebKit 390 と Chromium の表紙・題名の8回とも「/go の先」が Amazon の商品ページの URL で止まること。
 5. 戻し方：`wrangler rollback 3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe -c wrangler.bookshelf.toml -m "<理由>" --yes`（cf-worker で・トークンは同じ渡し方）。公開ページの配信（deploy の前に 200 だった URL）が悪くなった時だけ戻す。`/go` だけが期待と違う時は戻さず、応答と版 ID を書いて②へ返す（deploy の前も 404 なので悪くはなっていない）。
+
+## §4 push・deploy・本番での確認（step4・2026-11-22 05:37〜05:41 JST）
+
+### 4-1 push
+
+- push の直前に fetch した。origin/main は dd0ccd9 のまま（step3 の最後の載せ直しの先）。載せ直しは無し。
+- push の前に流した確認：`npm run lint` は「12 本中 0 本失敗」、`npm test` は 81 ファイル・1210 件・0 失敗（todo 2）。pre-push の lint も「12 本中 0 本失敗」。
+- `BOOKSHELF_ISSUE=699 git push origin c0e99c2:main` → **dd0ccd9..c0e99c2**（自分の commit 8本・どれも `Issue: #699`。他イシューの commit は混ざっていない）。
+
+### 4-2 deploy（bookshelf-cdn だけ・`scripts/verify/699-cf-deploy.mjs`）
+
+| 項目 | 値 |
+|---|---|
+| deploy の直前に今動いていた版（＝戻し先） | `3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe`（控えた版と同じことを確かめてから deploy） |
+| 作業ツリー | commit していない変更なし・HEAD c0e99c2 ＝ origin/main |
+| 新しい版 | **`ae515fab-d072-431e-b745-efe42a274c49`**（05:39:11 JST・Total Upload 45.65 KiB / gzip 14.92 KiB） |
+| 触っていないもの | hub（asayake-hub）・既定の wrangler.toml・他の Worker |
+| deploy の後の照合（`699-cf-compare.mjs`） | 本番の `bookshelf-cdn.js`（46747 bytes）＝ HEAD の dry-run（sha256 `cfc8cc6e…0fff591`）で**一致** |
+| 戻し方（使っていない） | `wrangler rollback 3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe -c wrangler.bookshelf.toml -m "<理由>" --yes` |
+
+### 4-3 本番の応答（deploy の前 05:38 と後 05:39・`699-prod-codes.mjs`・HEAD・追わない）
+
+| URL | 前 | 後 |
+|---|---|---|
+| `/hahero/6h8aVAy0YP/`（記事） | 200・ETag `W/"bdd97f9f…"` | 200・ETag 同じ |
+| `/hahero/OfGFUCJFVY/`（記事） | 200・ETag `W/"0795da4f…"` | 200・ETag 同じ |
+| `/hahero/`・`/hahero/6h8aVAy0YP/og.png` | 200・200 | 200・200（ETag 同じ） |
+| `/top`・`/report?target=…`・`/report.js`・`/robots.txt`・`/sitemap.xml` | 200 | 200 |
+| `/nobody-zz699/`（無い username）・`/about/`（予約語） | 404・404 | 404・404 |
+| `/go/<site>/B087JKL1JH`・`/go/<site>/B0BNTNRDV7` | **404** | **302 → `https://hub.asayake.org/go/<site>/<ASIN>`** |
+| `/go/<site>/short`・`/go/`・`/go/<site>/B087JKL1JH/extra`（形が違う） | 404 | 404 |
+| `hub.asayake.org/go/<site>/B087JKL1JH` | 302 → Amazon | 302 → Amazon（変わらない） |
+| `hub.asayake.org/public/<site>/` | 301 → `/hahero/` | 301 → `/hahero/` |
+
+- deploy の前に 200 だった URL は全部 200 のまま、記事の ETag も同じ（記事の中身は変わっていない）。404 だった道も、`/go/<site>/<ASIN>` 以外は 404 のまま。rollback はしていない。
+- 反映は deploy の5秒後（05:39:16）の最初の HEAD で 302 だった。
+- 記事の4冊の `/go` を配信元からたどると、4冊とも「302 bookshelf → 302 hub → `https://www.amazon.co.jp/dp/<ASIN>?tag=…`」で、Amazon の手前で止めた（Amazon へは要求を出していない）。
+
+### 4-4 本番の記事で押した動き（`699-prod-check.mjs … after`・WebKit 26.4 iPhone 390 と Chromium 148）
+
+| ブラウザ | 記事 | 表紙 | 題名 |
+|---|---|---|---|
+| WebKit 390 | `/hahero/6h8aVAy0YP/` | 新しいタブ → 302 bookshelf → 302 hub → Amazon の商品ページの URL（B087JKL1JH） | 同じ |
+| WebKit 390 | `/hahero/OfGFUCJFVY/` | 同じ（B0BNTNRDV7） | 同じ |
+| Chromium PC | 2記事とも | 同じ | 同じ |
+
+- 8回とも、新しいタブの行き先は Amazon の商品ページの URL になった（step1 の前は8回とも 404）。Amazon への要求は0件（止めた）。
+- このやり方では Amazon へ渡る Referer は測れない（§2-5）。
+- 画像（`/home/kuroko/kuroko/_vault-work/699/`）：前＝`before-webkit-iphone390-6h8aVAy0YP-cover-opened.png`（Not found）、後＝`after-webkit-iphone390-6h8aVAy0YP-cover-opened.png`（/go の行き先の一覧）。記事の画像は前後とも `*-article.png`。
+
+### 4-5 設計書の反映（obsidian・Edit・commit は自動バックアップ）
+
+- `81_🚀development/bookshelf/09_公開システム設計.md`：§10.3-v2「/go (アフィリンク) の扱い」の1段落目と、§11.7「Worker 構成」に1行。
+- `81_🚀development/bookshelf/08_意思決定記録.md`：ADR-178 を末尾に追記。
+- `63_🐙project/bookshelf/公開前最終テスト設計.md`：§2 の J5 に「7 公開した記事の本から Amazon へ移れる」を足し、37点を38点に（§2 の見出し・合格の行・§3・門(a) の行）。
+- `07_残検討事項.md` は変えていない（このイシューで閉じる行は無い）。`cf-worker/HUB-SETUP.md` の実績行と確認項目は step5。
