@@ -233,3 +233,68 @@ commit：a4b6849
 | 5（初期化の中身） | 足す | E2E は本体を空にする書き換えには気づくが、書いた中身の違い（存在しない本が「すべての本」に入る等）には気づかない（2件中0件）。単体なら書かれた4ファイルの名前と中身を直接確かめられ、mutator で前後を測れる |
 | 6（まとめ保存の「消す」） | 足す | E2E は気づく（1663h14dmpl）。ただし消したはずのファイルが残る＝データの食い違いで、単体なら保存先へ届いた指示を数行で確かめられる。後始末（1bl8t0bamt1）は E2E が気づかないので、失敗時に中身を捨てることも一緒に確かめる |
 | 6（ID の生成） | 足す（軽く） | E2E は気づく（2件中2件）。単体は「8文字・英小文字と数字・呼ぶたびに違う」の3点を確かめるだけで済み、mutator の前後の数に入れられる。E2E と重複する分は数行に留める |
+
+## §5 step3：CI の実行環境の固定と、1・2・5・6番の単体テスト
+
+### CI の実行環境を ubuntu-24.04 に固定（②の案A）
+
+- origin/main の ci.yml・visual.yml は `runs-on: ubuntu-latest` のままだった（他イシューは先に直していない）。
+- commit dd0ccd9：ci.yml と visual.yml の `runs-on` だけを `ubuntu-24.04` にした（2行）。手元の未 push の commit（10番・記録）を混ぜないように、origin/main（cf0655e）の上に直接作って push した（05:30:53〜05:30:58 JST・cf0655e..dd0ccd9）。push の前に `npm run lint`（12本中0本失敗）と `npm test`（80ファイル・1,203本・失敗0）。手元の commit は dd0ccd9 の上へ載せ直した。
+- CI run 44946684995（05:38 の時点）：
+
+| ジョブ | Install Playwright browser | 単体テスト | その後 | 結論 |
+|---|---|---|---|---|
+| test (char) | 成功（23秒） | （流さない） | char 6端末 成功 | 緑 |
+| test (e2e) | 成功（22秒） | **失敗**（34秒） | E2E 実行中 | 未確定（赤になる） |
+| test (webkit) | 成功（69秒） | （流さない） | 門の E2E（webkit）実行中 | 未確定 |
+| test (audit) | 成功（22秒） | （流さない） | 監査の機械検査 実行中 | 未確定 |
+| Visual（visual.yml） | — | — | — | 緑 |
+
+- ブラウザの導入は4ジョブとも通った（runs-on の固定で直った）。
+- 単体テストの step の失敗は、まだ原因が分からない。
+  - dd0ccd9 の単体テストのコードは cf0655e と同じで、違うのは yml の2行だけ。cf0655e の CI（Ubuntu 26.04・Vitest 5.1.1）では同じ step が成功（30秒）、6942583（Vitest 2.1.9）でも成功していた。
+  - 落ちたテストの名前は分からない。注記は0件（05:35・05:38）で、ジョブのログは未認証では読めない。
+  - 手元（Ubuntu 24.04・node 24）では、全件を3回流して3回とも失敗0。今日の手元の実行は全部緑。
+  - 揺れか、Vitest 5 と ubuntu-24.04 の組み合わせ（node 22 の版など）かは、まだ分けられていない。step4 の冒頭で run の最終の結論と注記を読み、分からなければ②へ出す。
+
+### 足したテスト
+
+| 番号 | commit | 置き場 | 中身 |
+|---|---|---|---|
+| 2 | 51fa720 | tests/unit/hub-billing.test.js（5本） | 支払いの開始・管理画面の入口から、Stripe へ送る success_url・cancel_url・return_url を確かめる。許可した場所はそのまま（クエリとハッシュは落とす）／許可していない場所（別のホスト・同じホストの http・別の番号・前方一致の偽ホスト）・壊れた URL・空・指定なしは先頭の場所の /bookshelf/／APP_ORIGIN が複数・空白入り・空の項目入り・未設定 |
+| 5・6 | 032c18a・7d47bc6 | tests/unit/storage-init-empty-batch.test.js（新設・9本） | 初期化で書く7ファイルの名前・順番・中身と、読込で本0冊になること・id が毎回新しいこと／まとめ保存の「消す」が、まとめ保存を持つ保存先では消す指示、持たない保存先では deleteFile で届くこと・送信の失敗で組み立てた中身を捨てること・捨てる口や印の口が無い保存先／id は8文字の英小文字と数字で呼ぶたびに違う |
+| 1 | 8e4bb45 | tests/unit/decide-loaded-state.test.js（6本） | 版の控えが無い時：手元に本があり保存先が空→local／手元が空→remote（保存先が空でもデータありでも）／自作の本棚だけ→local・「すべての本」だけ→remote／短文メモだけ→local／両方にデータ＋未反映の印→ask・印なし→remote |
+
+- 5番と6番は同じ新しいファイルに書いたので、commit は番号ごとに分けず1つにした（032c18a）。7d47bc6 は、mutator で残った6番の2件を確かめる追加。
+- 1番の期待は、#602 の決まりから決めた（手元のデータを黙って捨てない。保存先が空なら手元を採る。両方にデータがあり未反映の印があれば聞く。印が無ければ保存先を採る）。今のコードと食い違いは無かった。06_データ仕様書の本文は今回は読んでいない。
+- 1番の確認：書き換えを js/bookshelf.js へ手で入れて流した。104wi5mgfxz（手元に本があるかの判定を `<= 0` に）では足した6本のうち5本、109nrkzzlw2（自作の本棚の判定を `every` に）では2本が落ちた。戻した後に `git diff -- js` が空であることを確かめた。
+- 単体テストの数：80ファイル・1,203本 → 81ファイル・1,223本（1,221 passed・2 todo）。全件・失敗0。
+
+### 見逃しの前後（mutator の --only・対象の見逃し id だけ）
+
+| 番号 | 関数 | 前（落ちない） | 後（落ちない） |
+|---|---|---|---|
+| 5 | js/storage.js:_initEmptyNow | 50 | 3 |
+| 6 | js/storage.js:_syncBatchNow | 14 | 3 |
+| 6 | js/storage.js:generateInternalId | 9 | 0 |
+| 2 | cf-worker/asayake-hub.js:safeReturnUrl | 20 | 1 |
+| 合計 | | 93 | 7 |
+
+残った7件（どれも「挙動が変わらない書き換え」と判断した）：
+
+| id | 書き換え | 判断 |
+|---|---|---|
+| 1txgc0xk92z・jqe2ojlk7y・9qz03f9xxe | 初期化の settings.json の `showHighlights`・`showImagesInOverview`（true→false）、`memoOverrideDefault`（→空） | 挙動が変わらない。06_データ仕様書が「実ファイルに残るが現行コードは未使用」と書く legacy の項目 |
+| lu69qa3k4・3s805yyd7b・fcwbdk7t16 | まとめ保存の入口の `typeof a.beginBatch === 'function' && typeof a.commitBatch === 'function'` の片方を常に真に・`&&` を `||` に | 挙動が変わらない（実在の保存先は、まとめ保存の口を両方持つ（GitHub・ハブ）か、両方持たない（ローカル）） |
+| lh6xxem06y | safeReturnUrl の `if (!url)` を常に偽に | 挙動が変わらない（空・未指定は次の `new URL` が投げて、同じ既定の場所に落ちる） |
+
+- 1番は js/bookshelf.js なので mutator では測れない（上の手で入れた確認で代えた）。
+
+### js/storage.js のファイル単位（878件・-j 4・59秒）
+
+| | 気づいた（Killed） | Timeout | not detected | not infected | not reached |
+|---|---|---|---|---|---|
+| #690（前） | 340 | 2 | 177 | 4 | 352 |
+| step3 の後 | 432 | 1 | 114 | 6 | 322 |
+
+- 記録：`~/kuroko/_vault-work/701/mutation/after-step3b/`（関数ごと）・`mutation/storage-file-after/`（ファイル単位）。
