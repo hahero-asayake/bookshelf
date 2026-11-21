@@ -272,3 +272,38 @@ A（1.60.0）は、worktree の node_modules を付け替えずに行った。HE
 1. 基準画像の更新の範囲：4枚（da0e000）でよいか。特に 820 は、見出しが × の形から「← 設定」の形に変わる（狭い画面の決まりには合う）。
 2. push1（30958ac・da0e000・713-results.md。runs-on は 24.04 のまま）をしてよいか。
 3. 錨のブラウザ置き場に、3つの .so を写してよいか（3-2。システムは変えない）。
+
+## §4 step4：push1 と CI（2026-11-22 06:26〜06:45 JST）
+
+- origin/main 1636729 へ rebase した（衝突なし。#714 の check:deps と pretest が入っていた）。その後の確認：
+  - npm ci は通った。
+  - `npm run lint` は「12 本中 0 本失敗」。
+  - `npm test` は check:deps（node_modules と lock が一致）の後、82 ファイル・1216 件通過・0 件失敗。
+  - 画像比較（1.65.1）は 54 件とも通った。
+- push1：`BOOKSHELF_ISSUE=713 git push origin 548af83:main`（1636729..548af83・06:27:22）。pre-push の lint も「12 本中 0 本失敗」。
+- **CI run 427（548af83・ubuntu-24.04・Playwright 1.65.1）は Success（17分42秒）**。run 画面の HTML の annotation で読んだ。
+
+| ジョブ | 結果 | 24.04＋1.60.0 の基準（run 420） |
+|---|---|---|
+| test (e2e) | 単体テストは通過。E2E は 1014 件通過・17 skip・失敗0（14.2分）。sort-perf-budget も 1 passed（2.2分） | 単体テスト1件の時間切れで赤。E2E は 1013 件通過・失敗0 |
+| test (char) | 199 件通過・575 skip・失敗0（1.8分） | 成功 |
+| test (audit) | 成功（表示崩れ 100・ボタン名 8・alt 0・aria 22。手元と同じ） | 成功 |
+| test (webkit) | 76 件通過・12 skip・失敗0（5.6分。webkit 27.2 は --with-deps で入った） | 成功 |
+
+- 版による赤は CI でも0件。e2e の sort-perf の絶対値（CI記録のみ）は、direction の tFrame 中央値 110.9ms・inputDelay 中央値 160ms だった。run 420（1.60.0）は 162.6ms・353.1ms。
+- 錨：/home/kuroko/kuroko/work/playwright-anchor/1.65.1 を作った。既定の置き場に、1.65.1 のブラウザ（chromium-1255 等・webkit-2388 には3つの .so）を足した。1.60 の chromium-1223・webkit-2287 は残っている（06:27・06:41 に ls で確認）。プロジェクトノートに場所と .so の出所を書いた。
+
+## §5 step5：runs-on を ubuntu-26.04 にする commit（push していない）
+
+- run 427 が4ジョブとも緑だったので、②の決定（ubuntu-26.04 に固定）のとおり、ci.yml と visual.yml の `runs-on` を `ubuntu-24.04` から `ubuntu-26.04` に変えた（0b4d109）。
+  - 変えたのは各ファイルの runs-on の行と、その上に足した1行のコメントだけ。
+  - ci.yml のコメント：「OS は版で固定する (ubuntu-latest だと OS が上がった時に不意に赤になる・#713)。上げる時はこの行と visual.yml を揃えて変える。」
+- `npm run lint`（ci-lint-steps の検査を含む）は「12 本中 0 本失敗」。`npm test` は 82 ファイル・1216 件通過・0 件失敗。
+- **push2 で起きること**：
+  - visual.yml を変えるので、push2 で Visual（試験ジョブ・continue-on-error）が新しいランナー（26.04）で走る。
+  - 基準画像は手元の 24.04 で撮った。そのため差が出うる。24.04 の CI でも、54 件の全部が手元の基準画像と違っていた（run 3・§1-2）。
+  - この job の結論は合否に効かないので、参考として件数を書く。
+- ci.yml の4ジョブが 26.04 で落ちうる所：
+  - `npx playwright install --with-deps` が 26.04 の依存を入れられるか（1.61.0 から対応）。
+  - fonts-noto-cjk（audit）。
+  - 時間の揺れ。
