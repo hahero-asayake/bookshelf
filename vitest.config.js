@@ -7,6 +7,8 @@ export default defineConfig({
         environment: 'jsdom',
         include: ['tests/unit/**/*.test.js'],
         // CI では落ちたテストの名前と行を check-run の注記にも出す (ジョブのログは未認証では読めない・イシュー#701)
-        reporters: process.env.GITHUB_ACTIONS ? ['default', 'github-actions'] : ['default']
+        reporters: process.env.GITHUB_ACTIONS ? ['default', 'github-actions'] : ['default'],
+        // 単体テストは外へ接続しない: 差し替えていない fetch を失敗させ、呼んだテストを落とす (イシュー#701)
+        setupFiles: ['./tests/unit/helpers/no-network.setup.js']
     }
 });

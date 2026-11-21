@@ -2,7 +2,9 @@
 // まとめ保存はどの保存先でも既にあるファイルへの put を止めない (step2 の実測: ハブも GitHub も上書きした) ので、
 // takeBookMemoOps が保存の前に adapter.fileExists(to) で確かめる。その確かめが3つの保存先の本物の
 // adapter (GitHubAdapter・HubStorageAdapter・LocalFSAdapter) の fileExists / readText で効くことを見る。
-// 通信・フォルダの一番下 (GitHub=_getContent・ハブ=_fetch と ETag 一覧・ローカル=_resolveDir) だけを差し替える。
+// 通信・フォルダの一番下 (GitHub=_getContent と tree の一覧・ハブ=_fetch と ETag 一覧・ローカル=_resolveDir) だけを差し替える。
+// GitHub の tree の一覧 (_ensureRemoteShaMap) を差し替えないと、readText が本物の api.github.com へ ref を取りに行く
+// (失敗は握りつぶされるのでテストは通ってしまう・イシュー#701)。
 import { describe, it, expect, beforeEach } from 'vitest';
 
 let idCounter = 0;
@@ -20,6 +22,7 @@ const TO = 'private/books/A1__新.md';
 
 function githubWith(files) {
     const a = new GitHubAdapter({ owner: 'o', repo: 'r', token: 't' });
+    a._ensureRemoteShaMap = async () => ({}); // tree の一覧は空 (控え無し) → 中身は下の _getContent から読む
     a._getContent = async (p) => (files[p] == null ? null
         : { type: 'file', sha: `sha-${p}`, content: Buffer.from(files[p], 'utf8').toString('base64'), encoding: 'base64' });
     return a;
