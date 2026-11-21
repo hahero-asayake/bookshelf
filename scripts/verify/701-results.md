@@ -559,3 +559,6 @@ commit：a4b6849
 - push：`BOOKSHELF_ISSUE=701 git push origin 014ebea:main`（548af83..014ebea・22件・2026-11-22 06:37:03〜06:37:09 JST）。pre-push の lint は12本中0本失敗。
 - CI の結論は、この記録の commit の後に読む（提出に書く）。
 - プロジェクトノートへ追記した（単体テストの外への接続の準備・CI の注記・Vitest 5 と node_modules・mutator の前後の取り方・E2E が書き換えに気づくか）。vault の監査メモ（60/63/bookshelf/テスト監査_20261122.md）の末尾に、日付つきの見出しで結果を追記した。
+- push の後の CI（run #428・44952475056・014ebea）：06:39 の時点で、4ジョブとも「Install Playwright browser」は成功。test (e2e) の単体テストの step は**失敗**。E2E・char・audit・webkit は実行中。
+  - 単体テストの step は、dd0ccd9（run 420）・c0e99c2（421）でも落ち、8604cf1（422）・bd4aa3b・548af83（直前の main・run 44951618298）では通っていた。dd0ccd9・c0e99c2 には、このイシューで足したテストも10番の準備も入っていなかった＝揺れは、足したテストより前からある。
+  - 落ちたテストの名前は、e2e ジョブが終わると check-run の注記に出る（bd4aa3b の設定）。提出の時点で読めた分を書く。
