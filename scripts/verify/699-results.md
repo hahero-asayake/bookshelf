@@ -194,9 +194,9 @@ origin/main が cf0655e に進んでいた（#701 の2 commit：Vitest を 2.1.9
 |---|---|
 | `npm test`（共有の node_modules＝Vitest 2.1.9） | 81 ファイル・1210 件 0 失敗（todo 2） |
 | `npm test` を Vitest 5.1.1 で（CI と同じ版。#701 の worktree の node_modules を一時の worktree から借りて流した・読むだけ） | 81 ファイル・1210 件 0 失敗（todo 2） |
-| `npm run lint` | （3-4 に書く） |
-| e2e-diff-main（base＝origin/main cf0655e・work＝HEAD e1ce322・E2E 全件＋vitest＋画像比較） | （3-4 に書く） |
-| 門のE2E を gate-webkit で | （3-4 に書く） |
+| `npm run lint`（載せ直した後） | 「12 本中 0 本失敗」（`lint:e2e-gate` は「@gate 42本・違反0件・観測点の網羅 38/38」。textlint の警告は触っていないファイルの既存の分だけ） |
+| e2e-diff-main（base＝origin/main cf0655e・work＝HEAD 87b7b82・E2E 全件＋vitest＋画像比較・PORT 8199・05:21〜05:30） | **新しく落ちた 0件**・新しく通った 0件・両方で落ちた 0件（E2E と Unit とも）。E2E は base 1212 件通過・0 失敗／work 1213 件通過・0 失敗（増えた1件は J5-7 の chromium）。vitest は base 1201／work 1210 件通過・0 失敗（増えた9件は bookshelf-cdn の /go の6件と publish-go-route の3件）。画像の差分 0件／54件。除外は既定の sort-perf-budget の1件だけ。結果一式は `/home/kuroko/kuroko/_vault-work/699/e2e-diff2/`（report.md） |
+| 門のE2E を gate-webkit で（`GATE_WEBKIT=1 --project=gate-webkit --workers=1`・iPhone 13 相当・05:30〜05:35） | 88 件中 76 件通過・**0 失敗**・12 件は飛ばされた（門ではない `art-canvas-tap-edit`・`book-card-tap-after-touch-drag` の中の、spec 自身が条件で飛ばすもの。@gate は0件）。J5-7 も通過。chromium の門のE2E は e2e-diff の work 側（E2E 全件）に含まれ、全部通過 |
 
 - 共有の node_modules（`/home/sei/GitHub/bookshelf/node_modules`）はまだ Vitest 2.1.9 のまま。package.json は 5.1.1 なので、CI（`npm ci`）は 5.1.1 で流れる。両方の版で通ることを確かめた。
 
@@ -215,6 +215,10 @@ origin/main が cf0655e に進んでいた（#701 の2 commit：Vitest を 2.1.9
 - `wrangler deploy --dry-run -c wrangler.bookshelf.toml` は origin/main・HEAD とも exit 0（Total Upload 45.09 KiB → 45.65 KiB）。
 - 今動いている版（`scripts/verify/699-cf-deployments.mjs`・一覧の末尾）：`3edb7418-c8dd-40b8-9888-cb4f6c0fbcbe`（2026-11-13T18:54:43Z＝#584 の deploy。HUB-SETUP.md の実績行と同じ）。これが戻し先。
 - 生の記録：`/home/kuroko/kuroko/_vault-work/699/cf-compare.log`・`cf-deployments-before.log`（トークンの値・Author のメールアドレスは出していない）。
+
+### 3-4 push する物
+
+origin/main cf0655e の上に、自分の commit を積んだ HEAD（このステップの最後の commit）。どれも本文の末尾に `Issue: #699` がある。中身は `cf-worker/bookshelf-cdn.js`（/go の分岐）・テスト（門のE2E J5-7・模擬・単体3本）・`tests/e2e/gate/jobs.json`・README・`ci.yml` の注記・`scripts/verify/699-*`。アプリの js・css・index.html は変えていない（GitHub Pages の配信には影響しない）。step4 で push の直前に fetch し、origin/main が進んでいれば載せ直して lint と npm test を流し直す（sha はそこで変わる）。
 
 ### 3-5 step4 の手順（②の承認の後だけ）
 
