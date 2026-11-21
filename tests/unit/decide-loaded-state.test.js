@@ -70,3 +70,60 @@ describe('_decideLoadedState: 自分の書きかけが途中で切れた形 (イ
         expect(decide({ exportDate: NEW.exportDate, stamp: OTHER.stamp })).toBe('ask');
     });
 });
+
+// イシュー#701 (テスト監査 #690 の1番): 版の控え (sync base) が無い時＝この端末がまだ保存先と揃えたことが無い時の決め方。
+// 決まり (#602): 手元のデータを黙って捨てない。保存先が空なら手元を採る。両方にデータがあり、手元に未反映の印があれば聞く (ask)。
+// 未反映の印が無ければ保存先を採る。手元に「データがある」とは、本・自作の本棚 (「すべての本」以外)・短文メモのどれかがあること。
+// #690 では、「手元に本があるか」「自作の本棚があるか」の判定を書き換えても、単体テスト5本は落ちなかった。
+describe('_decideLoadedState: 版の控えが無い時 (初めての読込・イシュー#602・#701)', () => {
+    const ALL = { id: 'all', slug: 'all', isSpecial: true };
+    const MINE = { id: 'mine', slug: 'mine', name: '自作の本棚', isSpecial: false };
+    const BOOK = { asin: 'B0TEST0001', title: '本' };
+
+    function decideNoBase({ books = [], shelves = [ALL], notes = {}, remoteBooks = [], remoteShelves = [{ slug: 'all' }], remoteNotes = {}, pending = false }) {
+        localStorage.clear();
+        if (pending) localStorage.setItem('virtualBookshelf_pendingSync', '1');
+        const app = new App();
+        app.userData = { notes, bookshelves: shelves, settings: {} };
+        app.books = books;
+        app._readSyncBase = () => null;
+        return app._decideLoadedState({
+            library: { exportDate: '2026-11-14T08:00:00.000Z', books: remoteBooks },
+            bookshelvesMeta: { bookshelves: remoteShelves },
+            notes: remoteNotes,
+            syncStamp: null
+        });
+    }
+
+    it('手元に本があり、保存先が空 → 手元を採る (local)', () => {
+        expect(decideNoBase({ books: [BOOK] })).toBe('local');
+        expect(decideNoBase({ books: [BOOK], pending: true })).toBe('local');
+    });
+
+    it('手元が空で、保存先も空 → 保存先を採る (remote)', () => {
+        expect(decideNoBase({})).toBe('remote');
+        expect(decideNoBase({ pending: true })).toBe('remote');
+    });
+
+    it('手元が空で、保存先にデータ → 未反映の印があっても保存先を採る (remote)', () => {
+        expect(decideNoBase({ remoteBooks: [BOOK] })).toBe('remote');
+        expect(decideNoBase({ remoteBooks: [BOOK], pending: true })).toBe('remote');
+    });
+
+    it('手元は自作の本棚だけ (本0冊)、保存先が空 → 手元を採る (local)。「すべての本」だけなら手元は空とみなす', () => {
+        expect(decideNoBase({ shelves: [ALL, MINE] })).toBe('local');
+        expect(decideNoBase({ shelves: [MINE, ALL] })).toBe('local');
+        expect(decideNoBase({ shelves: [ALL] })).toBe('remote');
+    });
+
+    it('手元は短文メモだけ、保存先が空 → 手元を採る (local)', () => {
+        expect(decideNoBase({ notes: { B0TEST0001: { memo: 'メモ' } } })).toBe('local');
+    });
+
+    it('両方にデータがあり、手元に未反映の印がある → 聞く (ask)。印が無ければ保存先を採る (remote)', () => {
+        expect(decideNoBase({ books: [BOOK], remoteBooks: [BOOK], pending: true })).toBe('ask');
+        expect(decideNoBase({ books: [BOOK], remoteBooks: [BOOK], pending: false })).toBe('remote');
+        expect(decideNoBase({ shelves: [ALL, MINE], remoteShelves: [{ slug: 'all' }, { slug: 'other' }], pending: true })).toBe('ask');
+        expect(decideNoBase({ books: [BOOK], remoteNotes: { B0X: { memo: 'm' } }, pending: true })).toBe('ask');
+    });
+});
