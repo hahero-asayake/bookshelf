@@ -130,6 +130,45 @@ test.describe(`#387 並び替え設定の保持 (${method})`, () => {
         expect(r.settings).toBe('custom');
     });
 
+    test('読み直し: 手元で新しく並べ替えた順は、保存先が古い順のままでも残る', async ({ page }) => {
+        // イシュー#726 (#690 テスト監査 §5 の3番): _applyLoadedState の「手元の方が新しく並べ替えた本棚は手元の順を採る」を守る。
+        // 書き換え 10hv83ghzyg (条件の先頭の ! を外す＝手元の順を常に捨てる) を入れるとここで落ちる。
+        // 他の場面は、手元の bookOrder の更新時刻が保存先より新しい状態で判定 'remote' の読み直しを通らない＝見逃していた (726-results.md §1)。
+        const ALL_FILE = 'private/bookshelves/all.json';
+        const shelfIds = () => page.evaluate(() => Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]')).map((e) => e.dataset.asin));
+        // a. 保存先を手元の全量で初期化する
+        await seed(page); await page.goto('index.html'); await boot(page, { remote: '{}', method });
+        await selectSort(page, 'custom');
+        await pushAll(page);
+        // b. この時点の保存先と並び順を控える
+        const old = await page.evaluate(() => localStorage.getItem('__fakeRemote'));
+        const oldOrder = await page.evaluate(() => window.bookshelf.userData.bookOrder.all.slice());
+        // c. ドラッグと同じ入口で並べ替え、同期を済ませる (未反映の印が消える＝読込の判定は 'remote' になる)
+        const newOrder = await page.evaluate(async () => {
+            const bs = window.bookshelf;
+            const ids = Array.from(document.querySelectorAll('#bookshelf > .book-item[data-asin]')).map((e) => e.dataset.asin);
+            bs.reorderBooks(ids[5], ids[0]);
+            await bs.flushSync();
+            return bs.userData.bookOrder.all.slice();
+        });
+        expect(newOrder).not.toEqual(oldOrder);
+        expect(await page.evaluate(() => localStorage.getItem('virtualBookshelf_pendingSync'))).toBeNull();
+        // d. 古い状態のまま開いていた別の端末が、古い並び順で書いた＝保存先は古い順のまま
+        await page.evaluate((s) => localStorage.setItem('__fakeRemote', s), old);
+        expect((await remoteFile(page, ALL_FILE)).books).toEqual(oldOrder);
+        const ts = await page.evaluate(() => (window.bookshelf.userData.settings._updatedAt || {})['bookOrder:all'] || 0);
+        const remoteTs = ((await remoteFile(page, 'private/settings.json'))._updatedAt || {})['bookOrder:all'] || 0;
+        expect(ts).toBeGreaterThan(remoteTs);
+        // e. 起動時の同期読込 (storage.loadAll → _applyLoadedState): 手元の新しい順が残る
+        await loadRemote(page);
+        expect(await page.evaluate(() => window.bookshelf.userData.bookOrder.all.slice())).toEqual(newOrder);
+        // f. 手元が勝ったので保存先へ送り直す
+        await expect.poll(async () => (await remoteFile(page, ALL_FILE)).books, { timeout: 10000 }).toEqual(newOrder);
+        // g. 再起動しても画面の並びは手元の新しい順
+        await restart(page, method);
+        await expect.poll(shelfIds, { timeout: 10000 }).toEqual(newOrder);
+    });
+
     test('PC と交互に変更: 並び方は端末ごと・ドラッグの並び順は新しい方が残る', async ({ browser }) => {
         // browser.newContext() には fixture の遮断が掛からない＝自分で掛ける (イシュー#637: 掛けないと本物の Amazon へ表紙を48件取りに行っていた)
         const phoneContext = await browser.newContext();
