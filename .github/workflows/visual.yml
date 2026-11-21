@@ -8,7 +8,9 @@ name: Visual
 # 手元とでは日本語の書体が違い、54件とも差分になっていた(scripts/verify/728-results.md §1)。
 # イメージの版は package-lock.json の @playwright/test と揃える(tests/unit/visual-image.test.js が検査する)。
 #
-# on.push.paths は visual の比較に効くファイルに絞る(アプリの UI のファイルでは走らない・#728 ②決定)。
+# on.push.paths は、画像比較の絵に効くファイル (アプリの UI・テスト・基準画像・設定) に絞る (#728 ②決定)。
+# UI を変えて基準画像を撮り直し忘れた push はここで赤になる (#524 型)。撮り直しは
+# `PORT=8112 node scripts/verify/visual-docker.mjs -g "<テスト名>" --update-snapshots` (tests/visual/README.md)。
 # workflow_dispatch も残すが、未認証環境からは起動できない。
 #
 # .github/workflows/ci.yml は一切変更しない。別ファイル・別ワークフローなので、このジョブの
@@ -20,6 +22,9 @@ on:
       - '.github/workflows/visual.yml'
       - 'tests/visual/**'
       - 'playwright.visual.config.js'
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
   workflow_dispatch:
 
 jobs:
@@ -31,13 +36,8 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.65.1-resolute
       options: --user 1001 --ipc=host
-    # 同じ commit を別のランナーで2本流し、結果が同じかを見る (#728 ②決定・re-run は未認証では使えない)。
-    strategy:
-      fail-fast: false
-      matrix:
-        attempt: [1, 2]
-    # ジョブ全体の失敗をワークフローの最終結果に昇格させない(試験段階・②へ数字を出すのが目的)。
-    continue-on-error: true
+    # #728: 同じ commit を2本流して2本とも 0/54 だった (run 44956190046) ので、1本に戻し、
+    # continue-on-error も外した (差分が出たら Visual が赤になる)。
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,15 +52,13 @@ jobs:
         if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         run: |
           export FONT_CHECK_OUT="$(fc-match sans-serif:lang=ja)"
-          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(attempt ${{ matrix.attempt }})::'+esc)"
-      # visual自体の失敗(toHaveScreenshotの差分)でジョブを赤くしない・後続のartifact保存/
-      # summary出力を止めない(stepのcontinue-on-error: trueでoutcome=failureでもconclusion=
-      # successにし、以降のデフォルトif(success())を通す)。JSON出力先はoutputDir
+          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認::'+esc)"
+      # 差分が出たらこの step が落ちてジョブが赤になる (#728)。後続の要約と artifact 保存は
+      # !cancelled() で落ちた後も流す。JSON出力先はoutputDir
       # (test-results-visual/、既定でPlaywrightがテスト開始時にクリアする)の外にする。
       - name: Visual tests (Playwright, 9画面×6端末)
         id: run_visual
         if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
-        continue-on-error: true
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: visual-results.json
         run: npx playwright test -c playwright.visual.config.js --reporter=list,json
@@ -71,7 +69,7 @@ jobs:
         if: ${{ !cancelled() && steps.run_visual.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
-          name: visual-results-${{ matrix.attempt }}
+          name: visual-results
           path: |
             test-results-visual/
             visual-results.json

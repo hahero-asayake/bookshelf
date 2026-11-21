@@ -479,7 +479,9 @@ async function main() {
             if (r.code === 3) {
                 const warn = (r.err.split('\n').find((l) => l.includes('[visual]')) || '[visual] 警告: docker かイメージが無い').trim();
                 console.warn(warn);
-                visualStatus = `スキップ（${warn.replace(/^\[visual\] 警告: /, '')}）`;
+                // 警告文「…スキップする（理由）」の括弧の中だけを取り出す (括弧が二重にならないように)
+                const reason = (warn.match(/（(.+)）\s*$/) || [])[1] || warn.replace(/^\[visual\] 警告: /, '');
+                visualStatus = `スキップ（${reason}）`;
                 log(`visual: ${visualStatus}`);
             } else {
                 const visualTests = parsePlaywrightJson(outFile, { log });

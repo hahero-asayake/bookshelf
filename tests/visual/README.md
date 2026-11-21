@@ -43,12 +43,14 @@ PORT=8112 node scripts/verify/visual-docker.mjs
 
 ## CIの扱い
 
-visual は `ci.yml` には入れず、別のワークフロー `.github/workflows/visual.yml`（試験ジョブ・
-`continue-on-error`）で流す（イシュー#527・#728）。
+visual は `ci.yml` には入れず、別のワークフロー `.github/workflows/visual.yml` で流す（イシュー#527・#728）。
+差分が出たら Visual が赤になる（#728 で `continue-on-error` を外した。`ci.yml` とブランチ保護には効かない）。
 
-- 走る時：main への push のうち、`visual.yml`・`tests/visual/**`・`playwright.visual.config.js` を変えた時だけ。
-- 流し方：job の `container` に、手元と同じ公式コンテナを使う。同じ commit を `matrix.attempt: [1, 2]` で
-  別のランナーで2本流す（re-run は未認証では使えないため）。
+- 走る時：main への push のうち、`js/**`・`css/**`・`index.html`・`tests/visual/**`・
+  `playwright.visual.config.js`・`visual.yml` を変えた時。
+- 流し方：job の `container` に、手元と同じ公式コンテナを使う（#728 で同じ commit を2本流し、2本とも 0/54 件だった）。
+- **UI を変えたら、同じ commit で基準画像を撮り直す**：`PORT=8112 node scripts/verify/visual-docker.mjs -g "<テスト名>" --update-snapshots`
+  （忘れると push の後に Visual が赤になる）。
 - 件数：run 画面の annotation「visual 集計: 差分N/54件」で読む。
 - 閾値の限界：全画面の閾値は 0.1% なので、1文字（約100px）の変化は拾えない（#728 の確かめで 0/54）。
   40×24px の四角でも、拾えたのは 390・768 幅だけ。小さな変化は locator の比較（上）で見る。
