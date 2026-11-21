@@ -26,6 +26,8 @@
 //                 コストは一定(実測約8秒・#526 _vault-work/526/step1-compare.md)。
 //                 UIに一切触れない調査中で高速に回したい時だけ付ける)。
 //                 `--visual` は後方互換で受け付ける(既定で既にオンのため何も変えない)。
+//                 画像比較は公式コンテナの中で流す(イシュー#728・scripts/verify/visual-docker.mjs)。
+//                 docker かイメージが無い時は1行の警告を出し、reportに「スキップ」と書く。
 //   --self        base側と同じrefで、workも別の一時worktreeにする(自分自身との比較=誤検知の確認用)。
 //   --grep        両側・絞り込み試走用。playwrightの--grep/vitestの-tにそのまま渡す。
 //   --exclude     E2E(playwright)から除外するテスト名パターン。複数回指定可(既定の除外に追加)。
@@ -468,17 +470,27 @@ async function main() {
             const env = {
                 ...process.env, PORT, PLAYWRIGHT_BASE_URL: `http://localhost:${PORT}`, PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
             };
-            log(`[visual] cwd=${workDir} (work側の画像比較を実行)`);
-            const r = await run(PW_BIN, ['test', '--config=playwright.visual.config.js', '--reporter=json', ...WORKERS_ARGS], { cwd: workDir, env });
+            // イシュー#728: 基準画像は Playwright 公式コンテナの中で撮ったもの。手元の素の環境では書体が違い
+            // 全件が差分になるため、コンテナの中で流す (scripts/verify/visual-docker.mjs)。
+            // docker・イメージが無い時は1行の警告を出してスキップし、report に書く (黙って飛ばさない)。
+            log(`[visual] cwd=${workDir} (work側の画像比較を公式コンテナで実行)`);
+            const r = await run(join(workDir, 'scripts', 'verify', 'visual-docker.mjs'), ['--reporter=json', ...WORKERS_ARGS], { cwd: workDir, env });
             writeFileSync(`${outFile}.log`, `exit=${r.code}\n${r.out}\n${r.err}`);
-            const visualTests = parsePlaywrightJson(outFile, { log });
-            const failed = [...visualTests.values()].filter((t) => t.failed);
-            results.visual = {
-                total: visualTests.size,
-                failed: failed.length,
-                failedNames: failed.map((t) => `${t.file} > ${t.title} [${t.project}]`),
-            };
-            log(`[visual] ${visualTests.size}件中${failed.length}件が画像差分で失敗`);
+            if (r.code === 3) {
+                const warn = (r.err.split('\n').find((l) => l.includes('[visual]')) || '[visual] 警告: docker かイメージが無い').trim();
+                console.warn(warn);
+                visualStatus = `スキップ（${warn.replace(/^\[visual\] 警告: /, '')}）`;
+                log(`visual: ${visualStatus}`);
+            } else {
+                const visualTests = parsePlaywrightJson(outFile, { log });
+                const failed = [...visualTests.values()].filter((t) => t.failed);
+                results.visual = {
+                    total: visualTests.size,
+                    failed: failed.length,
+                    failedNames: failed.map((t) => `${t.file} > ${t.title} [${t.project}]`),
+                };
+                log(`[visual] ${visualTests.size}件中${failed.length}件が画像差分で失敗`);
+            }
         }
     } else {
         log(`visual: ${visualStatus}`);

@@ -1,27 +1,41 @@
 name: Visual
 
 # イシュー#527: visual(画像比較・tests/visual/screens.spec.js、playwright.visual.config.js)を
-# CI(ubuntu-latest)に入れられるかを実測で決めるための試験ジョブ。
+# CI に入れられるかを実測で決めるための試験ジョブ。
 #
-# 基準画像66枚(tests/visual/__screenshots__/*-linux.png)は手元のLinuxで撮ったもので、
-# GitHub ランナーとのフォント描画ゆれを確かめていない(#512で見送った経緯あり)。実測が済むまで
-# 他のpushのたびに走って既存のci.yml(test (e2e)/test (char))の横でノイズになることを避けるため、
-# on.push.paths を visual.yml 自身に絞る(このファイルを変えた時だけ走る)。workflow_dispatch も
-# 残すが、未認証環境からは起動できない(手元の実測はpushで行う・イシュー#527計画メモ)。
+# イシュー#728: 基準画像66枚(tests/visual/__screenshots__/*-linux.png)は Playwright 公式コンテナ
+# (scripts/verify/visual-image.mjs のイメージ)の中で撮る。CI も同じイメージの中で流す。ランナーの素の環境と
+# 手元とでは日本語の書体が違い、54件とも差分になっていた(scripts/verify/728-results.md §1)。
+# イメージの版は package-lock.json の @playwright/test と揃える(tests/unit/visual-image.test.js が検査する)。
+#
+# on.push.paths は visual の比較に効くファイルに絞る(アプリの UI のファイルでは走らない・#728 ②決定)。
+# workflow_dispatch も残すが、未認証環境からは起動できない。
 #
 # .github/workflows/ci.yml は一切変更しない。別ファイル・別ワークフローなので、このジョブの
-# 合否は test (e2e) / test (char) の結果にも、ブランチ保護にも影響しない。
+# 合否は ci.yml の結果にも、ブランチ保護にも影響しない。
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/visual.yml'
+      - 'tests/visual/**'
+      - 'playwright.visual.config.js'
   workflow_dispatch:
 
 jobs:
   visual:
-    # OS は版で固定する (ci.yml と同じ・#713)。
+    # OS は版で固定する (ci.yml と同じ・#713)。絵はコンテナの中で決まる。
     runs-on: ubuntu-26.04
+    # イメージのタグは scripts/verify/visual-image.mjs と同じにする (tests/unit/visual-image.test.js)。
+    # --user 1001 はランナーの作業ディレクトリの持ち主に合わせる。--ipc=host は Chromium の共有メモリ用。
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.1-resolute
+      options: --user 1001 --ipc=host
+    # 同じ commit を別のランナーで2本流し、結果が同じかを見る (#728 ②決定・re-run は未認証では使えない)。
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2]
     # ジョブ全体の失敗をワークフローの最終結果に昇格させない(試験段階・②へ数字を出すのが目的)。
     continue-on-error: true
     steps:
@@ -33,36 +47,19 @@ jobs:
       - name: Install dependencies
         id: npm_ci
         run: npm ci
-      - name: Install Playwright browser
-        id: install_playwright
+      # どの書体で描いたかを annotation に残す (イシュー#527/#728)。
+      - name: フォント確認 (コンテナの中)
         if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
-        run: npx playwright install --with-deps chromium
-      # イシュー#527 ②承認(2026-11-04)：差分がフォント由来か実測で確かめるため、
-      # fonts-noto-cjk 導入の前後で fc-list/fc-match の結果を annotation に記録する
-      # (artifactはgh未インストール環境から未認証で読めないため、annotationに出す・
-      # ci-visual-summary.mjsと同じエスケープ規則(%→%25、CR→%0D、LF→%0A)をnode -eで適用)。
-      - name: フォント確認(fonts-noto-cjk 導入前・イシュー#527)
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
         run: |
-          export FONT_CHECK_OUT="$(fc-list :lang=ja | head; echo '---fc-match sans-serif:lang=ja---'; fc-match sans-serif:lang=ja)"
-          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(導入前)::'+esc)"
-      - name: fonts-noto-cjk を apt 導入 (イシュー#527)
-        id: install_noto_cjk
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' }}
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
-      - name: フォント確認(fonts-noto-cjk 導入後・イシュー#527)
-        if: ${{ !cancelled() && steps.install_noto_cjk.outcome == 'success' }}
-        run: |
-          export FONT_CHECK_OUT="$(fc-list :lang=ja | head; echo '---fc-match sans-serif:lang=ja---'; fc-match sans-serif:lang=ja)"
-          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(導入後)::'+esc)"
+          export FONT_CHECK_OUT="$(fc-match sans-serif:lang=ja)"
+          node -e "const s=process.env.FONT_CHECK_OUT||''; const esc=s.replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'); console.log('::notice title=フォント確認(attempt ${{ matrix.attempt }})::'+esc)"
       # visual自体の失敗(toHaveScreenshotの差分)でジョブを赤くしない・後続のartifact保存/
       # summary出力を止めない(stepのcontinue-on-error: trueでoutcome=failureでもconclusion=
       # successにし、以降のデフォルトif(success())を通す)。JSON出力先はoutputDir
-      # (test-results-visual/、既定でPlaywrightがテスト開始時にクリアする)の外にする
-      # (イシュー#527計画メモ: ローカル実測で出力形式を確認済み)。
+      # (test-results-visual/、既定でPlaywrightがテスト開始時にクリアする)の外にする。
       - name: Visual tests (Playwright, 9画面×6端末)
         id: run_visual
-        if: ${{ !cancelled() && steps.install_playwright.outcome == 'success' && steps.install_noto_cjk.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.npm_ci.outcome == 'success' }}
         continue-on-error: true
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: visual-results.json
@@ -74,7 +71,7 @@ jobs:
         if: ${{ !cancelled() && steps.run_visual.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
-          name: visual-results
+          name: visual-results-${{ matrix.attempt }}
           path: |
             test-results-visual/
             visual-results.json
