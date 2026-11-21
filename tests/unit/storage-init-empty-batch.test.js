@@ -132,6 +132,21 @@ describe('まとめ保存の「消す」(syncBatch → _syncBatchNow・テスト
         expect(a.pending).toBeNull();
         expect(a.sent).toHaveLength(0);
     });
+
+    it('捨てる口 (discardBatch) を持たない保存先でも、送信の失敗はそのままの失敗として返す', async () => {
+        const a = batchAdapter({ fail: true });
+        delete a.discardBatch;
+        await expect(new BookshelfStorage(a).syncBatch(entries, { message: 'm1' })).rejects.toThrow('送信に失敗');
+    });
+
+    it('版の印 (stamp) は、印の口 (addBatchStamp) を持たない保存先では普通のファイルとして同じまとめ保存に入れる', async () => {
+        const a = batchAdapter();
+        const s = new BookshelfStorage(a);
+        await s.syncBatch(entries, { message: 'm1', stamp: 'S1' });
+        const last = a.sent[0].entries.at(-1);
+        expect(last).toEqual({ op: 'put', path: BookshelfStorage.SYNC_STAMP_PATH, content: JSON.stringify({ stamp: 'S1' }, null, 2) });
+        expect(s.syncStamp).toBe('S1');
+    });
 });
 
 describe('id の生成 (generateInternalId・テスト監査の6番)', () => {
