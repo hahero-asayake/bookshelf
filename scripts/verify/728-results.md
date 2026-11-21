@@ -209,3 +209,20 @@
    - 推奨は「visual.yml のまま、paths に js/**・css/**・index.html を足す」。UI を変えた push で基準画像の更新漏れ（#524 型）を CI で拾える。
    - ci.yml の matrix に入れると、container の指定がジョブ全体に効いて、他の suite と分けにくい。
    - 代わりの案：今の paths のまま（基準画像・テストを変えた時だけ）にする。
+
+## §5 step5：②の決定を入れた（2026-11-22 07:23〜07:26 JST）
+
+②の決定（step4 の tp）：continue-on-error を外す（job と step）・matrix を1本に戻す・paths に js/**・css/**・index.html を足す（ci.yml には入れない）・撮り直しのコマンドを README とプロジェクトノートに1行・括弧の二重を直す。
+
+- 2e1c76f `ci(visual): …`（3ファイル）
+  - visual.yml：
+    - continue-on-error を job と visual の step から外した。
+    - matrix を外して1本に戻した（artifact 名は visual-results に戻した）。
+    - paths に js/**・css/**・index.html を足した。
+    - コメントに撮り直しのコマンドを書いた。
+  - e2e-diff-main.mjs：スキップの文は、警告文の括弧の中だけを使う。docker の無い PATH で流し、report が「スキップ（docker が無い。取得は docker pull mcr.microsoft.com/playwright:v1.65.1-resolute）」の1重になるのを確かめた。
+  - README「CIの扱い」：赤になること・走る時・撮り直しのコマンド（1行）に直した。
+- push 前：`npm run lint` は 12 本中 0 本失敗。`npm test` は 1,261 件通過・0 件失敗。push は 2bc8ff5..2e1c76f（07:24:22）。
+- **CI：Visual run 6（44956582939・head 2e1c76f・continue-on-error なし）は Success。visual 集計は差分 0/54 件（テストの所要 27.8 秒）。run 全体は 1分9秒。** フォントは WenQuanYi Zen Hei。
+- これで、同じ環境で差分 0 になったのは、CI で3本（run 5 の2本・run 6）、手元で3回。
+- プロジェクトノート（bookshelf）に、撮り方・原因・版の揃え方・件数の読み方を追記した。
