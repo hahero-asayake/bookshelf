@@ -541,3 +541,9 @@ commit：a4b6849
 - CI で使われた node の正確な版：ログが読めないので未確認。runner image の告知では ubuntu-24.04 の Node.js 22 は 22.23.5。
 - Vitest 2.1.9 でも足したテストが通るか：共有の node_modules が既に 5.1.1 で、2.1.9 の環境が無いので未確認。足したテストは Vitest 5 だけの API を使っていない。
 - mutator で測れないもの：js/bookshelf.js（1番・3番）と E2E。1番は書き換えを手で入れて確かめた。
+
+### E2E の全件比較（e2e-diff-main）
+
+- origin/main との差分は、単体テスト（tests/unit の11ファイル）・vitest.config.js・この記録だけ。E2E が読むもの（tests/e2e・playwright の設定・js・css・index.html・sw.js・plugins-sample）の差分は0。＝ base と work の E2E は同じコードを流す。新しく落ちたものが出れば、それは揺れ。
+- 1回目（06:13〜・--workers=4）：base 側の E2E の途中で run が切れて止まった（load average が23前後）。結果は無い。
+- 2回目（06:20〜・--workers=3・上限12分）：結果は下に追記する。
