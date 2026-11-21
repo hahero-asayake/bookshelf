@@ -120,3 +120,62 @@
 | Referer と回数の実測 | `scripts/verify/699-referer-probe.mjs` |
 | 旧URLの利用者の件数 | `scripts/verify/699-kv-oldurl-count.mjs` |
 | 画像・ログ・JSON | `/home/kuroko/kuroko/_vault-work/699/`（`before-*.png`・`before-prod-check.{json,log}`・`preview-probe.log`・`referer-probe.log`・`kv-oldurl-count.log`） |
+
+## §2 落ちるテストを先に足して直した（step2・2026-11-22 05:05〜05:20 JST・push していない）
+
+### 2-1 渡し方
+
+302 で hub の `/go` へ送る方にした（②の step2 の指示どおり）。同じ zone の Worker の間で fetch できるかは調べていない（中継はしないと決まったため）。
+
+### 2-2 先に足したテストと、直す前の赤
+
+| テスト | 直す前 | 直した後 |
+|---|---|---|
+| 門のE2E `tests/e2e/gate/j5-7-article-amazon-link.spec.js`（J5-7・chromium と gate-webkit） | **赤**（2本とも）。「確認: 新しいタブが、置いた本の Amazon の商品ページになる」で `Expected pattern: /^https:\/\/www\.amazon\.co\.jp\/dp\/B000000001(\?|$)/`・`Received string: "https://bookshelf.asayake.org/go/s1/B000000001"` | 緑 |
+| 単体 `tests/unit/bookshelf-cdn.test.js` の `/go` の6本 | **4本が赤**（302 のはずが 404・Location が null）。形が違う `/go` の 404 と、他の予約語の 404・POST の 405 の2本は緑 | 6本とも緑 |
+| 単体 `tests/unit/publish-go-route.test.js`（生成器 → 配信元の Worker → ハブを順に通す） | 新URLの1本が**赤**（`{ url: "https://bookshelf.asayake.org/go/site1/B000000001", status: 404, hops: 0 }`）。href の形と旧URLの2本は緑 | 3本とも緑（新URLは2回、旧URLは1回たどって `https://www.amazon.co.jp/dp/B000000001?tag=operator-tag-01`） |
+
+赤の出力は `/home/kuroko/kuroko/_vault-work/699/j5-7-red.log`・`unit-red.log`、緑は `j5-7-green.log`・`unit-green.log`。
+
+### 2-3 直した内容
+
+`cf-worker/bookshelf-cdn.js`：予約語の判定より前に `/go` の分岐を足した。`/go/<siteId>/<asin>` の形（siteId が空でない・asin は英数字8〜14桁＝`handleGo` と同じ検査）なら、`HUB_API_ORIGIN`（未設定なら `https://hub.asayake.org`）の同じ道へ 302 で送る。ヘッダは `handleGo` と同じ（`Cache-Control: no-store`・`Referrer-Policy: strict-origin-when-cross-origin`）。形が違えば、今までどおり予約語の 404 に落ちる。KV を読まず、タグもプランも見ない（単体テストで KV を読むと落ちるようにしてある）。
+
+### 2-4 門のE2Eの模擬
+
+- `tests/e2e/helpers/gate-hub.js`：`/go/<siteId>/<asin>` を3か所で答える。①公開ページの配信元（`bookshelf.asayake.org`）は本物のハブのホストの同じ道へ送る ②本物のハブのホスト（`https://hub.asayake.org/go/**`）と ③模擬のハブ（`mockhub.test`・旧URLのページから届く）は、`handleGo` と同じ約束で Amazon の商品ページへ送る（Free と知らない siteId は運営のタグ、Plus は本人のタグ）。本人のタグは `/publish` で受け取って控える（本物の 821-824 行と同じ）。
+- **模擬は 302 を返せない**。Playwright の `route.fulfill` は WebKit で「Cannot fulfill with redirect status: 302」で落ちる（実測）。代わりに、同じ行き先へすぐ移るページ（meta refresh）を返す（`redirectForTest`）。新しいタブの最後の URL は本物と同じになる。本物の 302 そのものは、単体テストと step4 の本番の確認で見る。
+- `tests/e2e/helpers/gate-amazon.js`：`mockAmazonProductPageForTest`（`/dp/<ASIN>` に「Amazon の商品ページ (模擬)」を返す）を足した。
+
+### 2-5 新しく分かったこと：route はリダイレクトの先の要求に効かない
+
+`scripts/verify/699-route-redirect-probe.mjs`（手元だけ・外へ出ない）で確かめた。WebKit と Chromium で結果は同じ。
+
+| 場面 | route が呼ばれた | 実サーバーへ届いた |
+|---|---|---|
+| 模擬が meta refresh で送る（門のE2Eの形） | 3つとも（配信元の /go・ハブ・Amazon 役） | 0 |
+| 実サーバーが 302 で送る（本番の確認の形）。Amazon 役にだけ route | **呼ばれない** | ハブ役と **Amazon 役に届く** |
+
+- 本番の確認で「ブラウザに 302 をたどらせ、Amazon への要求だけ route で止める」やり方は**効かない**。直した後にそのまま流すと、運営タグ付きの要求が本当に Amazon へ届く。
+- そこで `scripts/verify/699-prod-check.mjs` を変えた：新しいタブの最初の要求（`bookshelf.asayake.org/go/…`）を route で受け、その先は Playwright の要求（`maxRedirects: 0`）で1つずつ読む。要求を出すのは公開ページの配信元とハブだけで、Location が Amazon を指したら止める。開いたタブには読んだ結果を出す。直す前の本番で流し直して動くことを確かめた（`before2-prod-check.log`：8回とも `/go の先=[404 …]`・Amazon への要求0件）。
+- このやり方では、Amazon へ渡る Referer は本番では測れない（ブラウザが Amazon へ要求を出さないため）。Referer は手元の実測（§1-5）で代える。
+
+### 2-6 観測点を38点にした
+
+`tests/e2e/gate/jobs.json` に J5-7「公開した記事の本から Amazon へ移れる」を足した。`tests/e2e/gate/README.md` の表と数、点数を決め打ちしていた単体テスト2本（`check-e2e-gate.test.js`・`gate-report.test.js`）も38点に合わせた。`npm run lint:e2e-gate` は「OK: @gate 42本・違反0件・観測点の網羅 38/38」。
+
+### 2-7 流した確認（step2 の分。全件は step3）
+
+- 単体：`bookshelf-cdn`・`publish-go-route`・`check-e2e-gate`・`gate-report`・`hub-go`・`publish-article-generator`・`reserved-usernames` の7本で 179 件 0 失敗。
+- 門のE2E：J5-7 と、模擬ハブを使う J1-3・J5-4・J5-5・J5-6・J6-3・J7 の8本を chromium と gate-webkit で流し、22 件 0 失敗。
+
+### 2-8 設計書の差分案（obsidian への反映は step4 でまとめて1回）
+
+節の番号は step4 で実物を読んで合わせる（09 は方針転換の検討中のため、ADR と併せて読む）。
+
+| 文書 | 直す所 | 書く内容 |
+|---|---|---|
+| `09_公開システム設計.md` | Worker 構成の節（§11.7）と `/go` の説明の節（§10.3-v2・ADR-034追補の所） | 公開ページの本のリンクは `/go/<siteId>/<asin>`（相対パス）。新URLのページは `bookshelf-cdn` が配信するので、`bookshelf-cdn` が `/go` を受け、hub の同じ道へ 302 で送る。行き先（プランとタグ）を決めるのは hub の `/go` だけ。`bookshelf-cdn` は KV を読まず、タグを持たない |
+| `08_意思決定記録.md` | ADR を1つ追記（番号は step4 で採番） | 決定：`bookshelf-cdn` が `/go` を hub へ 302 で送る。理由：既存の記事が再公開なしで直る・タグの判断を1か所に保つ・最小権限を変えない。採らなかった案：生成器が絶対URLで出す（既存の記事が直らない）・Cloudflare の route・fetch での中継（Referer に差が無く、往復が1回減るだけ）。教訓：配信元を移す時は、ページの中の相対リンクの行き先を全部洗う。生成器・配信元・中継を順に通すテストを置く |
+| `60_🐙claude/63_🐙project/bookshelf/公開前最終テスト設計.md` §2 | J5 の観測点 | J5-7「公開した記事の本から Amazon へ移れる」を足し、37点を38点にする |
+| `cf-worker/HUB-SETUP.md` L97（repo の中・step5） | 確認項目6 | 今の作りに合わせる：公開ページの Amazon リンクは `/go/<siteId>/<asin>`。`curl -sI https://bookshelf.asayake.org/go/<siteId>/<asin>` が 302 で hub の同じ道を指し、hub が 302 で Amazon を指す |

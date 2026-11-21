@@ -2,8 +2,10 @@
 // - WebKit (iPhone 13 の UA・390×844・タッチ) と Chromium (PC 幅) の2通り。ヘッドレス・一時プロファイル。
 // - リンクごとに href・解決後の URL・中心点の elementFromPoint がリンク自身かその子か、を記録する。
 // - 記事ごとに最初の表紙と最初の題名を押し、新しいタブが開くか・開いたタブの URL と応答コードを記録する。
-// - www.amazon.co.jp への要求は止めて模擬の応答を返し、行き先の URL と Referer だけ記録する
-//   (自動操作で運営タグ付きの流入を作らないため)。
+// - Amazon へは要求を出さない (自動操作で運営タグ付きの流入を作らないため)。新しいタブの最初の要求 (/go) を route で受け、
+//   その先のリダイレクトは1つずつ読むだけにする (walkChain)。ブラウザに 302 をたどらせない: Playwright の route は
+//   リダイレクトの先の要求には効かず (699-route-redirect-probe.mjs で実測)、たどらせると Amazon へ本当に届いてしまう。
+//   このため、Amazon へ渡る Referer は本番では測れない (手元の実測は 699-referer-probe.mjs)。
 // 使い方: node scripts/verify/699-prod-check.mjs <出力フォルダ> <ラベル (before / after)>
 import { webkit, chromium, devices } from '@playwright/test';
 import fs from 'node:fs';
@@ -20,6 +22,25 @@ const TARGETS = [
     { name: 'chromium-pc', launcher: chromium, ctx: { viewport: { width: 1280, height: 800 } }, touch: false }
 ];
 
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// /go の先を1つずつ読む (リダイレクトを追わない)。要求を出すのは公開ページの配信元とハブだけで、
+// Location が Amazon など外を指したら、そこで止める (要求しない)。
+async function walkChain(context, startUrl) {
+    const chain = [];
+    let url = startUrl;
+    for (let i = 0; i < 5; i++) {
+        const host = new URL(url).hostname;
+        if (host !== 'bookshelf.asayake.org' && host !== 'hub.asayake.org') break;
+        const res = await context.request.get(url, { maxRedirects: 0, timeout: 20000 });
+        const location = res.headers()['location'] || null;
+        chain.push({ url, status: res.status(), location });
+        if (res.status() < 300 || res.status() >= 400 || !location) break;
+        url = new URL(location, url).href;
+    }
+    return chain;
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 const result = { label: LABEL, at: new Date().toISOString(), targets: [] };
 
@@ -35,6 +56,17 @@ for (const t of TARGETS) {
             const req = route.request();
             rec.amazonRequests.push({ url: req.url(), referer: req.headers()['referer'] || null });
             await route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<!doctype html><title>amazon stub (#699)</title><h1>amazon stub (#699)</h1>' });
+        });
+        // 新しいタブの最初の要求 (/go) はここで受ける。その先は walkChain が読み、開いたタブには読んだ結果を出す
+        const goChains = [];
+        await context.route('https://bookshelf.asayake.org/go/**', async (route) => {
+            const chain = await walkChain(context, route.request().url());
+            goChains.push(chain);
+            const rows = chain.map(h => `<li>${h.status} ${esc(h.url)}${h.location ? ' → ' + esc(h.location) : ''}</li>`).join('');
+            await route.fulfill({
+                status: 200, contentType: 'text/html; charset=utf-8',
+                body: `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>#699 の確認</title><h1>/go の行き先 (#699 の確認)</h1><p>Amazon へは要求していない。下は1つずつ読んだ応答。</p><ol>${rows}</ol>`
+            });
         });
         const responses = [];
         context.on('response', (r) => {
@@ -90,6 +122,7 @@ for (const t of TARGETS) {
                     await popup.close();
                 }
                 tap.responses = responses.slice(before);
+                tap.chain = goChains.shift() || null;
                 tap.pageUrlAfter = page.url();
                 art.taps.push(tap);
             }
@@ -113,7 +146,10 @@ for (const t of result.targets) {
         console.log(`  ${a.url} status=${a.status} cover=${cov.length} title=${tit.length} 上に別の要素があるリンク=${covered.length}`);
         const hrefs = [...new Set(a.links.map(l => `${l.hrefAttr} -> ${l.resolved} target=${l.target} rel=${l.rel}`))];
         for (const h of hrefs) console.log(`    link ${h}`);
-        for (const tp of a.taps) console.log(`    tap ${tp.kind}: opened=${tp.opened} url=${tp.url || '-'} body=${JSON.stringify(tp.bodyText || '')} responses=${JSON.stringify(tp.responses)}`);
+        for (const tp of a.taps) {
+            const chain = (tp.chain || []).map(h => `${h.status} ${h.url}${h.location ? ' → ' + h.location : ''}`).join(' ／ ');
+            console.log(`    tap ${tp.kind}: opened=${tp.opened} url=${tp.url || '-'} /go の先=[${chain}]`);
+        }
     }
     console.log(`  amazon への要求 (止めたもの): ${JSON.stringify(t.amazonRequests)}`);
 }
