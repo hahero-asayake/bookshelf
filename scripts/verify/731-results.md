@@ -116,3 +116,12 @@ OFF は `PublishArticleGenerator._EM_STRONG_LDELIM_LIMIT = Infinity`（使い捨
 
 - 従テスト(L136)は 7144〜7451ms だが、明示 timeout が 60000ms なので対象外。CIでは約25秒の見込み。
 - 次に長いのは e2e-diff-main-fixture.test.js の各テストで、450〜565ms。
+
+## §5 CIの結果（step3・step4）
+
+- push 1（step3）：`BOOKSHELF_ISSUE=731 git push origin 73aae53:main`（001101c..73aae53・2026-11-22 07:44:47 JST）。中身は 66ac930（fix）と 73aae53（docs）。
+  - push の前に `npm run lint`（12本中0本失敗）と `npm test`（1261 passed・失敗0）を流した。
+- **run #436（44958317918・73aae53）**：test (e2e) の「Unit tests (Vitest)」step が **success**（22:45:01Z〜22:45:24Z＝23秒）。
+  - L110 の注記は0件。check-e2e-async-wait の注記・失敗も0件。
+  - 所要の notice は e2e ジョブの完了後に付く（実行中は check-run の注記 API が空配列）。値は完了報告に書く。
+- run 2本目：この記録だけの commit の push で起こす。結果は完了報告に書く。
