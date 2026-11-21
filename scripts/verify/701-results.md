@@ -462,3 +462,33 @@ commit：a4b6849
 | 10 | 単体テストが外へ接続する | tests/unit/book-memo-move-target-exists.test.js | 外向きの接続 2→0 | — |
 
 - 3番は step4 で時間切れになり、step5 は②の決まり（main の単体が赤のまま3番に進まない）と7番・8番で使い切った。step7 の前半（載せ直しの前）で行うか、②に決めてもらう。
+
+### 9番：関数ごとの前後
+
+| 関数 | #690（前） | step6 の後 |
+|---|---|---|
+| js/storage.js:migrateFromLegacy（195件） | 全部 not reached（単体が1行も通らない） | 気づいた 139（Timeout 1 を含む）・not detected 46・not infected 1・not reached 9 |
+| js/storage.js:detectFormat（31件） | 全部 not reached | 気づいた 30・not detected 1 |
+
+- migrateFromLegacy の残りの not detected 46 は、移行で埋める既定の値の細部（acquiredTime・addedDate の Date.now()・旧い設定の項目の既定）と、notes.json の分け方の分かれ道が中心。テストが足りない側で、次に足す候補として残す。
+
+### ファイル単位（6ファイル・-j 6・390.5秒・79348c1 の木）
+
+| ファイル | | 総数 | 気づいた | Timeout | not detected | not infected | not reached | スコア（届いた分） |
+|---|---|---|---|---|---|---|---|---|
+| js/storage.js | #690（前） | 878 | 340 | 2 | 177 | 4 | 352 | 65.4% |
+| js/storage.js | step6 の後 | 878 | 600 | 3 | 167 | 3 | 102 | 78.0% |
+| js/hub-adapter.js | #690（前） | 693 | 433 | 2 | 169 | 15 | 65 | 70.3% |
+| js/hub-adapter.js | step6 の後 | 693 | 450 | 2 | 174 | 6 | 52 | 71.5% |
+| js/github-adapter.js | #690（前） | 694 | 354 | 1 | 155 | 12 | 167 | 68.0% |
+| js/github-adapter.js | step6 の後 | 694 | 382 | 1 | 145 | 0 | 161 | 72.5% |
+| js/book-manager.js | #690（前） | 510 | 138 | 0 | 84 | 2 | 271 | 61.6% |
+| js/book-manager.js | step6 の後 | 510 | 194 | 0 | 42 | 1 | 258 | 81.9% |
+| js/hub-auth.js | #690（前） | 300 | 117 | 0 | 89 | 1 | 92 | 56.5% |
+| js/hub-auth.js | step6 の後 | 300 | 120 | 0 | 86 | 1 | 92 | 58.0% |
+| cf-worker/asayake-hub.js | #690（前） | 3470 | 2231 | 1 | 807 | 34 | 355 | 72.6% |
+| cf-worker/asayake-hub.js | step6 の後 | 3470 | 2270 | 1 | 805 | 7 | 345 | 73.7% |
+
+- 6ファイルとも、届いた分のスコアは上がった（js/storage.js 65.4%→78.0%・js/book-manager.js 61.6%→81.9%・js/github-adapter.js 68.0%→72.5%・js/hub-adapter.js 70.3%→71.5%・js/hub-auth.js 56.5%→58.0%・cf-worker/asayake-hub.js 72.6%→73.7%）。
+- not reached は js/storage.js で 352→102（9番の移行と判定・5番の初期化に単体が届くようになった）。
+- 記録：`~/kuroko/_vault-work/701/mutation/files-after-step6/mutation.json`・`gaps-after-step6.json`（関数ごと）。
