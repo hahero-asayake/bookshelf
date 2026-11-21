@@ -168,6 +168,8 @@
 
 - 単体：`bookshelf-cdn`・`publish-go-route`・`check-e2e-gate`・`gate-report`・`hub-go`・`publish-article-generator`・`reserved-usernames` の7本で 179 件 0 失敗。
 - 門のE2E：J5-7 と、模擬ハブを使う J1-3・J5-4・J5-5・J5-6・J6-3・J7 の8本を chromium と gate-webkit で流し、22 件 0 失敗。
+- J5-7 の揺れ：chromium と gate-webkit で3回ずつ（`--repeat-each=3 --workers=1`）流し、6 件 0 失敗（`j5-7-repeat3.log`）。
+- 全体（commit 1d317a4 の中身で）：`npm test` は 81 ファイル 1210 件 0 失敗（todo 2）。`npm run lint` は「12 本中 0 本失敗」。E2E の全件と e2e-diff は step3 で流す。
 
 ### 2-8 設計書の差分案（obsidian への反映は step4 でまとめて1回）
 
