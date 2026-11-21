@@ -431,3 +431,34 @@ commit：a4b6849
 - 名指しの id は全部気づくようになった：17af71tmlqw・q0ocbfsjkb（手動追加の番号と重複）・1y9tcf6hu48（再取込）・13pdkts28nm（件数）・1ewuzrkl8lv（監査が「43本のテストが通るのに落ちない」とした認証のヘッダー）。
 - 残りの判断（関数ごと）：commitBatch の30件と _exchange の33件は、送る中身の作り（tree・commit の本文・保存する設定の項目）とエラーの分かれ道の確認が足りない。importSelectedBooks・addBookManually の残りは、ログ・エラーの文と、既定の値の細部。どれも「テストが足りない」側で、step6 のファイル単位の数と合わせて次の候補として残す。
 - ファイル単位（js/book-manager.js・js/hub-auth.js・js/github-adapter.js）の数は、時間が足りず step6 でまとめて取る。
+
+## §8 step6：9番と、番号ごとの前後のまとめ
+
+### 9番（旧い形式からの移行）：テストを足した（commit 79348c1）
+
+- 決定：step1 の結論「分からない」を②が承認＝消さずにテストを足す（②の申し送り「step6 でテストを足す側に決める」）。
+- tests/unit/storage-legacy-migration.test.js（新設・5本）：
+  - detectFormat の5つの判定：new（直下に旧いファイルが残っていても）・flat・pre-notes-split・legacy・empty（books が配列・項目が無い・何も無い）。
+  - migrateFromLegacy：旧形式の見本を置き、書いたファイル（全部 private/ 配下・旧い library.json は消さない）・判定が new になること・本の項目の写し（無い項目は既定・ステータス系は値がある時だけ）・メモと評価の notes.json への分離・「すべての本」と自作の本棚（slug の作り方・重なりの -2・並び順は bookOrder）・設定の引き継ぎ・main.json の本棚の順・読込で読めること。
+  - 旧形式が無い（無い・books が配列）時は、例外を投げて何も書かない。
+- js/bookshelf.js の3か所の呼び出し（起動の読込で legacy なら移行する分岐）の E2E は足さない。理由：
+  - 呼び出しは「detectFormat が legacy なら migrateFromLegacy を呼ぶ」の1行ずつで、移行の中身は上の単体で確かめた。
+  - E2E で旧形式の保存先を作るには、ハブ・GitHub・ローカルの模擬に旧いファイルを置く仕組みを新しく足す必要があり、手間に比べて守れる範囲が狭い（1行の分岐だけ）。
+  - ADR-006 は「旧形式マイグレーションは書かない」で、このコードは公開前の残り。利用者の保存先に旧形式が残りうるかを確かめられた時に、消すかどうかを決め直す方が先。
+
+### 番号ごとの前後（名指しの id・関数ごとの落ちない数）
+
+| 番号 | 中身 | 関数 | 前→後（落ちない） | 名指しの id |
+|---|---|---|---|---|
+| 1 | 読込時の決め方（版の控えが無い時） | js/bookshelf.js:_decideLoadedState | mutator では測れない | 104wi5mgfxz・109nrkzzlw2 を手で入れると、足したテストが5本・2本落ちる |
+| 2 | 支払いの後に戻る先の URL | cf-worker/asayake-hub.js:safeReturnUrl | 20→1 | ha20foaip5 ほか（残り1件は挙動が変わらない） |
+| 3 | 読み直しの並び順（E2E） | js/bookshelf.js L3690〜 | — | **未着手**（下に記載） |
+| 4 | 衝突と版の確認 | _recoverBatchConflictAndRetry・_assertBatchNotStale・putObject | 45→40・22→16・17→12 | 29pmjcy6a95・6sx0agb0ps・5ou40sh0in・f891gnahod すべて気づく |
+| 5 | 空の保存先の初期化 | js/storage.js:_initEmptyNow | 50→3 | 65yxgvfkex 気づく（残り3件は legacy の設定の項目） |
+| 6 | まとめ保存の「消す」・ID の生成 | _syncBatchNow・generateInternalId | 14→3・9→0 | 1663h14dmpl・j6sjbtxa2x 気づく |
+| 7 | 取り込み・手動追加 | importSelectedBooks・addBookManually | 35→16・33→9 | 17af71tmlqw・q0ocbfsjkb・1y9tcf6hu48 気づく |
+| 8 | 模擬の通信の確認 | _headers・commitBatch・_exchange | 5→0・39→30・36→33 | 1ewuzrkl8lv 気づく |
+| 9 | 旧い形式からの移行 | migrateFromLegacy・detectFormat | not reached 195・31→（下のファイル単位の数で） | — |
+| 10 | 単体テストが外へ接続する | tests/unit/book-memo-move-target-exists.test.js | 外向きの接続 2→0 | — |
+
+- 3番は step4 で時間切れになり、step5 は②の決まり（main の単体が赤のまま3番に進まない）と7番・8番で使い切った。step7 の前半（載せ直しの前）で行うか、②に決めてもらう。
