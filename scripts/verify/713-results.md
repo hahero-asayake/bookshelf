@@ -157,3 +157,54 @@ GitHub API（未認証）で読んだ。同じ IP の残りは 05:52 の時点�
 - release-notes-js.md：Playwright のリリースノート
 - runner-images-README.md：runner-images の README
 - pack/：npm pack で取った playwright-core 1.61.1・1.65.1。中身は読むだけで、実行していない
+
+## §2 step2：worktree で 1.65.1 に上げ、lint・単体・chromium 全件を流した（2026-11-22 05:56〜06:16 JST・commit 30958ac・push していない）
+
+②の決定（05:56）：上げる・版は 1.65.1・runs-on は ubuntu-26.04 に固定（step5 で）・libavif16 は入れない。
+
+### 2-1 版上げ
+
+- worktree の node_modules は、core が npm ci した実ディレクトリだった（symlink ではない）。共有の node_modules（/home/sei/GitHub/bookshelf/node_modules）の中では npm を打っていない。
+- `npm install -D @playwright/test@1.65.1`。package.json の差分は `"@playwright/test": "^1.49.0"` → `"^1.65.1"` の1行だけ。
+- lock の差分は、@playwright/test・playwright・playwright-core の 1.60.0 → 1.65.1（engines は node>=18 → >=20）と、playwright 1.65.1 が持たなくなった optional の fsevents 2.3.2（darwin 専用）の削除だけ（+16・−34 行）。その後の `npm ci` は通った（474 packages）。vitest は 5.1.1 のまま。
+- ブラウザは `PLAYWRIGHT_BROWSERS_PATH=/home/kuroko/.cache/ms-playwright-713` に入れた（--with-deps なし）。browsers.json では chromium 159.0.8154.6（r1255）・chromium-headless-shell r1255・webkit 27.2（r2388）・ffmpeg r1013。install の最後に「libavif16 が無い」という依存の検査の警告が出た（webkit 用・予想どおり）。既定の置き場 ~/.cache/ms-playwright は chromium-1223・chromium_headless_shell-1223・ffmpeg-1011・webkit-2287 のまま（06:10 に ls で確認）。
+
+### 2-2 lint・単体
+
+| 検査 | 結果 |
+|---|---|
+| `npm run lint` | 「12 本中 0 本失敗」 |
+| `npm test`（Vitest 5.1.1） | 81 ファイル・1210 件通過・todo 2・0 件失敗 |
+
+### 2-3 chromium 全件（CI の e2e レグと同じ形・B＝1.65.1）
+
+`E2E_SKIP_KNOWN_RED=1 npx playwright test --project=chromium --grep-invert "sort-perf-budget"`（PORT 8113）。core の再起動で2回止められた（05:59・06:01 の回は exit 137）ので、3回目は `systemd-run --user` の別スコープで流した（#634 の作法）。
+
+| 回 | 時刻 | 負荷（前→後） | 通過 | 失敗 | 揺れ | skip | 壁時計 | duration の合計 |
+|---|---|---|---|---|---|---|---|---|
+| B3 | 06:03:54〜06:08:22 | 5.40 → 22.68 | 1014 | **0** | 0 | 17 | 268.0 秒（8 workers） | 1945.4 秒 |
+
+- 基準（24.04＋1.60.0 の CI run 420）は 1013 件通過・17 skip・0 件失敗。1件多いのは、その後に #699 が足した J5-7 の chromium の分。
+- **chromium 全件に、版による赤は無い。**1.61〜1.65 の Breaking changes（inert を待つ click・accessible name・hidden な iframe）に当たる赤も出なかった。
+
+### 2-4 sort-perf-budget（workers=1 の単独）と、赤の分け方
+
+B1 が赤だったので、(6) のとおり B→A→B→A で流した（`_local/713/step2/run-perf-ab.sh`。A は worktree の node_modules を node_modules.713 へ退け、共有の 1.60.0 へ symlink。trap で戻す。戻った後の版は 1.65.1 で、実ディレクトリであることを確かめた）。
+
+| 回 | 版 | 時刻 | 負荷（前→後） | 結果 | 落ちた所 |
+|---|---|---|---|---|---|
+| B1 | 1.65.1 | 06:08:34〜06:09:33 | 22.12 → 22.11 | 赤 | direction の inputDelay 中央値 382.3ms ＞ 予算 320ms（ローカル判定） |
+| B2 | 1.65.1 | 06:10:03〜06:10:07 | 20.32 → 19.49 | 赤 | 2.9 秒で `AssertionError: assert(!this.paused)`。予算の判定に届く前。Playwright の lib にも spec にもこの文は無く、出どころは未確認 |
+| A1 | 1.60.0 | 06:10:07〜06:11:06 | 19.49 → 14.96 | 赤 | drag の tFrame 中央値 152.6ms ＞ 予算 120ms（ローカル判定） |
+| B3 | 1.65.1 | 06:11:06〜06:13:14 | 14.96 → 7.61 | 通過 | |
+| A2 | 1.60.0 | 06:13:14〜06:15:24 | 7.61 → 3.46 | 通過 | |
+
+- 分類：**両方赤**（負荷が 15〜22 の時は 1.60.0 も 1.65.1 も予算を超え、負荷が下がると両方通る）。版による赤（B だけ赤）ではない。
+- CI では絶対の予算は「CI記録のみ」で、合否には使っていない（run 420 の annotation では 1.60.0 の direction inputDelay 中央値 353.1ms でも通過）。
+- B2 の `assert(!this.paused)` は1回だけで、同じ版の B3 は通った。出どころを確かめる時間が無かったので、揺れとして扱い、step3 以降と CI で同じものが出ないかを見る。
+
+### 2-5 計画との違い
+
+- port は②の指示どおり 8113（計画の 8713 ではない）。使う前に毎回 `ss -ltn` で空きを確かめた。
+- このステップの run は、core の再起動で4回打ち切られた。2回は流している E2E ごと止められた（exit 137）。長い E2E は `systemd-run --user --unit=issue713-*` で流した。
+- main の CI（24.04・1.60.0）：run 422（8604cf1）は success（4ジョブとも緑）、run 421（c0e99c2）は failure（単体テストの時間切れ・#699 の記録）。424・425 は 06:04 の時点で実行中。
