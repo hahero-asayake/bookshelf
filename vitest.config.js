@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
     test: {
         environment: 'jsdom',
-        include: ['tests/unit/**/*.test.js']
+        include: ['tests/unit/**/*.test.js'],
+        // CI では落ちたテストの名前と行を check-run の注記にも出す (ジョブのログは未認証では読めない・イシュー#701)
+        reporters: process.env.GITHUB_ACTIONS ? ['default', 'github-actions'] : ['default']
     }
 });
