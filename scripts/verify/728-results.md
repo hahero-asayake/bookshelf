@@ -178,3 +178,34 @@
 
 - 記録は `_local/728/s3/`（drive.log・run{1,2,3}.log・e2ediff/report.md・e2ediff-nodocker/report.md・lint.log・test.log）。
 - CI で同じになるかは step4 で確かめる。見込みは2本とも 0/54。
+
+## §4 step4：push して、CI の Visual を同じ commit で2本流した（2026-11-22 07:19〜07:22 JST）
+
+- push 前：fetch と rebase をした（origin/main 6e7ac8d のまま・変化なし）。`npm run lint` は 12 本中 0 本失敗、`npm test` は 1,261 件通過・0 件失敗。
+- push：`BOOKSHELF_ISSUE=728 git push origin 07bd006:main`（6e7ac8d..07bd006・07:19:56）。pre-push の lint も 12 本中 0 本失敗。
+- CI：Visual run 5（run id 44956190046・head 07bd006・ubuntu-26.04 の上で container mcr.microsoft.com/playwright:v1.65.1-resolute）。結論は Success。run 画面の HTML で読んだ。
+
+| ジョブ | job id | visual 集計 | テストの所要 | フォント確認 |
+|---|---|---|---|---|
+| visual (1)（attempt 1） | 137004734636 | **差分 0/54 件** | 19.7 秒 | WenQuanYi Zen Hei |
+| visual (2)（attempt 2） | 137004734991 | **差分 0/54 件** | 19.5 秒 | WenQuanYi Zen Hei |
+
+- run 全体の所要は **1分10秒**（コンテナの pull・npm ci を含む。2本は並行）。前の run 4（ランナーの素の環境・install --with-deps と apt あり）は 1分46秒だった。ジョブごとの step の時間は、未認証の HTML には出ない。
+- container の `--user 1001` でも、checkout・setup-node（cache npm）・npm ci は通った。
+- 注記は、2本とも「Node.js 20 is deprecated」の警告だけ（actions/checkout@v4 などの版の話で、このイシューとは関係ない）。
+- **判定：同じ commit を2本流して、2本とも差分 0/54 件で同じ結果になった。完了条件の「CI で安定して緑」を満たす。** 手元（§3-2・3回）とも同じ。
+- 見出しの 12 枚は、同じテストの中で比べられて通っている（54 テストが全部 passed）。
+
+### 4-1 ②に決めてほしいこと
+
+1. **continue-on-error を外すか**
+   - 推奨は「外す」（job と、visual の step の両方）。外すと、差分が出た push で Visual が赤になる。
+   - 理由：手元3回と CI 2本の計5回で 0 件。環境はイメージで固定されている。
+   - 外さない場合は、今までどおり件数を annotation で読むだけになる。
+2. **matrix の2本を残すか**
+   - 推奨は「1本に戻す」。同じイメージの中で2本とも同じ結果だった。時間は並行なので増えないが、ランナーを2倍使う。
+   - 揺れを見張りたいなら残す。
+3. **paths を広げるか・ci.yml の suite に入れるか**
+   - 推奨は「visual.yml のまま、paths に js/**・css/**・index.html を足す」。UI を変えた push で基準画像の更新漏れ（#524 型）を CI で拾える。
+   - ci.yml の matrix に入れると、container の指定がジョブ全体に効いて、他の suite と分けにくい。
+   - 代わりの案：今の paths のまま（基準画像・テストを変えた時だけ）にする。
