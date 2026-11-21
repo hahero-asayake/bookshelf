@@ -304,7 +304,10 @@ commit：a4b6849
 ### CI（step3 の続き・05:40 の時点）
 
 - run 44946684995（dd0ccd9）：test (char)・test (webkit) は緑で完了。test (audit) と test (e2e) の E2E は実行中。test (e2e) の単体テストの step は失敗のまま。原因はまだ不明（注記0件・ログは未認証で読めない）。
-- その後 #699 が dd0ccd9 の上に8 commit を push した（c0e99c2・05:39）。その CI（run 44947390608）の単体テストの step が、Vitest 5 と ubuntu-24.04 の組み合わせの2回目の結果になる。
+- その後 #699 が dd0ccd9 の上に8 commit を push した（c0e99c2・05:39）。その CI（run 44947390608）でも、test (e2e) の単体テストの step が失敗した（05:49 の時点。char・webkit・audit は緑）。
+- ＝Vitest 5.1.1 と ubuntu-24.04 の組み合わせで2回とも赤、ubuntu-26.04（cf0655e）では緑、手元（Ubuntu 24.04・node 24）では何度流しても緑。
+- node の版は違いではない：runner image の告知（ubuntu24/20261116・ubuntu26/20261116）では、どちらも Node.js 22.23.5 を持っている（ci.yml は `node-version: 22`）。
+- 落ちたテストの名前は、まだ分からない（注記0件・ログは未認証で読めない）。②へ判断を回した（request_review・05:50）。
 
 ### 足す前に E2E で気づくか
 
