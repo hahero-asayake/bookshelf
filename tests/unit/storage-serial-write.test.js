@@ -173,8 +173,21 @@ describe('まとめ保存の土台の版の確認 (_assertBatchNotStale・イシ
 
     it('読んだことの無いファイルへの put は確かめずに書く (見分けられない)', async () => {
         await new BookshelfStorage(device()).syncBatch([put(A, { books: ['other'] })], { message: 'other device' });
+        localStorage.clear(); // 別の端末＝他の端末が覚えた sha の控えは無い
         await new BookshelfStorage(device()).syncBatch([put(A, { books: ['mine'] })], { message: 'mine' });
         expect(gh.read(A)).toEqual({ books: ['mine'] });
+    });
+
+    it('版の印 (sync-stamp.json) は確かめない: 他の端末が印を書き換えていても、他のファイルが変わっていなければ止めずに書く', async () => {
+        const STAMP = BookshelfStorage.SYNC_STAMP_PATH;
+        await new BookshelfStorage(device()).syncBatch([put(A, { books: ['v0'] })], { message: 'seed', stamp: 'S0' });
+        const mine = device();
+        await mine.readJSON(A);
+        await mine.readJSON(STAMP);
+        await new BookshelfStorage(device()).syncBatch([put(B, { v: 1 })], { message: 'other device', stamp: 'S1' });
+        await new BookshelfStorage(mine).syncBatch([put(A, { books: ['mine'] })], { message: 'mine', stamp: 'S2' });
+        expect(gh.read(A)).toEqual({ books: ['mine'] });
+        expect(gh.read(STAMP)).toEqual({ stamp: 'S2' });
     });
 
     it('他の端末が、こちらの書こうとした中身と同じ中身を先に書いていれば、止めずに書く', async () => {
