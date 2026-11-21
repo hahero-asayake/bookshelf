@@ -298,3 +298,72 @@ commit：a4b6849
 | step3 の後 | 432 | 1 | 114 | 6 | 322 |
 
 - 記録：`~/kuroko/_vault-work/701/mutation/after-step3b/`（関数ごと）・`mutation/storage-file-after/`（ファイル単位）。
+
+## §6 step4：4番（衝突と版の確認）
+
+### CI（step3 の続き・05:40 の時点）
+
+- run 44946684995（dd0ccd9）：test (char)・test (webkit) は緑で完了。test (audit) と test (e2e) の E2E は実行中。test (e2e) の単体テストの step は失敗のまま。原因はまだ不明（注記0件・ログは未認証で読めない）。
+- その後 #699 が dd0ccd9 の上に8 commit を push した（c0e99c2・05:39）。その CI（run 44947390608）の単体テストの step が、Vitest 5 と ubuntu-24.04 の組み合わせの2回目の結果になる。
+
+### 足す前に E2E で気づくか
+
+- 選び方（結果を見る前に 05:40 に固定・`~/kuroko/_vault-work/701/tools/e2e-precheck-4.mjs`）：端末側の名指しの id 3件（29pmjcy6a95・6sx0agb0ps・5ou40sh0in）＋ _assertBatchNotStale の標本1件（id の昇順・文字列だけの書き換えを除く・別の行＝130xx9h3vus）。f891gnahod はハブ側（putObject）で、E2E のハブは全部模擬なので E2E では確かめられない（監査 §4）。
+- spec の組（衝突・他の端末・同期の10ファイル）：sync-conflict・sync-conflict-overwrite・github-sync-resilience・load-conflict-unsaved・publish-conflict-hub・hub-save-changed-only・gate/j6-2-github-other-device・gate/j6-3-hub-other-device・gate/j6-4-sync-conflict・gate/j1-4-github-save-reload。
+- 先に書き換えなしで流して、全部緑（26本・48.6秒）。
+
+| id | 書き換え | E2E |
+|---|---|---|
+| 29pmjcy6a95 | hub-adapter L357 `!conflictPaths.has(e.path)` → false（衝突していないファイルも読み直す） | 気づかなかった |
+| 6sx0agb0ps | hub-adapter L359 `this._etagCache.delete(e.path)` を消す（衝突したファイルの古い ETag を残す） | 気づかなかった |
+| 5ou40sh0in | github-adapter L443 確かめる対象の絞り込みを常に真に（読んだことの無いファイル・印・base64 も確かめる） | 気づかなかった |
+| 130xx9h3vus | github-adapter L457 `latest !== null && knownContent !== undefined` の `&&` を `||` に | 気づかなかった |
+| f891gnahod | asayake-hub L561 版の確認を常に偽に | E2E では確かめられない（ハブは模擬） |
+
+- 4件とも、配られた js に書き換えが入っていたことと、戻した後に差分が無いことを確かめた。
+- 判断：4番は4件とも E2E が気づかないので、単体を足す（データの食い違い・上書きの類で、単体なら送った中身で直接確かめられる）。
+
+### 足したテスト（commit 3aec818・ほか1件）
+
+| 置き場 | 本数 | 中身 |
+|---|---|---|
+| tests/unit/hub-adapter.test.js | 3 | まとめ保存の 412 の回復：衝突したファイルだけを読み直し、他は1回目と同じ条件のままやり直しに入れる。衝突したファイルの ETag の控えを捨て、他の端末の変更で止まった後の単発の書き込みは古い ETag を使わず取り直す。既に消えている削除はやり直さない |
+| tests/unit/hub-batch.test.js | 3 | 単発 PUT /data：If-Match が今の版なら書いて新しい ETag と使った量を返す。古い版・まだ無いファイルなら 412 で書かない。容量が上限でも、容量の判定（413）より先に版で断る |
+| tests/unit/storage-serial-write.test.js | 4 | GitHub のまとめ保存：読んだ後に他の端末が変えたファイルは上書きせず止め、保存先は他の端末の中身のまま。変わっていなければ書く。読んだことの無いファイルは確かめずに書く（js/github-adapter.js の注の決まり）。他の端末が同じ中身を先に書いていれば止めない |
+
+- 追加の commit 808ea49：「読んだことの無いファイル」の場合を、sha の控え（localStorage）を消した別の端末として作り直した。版の印（sync-stamp.json）は他の端末が書き換えていても止めずに書く場合を足した（5ou40sh0in を手で入れると、この1本が落ちることを確かめた）。
+- 単体テストの数：81ファイル・1,234本（1,232 passed・2 todo）・失敗0。
+
+### 見逃しの前後（mutator の --only）
+
+| 関数 | 前（落ちない） | 後（落ちない） | 名指しの id |
+|---|---|---|---|
+| cf-worker/asayake-hub.js:putObject | 17 | 12 | f891gnahod 気づいた |
+| js/hub-adapter.js:_recoverBatchConflictAndRetry | 45 | 40 | 29pmjcy6a95・6sx0agb0ps 気づいた |
+| js/github-adapter.js:_assertBatchNotStale | 22 | 16 | 5ou40sh0in 気づいた |
+| 合計 | 84 | 68 | 4件とも気づいた |
+
+残った68件（関数ごとの判断）：
+
+| 関数 | 残り | 判断 |
+|---|---|---|
+| putObject | 12 | テストが足りない：容量の計算（使った量の足し引き・上限ちょうど）と、R2 の onlyIf が失敗した時（TOCTOU）の2つ。版の確認とは別の性質（監査の次点「ハブの容量と書き込み回数の制限の境目」） |
+| _recoverBatchConflictAndRetry | 40 | テストが足りない：項目ごとに合わせて送り直す経路（#612）・取り直しの GET の失敗・新規作成（ifNoneMatch）の衝突・やり直しの失敗（409/412）の分かれ道。文字列だけの書き換え9件（ログ・エラーの文） |
+| _assertBatchNotStale | 16 | テストが足りない：tree の取得の失敗・一覧が切れた時（truncated）・base64 の項目・削除の項目。130xx9h3vus（`&&` を `||` に）は挙動が変わらない（`latest === knownContent` の判定が同じ結果になる） |
+
+- 4番の目的（名指しの4件＝衝突したファイルだけを読み直す・控えを捨てる・版が違えば書かない・版の確認）は、全部気づくようになった。残りは、step6 のファイル単位の数と合わせて、次に足す候補として記録に残す。
+
+### ファイル単位（js/hub-adapter.js・js/github-adapter.js・-j 4・126.7秒）
+
+| ファイル | | 気づいた | Timeout | not detected | not infected | not reached |
+|---|---|---|---|---|---|---|
+| js/hub-adapter.js（693件） | #690（前） | 433 | 2 | 169 | 15 | 65 |
+| | step4 の後 | 450 | 2 | 166 | 14 | 52 |
+| js/github-adapter.js（694件） | #690（前） | 354 | 1 | 155 | 12 | 167 |
+| | step4 の後 | 356 | 1 | 152 | 12 | 168 |
+
+- ファイル単位は 808ea49 の前の木で流した（版の印の1本は入っていない）。cf-worker/asayake-hub.js（3,470件）のファイル単位は、時間が足りず step6 で取る。
+
+### 3番（読み直しの並び順の E2E）：このステップでは手を付けていない
+
+- run の時間（30分）が、4番の E2E の確認と単体テストで尽きた。3番は次のステップ（step5）の前半で行う。やること：sort-persist の「PC と交互に変更」が 10hv83ghzyg で落ちなかった理由を調べる → spec を1本足す → 10hv83ghzyg を手で入れて落ち、戻して通る → chromium で3回続けて通る。
