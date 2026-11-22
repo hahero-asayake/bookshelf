@@ -57,7 +57,7 @@
 | status-bar-over-faces | 1（(g) PC） | (b) | 帯と見出しのボタンの検査。プレビューを開く準備の「表示中のN冊を追加」は、シートで開いて押し、閉じてから次へ |
 | standard-ops | 1（:150 ⋯メニュー/ESC） | (a) | PC でも本棚ブロックを足すとシートが開く＝ESC はまずシートだけ閉じ（全画面は残る）、2回目で完了。新しい段の並びを見る形に直した |
 
-- origin/main 7e60b0a との比べはまだ流していない（/tmp/i770base に 7e60b0a を展開済み）。上の赤はどれも引き出しの前提が原因で、手当て後に緑になった（§2-1）ことで元からの赤ではないと判断した。
+- origin/main 7e60b0a との比べ：e2e-diff-main（§5）で、手当て後の work だけ落ちる物は E2E・vitest とも0件（base 側は E2E 1289・vitest 1298 が全部緑＝上の赤は元からの赤ではない）。
 - addBlock（helpers）は、PC の is-six で引き出しのシートが開いていれば先に閉じるようにした（本棚ブロックを続けて足す所・addShelfWithBooks の後の行の操作）。publish-article-editor の addShelfWithBooks（4か所）も足した後に閉じる。
 
 ### §2-1 手当て後の再実行（chromium）
@@ -93,14 +93,27 @@
 - npm test：緑（vitest）。
 - check:version --range=origin/main..HEAD：OK。
 
-## §5 e2e-diff-main（step6・origin/main 7e60b0a 対 work・途中）
+## §5 e2e-diff-main（step6・origin/main 7e60b0a 対 work）
 
-結果の置き場：`_vault-work/770/e2e-diff/`（ログ `_vault-work/770/logs/step6-e2e-diff.log`）。流し直し（新しく落ちた物×3回）の途中で run の締切が来たため、下は1回目の数。
+### 2回目（最終・work HEAD=b34a693）
+
+結果の置き場：`_vault-work/770/e2e-diff2/`（report.md・ログ `_vault-work/770/logs/step6b-e2e-diff.log`）。systemd-run（unit i770-e2ediff2・PORT 8178・`--init-storage` なし・時間の都合で `--retries=1`）。
 
 | 表 | base（origin/main） | work | work だけ落ちる |
 |---|---|---|---|
-| E2E（全 project・char 含む・sort-perf-budget 除外） | 1289 passed・0 failed | 1319 passed・**5 failed** | **5件**：publish-article-editor.spec.js:1990・2656・2679・2846・2996（どれも60秒の時間切れ） |
-| vitest | 1298 passed・0 failed | 1275 passed・**23 failed** | **23件**：book-detail-shelf-tree 9・book-detail-shelf-chips 8・book-detail-memo-button 5・audit-screens-coverage 1（'mde-table-menu' が監査の画面の一覧に無い） |
-| 画像比較（work 単独・公式コンテナ） | — | 54件中0件が差分 | 0（step5 で撮り直した12枚と一致） |
+| E2E（全 project・char 含む・sort-perf-budget 除外） | 1289 passed・0 failed | 1327 passed・0 failed | **0件** |
+| vitest | 1298 passed・0 failed | 1298 passed・0 failed | **0件** |
+| 画像比較（work 単独・公式コンテナ） | — | 54件中0件が差分 | 0（意図した差12枚は step5 で撮り直し済み＝§1 の名前だけ） |
 
-- 「work だけ落ちる」は0件になっていない＝未達。次で直す（2656・2679 は PC の右の列の「畳む」＝#759-2 で編集状態に右の列が無いので '0' か新しい形へ。他は本棚ブロックの後の幕の見込み。vitest の book-detail 3本は 8c/書く入口の DOM 変更の見込み・未確認）。
+- フレーク判定・判定不能：0件。
+- check:version --range=origin/main..HEAD：OK。npm run lint：12本中0本失敗。
+- 監査（mde-table-menu を足した分）：layout・a11y-names・button-names を mde-table-menu で絞って36 passed、check-audit は3つとも上限以内。
+
+### 1回目（work HEAD=2ac6252＋d5c21d3・参考）
+
+E2E で work だけ落ちる5件（publish-article-editor.spec.js:1990・2656・2679・2846・2996）と vitest 23件があった。手当て：
+- vitest 22件：book-detail.js が記事エディタの mixin の無い単体の環境で `_artWriteEntryOn` を直に呼んでいた＝typeof で守る（c351a73・アプリ側の直し）。
+- vitest 1件（audit-screens-coverage）：表の欄 'mde-table-menu' を tests/audit/screens.js・open-dialogs.js・docs/ui-standards.md の期待表・standard-ops.spec.js に足した（b34a693）。
+- 2656・2679（PC の右の列の「畳む」）：決め5の (a)。前の形は artSix='0'（起動後に page.evaluate で入れる）で2件そのまま残し、新しい形（本エリアの常駐ボタンで真ん中のシートが開く・×で閉じる・畳むボタンは無い／前に畳んだ記憶があっても本棚ブロックを足すとシートが開く）の2件を足した。
+- 2846・2996：本棚ブロックの後の leaveForm で、シートの幕が「完了」を覆っていた＝leaveForm で幅900px超なら先に closeArtSheet。
+- 1990：⋯メニューの「編集」で本棚ブロックを開き直した時は引き出しが自分で開かない（#759-1/2 の形）＝openArtSheet で開く。helpers の openArtSheet は、本棚の全画面（data-art-mode=form）では #art-blocks 側の「本を追加」を押すように直した。
