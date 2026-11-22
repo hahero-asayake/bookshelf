@@ -1331,6 +1331,8 @@ class VirtualBookshelf {
                 items.push({
                     group: '本棚', icon: bs.iconName || 'library', iconValue: bs.iconName,
                     title: bs.name || bs.id, sub: bs.isSpecial ? '特殊本棚' : '本棚',
+                    // イシュー#746: 当たり方は name と id のまま。出す文字だけ親からのパス (T1)
+                    titleHtml: (!bs.isSpecial && window.BookshelfUI && window.BookshelfUI.shelfPathHtml) ? window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bs) : null,
                     run: () => this.switchBookshelf(bs.id)
                 });
             }
@@ -1372,11 +1374,12 @@ class VirtualBookshelf {
             html += `
                 <div class="cmdk-item${idx === 0 ? ' is-active' : ''}" data-idx="${idx}">
                     ${iconHtml}
-                    <span class="cmdk-item-title">${BookshelfEscape.escapeHtml(it.title)}</span>
+                    <span class="cmdk-item-title">${it.titleHtml || BookshelfEscape.escapeHtml(it.title)}</span>
                     ${it.sub ? `<span class="cmdk-item-sub">${BookshelfEscape.escapeHtml(it.sub)}</span>` : ''}
                 </div>`;
         });
         results.innerHTML = html;
+        requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(results); }); // イシュー#746 (T1)
     }
 
     _setPaletteActive(idx, scroll = true) {
@@ -1502,11 +1505,12 @@ class VirtualBookshelf {
         host.innerHTML = shelves.map(bs => `
             <button type="button" class="bookshelf-popover-item" data-bs-internal="${bs.internalId || bs.id}">
                 <span class="bs-popover-icon" data-icon-value="${(bs.iconName || '').replace(/"/g, '&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 16 })}</span>
-                <span>${BookshelfEscape.escapeHtml(bs.name)}</span>
+                <span class="bs-popover-name">${(window.BookshelfUI && window.BookshelfUI.shelfPathHtml ? window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bs) : BookshelfEscape.escapeHtml(bs.name))}</span>
             </button>`).join('');
         host.querySelectorAll('[data-bs-internal]').forEach(btn => {
             btn.addEventListener('click', () => this._bulkAddToShelf(btn.dataset.bsInternal));
         });
+        requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(host); }); // イシュー#746 (T1)
     }
 
     async _bulkAddToShelf(internalId) {
@@ -5103,6 +5107,21 @@ class VirtualBookshelf {
         }
         // イシュー#359 段階①: _refreshMarquees は scrollWidth/clientWidth を読んで一覧800枚のレイアウトを同期で
         // 強制する (step2 の self time 2位)。タイトル/説明が変わった時だけ呼ぶ。
+        // イシュー#746 (M3): 切り替えが on の時、題は本棚自身の名前だけ (流れる文字にしない・2行まで折り返す)、
+        // 題の下の行に親までのパス (T1 で根の側を省く・いちばん近い親は残す)。1階層・ALL・off は下の行を出さない。
+        const pathEl = document.getElementById('current-bookshelf-path');
+        const pathOn = !!(this.bookshelfManager && typeof this.bookshelfManager.shelfPathOn === 'function' && this.bookshelfManager.shelfPathOn());
+        titleEl.classList.toggle('bvh-title-wrap', pathOn);
+        if (pathOn) titleEl.classList.remove('auto-marquee', 'is-marquee');
+        let pathHtml = '';
+        if (pathEl && pathOn && bs && !bs.isSpecial && window.BookshelfUI && window.BookshelfUI.shelfPathHtml) {
+            pathHtml = window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bs, { parentsOnly: true });
+        }
+        if (pathEl) {
+            if (pathEl.innerHTML !== pathHtml) pathEl.innerHTML = pathHtml;
+            pathEl.hidden = !pathHtml;
+            if (pathHtml) requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(pathEl); });
+        }
         const changed = titleEl.textContent !== title || (descEl && descEl.textContent !== desc);
         titleEl.textContent = title;
         if (descEl) {
@@ -5147,8 +5166,10 @@ class VirtualBookshelf {
     }
 
     _refreshMarqueesNow() {
+        // イシュー#746: 切り替えが on の時、題は流れる文字にしない (2行まで折り返す)
+        const titleMarquee = !(this.bookshelfManager && typeof this.bookshelfManager.shelfPathOn === 'function' && this.bookshelfManager.shelfPathOn());
         const els = [
-            document.getElementById('current-bookshelf-title'),
+            titleMarquee ? document.getElementById('current-bookshelf-title') : null,
             document.getElementById('current-bookshelf-desc'),
             ...document.querySelectorAll('.path-display')
         ];
@@ -5991,7 +6012,7 @@ class VirtualBookshelf {
             ` + descendants.map(d => `
                 <label style="display: block; padding: 0.25rem 0;">
                     <input type="checkbox" class="descendants-pick-item" value="${d.internalId}">
-                    <span data-icon-value="${(d.iconName || 'library').replace(/"/g,'&quot;')}" style="display:inline-flex;vertical-align:-3px;color:var(--accent);margin-right:0.25rem;">${window.renderIcon(d.iconName || 'library', { size: 14 })}</span>${d.name}
+                    <span data-icon-value="${(d.iconName || 'library').replace(/"/g,'&quot;')}" style="display:inline-flex;vertical-align:-3px;color:var(--accent);margin-right:0.25rem;">${window.renderIcon(d.iconName || 'library', { size: 14 })}</span><span class="descendants-pick-name">${(window.BookshelfUI && window.BookshelfUI.shelfPathHtml ? window.BookshelfUI.shelfPathHtml(this.bookshelfManager, d) : BookshelfEscape.escapeHtml(d.name))}</span>
                 </label>
             `).join('');
 
@@ -6004,6 +6025,7 @@ class VirtualBookshelf {
 
             // 重なり管理役 (イシュー#367): 小 (sm)。履歴は従来どおり _modalHistPush/Pop (hist:false = 管理役は履歴に触らない)
             this._overlays().open(modal, { kind: 'modal', size: 'sm', hist: false });
+            requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(list); }); // イシュー#746 (T1)
 
             const cleanup = ({ fromHistory = false } = {}) => {
                 this._overlays().close('descendants-pick-modal', { reason: fromHistory ? 'history' : 'button' });

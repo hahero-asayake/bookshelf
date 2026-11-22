@@ -132,6 +132,8 @@ class _BookDetailMethods {
         const contextSlug = contextBookshelf ? contextBookshelf.id : null;
         const memberBookshelves = (this.userData.bookshelves || [])
             .filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(book.asin));
+        // イシュー#746 (T1): チップの本棚のパスは、描いた後に欄の幅で根の側を省く
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(document); });
         const candidateBookshelves = (this.userData.bookshelves || [])
             .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
 
@@ -140,7 +142,7 @@ class _BookDetailMethods {
             return `
             <span class="bd-chip${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bs.id)}"${isCtx ? ' title="いま開いている本棚"' : ''}>
                 <span class="bd-chip-icon" data-icon-value="${(bs.iconName || 'library').replace(/"/g,'&quot;')}">${window.renderIcon(bs.iconName || 'library', { size: 12 })}</span>
-                <span>${esc(bs.name)}</span>
+                <span>${(window.BookshelfUI && window.BookshelfUI.shelfPathHtml && typeof this.bookshelfManager?.getShelfPath === 'function') ? window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bs) : esc(bs.name)}</span>
                 ${isEditMode ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bs.id)}" title="この本棚から外す">×</button>` : ''}
             </span>`;
         }).join('');

@@ -6309,6 +6309,57 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     white-space: nowrap;
 }
 
+/* イシュー#746 (M3): 切り替え on の題 = 本棚自身の名前。流れる文字にせず2行まで折り返す */
+#current-bookshelf-title.bvh-title-wrap {
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: clip;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+}
+
+/* イシュー#746 (M3): 題の下の行 = 親までのパス (説明と同じ従属的な行) */
+.bvh-path {
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    margin: 0.05rem 0 0;
+    min-width: 0;
+}
+
+/* イシュー#746 (T1): 1行の部品の本棚のパス。収まらない時は fitShelfPaths が根の側の段を「… / 」に替える */
+.shelf-path {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+/* 最後の段 (本棚自身) だけでも収まらない時は折り返して全部見せる */
+.shelf-path.is-self-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* 部品の中で縮められるようにする (チップ・一括追加の一覧・子孫の選択・冊数の行・カードの名前) */
+.bd-chip { max-width: 100%; }
+.bd-chip > span:has(> .shelf-path),
+.bookshelf-popover-item > .bs-popover-name,
+.descendants-pick-name,
+.rs-shelves li > span:has(> .shelf-path) {
+    min-width: 0;
+    overflow: hidden;
+}
+.descendants-pick-name { display: inline-block; max-width: calc(100% - 3rem); vertical-align: middle; }
+.cmdk-item-title:has(> .shelf-path) { min-width: 0; overflow: hidden; }
+.cmdk-item-title > .shelf-path,
+.bookshelf-preview-header h3 > .shelf-path { display: block; }
+.bookshelf-preview-header h3:has(> .shelf-path) { display: flex; align-items: center; min-width: 0; }
+.bookshelf-preview-header h3 > .shelf-path { flex: 1 1 auto; }
+
 /* ===== Book item: 全体をクリッカブルに (Phase B-8: アニメーション削除) ===== */
 .book-item.clickable {
     cursor: pointer;

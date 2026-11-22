@@ -154,7 +154,7 @@ class _BookshelfCardMethods {
         return `
             <div class="bookshelf-preview ${textOnlyClass}" data-bookshelf-id="${bookshelf.id}">
                 <div class="bookshelf-preview-header">
-                    <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${name}</h3>
+                    <h3><span class="bs-card-icon" data-icon-value="${cardEffectiveIcon.replace(/"/g,'&quot;')}">${iconSvg}</span>${(!isSpecial && window.BookshelfUI && window.BookshelfUI.shelfPathHtml && this.bookshelfManager) ? window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bookshelf) : BookshelfEscape.escapeHtml(name)}</h3>
                 </div>
                 <p class="bs-card-desc">${description}</p>
                 <p class="book-count">${bookCount}冊</p>

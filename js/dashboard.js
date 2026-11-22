@@ -1013,6 +1013,7 @@ class BookshelfDashboard {
         host.innerHTML = `<div class="widget-bookshelves-grid" id="widget-bookshelves-grid-host"></div>`;
         const gridHost = host.querySelector('#widget-bookshelves-grid-host');
         gridHost.innerHTML = cards.join('');
+        requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(gridHost); }); // イシュー#746 (T1)
         // バインド (既存の _bindBookshelfOverviewEvents を流用)
         if (typeof app._bindBookshelfOverviewEvents === 'function') {
             app._bindBookshelfOverviewEvents(gridHost);
@@ -1047,7 +1048,7 @@ class BookshelfDashboard {
 
         // 本棚別 Top5 (特殊本棚 ALL は除外)
         const shelfTop = shelves.filter(s => !s.isSpecial)
-            .map(s => ({ name: s.name, count: app.shelfVisibleAsins(s).length })) // 見える本だけ数える (イシュー#670)
+            .map(s => ({ name: s.name, shelf: s, count: app.shelfVisibleAsins(s).length })) // 見える本だけ数える (イシュー#670)
             .sort((a, b) => b.count - a.count).slice(0, 5);
 
         const esc = (s) => BookshelfEscape.escapeHtml(s);
@@ -1070,11 +1071,12 @@ class BookshelfDashboard {
                 <div class="rs-block">
                     <div class="rs-h">本棚別 Top5</div>
                     ${shelfTop.length ? `<ul class="rs-shelves">${shelfTop.map(s =>
-                        `<li><span>${esc(s.name)}</span><strong>${s.count}</strong></li>`).join('')}</ul>`
+                        `<li><span>${(window.BookshelfUI && window.BookshelfUI.shelfPathHtml && app.bookshelfManager) ? window.BookshelfUI.shelfPathHtml(app.bookshelfManager, s.shelf) : esc(s.name)}</span><strong>${s.count}</strong></li>`).join('')}</ul>`
                         : '<div class="rs-empty">ユーザ本棚なし</div>'}
                 </div>
             </div>
         `;
+        requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(host); }); // イシュー#746 (T1)
     }
 
     _renderPinnedMemo(host, app, config) {

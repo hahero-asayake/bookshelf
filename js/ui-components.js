@@ -15,6 +15,8 @@
     const esc = BookshelfEscape.escapeHtml;
 
     // internalId || id(slug)。bookshelf-manager._keyOf と同じ規則 (依存を持たないよう再実装)
+    const SHELF_SEP = ' / '; // getPathLabel・getShelfLabel と同じ区切り (イシュー#746)
+
     function keyOf(bs) {
         return bs.internalId || bs.id;
     }
@@ -37,7 +39,64 @@
                 + countHtml;
         },
 
+        // イシュー#746 (T1): 1行の部品に本棚を出す時の HTML。切り替え (bm.shelfPathOn) が on なら
+        // 親からのパスを .shelf-path に入れ、段 (根→自身) は data-shelf-segs に JSON で持つ (文字から ' / ' で割らない)。
+        // off なら今と同じ素の名前 (エスケープ済み) = 前の形の DOM。opts.parentsOnly は本棚の画面の題の下の行用 (親まで)。
+        shelfPathHtml(bm, shelfOrKey, opts = {}) {
+            const shelf = (shelfOrKey && typeof shelfOrKey === 'object') ? shelfOrKey : (bm && bm.getById(shelfOrKey));
+            if (!shelf) return '';
+            const on = !!(bm && typeof bm.shelfPathOn === 'function' && bm.shelfPathOn());
+            if (!on || shelf.isSpecial) return esc(shelf.name || '');
+            let segs = bm.getShelfPath(shelf);
+            if (opts.parentsOnly) segs = segs.slice(0, -1);
+            if (!segs.length) return '';
+            return `<span class="shelf-path" data-shelf-segs="${esc(JSON.stringify(segs))}">${esc(segs.join(SHELF_SEP))}</span>`;
+        },
+
+        // イシュー#746 (T1): root の中の見えている .shelf-path を、欄に収まらない時だけ根の側の段から「… / 」に替える。
+        // 最後の段 (本棚自身・題の下の行では いちばん近い親) は必ず残す。それでも収まらない時は is-self-wrap で折り返す。
+        // 省いた時は title 属性に全文。#359 の教訓 (一覧の強制レイアウト) に沿い、全部を全文に戻す (書く) →
+        // まとめて測る (読む) → はみ出した物だけ段を落として測り直す。見えていない物は飛ばす。
+        fitShelfPaths(root) {
+            const scope = root || (typeof document !== 'undefined' ? document : null);
+            if (!scope || !scope.querySelectorAll) return 0;
+            const items = [];
+            for (const el of scope.querySelectorAll('.shelf-path[data-shelf-segs]')) {
+                if (!el.getClientRects().length) continue;
+                let segs = null;
+                try { segs = JSON.parse(el.dataset.shelfSegs); } catch (_) { segs = null; }
+                if (Array.isArray(segs) && segs.length) items.push({ el, segs });
+            }
+            for (const { el, segs } of items) {
+                el.textContent = segs.join(SHELF_SEP);
+                el.classList.remove('is-t1', 'is-self-wrap');
+                el.removeAttribute('title');
+            }
+            const over = items.filter(({ el }) => el.scrollWidth > el.clientWidth + 1);
+            for (const { el, segs } of over) {
+                const full = segs.join(SHELF_SEP);
+                let fit = false;
+                for (let k = 1; k < segs.length; k++) {
+                    el.textContent = '…' + SHELF_SEP + segs.slice(k).join(SHELF_SEP);
+                    if (el.scrollWidth <= el.clientWidth + 1) { fit = true; break; }
+                }
+                if (!fit) el.classList.add('is-self-wrap');
+                if (segs.length > 1) { el.classList.add('is-t1'); el.title = full; }
+            }
+            return over.length;
+        },
+
     };
+
+    // イシュー#746: 画面の幅が変わった時は、見えている .shelf-path を測り直す (window の resize に1つだけ・rAF でまとめる)。
+    if (typeof window !== 'undefined' && !window.__shelfPathResizeBound) {
+        window.__shelfPathResizeBound = true;
+        let raf = null;
+        window.addEventListener('resize', () => {
+            if (raf) return;
+            raf = requestAnimationFrame(() => { raf = null; BookshelfUI.fitShelfPaths(document); });
+        });
+    }
 
     if (typeof window !== 'undefined') window.BookshelfUI = BookshelfUI;
     if (typeof globalThis !== 'undefined') globalThis.BookshelfUI = BookshelfUI;
