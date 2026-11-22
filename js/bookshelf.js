@@ -924,7 +924,11 @@ class VirtualBookshelf {
         // 公開ページ管理を開く (静的SSG, ADR-030)。左ペインの「公開」ボタンから (設定からは分離)
         const publishBtn = document.getElementById('sidebar-publish');
         if (publishBtn) {
-            publishBtn.addEventListener('click', () => this.openPublishPagesModal());
+            publishBtn.addEventListener('click', () => {
+                // イシュー#760: 左ナビで移るのは同じ挙動＝設定を閉じてから開く (上に重ねると、公開を閉じた時に裏の設定がまた出る)
+                this._closePageFacesForNav();
+                this.openPublishPagesModal();
+            });
         }
 
         // 左ペイン「プラグイン」ボタン (ADR-047 P1)。当面は設定のプラグイン節を開く
@@ -5087,6 +5091,9 @@ class VirtualBookshelf {
     // 同じパターン (設定へ移る入口) は全て _openSettingsModal を通るので、閉じ方はここだけ
     _closeOverlaysForTransition() {
         this._overlays().closeAll({ kinds: ['popover', 'menu'], reason: 'closeOthers' });
+        // イシュー#760: ドロワー (本棚) から設定へ移る時もドロワーを閉じる (下のナビの「設定」と同じ・段は設定へ引き継がれる
+        // #284 K2)。閉じずに設定を重ねると、← ホームで閉じた時にドロワーが開いたまま残っていた
+        this._closeDrawer();
         if (typeof this._artClosePublishPanel === 'function') this._artClosePublishPanel();
     }
 
@@ -5709,11 +5716,43 @@ class VirtualBookshelf {
     _navigateFromUi(kind, ...args) {
         if (!this.router) return false;
         this._closeOverlayFacesSilently();
-        // replace/push の判断は台帳 (historyOp: overlay を閉じた遷移は replace・他は push)。router._setHash が nav へ委譲する
-        if (kind === 'main') this.router.navigateMain();
-        else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0], args[1]);
-        else if (kind === 'book') this.router.navigateBook(args[0], args[1]);
+        const go = () => {
+            // イシュー#760: 設定・公開の設定 (exit:'page' の面) が開いていれば閉じてから移る
+            this._closePageFacesForNav();
+            // replace/push の判断は台帳 (historyOp: overlay を閉じた遷移は replace・他は push)。router._setHash が nav へ委譲する
+            if (kind === 'main') this.router.navigateMain();
+            else if (kind === 'bookshelf') this.router.navigateBookshelf(args[0], args[1]);
+            else if (kind === 'book') this.router.navigateBook(args[0], args[1]);
+        };
+        // イシュー#760: 直前に別の面 (パレット等) を閉じた戻るの予約 (go) が着地する前に面を閉じて移ると、2つの go が
+        // 重なって設定が残った (X19・パレットの「ホーム」)。面が開いている時だけ、予約の着地を待ってから移る
+        const pageOpen = this._overlays().has('settings-modal') || this._overlays().has('publish-settings-modal');
+        if (pageOpen && this.nav && this.nav._pendingGo) {
+            let done = false;
+            const once = () => { if (done) return; done = true; window.removeEventListener('popstate', onPop); setTimeout(go, 0); };
+            const onPop = () => once();
+            window.addEventListener('popstate', onPop);
+            setTimeout(once, 400); // 着地の知らせが来ない時の上限
+        } else go();
         return true;
+    }
+
+    // イシュー#760: exit:'page' の面 (設定・公開の設定) は「行き先の1つ」(#511 X1 §4-2・PC は←も×も無く左ナビで出る)。
+    // 左ナビ・パレットで別の行き先へ移る時はこの1か所で閉じる。#435 (11/02) で左ナビが押せるようになった後も、
+    // hash だけ変わり面が最前面に残っていた (ハヘロ報告「設定が常に最前面・公開以外に移れない」)。
+    // 公開の設定は親の公開の一覧ごと閉じる (公開の仕事をやめて移る)。閉じた面があれば true
+    _closePageFacesForNav() {
+        const ov = this._overlays();
+        let closed = false;
+        if (ov.has('publish-settings-modal')) {
+            // 段は公開の一覧の閉じ方 (closePublish3) が公開の面をまとめて1回で外す。公開の設定の閉じ方 (段を親の
+            // 公開へ戻す) と2回に分けると、後の apply が公開の一覧を開き直す (X21 で実測)。見た目だけ先に外す
+            ov.close('publish-settings-modal', { reason: 'program' });
+            if (ov.has('publish-pages-modal')) this.closePublishPagesModal();
+            closed = true;
+        }
+        if (ov.has('settings-modal')) { this._closeSettingsModal(); closed = true; }
+        return closed;
     }
 
     // ビューの上に重なる面 (ドロワー/パレット) を、履歴を動かさず静かに閉じる (silent オプションは #259 で既設)。

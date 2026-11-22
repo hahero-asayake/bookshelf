@@ -1938,3 +1938,125 @@ test.describe('戻る: イシュー#568 直リンク着地の閉じ方', () => {
         });
     }
 });
+
+// イシュー#760 (ハヘロ報告「PCで設定を開くと公開以外に移れない・設定が常に最前面」): 設定・公開の設定
+// (exit:'page' の面) が開いている時に、左ナビ・パレットの行き先へ移ると、面を閉じてから移る。
+// 直す前 (025ec6c) は hash だけ変わり面が最前面に残った (scripts/verify/760-results.md §1)。
+test.describe('戻る: イシュー#760 設定を開いたまま左ナビで移る', () => {
+    const PC = { width: 1280, height: 900 };
+    async function bootPc(page, ti) {
+        test.skip(ti.project.name === 'webkit', 'PC 幅の左ナビの件 (webkit は iPhone 13 の UA)');
+        await page.setViewportSize(PC);
+        return bootApp(page);
+    }
+    // 画面の中央の最前面が、どの面/画面か
+    async function topAt(page) {
+        return page.evaluate(() => {
+            const t = document.elementFromPoint(window.innerWidth * 0.6, window.innerHeight * 0.5);
+            if (!t) return null;
+            for (const id of ['settings-modal', 'publish-settings-modal', 'publish-pages-modal', 'command-palette', 'view-main', 'view-bookshelf']) {
+                if (t.closest('#' + id)) return id;
+            }
+            return t.tagName;
+        });
+    }
+    async function openSettingsPc(page) {
+        await page.click('#sidebar-settings');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page);
+    }
+    // opener: 左ナビ「検索」(PC で設定が開いている時の実際の開き方) か ⌘K
+    async function paletteGo(page, text, opener) {
+        if (opener) await page.click(opener); else await page.keyboard.press('Control+k');
+        await expect(page.locator('#command-palette')).toBeVisible();
+        await settle(page, 300);
+        await page.keyboard.type(text);
+        await settle(page, 300);
+        await page.keyboard.press('Enter');
+        await settle(page, 700);
+    }
+    async function expectClosedAt(page, view) {
+        await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
+        await expect(page.locator('#publish-settings-modal')).not.toHaveClass(/show/);
+        await expect.poll(() => topAt(page), `最前面が ${view}`).toBe(view);
+    }
+
+    test('X17 PC1280 設定→左上のロゴ＝設定が閉じてホーム・戻るで設定が開き直さない', async ({ page }, ti) => {
+        const errors = await bootPc(page, ti);
+        await openSettingsPc(page);
+        await page.click('.sidebar-brand');
+        await settle(page, 700);
+        await expectClosedAt(page, 'view-main');
+        const s = await snap(page);
+        expect.soft(s.navFaces, '段が余らない').toEqual([]);
+        expect(errors).toEqual([]);
+    });
+
+    test('X18 PC1280 設定→左の本棚の木＝設定が閉じて本棚・戻る1回でホーム', async ({ page }, ti) => {
+        const errors = await bootPc(page, ti);
+        await openSettingsPc(page);
+        await page.locator('#sidebar-bookshelf-tree .tree-node').first().click({ position: { x: 70, y: 12 } });
+        await settle(page, 700);
+        await expectClosedAt(page, 'view-bookshelf');
+        expect.soft((await snap(page)).hash).toMatch(/^#\/bookshelf\//);
+        await back(page);
+        const b = await snap(page);
+        expect.soft(b.hash, '戻る1回で開く前のホーム').toBe('');
+        expect.soft(b.openModals, '戻るで設定が開き直さない').not.toContain('settings-modal');
+        expect(errors).toEqual([]);
+    });
+
+    test('X19 PC1280 設定→左ナビ「検索」→「ホーム / 本棚一覧へ」＝設定が閉じてホーム', async ({ page }, ti) => {
+        const errors = await bootPc(page, ti);
+        await page.locator('#sidebar-bookshelf-tree .tree-node').first().click({ position: { x: 70, y: 12 } });
+        await settle(page, 600);
+        await openSettingsPc(page);
+        await paletteGo(page, 'ホーム / 本棚一覧へ', '#sidebar-search');
+        await expectClosedAt(page, 'view-main');
+        expect(errors).toEqual([]);
+    });
+
+    test('X20 PC1280 設定→左ナビ「公開」＝設定を閉じて公開の一覧・公開を閉じても設定が出てこない', async ({ page }, ti) => {
+        const errors = await bootPc(page, ti);
+        await openSettingsPc(page);
+        await page.click('#sidebar-publish');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        await expect(page.locator('#settings-modal')).not.toHaveClass(/show/);
+        await page.keyboard.press('Escape');
+        await settle(page, 700);
+        await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
+        await expectClosedAt(page, 'view-main');
+        expect(errors).toEqual([]);
+    });
+
+    test('X21 PC1280 公開の設定→⌘K「ホーム / 本棚一覧へ」＝公開の設定と公開の一覧が閉じてホーム', async ({ page }, ti) => {
+        const errors = await bootPc(page, ti);
+        await page.click('#sidebar-publish');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await settle(page, 500);
+        await page.click('#art-settings-open');
+        await expect(page.locator('#publish-settings-modal')).toHaveClass(/show/);
+        await settle(page, 500);
+        await paletteGo(page, 'ホーム / 本棚一覧へ');
+        await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
+        await expectClosedAt(page, 'view-main');
+        expect(errors).toEqual([]);
+    });
+
+    test('R25 390 ドロワー→設定→← ホーム＝ドロワーも閉じたホーム・段が余らない', async ({ page }, ti) => caseRun(page, ti, 'R25', async (r, before) => {
+        await openDrawerTap(page);
+        await tap(page, '#sidebar-settings');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page);
+        await r.step(page, 'settings-open');
+        await tap(page, '#settings-modal-close');
+        await settle(page, 700);
+        const s = await snap(page);
+        await r.step(page, 'closed');
+        expect.soft(s.drawer, '← ホームでドロワーが残らない').toBe(false);
+        expect.soft(s.openModals).not.toContain('settings-modal');
+        expect.soft(s.navFaces, '段が余らない').toEqual([]);
+        expect.soft(s.hash, '開く前の hash').toBe(before.hash);
+    }));
+});
