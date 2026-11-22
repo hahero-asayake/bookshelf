@@ -36,6 +36,11 @@ export const OPENERS_DIALOGS = {
         root: '.mde-heading-menu',
         open: async (page) => { await page.click('#book-memo-modal .editor-toolbar button[title="見出し"]'); },
     },
+    'mde-table-menu': {
+        after: 'book-memo',
+        root: '.mde-table-menu',
+        open: async (page) => { await page.click('#book-memo-modal .editor-toolbar .mde-table-btn'); },
+    },
     'icon-picker': {
         after: 'shelf-form',
         root: '#icon-picker-modal',

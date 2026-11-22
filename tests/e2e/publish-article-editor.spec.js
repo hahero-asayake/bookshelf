@@ -39,6 +39,8 @@ async function publishViaPanel(page) {
 
 // 全画面編集(form)中ならヘッダー操作の前に「完了」で編集状態へ戻す
 async function leaveForm(page) {
+    // イシュー#770(#759-1): PC でも引き出しが真ん中のシートで開き、幕が「完了」を覆う＝先にシートを閉じる。
+    if ((page.viewportSize()?.width ?? 0) > 900) await closeArtSheet(page);
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
 }
@@ -2020,6 +2022,8 @@ test.describe('記事エディタ: 追加先ブロックの明示・まとめて
         // イシュー#268: ブロックAを全画面編集で開き直す→Aが再びアクティブになる (画面と実際の追加先が一致する)
         await leaveForm(page);
         await editArtBlockViaMenu(page, 0); // blockA(ブロック0番)を⋯メニューの「編集」で開き直す
+        // イシュー#770(#759-1/2): 開き直しでは引き出しは自分で開かない＝本棚の「本を追加」で開く(PC もシート)
+        await openArtSheet(page);
         await expect(blockA).toHaveClass(/is-add-target/);
         await expect(blockB).not.toHaveClass(/is-add-target/);
         // イシュー#530(2・案i): 同上。Aには既に1冊入っている
@@ -2650,11 +2654,13 @@ test.describe('記事エディタ: 900px超は本の引き出しが初期状態�
     });
 });
 
-test.describe('記事エディタ: 900px超で本の引き出しを畳める・記憶する (イシュー#168)', () => {
+test.describe('記事エディタ: 900px超で本の引き出しを畳める・記憶する (イシュー#168・前の形＝artSix=0)', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
+    // イシュー#770(#759-1/2): 既定では PC の引き出しは右の列でなく真ん中のシート＝「畳む」は無い。前の形は artSix='0' で残す。
     test('本エリアの常駐ボタンで開く→畳むボタンで閉じる→常駐ボタンで再度開ける', async ({ page }) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSix', '0'));
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
@@ -2678,6 +2684,7 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
 
     test('畳んだ状態はlocalStorageに記憶され、エディタを開き直しても畳んだまま', async ({ page }) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSix', '0'));
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
@@ -2693,6 +2700,39 @@ test.describe('記事エディタ: 900px超で本の引き出しを畳める・�
         await page.click('#art-new');
         await expect(page.locator('.art-wrap')).toHaveClass(/art-drawer-user-collapsed/);
         await expect(page.locator('#art-drawer')).toBeHidden();
+        expect(errors).toEqual([]);
+    });
+});
+
+// イシュー#770(#759-1/2・決め5の(a)): 既定(新しい形)の PC 1024。右の列も「畳む」も無く、本エリアの常駐ボタンで真ん中のシートが開く。
+test.describe('記事エディタ: 900px超の本の引き出しは真ん中のシート (イシュー#770・#759-1/2)', () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    test('本エリアの常駐ボタンで開く→×で閉じる→常駐ボタンで再度開ける(畳むボタンは無い)', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        // 本棚ブロックを足すとシートが開く
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await expect(page.locator('#art-drawer-collapse-btn')).toBeHidden();
+        await closeArtSheet(page);
+        await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+        await expect(page.locator('#art-drawer')).toBeHidden();
+        await openArtSheet(page);
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await expect(page.locator('#art-drawer')).toBeVisible();
+        expect(errors).toEqual([]);
+    });
+
+    test('前に畳んだ記憶(bookshelf_art_drawer_collapsed=1)があっても、本棚ブロックを足すとシートが開く', async ({ page }) => {
+        const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf_art_drawer_collapsed', '1'));
+        await page.evaluate(() => window.bookshelf.openPublishPagesModal());
+        await page.click('#art-new');
+        await addBlock(page, 'shelf', 'first');
+        await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+        await expect(page.locator('#art-drawer')).toBeVisible();
         expect(errors).toEqual([]);
     });
 });

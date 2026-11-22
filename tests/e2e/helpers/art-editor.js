@@ -366,6 +366,9 @@ export async function openArtSheet(page) {
     // イシュー#770 (#759-1): PC でも #art-edit-view.is-six の時はシート (真ん中) で開く＝900px以下と同じ道
     if (!(await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches
         || !!document.getElementById('art-edit-view')?.classList.contains('is-six')))) return;
+    // 本棚の全画面 (data-art-mode=form) の「本を追加」は #art-blocks 側にある (キャンバスの中ではない)
+    const fsAdd = page.locator('#art-blocks .art-shelf-add:visible');
+    if (await page.locator('#art-edit-view[data-art-mode="form"]').count() && await fsAdd.count()) { await fsAdd.first().click(); return; }
     await canvas(page).locator('.art-shelf-add').last().click();
 }
 

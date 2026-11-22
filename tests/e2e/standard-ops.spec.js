@@ -147,6 +147,27 @@ test('ESC/枠外クリック: 見た目シートは自分だけ閉じ、エデ�
     expect(errors).toEqual([]);
 });
 
+test('ESC/枠外クリック: 表ボタンの行と列の欄は自分だけ閉じ、文章の全画面は残る (イシュー#770・#759-6)', async ({ page }) => {
+    const errors = await bootApp(page);
+    await openEditorInEditMode(page);
+    const frame = page.frameLocator('#art-canvas-frame');
+    await frame.locator('.art-cv-ins-btn').last().click();
+    await page.locator('#art-add-sheet [data-block-type="text"]').click();
+    await waitForArtTextFsEditor(page);
+    const btn = page.locator('#art-blocks .editor-toolbar .mde-table-btn').first();
+    await btn.click();
+    await expect(page.locator('.mde-table-menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mde-table-menu')).toHaveCount(0);
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    await btn.click();
+    await expect(page.locator('.mde-table-menu')).toBeVisible();
+    await page.mouse.click(5, 5);
+    await expect(page.locator('.mde-table-menu')).toHaveCount(0);
+    await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+    expect(errors).toEqual([]);
+});
+
 test('ESC/枠外クリック: ブロックの⋯メニューは自分だけ閉じ、全画面はESCで完了扱い (イシュー#268)', async ({ page }) => {
     const errors = await bootApp(page);
     await openEditorInEditMode(page);

@@ -20,6 +20,7 @@ export const SCREENS = [
     { id: 'book-detail', scope: true, title: '本の詳細（PCは右ペイン・スマホはシート）', group: 'main', std1: ['本詳細シート'] },
     { id: 'book-memo', title: '長文メモエディタ', group: 'memo', surfaces: ['book-memo-modal'], std1: ['長文メモエディタ'] },
     { id: 'mde-heading-menu', scope: true, title: '見出しボタンの3択メニュー', group: 'memo', surfaces: ['mde-heading-menu'], std1: ['書式ツールバーの見出しボタンの3択メニュー'] },
+    { id: 'mde-table-menu', scope: true, title: '表ボタンの行と列の欄', group: 'memo', surfaces: ['mde-table-menu'], std1: ['書式ツールバーの表ボタンの行と列の欄'] },
     { id: 'drawer', scope: true, title: '左ナビのドロワー', group: 'main', surfaces: ['drawer'], std1: ['ドロワー'] },
     { id: 'command-palette', title: 'コマンドパレット', group: 'main', surfaces: ['command-palette'], std1: ['コマンドパレット'] },
     { id: 'settings', title: '設定の一覧', group: 'settings', surfaces: ['settings-modal'], std1: ['設定モーダル'] },
