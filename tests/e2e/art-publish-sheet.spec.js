@@ -12,9 +12,9 @@ const BOOK_1 = 'フィクスチャの本 1';
 const PUBLIC_URL_RE = /^https:\/\/bookshelf\.asayake\.org\/hahero\/[^/]+\/$/;
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
-// PC 幅 1280×800 で前の版 (origin/main b9d95ec) の公開パネルを開いた時の矩形 (同じ setup/geom で実測・2026-11-22)。
-// left 280・right 1000 (ov-md 720px)・×は top 145.8/right 988・下のボタンの列の下端 658.2
-const PC_BEFORE = { top: 125.78, height: 548.44 };
+// PC 幅 1280×800 の公開パネルの高さは書体で変わる (イシュー#748): 手元 (homelab・Takao Pゴシック) 548.44 /
+// CI と公式コンテナ (WenQuanYi Zen Hei) 547.52。前の版 (b9d95ec) も今も、同じ環境なら同じ値 (scripts/verify/748-results.md §1)。
+// そのため PC 幅の件は手元で測った絶対値と比べず、同じ実行の中で前の形 (切り替え '0') と比べる。
 
 const editView = (page) => page.locator('#art-edit-view');
 const panel = (page) => page.locator('#art-publish-modal');
@@ -73,6 +73,18 @@ async function geom(page) {
             aboveIsRoot: above === m,
         };
     });
+}
+
+// geom を 150ms ごとに読み、パネルの矩形が2回続けて同じになったら返す (開いた直後の揺れを拾わない)
+async function stableGeom(page) {
+    let prev = null;
+    let cur = null;
+    await expect.poll(async () => {
+        prev = cur;
+        cur = await geom(page);
+        return prev !== null && JSON.stringify(prev.panel) === JSON.stringify(cur.panel);
+    }, { timeout: 5000, intervals: [150] }).toBe(true);
+    return cur;
 }
 
 async function expectOnlyPanelClosed(page, how) {
@@ -195,16 +207,29 @@ test.describe('PC 幅 (1280×800): 出し方は変えない', () => {
         test.skip(testInfo.project.name === 'webkit', 'webkit project は iPhone 13 (スマホ幅の件だけ流す)');
     });
 
-    test('開く: パネルの矩形が前の版 (origin/main b9d95ec) と同じ', async ({ page }) => {
+    // 前の形 = 切り替え localStorage 'bookshelf.flag.pubSheet'='0' (_artPubSheetOn は開くたびに読む)。
+    // PC 幅では '0' の形は #742 より前の版 (b9d95ec) と同じ出し方 (#742 の css は全部 max-width:900px の中)。
+    // 切り替えを撤去する時は、この件の比べる相手が無くなる = 下の「書体に依らない形の検査」だけにするか、
+    // 公式コンテナの画像比較 (tests/visual) へ移す (#748)。
+    test("開く: パネルの矩形が前の形 (切り替え '0') と同じ", async ({ page }) => {
         await setup(page, { touch: false });
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.pubSheet', '0'));
         await openPanel(page, false);
-        const g = await geom(page);
-        // 期待値の出どころ: origin/main b9d95ec を git archive したディレクトリを python3 -m http.server で配り、
-        // 同じ setup/geom で測った値 (scripts/verify/742-results.md §2)。PC 幅は data-ov-narrow が付いても css が効かない
+        const before = await stableGeom(page);
+        expect(before.narrow).toBe(null);
+        await page.locator('#art-pub-close').click();
+        await expect(panel(page)).not.toHaveClass(/show/);
+        await page.evaluate(() => localStorage.removeItem('bookshelf.flag.pubSheet'));
+        await openPanel(page, false);
+        const g = await stableGeom(page);
+        expect(g.narrow).toBe('fit');
+        // 同じ実行の中で前の形と比べる (書体の差を受けない)
+        for (const k of ['top', 'bottom', 'left', 'right', 'height']) expect(g.panel[k], `panel.${k}`).toBeCloseTo(before.panel[k], 1);
+        for (const k of ['top', 'right']) expect(g.close[k], `close.${k}`).toBeCloseTo(before.close[k], 1);
+        // 書体に依らない形の検査: 幅は ov-md 720px で左右の中央・上下の中央寄せ (下寄せのシートになっていない)
         expect(g.panel.left).toBeCloseTo(280, 0);
         expect(g.panel.right).toBeCloseTo(1000, 0);
-        expect(g.panel.top).toBeCloseTo(PC_BEFORE.top, 0);
-        expect(g.panel.height).toBeCloseTo(PC_BEFORE.height, 0);
+        expect(Math.abs(g.panel.top - (g.vh - g.panel.bottom))).toBeLessThanOrEqual(1);
         expect(g.close.position).toBe('absolute');
         expect(g.aboveIsRoot).toBe(true);
     });
