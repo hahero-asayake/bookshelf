@@ -2289,3 +2289,109 @@ test.describe('戻る: イシュー#764 引き出し→公開の一覧', () => {
         }));
     }
 });
+
+// イシュー#765: スマホで引き出しの「検索」(#sidebar-search) から開いた検索 (⌘K パレット) は、引き出しを下に残したまま
+// 段に積まれていた ([drawer, command-palette])。下のナビの「検索」は引き出しを閉じてから開く＝入口で違った。
+// さらに、その上で本棚を選ぶ・設定を開くと、引き出しの閉じが次の push/replace と合流し (#764 の公開と同じ型)、
+// D06 の自己修復が1段余分に戻って、本棚・設定が残らず、次の戻るでアプリの外へ出ていた。
+// 期待は 17表 R22 (ドロワー→⌘K＝ドロワーは先に閉じている)・R23・K2・#764 R31/R32 に揃える (②決裁 ア扱い・切り替えなし)。
+// R22 の E2E は下のナビを evaluate で押している (引き出しが開いている間、下のナビは見えない)＝ここで人が押せる入口を見る。
+test.describe('戻る: イシュー#765 引き出しの「検索」', () => {
+    async function forward(page) {
+        await page.goForward({ waitUntil: 'commit', timeout: 3000 }).catch(() => {});
+        await settle(page, 1200);
+    }
+    async function openSearchFromDrawer(page) {
+        await openDrawerTap(page);
+        await tap(page, '#sidebar-search');
+        await settle(page, 600);
+    }
+    async function expectPaletteAlone(page, label) {
+        expect.soft(await paletteOpen(page), `${label}: パレットが開く`).toBe(true);
+        const s = await snap(page);
+        expect.soft(s.drawer, `${label}: 引き出しは先に閉じている (R22)`).toBe(false);
+        expect.soft(s.navFaces, `${label}: 段はパレットだけ`).toEqual(['command-palette']);
+    }
+    async function expectBackToStart(page, before, label) {
+        expect.soft(await paletteOpen(page), `${label}: パレットは出ない`).toBe(false);
+        const s = await snap(page);
+        expect.soft(s.drawer, `${label}: 引き出しは出ない`).toBe(false);
+        expect.soft(s.navFaces, `${label}: 段が余らない`).toEqual([]);
+        expect.soft(s.hash, `${label}: 開く前の hash`).toBe(before.hash);
+        expectSameHistory(before, s);
+    }
+
+    for (const [how, label] of [['back', '戻る'], ['esc', 'Esc'], ['backdrop', '枠外']]) {
+        test(`R33 390 引き出し→検索→${label}＝パレットだけ閉じ、引き出しは出ない・段が余らない (R22 と同じ)`, async ({ page }, ti) => caseRun(page, ti, 'R33-' + how, async (r, before) => {
+            await openSearchFromDrawer(page);
+            await r.step(page, 'palette');
+            await expectPaletteAlone(page, '開いた直後');
+            if (how === 'back') await back(page);
+            else if (how === 'esc') { await page.keyboard.press('Escape'); await settle(page); }
+            else { await page.locator('#cmdk-backdrop').tap({ position: { x: 5, y: 5 } }); await settle(page); }
+            await r.step(page, how);
+            await expectBackToStart(page, before, label);
+        }));
+    }
+
+    test('R33f 390 引き出し→検索→戻る→進む＝パレットが開き直り、引き出しは開かない (ADR-124・#764 R31 と同じ)', async ({ page }, ti) => caseRun(page, ti, 'R33f', async (r, before) => {
+        await openSearchFromDrawer(page);
+        await r.step(page, 'palette');
+        await back(page);
+        await r.step(page, 'back1');
+        await expectBackToStart(page, before, '戻る1回');
+        await forward(page);
+        await r.step(page, 'forward');
+        const s = await snap(page);
+        expect.soft(s.drawer, '進む: 引き出しが開かない').toBe(false);
+        expect.soft(await paletteOpen(page), '進む: パレットが開き直る (#291)').toBe(true);
+    }));
+
+    test('R33k 390 引き出しを開いて ⌘K (Ctrl+K)＝引き出しを閉じてパレット・戻る＝パレットだけ閉じる (R22 の ⌘K)', async ({ page }, ti) => caseRun(page, ti, 'R33k', async (r, before) => {
+        await openDrawerTap(page);
+        await page.keyboard.press('Control+k');
+        await settle(page, 600);
+        await r.step(page, 'palette');
+        await expectPaletteAlone(page, '⌘K の直後');
+        await back(page);
+        await r.step(page, 'back1');
+        await expectBackToStart(page, before, '戻る1回');
+    }));
+
+    test('R34 390 引き出し→検索→本棚を選ぶ＝本棚が開き、戻る1回で開く前の画面 (R04 と同じ)', async ({ page }, ti) => caseRun(page, ti, 'R34', async (r, before) => {
+        const { name } = await shelfInfo(page);
+        await openSearchFromDrawer(page);
+        await page.fill('#cmdk-input', name);
+        await settle(page, 300);
+        await page.locator('#cmdk-results .cmdk-item', { hasText: name }).first().tap();
+        await settle(page, 900);
+        await r.step(page, 'shelf');
+        const s1 = await snap(page);
+        expect.soft(s1.hash, '本棚の hash').toMatch(/^#\/bookshelf\//);
+        await expect.soft(page.locator('body'), '本棚が開く').toHaveClass(/app-view-bookshelf/);
+        expect.soft(await paletteOpen(page), 'パレットは閉じる').toBe(false);
+        expect.soft(s1.drawer, '引き出しは出ない').toBe(false);
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expectBackToStart(page, before, '戻る1回');
+    }));
+
+    test('R35 390 引き出し→検索→「設定を開く」＝設定が開いたまま・戻る1回で閉じて開く前の画面 (引き出しは出ない)', async ({ page }, ti) => caseRun(page, ti, 'R35', async (r, before) => {
+        await openSearchFromDrawer(page);
+        await page.fill('#cmdk-input', '設定を開く');
+        await settle(page, 300);
+        await page.locator('#cmdk-results .cmdk-item', { hasText: '設定を開く' }).first().tap();
+        await settle(page, 1200);
+        await r.step(page, 'settings');
+        await expect.soft(page.locator('#settings-modal'), '設定が開いたまま').toHaveClass(/show/);
+        const s1 = await snap(page);
+        expect.soft(s1.navFaces, '段は設定だけ').toEqual(['settings-modal']);
+        expect.soft(s1.drawer, '引き出しは出ない').toBe(false);
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expect.soft(page.locator('#settings-modal'), '戻る1回: 設定が閉じる').not.toHaveClass(/show/);
+        await expectBackToStart(page, before, '戻る1回');
+    }));
+});
