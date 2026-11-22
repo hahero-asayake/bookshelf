@@ -1,5 +1,22 @@
 # イシュー#770 公開エディタ一式をアプリに入れる — 結果
 
+## §0 入れた物と切り替え5本（戻し方）
+
+既定はどれも新しい形（true）。戻し方は2通り：
+- **全端末で戻す**：下の定数を `false` にする1行（その群だけ前の形になる）。
+- **端末ごとに戻す**：その端末の localStorage のキーに `'0'` を入れる（`'1'`＝新しい形・それ以外＝定数の既定）。
+
+| 群 | 入れた物 | 定数（場所） | localStorage のキー |
+|---|---|---|---|
+| ① | #759 の1〜6（PC の引き出しを真ん中のシート・編集状態では引き出しを出さない・「＋ ここに追加」を常に・本棚の全画面の「全部の本で」の段・空のブロックの案内＝案B・表のボタンの行と列の欄） | `ART_SIX_DEFAULT`（js/screens/article-editor.js `_artSixOn`） | `bookshelf.flag.artSix` |
+| ② | #767 本ブロックの切り替え（本を選ぶ/替えるボタン・＋ここに追加→本で自分で開く・選んだら閉じる・表示中のN冊を出さない）と、本ブロックの短文メモ（#758） | `ART_BOOK_BLOCK_DEFAULT`（同 `_artBookBlockOn`） | `bookshelf.flag.artBookBlock` |
+| ③ | #769 見た目の選択肢を縦一列 | `ART_LOOK_LIST_DEFAULT`（同 `_artLookListOn`） | `bookshelf.flag.artLookList` |
+| ④ | 8c 本の詳細の閲覧中は帯の行をなくし鉛筆を表紙の段の右上に（編集中は今のまま） | `DETAIL_TOPBAR_FLOAT_DEFAULT`（js/screens/book-detail.js `_detailTopbarFloatOn`） | `bookshelf.flag.detailTopbarFloat` |
+| ⑤ | 記事を書く入口（本の詳細「この本で記事を書く」#758・本棚の画面の帯の右端の pencil の角ボタン 9） | `ART_WRITE_ENTRY_DEFAULT`（article-editor.js `_artWriteEntryOn`） | `bookshelf.flag.writeEntry` |
+
+入れていない物：8・8b・9b・題の下の入口・a1/b/c（計画の決め6）。
+
+
 ## §1 画像比較（tests/visual・公式コンテナ mcr.microsoft.com/playwright:v1.65.1-resolute）
 
 撮り直す前に全54件（基準は PNG 66枚）を比べた。差が出たのは12枚で、どれも意図した変更。撮り直したのはこの12枚だけ（`-g "本棚の一覧|本の詳細|記事の編集|引き出し" --update-snapshots`・他の画像は変わっていない）。
@@ -50,16 +67,40 @@
 - 手当てした12 spec（step5-fix2.log・330秒で打ち切り・220件中約170件）：publish-article-editor の 1132・1449・1802・1843 だけ赤＝addBlock の手当ての前の物。3件は手当て後に緑（step5-fix3.log）。
 - 13 spec をまとめて（step5-fix4.log・390秒）：230件中187件まで、赤は publish-article-editor の 1959・1988・2145（addShelfWithBooks の後の行の操作＝幕）。addShelfWithBooks で閉じる手当てを入れたが、手当て後の再実行はまだ。
 
+### §2-2 webkit（iPhone 13 相当・step6）
+
+- `BACKNAV_WEBKIT=1 npx playwright test --project=webkit`（新しい5 spec＝art-editor-six・art-book-block-pick・art-look-list・write-article-entry・book-detail-topbar-float と、手当て・変更した spec のうち webkit の列にある art-canvas-tap-edit・art-publish-sheet・back-nav-matrix）：**187 passed・0 failed・14 skipped**（5.5分・ログ `_vault-work/770/logs/step6-webkit.log`）。
+- `GATE_WEBKIT=1 npx playwright test --project=gate-webkit`（全件）：**113 passed・0 failed・13 skipped**（2.8分・ログ `step6-gate-webkit.log`）。
+
 ## §3 char（test (char)・6端末）
 
-- 774件を流した（step5-char.log・4.0分）。189 passed・10 failed（PC の 1024・1440・1920 だけ）：
-  - char/article-ops-count.spec.js:194・:209（X3 step4 の手数・1024/1440/1920）
-  - char/publish-hub.spec.js:167（A1）・:178（A7）（1024）
-  - char/article.spec.js:176（A-b・1440/1920）
-- どれも PC で本棚ブロックを足すと引き出しが真ん中のシートで開く（#759-1）ことに当たっていると見ている（原因はまだ見ていない）。手数の写しは、引き出しの開閉の手数が変わる＝意図した差の見込み。次の step で分ける。
+- step5 で 774件を流し、10件が赤（PC の 1024・1440・1920 だけ・どれも60秒の時間切れ）：char/article-ops-count.spec.js:194・:209、char/publish-hub.spec.js:167（A1）・:178（A7）、char/article.spec.js:176（A-b）。
+- 原因：PC でも本棚ブロックを足すと引き出しが真ん中のシートで開き（#759-1）、その幕が「完了」（#art-fs-done）を覆う＝意図した差。
+- 手当て（d5c21d3）：3つの spec の leaveForm で、幅900px超なら先に closeArtSheet でシートを閉じる。手数の写し（article-ops-count）は、シートが開いていた時だけ「引き出しのシートを閉じる」を1手として数える。
+- 手当て後（step6-char-fix.log）：3 spec × char-390/1024/1440/1920 で 38 passed・0 failed。
+- 手数の変化（意図した差・1行ずつ）：
+
+| 計測 | 端末 | 前（docs/char/x3-step1-design.md §8） | 後 |
+|---|---|---|---|
+| 公開済みの記事に3冊足して変更を公開（A7相当） | PC 1024/1440/1920 | 9手（base 側の実測も9手） | 10手（③〜⑤本3冊の後に「引き出しのシートを閉じる」が1手増える） |
+| 公開済みの記事に3冊足して変更を公開（A7相当） | 390/768 | 9手 | 9手（変わらない） |
+| 新しい記事に3冊入れて初めて公開（A1相当） | 390 | 15手 | 15手（変わらない） |
+| 新しい記事に3冊入れて初めて公開（A1相当） | PC 1024/1440/1920 | 14手（e2e-diff の base 側＝origin/main 7e60b0a の実測） | 15手（本3冊の後に「引き出しのシートを閉じる」が1手増える） |
 
 ## §4 lint・単体・版
 
 - npm run lint：12本中0本失敗（spec の手当ての後にも流した）。
 - npm test：緑（vitest）。
 - check:version --range=origin/main..HEAD：OK。
+
+## §5 e2e-diff-main（step6・origin/main 7e60b0a 対 work・途中）
+
+結果の置き場：`_vault-work/770/e2e-diff/`（ログ `_vault-work/770/logs/step6-e2e-diff.log`）。流し直し（新しく落ちた物×3回）の途中で run の締切が来たため、下は1回目の数。
+
+| 表 | base（origin/main） | work | work だけ落ちる |
+|---|---|---|---|
+| E2E（全 project・char 含む・sort-perf-budget 除外） | 1289 passed・0 failed | 1319 passed・**5 failed** | **5件**：publish-article-editor.spec.js:1990・2656・2679・2846・2996（どれも60秒の時間切れ） |
+| vitest | 1298 passed・0 failed | 1275 passed・**23 failed** | **23件**：book-detail-shelf-tree 9・book-detail-shelf-chips 8・book-detail-memo-button 5・audit-screens-coverage 1（'mde-table-menu' が監査の画面の一覧に無い） |
+| 画像比較（work 単独・公式コンテナ） | — | 54件中0件が差分 | 0（step5 で撮り直した12枚と一致） |
+
+- 「work だけ落ちる」は0件になっていない＝未達。次で直す（2656・2679 は PC の右の列の「畳む」＝#759-2 で編集状態に右の列が無いので '0' か新しい形へ。他は本棚ブロックの後の幕の見込み。vitest の book-detail 3本は 8c/書く入口の DOM 変更の見込み・未確認）。
