@@ -117,7 +117,9 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
     test.describe(`本棚の階層パス (イシュー#746)・${label}`, () => {
         test.use({ viewport: vp, hasTouch: mobile, isMobile: mobile, ...(mobile ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' } : {}) });
 
-        test('H1・M1・H3・H6・H8：本の詳細の選択肢・チップ・通知・確認・子孫の選択がパスで出る', async ({ page }) => {
+        test('H1・M1・H3・H6・H8：本の詳細の選択肢・チップ・通知・確認・子孫の選択がパスで出る（前の形）', async ({ page }) => {
+            // イシュー#757: 本の詳細のチップを見るので、所属本棚は前の形 (チップ) に固定する
+            await page.addInitScript(() => localStorage.setItem('bookshelf.flag.detailShelfTree', '0'));
             await boot(page);
             // M1: 本001 は 小説 / SF / 海外 と 漫画 / SF の両方に入っている
             await openDetailEdit(page, asinOf(1));
@@ -280,7 +282,9 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
             await expectBulkPopoverInView(page);
         });
 
-        test('(f) 切り替え off：全部名前だけ・題の下の行なし・.shelf-path が無い', async ({ page }) => {
+        test('(f) 切り替え off：全部名前だけ・題の下の行なし・.shelf-path が無い（前の形）', async ({ page }) => {
+            // イシュー#757: 本の詳細のチップを見るので、所属本棚は前の形 (チップ) に固定する
+            await page.addInitScript(() => localStorage.setItem('bookshelf.flag.detailShelfTree', '0'));
             await boot(page, { flag: '0' });
             await openDetailEdit(page, asinOf(1));
             await expect(page.locator('.bd-chip .shelf-path')).toHaveCount(0);

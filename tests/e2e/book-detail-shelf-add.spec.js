@@ -16,6 +16,8 @@ const ASIN2 = 'B000000002';
 // fixture の「テスト本棚」(fixshelf・本1が所属) に加えて、本1が入っていない本棚を3つ足す (親子を1組含む)
 async function bootApp(page, { saveDelayMs = 0 } = {}) {
     await page.addInitScript(([userData, library]) => {
+        // イシュー#757: この spec は前の形 (チップ) を見る。新しい形 (字下げの木) は book-detail-shelf-tree.spec.js
+        localStorage.setItem('bookshelf.flag.detailShelfTree', '0');
         const ud = JSON.parse(userData);
         ud.bookshelves.push({ id: 'e2e-shelf', internalId: 'e2eshelf01', name: '追加用の本棚', books: [], isSpecial: false, parent: 'fixall001' });
         ud.bookshelves.push({ id: 'e2e-parent', internalId: 'e2eparent01', name: '親の本棚', books: [], isSpecial: false, parent: 'fixall001' });
@@ -56,7 +58,7 @@ const memberOf = (page, slug, asin = ASIN) => page.evaluate(([s, a]) => {
 
 // PC 幅 (既定の chromium) と 390 幅 (スマホ) の両方で流す本体
 function addCases(label) {
-    test(`${label}: 編集モードで追加すると、すぐにチップが増え、追加した本棚が選択肢から消える (未保存の書名は残る)`, async ({ page }) => {
+    test(`${label}: 編集モードで追加すると、すぐにチップが増え、追加した本棚が選択肢から消える (未保存の書名は残る)（前の形）`, async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, ASIN);
         await expect(chips(page)).toHaveCount(1);
@@ -73,7 +75,7 @@ function addCases(label) {
         expect(await memberOf(page, 'e2e-shelf')).toBe(true);
     });
 
-    test(`${label}: 子の本棚に追加すると親のチップも出て、両方が選択肢から消える。候補が0になると追加欄が消える`, async ({ page }) => {
+    test(`${label}: 子の本棚に追加すると親のチップも出て、両方が選択肢から消える。候補が0になると追加欄が消える（前の形）`, async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, ASIN);
 
@@ -92,7 +94,7 @@ function addCases(label) {
         await expect(page.locator('#book-detail-pane .bd-add-bookshelf')).toHaveCount(0);
     });
 
-    test(`${label}: 書き換えた後のチップの × で外せる (外すと詳細が閉じる今の動きのまま)`, async ({ page }) => {
+    test(`${label}: 書き換えた後のチップの × で外せる (外すと詳細が閉じる今の動きのまま)（前の形）`, async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, ASIN);
         await addShelf(page, 'e2e-shelf');
@@ -111,7 +113,7 @@ test.describe('PC 幅', () => {
     addCases('PC');
 
     // (i) 保存を待つ間に閉じた・別の本を開いた時は、元の本を開き直さない
-    test('保存を待つ間に Esc で詳細を閉じると、保存の後も閉じたまま', async ({ page }) => {
+    test('保存を待つ間に Esc で詳細を閉じると、保存の後も閉じたまま（前の形）', async ({ page }) => {
         await bootApp(page, { saveDelayMs: 1500 });
         await openFromHome(page, ASIN);
         await addShelf(page, 'e2e-shelf');
@@ -125,7 +127,7 @@ test.describe('PC 幅', () => {
         expect(await memberOf(page, 'e2e-shelf')).toBe(true);
     });
 
-    test('保存を待つ間に別の本を開くと、保存の後もその本のまま (元の本の編集モードへ戻らない)', async ({ page }) => {
+    test('保存を待つ間に別の本を開くと、保存の後もその本のまま (元の本の編集モードへ戻らない)（前の形）', async ({ page }) => {
         await bootApp(page, { saveDelayMs: 1500 });
         await openFromHome(page, ASIN);
         await addShelf(page, 'e2e-shelf');
@@ -148,7 +150,7 @@ test.describe('PC 幅', () => {
         await card.click();
     }
 
-    test('閲覧モードで詳細を開いたまま一括で追加すると、詳細のチップが増える', async ({ page }) => {
+    test('閲覧モードで詳細を開いたまま一括で追加すると、詳細のチップが増える（前の形）', async ({ page }) => {
         await bootApp(page);
         await openShelfBookAndSelect(page);
 
@@ -160,7 +162,7 @@ test.describe('PC 幅', () => {
         expect(await memberOf(page, 'e2e-shelf')).toBe(true);
     });
 
-    test('閲覧モードで詳細を開いたまま一括で外すと、詳細のチップが消える', async ({ page }) => {
+    test('閲覧モードで詳細を開いたまま一括で外すと、詳細のチップが消える（前の形）', async ({ page }) => {
         await bootApp(page);
         await openShelfBookAndSelect(page);
 

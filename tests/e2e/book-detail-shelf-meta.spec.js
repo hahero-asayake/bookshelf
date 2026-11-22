@@ -17,6 +17,8 @@ const ASIN = 'B000000001';
 // 本1が入っていない本棚を足す
 async function bootApp(page) {
     await page.addInitScript(([userData, library, asin]) => {
+        // イシュー#757: この spec は前の形 (チップ) を見る。新しい形 (字下げの木) は book-detail-shelf-tree.spec.js
+        localStorage.setItem('bookshelf.flag.detailShelfTree', '0');
         const ud = JSON.parse(userData);
         ud.bookshelves.push({ id: 'e2e-parent', internalId: 'e2eparent01', name: '親の本棚', iconName: 'library', books: [asin], isSpecial: false, parent: 'fixall001' });
         ud.bookshelves.push({ id: 'e2e-child', internalId: 'e2echild01', name: '子の本棚', iconName: 'library', books: [asin], isSpecial: false, parent: 'e2eparent01' });
@@ -155,7 +157,7 @@ async function expectDetailKept(page, edit) {
 
 for (const [label, edit] of [['閲覧モード', false], ['編集モード', true]]) {
     test.describe(`PC 幅・${label}`, () => {
-        test(`(a) ${label}: 本が入っている本棚の名前を変えると、すぐにチップの名前が変わる`, async ({ page }) => {
+        test(`(a) ${label}: 本が入っている本棚の名前を変えると、すぐにチップの名前が変わる（前の形）`, async ({ page }) => {
             await bootApp(page);
             await openFromHome(page, { edit });
             await expect(chip(page, 'fixshelf')).toContainText('テスト本棚');
@@ -168,7 +170,7 @@ for (const [label, edit] of [['閲覧モード', false], ['編集モード', tru
             await expectDetailKept(page, edit);
         });
 
-        test(`(b) ${label}: 本が入っている本棚のアイコンを変えると、すぐにチップのアイコンが変わる`, async ({ page }) => {
+        test(`(b) ${label}: 本が入っている本棚のアイコンを変えると、すぐにチップのアイコンが変わる（前の形）`, async ({ page }) => {
             await bootApp(page);
             await openFromHome(page, { edit });
             await expect(chip(page, 'fixshelf').locator('.bd-chip-icon')).toHaveAttribute('data-icon-value', 'library');
@@ -179,7 +181,7 @@ for (const [label, edit] of [['閲覧モード', false], ['編集モード', tru
             await expectDetailKept(page, edit);
         });
 
-        test(`(c) ${label}: 本が入っている本棚を削除すると、子の本棚の分も含めてすぐにチップが消える`, async ({ page }) => {
+        test(`(c) ${label}: 本が入っている本棚を削除すると、子の本棚の分も含めてすぐにチップが消える（前の形）`, async ({ page }) => {
             await bootApp(page);
             await openFromHome(page, { edit });
             await expect(chips(page)).toHaveCount(3);
@@ -196,7 +198,7 @@ for (const [label, edit] of [['閲覧モード', false], ['編集モード', tru
 }
 
 test.describe('PC 幅・編集モードの選択肢', () => {
-    test('(d-1) 本が入っていない本棚の名前を変えると、すぐに選択肢の文字が変わる', async ({ page }) => {
+    test('(d-1) 本が入っていない本棚の名前を変えると、すぐに選択肢の文字が変わる（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect(option(page, 'e2e-other')).toHaveText('入っていない本棚');
@@ -207,7 +209,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
         await expectDetailKept(page, true);
     });
 
-    test('(d-2) 本が入っていない本棚を削除すると、すぐに選択肢から消える', async ({ page }) => {
+    test('(d-2) 本が入っていない本棚を削除すると、すぐに選択肢から消える（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect(option(page, 'e2e-other')).toHaveCount(1);
@@ -220,7 +222,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
         await expectDetailKept(page, true);
     });
 
-    test('(d-3) 本棚を新しく作ると、すぐに選択肢に出て、そのまま選んで追加できる', async ({ page }) => {
+    test('(d-3) 本棚を新しく作ると、すぐに選択肢に出て、そのまま選んで追加できる（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
 
@@ -236,7 +238,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
         await expect(optionByName(page, '新しく作った本棚')).toHaveCount(0);
     });
 
-    test('(d-4) 本が入っている本棚に子の本棚を作ると、すぐにその子のチップが出る (子は親の本を初めから持つ)', async ({ page }) => {
+    test('(d-4) 本が入っている本棚に子の本棚を作ると、すぐにその子のチップが出る (子は親の本を初めから持つ)（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect(chips(page)).toHaveCount(3);
@@ -249,7 +251,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
         await expectDetailKept(page, true);
     });
 
-    test('(f) 本が入っている本棚の親を、本が入っていない本棚に付け替えると、補充された親のチップがすぐに出て選択肢から消える', async ({ page }) => {
+    test('(f) 本が入っている本棚の親を、本が入っていない本棚に付け替えると、補充された親のチップがすぐに出て選択肢から消える（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect(chip(page, 'e2e-other')).toHaveCount(0);
@@ -264,7 +266,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
         await expectDetailKept(page, true);
     });
 
-    test('(i) 改名の後も、チップの × で外せる (外すと詳細が閉じる今の動きのまま)', async ({ page }) => {
+    test('(i) 改名の後も、チップの × で外せる (外すと詳細が閉じる今の動きのまま)（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await renameShelf(page, 'fixshelf', '改名した本棚');
@@ -279,7 +281,7 @@ test.describe('PC 幅・編集モードの選択肢', () => {
 });
 
 test.describe('PC 幅・いま開いている本棚', () => {
-    test('(e) 開いている本棚の本の詳細を開いたまま、その本棚を削除すると、すぐにチップが消える', async ({ page }) => {
+    test('(e) 開いている本棚の本の詳細を開いたまま、その本棚を削除すると、すぐにチップが消える（前の形）', async ({ page }) => {
         await bootApp(page);
         await page.evaluate(() => { location.hash = '#/bookshelf/fixshelf'; });
         await page.locator(`.book-item[data-asin="${ASIN}"]`).first().click();
@@ -298,7 +300,7 @@ test.describe('PC 幅・いま開いている本棚', () => {
 test.describe('PC 幅・ツリーのドラッグ', () => {
     test.use({ viewport: { width: 1280, height: 900 } });
 
-    test('(j) 子の本棚を、本が入っていない本棚の上へドラッグして付け替えると、補充された本棚のチップがすぐに出て選択肢から消える', async ({ page }) => {
+    test('(j) 子の本棚を、本が入っていない本棚の上へドラッグして付け替えると、補充された本棚のチップがすぐに出て選択肢から消える（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect(chip(page, 'e2e-other')).toHaveCount(0);
@@ -320,7 +322,7 @@ test.describe('PC 幅・ツリーのドラッグ', () => {
     // 同じ親の中での並べ替え (イシュー#638)。チップは本棚の並び (userData.bookshelves の順) で描くので、並べ替えた順にすぐ並び直す。
     // 行の上の端 (高さの0.3より上) へ落とすと前へ、下の端 (0.7より下) へ落とすと後ろへの並べ替え (親は変わらず、確認ダイアログは出ない)
     for (const [label, edit] of [['閲覧モード', false], ['編集モード', true]]) {
-        test(`(k) ${label}: 同じ親の中で本棚を前へ並べ替えると、すぐにチップがその順に並び直す`, async ({ page }) => {
+        test(`(k) ${label}: 同じ親の中で本棚を前へ並べ替えると、すぐにチップがその順に並び直す（前の形）`, async ({ page }) => {
             await bootApp(page);
             await openFromHome(page, { edit });
             await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
@@ -337,7 +339,7 @@ test.describe('PC 幅・ツリーのドラッグ', () => {
         });
     }
 
-    test('(k-2) 同じ親の最後の本棚の後ろへ並べ替えると、すぐにチップがその順に並び直す', async ({ page }) => {
+    test('(k-2) 同じ親の最後の本棚の後ろへ並べ替えると、すぐにチップがその順に並び直す（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
@@ -356,7 +358,7 @@ test.describe('PC 幅・ツリーのドラッグ', () => {
     });
 
     // 本棚管理のモーダル (⌘K の「本棚を管理」) のドラッグも、ツリーと同じ並べ替えを通る
-    test('(l) 本棚管理のモーダルで同じ親の中で前へ並べ替えると、すぐにチップがその順に並び直す', async ({ page }) => {
+    test('(l) 本棚管理のモーダルで同じ親の中で前へ並べ替えると、すぐにチップがその順に並び直す（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: true });
         await expect.poll(() => chipOrder(page)).toEqual(['fixshelf', 'e2e-parent', 'e2e-child']);
@@ -381,7 +383,7 @@ test.describe('PC 幅・ツリーのドラッグ', () => {
 
 // 詳細の外 (見張り): ホームの本棚のカードは、改名・削除の後に今の本棚に合っている (#623 step1 の実測で、もともと合っていた)
 test.describe('PC 幅・ホームの本棚のカード', () => {
-    test('(h) 詳細を開いたまま改名・削除すると、ホームの本棚のカードも今の本棚に合う', async ({ page }) => {
+    test('(h) 詳細を開いたまま改名・削除すると、ホームの本棚のカードも今の本棚に合う（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: false });
         const card = (slug) => page.locator(`.bookshelf-preview[data-bookshelf-id="${slug}"]`);
@@ -400,7 +402,7 @@ test.describe('PC 幅・ホームの本棚のカード', () => {
 test.describe('390 幅 (スマホ)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-    test('(g) 詳細を開いたまま、ツリーから本棚の名前を変えると、チップの名前が変わっている', async ({ page }) => {
+    test('(g) 詳細を開いたまま、ツリーから本棚の名前を変えると、チップの名前が変わっている（前の形）', async ({ page }) => {
         await bootApp(page);
         await openFromHome(page, { edit: false });
         await page.locator('#mobile-bottom-nav [data-mobile-nav="shelves"]').click();

@@ -38,8 +38,10 @@ const WIDTHS = [
 ];
 
 for (const [name] of WIDTHS) {
-    test(`B2@${name}: 本の詳細から本棚を外す(remove-from-bookshelf)が反映される`, async ({ page }, testInfo) => {
+    test(`B2@${name}: 本の詳細から本棚を外す(remove-from-bookshelf)が反映される（前の形）`, async ({ page }, testInfo) => {
         test.skip(testInfo.project.name !== name, `この端末(${testInfo.project.name})はB2の対象外ではない想定(全5幅が対象)`);
+        // イシュー#757: B2 は前の形 (チップ) を見る。新しい形 (字下げの木) は book-detail-shelf-tree.spec.js
+        await page.addInitScript(() => localStorage.setItem('bookshelf.flag.detailShelfTree', '0'));
         await bootApp(page);
         await openBookFromHome(page, ASIN);
         await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();
