@@ -2060,3 +2060,138 @@ test.describe('戻る: イシュー#760 設定を開いたまま左ナビで移�
         expect.soft(s.hash, '開く前の hash').toBe(before.hash);
     }));
 });
+
+// イシュー#762 (ハヘロ決裁 2026-11-23「ａで」＝案A): 設定の外から「設定の中の画面(節)」へ直接開いた時は、
+// 戻る1回で設定を閉じて開く前の画面へ戻る (17表 D11 を案Aへ変更)。「← 設定」(#settings-back) は今どおり一覧へ。
+// 切り替え localStorage 'bookshelf.flag.settingsJumpClose' = '0' で前の形 (戻る1回目は一覧) に戻せる (R29)。
+// X09 は #548 以降、下のナビ→一覧→節のクリック経路 (直接開くのではない) なので期待は変えない。
+test.describe('戻る: イシュー#762 設定の節へ直接開いた時', () => {
+    // 保存先が未設定の起動 (bookshelf_sync を置かない・_isSyncReady もモックしない) = 状態バーに「保存先を選ぶ」が出る
+    async function bootUnsynced(page, { flag } = {}) {
+        const errors = [];
+        page.on('pageerror', (err) => errors.push(String(err)));
+        await page.addInitScript(([userData, library, f]) => {
+            if (sessionStorage.getItem('_seeded762')) return; // 再読込で見本を上書きしない
+            localStorage.setItem('virtualBookshelf_userData', userData);
+            localStorage.setItem('virtualBookshelf_library', library);
+            localStorage.removeItem('bookshelf_sync');
+            if (f != null) localStorage.setItem('bookshelf.flag.settingsJumpClose', f);
+            sessionStorage.setItem('_seeded762', '1');
+        }, [fixtureUserData, fixtureLibrary, flag == null ? null : String(flag)]);
+        await page.goto('index.html');
+        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
+        await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+        await settle(page, 500);
+        return errors;
+    }
+    async function run762(page, ti, id, opts, body) {
+        const errors = await bootUnsynced(page, opts);
+        const r = recorder(ti, id);
+        const before = await snap(page);
+        await r.step(page, 'before');
+        try { await body(r, before); } finally { await r.save(page); }
+        expect(errors).toEqual([]);
+    }
+    const settingsView = (page) => page.evaluate(() => (document.querySelector('.settings-modal-content') || {}).dataset?.settingsView || null);
+    async function openFromStatusBar(page) {
+        const b = page.locator('[data-status-action="open-sync"]').filter({ visible: true }).first();
+        await expect(b).toBeVisible();
+        await b.click();
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        expect.soft(await settingsView(page), '同期の画面 (詳細) で開く').toBe('detail');
+    }
+    async function expectClosedSame(page, before, label) {
+        await expect(page.locator('#settings-modal'), `${label}: 設定が閉じる`).not.toHaveClass(/show/);
+        const s = await snap(page);
+        expect.soft(s.hash, `${label}: 開く前の hash`).toBe(before.hash);
+        expect.soft(s.navFaces, `${label}: 段が余らない`).toEqual([]);
+        expectSameHistory(before, s);
+        return s;
+    }
+
+    test('R26 390 状態バー「保存先を選ぶ」→戻る＝設定が閉じて開く前の画面・段が余らない', async ({ page }, ti) => run762(page, ti, 'R26', {}, async (r, before) => {
+        await openFromStatusBar(page);
+        await r.step(page, 'opened');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expectClosedSame(page, before, '戻る1回');
+    }));
+
+    test('R27 390 状態バー「保存先を選ぶ」→「← 設定」＝一覧→戻る＝閉じる・段が余らない', async ({ page }, ti) => run762(page, ti, 'R27', {}, async (r, before) => {
+        await openFromStatusBar(page);
+        await tap(page, '#settings-back');
+        await settle(page, 600);
+        expect.soft(await settingsView(page), '「← 設定」は一覧へ').toBe('master');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await r.step(page, 'master');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expectClosedSame(page, before, '一覧から戻る1回');
+    }));
+
+    test('R28 390 ほかの直接の入口 (公開の一覧の案内「保存先を選ぶ」・引き出しのアカウント)→戻る＝閉じる', async ({ page }, ti) => run762(page, ti, 'R28', {}, async (r, before) => {
+        // (1) 引き出しのアカウント → アカウントの画面
+        await openDrawerTap(page);
+        await tap(page, '#sidebar-account');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        expect.soft(await settingsView(page), 'アカウント: 詳細で開く').toBe('detail');
+        await r.step(page, 'account-opened');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'account-back1');
+        await expect(page.locator('#settings-modal'), 'アカウント: 戻る1回で設定が閉じる').not.toHaveClass(/show/);
+        const afterAccount = await snap(page);
+        expect.soft(afterAccount.navFaces, 'アカウント: 段が余らない').toEqual([]);
+        // (2) 公開の一覧の案内「保存先を選ぶ」→ 同期の画面 (公開の一覧の上に開く)
+        await openDrawerTap(page);
+        await tap(page, '#sidebar-publish');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        const pubBefore = await snap(page);
+        await tap(page, '#art-store-notice-btn');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        expect.soft(await settingsView(page), '公開の案内: 詳細で開く').toBe('detail');
+        await r.step(page, 'pub-opened');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'pub-back1');
+        await expect(page.locator('#settings-modal'), '公開の案内: 戻る1回で設定が閉じる').not.toHaveClass(/show/);
+        const s = await snap(page);
+        expect.soft(s.navFaces, '公開の案内: 設定の段が残らない').not.toContain('settings-modal');
+        expect.soft(s.navFaces, '公開の案内: 設定の詳細の段が残らない').not.toContain('settings-cat');
+        expect.soft(pubBefore.navFaces, '開く前は公開の一覧の段').toContain('publish-pages-modal');
+    }));
+
+    test('R29 390 切り替え 0 (前の形)＝状態バー「保存先を選ぶ」→戻る1回目は一覧→2回目で閉じる', async ({ page }, ti) => run762(page, ti, 'R29', { flag: '0' }, async (r, before) => {
+        await openFromStatusBar(page);
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expect(page.locator('#settings-modal'), '前の形: 戻る1回目は設定が残る').toHaveClass(/show/);
+        expect.soft(await settingsView(page), '前の形: 戻る1回目は一覧').toBe('master');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back2');
+        await expectClosedSame(page, before, '前の形: 戻る2回');
+    }));
+
+    test('X22 PC1280 状態バー「保存先を選ぶ」→戻る＝閉じる (変わらない)', async ({ page }, ti) => {
+        test.skip(ti.project.name === 'webkit', 'PC 幅の件 (webkit は iPhone 13 の UA)');
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await run762(page, ti, 'X22', {}, async (r, before) => {
+            const b = page.locator('[data-status-action="open-sync"]').filter({ visible: true }).first();
+            await b.click();
+            await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+            await settle(page, 600);
+            await back(page);
+            await settle(page, 400);
+            await r.step(page, 'back1');
+            await expectClosedSame(page, before, 'PC 戻る1回');
+        });
+    });
+});

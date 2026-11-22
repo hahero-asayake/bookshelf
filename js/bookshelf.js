@@ -6864,7 +6864,7 @@ class VirtualBookshelf {
         if (st.blockId) return () => this._reopenArtFs(st); // art-fs の引き継ぎ (旧名のまま残る) は blockId で判定
         const t = {
             'settings-modal': () => this._openSettingsModal(),
-            'settings-cat': () => this._openSettingsModal(st.cat),
+            'settings-cat': () => this._openSettingsModal(st.cat, { reopen: true }), // イシュー#762: 進むは今の積み方のまま
             'drawer': () => { this._histNoAnimOnce(document.getElementById('app-sidebar')); this._histNoAnimOnce(document.querySelector('.mobile-scrim')); this._openDrawer(); },
             'publish-pages-modal': () => this.openPublishPagesModal(),
             'publish-settings-modal': () => this.openPublishSettingsModal(),

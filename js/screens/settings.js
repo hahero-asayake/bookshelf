@@ -1556,9 +1556,25 @@ class _SettingsMethods {
         if (typeof window.applyIcons === 'function') window.applyIcons(host);
     }
 
-    async _openSettingsModal(targetId, { switchFrom } = {}) {
+    // イシュー#762: 設定の外から「設定の中の画面(節)」へ直接開いた時、戻る1回で設定ごと閉じるかの切り替え
+    // (ハヘロ決裁 2026-11-23 案A。ハヘロが iPhone で使って承認するまで残す・21_UIUX方針 (c)-2)。
+    // 全員を前の形 (17表 D11＝戻る1回目は設定の一覧) に戻す時は SETTINGS_JUMP_CLOSE_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.settingsJumpClose' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    _settingsJumpCloseOn() {
+        const SETTINGS_JUMP_CLOSE_DEFAULT = true;
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.settingsJumpClose');
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return SETTINGS_JUMP_CLOSE_DEFAULT;
+    }
+
+    async _openSettingsModal(targetId, { switchFrom, reopen } = {}) {
         const modal = document.getElementById('settings-modal');
         if (!modal) return;
+        // イシュー#762: 開く前に設定が開いていたか (外から開くのか・設定の中からの移動か)
+        const wasOpen = modal.classList.contains('show');
         this._buildSettingsMaster();
         // 設定は「別の仕事」= 公開まわりの面を閉じてから開く (§6-4「移る前に閉じる」・イシュー#367)。入口ごとの
         // 個別の閉じ方 (旧: ここで公開パネルだけ・_confirmOpenSettings で公開モーダルだけ) をこの 1 か所に寄せた
@@ -1605,7 +1621,10 @@ class _SettingsMethods {
         if (urlInput) urlInput.value = '';
         // 初期表示: targetId があればその節へ / 無ければ スマホ=一覧・PC=先頭(アカウント)
         if (targetId) {
-            this._scrollSettingsTo(targetId);
+            // イシュー#762: 外から節へ直接開いた時は詳細の段 (settings-cat) を積まない＝戻る1回で設定ごと閉じる。
+            // 進むの開き直し (reopen) と設定の中からの移動は今どおり積む。PC は元々積まない (_activateSettingsCategory)。
+            const jump = !wasOpen && !reopen && this._settingsJumpCloseOn();
+            this._scrollSettingsTo(targetId, { push: !jump });
         } else if (this._isSettingsMobile()) {
             this._showSettingsMaster();
         } else {
@@ -1707,11 +1726,12 @@ class _SettingsMethods {
 
     // 設定モーダル内の特定要素/節へジャンプ (該当カテゴリを開いて要素へフォーカス)。
     // 引数 targetId は要素 id (details 自身でも、節内の要素でも可)。
-    _scrollSettingsTo(targetId) {
+    // push=false はスマホで詳細の段を積まない (外から直接開いた時・イシュー#762)。
+    _scrollSettingsTo(targetId, { push = true } = {}) {
         const el = targetId && document.getElementById(targetId);
         if (!el) return;
         const det = (el.tagName === 'DETAILS') ? el : el.closest('details.settings-section');
-        if (det && det.id) this._activateSettingsCategory(det.id, { push: true });
+        if (det && det.id) this._activateSettingsCategory(det.id, { push });
         if (el !== det) {
             // 折りたたみ (details) の中の項目へ案内するときは、祖先を開いてから見せる (例: 公開先の変更)
             for (let d = el.parentElement && el.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
