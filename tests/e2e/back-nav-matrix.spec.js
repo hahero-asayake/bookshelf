@@ -2065,25 +2065,27 @@ test.describe('戻る: イシュー#760 設定を開いたまま左ナビで移�
 // 戻る1回で設定を閉じて開く前の画面へ戻る (17表 D11 を案Aへ変更)。「← 設定」(#settings-back) は今どおり一覧へ。
 // 切り替え localStorage 'bookshelf.flag.settingsJumpClose' = '0' で前の形 (戻る1回目は一覧) に戻せる (R29)。
 // X09 は #548 以降、下のナビ→一覧→節のクリック経路 (直接開くのではない) なので期待は変えない。
+// 保存先が未設定の起動 (bookshelf_sync を置かない・_isSyncReady もモックしない) = 状態バーに「保存先を選ぶ」が出る。
+// 公開の一覧にも案内「保存先を選ぶ」(#art-store-notice-btn) が出る。#762・#764 で共用
+async function bootUnsynced(page, { flag } = {}) {
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    await page.addInitScript(([userData, library, f]) => {
+        if (sessionStorage.getItem('_seeded762')) return; // 再読込で見本を上書きしない
+        localStorage.setItem('virtualBookshelf_userData', userData);
+        localStorage.setItem('virtualBookshelf_library', library);
+        localStorage.removeItem('bookshelf_sync');
+        if (f != null) localStorage.setItem('bookshelf.flag.settingsJumpClose', f);
+        sessionStorage.setItem('_seeded762', '1');
+    }, [fixtureUserData, fixtureLibrary, flag == null ? null : String(flag)]);
+    await page.goto('index.html');
+    await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
+    await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
+    await settle(page, 500);
+    return errors;
+}
+
 test.describe('戻る: イシュー#762 設定の節へ直接開いた時', () => {
-    // 保存先が未設定の起動 (bookshelf_sync を置かない・_isSyncReady もモックしない) = 状態バーに「保存先を選ぶ」が出る
-    async function bootUnsynced(page, { flag } = {}) {
-        const errors = [];
-        page.on('pageerror', (err) => errors.push(String(err)));
-        await page.addInitScript(([userData, library, f]) => {
-            if (sessionStorage.getItem('_seeded762')) return; // 再読込で見本を上書きしない
-            localStorage.setItem('virtualBookshelf_userData', userData);
-            localStorage.setItem('virtualBookshelf_library', library);
-            localStorage.removeItem('bookshelf_sync');
-            if (f != null) localStorage.setItem('bookshelf.flag.settingsJumpClose', f);
-            sessionStorage.setItem('_seeded762', '1');
-        }, [fixtureUserData, fixtureLibrary, flag == null ? null : String(flag)]);
-        await page.goto('index.html');
-        await page.waitForFunction(() => window.bookshelf && window.bookshelf.userData && (window.bookshelf.books || []).length > 0);
-        await page.evaluate(() => { window.bookshelf.saveUserData = async () => {}; });
-        await settle(page, 500);
-        return errors;
-    }
     async function run762(page, ti, id, opts, body) {
         const errors = await bootUnsynced(page, opts);
         const r = recorder(ti, id);
@@ -2194,4 +2196,80 @@ test.describe('戻る: イシュー#762 設定の節へ直接開いた時', () =
             await expectClosedSame(page, before, 'PC 戻る1回');
         });
     });
+});
+
+// イシュー#764: スマホで引き出し→「公開」で開いた公開の一覧は、引き出しを下に残したまま段に積まれていた。
+// その上で設定を開くと、設定へ移る時の引き出しの閉じ (#760 _closeOverlaysForTransition) が設定の push と合流して
+// 公開の一覧のエントリを上書きし (push→replace)、戻る1回で公開の一覧ごと閉じ、進むで引き出しが開いていた。
+// 期待は 17表 R23 (ドロワー→設定)・K2 (閉じてすぐ開く経路は段を引き継ぐ)・A01 (ドロワー→記事)・A42f (#291 進むで開き直す) に揃える。
+// R32 (×・Esc の行き先) は tp で期待を決めるまで空けておく。
+test.describe('戻る: イシュー#764 引き出し→公開の一覧', () => {
+    async function forward(page) {
+        await page.goForward({ waitUntil: 'commit', timeout: 3000 }).catch(() => {});
+        await settle(page, 1200);
+    }
+    async function openPublishFromDrawer(page) {
+        await openDrawerTap(page);
+        await tap(page, '#sidebar-publish');
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+    }
+    async function run764(page, ti, id, body) {
+        const errors = await bootUnsynced(page);
+        const r = recorder(ti, id);
+        const before = await snap(page);
+        await r.step(page, 'before');
+        try { await body(r, before); } finally { await r.save(page); }
+        expect(errors).toEqual([]);
+    }
+
+    test('R30 390 引き出し→公開→案内「保存先を選ぶ」→設定→戻る＝公開の一覧・もう1回＝閉じる・進む＝引き出しは開かず公開の一覧', async ({ page }, ti) => run764(page, ti, 'R30', async (r, before) => {
+        await openPublishFromDrawer(page);
+        await r.step(page, 'pub');
+        await tap(page, '#art-store-notice-btn');
+        await expect(page.locator('#settings-modal')).toHaveClass(/show/);
+        await settle(page, 600);
+        await r.step(page, 'settings');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expect.soft(page.locator('#settings-modal'), '戻る1回: 設定が閉じる').not.toHaveClass(/show/);
+        await expect.soft(page.locator('#publish-pages-modal'), '戻る1回: 公開の一覧が残る').toHaveClass(/show/);
+        const s1 = await snap(page);
+        expect.soft(s1.navFaces, '戻る1回: 段は公開の一覧だけ').toEqual(['publish-pages-modal']);
+        expect.soft(s1.drawer, '戻る1回: 引き出しは開いていない').toBe(false);
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back2');
+        await expect.soft(page.locator('#publish-pages-modal'), '戻る2回: 公開の一覧が閉じる').not.toHaveClass(/show/);
+        const s2 = await snap(page);
+        expect.soft(s2.hash, '戻る2回: 開く前の hash').toBe(before.hash);
+        expect.soft(s2.navFaces, '戻る2回: 段が余らない').toEqual([]);
+        expect.soft(s2.drawer, '戻る2回: 引き出しは開いていない').toBe(false);
+        expectSameHistory(before, s2);
+        await forward(page);
+        await r.step(page, 'forward');
+        const s3 = await snap(page);
+        expect.soft(s3.drawer, '進む: 引き出しが開かない').toBe(false);
+        await expect.soft(page.locator('#publish-pages-modal'), '進む: 公開の一覧が開き直る (A42f・#291)').toHaveClass(/show/);
+    }));
+
+    test('R31 390 引き出し→公開→戻る＝閉じて開く前の画面・進む＝引き出しは開かず公開の一覧', async ({ page }, ti) => run764(page, ti, 'R31', async (r, before) => {
+        await openPublishFromDrawer(page);
+        await r.step(page, 'pub');
+        await back(page);
+        await settle(page, 400);
+        await r.step(page, 'back1');
+        await expect.soft(page.locator('#publish-pages-modal'), '戻る1回: 公開の一覧が閉じる').not.toHaveClass(/show/);
+        const s1 = await snap(page);
+        expect.soft(s1.hash, '戻る1回: 開く前の hash').toBe(before.hash);
+        expect.soft(s1.navFaces, '戻る1回: 段が余らない').toEqual([]);
+        expect.soft(s1.drawer, '戻る1回: 引き出しは開いていない').toBe(false);
+        expectSameHistory(before, s1);
+        await forward(page);
+        await r.step(page, 'forward');
+        const s2 = await snap(page);
+        expect.soft(s2.drawer, '進む: 引き出しが開かない').toBe(false);
+        await expect.soft(page.locator('#publish-pages-modal'), '進む: 公開の一覧が開き直る (A42f・#291)').toHaveClass(/show/);
+    }));
 });
