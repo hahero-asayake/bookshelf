@@ -78,3 +78,11 @@
 
 - 判定不能 0 件。合格（work だけ落ちる 0 件）。
 - 結果一式は `_local/742/e2e-diff/`（report.md・report.json・base/work の json）。
+
+## 7 ハヘロ向けの前後の画像（step5）
+
+- 頁：`~/kuroko/_vault-work/742/hahero/公開パネル20261122/index.html`（ダッシュボード https://homelab.tail83cfaa.ts.net:8444/bookshelf/4/3/公開パネル20261122/ ・頁と画像は curl で 200）。
+- 撮り方：新 spec と同じ setup（ハブの模擬・新しい記事「最近読んだ本」→本棚ブロックに本1冊→公開パネル）を一時 spec（`_local/742/shots.spec.js.txt`）で通し、等倍で撮った。前＝origin/main b9d95ec の展開（`_local/742/main`・PORT 8177）、後＝作業ツリー（PORT 8142）。#733 の足場は使わず、E2E と同じ操作の経路で撮った（同じ終わりの状態）。
+- 数値（パネルの top〜bottom・高さ）：390 今 0〜844（844・ボタンの下端 534）→新 294〜844（550）・公開後 194〜844（650）・キーボード中 0〜844／768 今 0〜1024→新 494〜1024（530）／1280 今も新も 126〜674（548）・left 280・right 1000。
+- 上の暗い所で閉じても、入れたタグ（「小説」）は開き直すと残っていた。
+- 撮って見つけた直し（commit c578db5）：キーボード中に全画面へ広げた時、本文（grid）の行が縦に引き伸ばされて「公開前チェック」の枠が大きくなっていた → `[data-ov-scroll]` に `align-content: start`。直した後に新 spec を chromium 8件・webkit 5件で流し直して通過・check:version OK。
