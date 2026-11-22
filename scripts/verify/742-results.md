@@ -62,3 +62,19 @@
 
 - 落ちた件が無いので、既存の spec の期待は直していない（意図した変化で落ちる件も無かった）。
 - 768/820 幅は char の4幅で公開パネルを開く件も通った。形の変化（下から出る）は step5 の画像で「及ぶ画面」として見せる。
+
+## 6 e2e-diff（step4・`node scripts/verify/e2e-diff-main.mjs --port=8142 --no-visual`）
+
+- 流し方：systemd-run --user --unit=e2e-diff-742（--working-directory 付き）。17:00:37 開始・17:08:50 終了（exit 0）。--init-storage なし。画像比較は step3 で公式コンテナで別に流した（54件差分0）ので --no-visual。
+- base：origin/main b9d95ec。work：HEAD 868c0c8。
+- E2E：base 1215 通過・0 失敗・592 skip／work 1223 通過・0 失敗・592 skip（+8 は新 spec art-publish-sheet の chromium 8件）。flaky 0。除外は CI と同じ sort-perf-budget だけ。
+- Vitest：base・work とも失敗 0。
+
+| 表 | E2E | Unit |
+|---|---|---|
+| work だけ落ちる（新しく落ちた） | 0 件 | 0 件 |
+| main だけ落ちる（新しく通った） | 0 件 | 0 件 |
+| 両方落ちる（既存の問題） | 0 件 | 0 件 |
+
+- 判定不能 0 件。合格（work だけ落ちる 0 件）。
+- 結果一式は `_local/742/e2e-diff/`（report.md・report.json・base/work の json）。
