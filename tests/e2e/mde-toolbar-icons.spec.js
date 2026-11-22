@@ -250,3 +250,24 @@ test.describe('ヘッダーのタイトル1行省略 (イシュー#282)', () => 
         expect(errors).toEqual([]);
     });
 });
+
+// イシュー#770 (#759-6・切り替え① artSix 既定 on): 長文メモの md エディタも同じ部品なので、表のボタンは行と列を選ぶ欄になる
+test.describe('表のボタンの行と列の欄 (イシュー#770・#759-6)', () => {
+    test('長文メモ390: 表のボタンで欄が開き、既定の3行×2列で表が入り、欄は閉じてエディタは残る', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const errors = await bootApp(page);
+        await openMemo(page);
+        await setBookMemoValue(page, '');
+        await page.click('#book-memo-modal .editor-toolbar button.mde-table-btn');
+        const menu = page.locator('.mde-table-menu');
+        await expect(menu).toBeVisible();
+        const r = await menu.boundingBox();
+        expect(r.x).toBeGreaterThanOrEqual(0);
+        expect(r.x + r.width).toBeLessThanOrEqual(390);
+        await menu.locator('.mde-tm-insert').click();
+        await expect(menu).toHaveCount(0);
+        expect(await getBookMemoValue(page)).toBe('| 見出し1 | 見出し2 |\n| --- | --- |\n|   |   |\n|   |   |\n');
+        await expect(page.locator('#book-memo-modal')).toHaveClass(/show/);
+        expect(errors).toEqual([]);
+    });
+});

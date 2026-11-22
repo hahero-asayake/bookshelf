@@ -3250,6 +3250,22 @@ html.bs-likely-has-data #dashboard-welcome {
 /* 見出しボタンの3択メニュー (イシュー#282・ハヘロ精査後の方針)。_placeAnchoredMenuが
    position(top/left)を付与する(.art-more-menuと同型)。クリックのたびに生成し閉じたら
    DOMごと消す(永続パネルを持たない=#282 step3の「その他」パネル孤児化バグを踏まない設計)。 */
+/* イシュー#770 (#759-6): 表の行と列の欄。見た目は見出しのメニューと同じ箱 (fixed・z 1300・枠・影)。作るのは切り替え① artSix が on の時だけ */
+.mde-table-menu {
+    position: fixed; z-index: 1300; padding: 0.6rem; display: grid; gap: 0.5rem; min-width: 15rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+}
+.mde-tm-dims { display: flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.mde-tm-lbl { font-size: 0.84rem; color: var(--fg2); }
+.mde-tm-x { font-size: 0.9rem; color: var(--fg2); margin: 0 0.2rem; }
+.mde-tm-step {
+    width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 1.05rem; cursor: pointer;
+}
+.mde-tm-step:disabled { opacity: 0.4; cursor: default; }
+.mde-tm-val { min-width: 1.6em; text-align: center; font-weight: 700; font-size: 0.95rem; }
+.mde-tm-note { margin: 0; font-size: 0.74rem; color: var(--fg2); }
 .mde-heading-menu {
     position: fixed; z-index: 1300; min-width: 11rem; padding: 0.3rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
@@ -8390,6 +8406,14 @@ body.select-mode .drag-handle { display: none; }
     /* 右ペイン (幅416px) のツールバーはスマホと同じ7ボタンに絞る (_mdeToolbarConfig compact)。
        詰め方 (flex: 1 1 0 で1段に収める) は .editor-toolbar.mde-iconized 側で共通化済み (イシュー#281)。 */
 }
+/* イシュー#770 (#759-4): 本棚の全画面の「全部の本で：［短文メモ］［評価］」の段 (チップは選択バーと同じ art-chip-toggle)。全幅で同じ */
+.art-fs-bulk {
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    margin: 0 0 0.6rem; padding: 0.5rem 0.6rem;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+}
+.art-fs-bulk-lbl { font-size: 0.8rem; color: var(--fg2); font-weight: 600; }
+.art-fs-bulk .art-chips { grid-template-columns: repeat(2, var(--art-chip-w, auto)); }
 /* イシュー#770 (#759 の1・2・切り替え① artSix＝#art-edit-view.is-six・_artApplyFlagClasses が付ける)。900px超だけ。
    1：PC の右の列をやめ、引き出しは開いた時だけ画面の真ん中のシートで出す (開く道はスマホと同じ _artOpenSheet → is-open＋幕＋Surface 'art-sheet')。
       transform は使わない (#756：transform のある面の中では fixed の吹き出しの基準が面になってずれる)＝inset:0＋margin:auto で真ん中に置く。

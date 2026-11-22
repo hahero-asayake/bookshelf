@@ -71,6 +71,8 @@ body.art-cv-pc .art-cv-ops{top:-32px}
 body:not(.art-cv-six) .art-cv-ins-btn{opacity:0;transition:opacity .12s}
 .art-cv-ins:hover .art-cv-ins-btn,.art-cv-ins:focus-within .art-cv-ins-btn{opacity:1}
 }
+/* イシュー#770 (#759-5・案B): 切り替え① artSix が on なら空のブロックに薄い地と角丸を付ける。灰色の点線は付けない (線は .art-cv-blk の青い点線1本) */
+body.art-cv-six .art-cv-empty{border-radius:8px;background:rgba(61,82,255,.035)}
 .art-cv-empty{min-height:64px;padding-top:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-sizing:border-box}
 .art-cv-empty-guide{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:38px;border:none;background:transparent;color:var(--sub);font:inherit;font-size:13px;cursor:pointer;padding:8px;text-align:center}
 .art-cv-empty-guide:hover{color:var(--acc)}
@@ -971,6 +973,18 @@ class VirtualBookshelf {
             e.stopImmediatePropagation();
             e.preventDefault();
         }, true);
+        // イシュー#770 (#759-6): 表の欄も同じ (枠外のクリック・Esc で欄だけ閉じる)
+        document.addEventListener('click', (e) => {
+            const menu = document.querySelector('.mde-table-menu');
+            if (!menu) return;
+            if (window.Surface.isOutside(e, menu, menu._mdeAnchorBtn)) this._mdeCloseTableMenu();
+        });
+        window.Surface.onEsc(document, (e) => {
+            if (!document.querySelector('.mde-table-menu')) return;
+            this._mdeCloseTableMenu();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }, true);
 
         // Esc・戻る(履歴)は完了扱い(記事エディタの art-fs-done と同じ規則・②決裁)。全モーダル共通の
         // Escハンドラ(622行, bubblingフェーズ)はモーダルに .modal-close が無いとただ閉じる(保存しない)
@@ -982,7 +996,7 @@ class VirtualBookshelf {
             // そちらのEscを優先して奪わない(_artCloseBlockFs のEscハンドラ・8212行と同型のガード。
             // 見出しメニューは上のハンドラが先に登録されているため通常はここへ来る前に消費されるが、
             // 二重の安全網として明示チェックも残す)。
-            if (document.querySelector('.cfm-overlay') || document.querySelector('.mde-heading-menu')) return;
+            if (document.querySelector('.cfm-overlay') || document.querySelector('.mde-heading-menu, .mde-table-menu')) return;
             this._bookMemoFsDone();
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -6614,7 +6628,11 @@ class VirtualBookshelf {
     // 見出しはカスタムボタン(押すと3択メニュー・_mdeToggleHeadingMenu)にする。
     _mdeToolbarConfig({ compact = false } = {}) {
         const headingBtn = { name: 'heading', action: (editor) => this._mdeToggleHeadingMenu(editor), className: 'mde-heading-btn', title: '見出し' };
-        const base = [headingBtn, 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', 'table', 'preview'];
+        // イシュー#770 (#759-6): 切り替え① artSix が on なら「表」は行と列の数を選んで入れる自前ボタン (名前は同じ table＝字と絵はそのまま付く)
+        const tableBtn = (typeof this._artSixOn === 'function' && this._artSixOn())
+            ? { name: 'table', action: (editor) => this._mdeToggleTableMenu(editor), className: 'mde-table-btn', title: '表' }
+            : 'table';
+        const base = [headingBtn, 'bold', 'unordered-list', 'ordered-list', 'quote', 'link', tableBtn, 'preview'];
         if (compact || window.innerWidth <= 600) return base; // スマホ・PC右ペイン: 8個のみ
         return [...base, '|', 'side-by-side', 'fullscreen'];
     }
@@ -6663,6 +6681,7 @@ class VirtualBookshelf {
     _mdeToggleHeadingMenu(easymde) {
         const existing = document.querySelector('.mde-heading-menu');
         if (existing) { this._mdeCloseHeadingMenu(); return; }
+        this._mdeCloseTableMenu(); // 欄は1つだけ (表の欄を開いたまま見出しを押した時)
         const btn = easymde.toolbarElements && easymde.toolbarElements.heading;
         if (!btn) return;
         const level = this._mdeCurrentHeadingLevel(easymde);
@@ -6700,6 +6719,71 @@ class VirtualBookshelf {
         if (menu._mdeAnchorBtn) menu._mdeAnchorBtn.setAttribute('aria-expanded', 'false');
         menu.remove();
         this._surface().close('mde-heading-menu', { fromHistory }); // D01
+    }
+
+    // イシュー#770 (#759-6): 「表」の欄。行 (見出しの行を含む) 2〜20・既定3、列 1〜8・既定2 を選んで入れる。
+    // 作りは見出しのメニューと同じ (押すたびに作り閉じたら消す・置き場所は _placeAnchoredMenu・Esc/戻るは Surface の段 'mde-table-menu')。
+    _mdeToggleTableMenu(easymde) {
+        if (document.querySelector('.mde-table-menu')) { this._mdeCloseTableMenu(); return; }
+        const btn = easymde.toolbarElements && easymde.toolbarElements.table;
+        if (!btn) return;
+        this._mdeCloseHeadingMenu(); // 欄は1つだけ
+        const LIM = { r: [2, 20], c: [1, 8] };
+        const st = { r: 3, c: 2 };
+        const stepBtn = (k, d, label) => `<button type="button" class="mde-tm-step" data-k="${k}" data-d="${d}" aria-label="${label}">${d < 0 ? '−' : '＋'}</button>`;
+        const menu = document.createElement('div');
+        menu.className = 'mde-table-menu';
+        menu.setAttribute('role', 'dialog');
+        menu.setAttribute('aria-label', '表の行と列の数');
+        menu.innerHTML = `<div class="mde-tm-dims">`
+            + `<span class="mde-tm-lbl">行</span>${stepBtn('r', -1, '行を減らす')}<span class="mde-tm-val" data-v="r">3</span>${stepBtn('r', 1, '行を増やす')}`
+            + `<span class="mde-tm-x">×</span>`
+            + `<span class="mde-tm-lbl">列</span>${stepBtn('c', -1, '列を減らす')}<span class="mde-tm-val" data-v="c">2</span>${stepBtn('c', 1, '列を増やす')}`
+            + `</div><p class="mde-tm-note">行は見出しの行を含めた数</p>`
+            + `<button type="button" class="btn btn-primary btn-small mde-tm-insert">表を入れる</button>`;
+        const sync = () => {
+            ['r', 'c'].forEach((k) => {
+                menu.querySelector(`[data-v="${k}"]`).textContent = String(st[k]);
+                menu.querySelector(`[data-k="${k}"][data-d="-1"]`).disabled = st[k] <= LIM[k][0];
+                menu.querySelector(`[data-k="${k}"][data-d="1"]`).disabled = st[k] >= LIM[k][1];
+            });
+        };
+        menu.querySelectorAll('.mde-tm-step').forEach((s) => {
+            s.addEventListener('click', () => {
+                const k = s.dataset.k;
+                st[k] = Math.min(LIM[k][1], Math.max(LIM[k][0], st[k] + Number(s.dataset.d)));
+                sync();
+            });
+        });
+        menu.querySelector('.mde-tm-insert').addEventListener('click', () => {
+            const cm = easymde.codemirror;
+            const cur = cm.getCursor();
+            const lineText = cm.getLine(cur.line) || '';
+            let head = '|', sep = '|', body = '';
+            for (let k = 1; k <= st.c; k++) { head += ` 見出し${k} |`; sep += ' --- |'; }
+            for (let r = 1; r < st.r; r++) { body += '|'; for (let k = 1; k <= st.c; k++) body += '   |'; body += '\n'; }
+            let pre = '';
+            if (lineText.trim()) { cm.setCursor({ line: cur.line, ch: lineText.length }); pre = '\n\n'; }
+            const startLine = cm.getCursor().line + (pre ? 2 : 0);
+            cm.replaceSelection(pre + head + '\n' + sep + '\n' + body);
+            this._mdeCloseTableMenu();
+            cm.focus();
+            cm.setSelection({ line: startLine, ch: 2 }, { line: startLine, ch: 2 + '見出し1'.length });
+        });
+        sync();
+        document.body.appendChild(menu);
+        this._surface().open('mde-table-menu', { close: (o) => this._mdeCloseTableMenu(o), extra: { articleId: this._artEditingId } });
+        this._placeAnchoredMenu(btn, menu);
+        btn.setAttribute('aria-expanded', 'true');
+        menu._mdeAnchorBtn = btn;
+    }
+
+    _mdeCloseTableMenu({ fromHistory = false } = {}) {
+        const menu = document.querySelector('.mde-table-menu');
+        if (!menu) return;
+        if (menu._mdeAnchorBtn) menu._mdeAnchorBtn.setAttribute('aria-expanded', 'false');
+        menu.remove();
+        this._surface().close('mde-table-menu', { fromHistory });
     }
 
     _mdeCurrentHeadingLevel(easymde) {
@@ -6902,6 +6986,7 @@ class VirtualBookshelf {
             'art-blk-menu': () => this._reopenArtContextOnly(st),
             'art-more-menu': () => this._reopenArtContextOnly(st),
             'mde-heading-menu': () => this._reopenArtContextOnly(st),
+            'mde-table-menu': () => this._reopenArtContextOnly(st),
         };
         return t[id] || null;
     }
@@ -6962,7 +7047,7 @@ class VirtualBookshelf {
         S.define('art-fs', Object.assign({}, artFace, { overlay: false }));
         // 段だけ Surface 経由にする面 (overlays へは各画面が今どおり hist:false で載せる・または overlays を使わない面)。
         // 載せ替え前の _modalHistPush/_modalHistPop と同じ判定・同じ呼び順 (イシュー#509 U3 step3)
-        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'descendants-pick-modal', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
+        ['add-book-modal', 'art-edit-mode', 'art-publish-modal', 'art-viewing', 'book-memo-modal', 'bookshelf-form-modal', 'bookshelf-modal', 'descendants-pick-modal', 'exclusions-modal', 'icon-picker-modal', 'import-modal', 'mde-heading-menu', 'mde-table-menu', 'plugin-settings-modal', 'pp-preview-modal', 'publish-pages-modal', 'settings-cat'].forEach((id) => S.define(id, { overlay: false }));
         // イシュー#513 S6: report-modal だけ reloadReopen:true(リロードでも開き直してよい・
         // nav-state.js boot() の o.canReloadReopen が見る)。sessionStorage の pendingReport から
         // 明示的に開き直す既存の仕組み(_handleReportParam)が元からあり、全幅化で段を積むようになった

@@ -1757,7 +1757,8 @@ test.describe('ブロックのチップ (イシュー#288)', () => {
         }
         expect.soft(measure[0].label, '空の文章ブロックの文言は種類名のみ').toBe('文章');
         expect.soft(measure[0].height, '空の文章ブロックは64px以上').toBeGreaterThanOrEqual(64);
-        expect.soft(measure[0].guideText).toBe('タップして文章を書く');
+        // イシュー#770 (#759-5・決め5の(a)): 切り替え① artSix の既定 on で、空の文章ブロックの案内は「ここに文章（タップして書く）」。前の字は art-editor-six.spec の '0' で見る
+        expect.soft(measure[0].guideText).toBe('ここに文章（タップして書く）');
         expect.soft(measure[1].label, '空の本ブロックの文言は種類名のみ').toBe('本');
         expect.soft(measure[1].height, '空の本ブロックは64px以上').toBeGreaterThanOrEqual(64);
         expect.soft(measure[1].guideText).toBe('タップして本を選ぶ');

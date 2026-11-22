@@ -229,7 +229,7 @@ class _ArticleEditorMethods {
             if (sheet && !sheet.hidden) this._artCloseAddSheet();
             else if (lk && !lk.hidden) this._artCloseLookSheet();
             else if (menu && !menu.hidden) this._artCloseBlkMenu();
-            else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.querySelector('.mde-heading-menu') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
+            else if (this._artMode === 'form' && !document.querySelector('.cfm-overlay') && !document.querySelector('.mde-heading-menu, .mde-table-menu') && !document.getElementById('art-drawer').classList.contains('is-open')) this._artCloseBlockFs(true);
             else return;
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -874,6 +874,30 @@ class _ArticleEditorMethods {
         frame.style.height = `${doc.documentElement.scrollHeight}px`;
     }
 
+    // イシュー#770 (#759-5・案B): PC の文章の全画面で対象が空の時、生成器は section を出さず左のキャンバスに何も出ない。
+    // その位置に仮の section「ここに文章が入ります」を出す (地＋青い outline・灰色の点線は付けない)。.art-cv-ui なので次の描画で外れる。
+    // キャンバスが見えている時 (幅>0) だけ出す: スマホの文章の全画面 (キャンバスが隠れている) で高さを変えると、
+    // webkit 390 で ResizeObserver loop の pageerror が出た (#759 step4)。
+    _artCanvasEmptyTextPlaceholder(doc, frame, i) {
+        const b = (this._artDraft.blocks || [])[i];
+        if (!b || b.type !== 'text' || (b.markdown || '').trim()) return;
+        if (!frame.getBoundingClientRect().width) return;
+        const article = doc.querySelector('.article');
+        if (!article) return;
+        let last = null;
+        for (let j = i - 1; j >= 0 && !last; j--) last = doc.querySelector(`section[data-art-idx="${j}"]`);
+        if (!last) last = article.querySelector(':scope > .tags') || article.querySelector(':scope > h1');
+        const style = doc.createElement('style');
+        style.className = 'art-cv-ui';
+        style.textContent = '.art-cv-text-ph{min-height:64px;display:flex;align-items:center;justify-content:center;color:#596f80;font-size:13px;border-radius:8px;background:rgba(61,82,255,.035);outline:2px solid #3d52ff;outline-offset:6px;margin:1.2em 0}';
+        doc.head.appendChild(style);
+        const sec = doc.createElement('section');
+        sec.className = 'blk art-cv-ui art-cv-text-ph';
+        sec.dataset.artPhIdx = String(i);
+        sec.textContent = 'ここに文章が入ります';
+        if (last && last.parentNode) last.after(sec); else article.appendChild(sec);
+    }
+
     _artApplyCanvasChrome() {
         const frame = document.getElementById('art-canvas-frame');
         const doc = frame && frame.contentDocument;
@@ -903,6 +927,8 @@ class _ArticleEditorMethods {
                     const col = document.querySelector('#art-edit-view .art-col');
                     if (col) col.scrollTop = Math.max(0, frame.offsetTop - col.offsetTop + sec.offsetTop - 16);
                 }
+            } else if (i >= 0 && this._artSixOn()) {
+                this._artCanvasEmptyTextPlaceholder(doc, frame, i);
             }
         }
         if (this._artMode === 'edit') {
@@ -944,6 +970,8 @@ class _ArticleEditorMethods {
                 return n ? `本棚・${n}冊` : '本棚';
             };
             const EMPTY_GUIDE = { text: 'タップして文章を書く', book: 'タップして本を選ぶ', shelf: 'タップして本を追加' };
+            // イシュー#770 (#759-5): ① artSix が on なら、空の文章ブロックの案内は「ここに文章（タップして書く）」(記事の上で場所が分かる字)
+            if (this._artSixOn()) EMPTY_GUIDE.text = 'ここに文章（タップして書く）';
             // 挿入の基準点: ブロックが1つも描かれていない時はタイトル (とタグ) の直後
             let last = null;
             if (article) last = article.querySelector(':scope > .tags') || article.querySelector(':scope > h1');
@@ -2034,6 +2062,18 @@ class _ArticleEditorMethods {
     // イシュー#268 step4: 本棚の全画面 (承認モック shot-2-shelf-sp-390 の並び)。
     // 行 = 書影サムネ・書名・著者・短文メモ入力 (その場で入力)・チップ「短文メモ/評価」、右端に ↑ ↓ ×。
     // チェックボックス一括操作と grip ドラッグは出さない (上へ・下へに一本化・②決裁)。
+    // イシュー#770 (#759-4): 本棚の全画面の一覧の上に常に置く「全部の本で：［短文メモ］［評価］」の段 (① artSix・1冊以上の時)。
+    // チップは選択バーと同じ art-chip-toggle・同じ3つの態 (全部 on＝押下・一部＝混在・押すと全部 on／全部 on なら全部 off)。
+    _artFsBulkRowHtml(items) {
+        const chip = (key, label) => {
+            const n = items.filter(it => it.show && it.show[key]).length;
+            const all = n === items.length;
+            const mixed = n > 0 && !all;
+            return `<button type="button" class="art-chip-toggle art-bulk-chip${all ? ' is-on' : ''}${mixed ? ' is-mixed' : ''}" data-show-key="${key}" aria-pressed="${all ? 'true' : (mixed ? 'mixed' : 'false')}">${label}</button>`;
+        };
+        return `<div class="art-fs-bulk"><span class="art-fs-bulk-lbl">全部の本で：</span><div class="art-chips">${chip('shortMemo', '短文メモ')}${chip('rating', '評価')}</div></div>`;
+    }
+
     _artRenderShelfFs(b, index) {
         const esc = BookshelfEscape.escapeHtml;
         const items = (b.items || []).slice().sort((x, y) => x.order - y.order);
@@ -2067,6 +2107,7 @@ class _ArticleEditorMethods {
         // (「本」単体ブロックは不満が無く、追加シートの入口を#528前の形に戻したため不要)。
         return `<div class="art-block art-fs-block is-fs-target is-add-target" data-block-id="${esc(b.id)}" data-index="${index}">
             <div class="art-fs-sec">本（${items.length}冊）</div>
+            ${this._artSixOn() && items.length ? this._artFsBulkRowHtml(items) : ''}
             <div class="art-shelf-list art-fs-list">${rows}</div>
             <div class="art-fs-actions">
                 <button type="button" class="art-shelf-add art-fs-add">${ic('plus', 16)}本を追加（本棚・リストから選ぶ）</button>
@@ -2339,6 +2380,23 @@ class _ArticleEditorMethods {
             if (selClearBtn) selClearBtn.addEventListener('click', () => {
                 this._artShelfSelSet(blockId).clear();
                 this._artRenderBlocks();
+            });
+            // イシュー#770 (#759-4): 全部の本で一括 (選択バーのチップと同じ順で呼ぶ)
+            el.querySelectorAll('.art-bulk-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const key = chip.dataset.showKey;
+                    const targets = block.items || [];
+                    const next = chip.getAttribute('aria-pressed') !== 'true';
+                    this._artSnapshotBulk(blockId, block);
+                    targets.forEach(it => {
+                        it.show = it.show || { shortMemo: false, rating: false };
+                        it.show[key] = next;
+                    });
+                    this._artRenderBlocks();
+                    this._artScheduleSave();
+                    this._artToastBulkApplied(targets.length);
+                });
             });
             el.querySelectorAll('.art-sel-chip').forEach(chip => {
                 chip.addEventListener('click', (e) => {
