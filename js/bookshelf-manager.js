@@ -92,6 +92,59 @@ class BookshelfManager {
         return !descendants.some(d => this._keyOf(d) === candidateParentId);
     }
 
+    // ===== 同じ親の下の名前の一意 (イシュー#745) =====
+    // 一意なのは親を含めた階層パス。同じ親の下に、比べ方で同じになる名前の本棚を置かない。
+    // 作る (create)・名前を変える (update の name)・移す (update の parent / previewReparent / reparent) の
+    // 3つの口がすべてここを通る。既存データの同名は読み込みでは検査しない (そのまま読める・名前を変えない編集は通す)。
+
+    // 比べ方: NFKC → 前後の空白を除く → 小文字化。比べる時だけ使い、保存する名前は変えない。
+    static normalizeShelfName(name) {
+        return String(name == null ? '' : name).normalize('NFKC').trim().toLowerCase();
+    }
+
+    // 親の参照を同じ鍵に畳む。null・''・'all'・ALL (特殊本棚) の internalId/slug は null (トップ階層)。
+    // slug 参照と internalId 参照は getById で同じ本棚を引いて _keyOf に揃える。引けない参照はそのまま返す。
+    _parentKeyOf(ref) {
+        if (ref == null || ref === '' || ref === 'all') return null;
+        if (ref === this.getAllInternalId()) return null;
+        const p = this.getById(ref);
+        if (!p) return ref;
+        if (p.isSpecial) return null;
+        return this._keyOf(p);
+    }
+
+    // parentRef の下の非特殊本棚から、name と比べ方で同じ名前の1件を返す (無ければ null)。excludeKey の本棚は数えない。
+    findSiblingNameConflict(name, parentRef, excludeKey = null) {
+        const target = BookshelfManager.normalizeShelfName(name);
+        if (!target) return null;
+        const parentKey = this._parentKeyOf(parentRef);
+        const excluded = excludeKey != null ? this.getById(excludeKey) : null;
+        return this.getBookshelves().find(b => b && !b.isSpecial && b !== excluded
+            && this._parentKeyOf(b.parent) === parentKey
+            && BookshelfManager.normalizeShelfName(b.name) === target) || null;
+    }
+
+    // 止めた時の文言。kind: 'name' = 作る・名前を変える / 'move' = 移す。親は階層パスで出す。
+    nameConflictMessage(name, parentRef, kind = 'name') {
+        const parentKey = this._parentKeyOf(parentRef);
+        const where = parentKey == null ? 'トップ階層に' : `「${this.getPathLabel(parentKey) || parentKey}」の下に`;
+        if (kind === 'move') return `${where}「${name}」という本棚がすでにあるため移動できません。先にどちらかの名前を変えてください`;
+        return `${where}「${name}」という本棚がすでにあります。別の名前にしてください`;
+    }
+
+    _nameConflictError(conflict, parentRef, kind) {
+        const err = new Error(this.nameConflictMessage(conflict.name, parentRef, kind));
+        err.code = 'name-conflict';
+        err.conflict = conflict;
+        return err;
+    }
+
+    // 移す時の検査 (親が実際に変わる時だけ)。衝突する本棚か null。
+    _moveConflict(bs, newParentRef) {
+        if (this._parentKeyOf(newParentRef) === this._parentKeyOf(bs.parent)) return null;
+        return this.findSiblingNameConflict(bs.name, newParentRef, this._keyOf(bs));
+    }
+
     // ===== 逆引きマップ =====
     rebuildReverseIndex() {
         this.reverseIndex = new Map();
@@ -148,6 +201,9 @@ class BookshelfManager {
         }
         const parentId = meta.parent || this.getAllInternalId();
         const allId = this.getAllInternalId();
+        // 同じ親の下の同名は作らない (イシュー#745)
+        const conflict = this.findSiblingNameConflict(meta.name || slug, parentId);
+        if (conflict) throw this._nameConflictError(conflict, parentId, 'name');
 
         const newBookshelf = {
             id: slug,
@@ -185,6 +241,19 @@ class BookshelfManager {
     update(internalId, meta) {
         const bs = this.getById(internalId);
         if (!bs) throw new Error('本棚が見つかりません');
+        // 同じ親の下の同名を、どの欄を書く前にも止める (イシュー#745)。名前を変えない編集 (アイコン・説明) は
+        // 既存の同名でも通す。名前が比べ方で今と同じなら、変えていないと見る。
+        if (!bs.isSpecial) {
+            const nextParent = typeof meta.parent === 'string' ? meta.parent : bs.parent;
+            const nameChanged = typeof meta.name === 'string'
+                && BookshelfManager.normalizeShelfName(meta.name) !== BookshelfManager.normalizeShelfName(bs.name);
+            const parentChanged = this._parentKeyOf(nextParent) !== this._parentKeyOf(bs.parent);
+            if (nameChanged || parentChanged) {
+                const nextName = typeof meta.name === 'string' ? meta.name : bs.name;
+                const conflict = this.findSiblingNameConflict(nextName, nextParent, this._keyOf(bs));
+                if (conflict) throw this._nameConflictError(conflict, nextParent, nameChanged ? 'name' : 'move');
+            }
+        }
         if (typeof meta.name === 'string') bs.name = meta.name;
         if (typeof meta.iconName === 'string') bs.iconName = meta.iconName;
         if (typeof meta.description === 'string') bs.description = meta.description;
@@ -234,6 +303,10 @@ class BookshelfManager {
         if (!this.canSetParent(internalId, targetParent)) {
             return { valid: false, reason: '循環参照になるため移動できません' };
         }
+        const conflict = this._moveConflict(bs, targetParent);
+        if (conflict) {
+            return { valid: false, code: 'name-conflict', reason: this.nameConflictMessage(conflict.name, targetParent, 'move') };
+        }
         const subtree = this._subtreeBookSet(internalId);
         const chain = this._parentChainShelves(targetParent);
         const targetShelves = [];
@@ -257,6 +330,8 @@ class BookshelfManager {
         if (!this.canSetParent(internalId, targetParent)) {
             throw new Error('循環参照になるため移動できません');
         }
+        const conflict = this._moveConflict(bs, targetParent);
+        if (conflict) throw this._nameConflictError(conflict, targetParent, 'move');
         bs.parent = targetParent;
         bs.lastUpdated = new Date().toISOString();
 

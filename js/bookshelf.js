@@ -5738,6 +5738,16 @@ class VirtualBookshelf {
             description: descriptionInput.value.trim()
         };
 
+        // 同じ親の下の同名は、書き換える前に止める (イシュー#745)。フォームは開いたまま・何も保存しない
+        // (空の名前と同じ出し方)。作る＝(名前, 選んだ親)。編集＝名前が変わる時は (新しい名前, 今の親)、親が変わる時は
+        // (新しい名前, 新しい親)。移す確認でキャンセルすると今の親に残るので、両方を保つ。manager 側の throw は保険。
+        const conflictMsg = this._shelfFormNameConflict(name, parentId);
+        if (conflictMsg) {
+            toast(conflictMsg);
+            nameInput.focus();
+            return;
+        }
+
         let _emitCreated = null, _emitUpdated = null;
         let _reparented = false;
         try {
@@ -5791,6 +5801,28 @@ class VirtualBookshelf {
         if (changed && _reparented) changedShelves.push(...this.bookshelfManager.getDescendants(this.bookshelfManager._keyOf(changed)));
         this._applyShelfChangeToDetail(changedShelves);
         this.closeBookshelfForm();
+    }
+
+    // 本棚フォームの保存前の同名の検査 (イシュー#745)。止める時は文言、通す時は null。
+    _shelfFormNameConflict(name, parentId) {
+        const bm = this.bookshelfManager;
+        const editing = this.currentEditingBookshelf;
+        if (!editing) {
+            const c = bm.findSiblingNameConflict(name, parentId || null);
+            return c ? bm.nameConflictMessage(c.name, parentId || null, 'name') : null;
+        }
+        const editKey = bm._keyOf(editing);
+        const norm = bm.constructor.normalizeShelfName;
+        const nameChanged = norm(name) !== norm(editing.name);
+        if (nameChanged) {
+            const c = bm.findSiblingNameConflict(name, editing.parent, editKey);
+            if (c) return bm.nameConflictMessage(c.name, editing.parent, 'name');
+        }
+        if (this._normalizeParentKey(parentId) !== this._normalizeParentKey(editing.parent)) {
+            const c = bm.findSiblingNameConflict(name, parentId || null, editKey);
+            if (c) return bm.nameConflictMessage(c.name, parentId || null, nameChanged ? 'name' : 'move');
+        }
+        return null;
     }
 
     // 本棚そのものの変更 (名前・アイコンの変更・作成・親の付け替え・削除) を、開いている本の詳細の本棚セクションへ反映する

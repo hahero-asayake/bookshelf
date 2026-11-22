@@ -174,3 +174,99 @@ describe('短文メモ (ALL 1段。本棚 override は廃止 — 2026-06-20)', (
         expect(mgr.resolveRating('ZZZ')).toBe(0);
     });
 });
+
+describe('同じ親の下の同名を止める (イシュー#745: 一意なのは親を含めた階層パス)', () => {
+    const names = (parentKey) => app.userData.bookshelves.filter(b => !b.isSpecial && (b.parent === parentKey)).map(b => b.name);
+
+    it('作る: 同じ親の下に同名は throw (code=name-conflict・文言に親のパス)。本棚は増えない', () => {
+        const before = app.userData.bookshelves.length;
+        let err;
+        try { mgr.create({ name: '子', slug: 'dup', parent: 'p1' }); } catch (e) { err = e; }
+        expect(err && err.code).toBe('name-conflict');
+        expect(err.message).toBe('「親」の下に「子」という本棚がすでにあります。別の名前にしてください');
+        expect(app.userData.bookshelves.length).toBe(before);
+        expect(app.userData.bookOrder.dup).toBeUndefined();
+    });
+    it('作る: 別の親の下なら同名でも作れる', () => {
+        const bs = mgr.create({ name: '子', slug: 'other-child', parent: 'o1' });
+        expect(bs.parent).toBe('o1');
+        expect(mgr.getPathLabel('o1')).toBe('別系統');
+    });
+    it('作る: トップ階層同士は parent 未指定・allId・"all"・ALL の slug を同じに数える', () => {
+        for (const parent of [undefined, 'allid', 'all']) {
+            expect(() => mgr.create({ name: '親', slug: `top-${parent}`, parent }), String(parent)).toThrow('トップ階層に「親」という本棚がすでにあります。別の名前にしてください');
+        }
+        // 既存の parent が null (旧データ) でもトップ階層として数える
+        app.userData.bookshelves.find(b => b.id === 'other').parent = null;
+        expect(() => mgr.create({ name: '別系統', slug: 'top-null' })).toThrow(/トップ階層に/);
+    });
+    it('作る: 親を slug で参照する子と internalId で参照する子を同じ親として数える', () => {
+        app.userData.bookshelves.push({ id: 'slugchild', name: 'スラッグ参照の子', parent: 'parent', books: [], notes: {} });
+        expect(() => mgr.create({ name: 'スラッグ参照の子', slug: 'x1', parent: 'p1' })).toThrow(/name-conflict|すでにあります/);
+        expect(() => mgr.create({ name: '子', slug: 'x2', parent: 'parent' })).toThrow('「親」の下に「子」という本棚がすでにあります。別の名前にしてください');
+    });
+    it('比べ方: 全角・前後の空白・大文字小文字の違いは同じと見る (保存する名前は変えない)', () => {
+        app.userData.bookshelves.push({ id: 'sf', internalId: 'sf1', name: 'SF', parent: 'p1', books: [], notes: {} });
+        for (const n of ['ＳＦ', ' SF ', 'sf', 'Sf']) {
+            expect(() => mgr.create({ name: n, slug: `sf-${encodeURIComponent(n)}`, parent: 'p1' }), n).toThrow('「親」の下に「SF」という本棚がすでにあります。別の名前にしてください');
+        }
+        expect(BookshelfManager.normalizeShelfName('　ＳＦ　')).toBe('sf');
+        const ok = mgr.create({ name: 'SF2', slug: 'sf2', parent: 'p1' });
+        expect(ok.name).toBe('SF2');
+    });
+    it('名前を変える: 兄弟の名前にすると throw し、名前もアイコンも変わらない。自分自身は数えない', () => {
+        app.userData.bookshelves.push({ id: 'sib', internalId: 's1', name: '兄弟', parent: 'p1', books: [], notes: {}, iconName: 'library' });
+        expect(() => mgr.update('s1', { name: '子', iconName: 'star' })).toThrow('「親」の下に「子」という本棚がすでにあります。別の名前にしてください');
+        const s = mgr.getById('s1');
+        expect(s.name).toBe('兄弟');
+        expect(s.iconName).toBe('library');
+        // 自分の名前の大文字小文字だけ変える・同じ名前で保存するのは通る
+        expect(mgr.update('c1', { name: '子' }).name).toBe('子');
+        expect(mgr.update('s1', { name: ' 兄弟 ' }).name).toBe(' 兄弟 ');
+    });
+    it('既存の同名 (読み込んだデータ): 名前を変えない編集は通り、片方の名前を別にすれば通る', () => {
+        app.userData.bookshelves.push({ id: 'dup2', internalId: 'c2', name: '子', parent: 'p1', books: [], notes: {}, iconName: 'library' });
+        mgr.rebuildReverseIndex();
+        expect(names('p1')).toEqual(['子', '子']);
+        expect(mgr.update('c2', { name: '子', iconName: 'star', description: '説明' }).iconName).toBe('star');
+        expect(mgr.update('c1', { iconName: 'book' }).iconName).toBe('book');
+        expect(mgr.update('c2', { name: '子2' }).name).toBe('子2');
+        expect(names('p1')).toEqual(['子', '子2']);
+    });
+    it('update(parent): 移す先に同名があれば throw し親は変わらない。別の名前と一緒なら通る', () => {
+        app.userData.bookshelves.push({ id: 'oc', internalId: 'oc1', name: '子', parent: 'o1', books: [], notes: {} });
+        expect(() => mgr.update('oc1', { parent: 'p1' })).toThrow('「親」の下に「子」という本棚がすでにあるため移動できません。先にどちらかの名前を変えてください');
+        expect(mgr.getById('oc1').parent).toBe('o1');
+        expect(mgr.update('oc1', { name: '別の子', parent: 'p1' }).parent).toBe('p1');
+    });
+    it('previewReparent は valid:false と文言・reparent は throw し、親も本も変わらない', () => {
+        app.userData.bookshelves.push({ id: 'oc', internalId: 'oc1', name: '子', parent: 'o1', books: ['A3'], notes: {} });
+        mgr.rebuildReverseIndex();
+        const msg = '「親」の下に「子」という本棚がすでにあるため移動できません。先にどちらかの名前を変えてください';
+        expect(mgr.previewReparent('oc1', 'p1')).toEqual({ valid: false, code: 'name-conflict', reason: msg });
+        const parentBooks = [...mgr.getById('p1').books];
+        let err;
+        try { mgr.reparent('oc1', 'p1'); } catch (e) { err = e; }
+        expect(err && err.code).toBe('name-conflict');
+        expect(err.message).toBe(msg);
+        expect(mgr.getById('oc1').parent).toBe('o1');
+        expect(mgr.getById('p1').books).toEqual(parentBooks);
+        // トップ階層へ移す時も数える (トップに「親」がある)
+        app.userData.bookshelves.push({ id: 'p-dup', internalId: 'pd1', name: '親', parent: 'o1', books: [], notes: {} });
+        expect(mgr.previewReparent('pd1', null)).toMatchObject({ valid: false, reason: 'トップ階層に「親」という本棚がすでにあるため移動できません。先にどちらかの名前を変えてください' });
+        // 衝突しなければ今までどおり移せる (移す先は slug 参照の本棚)
+        expect(mgr.previewReparent('c1', 'noiid').valid).toBe(true);
+        mgr.reparent('c1', 'noiid');
+        expect(mgr.getById('c1').parent).toBe('noiid');
+    });
+    it('親が変わらない移動 (同じ親への reparent) は既存の同名でも止めない', () => {
+        app.userData.bookshelves.push({ id: 'dup2', internalId: 'c2', name: '子', parent: 'p1', books: [], notes: {} });
+        expect(mgr.previewReparent('c2', 'p1').valid).toBe(true);
+        expect(() => mgr.reparent('c2', 'p1')).not.toThrow();
+    });
+    it('特殊本棚 (ALL) は数えない・ALL の名前の変更は検査しない', () => {
+        expect(mgr.create({ name: 'すべての本', slug: 'all-name' }).name).toBe('すべての本');
+        expect(mgr.update('allid', { name: 'すべての本' }).name).toBe('すべての本');
+        expect(mgr.findSiblingNameConflict('すべての本', null, 'all-name')).toBeNull();
+    });
+});
