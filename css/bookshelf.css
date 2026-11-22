@@ -8461,7 +8461,8 @@ body.select-mode .drag-handle { display: none; }
     }
     .modal[data-ov-narrow="fit"] > .modal-content > * { flex: none; }
     .modal[data-ov-narrow="fit"] > .modal-content > .modal-body,
-    .modal[data-ov-narrow="fit"] > .modal-content > [data-ov-scroll] { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    .modal[data-ov-narrow="fit"] > .modal-content > [data-ov-scroll] { flex: 1 1 auto; min-height: 0; overflow-y: auto; align-content: start; }
+    /* align-content:start = 全画面に広げた時 (キーボード中) に grid/flex の本文の行が縦に引き伸ばされない (前の全画面の形と同じ詰め方) */
     .modal[data-ov-narrow="fit"] > .modal-content > .modal-close { position: absolute; top: 20px; right: 12px; }
     .modal[data-ov-narrow="fit"][data-ov-kb-open].show { align-items: stretch; }
     .modal[data-ov-narrow="fit"][data-ov-kb-open] > .modal-content { height: 100%; max-height: 100%; border-radius: 0; }
