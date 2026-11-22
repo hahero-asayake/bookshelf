@@ -7,6 +7,7 @@
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { test, expect } from './helpers/test-base.js';
+import { openArtSheetInternal } from './helpers/art-editor.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { stubFolderPickerForTest, connectLocalFolderForTest } from './helpers/gate-local.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, waitForHubFileContainsForTest } from './helpers/gate-hub.js';
@@ -187,6 +188,8 @@ test.describe('ローカル (フォルダ)', () => {
         const toEdit = page.locator('#art-mode-edit');
         if (await toEdit.isVisible()) await toEdit.click();
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        // イシュー#770 (#759-1・2): PC の編集状態では引き出しを出さない＝中身を見るためにシートで開く (共通の開き方)
+        await openArtSheetInternal(page);
         await expect(page.locator('.art-drawer-item[data-asin="B0GATEIMP1"]')).toBeVisible({ timeout: 10_000 });
         await expect(page.locator('.art-drawer-item[data-asin="B0M662ADD1"]')).toBeVisible();
     });

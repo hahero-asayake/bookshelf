@@ -357,6 +357,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
 
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
 
         await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);
@@ -381,6 +383,8 @@ test.describe('記事エディタ: プレビュー (PublishArticleGenerator を�
         await page.click('#art-new');
         await addBlock(page, 'shelf', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
 
@@ -863,6 +867,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
         await addBlock(page, 'shelf', 'last');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
         await flushArtSaveAndRemote(page);
         await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
 
@@ -1136,6 +1142,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '評価つき記事');
         await addBlock(page, 'shelf', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click(); // B000000001 (rating:5)
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
         await flushArtSaveAndRemote(page);
@@ -1453,6 +1461,8 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await page.fill('#art-title', '更新前のタイトル');
         await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
         await publishViaPanel(page);
         // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1756,6 +1766,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+        await closeArtSheet(page); // イシュー#770 (#759-1): PC の真ん中のシートの幕を閉じてから行の操作へ
     }
 
     test('本棚ブロックの既定密度はコンパクトリスト (1行1冊・34pxサムネ)', async ({ page }) => {
@@ -1816,6 +1827,7 @@ test.describe('記事エディタ: 表示密度改善 (B, イシュー#29)', () 
         await expect(drawerItems).toHaveCount(2);
 
         // 絞り込んだ状態から本棚ブロックを追加し、同じ本を複数回配置できる (多重配置, ADR-058 §11.1)
+        await closeArtSheet(page); // イシュー#770 (#759-1): PC の真ん中のシートの幕が＋を覆う＝閉じてから足す (足すとまた開く)
         await addBlock(page, 'shelf', 'first');
         await drawerItems.first().click();
         await drawerItems.first().click();
@@ -1943,6 +1955,7 @@ test.describe('本棚ブロックの操作整理 (イシュー#55)', () => {
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+        await closeArtSheet(page); // イシュー#770 (#759-1): PC の真ん中のシートの幕を閉じてから行の操作へ
     }
 
     test('各行の短/長トグルは.art-chip-toggleで、オン時に aria-pressed と太字・背景色 (色以外の手掛かり) が付く (イシュー#170: .art-icon-toggle廃止・chip-toggleへ統一)', async ({ page }) => {
@@ -2075,6 +2088,7 @@ test.describe('記事エディタ: 短/長トグルの説明+メモ内容 (イ�
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+        await closeArtSheet(page); // イシュー#770 (#759-1): PC の真ん中のシートの幕を閉じてから行の操作へ
     }
 
     test('キーボードフォーカスでツールチップが表示され、実際のメモ内容が入る。Escで閉じる', async ({ page }) => {
@@ -2186,6 +2200,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         const drawerItems = page.locator('#art-drawer-list .art-drawer-item');
         const count = Math.min(n, await drawerItems.count());
         for (let i = 0; i < count; i++) { await drawerItems.nth(i).click(); }
+        await closeArtSheet(page); // イシュー#770 (#759-1): PC の真ん中のシートの幕を閉じてから行の操作へ
     }
 
     test('アイテムの星トグルはオン→保存→リロード→オンのまま (articles.json 永続化)', async ({ page }) => {

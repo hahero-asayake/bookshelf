@@ -11,6 +11,7 @@ import { bootAppForTest } from './helpers/gate-setup.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest, failHubWritesForTest, hubStoreForTest, publicBaseOf, HUB_BASE } from './helpers/gate-hub.js';
 import { shortenSyncRetryForTest } from './helpers/gate-sync-retry.js';
 import { openSettingsByClick } from './helpers/settings.js';
+import { openArtSheetInternal, closeArtSheet } from './helpers/art-editor.js';
 import fs from 'node:fs';
 
 test.use({ viewport: { width: 390, height: 844 }, actionTimeout: 10_000 });
@@ -530,7 +531,10 @@ test.describe('(g) PC 幅 1280×800 (イシュー#682)', () => {
         await expectFitsBelowBand(page, '#publish-pages-modal');
         // プレビュー (size full) はブロックが1つ以上ある時だけ開く (_artPreview)。引き出しの「表示中のN冊を追加」で本棚ブロックを作り、
         // その他 →「表示幅を切り替えて見る」(#art-width-preview) から開く
+        // イシュー#770 (#759-1・2): PC の編集状態は引き出しを出さない＝シートで開いて足し、幕を閉じてから次を押す (共通の開き方)
+        await openArtSheetInternal(page);
         await page.locator('#art-drawer-add-all').click();
+        await closeArtSheet(page);
         await expect(page.locator('#art-canvas .art-block, #art-blocks .art-block').first()).toBeAttached();
         await expectClickReaches(page, page.locator('#art-more-btn'));
         await expectClickReaches(page, page.locator('#art-width-preview'));

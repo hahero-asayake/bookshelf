@@ -158,6 +158,8 @@ export async function canvasBlockBlankPosition(block, { side = 'left' } = {}) {
  *   textMode: 'form' (既定・#276 step3以降の型=全画面EasyMDE) | 'inline' (旧キャンバスその場入力=.art-cv-ta)
  */
 export async function addBlock(page, type, pos = 'last', { textMode = 'form' } = {}) {
+    // イシュー#770 (#759-1): PC (#art-edit-view.is-six) の引き出しは真ん中のシート＝開いたままだと幕が「完了」・＋を覆う。先に閉じる
+    if (await page.evaluate(() => !!document.getElementById('art-edit-view')?.classList.contains('is-six'))) await closeArtSheet(page);
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
     const edit = page.locator('#art-mode-edit');
@@ -361,7 +363,9 @@ export async function editArtBlockViaMenu(page, blockIdx) {
 export async function openArtSheet(page) {
     const isOpen = await page.evaluate(() => !!document.getElementById('art-drawer')?.classList.contains('is-open'));
     if (isOpen) return;
-    if (!(await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches))) return;
+    // イシュー#770 (#759-1): PC でも #art-edit-view.is-six の時はシート (真ん中) で開く＝900px以下と同じ道
+    if (!(await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches
+        || !!document.getElementById('art-edit-view')?.classList.contains('is-six')))) return;
     await canvas(page).locator('.art-shelf-add').last().click();
 }
 

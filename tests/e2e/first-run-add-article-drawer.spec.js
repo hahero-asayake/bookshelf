@@ -11,6 +11,7 @@
 // なる)。止めた後は gate-hub.js の模擬へ回す (gate-hub.js 本体は変えない)。アプリの内部は読まない。
 // 直す前の版で赤・main で緑になることは scripts/verify/633-results.md に残した。
 import { test, expect } from './helpers/test-base.js';
+import { openArtSheetInternal } from './helpers/art-editor.js';
 import { createHubStateForTest, seedHubLoginForTest, mockHubForTest, hubStoreForTest, waitForHubStartupForTest } from './helpers/gate-hub.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { openSettingsByClick } from './helpers/settings.js';
@@ -82,5 +83,7 @@ test('空のハブを初期化した直後、読込が終わる前に手で足�
     const toEdit = page.locator('#art-mode-edit');
     if (await toEdit.isVisible()) await toEdit.click();
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    // イシュー#770 (#759-1・2): PC の編集状態では引き出しを出さない＝中身を見るためにシートで開く (共通の開き方)
+    await openArtSheetInternal(page);
     await expect(page.locator(`.art-drawer-item[data-asin="${BOOK.asin}"]`)).toBeVisible({ timeout: 10_000 });
 });

@@ -11,6 +11,7 @@
 // 保存の後に、bookshelves.json と all.json の「すべての本」の id が同じであることも確かめる (書き出しは all.json に
 // _storage.allInternalId、bookshelves.json にメモリの本棚の id を書くため、揃えないと食い違う)。
 import { test, expect } from './helpers/test-base.js';
+import { openArtSheetInternal } from './helpers/art-editor.js';
 import { createHubStateForTest, seedHubLoginForTest, mockHubForTest, hubStoreForTest, waitForHubStartupForTest } from './helpers/gate-hub.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
 import { stubFolderPickerForTest, waitForLocalFileContainsForTest } from './helpers/gate-local.js';
@@ -47,6 +48,8 @@ async function expectBookInDrawer(page, asin) {
     const toEdit = page.locator('#art-mode-edit');
     if (await toEdit.isVisible()) await toEdit.click();
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+    // イシュー#770 (#759-1・2): PC の編集状態では引き出しを出さない＝中身を見るためにシートで開く (共通の開き方)
+    await openArtSheetInternal(page);
     await expect(page.locator(`.art-drawer-item[data-asin="${asin}"]`)).toBeVisible({ timeout: 10_000 });
 }
 

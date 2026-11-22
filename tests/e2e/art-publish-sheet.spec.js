@@ -5,6 +5,7 @@
 // webkit project (iPhone 13) でもスマホ幅の件を流す (playwright.config.js の testMatch)。
 import { test, expect } from './helpers/test-base.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
+import { closeArtSheet } from './helpers/art-editor.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest } from './helpers/gate-hub.js';
 
 const TITLE = '#742 公開パネルのシート';
@@ -45,6 +46,8 @@ async function setup(page, { touch, flag } = {}) {
     await press(page, page.locator('#art-add-sheet [data-block-type="shelf"]'), touch);
     await expect(drawerBook(page)).toBeVisible();
     await press(page, drawerBook(page), touch);
+    // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝幕が「完了」を覆うので先に閉じる (共通の閉じ方)
+    if (!touch) await closeArtSheet(page);
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await press(page, done, touch);
     await expect(editView(page)).toHaveAttribute('data-art-mode', 'edit');

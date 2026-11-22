@@ -3,7 +3,7 @@
 //  ハブ API (usage / billing / account) は route モック。意地悪ステップ (二度押し・リロード) を混ぜる。
 //  ローンチ判定: この1本が緑 = 主要導線が通しで壊れていない。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, openArtPreview as openPreview } from './helpers/art-editor.js';
+import { canvas, addBlock, closeArtSheet, openArtPreview as openPreview } from './helpers/art-editor.js';
 import { openSettingsByClick } from './helpers/settings.js';
 import { mockSyncReady } from './helpers/sync.js';
 
@@ -159,6 +159,8 @@ test('クリティカルパス: 初回→取込→公開→課金→退会 が�
         await expect(page.locator('#art-edit-view')).toBeVisible();
         await addBlock(page, 'shelf', 'first');
         await page.locator('#art-drawer-list .art-drawer-item').first().click();
+        // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+        await closeArtSheet(page);
         await expect(page.locator('.art-shelf-item')).toHaveCount(1);
         await openPreview(page);
         await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);

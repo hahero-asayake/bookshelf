@@ -5,7 +5,7 @@
 // 操作は locator.tap()/click() とマウスのみ。結果はキャンバスの DOM (ブロックの中の書名) で確かめる。
 // 委譲の優先順位: ⋯ピル・つまみのドラッグはそれぞれの操作になり、ブロックの編集は開かない。
 import { test, expect } from './helpers/test-base.js';
-import { addBlock, canvas, canvasBlockBlankPosition, waitForCanvasBlockEditReady, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
+import { addBlock, canvas, canvasBlockBlankPosition, waitForCanvasBlockEditReady, waitForArtTextFsEditor, setArtTextFsEditorValue, closeArtSheet } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -64,13 +64,16 @@ async function newArticle(page, touch) {
 async function pickAndDone(page, touch, title, opener) {
     const drawerItem = page.locator('#art-drawer-list .art-drawer-item', { hasText: title }).first();
     // 本ブロックは「選ぶ/選び直す」を押した時だけ差し替え対象になる (#166)。本棚は狭幅で引き出しが閉じていれば開く (PCは常駐)
-    const narrow = await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches);
+    // イシュー#770 (#759-1): PC でも #art-edit-view.is-six の時は引き出しはシート＝狭幅と同じ道
+    const narrow = await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches || !!document.getElementById('art-edit-view')?.classList.contains('is-six'));
     const drawerOpen = await page.locator('#art-drawer.is-open').count();
     // イシュー#770 ② artBookBlock (#767-c): 「＋ ここに追加→本」で足すと引き出しは自分で開いている＝開いていれば押さない
     if ((opener === '.art-book-pick' && !drawerOpen) || (narrow && !drawerOpen)) await press(page, page.locator(`#art-edit-view ${opener}:visible`).first(), touch);
     if (narrow) await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
     await expect(drawerItem).toBeInViewport();
     await press(page, drawerItem, touch);
+    // イシュー#770 (#759-1): PC の真ん中のシートは幕が「完了」を覆う＝本棚ブロックで開いたままなら先に閉じる (共通の閉じ方)
+    if (!touch) await closeArtSheet(page);
     await press(page, page.locator('#art-fs-done'), touch);
     await expect(editView(page)).toHaveAttribute('data-art-mode', 'edit');
 }

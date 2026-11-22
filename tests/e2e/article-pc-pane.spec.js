@@ -74,20 +74,30 @@ async function openTextBlock(page) {
 const box = async (loc) => { const b = await loc.boundingBox(); expect(b).not.toBeNull(); return b; };
 const articleWidth = (page) => page.evaluate(() => document.getElementById('art-canvas-frame').contentDocument.querySelector('.article').getBoundingClientRect().width);
 
-for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+// イシュー#770 (#759-1・2): 既定 (artSix on) では編集状態に右の列 (引き出し) を出さない。
+// 1280 は '0' (前の形＝右の列あり) を残す1件、1440 は新しい形を見る (決め5 (a))。
+const sixOff = (page) => page.evaluate(() => localStorage.setItem('bookshelf.flag.artSix', '0'));
+for (const vp of [{ width: 1280, height: 800, six: false }, { width: 1440, height: 900, six: true }]) {
     test.describe(`記事エディタ PC ${vp.width}幅 (イシュー#278)`, () => {
-        test.use({ viewport: vp });
+        test.use({ viewport: { width: vp.width, height: vp.height } });
 
         test('本文幅860: 閲覧状態と公開ページが1px単位で一致し、編集状態でも860が入る', async ({ page, context }) => {
             const errors = await bootApp(page);
+            if (!vp.six) await sixOff(page);
             await newArticleWithText(page);
             // 編集状態 (引き出しの横) でも 860 が入る＝モーダルが広がっている
             await expect.poll(() => articleWidth(page), { timeout: 15000 }).toBe(860);
             const modal = await box(page.locator('#publish-pages-modal .art-modal-content'));
             expect(modal.width).toBeGreaterThan(1080);
-            const side = await box(page.locator('.art-side'));
             const frame = await box(page.locator('#art-canvas-frame'));
-            expect(frame.x + frame.width).toBeLessThanOrEqual(side.x);
+            if (vp.six) {
+                // 新しい形: 編集状態に引き出しの列は無く、記事はモーダルの中に収まる
+                await expect(page.locator('.art-side')).toBeHidden();
+                expect(frame.x + frame.width).toBeLessThanOrEqual(modal.x + modal.width);
+            } else {
+                const side = await box(page.locator('.art-side'));
+                expect(frame.x + frame.width).toBeLessThanOrEqual(side.x);
+            }
 
             // 閲覧状態
             await page.click('#art-mode-done');
@@ -115,8 +125,10 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
 
         test('文章ブロックは右ペインで開き、引き出しの列を置き換え、左の記事が入力に追従する', async ({ page }) => {
             const errors = await bootApp(page);
+            if (!vp.six) await sixOff(page);
             await newArticleWithText(page);
-            const sideBefore = await box(page.locator('.art-side'));
+            // 新しい形 (six) は編集状態に引き出しの列が無い＝ペインはモーダルの右端の列に来る
+            const sideBefore = vp.six ? await box(page.locator('#publish-pages-modal .art-modal-content')) : await box(page.locator('.art-side'));
             await openTextBlock(page);
             const pane = await box(page.locator('#art-blocks .EasyMDEContainer'));
             const frame = await box(page.locator('#art-canvas-frame'));
@@ -125,7 +137,8 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             expect(frame.x + frame.width).toBeLessThanOrEqual(pane.x);
             // 引き出しは隠れ、ペインはその列 (右端) に来る
             await expect(page.locator('.art-side')).toBeHidden();
-            expect(Math.abs((pane.x + pane.width) - (sideBefore.x + sideBefore.width))).toBeLessThanOrEqual(1);
+            if (vp.six) expect(pane.x + pane.width).toBeLessThanOrEqual(sideBefore.x + sideBefore.width);
+            else expect(Math.abs((pane.x + pane.width) - (sideBefore.x + sideBefore.width))).toBeLessThanOrEqual(1);
             // 対象ブロックを左の記事で枠表示
             await expect(canvas(page).locator('section[data-art-idx="0"].art-cv-fs-target')).toHaveCount(1);
             // 入力に追従
@@ -143,7 +156,8 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
             await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
             await expect(canvas(page).locator('h2', { hasText: '見出しです' })).toHaveCount(1);
             await expect(canvas(page).locator('h2', { hasText: '追従テスト見出し' })).toHaveCount(0);
-            await expect(page.locator('.art-side')).toBeVisible();
+            if (vp.six) await expect(page.locator('.art-side')).toBeHidden();
+            else await expect(page.locator('.art-side')).toBeVisible();
             // ESC = 完了 (確定)
             await openTextBlock(page);
             await setArtTextFsEditorValue(page, '## ESCで確定\n\n本文');

@@ -2,7 +2,7 @@
 // フィクスチャを localStorage に注入して起動する (同期フォルダ不要の localStorage フォールバック経路)。
 // ⚠️ 大量冊数の描画テストは書かない (ヘッドレス + content-visibility の制約、COMMON 参照)
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, openArtPreview as openPreview } from './helpers/art-editor.js';
+import { canvas, addBlock, closeArtSheet, openArtPreview as openPreview } from './helpers/art-editor.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -180,6 +180,8 @@ test('公開: 記事を新規作成→本棚ブロックに本を配置→プレ
     // ブロックを追加 → 本棚。引き出し (all 本棚) から本を1冊配置する
     await addBlock(page, 'shelf', 'first');
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
+    // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+    await closeArtSheet(page);
     await expect(page.locator('.art-shelf-item')).toHaveCount(1);
     await openPreview(page);
     await expect(page.locator('#pp-preview-modal')).toHaveClass(/show/);

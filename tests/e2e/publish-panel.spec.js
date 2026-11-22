@@ -2,7 +2,7 @@
 // 記事ストアはメモリ差し替え (publish-article-editor.spec.js の bootApp と同じ型)。公開先・プラン・GitHub 連携は
 // localStorage の bookshelf_sync、自分のタグは userData.settings.affiliateId で与え、画面の実操作で確かめる。
 import { test, expect } from './helpers/test-base.js';
-import { canvas, addBlock, flushArtSave, getArtDraft, openArtPreview as openPreview } from './helpers/art-editor.js';
+import { canvas, addBlock, closeArtSheet, flushArtSave, getArtDraft, openArtPreview as openPreview } from './helpers/art-editor.js';
 import { mockSyncReady } from './helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -82,6 +82,8 @@ async function newArticleWithBook(page, title = '公開テスト') {
     // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無くなった。1冊入れるだけなら本棚ブロックで足りる。
     await addBlock(page, 'shelf', 'last');
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
+    // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+    await closeArtSheet(page);
     await leaveForm(page);
 }
 
@@ -104,6 +106,8 @@ test('公開前チェック: 必須 (タイトル・本1冊以上) が欠ける�
     await page.fill('#art-title', 'タイトルあり');
     await addBlock(page, 'shelf', 'last'); // X3(イシュー#528): 「本」単体ブロックの新規追加入口は無い
     await page.locator('#art-drawer-list .art-drawer-item').first().click();
+    // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
+    await closeArtSheet(page);
     await openPanel(page);
     await expect(page.locator('#art-pub-go')).toBeEnabled();
     // 必須が揃えば 1行に畳む (推奨＝タグ無しは警告だけで公開は止めない)

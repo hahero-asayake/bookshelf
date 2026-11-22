@@ -154,6 +154,11 @@ test('ESC/枠外クリック: ブロックの⋯メニューは自分だけ閉�
     await frame.locator('.art-cv-ins-btn').last().click();
     await page.click('#art-add-sheet [data-block-type="shelf"]');
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+    // イシュー#770 (#759-1): PC でも本棚ブロックを足すと引き出しのシートが開く＝ESC はまずシートだけ閉じる
+    await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#art-drawer')).not.toHaveClass(/is-open/);
+    await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
     await page.keyboard.press('Escape'); // 全画面の ESC = 完了 (ブロックは残る)
     await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
     await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
