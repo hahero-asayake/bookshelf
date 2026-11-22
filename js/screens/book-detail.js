@@ -555,7 +555,7 @@ class _BookDetailMethods {
 
                 <div class="bd-actions">
                     <a class="amazon-link" href="${esc(amazonUrl)}" target="_blank" rel="noopener">${ico('external-link')}Amazon</a>
-                    ${this._artWriteEntryOn() ? `<a href="#" class="amazon-link bd-write-article" data-asin="${esc(book.asin)}">${ico('pencil')}この本で記事を書く</a>` : ''}
+                    ${(typeof this._artWriteEntryOn === 'function' && this._artWriteEntryOn()) ? `<a href="#" class="amazon-link bd-write-article" data-asin="${esc(book.asin)}">${ico('pencil')}この本で記事を書く</a>` : ''}
                     ${isEditMode ? `<button class="btn btn-warning exclude-btn" data-asin="${esc(book.asin)}" type="button" title="「全ての本」から除外">${ico('ban')}除外</button>` : ''}
                 </div>
             </div>
