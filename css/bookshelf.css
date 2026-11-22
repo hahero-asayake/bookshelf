@@ -995,6 +995,11 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     padding: 0.75rem 1rem 0.5rem;
     background: var(--bg);
 }
+/* イシュー#770 ④ detailTopbarFloat (#768 の8c): 閲覧の時だけ帯の行をなくし、鉛筆を .bd の右上 (表紙の段の右上) に重ねる。
+   頁と一緒に流れる。編集中 (.bd.editing) は上の sticky のまま＝✓ (保存) が付いてくる (#453 の決裁)。class は描く時に付ける */
+.bd.is-topbar-float { position: relative; }
+.bd.is-topbar-float > .bd-topbar { position: absolute; top: 0; right: 0; left: auto; width: auto; height: 0; min-height: 0;
+    padding: 0; margin: 0; background: transparent; border: 0; box-shadow: none; z-index: 2; }
 /* ::after でタップ領域だけ44pxに拡張 (見た目は変えない・#225 P7 残り・イシュー#258・ui-standards §2-24) */
 .bd-edit-toggle {
     position: relative;

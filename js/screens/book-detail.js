@@ -525,7 +525,7 @@ class _BookDetailMethods {
         const showBelow = !overlayOnDetail;
 
         modalBody.innerHTML = `
-            <div class="bd${isEditMode ? ' editing' : ''}">
+            <div class="bd${isEditMode ? ' editing' : ''}${!isEditMode && this._detailTopbarFloatOn() ? ' is-topbar-float' : ''}">
                 <div class="bd-topbar">
                     <button class="bd-edit-toggle${isEditMode ? ' is-active' : ''} ${isEditMode ? 'cancel-edit-btn' : 'edit-mode-btn'}" data-asin="${esc(book.asin)}" title="${isEditMode ? '編集を終える' : '編集モードに切替'}" type="button">
                         ${window.renderIcon(isEditMode ? 'check' : 'pencil', { size: 14 })}
@@ -555,6 +555,7 @@ class _BookDetailMethods {
 
                 <div class="bd-actions">
                     <a class="amazon-link" href="${esc(amazonUrl)}" target="_blank" rel="noopener">${ico('external-link')}Amazon</a>
+                    ${this._artWriteEntryOn() ? `<a href="#" class="amazon-link bd-write-article" data-asin="${esc(book.asin)}">${ico('pencil')}この本で記事を書く</a>` : ''}
                     ${isEditMode ? `<button class="btn btn-warning exclude-btn" data-asin="${esc(book.asin)}" type="button" title="「全ての本」から除外">${ico('ban')}除外</button>` : ''}
                 </div>
             </div>
@@ -585,6 +586,15 @@ class _BookDetailMethods {
         
         // 本棚セクションの「追加」と × (書き換えた後も同じ関数でつなぎ直す・イシュー#620)
         this._bindDetailShelvesEvents(modalBody);
+
+        // イシュー#770 ⑤ writeEntry (#758 の本の詳細の入口): この本の本ブロック1つの新しい記事を開く
+        const writeBtn = modalBody.querySelector('.bd-write-article');
+        if (writeBtn) {
+            writeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this._artStartFromBook(writeBtn.dataset.asin);
+            });
+        }
 
         const excludeBtn = modalBody.querySelector('.exclude-btn');
         if (excludeBtn) {

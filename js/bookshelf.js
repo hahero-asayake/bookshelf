@@ -925,6 +925,11 @@ class VirtualBookshelf {
         });
 
         // 公開ページ管理を開く (静的SSG, ADR-030)。左ペインの「公開」ボタンから (設定からは分離)
+        const shelfWriteBtn = document.getElementById('shelf-write-article');
+        if (shelfWriteBtn) shelfWriteBtn.addEventListener('click', () => {
+            if (shelfWriteBtn.dataset.shelfKey) this._artStartFromShelf(shelfWriteBtn.dataset.shelfKey);
+        });
+
         const publishBtn = document.getElementById('sidebar-publish');
         if (publishBtn) {
             publishBtn.addEventListener('click', () => {
@@ -5186,6 +5191,12 @@ class VirtualBookshelf {
             descEl.style.display = desc ? '' : 'none';
         }
         if (changed || !this._marqueeInitDone) { this._marqueeInitDone = true; this._refreshMarquees(); }
+        // イシュー#770 ⑤ writeEntry (#768 の9): 帯の右の道具の列の末尾の「この本棚で記事を書く」。すべての本 (isSpecial) では出さない
+        const writeBtn = document.getElementById('shelf-write-article');
+        if (writeBtn) {
+            writeBtn.hidden = !(bs && !bs.isSpecial && typeof this._artWriteEntryOn === 'function' && this._artWriteEntryOn());
+            writeBtn.dataset.shelfKey = writeBtn.hidden ? '' : (bs.internalId || bs.id);
+        }
     }
 
     /**

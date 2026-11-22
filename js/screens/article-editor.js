@@ -3072,6 +3072,60 @@ class _ArticleEditorMethods {
         return this._artFlagOn('writeEntry', ART_WRITE_ENTRY_DEFAULT);
     }
 
+    // ⑤ writeEntry: 新しい記事を開いて編集の状態にする (本の詳細と本棚の画面の入口で共通)。
+    // 公開の一覧を開くのは左ナビの「公開」(#sidebar-publish) と同じ道 (#760: 設定等の面を閉じてから開く)。
+    // srcKey があれば記事の元の本棚にする (すべての本は除く・_artOnDrawerShelfChange と同じ欄)。
+    async _artStartNewArticle(srcKey) {
+        if (typeof this._closePageFacesForNav === 'function') this._closePageFacesForNav();
+        await this.openPublishPagesModal();
+        this._artOpenEditor(null);
+        if (this._artMode !== 'edit') this._artSetMode('edit');
+        const src = srcKey ? this.bookshelfManager.getById(srcKey) : null;
+        if (src && !src.isSpecial) this._artDraft.sourceShelfId = src.internalId || src.id;
+        return !!this._artDraft;
+    }
+
+    // 本棚の画面が出ている時の、その本棚の key (すべての本・本棚の画面でない時は null)
+    _artShelfViewKey() {
+        const v = document.getElementById('view-bookshelf');
+        if (!v || !v.getClientRects().length || getComputedStyle(v).display === 'none') return null;
+        const id = this.currentBookshelf;
+        const s = id ? (this.bookshelfManager.getBySlug?.(id) || this.bookshelfManager.getById(id)) : null;
+        return s && !s.isSpecial ? (s.internalId || s.id) : null;
+    }
+
+    // ⑤ 本の詳細「この本で記事を書く」(#758・entry.js と同じ結果): 本ブロック1つ (show は全部 false) の新しい記事。
+    // 本棚の画面から開いた詳細なら、その本棚を記事の元の本棚にする
+    async _artStartFromBook(asin) {
+        if (!asin || this._artStartBusy) return;
+        this._artStartBusy = true;
+        try {
+            const srcKey = this._artShelfViewKey();
+            if (!(await this._artStartNewArticle(srcKey))) return;
+            this._artDraft.blocks = [{ id: PublishArticleStore._newId('blk'), type: 'book', asin, show: { shortMemo: false, longMemo: false, rating: false } }];
+            this._artRenderBlocks();
+            this._artRenderDrawer();
+            this._artScheduleSave();
+        } finally { this._artStartBusy = false; }
+    }
+
+    // ⑤ 本棚の画面の角ボタン「この本棚で記事を書く」(#768 の 9・shelf754 と同じ結果): その本棚の本を全部入れた本棚ブロック1つ。
+    // 51冊以上の確認は出さない (モックのまま・②承認)。引き出しがシートなら閉じる
+    async _artStartFromShelf(key) {
+        if (!key || this._artStartBusy) return;
+        this._artStartBusy = true;
+        try {
+            if (!(await this._artStartNewArticle(key))) return;
+            this._artInsertBlock('shelf', 0);
+            const search = document.getElementById('art-drawer-search');
+            if (search) search.value = '';
+            this._artDrawerQuery = '';
+            const asins = this._artDrawerFilteredAsins();
+            if (asins.length) this._artAddBooksToShelf(asins);
+            if (this._artDrawerAsSheet()) this._artCloseSheet();
+        } finally { this._artStartBusy = false; }
+    }
+
     // 切り替えの class を編集画面に付ける (CSS はこの class の時だけ効く)。モードを替える所から呼ぶ。
     _artApplyFlagClasses() {
         const view = document.getElementById('art-edit-view');
