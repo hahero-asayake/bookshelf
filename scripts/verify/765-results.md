@@ -105,3 +105,59 @@
 | #sidebar-search を押す spec：ux-p1-nav・ux-quickwins・gate/j4-memo（chromium）、char/exits・char/settings-shelves-nav（char-390〜char-1920 の6端末） | **63 passed・234 skipped**（skip は char の spec が自分の幅以外で飛ばす分）。j4-memo（J4-1〜3）と char-1024 の P10 の2本（#sidebar-search から手動追加）は緑を個別に確かめた | — |
 
 ログ：`~/kuroko/_vault-work/765/repro/after/bnm-chromium.log`・`bnm-webkit.log`・`others.log`。gate/j4-memo は既定の chromium project で流した（gate-webkit では流していない＝step3 の e2e-diff の表で見る）。
+
+## §3 lint・単体・全件比較・前後の画像（step3・push の前）
+
+### lint・単体
+
+- `npm run lint`：12 本中 0 本失敗（esc-focus.spec.js を直した後に流し直しても同じ）。
+- `npm test`：1298 passed・2 todo（1300）。
+
+### e2e-diff-main（base＝origin/main @ 81057c1＝#764 着地後、work＝HEAD 59bd09e）
+
+1回目（`~/kuroko/_vault-work/765/e2ediff/report.md`）：
+
+| 表 | E2E | Unit | 画像比較 |
+|---|---|---|---|
+| 新しく落ちた | **1件**（下） | 0 | 差分 0件 / 54件 |
+| 新しく通った | 0 | 0 | — |
+| 両方で落ちた | 0 | 0 | — |
+
+- E2E 件数：base 1282 passed・592 skipped（249秒）、work 1288 passed・1 failed・592 skipped（255秒）。work の +7 は R33〜R35。
+- PC 幅の行（chromium 1280 等・webkit の PC 幅・char-1024〜1920）は新しく落ちた件が0＝**PC 幅の差は0**。画像比較も差分0（見た目の部品は変えていない）。
+- 新しく落ちた1件：`esc-focus.spec.js` の「引き出しの上の面を Esc で閉じる (幅900px以下 Chromium) > Esc で上の面だけ閉じ、引き出しは残る→戻る1回でアプリの外へ出ない→進むで再び開く」（390・3回流し直して3回とも赤＝揺れでない）。
+  - 理由：引き出しを開いたまま ⌘K（Ctrl+K）を押して「引き出しの上にパレットを積む」場面を作っていた。#765 で ⌘K も `_openPaletteFromUi` を通り、引き出しを閉じてから開く（承認どおり・17表 R33k）ので、パレットは引き出しの上に積まなくなった＝この spec の前提が今回の変更で無くなった。
+  - 直し：spec の意図（引き出しの上に積んだ面を Esc で閉じると、その面だけ閉じて引き出しは残る・戻る1回でアプリの外へ出ない・進むで再び開く）は残し、引き出しの上に積む面を「本棚を追加」のフォーム（#sidebar-add-bookshelf・#bookshelf-form-modal＝このイシューの対象外で今も引き出しの上に積む）に替えた。⌘K の側は back-nav-matrix の R33k が見る。chromium で `--repeat-each=3` 12 passed・3 skipped（skip の中身は見ていない）。
+- 2回目（spec を直した後・`~/kuroko/_vault-work/765/e2ediff2/report.md`）：下の「2回目の結果」に書く。
+
+### 前後の画像（390・chromium と webkit iPhone 13）
+
+台本 `~/kuroko/_vault-work/765/repro/shots765.mjs`。直す前＝`git archive origin/main`（81057c1）を `repro/src-before/` へ展開した物、直した後＝この worktree。
+
+| 場面 | 直す前 | 直した後 |
+|---|---|---|
+| 01 引き出し→検索を開いた直後 | 引き出しの上にパレット（drawer=true） | 引き出しは閉じてパレットだけ |
+| 02 その後の戻る | 引き出しに戻る（drawer=true） | ホームに戻る |
+| 03 検索→「設定を開く」の後 | 設定が出ずホームのまま（hash 空） | 設定が開いたまま（#/settings） |
+| 04 その後の戻る | アプリの外（about:blank）＝撮れない | ホームに戻る |
+
+画像：`~/kuroko/_vault-work/765/repro/before/shots/{c390,w390}/`・`repro/after/shots/{c390,w390}/`（ログは各 `shots.log`）。
+
+### ハヘロ向けの頁
+
+https://homelab.tail83cfaa.ts.net:8444/bookshelf/6/4/引き出しの検索の戻り先/
+（変わる所1行・直した不具合1行・「PC 幅では変わらない」1行・前後の画像（webkit iPhone 13）・iPhone で試す手順）
+
+### 17表
+
+vault の 17_戻る挙動テスト表_20261014.md §2-1 の R32 の後に R33〜R35 の行を足した（R33 に「R22 の人が押せる入口（R22 の E2E は下のナビを evaluate で押している）」）。commit は自動バックアップに任せる。
+
+#### 2回目の結果（esc-focus.spec.js を直した後・`~/kuroko/_vault-work/765/e2ediff2/report.md`・exit 0）
+
+| 表 | E2E | Unit | 画像比較 |
+|---|---|---|---|
+| 新しく落ちた | **0** | 0 | 差分 0件 / 54件 |
+| 新しく通った | 0 | 0 | — |
+| 両方で落ちた | 0 | 0 | — |
+
+work の E2E：1289 passed・0 failed・0 flaky・592 skipped。PC 幅の差も0。
