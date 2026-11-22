@@ -65,3 +65,51 @@
 - 記事エディタで #art-edit-bottom-bar に隠れる物は見つかりませんでした。②の申し送り（「隠れる物が見つかった時だけ直す範囲に入れる」）に従い、step2 では **#art-edit-bottom-bar に印を付けず、tests/e2e/anchored-menu-floor.spec.js も足しません**。印を付けるのは #mobile-bottom-nav だけです。記事エディタのメニューの位置は変わりません（記事エディタを開いている間、ナビは inert なので数えない）。
 - 直さない候補：
   - 引き出しの本棚の選択（#art-drawer-shelf-popover）が、スマホでシートの transform のため画面の外に出る件（#673 の別件・今回の直しでは救えない）
+
+## §2 直し（step2）と後の実測
+
+### 直し（c8a8b23）
+
+- `js/bookshelf.js` の `_placeAnchoredMenu` を次のように直した。
+  - 下限 floor を決める。画面の高さと、`[data-anchored-floor]` のバーの top のうち小さい方を使う。
+  - バーを数えないのは3つの時：inert の中にある時、getClientRects が空か高さが 0 の時、visibility が visible でない時。
+  - 下の空きは floor − アンカーの下端で測る。
+  - 挟む時の下限も floor − 高さ − 8 にする。
+  - 中をスクロールできる物を詰める時は、下が 120px 以上なら下へ詰める（#749 のまま）。下が足りず上が 120px 以上なら、上へ詰めて is-up にする（今回足した）。詰めた値には、#749 の data-anchored-fit の印を付ける。
+- `index.html`：
+  - `#mobile-bottom-nav` に `data-anchored-floor` を付けた。
+  - js/bookshelf.js の `?v=` を 2026112249 から 2026112252 に上げた。check:version は OK。
+- **計画からの変更：`#art-edit-bottom-bar` には印を付けていない。**
+  - 理由：§1 で、記事のバーに隠れるメニューが0件だった。測った記事エディタのメニューは z 1300 で、バー（z 1050）より上に重なる。
+  - ②の申し送り「隠れる物が見つかった時だけ直す範囲に入れる」に従った。
+  - 結果として、記事エディタの中ではメニューの位置は何も変わらない。記事エディタの間はナビが inert なので、ナビも数えない。
+- `docs/ui-standards.md` §2-12：下の常設バーの1行と、変更履歴の1行を足した。
+- `tests/e2e/shelf-path-label.spec.js`：H2 と「(f) 切り替え off：一括」で使う `expectBulkPopoverInView` に、次の assert を足した。
+  - ナビに箱がある時は、吹き出しの下端 ≤ ナビの上端 − 8。
+  - H2 では、一覧を末尾まで送り、最後の行に `click({ trial: true })` をかける。force なしで受け取りの検査をし、押した後の処理は走らせない（押すと吹き出しが閉じ、続く H4 の操作ができなくなるため）。
+  - 直す前の版（191fd91）では、スマホ390 の2件（H2・off）が赤だった（下端 836 > 786）。PC の2件は緑だった。
+  - 直した後は、chromium 12件・webkit（BACKNAV_WEBKIT=1）12件がすべて緑だった。
+
+### 後の実測（同じ足場・`_vault-work/752/measure/after/`）
+
+| 場面 | 構成 | 前：top / bottom（max-height） | 後：top / bottom（max-height） | 下限（ナビの top） | 末尾の最後の行（後） | 当たる物・trial（後） |
+|---|---|---|---|---|---|---|
+| 一括の本棚に追加 | 390 chromium | 204 / 836（632） | **204 / 786（582）** | 794 | 728 / 772 | 最後の行・ok（前はナビ・押せない） |
+| 一括の本棚に追加 | 390 webkit | 439 / 836（397） | **439 / 786（347）** | 794 | 728 / 772 | 最後の行・ok（前はナビ・押せない） |
+| 一括の本棚に追加 | PC1280 | 169 / 489（320） | 169 / 489（320） | 箱なし | 431 / 475 | 最後の行・ok（変化なし） |
+| その他 #art-more-menu | 390 両方・PC | 48 / 194・40 / 186 | 同じ | ナビ＝inert（数えない） | - | 最後の行（変化なし） |
+| ブロックの⋯ #art-blk-menu（先頭・一番下） | 390 両方・PC | 226 / 387・333 / 494・207 / 368・347 / 509 | 同じ | ナビ＝inert | - | 最後の行・ok（変化なし） |
+| 見出しメニュー .mde-heading-menu | 390 両方・PC | 104 / 228・108 / 232 | 同じ | ナビ＝inert | - | 最後の行（変化なし） |
+| 引き出しの本棚の選択 #art-drawer-shelf-popover | 390 chromium・webkit | 922 / 993・926 / 997（画面の外） | 同じ（直していない・#673 の別件） | ナビ＝inert | - | 前と同じ |
+| 引き出しの本棚の選択 | PC1280 | 140 / 211 | 同じ | 箱なし | - | 最後の行・ok |
+| 吹き出し #art-item-tooltip・ブロック追加 .art-add-menu | 3構成 | 開けない（§1） | 開けない | - | - | - |
+
+- スマホの一括の吹き出しは、下端がナビの上端の 8px 上（786）で止まった。末尾まで送った最後の行（728〜772）は、中心が最後の行に当たり、force なしで押せる。
+- PC と記事エディタの場面は、前と後で座標が1px も変わっていない。
+
+### 検査と関連 E2E
+
+- npm run lint：12本中0本失敗。npm test：1289件緑（86ファイル）。check:version --range=origin/main..HEAD：OK。
+- 関連 E2E を chromium で流した。対象は14本：shelf-path-label・book-detail-shelf-add・library-count-refresh・gate/j3-2-create-shelf・char/settings-shelves-nav・art-canvas-tap-edit・exclude-custom-shelf・article-pc-pane・mde-toolbar-icons・publish-panel・status-bar-over-faces・standard-ops・back-nav-matrix・publish-article-editor（project の指定なし）。
+  - 結果は 404件緑・210件 skip（char の他の幅）・赤0（3.2分）。ログは `_vault-work/752/related-e2e.log`。
+- webkit（BACKNAV_WEBKIT=1）では shelf-path-label を流した。12件すべて緑。
