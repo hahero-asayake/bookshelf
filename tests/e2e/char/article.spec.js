@@ -21,7 +21,7 @@
 // 撤去した(is-singleの撤去自体は#530の改善として残す=1冊でも本棚ブロックの見た目は変えない)。
 // 下記のうち「本」関連のテスト(旧A-a)だけ#539で期待値を書き直した(タイトルに#539を付記)。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, editArtBlockForSetup } from '../helpers/art-editor.js';
+import { addBlock, closeArtSheet, canvas, getArtBlocks, setArtDraftField, waitForArtTextFsEditor, setArtTextFsEditorValue, editArtBlockForSetup } from '../helpers/art-editor.js';
 import { mockSyncReady } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +71,8 @@ async function openPublishPagesModal(page) {
 }
 
 async function leaveForm(page) {
+    // イシュー#770(#759-1): PC でも引き出しが真ん中のシートで開き、幕が「完了」を覆う＝先にシートを閉じる。
+    if ((page.viewportSize()?.width ?? 0) > 900) await closeArtSheet(page);
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
 }

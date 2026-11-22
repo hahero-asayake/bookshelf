@@ -12,7 +12,7 @@
 // 「新規作成→タイトル入力→本棚ブロック→本3冊選択→公開パネルで送信→URLが出るまで」の粒度に
 // 合わせてここでは1クリック/1入力=1手で統一して数え直す)。
 import { test, expect } from '../helpers/test-base.js';
-import { addBlock } from '../helpers/art-editor.js';
+import { addBlock, closeArtSheet } from '../helpers/art-editor.js';
 import { mockSyncReady, stubScheduleSync } from '../helpers/sync.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,8 @@ async function openPublishPagesModal(page, ops) {
 }
 
 async function leaveForm(page, ops, label = '全画面編集の「完了」') {
+    // イシュー#770(#759-1): PC でも引き出しが真ん中のシートで開き、幕が「完了」を覆う＝先にシートを閉じる手が1つ増える。
+    if ((page.viewportSize()?.width ?? 0) > 900 && await page.locator('#art-drawer.is-open').count()) { await closeArtSheet(page); ops.push('引き出しのシートを閉じる'); }
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) { await done.click(); ops.push(label); }
 }

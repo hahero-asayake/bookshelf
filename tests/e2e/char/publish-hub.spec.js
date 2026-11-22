@@ -90,6 +90,8 @@ async function openPublishPagesModal(page) {
 }
 
 async function leaveForm(page) {
+    // イシュー#770(#759-1): PC でも引き出しが真ん中のシートで開き、幕が「完了」を覆う＝先にシートを閉じる。
+    if ((page.viewportSize()?.width ?? 0) > 900) await closeArtSheet(page);
     const done = page.locator('#art-fs-done');
     if (await done.isVisible()) await done.click();
 }
