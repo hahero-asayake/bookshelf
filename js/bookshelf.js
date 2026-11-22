@@ -65,9 +65,10 @@ body.art-cv-pc .art-cv-ops{top:-32px}
 .art-cv-ins{min-height:44px;display:flex;align-items:center;justify-content:center;margin:0 0 8px}
 .art-cv-ins-btn{min-height:44px;min-width:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--acc);background:var(--bg);color:var(--acc);display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700}
 /* イシュー#442 07項目(②承認済み採用): 「ここに追加」はホバー/フォーカス時だけ表示(常時点線を解消)。
-   既存の.book-item:hover .drag-handleと同型。ホバー不可(タッチ)端末は従来どおり常時表示のまま(安全側)。 */
+   既存の.book-item:hover .drag-handleと同型。ホバー不可(タッチ)端末は従来どおり常時表示のまま(安全側)。
+   イシュー#770 (#759-3): 切り替え① artSix が on (body.art-cv-six) の時は隠さず常に見せる。 */
 @media (hover:hover) and (pointer:fine){
-.art-cv-ins-btn{opacity:0;transition:opacity .12s}
+body:not(.art-cv-six) .art-cv-ins-btn{opacity:0;transition:opacity .12s}
 .art-cv-ins:hover .art-cv-ins-btn,.art-cv-ins:focus-within .art-cv-ins-btn{opacity:1}
 }
 .art-cv-empty{min-height:64px;padding-top:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-sizing:border-box}

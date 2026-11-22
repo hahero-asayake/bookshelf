@@ -798,6 +798,7 @@ class _ArticleEditorMethods {
         this._artMode = newMode;
         const view = document.getElementById('art-edit-view');
         if (view) view.dataset.artMode = this._artMode;
+        this._artApplyFlagClasses();
         this._artCloseBlkMenu();
         this._artCloseAddSheet();
         this._artCloseLookSheet();
@@ -923,6 +924,8 @@ class _ArticleEditorMethods {
             const pcReorder = window.viewport.isWide(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
             // PC はつまみと⋯をブロック枠の上辺の線の上に乗せる (下端=枠線・左右対称)。先頭の見出しの文字と重ならない (イシュー#278 ②指摘)
             doc.body.classList.toggle('art-cv-pc', pcReorder);
+            // イシュー#770 (#759-3): ① artSix が on なら「＋ ここに追加」をホバーしなくても常に見せる (ART_CANVAS_CHROME_CSS が body の class で分ける)
+            doc.body.classList.toggle('art-cv-six', this._artSixOn());
             const svg = (name) => (typeof icon === 'function' ? icon(name, { size: 16 }) : '');
             const mkInserter = (index) => {
                 const row = doc.createElement('div');
@@ -2885,7 +2888,7 @@ class _ArticleEditorMethods {
     // _artCloseSheet() 側は分岐させない (ビュー切替時の自動クローズ等・900px以下専用の複数箇所から
     // 呼ばれており、900px超に広げるとユーザーが畳んだ状態を意図せず上書きしてしまうため)。
     _artOpenSheet() {
-        if (!this._artIsDrawerNarrow()) { this._artSetDrawerUserCollapsed(false); return; }
+        if (!this._artDrawerAsSheet()) { this._artSetDrawerUserCollapsed(false); return; }
         const side = document.getElementById('art-drawer');
         const scrim = document.getElementById('art-sheet-scrim');
         if (!side) return;
@@ -2893,7 +2896,7 @@ class _ArticleEditorMethods {
         if (side.classList.contains('is-open')) return;
         side.classList.add('is-open');
         if (scrim) scrim.classList.add('is-open');
-        this._surface().open('art-sheet', { close: (o) => this._artCloseSheet(o), isMobile: () => this._artIsDrawerNarrow(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
+        this._surface().open('art-sheet', { close: (o) => this._artCloseSheet(o), isMobile: () => this._artDrawerAsSheet(), extra: { articleId: this._artEditingId, menuBlockId: this._artActiveShelfBlockId } });
     }
 
     _artCloseSheet({ fromHistory = false } = {}) {
@@ -2909,6 +2912,55 @@ class _ArticleEditorMethods {
 
     _artIsDrawerNarrow() {
         return window.viewport.isNarrow(); // 境目はjs/ui/viewport.js(900px)に一本化(イシュー#505)
+    }
+
+    // イシュー#770 (#759-1): 本の引き出しをシート (is-open＋幕＋Surface 'art-sheet') の道で開くか。
+    // 900px以下は今までどおり。① artSix が on の時は PC でも同じ道で開き、CSS (#art-edit-view.is-six) が画面の真ん中に出す。
+    // _artIsDrawerNarrow は幅の判定のまま残す (畳む状態の記憶等、幅で分けている所はそのまま)。
+    _artDrawerAsSheet() {
+        return this._artIsDrawerNarrow() || this._artSixOn();
+    }
+
+    // イシュー#770: 公開エディタ一式の切り替え (#757 の _detailShelfTreeOn と同じ型・21_UIUX方針の「承認までは前の形に戻せる」)。
+    // 全員を前の形に戻す時は各 *_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.<名>' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    _artFlagOn(name, def) {
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.' + name);
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return def;
+    }
+
+    // ① artSix: #759 の6つ (PC の引き出しを真ん中に・編集状態では出さない・ここに追加を常に・本棚の一括の段・空のブロックの案内・表のボタン)
+    _artSixOn() {
+        const ART_SIX_DEFAULT = true;
+        return this._artFlagOn('artSix', ART_SIX_DEFAULT);
+    }
+
+    // ② artBookBlock: #767 (本ブロックの選ぶ・替えるボタン・引き出しの自動開閉) と本ブロックの短文メモ (#758)
+    _artBookBlockOn() {
+        const ART_BOOK_BLOCK_DEFAULT = true;
+        return this._artFlagOn('artBookBlock', ART_BOOK_BLOCK_DEFAULT);
+    }
+
+    // ③ artLookList: #769 (記事の「見た目」の選択肢を縦一列に)
+    _artLookListOn() {
+        const ART_LOOK_LIST_DEFAULT = true;
+        return this._artFlagOn('artLookList', ART_LOOK_LIST_DEFAULT);
+    }
+
+    // ⑤ writeEntry: 本の詳細「この本で記事を書く」・本棚の画面の角ボタン (#758・#768 の 9)
+    _artWriteEntryOn() {
+        const ART_WRITE_ENTRY_DEFAULT = true;
+        return this._artFlagOn('writeEntry', ART_WRITE_ENTRY_DEFAULT);
+    }
+
+    // 切り替えの class を編集画面に付ける (CSS はこの class の時だけ効く)。モードを替える所から呼ぶ。
+    _artApplyFlagClasses() {
+        const view = document.getElementById('art-edit-view');
+        if (view) view.classList.toggle('is-six', this._artSixOn());
     }
 
     // 900px超限定のユーザー操作による畳み (イシュー#168)。棚が空のとき自動で隠す

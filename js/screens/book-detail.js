@@ -133,6 +133,19 @@ class _BookDetailMethods {
         return DETAIL_SHELF_TREE_DEFAULT;
     }
 
+    // イシュー#770 (#768 の 8c): 閲覧中は本の詳細の帯 (.bd-topbar) の行をなくし、鉛筆を表紙の段の右上に重ねるかの切り替え。
+    // 型は _detailShelfTreeOn と同じ。全員を前の形に戻す時は DETAIL_TOPBAR_FLOAT_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.detailTopbarFloat' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    _detailTopbarFloatOn() {
+        const DETAIL_TOPBAR_FLOAT_DEFAULT = true;
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.detailTopbarFloat');
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return DETAIL_TOPBAR_FLOAT_DEFAULT;
+    }
+
     // 前の形 (チップ) の行の中身 (イシュー#757 で _detailShelvesBodyHtml から字を変えずに移した)。
     _detailShelfChipsHtml(book, isEditMode, contextInternalId) {
         const esc = BookshelfEscape.escapeHtml;

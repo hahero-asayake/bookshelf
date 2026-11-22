@@ -8390,6 +8390,29 @@ body.select-mode .drag-handle { display: none; }
     /* 右ペイン (幅416px) のツールバーはスマホと同じ7ボタンに絞る (_mdeToolbarConfig compact)。
        詰め方 (flex: 1 1 0 で1段に収める) は .editor-toolbar.mde-iconized 側で共通化済み (イシュー#281)。 */
 }
+/* イシュー#770 (#759 の1・2・切り替え① artSix＝#art-edit-view.is-six・_artApplyFlagClasses が付ける)。900px超だけ。
+   1：PC の右の列をやめ、引き出しは開いた時だけ画面の真ん中のシートで出す (開く道はスマホと同じ _artOpenSheet → is-open＋幕＋Surface 'art-sheet')。
+      transform は使わない (#756：transform のある面の中では fixed の吹き出しの基準が面になってずれる)＝inset:0＋margin:auto で真ん中に置く。
+      文章の全画面 (右の欄 26rem・.art-col は width:auto) は列を真ん中にしない (真ん中にすると記事の列が中身の幅に縮む)。
+   2：編集状態 (data-art-mode=edit) には引き出しを出さない。本・本棚のブロックの編集 (form) の時だけ出る。 */
+@media (min-width: 901px) {
+    #art-edit-view.is-six:not([data-art-mode="form"][data-art-fs-type="text"]) .art-wrap { grid-template-columns: 1fr; }
+    #art-edit-view.is-six:not([data-art-mode="form"][data-art-fs-type="text"]) .art-wrap .art-col { justify-self: center; }
+    #art-edit-view.is-six .art-side { display: none; }
+    #art-edit-view.is-six .art-side.is-open {
+        display: flex; position: fixed; inset: 0; margin: auto; transform: none;
+        width: min(760px, calc(100vw - 4rem)); height: min(80vh, 820px); max-height: none;
+        border-radius: 14px; box-shadow: 0 18px 48px rgba(0, 0, 0, .35); z-index: 1060;
+    }
+    #art-edit-view.is-six .art-sheet-scrim {
+        display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .45);
+        z-index: 1055; opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    }
+    #art-edit-view.is-six .art-sheet-scrim.is-open { opacity: 1; pointer-events: auto; }
+    #art-edit-view.is-six .art-sheet-close { display: inline-flex; align-items: center; }
+    #art-edit-view.is-six .art-drawer-collapse-btn { display: none; }
+    /* 2 は上の .is-six .art-side { display:none } が編集状態も覆う (開いた時＝is-open だけ出る)。編集状態で開いたシートまで消すと幕だけが残るので消さない。 */
+}
 /* 本棚/本ブロックの全画面編集 ('form'): 上端は キャンセル/題/完了 だけ。中身は対象ブロック1つと本の引き出し */
 .art-fs-hd { display: none; }
 #art-edit-view[data-art-mode="form"] .art-fs-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px;
