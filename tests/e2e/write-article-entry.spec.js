@@ -41,7 +41,10 @@ async function openShelf(page, name) {
         await page.locator('[data-mobile-nav="shelves"]').click();
         await expect(page.locator('body')).toHaveClass(/drawer-open/);
     }
-    await page.locator('#sidebar-bookshelf-tree .tree-node', { hasText: name }).first().click();
+    const node = page.locator('#sidebar-bookshelf-tree .tree-node', { hasText: name }).first();
+    // 子の本棚は「すべて」の下に畳まれている時がある＝開く
+    if (!(await node.isVisible())) await page.locator('#sidebar-bookshelf-tree .tree-node.lv0 .tree-toggle').first().click();
+    await node.click();
     await expect(page.locator('#current-bookshelf-title')).toContainText(name);
     await expect(page.locator('#bookshelf .book-item').first()).toBeVisible();
 }
