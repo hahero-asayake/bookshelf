@@ -163,6 +163,10 @@ async function runCase(page, kind) {
 const top5Items = (page) => page.locator('#dashboard .widget-reading-stats .rs-shelves li');
 // 1行は <span>名前</span><strong>冊数</strong>。期待値の「名前:冊数」を行の文字 (名前と冊数が続いたもの) に直して、上から順に比べる
 const top5Texts = (list) => list.map((s) => s.replace(':', ''));
+// イシュー#746: 子の本棚は「親 / 子」と親からのパスで出る (長いと根の側が「… / 」に省かれる)。
+// この spec は冊数と本棚の対応を見るので、名前の欄は最後の段 (本棚自身の名前) で比べる
+const top5Self = (page) => page.evaluate(() => Array.from(document.querySelectorAll('#dashboard .widget-reading-stats .rs-shelves li'))
+    .map((li) => ((li.querySelector('span')?.textContent || '').split(' / ').pop()) + (li.querySelector('strong')?.textContent || '')));
 const homeTotal = (page) => page.locator('#dashboard .rs-total');
 const sidebarAllCount = (page) => page.locator('#sidebar-bookshelf-tree [data-bookshelf-id="all"] .bsr-count');
 const sidebarShelfCount = (page, slug) => page.locator(`#sidebar-bookshelf-tree [data-bookshelf-id="${slug}"] .bsr-count`);
@@ -170,7 +174,7 @@ const shelfCard = (page, slug) => page.locator(`#dashboard .bookshelf-preview[da
 
 // ホームの集計と左ツリーを期待値と比べる。1か所が違っても止めずに残りの観測点も見る (expect.soft)
 async function expectHome(page, c) {
-    await expect.soft(top5Items(page), '本棚別 Top5').toHaveText(top5Texts(c.top5));
+    await expect.configure({ soft: true }).poll(() => top5Self(page), { message: '本棚別 Top5' }).toEqual(top5Texts(c.top5));
     for (const [slug, n] of Object.entries(c.counts)) {
         await expect.soft(shelfCard(page, slug).locator('.book-count'), `本棚ハイライトのカード ${slug}`).toHaveText(`${n}冊`);
         await expect.soft(sidebarShelfCount(page, slug), `左ツリーの冊数 ${slug}`).toHaveText(String(n));
@@ -207,7 +211,7 @@ test.describe('PC 幅 (1280x800)', () => {
 
         test(`S1 ホームを表示したまま${c.label}と、その場でホームの本棚別 Top5 と本棚の冊数が今の本棚に合う`, async ({ page }) => {
             await bootApp(page);
-            await expect(top5Items(page)).toHaveText(top5Texts(TOP5_BEFORE));
+            await expect.poll(() => top5Self(page)).toEqual(top5Texts(TOP5_BEFORE));
             await runCase(page, kind);
             await settleOnHome(page, kind);
             await expectHome(page, c);
@@ -215,7 +219,7 @@ test.describe('PC 幅 (1280x800)', () => {
 
         test(`S2 本の詳細を開いたまま${c.label}と、その場でホームの本棚別 Top5 と本棚の冊数が今の本棚に合う`, async ({ page }) => {
             await bootApp(page);
-            await expect(top5Items(page)).toHaveText(top5Texts(TOP5_BEFORE));
+            await expect.poll(() => top5Self(page)).toEqual(top5Texts(TOP5_BEFORE));
             await page.locator('#dashboard .widget-book-cell').first().click();
             await expect(page.locator('#book-detail-pane .bd-title')).toBeVisible();
             await runCase(page, kind);
@@ -225,7 +229,7 @@ test.describe('PC 幅 (1280x800)', () => {
 
         test(`S3 本棚の一覧を表示したまま${c.label}と、ホームへ戻った時に本棚別 Top5 と本棚の冊数が今の本棚に合う`, async ({ page }) => {
             await bootApp(page);
-            await expect(top5Items(page)).toHaveText(top5Texts(TOP5_BEFORE));
+            await expect.poll(() => top5Self(page)).toEqual(top5Texts(TOP5_BEFORE));
             // 消す本棚・移す本棚とは関係のないテスト本棚を開いておく
             await expandTree(page);
             await treeNode(page, 'fixshelf').locator('.bsr-label').click();
@@ -245,7 +249,7 @@ test.describe('390 幅 (スマホ)', () => {
 
     test('S1 ホームから本棚フォームで親を付け替えると、その場でホームの本棚別 Top5 と本棚の冊数が今の本棚に合う', async ({ page }) => {
         await bootApp(page);
-        await expect(top5Items(page)).toHaveText(top5Texts(TOP5_BEFORE));
+        await expect.poll(() => top5Self(page)).toEqual(top5Texts(TOP5_BEFORE));
         await page.locator('#mobile-bottom-nav [data-mobile-nav="shelves"]').click();
         await expect(page.locator('body')).toHaveClass(/drawer-open/);
         await runCase(page, 'form');

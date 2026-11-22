@@ -81,7 +81,8 @@ function addCases(label) {
 
         await expect(chips(page)).toHaveCount(3);
         await expect(chips(page).filter({ hasText: '子の本棚' })).toHaveCount(1);
-        await expect(chips(page).filter({ hasText: '親の本棚' })).toHaveCount(1);
+        // イシュー#746: 子のチップは「親の本棚 / 子の本棚」と親からのパスで出る＝親の名前を含む。親のチップだけを数える
+        await expect(chips(page).filter({ hasText: '親の本棚', hasNotText: '子の本棚' })).toHaveCount(1);
         await expect(option(page, 'e2e-child')).toHaveCount(0);
         await expect(option(page, 'e2e-parent')).toHaveCount(0);
 
