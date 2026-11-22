@@ -129,3 +129,10 @@
   - 原因：step4 の exclude-custom-shelf と同じ、意図した変化。子のカードの名前が「親の本棚 / 子の本棚」と親からのパスで出るため、「子の本棚を含み親の本棚を含まない」で子のカードを見分けられなくなった。
   - 直し：パスを本棚自身の名前に戻してから見分ける（exclude-custom-shelf と同じ直し方）。直した後、この spec は7件緑。
 - 結論：work だけ落ちる物は、意図した変化の1件だけ。直したので、残りは0件。
+
+## step6（ハヘロ向けの前後の頁）
+
+- 頁：_vault-work/746/hahero/本棚の階層パス前後20261122/index.html（画像 img/pb・pa＝スマホの前後・cb・ca＝PCの前後・off＝切り替え off）。ダッシュボードの URL は https://homelab.tail83cfaa.ts.net:8444/bookshelf/5/3/本棚の階層パス前後20261122/ （curl で頁と画像5枚が200）。
+- 撮り方：#743 の足場（mini.mjs・now.mjs）を _vault-work/746/harness/ へ写した。PORT を 8146、配信元を SNAP_DIR（前＝snap/before＝bee101c の git archive・後＝snap/after＝HEAD の git archive）にした。切り替え off は SHELF_FLAG=0 で撮った。差し込み（inject/label.js）は使っていない。同じ見本・同じ操作・同じ順で撮った。
+- 撮れた場面：スマホは前後とも20場面（H1〜H8・H3b・M1〜M7・M3b・L1〜L3・U1）。PC は前後とも、頁に載せた5場面（M1・M2・M3・M3b・M4）。off は3場面（M1・H3・M3）。PC の H3（本の詳細からの追加の通知）は、#743 と同じ理由で載せていない（足場で撮れない場面・文はスマホと同じ）。
+- 「前」は bee101c（#745 が入る前の main）で撮った。今回の変更だけを前後で見せるため。
