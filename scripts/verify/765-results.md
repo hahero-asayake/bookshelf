@@ -68,3 +68,40 @@
 実行したコマンド：
 - `PORT=8165 PLAYWRIGHT_BASE_URL=http://localhost:8165 npx playwright test tests/e2e/back-nav-matrix.spec.js -g "イシュー#765|R22"`（chromium）
 - 同じ条件に `BACKNAV_WEBKIT=1` と `--project=webkit` を足して webkit
+
+## §2 直した（step2）
+
+### 直したこと（b5d26f6）
+
+- js/bookshelf.js に `_openPaletteFromUi()` を _openPalette の直前に足した。中身は `this._closeDrawer(); this._openPalette();`（同じ同期の塊）。引き出しが開いていれば閉じ、その段をパレットへ引き継ぐ（nav-state の push→replace）。_closeDrawer は開いていなければ何もしない＝PC 幅は変わらない。
+- 人の操作の入口4つをここへ集めた：引き出しの「検索」#sidebar-search・ヘッダーの #palette-trigger・⌘K/Ctrl+K の開く側・下のナビの「検索」（`_closeDrawer(); _openPalette();` の2行を置き換えて1か所に）。
+- 進むの開き直し（reopen の表の 'command-palette'）は _openPalette を直に呼ぶまま（開き直しの最中に go(-1) を出さない）。⌘K の閉じる側・本棚を追加（#sidebar-add-bookshelf）は触っていない。入口ごとの分岐は足していない。
+- index.html の `js/bookshelf.js?v=` を 2026112301 → 2026112302。`npm run check:version -- --range=origin/main..HEAD` は OK。
+
+### 直した後の段（390・chromium と webkit iPhone 13 で同じ）
+
+台本は §1 と同じ（`repro/after/c390.log`・`w390.log`。2つは h の数を除いて同じ）。
+
+| 操作（引き出しの「検索」から） | 段 | 引き出し | 画面 | nav.log |
+|---|---|---|---|---|
+| 「検索」 | [command-palette] | **閉** | ホーム＋パレット | close:drawer:go → open:command-palette:**replace** |
+| →戻る | [] | 閉 | ホーム | （無し） |
+| →Esc／枠外 | [] | 閉 | ホーム | close:command-palette:go |
+| →本棚を選ぶ | [] | 閉 | **本棚（#/bookshelf/fixshelf）** | navigate:null:replace |
+| 　→戻る | [] | 閉 | **ホーム** | — |
+| →「設定を開く」 | [settings-modal] | 閉 | **設定（#/settings）** | close:command-palette:go → openRoute3:settings-modal:replace |
+| 　→戻る | [] | 閉 | **ホーム** | — |
+
+下のナビの「検索」（ホームから）の行は §1 と同じ（open:command-palette:push 以降が上と同じ）。引き出しの検索は、引き出しの段をパレットへ引き継ぐ分だけ nav.log の先頭が違い、その後は同じ形になった。
+（台本の「戻る2回目」でアプリの外へ出るのは、about:blank から1段で開いているため＝開く前の画面のさらに1つ前で正しい。）
+
+### E2E（直した後）
+
+| 何を | chromium | webkit（BACKNAV_WEBKIT=1 --project=webkit） |
+|---|---|---|
+| R33（戻る・Esc・枠外）・R33f・R33k・R34・R35 | 7 passed | 7 passed（全件の中で） |
+| back-nav-matrix.spec.js 全件（R04・R19〜R22・R23・R24f・X09・X19・#764 R30〜R32・#762 R26〜R29・X22 を含む） | **150 passed**（4.0分） | **144 passed・6 skipped**（5.0分。skip は spec が webkit で飛ばす PC 幅の行） |
+
+| #sidebar-search を押す spec：ux-p1-nav・ux-quickwins・gate/j4-memo（chromium）、char/exits・char/settings-shelves-nav（char-390〜char-1920 の6端末） | **63 passed・234 skipped**（skip は char の spec が自分の幅以外で飛ばす分）。j4-memo（J4-1〜3）と char-1024 の P10 の2本（#sidebar-search から手動追加）は緑を個別に確かめた | — |
+
+ログ：`~/kuroko/_vault-work/765/repro/after/bnm-chromium.log`・`bnm-webkit.log`・`others.log`。gate/j4-memo は既定の chromium project で流した（gate-webkit では流していない＝step3 の e2e-diff の表で見る）。
