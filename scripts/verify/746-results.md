@@ -42,3 +42,24 @@
 
 - 結果：npm test＝86 ファイル・1278 件 pass。npm run lint＝12 本中 0 本失敗（lint:copy の丸かっこの注記は前からある物で、今回の文ではない）。
 - 測っていない物：ホームのカード（M4）と冊数（M5）、一括追加の一覧（H2）、子孫の選択（H8）、webkit。step3 の E2E で測る。
+
+## step3（新しい E2E：tests/e2e/shelf-path-label.spec.js）
+
+- 見本：_vault-work/743/harness/shelves-fixture.json を tests/fixtures/shelves-path.json へ写した。about の頭に出どころを足した。中身は見本のデータだけ。起動は book-detail-shelf-add.spec.js と同じ型で、fixture-userdata/library を土台にした（本150冊は本1の写し・本棚20は fixture の ranges/extra のとおり）。
+  - M5 の場面だけは、2つの SF の本を親と同じにした写し（topSF）で、冊数の Top5 に SF を入れた。
+- 確認の文（H5・H6・H7・M7）は、`window.confirmDialog` を「文を記録してキャンセルを返す」に替えて読んだ。描いた文はそのままで、押した後の処理は走らせない。
+- 経路：H1・M1・H3・H6・H8 は本の詳細の編集で、選択肢を選び「追加」を押し、チップの × を押して出した。H2・H4・H7 は「漫画 / SF」を開き、複数選択のボタン→本を2冊押す→「本棚に追加」→一覧の行を押す・「本棚から外す」を押す、で出した。M6・M7 は本棚の作成・編集のフォームで、親を替えて「保存」を押した。M2 は Ctrl+K と入力。M3 は本棚を開く。M4・M5 はホーム。
+  - H5（削除の確認）だけは、木の「…」が呼ぶ `deleteBookshelf` を直に呼んだ（#743 の step2 と同じ）。開くための `showBookDetail`・`showBookshelfForm`・`switchBookshelf` も直に呼んだ。どれも bookshelf._ の内部参照ではない（lint:internal-refs は上限内）。
+- 場面と結果（chromium のスマホ390 と PC1280・各5件＝10件／webkit iPhone 13 で同じ10件）：
+
+| 場面 | 確かめた事 | chromium | webkit |
+|---|---|---|---|
+| H1・M1・H3・H6・H8 | 選択肢・チップ（小説 / SF・漫画 / SF・小説 / SF / 海外・1階層は名前）・通知「「漫画 / SF」に追加しました」・除外の確認・子孫の選択の行。(c) s18 への追加の通知は「「… / 2026年に読み返したい本」に追加しました」で、本文の1文が2行以内（Range の行数で測った） | 緑 | 緑 |
+| H2・H4・H7・H5・M6・M7 | 一括の一覧（収まる）・「2 冊を「漫画 / SF」に追加しました」・「…冊を「漫画 / SF」から外しますか？」・「本棚「小説 / SF」を削除しますか？」と子孫「・小説 / SF / 海外」（消えていない）・親の選択肢・「「小説 / SF / 海外」を「漫画 / SF」の下へ移動します」と「・漫画 / SF: +」 | 緑 | 緑 |
+| M2・M3・M4・M5 (b)(d)(e) | ホームのカードと冊数に2つの SF（カードは収まる）・パレット「SF」は2つの SF だけ・「2026」はスマホで「… / 」始まり・title に全文、PC は全文・題「SF」と下の行「漫画」・s18 の下の行は親までで、スマホは「… / マーケティングとブランド」・PC は全文・流れる文字なし・1階層は下の行が hidden | 緑 | 緑 |
+| (g) 低3 | 木の行に「 / 」が無い・空の棚の案内は名前だけ | 緑 | 緑 |
+| (f) 切り替え off | チップに .shelf-path が無く SF が2つ・通知「「SF」に追加しました」・題「SF」で下の行なし・画面に .shelf-path が0 | 緑 | 緑 |
+
+- webkit で流すため、playwright.config.js の webkit の testMatch（BACKNAV_WEBKIT=1 の時だけの project）に shelf-path-label.spec.js を1つ足した。計画では「config は触らない」だったが、スマホ幅の指定は spec の中の test.use で済ませた。webkit の project は名前を並べた所に入れないと流れないため。
+- 繰り返し：chromium で --repeat-each=3 を流し、30件緑。
+- 結果：npm test＝86 ファイル・1278 件 pass。npm run lint＝12 本中 0 本失敗。

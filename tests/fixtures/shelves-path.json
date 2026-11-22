@@ -1,0 +1,287 @@
+{
+  "about": "イシュー#743 の見本の写し（出どころ: _vault-work/743/harness/shelves-fixture.json・イシュー#746 で tests/fixtures へ写した）。イシュー#743 の見本（②の決め：#741 もこれを使う）。本棚20個（ALL を除く）・同名の組1つ（小説 / SF と 漫画 / SF）・3階層・スマホ幅で切れる長いパス。本は150冊（asin は #733 の bigData と同じ B0000 + 5桁）。",
+  "howToApply": "#733 の harness/flow.mjs の bigData と同じく loadFixture() の後で書き換える。各本棚は proto（fixtures の ALL 以外の本棚）を写し、id・internalId・name・parent・books・notes:{} を入れる。parent が null の本棚は ALL の internalId（userData._storage.allInternalId か ALL の internalId）を入れる。books は ranges（両端を含む本の番号）と extra（追加の番号）を asin にして並べる。bookOrder[id] は books と同じ順。子の本は親の本の中にある（ADR-008 子⊆親）。",
+  "separator": " / ",
+  "bookCount": 150,
+  "asinOf": "'B0000' + String(n).padStart(5, '0')",
+  "shelves": [
+    {
+      "id": "s01",
+      "internalId": "s01x",
+      "name": "小説",
+      "parent": null,
+      "ranges": [
+        [
+          1,
+          40
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s02",
+      "internalId": "s02x",
+      "name": "漫画",
+      "parent": null,
+      "ranges": [
+        [
+          41,
+          75
+        ]
+      ],
+      "extra": [
+        1
+      ]
+    },
+    {
+      "id": "s03",
+      "internalId": "s03x",
+      "name": "ビジネスと自己啓発",
+      "parent": null,
+      "ranges": [
+        [
+          76,
+          100
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s04",
+      "internalId": "s04x",
+      "name": "技術書",
+      "parent": null,
+      "ranges": [
+        [
+          101,
+          125
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s05",
+      "internalId": "s05x",
+      "name": "エッセイ",
+      "parent": null,
+      "ranges": [
+        [
+          126,
+          135
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s06",
+      "internalId": "s06x",
+      "name": "歴史",
+      "parent": null,
+      "ranges": [
+        [
+          136,
+          150
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s07",
+      "internalId": "s07x",
+      "name": "SF",
+      "parent": "s01x",
+      "ranges": [
+        [
+          1,
+          15
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s08",
+      "internalId": "s08x",
+      "name": "ミステリー",
+      "parent": "s01x",
+      "ranges": [
+        [
+          16,
+          30
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s09",
+      "internalId": "s09x",
+      "name": "SF",
+      "parent": "s02x",
+      "ranges": [
+        [
+          41,
+          52
+        ]
+      ],
+      "extra": [
+        1
+      ]
+    },
+    {
+      "id": "s10",
+      "internalId": "s10x",
+      "name": "少年",
+      "parent": "s02x",
+      "ranges": [
+        [
+          53,
+          65
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s11",
+      "internalId": "s11x",
+      "name": "マーケティングとブランド",
+      "parent": "s03x",
+      "ranges": [
+        [
+          76,
+          88
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s12",
+      "internalId": "s12x",
+      "name": "プログラミング",
+      "parent": "s04x",
+      "ranges": [
+        [
+          101,
+          112
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s13",
+      "internalId": "s13x",
+      "name": "設計",
+      "parent": "s04x",
+      "ranges": [
+        [
+          113,
+          120
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s14",
+      "internalId": "s14x",
+      "name": "日本史",
+      "parent": "s06x",
+      "ranges": [
+        [
+          136,
+          142
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s15",
+      "internalId": "s15x",
+      "name": "世界史",
+      "parent": "s06x",
+      "ranges": [
+        [
+          143,
+          150
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s16",
+      "internalId": "s16x",
+      "name": "海外",
+      "parent": "s07x",
+      "ranges": [
+        [
+          1,
+          8
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s17",
+      "internalId": "s17x",
+      "name": "国内",
+      "parent": "s07x",
+      "ranges": [
+        [
+          9,
+          15
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s18",
+      "internalId": "s18x",
+      "name": "2026年に読み返したい本",
+      "parent": "s11x",
+      "ranges": [
+        [
+          76,
+          80
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s19",
+      "internalId": "s19x",
+      "name": "JavaScript",
+      "parent": "s12x",
+      "ranges": [
+        [
+          101,
+          106
+        ]
+      ],
+      "extra": []
+    },
+    {
+      "id": "s20",
+      "internalId": "s20x",
+      "name": "古典",
+      "parent": "s08x",
+      "ranges": [
+        [
+          16,
+          20
+        ]
+      ],
+      "extra": []
+    }
+  ],
+  "pointsToShow": {
+    "sameName": [
+      "小説 / SF（s07）",
+      "漫画 / SF（s09）"
+    ],
+    "threeLevels": [
+      "小説 / SF / 海外（s16）",
+      "小説 / SF / 国内（s17）",
+      "小説 / ミステリー / 古典（s20）",
+      "技術書 / プログラミング / JavaScript（s19）"
+    ],
+    "longPath": "ビジネスと自己啓発 / マーケティングとブランド / 2026年に読み返したい本（s18）",
+    "bookInBothSF": "本 001（B000000001）は 小説・小説 / SF・小説 / SF / 海外 と 漫画・漫画 / SF に入る＝本の詳細のチップに「SF」が2つ並ぶ"
+  }
+}
