@@ -84,3 +84,26 @@
     - 描いた時に見えていなかった物を300ms後に1回だけ測り直す口を足したが（ui-components.js）、件数は変わらなかった＝原因は見えていないことではない。最後の段（本棚自身）だけでも収まらない長い名前で、is-self-wrap（折り返し）がカードの h3（flex・overflow hidden）の中で効いていない見込み（未確認）。
   - ログ：_vault-work/746/spill/audit-first.log・audit-after.log。
 - M4 の部品（_renderBookshelfCard）が描かれる所：dashboard.js のホームの本棚ハイライトだけ。bookshelf.js の renderBookshelfOverview は #bookshelves-grid が index.html に無く、何もしない（git grep で bookshelves-grid は index.html に0件）。audit でもカードが出たのは home と home-edit（ホームの編集）だけだった。
+
+### step4 の続き（②の差し戻し 17:56 の後）
+
+- 残っていた clip 10件の原因を、実画面の値で確かめた。
+  - 手元（_vault-work/746/harness/measure4.mjs・long の見本と同じ40字の親と子）では、カードの名前は `shelf-path is-self-wrap is-t1`。390 で 244x62 / 244x62、1440 で 328x42 / 328x42。手元では切れていなかった。
+  - audit の生データ（test-results-audit/all/raw/layout/*long*）では、カードが `y 中身 244x64 / 箱 244x62` など、縦に 2px だけあふれていた。チップは `y 中身 226x58 / 箱 226x39`。
+  - 原因：本棚自身の名前だけでも収まらない時の折り返し（is-self-wrap）が、行数の制限も省略の印も持っていなかった。そのため、audit の検出（overflow hidden で中身があふれていれば「文字の切れ」）に、意図した省略として扱われなかった。描いた時に見えていなかった事は原因ではなかった（測り直しの口を足しても件数は同じだった）。
+- 直し（②の指示どおり「2行まで折り返しを許す」を第一にした）：
+  - .shelf-path.is-self-wrap を2行の制限（-webkit-line-clamp: 2）にした。
+  - .shelf-path に text-overflow: ellipsis を足した。測る前や測れない時は、末尾が「…」になり、黙って切らない。
+  - tests/audit/layout-allowlist.json に `.shelf-path` の clip を1行足した。理由は「T1・末尾の省略・2行の制限＝意図した省略表示」。除外は ellipsis か line-clamp が実際に付いている時だけ効く（detectors/layout.js の intended）。
+- 「300ms後に1回だけ測り直す」口は外した。原因ではなかったため（効かない物を残さない）。
+- 直した後の版の結果：
+  - audit（work）：layout exit 0。clip 70（上限70）・overflow 30（上限30）・pageX 0・overlap 0。a11y・buttons も exit 0（axe 6・input 2・inputPlaceholderOnly 12・select 2・variants 8）。前回の一覧との差は「増えた」0。
+  - 同じ手元で origin/main（bee101c を git archive して展開）を流した：clip 83（上限超えで exit 1）・overflow 30。a11y と buttons の件数は work と同じ。＝この手元では、main の方が clip が多い。work は、どの件数も main 以下。
+  - ログ：_vault-work/746/spill/audit-final.log（work）・audit-main.log（main）。
+  - 画像比較（visual-docker・resolute）：直した後の版で 54件 pass・差分0。
+  - 新 spec：chromium 10件・webkit 10件が緑。b031ab4 で直した3本（book-detail-shelf-add・shelf-structure-home-refresh・exclude-custom-shelf）も、新 spec と合わせて37件緑。
+  - npm test：1278件 pass。lint：12本中0本失敗。check:version：OK。
+- 1階層の扱いの変更（55bc59b・step6 の頁の「モックと違う所」に載せる）：
+  - 1階層の本棚は、どの部品でも前と同じ素の名前（.shelf-path にしない）。
+  - 本棚の画面の題も、1階層・ALL では前と同じ（名前＋流れる文字）。題を名前と下の行に分けて流れる文字をやめるのは、親がある棚だけ。
+  - 理由：1階層まで1行の nowrap にすると、long の見本でホームのカードが格子を押し広げた（overflow 74）。題は、1階層でも clip に出た。

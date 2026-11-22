@@ -63,9 +63,8 @@
             const scope = root || (typeof document !== 'undefined' ? document : null);
             if (!scope || !scope.querySelectorAll) return 0;
             const items = [];
-            let hidden = 0;
             for (const el of scope.querySelectorAll('.shelf-path[data-shelf-segs]')) {
-                if (!el.getClientRects().length || !el.clientWidth) { hidden++; continue; }
+                if (!el.getClientRects().length || !el.clientWidth) continue;
                 let segs = null;
                 try { segs = JSON.parse(el.dataset.shelfSegs); } catch (_) { segs = null; }
                 if (Array.isArray(segs) && segs.length) items.push({ el, segs });
@@ -85,11 +84,6 @@
                 }
                 if (!fit) el.classList.add('is-self-wrap');
                 if (segs.length > 1) { el.classList.add('is-t1'); el.title = full; }
-            }
-            // 描いた時に見えていなかった物 (ホームの起動中・閉じた一覧) は、少し後に1回だけ測り直す
-            if (hidden && !scope.__shelfFitRetry && typeof setTimeout === 'function') {
-                scope.__shelfFitRetry = true;
-                setTimeout(() => { scope.__shelfFitRetry = false; BookshelfUI.fitShelfPaths(scope === document ? document : (scope.isConnected ? scope : document)); }, 300);
             }
             return over.length;
         },

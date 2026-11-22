@@ -6336,12 +6336,17 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
     max-width: 100%;
     overflow: hidden;
     white-space: nowrap;
+    /* 測る前 (描いた直後) と測れない時は、末尾を「…」にしておく (文字を黙って切らない) */
+    text-overflow: ellipsis;
 }
 
-/* 最後の段 (本棚自身) だけでも収まらない時は折り返して全部見せる */
+/* 最後の段 (本棚自身) だけでも収まらない時は、2行まで折り返す (イシュー#746 step4・②の指示) */
 .shelf-path.is-self-wrap {
     white-space: normal;
     overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 /* 部品の中で縮められるようにする (チップ・一括追加の一覧・子孫の選択・冊数の行・カードの名前) */
