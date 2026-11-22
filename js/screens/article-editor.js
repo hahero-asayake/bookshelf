@@ -2787,6 +2787,15 @@ class _ArticleEditorMethods {
             e.stopImmediatePropagation();
             e.preventDefault();
         }, true);
+        // イシュー#756: スマホ幅のシートが開く transition の途中で押されると、滑っている途中のボタンの位置で置かれ、
+        // 止まった後にボタンから離れる (実測 240px)。開き終わった時に、吹き出しが開いていれば置き直す。
+        // 閉じている時・シートを閉じる transition では何もしない。
+        const side = document.getElementById('art-drawer');
+        if (side) side.addEventListener('transitionend', (e) => {
+            if (e.target !== side || e.propertyName !== 'transform') return;
+            if (pop.hidden || !side.classList.contains('is-open')) return;
+            this._placeAnchoredMenu(btn, pop);
+        });
     }
 
     _artOnDrawerShelfChange(shelfInternalId) {

@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026112253">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026112256">
     <!-- 起動に必須で、js が fetch で読むファイル。sw.js の install はこの index.html から先読みの一覧を作るため、
          ここに載せておくと1回開いただけの端末でも電波なしで起動できる (イシュー#597)。
          rel="bookshelf-precache" はブラウザが取得しない印 (sw.js だけが読む)。rel="preload" にすると WebKit は
@@ -1534,7 +1534,7 @@
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける
          (イシュー#547 U8f: U7の移し残しだった_reopenArt*クラスタ10個を末尾に追加) -->
-    <script defer src="js/screens/article-editor.js?v=2026112201"></script>
+    <script defer src="js/screens/article-editor.js?v=2026112256"></script>
     <!-- イシュー#537 (U8a): 設定画面(設定モーダルとその各タブ)。article-editor.js と同じ理由で
          VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/settings.js?v=2026111730"></script>

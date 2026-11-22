@@ -4,7 +4,7 @@ import { CHAR_DEVICES } from './tests/char-devices.js';
 // webkit (iPhone相当) は CI では入れていないため、BACKNAV_WEBKIT=1 のときだけ戻る網羅マトリクス
 // (イシュー#284)・チェックリスト自動化 (イシュー#295)・進む冪等化/transition無効化 (イシュー#330) に限って足す
 const extraProjects = process.env.BACKNAV_WEBKIT === '1'
-    ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js|checklist-timing\.spec\.js|forward-reopen-idempotent\.spec\.js|touch-reorder\.spec\.js|overlay-front\.spec\.js|bookshelf-clip-373\.spec\.js|bookshelf-clip-385\.spec\.js|focus-trap-deeplink\.spec\.js|art-canvas-tap-edit\.spec\.js|sync-section-status\.spec\.js|art-publish-sheet\.spec\.js|shelf-path-label\.spec\.js|book-detail-shelf-tree\.spec\.js/, use: { ...devices['iPhone 13'] } }]
+    ? [{ name: 'webkit', testMatch: /back-nav-matrix\.spec\.js|checklist-timing\.spec\.js|forward-reopen-idempotent\.spec\.js|touch-reorder\.spec\.js|overlay-front\.spec\.js|bookshelf-clip-373\.spec\.js|bookshelf-clip-385\.spec\.js|focus-trap-deeplink\.spec\.js|art-canvas-tap-edit\.spec\.js|sync-section-status\.spec\.js|art-publish-sheet\.spec\.js|shelf-path-label\.spec\.js|book-detail-shelf-tree\.spec\.js|art-drawer-shelf-popover-sheet\.spec\.js/, use: { ...devices['iPhone 13'] } }]
     : [];
 
 // 門のE2E (@gate・tests/e2e/gate/) を webkit (iPhone相当・390タッチ) でも流す project (イシュー#589・G-6)。
@@ -31,7 +31,7 @@ const gateWebkitProjects = process.env.GATE_WEBKIT === '1'
     : [];
 // 門ではない E2E のうち、webkit (iPhone 相当) でも流すもの (イシュー#604: 支払い管理からの戻り・
 // イシュー#599: 保存先へ届く前に再読込した新規記事が一覧に戻る。イシュー#660: 面を開いたままでも保存の失敗・未保存の帯を押せる)
-gateWebkitProjects.forEach((p) => { p.testMatch = [p.testMatch, /billing-portal-return\.spec\.js$/, /article-orphan-draft\.spec\.js$/, /book-card-tap-after-touch-drag\.spec\.js$/, /status-bar-over-faces\.spec\.js$/]; });
+gateWebkitProjects.forEach((p) => { p.testMatch = [p.testMatch, /billing-portal-return\.spec\.js$/, /article-orphan-draft\.spec\.js$/, /book-card-tap-after-touch-drag\.spec\.js$/, /status-bar-over-faces\.spec\.js$/, /art-drawer-shelf-popover-sheet\.spec\.js$/]; });
 
 // worktree分離(イシュー#413)でport衝突を避けるため環境変数化。PORT優先、未指定ならPLAYWRIGHT_BASE_URLの
 // portを使い、どちらも無ければ既定の8000(従来どおり)。webServer.command/portとuse.baseURLの両方に使う

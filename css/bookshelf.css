@@ -5311,7 +5311,10 @@ body.left-collapsed .app-sidebar .sidebar-account-chip { display: none; }
            上に来る必要がある (950 → 1060。.art-publish-modal 等 1150+ のモーダル群よりは下のまま)。 */
         z-index: 1060;
     }
-    .art-side.is-open { transform: translateY(0); }
+    /* イシュー#756: 開いた状態は translateY(0) でなく none にする。translateY(0) も none ではないので、中の position:fixed
+       (本棚の選択 #art-drawer-shelf-popover) の基準がシートになり、シートの top の分だけ下へずれて画面の外に出ていた。
+       開閉の動きは translateY(100%)⇄none の補間で同じ。重なりは position:fixed＋z-index で元から文脈を作るので変わらない (ui-standards §2-12)。 */
+    .art-side.is-open { transform: none; }
 
     /* イシュー#330: 「戻る/進む」(履歴復元)で開閉する時だけ、スライドのtransitionを無効化して
        即座に表示/非表示する(本詳細・左ドロワーと同じ規則・②決裁2026-10-23)。
