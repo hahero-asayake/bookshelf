@@ -74,11 +74,14 @@ test.describe('引き出しの上の面を Esc で閉じる (幅900px以下 Chro
         const appUrl = page.url().split('#')[0];
         await openDrawer(page);
         expect(await drawerOpen(page)).toBe(true);
-        await page.keyboard.press('Control+k');
-        await expect(palette(page)).toBeVisible();
+        // 引き出しの上に積む面は「本棚を追加」のフォーム (イシュー#765 で ⌘K・検索は引き出しを閉じてから開くようになり
+        // 引き出しの上に積まなくなった＝17表 R33k。⌘K の側は back-nav-matrix の R33k が見る)
+        const form = page.locator('#bookshelf-form-modal');
+        await page.locator('#sidebar-add-bookshelf').filter({ visible: true }).first().click();
+        await expect(form).toBeVisible();
 
         await page.keyboard.press('Escape');
-        await expect(palette(page)).toBeHidden();
+        await expect(form).toBeHidden();
         // 1段だけ戻る (旧: 引き出しの Esc も動いて2段戻り、アプリの外の手前まで行っていた)
         await page.waitForTimeout(300);
         expect(await drawerOpen(page)).toBe(true);
