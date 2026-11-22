@@ -936,7 +936,7 @@ class VirtualBookshelf {
 
         // 左ペイン「検索」ボタン → ⌘K パレット
         const searchSideBtn = document.getElementById('sidebar-search');
-        if (searchSideBtn) searchSideBtn.addEventListener('click', () => this._openPalette());
+        if (searchSideBtn) searchSideBtn.addEventListener('click', () => this._openPaletteFromUi());
 
         // 左ペイン「設定」ボタン → 設定モーダル
         const settingsSideBtn = document.getElementById('sidebar-settings');
@@ -1208,7 +1208,7 @@ class VirtualBookshelf {
         this._paletteBound = true;
 
         const trigger = document.getElementById('palette-trigger');
-        if (trigger) trigger.addEventListener('click', () => this._openPalette());
+        if (trigger) trigger.addEventListener('click', () => this._openPaletteFromUi());
 
         // ⌘K / Ctrl+K でトグル
         document.addEventListener('keydown', (e) => {
@@ -1216,7 +1216,7 @@ class VirtualBookshelf {
                 e.preventDefault();
                 const pal = document.getElementById('command-palette');
                 if (pal && !pal.hidden) this._closePalette();
-                else this._openPalette();
+                else this._openPaletteFromUi();
             }
         });
 
@@ -1240,6 +1240,18 @@ class VirtualBookshelf {
                 if (item) this._setPaletteActive(parseInt(item.dataset.idx), false);
             });
         }
+    }
+
+    // イシュー#765: 人の操作で検索 (⌘K パレット) を開く入口 (引き出しの「検索」・ヘッダーの検索・⌘K・下のナビの「検索」) は
+    // ここを通す。引き出し (スマホの左ナビ) が開いていれば閉じ、その段をパレットへ引き継ぐ (17表 R22「ドロワーは先に
+    // 閉じている」・K2・#764 の公開と同じ型)。閉じるのと開くのは同じ同期の塊で行う (間に await を挟むと引き出しの go(-1) が
+    // 先に飛び、push→replace の引き継ぎが効かない＝#259 型)。閉じずに重ねると、パレットで本棚を選ぶ・設定を開く時に
+    // 引き出しの閉じが次の replace と合流し、D06 の自己修復が1段余分に戻って、戻るでアプリの外へ出ていた。
+    // 進むの開き直し (reopen の表) は _openPalette を直に呼ぶ＝ここを通さない (開き直しの最中に go(-1) を出さない)。
+    // _closeDrawer は開いていなければ何もしない＝PC 幅 (引き出しが無い) は変わらない
+    _openPaletteFromUi() {
+        this._closeDrawer();
+        this._openPalette();
     }
 
     _openPalette() {
@@ -4615,8 +4627,7 @@ class VirtualBookshelf {
             } else if (action === 'shelves') {
                 if (body.classList.contains('drawer-open')) this._closeDrawer(); else this._openDrawer();
             } else if (action === 'search') {
-                this._closeDrawer();
-                this._openPalette();
+                this._openPaletteFromUi(); // 引き出しを閉じてから開く (イシュー#765 で入口を1か所に集めた)
             } else if (action === 'settings') {
                 // 閉じたドロワーの段は設定へ引き継がれる (_modalHistPush・イシュー#284 K2)
                 this._closeDrawer();
