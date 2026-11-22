@@ -97,3 +97,19 @@
 - 落ちた2本は article-leave-flush の H3・H6。公開の一覧を Esc で閉じた後も引き出しが開いたままという前提で、開き直す時に `drawerOpen: true`（引き出しを開かずに「公開」を押す）を使っていた。
 - R32 の決めで、閉じた後の引き出しは閉じている。そこで2本とも引き出しを開き直してから「公開」を押す形に直した。直した後の article-leave-flush は 9 passed（chromium）。
 - PC 1280 の行（X20・X21・X22）は緑のままで、変わらない。
+
+## §3 lint・単体・全件比較・前後の画像（step3）
+
+- `npm run lint`：12本中0本失敗。
+- `npm test`：87 files・1298 passed（2 todo）。
+- `node scripts/verify/e2e-diff-main.mjs --port=8164`（systemd-run --user で実行・約9分）。base＝origin/main a303920、work＝HEAD 8424bfe。
+  - E2E：新しく落ちた 0、新しく通った 0、両方で落ちた 0。除外は sort-perf-budget だけ（CI では別の step）。
+  - visual：54件中 差分0。
+  - 結果一式は `~/kuroko/_vault-work/764/e2e-diff/`。
+- 前後の画像（390・chromium と webkit iPhone 13）：`~/kuroko/_vault-work/764/repro/{before,after}/{c390,w390}/`。台本は `shots764.mjs`。
+  - 撮った流れは2つ。引き出し→公開→案内→設定→戻る→戻る→進む。引き出し→公開→×。
+  - 撮る前に、配信元の `article-editor.js?v=` を出力で確かめた（before＝2026112256、after＝2026112302）。
+  - 最初に使ったポート 8781・8782 は別のサーバーが使っていて、違う中身を撮った。その画像は `repro/_trash/` に退けて撮り直した。
+- ハヘロ向けの頁：`~/kuroko/_vault-work/764/hahero/公開の一覧から設定を戻る/index.html`。中身は、直した後の3枚・直す前1枚・×の前後・iPhone で試す手順。「×で引き出しに戻らなくなる」も入れた。
+- vault の 17_戻る挙動テスト表_20261014.md §2-1 の R23 の後に、R30〜R32 の行を足した。commit は自動バックアップに任せる。
+- iPhone 実機での確認はまだ（未確認）。
