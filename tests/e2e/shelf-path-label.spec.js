@@ -77,6 +77,35 @@ async function openDetailEdit(page, asin) {
     await expect(page.locator('.bookshelf-select').filter({ visible: true }).first()).toBeVisible();
 }
 
+// イシュー#749: 一括の「本棚に追加」の吹き出しを、画面に対する矩形で測る (行の fits だけだと箱ごと広がった時に通ってしまう)
+async function bulkPopoverBox(page) {
+    return page.evaluate(() => {
+        const pop = document.getElementById('bulk-shelf-popover');
+        const b = pop.getBoundingClientRect();
+        const t = pop.querySelector('.popover-title').getBoundingClientRect();
+        const rows = Array.from(pop.querySelectorAll('#bulk-shelf-list .bookshelf-popover-item')).map((it) => {
+            const p = it.querySelector('.shelf-path');
+            const r = (p || it).getBoundingClientRect();
+            return { text: (p || it).textContent.trim(), inPop: r.left >= b.left - 0.5 && r.right <= b.right + 0.5, fits: p ? p.scrollWidth <= p.clientWidth + 1 : true, t1: !!(p && p.classList.contains('is-t1')) };
+        });
+        const btn = document.getElementById('bulk-add-shelf').getBoundingClientRect();
+        return { W: window.innerWidth, H: window.innerHeight, left: b.left, right: b.right, top: b.top, bottom: b.bottom, btnBottom: btn.bottom, titleLeft: t.left, titleRight: t.right, rows };
+    });
+}
+
+async function expectBulkPopoverInView(page) {
+    await expect.poll(async () => { const x = await bulkPopoverBox(page); return x.left >= 7.5 && x.right <= x.W - 7.5; }).toBe(true);
+    const x = await bulkPopoverBox(page);
+    expect(x.titleLeft).toBeGreaterThanOrEqual(0);
+    expect(x.titleRight).toBeLessThanOrEqual(x.W);
+    // 縦：ボタンを覆わずにその下へ出て、画面の下端を越えない
+    expect(x.top).toBeGreaterThanOrEqual(x.btnBottom - 0.5);
+    expect(x.bottom).toBeLessThanOrEqual(x.H + 0.5);
+    expect(x.rows.length).toBeGreaterThan(0);
+    expect(x.rows.filter((r) => !r.inPop || !r.fits)).toEqual([]);
+    return x;
+}
+
 const toastText = (page, text) => page.locator('#toast-container .toast').filter({ hasText: text });
 
 for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 }, true], ['PC1280', { width: 1280, height: 860 }, false]]) {
@@ -142,7 +171,14 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
             await page.locator('#bulk-add-shelf').click();
             await expect(page.locator('#bulk-shelf-popover')).toBeVisible();
             await expect.poll(async () => (await shelfPaths(page, '#bulk-shelf-list .shelf-path')).map((x) => x.text)).toEqual(expect.arrayContaining(['小説 / SF', '漫画 / SF']));
-            expect((await shelfPaths(page, '#bulk-shelf-list .shelf-path')).every((x) => x.fits)).toBe(true);
+            // 幅に上限があるので、描いた直後ははみ出し、次のフレームの T1 で収まる (イシュー#749)
+            await expect.poll(async () => (await shelfPaths(page, '#bulk-shelf-list .shelf-path')).every((x) => x.fits)).toBe(true);
+            // イシュー#749: 吹き出しは画面の内側 (左右 8px 以上)・見出しも行も見える。スマホは長いパス (s18) を T1 で省く
+            const box = await expectBulkPopoverInView(page);
+            if (mobile) {
+                await expect.poll(async () => (await bulkPopoverBox(page)).rows.some((r) => r.t1 && r.text.endsWith(LONG_SELF))).toBe(true);
+            }
+            expect(box.rows.some((r) => r.text.endsWith(LONG_SELF))).toBe(true);
             // H4: 「漫画 / SF」へ追加 → 通知
             await page.locator('#bulk-shelf-list [data-bs-internal="s09x"]').click();
             await expect(toastText(page, '2 冊を「漫画 / SF」に追加しました')).toBeVisible();
@@ -222,6 +258,18 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
                 window.bookshelf.switchBookshelf('sfx');
             });
             await expect(page.getByText('「空の棚」にはまだ本がありません')).toBeVisible();
+        });
+
+        test('(f) 切り替え off：一括の「本棚に追加」の吹き出しも画面の内側に出る (イシュー#749)', async ({ page }) => {
+            await boot(page, { flag: '0' });
+            await page.evaluate(() => window.bookshelf.switchBookshelf('s09'));
+            await page.locator('#toggle-select-mode').filter({ visible: true }).first().click();
+            const items = page.locator('#bookshelf .book-item');
+            await expect(items.first()).toBeVisible();
+            await items.nth(0).click();
+            await page.locator('#bulk-add-shelf').click();
+            await expect(page.locator('#bulk-shelf-popover')).toBeVisible();
+            await expectBulkPopoverInView(page);
         });
 
         test('(f) 切り替え off：全部名前だけ・題の下の行なし・.shelf-path が無い', async ({ page }) => {

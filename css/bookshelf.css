@@ -7707,6 +7707,10 @@ body.select-mode .drag-handle { display: none; }
     overflow-y: auto;
     text-align: left;
 }
+/* イシュー#749: 位置は _placeAnchoredMenu が開くたびに px で決める (画面の内側・左右 8px 以上)。.popover の中央寄せ
+   (left:50%・translateX) は打ち消す。幅の上限が無いと、1行のパス (.shelf-path・nowrap) で箱が一番長い行まで広がり、
+   T1 (fitShelfPaths) が効かない＝上限を付けて、収まらない行は T1 で親の側を省く。先例 .popover.art-drawer-shelf-popover */
+.popover.popover-bulk-shelf { position: fixed; left: auto; top: auto; transform: none; max-width: min(360px, calc(100vw - 16px)); }
 
 /* =====================================================================
    モバイル本格 UI (<=900px): 単一ペイン + 左ドロワー + 詳細フルシート + 下部ナビ

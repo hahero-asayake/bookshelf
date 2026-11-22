@@ -1443,11 +1443,21 @@ class VirtualBookshelf {
                 e.stopPropagation();
                 const willShow = addPop.hidden;
                 addPop.hidden = !willShow;
-                if (willShow) this._renderBulkShelfList();
+                if (willShow) { this._renderBulkShelfList(); this._placeBulkShelfPopover(); }
             });
             document.addEventListener('click', (e) => {
                 if (!addPop.hidden && window.Surface.isOutside(e, addPop, addBtn)) addPop.hidden = true;
             });
+            // 位置は fixed (イシュー#749)。開いている間は、画面の幅が変わった時と外側がスクロールした時に置き直す
+            // (前の absolute と同じく、ボタンについて動く)。吹き出しの中のスクロールは除く。rAF でまとめる。
+            let placeRaf = null;
+            const replace = (e) => {
+                if (addPop.hidden || placeRaf) return;
+                if (e && e.type === 'scroll' && e.target instanceof Node && addPop.contains(e.target)) return;
+                placeRaf = requestAnimationFrame(() => { placeRaf = null; this._placeBulkShelfPopover(); });
+            };
+            window.addEventListener('resize', replace);
+            document.addEventListener('scroll', replace, { capture: true, passive: true });
         }
     }
 
@@ -1510,7 +1520,19 @@ class VirtualBookshelf {
         host.querySelectorAll('[data-bs-internal]').forEach(btn => {
             btn.addEventListener('click', () => this._bulkAddToShelf(btn.dataset.bsInternal));
         });
-        requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(host); }); // イシュー#746 (T1)
+        requestAnimationFrame(() => {
+            if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(host); // イシュー#746 (T1)
+            this._placeBulkShelfPopover(); // T1 で幅が縮むと真ん中がずれるので置き直す (イシュー#749)
+        });
+    }
+
+    // 一括の「本棚に追加」の吹き出しを、ボタンの下・画面の内側へ置く (イシュー#749)。開いていなければ何もしない。
+    // 位置決めは共通の _placeAnchoredMenu に任せる (座標をここで書かない)。
+    _placeBulkShelfPopover() {
+        const btn = document.getElementById('bulk-add-shelf');
+        const pop = document.getElementById('bulk-shelf-popover');
+        if (!btn || !pop || pop.hidden) return;
+        this._placeAnchoredMenu(btn, pop);
     }
 
     async _bulkAddToShelf(internalId) {
@@ -6368,9 +6390,28 @@ class VirtualBookshelf {
         menuEl.classList.remove('is-up');
         const margin = 8;
         const anchorRect = anchorEl.getBoundingClientRect();
-        const menuRect = menuEl.getBoundingClientRect();
+        // 横の保証 (イシュー#749): 画面の幅 − 左右の margin より広いメニューは、その幅に詰めてから測る
+        // (中身が1行のまま広がる箱でも画面の外へ出さない)。画面より狭いメニューは何も変わらない。
+        // 前回ここで詰めた値だけを戻す (data-anchored-fit の印。CSS や他の処理が書いた inline は触らない)。
+        if (menuEl.dataset.anchoredFit) { menuEl.style.maxWidth = ''; menuEl.style.maxHeight = ''; delete menuEl.dataset.anchoredFit; }
+        let menuRect = menuEl.getBoundingClientRect();
+        const maxW = window.innerWidth - margin * 2;
+        if (menuRect.width > maxW) {
+            menuEl.style.maxWidth = `${maxW}px`;
+            menuEl.dataset.anchoredFit = '1';
+            menuRect = menuEl.getBoundingClientRect();
+        }
         const spaceBelow = window.innerHeight - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
+        // 縦 (イシュー#749): 上下どちらにも入らない、中をスクロールできるメニューは、下の空きに高さを詰めて
+        // アンカーの下に出す (下端で挟むとアンカーを覆うため)。スクロールしないメニューは今までどおり挟むだけ。
+        const oy = getComputedStyle(menuEl).overflowY;
+        if (spaceBelow < menuRect.height + margin && spaceAbove < menuRect.height + margin
+            && (oy === 'auto' || oy === 'scroll') && spaceBelow - margin >= 120) {
+            menuEl.style.maxHeight = `${Math.floor(spaceBelow - margin)}px`;
+            menuEl.dataset.anchoredFit = '1';
+            menuRect = menuEl.getBoundingClientRect();
+        }
         let top;
         if (spaceBelow < menuRect.height + margin && spaceAbove >= menuRect.height + margin) {
             menuEl.classList.add('is-up');
