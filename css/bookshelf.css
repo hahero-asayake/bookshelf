@@ -6357,7 +6357,10 @@ body.app-view-main .needs-bookshelf .btn-icon-square {
 .cmdk-item-title:has(> .shelf-path) { min-width: 0; overflow: hidden; }
 .cmdk-item-title > .shelf-path,
 .bookshelf-preview-header h3 > .shelf-path { display: block; }
-.bookshelf-preview-header h3:has(> .shelf-path) { display: flex; align-items: center; min-width: 0; }
+.bookshelf-preview-header h3:has(> .shelf-path) { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+/* ホームの格子の中で、パスの1行がカードの幅を押し広げないようにする */
+.bookshelf-preview:has(.shelf-path),
+.bookshelf-preview:has(.shelf-path) .bookshelf-preview-header { min-width: 0; }
 .bookshelf-preview-header h3 > .shelf-path { flex: 1 1 auto; }
 
 /* ===== Book item: 全体をクリッカブルに (Phase B-8: アニメーション削除) ===== */

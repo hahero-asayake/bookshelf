@@ -63,3 +63,24 @@
 - webkit で流すため、playwright.config.js の webkit の testMatch（BACKNAV_WEBKIT=1 の時だけの project）に shelf-path-label.spec.js を1つ足した。計画では「config は触らない」だったが、スマホ幅の指定は spec の中の test.use で済ませた。webkit の project は名前を並べた所に入れないと流れないため。
 - 繰り返し：chromium で --repeat-each=3 を流し、30件緑。
 - 結果：npm test＝86 ファイル・1278 件 pass。npm run lint＝12 本中 0 本失敗。
+
+## step4（関連する既存 spec・lint・単体・audit・画像比較）
+
+- 既存 spec（chromium・計画の10本・77件）：最初は13件が落ちた。どれも「意図した変化」で、子の本棚の名前が親からのパスで出るようになったため。3本の期待を直し、どれも緑になった（commit b031ab4）。
+  - book-detail-shelf-add（2件）：子のチップ「親の本棚 / 子の本棚」が hasText '親の本棚' に当たり、親のチップが2つに数えられた → 子のチップを除いて数える。
+  - shelf-structure-home-refresh（10件）：本棚別 Top5 が「消す本棚Q / Qの子」と出る → 名前の欄は最後の段（本棚自身）で比べる。
+  - exclude-custom-shelf（1件）：カードと Top5 の名前に親が入る → パスを本棚自身の名前に戻してから見分ける。
+- char/bookdetail（char-390/768/820/1024）：7件緑。back-nav-matrix（webkit）：128件緑。gate/j3-2 は chromium で緑。gate-webkit では、もともと対象外（playwright.config.js の GATE_WEBKIT_IGNORE・PC の左ペインの操作のため）。
+- lint 一式：12本中0本失敗。npm test：1278件 pass。check:version --range=origin/main..HEAD：OK。
+- 画像比較（PORT=8746 visual-docker.mjs・v1.65.1-resolute）：54件 pass・差分0（1階層の見本の画面は今と同じ）。※ この時は後の2つの直し（1階層は素の名前／題の分割は親がある時だけ）の前の版で流した。どちらも1階層の見た目を前に近づける直しで、step5 の e2e-diff の visual でもう一度見る。
+- audit（npm run audit・手元の work）：
+  - 1回目：overflow 74（上限30）で違反。ホームのカードが、1階層の長い名前（long の見本）まで .shelf-path（nowrap）にしたため、格子の幅を押し広げていた。
+    - 直し：1階層は前と同じ素の名前にした（shelfPathHtml・T1 は親がある時だけ）。.shelf-path のあるカードは min-width:0。
+  - 2回目：overflow 26（上限内・前の30より少ない）。clip 86（上限70）。
+    - 本棚の画面の題（#current-bookshelf-title）が、1階層の standard の見本でも clip に出た。題の分割と流れる文字の取りやめを、どの棚でもしていたため。
+    - 直し：題の分割は親がある時だけにした。1階層・ALL・off は前と同じ題（名前＋流れる文字）。
+  - 3回目と4回目：clip 80（上限70）で、まだ違反。
+    - 残っているのは10件。どれも long の見本のホームのカード（home・home-edit の5幅ずつ）で、`h3 > span.shelf-path` が clip に出ている。
+    - 描いた時に見えていなかった物を300ms後に1回だけ測り直す口を足したが（ui-components.js）、件数は変わらなかった＝原因は見えていないことではない。最後の段（本棚自身）だけでも収まらない長い名前で、is-self-wrap（折り返し）がカードの h3（flex・overflow hidden）の中で効いていない見込み（未確認）。
+  - ログ：_vault-work/746/spill/audit-first.log・audit-after.log。
+- M4 の部品（_renderBookshelfCard）が描かれる所：dashboard.js のホームの本棚ハイライトだけ。bookshelf.js の renderBookshelfOverview は #bookshelves-grid が index.html に無く、何もしない（git grep で bookshelves-grid は index.html に0件）。audit でもカードが出たのは home と home-edit（ホームの編集）だけだった。

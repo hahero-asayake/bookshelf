@@ -50,6 +50,8 @@
             let segs = bm.getShelfPath(shelf);
             if (opts.parentsOnly) segs = segs.slice(0, -1);
             if (!segs.length) return '';
+            // 1階層は名前だけ = 前と同じ素の名前 (折り返し・幅の決まりも前のまま)。T1 は親がある時だけ
+            if (!opts.parentsOnly && segs.length === 1) return esc(shelf.name || '');
             return `<span class="shelf-path" data-shelf-segs="${esc(JSON.stringify(segs))}">${esc(segs.join(SHELF_SEP))}</span>`;
         },
 
@@ -61,8 +63,9 @@
             const scope = root || (typeof document !== 'undefined' ? document : null);
             if (!scope || !scope.querySelectorAll) return 0;
             const items = [];
+            let hidden = 0;
             for (const el of scope.querySelectorAll('.shelf-path[data-shelf-segs]')) {
-                if (!el.getClientRects().length) continue;
+                if (!el.getClientRects().length || !el.clientWidth) { hidden++; continue; }
                 let segs = null;
                 try { segs = JSON.parse(el.dataset.shelfSegs); } catch (_) { segs = null; }
                 if (Array.isArray(segs) && segs.length) items.push({ el, segs });
@@ -82,6 +85,11 @@
                 }
                 if (!fit) el.classList.add('is-self-wrap');
                 if (segs.length > 1) { el.classList.add('is-t1'); el.title = full; }
+            }
+            // 描いた時に見えていなかった物 (ホームの起動中・閉じた一覧) は、少し後に1回だけ測り直す
+            if (hidden && !scope.__shelfFitRetry && typeof setTimeout === 'function') {
+                scope.__shelfFitRetry = true;
+                setTimeout(() => { scope.__shelfFitRetry = false; BookshelfUI.fitShelfPaths(scope === document ? document : (scope.isConnected ? scope : document)); }, 300);
             }
             return over.length;
         },

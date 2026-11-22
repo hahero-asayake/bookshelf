@@ -5111,12 +5111,14 @@ class VirtualBookshelf {
         // 題の下の行に親までのパス (T1 で根の側を省く・いちばん近い親は残す)。1階層・ALL・off は下の行を出さない。
         const pathEl = document.getElementById('current-bookshelf-path');
         const pathOn = !!(this.bookshelfManager && typeof this.bookshelfManager.shelfPathOn === 'function' && this.bookshelfManager.shelfPathOn());
-        titleEl.classList.toggle('bvh-title-wrap', pathOn);
-        if (pathOn) titleEl.classList.remove('auto-marquee', 'is-marquee');
         let pathHtml = '';
         if (pathEl && pathOn && bs && !bs.isSpecial && window.BookshelfUI && window.BookshelfUI.shelfPathHtml) {
             pathHtml = window.BookshelfUI.shelfPathHtml(this.bookshelfManager, bs, { parentsOnly: true });
         }
+        // 題の分割は親がある時だけ (1階層・ALL・off は前と同じ題＝名前＋流れる文字)
+        this._titlePathSplit = !!pathHtml;
+        titleEl.classList.toggle('bvh-title-wrap', !!pathHtml);
+        if (pathHtml) titleEl.classList.remove('auto-marquee', 'is-marquee');
         if (pathEl) {
             if (pathEl.innerHTML !== pathHtml) pathEl.innerHTML = pathHtml;
             pathEl.hidden = !pathHtml;
@@ -5166,8 +5168,8 @@ class VirtualBookshelf {
     }
 
     _refreshMarqueesNow() {
-        // イシュー#746: 切り替えが on の時、題は流れる文字にしない (2行まで折り返す)
-        const titleMarquee = !(this.bookshelfManager && typeof this.bookshelfManager.shelfPathOn === 'function' && this.bookshelfManager.shelfPathOn());
+        // イシュー#746: 題を名前とパスに分けた時 (親がある棚) は、題を流れる文字にしない (2行まで折り返す)
+        const titleMarquee = !this._titlePathSplit;
         const els = [
             titleMarquee ? document.getElementById('current-bookshelf-title') : null,
             document.getElementById('current-bookshelf-desc'),

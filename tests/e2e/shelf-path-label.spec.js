@@ -90,7 +90,10 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
             await expect.poll(async () => (await shelfPaths(page, '.bd-chip .shelf-path')).map((c) => c.text)).toEqual(expect.arrayContaining(['小説 / SF', '漫画 / SF', '小説 / SF / 海外']));
             const chips = await shelfPaths(page, '.bd-chip .shelf-path');
             expect(chips.every((c) => c.fits)).toBe(true);
-            expect(chips.map((c) => c.text)).toContain('小説'); // 1階層は名前だけ
+            // 1階層は名前だけ (前と同じ素の名前・.shelf-path にしない)
+            const chipTexts1 = (await page.locator('.bd-chip').filter({ visible: true }).allTextContents()).map((t) => t.replace('×', '').trim());
+            expect(chipTexts1).toContain('小説');
+            expect(chips.map((c) => c.text)).not.toContain('小説');
             // H6: 漫画 / SF のチップの × → 確認の文
             await page.locator('.bd-chip[data-bookshelf-id="s09"] .bd-chip-remove').filter({ visible: true }).first().click();
             await expect.poll(() => page.evaluate(() => window.__confirms.join('\n'))).toContain('を「漫画 / SF」から除外しますか？');
