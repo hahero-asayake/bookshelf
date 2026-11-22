@@ -1834,6 +1834,89 @@ body.right-collapsed .app-detail .detail-strip { display: flex; }
     background: rgba(255,255,255,0.6);
 }
 
+/* ===== 本詳細 所属本棚の字下げの木 (イシュー#757・#753 案2＋折り畳み・値は仮) =====
+   列は [アイコン16px][名前][開閉の欄44px][×36px (編集だけ)]。字下げは行の padding-left (段×18px) なので、
+   名前の頭は段ごとに、開閉と×は全行で同じ線にそろう。前の形 (チップ) へは _detailShelfTreeOn で戻す */
+.bd-chips-row.is-tree {
+    display: block;
+}
+.bd-tree {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.76rem;
+}
+.bd-tree-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) 44px;
+    align-items: center;
+    column-gap: 0.4rem;
+    min-height: 36px;
+    padding-left: calc(var(--bd-depth, 0) * 18px);
+    border-top: 1px solid var(--line);
+}
+.bd-tree-row:first-child {
+    border-top: none;
+}
+.bd-tree.is-edit .bd-tree-row {
+    grid-template-columns: 16px minmax(0, 1fr) 44px 36px;
+}
+.bd-tree-row.has-kids {
+    cursor: pointer;
+}
+.bd-tree-row.is-missing {
+    opacity: 0.55;
+}
+.bd-tree-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-text);
+}
+.bd-tree-name {
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    color: var(--fg);
+}
+.bd-tree-row.is-context .bd-tree-name {
+    background: var(--accent);
+    color: #fff;
+}
+.bd-tree-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px;
+    width: 44px;
+    height: 36px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--fg2);
+    cursor: pointer;
+}
+.bd-tree-toggle:hover {
+    background: var(--accent-bg);
+}
+.bd-tree-count {
+    font-size: 0.7rem;
+    color: var(--muted);
+}
+.bd-tree-row .bd-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+}
+
 /* ===== Dashboard (UI-5) ===== */
 
 .dashboard {

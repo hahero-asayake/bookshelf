@@ -22,6 +22,8 @@ beforeAll(async () => {
 });
 
 function mountDom() {
+    // イシュー#757: このファイルは前の形 (チップ) を見る。新しい形 (字下げの木) は book-detail-shelf-tree.test.js
+    window.localStorage.setItem('bookshelf.flag.detailShelfTree', '0');
     document.body.className = '';
     document.body.innerHTML = '<div id="book-detail-pane"></div>';
 }
@@ -77,7 +79,7 @@ const chipNames = () => Array.from(section().querySelectorAll('.bd-chip')).map((
 const optionValues = () => Array.from(section().querySelectorAll('.bookshelf-select option')).map((o) => o.value).filter(Boolean);
 const shelf = (app, id) => app.userData.bookshelves.find((s) => s.id === id);
 
-describe('本の詳細の本棚のチップと選択肢の書き換え (イシュー#620)', () => {
+describe('本の詳細の本棚のチップと選択肢の書き換え (イシュー#620)（前の形）', () => {
     beforeEach(() => mountDom());
 
     it.each([['閲覧モード', false], ['編集モード', true]])('%s: データを変えずに書き換えると、本棚セクションは描画とまったく同じ', (_label, edit) => {

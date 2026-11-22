@@ -120,24 +120,28 @@ class _BookDetailMethods {
         return bs.internalId || bs.id;
     }
 
-    // 本棚セクションの本体 (所属のチップの行と、編集モードの「本棚を追加...」の欄) の HTML (イシュー#620)。
-    // 詳細を描く時 (showBookDetail) と、所属が変わった時の書き換え (_applyDetailShelvesEverywhere) の両方がここを通る。
-    _detailShelvesBodyHtml(book, isEditMode) {
-        const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
-        const esc = BookshelfEscape.escapeHtml;
-        const contextInternalId = this._currentBookshelfInternalId();
-        const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
+    // イシュー#757: 所属本棚を字下げの木で見せるかの切り替え (#742・#746 と同じ形)。ハヘロが iPhone で使って承認するまで残す。
+    // 全員を前の形 (チップ) に戻す時は DETAIL_SHELF_TREE_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.detailShelfTree' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    _detailShelfTreeOn() {
+        const DETAIL_SHELF_TREE_DEFAULT = true;
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.detailShelfTree');
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return DETAIL_SHELF_TREE_DEFAULT;
+    }
 
+    // 前の形 (チップ) の行の中身 (イシュー#757 で _detailShelvesBodyHtml から字を変えずに移した)。
+    _detailShelfChipsHtml(book, isEditMode, contextInternalId) {
+        const esc = BookshelfEscape.escapeHtml;
+        const contextBookshelf = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
         // 所属本棚 (chips) — 開いている本棚 (context) は色を強調
         const contextSlug = contextBookshelf ? contextBookshelf.id : null;
         const memberBookshelves = (this.userData.bookshelves || [])
             .filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(book.asin));
-        // イシュー#746 (T1): チップの本棚のパスは、描いた後に欄の幅で根の側を省く
-        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(document); });
-        const candidateBookshelves = (this.userData.bookshelves || [])
-            .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
-
-        const chipsHtml = memberBookshelves.map(bs => {
+        return memberBookshelves.map(bs => {
             const isCtx = contextSlug && bs.id === contextSlug;
             return `
             <span class="bd-chip${isCtx ? ' is-context' : ''}" data-bookshelf-id="${esc(bs.id)}"${isCtx ? ' title="いま開いている本棚"' : ''}>
@@ -146,6 +150,126 @@ class _BookDetailMethods {
                 ${isEditMode ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(bs.id)}" title="この本棚から外す">×</button>` : ''}
             </span>`;
         }).join('');
+    }
+
+    // イシュー#757: 木に出す本棚 (所属と、その祖先) を、根は userData.bookshelves の順・子は getChildren の順に並べる。
+    // 所属でない祖先 (ADR-008「子⊆親」の違反の写し) も行にする (member: false)。below = その行より下の所属の数 (自分は数えない)。
+    _detailShelfTreeNodes(asin) {
+        const bm = this.bookshelfManager;
+        const key = (s) => s.internalId || s.id;
+        const shelves = this.userData.bookshelves || [];
+        const members = shelves.filter(bs => !bs.isSpecial && Array.isArray(bs.books) && bs.books.includes(asin));
+        const mem = new Set(members.map(key));
+        const ancestorsOf = (bs) => bm.getAncestors(key(bs)).filter(a => !a.isSpecial);
+        const nodes = new Map();
+        for (const m of members) {
+            nodes.set(key(m), m);
+            for (const a of ancestorsOf(m)) nodes.set(key(a), a);
+        }
+        const order = shelves.map(key);
+        const roots = [...nodes.values()].filter(n => ancestorsOf(n).length === 0)
+            .sort((x, y) => order.indexOf(key(x)) - order.indexOf(key(y)));
+        const out = [];
+        const seen = new Set();
+        const walk = (n, depth) => {
+            const k = key(n);
+            if (seen.has(k)) return 0; // 循環ガード
+            seen.add(k);
+            const item = { bs: n, depth, member: mem.has(k), below: 0 };
+            out.push(item);
+            for (const c of bm.getChildren(k).filter(c => nodes.has(key(c)))) {
+                item.below += walk(c, depth + 1);
+            }
+            return item.below + (item.member ? 1 : 0);
+        };
+        for (const r of roots) walk(r, 0);
+        return out;
+    }
+
+    // イシュー#757: 開閉の状態 (同じ本の詳細を開いている間だけ覚える・localStorage には置かない)。
+    // 無い時・別の本の時は既定から作る＝畳む。本棚の画面から開いた時は、根からその本棚までと、その本棚自身を開く。
+    _detailShelfTreeState(asin, contextInternalId) {
+        const st = this._detailShelfTree;
+        if (st && st.asin === asin) return st;
+        const open = new Set();
+        const ctx = contextInternalId ? this.bookshelfManager.getById(contextInternalId) : null;
+        if (ctx && this._detailShelfTreeNodes(asin).some(n => n.bs === ctx)) {
+            this._detailShelfTreeOpenTo(open, ctx);
+        }
+        this._detailShelfTree = { asin, open };
+        return this._detailShelfTree;
+    }
+
+    // 本棚 bs の祖先と bs 自身を open に足す (bs の子が1段見える)
+    _detailShelfTreeOpenTo(open, bs) {
+        const key = (s) => s.internalId || s.id;
+        for (const a of this.bookshelfManager.getAncestors(key(bs))) if (!a.isSpecial) open.add(key(a));
+        open.add(key(bs));
+    }
+
+    // イシュー#757 (#753 案2＋折り畳み): 1行＝本棚1つ。列は [アイコン][名前][開閉の欄][×(編集だけ)]・字下げは行の padding。
+    _detailShelfTreeHtml(book, isEditMode, contextInternalId) {
+        const esc = BookshelfEscape.escapeHtml;
+        const bm = this.bookshelfManager;
+        const key = (s) => s.internalId || s.id;
+        const nodes = this._detailShelfTreeNodes(book.asin);
+        if (nodes.length === 0) return '';
+        const { open } = this._detailShelfTreeState(book.asin, contextInternalId);
+        const ctx = contextInternalId ? bm.getById(contextInternalId) : null;
+        const pathText = (bs) => (typeof bm.getShelfPath === 'function' ? bm.getShelfPath(bs) : [bs.name]).join(' / ');
+        const rows = [];
+        let hideBelow = Infinity; // この段より深い行は、畳んだ祖先の下なので出さない
+        for (const n of nodes) {
+            if (n.depth > hideBelow) continue;
+            hideBelow = Infinity;
+            const k = key(n.bs);
+            const isOpen = n.below > 0 && open.has(k);
+            if (n.below > 0 && !isOpen) hideBelow = n.depth;
+            const isCtx = !!(ctx && ctx === n.bs);
+            const nameEsc = esc(n.bs.name);
+            const toggle = n.below > 0
+                ? `<button class="bd-tree-toggle" type="button" aria-expanded="${isOpen ? 'true' : 'false'}" aria-label="「${nameEsc}」の下の${n.below}つを${isOpen ? '畳む' : '開く'}">${window.renderIcon(isOpen ? 'chevron-down' : 'chevron-right', { size: 14 })}<span class="bd-tree-count">${n.below}</span></button>`
+                : '<span class="bd-tree-toggle-cell" aria-hidden="true"></span>';
+            const remove = !isEditMode ? ''
+                : (n.member
+                    ? `<button class="bd-chip-remove remove-from-bookshelf" type="button" data-asin="${esc(book.asin)}" data-bookshelf-id="${esc(n.bs.id)}" title="「${esc(pathText(n.bs))}」から外す${n.below > 0 ? '（下の段も外れる）' : ''}">×</button>`
+                    : '<span class="bd-tree-x-cell" aria-hidden="true"></span>');
+            rows.push(`<div class="bd-tree-row${n.member ? '' : ' is-missing'}${isCtx ? ' is-context' : ''}${n.below > 0 ? ' has-kids' : ''}" data-shelf-key="${esc(k)}" data-bookshelf-id="${esc(n.bs.id)}" style="--bd-depth:${n.depth}"${isCtx ? ' title="いま開いている本棚"' : ''}>`
+                + `<span class="bd-tree-icon" data-icon-value="${esc(n.bs.iconName || 'library')}">${window.renderIcon(n.bs.iconName || 'library', { size: 12 })}</span>`
+                + `<span class="bd-tree-name">${nameEsc}</span>${toggle}${remove}</div>`);
+        }
+        return `<div class="bd-tree${isEditMode ? ' is-edit' : ''}">${rows.join('')}</div>`;
+    }
+
+    // イシュー#757: 開閉を押した後、本棚セクションの本体を描き直し、押した行の開閉へフォーカスを戻す。
+    _toggleDetailShelfTree(shelfKey) {
+        const book = this._lastDetailBook;
+        if (!book) return;
+        const st = this._detailShelfTreeState(book.asin, this._currentBookshelfInternalId());
+        if (st.open.has(shelfKey)) st.open.delete(shelfKey); else st.open.add(shelfKey);
+        this._applyDetailShelvesEverywhere([book.asin]);
+        const pane = document.querySelector('#book-detail-pane .bd-section[data-section="bookshelves"] .bd-section-body');
+        const btn = pane && Array.from(pane.querySelectorAll('.bd-tree-row')).find(r => r.dataset.shelfKey === shelfKey)?.querySelector('.bd-tree-toggle');
+        if (btn) btn.focus();
+    }
+
+    // 本棚セクションの本体 (所属のチップの行と、編集モードの「本棚を追加...」の欄) の HTML (イシュー#620)。
+    // 詳細を描く時 (showBookDetail) と、所属が変わった時の書き換え (_applyDetailShelvesEverywhere) の両方がここを通る。
+    _detailShelvesBodyHtml(book, isEditMode) {
+        const ico = (n, s = 14) => `<span class="h-icon">${window.renderIcon(n, { size: s })}</span>`;
+        const esc = BookshelfEscape.escapeHtml;
+        const contextInternalId = this._currentBookshelfInternalId();
+
+        // イシュー#757: 所属の見せ方は、字下げの木 (新しい形) か、今のチップ (前の形) か (_detailShelfTreeOn)
+        const treeOn = this._detailShelfTreeOn();
+        // イシュー#746 (T1): チップの本棚のパスは、描いた後に欄の幅で根の側を省く
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (window.BookshelfUI && window.BookshelfUI.fitShelfPaths) window.BookshelfUI.fitShelfPaths(document); });
+        const candidateBookshelves = (this.userData.bookshelves || [])
+            .filter(bs => !bs.isSpecial && !(Array.isArray(bs.books) && bs.books.includes(book.asin)));
+
+        const chipsHtml = treeOn
+            ? this._detailShelfTreeHtml(book, isEditMode, contextInternalId)
+            : this._detailShelfChipsHtml(book, isEditMode, contextInternalId);
 
         const addBookshelfHtml = (isEditMode && candidateBookshelves.length > 0) ? `
             <div class="bd-add-bookshelf">
@@ -158,7 +282,7 @@ class _BookDetailMethods {
         ` : '';
 
         return `
-            <div class="bd-chips-row" id="current-bookshelves-${esc(book.asin)}">
+            <div class="bd-chips-row${treeOn ? ' is-tree' : ''}" id="current-bookshelves-${esc(book.asin)}">
                 ${chipsHtml || '<span class="bd-empty-note">どの本棚にも追加されていません</span>'}
             </div>
             ${addBookshelfHtml}
@@ -170,6 +294,13 @@ class _BookDetailMethods {
         const addToBookshelfBtn = root.querySelector('.add-to-bookshelf');
         if (addToBookshelfBtn) {
             addToBookshelfBtn.addEventListener('click', (e) => {
+                // イシュー#757: 選んだ本棚の祖先とその本棚自身を開いておく (追加した行と「子孫にも追加」で入った子が見える)
+                const asin = e.currentTarget.dataset.asin;
+                const sel = root.querySelector('.bookshelf-select');
+                const picked = sel && sel.value ? this.bookshelfManager.getBySlug(sel.value) : null;
+                if (picked && this._detailShelfTreeOn()) {
+                    this._detailShelfTreeOpenTo(this._detailShelfTreeState(asin, this._currentBookshelfInternalId()).open, picked);
+                }
                 // currentTarget = ボタン本体。e.target だとボタン内アイコン(SVG)クリックで asin が undefined になる
                 this.addBookToBookshelf(e.currentTarget.dataset.asin);
             });
@@ -181,6 +312,16 @@ class _BookDetailMethods {
                 const asin = e.target.dataset.asin;
                 const bookshelfId = e.target.dataset.bookshelfId;
                 this.removeFromBookshelf(asin, bookshelfId);
+            });
+        });
+
+        // イシュー#757: 木の開閉。×を除いた行のどこを押しても、その行の下を開く／畳む
+        root.querySelectorAll('.bd-tree').forEach(tree => {
+            tree.addEventListener('click', (e) => {
+                if (e.target.closest('.remove-from-bookshelf')) return;
+                const row = e.target.closest('.bd-tree-row');
+                if (!row || !row.querySelector('.bd-tree-toggle')) return;
+                this._toggleDetailShelfTree(row.dataset.shelfKey);
             });
         });
     }
@@ -211,6 +352,9 @@ class _BookDetailMethods {
         if (book && this._lastDetailBook && this._lastDetailBook.asin === book.asin
             && !!this._lastDetailEditMode === !!isEditMode
             && document.body.classList.contains('book-detail-pinned')) return;
+        // イシュー#757: 所属本棚の木の開閉は、同じ本の詳細を開いている間だけ覚える (閉じた後・別の本は既定から)
+        if (!document.body.classList.contains('book-detail-pinned') || !book || !this._lastDetailBook
+            || this._lastDetailBook.asin !== book.asin) this._detailShelfTree = null;
         // Router 連携（_applyRoute 由来でない場合のみ URL を更新）
         if (this.nav) {
             // イシュー#359 段階③: 台帳へ「本を開く」を入力 (URL #book/ と、スマホ幅なら本詳細の段を 1 回の pushState で)。
@@ -555,6 +699,7 @@ class _BookDetailMethods {
      * PC v2: モーダルではなく右ペイン (#book-detail-pane) を placeholder に戻す
      */
     _closeBookModalDom() {
+        this._detailShelfTree = null; // イシュー#757: 木の開閉は閉じたら忘れる
         const modal = document.getElementById('book-modal');
         if (modal) modal.classList.remove('show');
         const pane = document.getElementById('book-detail-pane');
