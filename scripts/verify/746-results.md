@@ -107,3 +107,25 @@
   - 1階層の本棚は、どの部品でも前と同じ素の名前（.shelf-path にしない）。
   - 本棚の画面の題も、1階層・ALL では前と同じ（名前＋流れる文字）。題を名前と下の行に分けて流れる文字をやめるのは、親がある棚だけ。
   - 理由：1階層まで1行の nowrap にすると、long の見本でホームのカードが格子を押し広げた（overflow 74）。題は、1階層でも clip に出た。
+
+## step5（e2e-diff：main との全件比較）
+
+- 流し方：`systemd-run --user --unit=e2e-diff-746 --working-directory=…/issue-746` で `node scripts/verify/e2e-diff-main.mjs --port=8746 --out=_vault-work/746/e2e-diff/out` を流した。18:06 に始めて 18:15 に終わった（約9分）。--init-storage は付けていない。
+  - 8146 に、step2 の手元の測りで立てた python の http.server（17:34 起動・cwd はこの worktree）が残っていたので止めた。
+- 比べた版：base＝origin/main @ b5b174a、work＝HEAD 7bed611。
+  - この間に、#745（同じ親の下の同名を止める・b485daa・b5b174a）が main に入った。work はまだ #745 を含まない（rebase は step7）。
+- 3表（report.md・_vault-work/746/e2e-diff/out/）
+
+| 表 | E2E（playwright） | Unit（vitest） |
+|---|---|---|
+| work だけ落ちる（新しく落ちた） | 1件（下）→ 直した | 0件 |
+| main だけ落ちる（新しく通った） | 0件 | 0件 |
+| 両方落ちる（既存の問題） | 0件 | 0件 |
+
+- 除外は、既定の1件（sort-perf-budget・CI でも別の step で流す物）だけ。
+- 画像比較（e2e-diff の visual・work 側）：54件中0件が差分。
+- work だけ落ちた1件：tests/e2e/exclude-local-reload-unexclude.spec.js の「675-A 保存先なしで1冊除外して再読込した後、除外一覧から取り消すと、蔵書と元の本棚に戻り book:added が出る」（chromium・3回流し直して3回とも落ちた）。
+  - 落ちた所：ホームのカードの冊数が `{ p, c }` のうち c だけ取れない。
+  - 原因：step4 の exclude-custom-shelf と同じ、意図した変化。子のカードの名前が「親の本棚 / 子の本棚」と親からのパスで出るため、「子の本棚を含み親の本棚を含まない」で子のカードを見分けられなくなった。
+  - 直し：パスを本棚自身の名前に戻してから見分ける（exclude-custom-shelf と同じ直し方）。直した後、この spec は7件緑。
+- 結論：work だけ落ちる物は、意図した変化の1件だけ。直したので、残りは0件。

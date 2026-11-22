@@ -132,7 +132,8 @@ const readCounts = (page, root) => page.evaluate((root) => {
     document.querySelectorAll(`${root} .book-count`).forEach(el => {
         let n = el.parentElement;
         for (let i = 0; i < 8 && n && !/子の本棚|親の本棚/.test(n.textContent); i++) n = n.parentElement;
-        const t = n ? n.textContent : '';
+        // イシュー#746: 子のカードの名前は「親の本棚 / 子の本棚」と親からのパスで出る。パスを本棚自身の名前に戻してから見分ける
+        const t = (n ? n.textContent : '').split('親の本棚 / 子の本棚').join('子の本棚');
         const key = t.includes('子の本棚') && !t.includes('親の本棚') ? 'c' : (t.includes('親の本棚') && !t.includes('子の本棚') ? 'p' : null);
         if (key && !(key in out)) out[key] = el.textContent.trim();
     });
