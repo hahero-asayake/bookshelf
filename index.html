@@ -361,7 +361,7 @@
         <div class="mobile-scrim" id="mobile-scrim" aria-hidden="true"></div>
 
         <!-- モバイル: 下部ナビ (<=900px のみ表示・イシュー#505で旧768pxから統一) -->
-        <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="モバイルナビゲーション">
+        <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="モバイルナビゲーション" data-anchored-floor>
             <button type="button" data-mobile-nav="home"><span class="mnav-icon" data-icon="home" data-icon-size="20"></span><span>ホーム</span></button>
             <button type="button" data-mobile-nav="shelves"><span class="mnav-icon" data-icon="library" data-icon-size="20"></span><span>本棚</span></button>
             <button type="button" data-mobile-nav="search"><span class="mnav-icon" data-icon="search" data-icon-size="20"></span><span>検索</span></button>
@@ -1524,7 +1524,7 @@
     <script defer src="js/dashboard.js?v=2026112246"></script>
     <script defer src="js/ui-components.js?v=2026112249"></script>
     <script defer src="js/sync-failure.js?v=2026111886"></script>
-    <script defer src="js/bookshelf.js?v=2026112249"></script>
+    <script defer src="js/bookshelf.js?v=2026112252"></script>
     <!-- イシュー#546 (U8e): 本棚カード・ツリー順の共用部品(_bookshelvesInTreeOrder・
          _bindBookshelfOverviewEvents・_renderBookshelfCard。bookshelf.js と dashboard.js の
          両方から呼ばれる)。js/ui/ 配下だが article-editor.js 等と同じ Plan A の prototype 合成

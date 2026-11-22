@@ -6401,16 +6401,27 @@ class VirtualBookshelf {
             menuEl.dataset.anchoredFit = '1';
             menuRect = menuEl.getBoundingClientRect();
         }
-        const spaceBelow = window.innerHeight - anchorRect.bottom;
+        // 下限 (イシュー#752): 画面の下端と、下の常設バー (印 data-anchored-floor・今は #mobile-bottom-nav) の上端の
+        // 小さい方。バーは inert の中 (記事エディタ等の trap 面の後ろ)・箱が無い (PC の display:none)・見えていない時は数えない。
+        let floor = window.innerHeight;
+        document.querySelectorAll('[data-anchored-floor]').forEach((bar) => {
+            if (bar.closest('[inert]') || !bar.getClientRects().length || getComputedStyle(bar).visibility !== 'visible') return;
+            const br = bar.getBoundingClientRect();
+            if (br.height > 0 && br.top < floor) floor = br.top;
+        });
+        const spaceBelow = floor - anchorRect.bottom;
         const spaceAbove = anchorRect.top;
-        // 縦 (イシュー#749): 上下どちらにも入らない、中をスクロールできるメニューは、下の空きに高さを詰めて
-        // アンカーの下に出す (下端で挟むとアンカーを覆うため)。スクロールしないメニューは今までどおり挟むだけ。
+        // 縦 (イシュー#749・#752): 上下どちらにも入らない、中をスクロールできるメニューは、下の空きが 120px 以上なら
+        // 下に詰めてアンカーの下に出す (下端で挟むとアンカーを覆うため)。下が狭く上が 120px 以上なら、上に詰めて上に出す。
+        // スクロールしないメニューは今までどおり挟むだけ。
         const oy = getComputedStyle(menuEl).overflowY;
-        if (spaceBelow < menuRect.height + margin && spaceAbove < menuRect.height + margin
-            && (oy === 'auto' || oy === 'scroll') && spaceBelow - margin >= 120) {
-            menuEl.style.maxHeight = `${Math.floor(spaceBelow - margin)}px`;
-            menuEl.dataset.anchoredFit = '1';
-            menuRect = menuEl.getBoundingClientRect();
+        if (spaceBelow < menuRect.height + margin && spaceAbove < menuRect.height + margin && (oy === 'auto' || oy === 'scroll')) {
+            const fit = spaceBelow - margin >= 120 ? spaceBelow - margin : (spaceAbove - margin >= 120 ? spaceAbove - margin : 0);
+            if (fit) {
+                menuEl.style.maxHeight = `${Math.floor(fit)}px`;
+                menuEl.dataset.anchoredFit = '1';
+                menuRect = menuEl.getBoundingClientRect();
+            }
         }
         let top;
         if (spaceBelow < menuRect.height + margin && spaceAbove >= menuRect.height + margin) {
@@ -6419,7 +6430,7 @@ class VirtualBookshelf {
         } else {
             top = anchorRect.bottom;
         }
-        top = Math.max(margin, Math.min(top, window.innerHeight - menuRect.height - margin));
+        top = Math.max(margin, Math.min(top, floor - menuRect.height - margin));
         let left = anchorRect.left + anchorRect.width / 2 - menuRect.width / 2;
         left = Math.max(margin, Math.min(left, window.innerWidth - menuRect.width - margin));
         menuEl.style.top = `${top}px`;

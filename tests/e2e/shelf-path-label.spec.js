@@ -89,7 +89,10 @@ async function bulkPopoverBox(page) {
             return { text: (p || it).textContent.trim(), inPop: r.left >= b.left - 0.5 && r.right <= b.right + 0.5, fits: p ? p.scrollWidth <= p.clientWidth + 1 : true, t1: !!(p && p.classList.contains('is-t1')) };
         });
         const btn = document.getElementById('bulk-add-shelf').getBoundingClientRect();
-        return { W: window.innerWidth, H: window.innerHeight, left: b.left, right: b.right, top: b.top, bottom: b.bottom, btnBottom: btn.bottom, titleLeft: t.left, titleRight: t.right, rows };
+        // イシュー#752: 下のナビ (スマホだけ箱がある) の上端。PC は display:none で null
+        const nav = document.getElementById('mobile-bottom-nav');
+        const navTop = nav && nav.getClientRects().length ? nav.getBoundingClientRect().top : null;
+        return { navTop, W: window.innerWidth, H: window.innerHeight, left: b.left, right: b.right, top: b.top, bottom: b.bottom, btnBottom: btn.bottom, titleLeft: t.left, titleRight: t.right, rows };
     });
 }
 
@@ -101,6 +104,8 @@ async function expectBulkPopoverInView(page) {
     // 縦：ボタンを覆わずにその下へ出て、画面の下端を越えない
     expect(x.top).toBeGreaterThanOrEqual(x.btnBottom - 0.5);
     expect(x.bottom).toBeLessThanOrEqual(x.H + 0.5);
+    // イシュー#752: 下のナビが見えている時は、その上端より 8px 上で終わる (ナビの下に最後の行が隠れない)
+    if (x.navTop !== null) expect(x.bottom).toBeLessThanOrEqual(x.navTop - 8 + 0.5);
     expect(x.rows.length).toBeGreaterThan(0);
     expect(x.rows.filter((r) => !r.inPop || !r.fits)).toEqual([]);
     return x;
@@ -179,6 +184,9 @@ for (const [label, vp, mobile] of [['スマホ390', { width: 390, height: 844 },
                 await expect.poll(async () => (await bulkPopoverBox(page)).rows.some((r) => r.t1 && r.text.endsWith(LONG_SELF))).toBe(true);
             }
             expect(box.rows.some((r) => r.text.endsWith(LONG_SELF))).toBe(true);
+            // イシュー#752: 一覧の末尾まで送った最後の行を、force なしで押せる (下のナビが覆うと、受け取りの検査で落ちる)
+            await page.evaluate(() => { const p = document.getElementById('bulk-shelf-popover'); p.scrollTop = p.scrollHeight; });
+            await page.locator('#bulk-shelf-list .bookshelf-popover-item').last().click({ trial: true, timeout: 5000 });
             // H4: 「漫画 / SF」へ追加 → 通知
             await page.locator('#bulk-shelf-list [data-bs-internal="s09x"]').click();
             await expect(toastText(page, '2 冊を「漫画 / SF」に追加しました')).toBeVisible();
