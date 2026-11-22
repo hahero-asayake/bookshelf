@@ -2202,7 +2202,7 @@ test.describe('戻る: イシュー#762 設定の節へ直接開いた時', () =
 // その上で設定を開くと、設定へ移る時の引き出しの閉じ (#760 _closeOverlaysForTransition) が設定の push と合流して
 // 公開の一覧のエントリを上書きし (push→replace)、戻る1回で公開の一覧ごと閉じ、進むで引き出しが開いていた。
 // 期待は 17表 R23 (ドロワー→設定)・K2 (閉じてすぐ開く経路は段を引き継ぐ)・A01 (ドロワー→記事)・A42f (#291 進むで開き直す) に揃える。
-// R32 (×・Esc の行き先) は tp で期待を決めるまで空けておく。
+// R32: ×・Esc も閉じて開く前の画面 (引き出しは出ない・R23 と同じ形。②決裁 2026-11-23 ア扱い・切り替えなし)。
 test.describe('戻る: イシュー#764 引き出し→公開の一覧', () => {
     async function forward(page) {
         await page.goForward({ waitUntil: 'commit', timeout: 3000 }).catch(() => {});
@@ -2272,4 +2272,20 @@ test.describe('戻る: イシュー#764 引き出し→公開の一覧', () => {
         expect.soft(s2.drawer, '進む: 引き出しが開かない').toBe(false);
         await expect.soft(page.locator('#publish-pages-modal'), '進む: 公開の一覧が開き直る (A42f・#291)').toHaveClass(/show/);
     }));
+    for (const [how, label] of [['close', '×'], ['esc', 'Esc']]) {
+        test(`R32 390 引き出し→公開→${label}＝閉じて開く前の画面・引き出しは出ない (R23 と同じ)`, async ({ page }, ti) => run764(page, ti, 'R32-' + how, async (r, before) => {
+            await openPublishFromDrawer(page);
+            await r.step(page, 'pub');
+            if (how === 'close') await tap(page, '#publish-pages-close');
+            else await page.keyboard.press('Escape');
+            await settle(page, 700);
+            await r.step(page, how);
+            await expect.soft(page.locator('#publish-pages-modal'), `${label}: 公開の一覧が閉じる`).not.toHaveClass(/show/);
+            const s = await snap(page);
+            expect.soft(s.drawer, `${label}: 引き出しは出ない`).toBe(false);
+            expect.soft(s.navFaces, `${label}: 段が余らない`).toEqual([]);
+            expect.soft(s.hash, `${label}: 開く前の hash`).toBe(before.hash);
+            expectSameHistory(before, s);
+        }));
+    }
 });

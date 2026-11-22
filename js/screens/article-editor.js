@@ -125,6 +125,13 @@ class _ArticleEditorMethods {
             if (loaded) await this._artRecoverOrphanDrafts();
         }
         this._artShowList();
+        // イシュー#764: 引き出し (スマホの左ナビ) から開いた時は、引き出しを閉じてその段を公開の一覧へ引き継ぐ
+        // (17表 K2・下のナビ「設定」#284 K2・設定へ移る時の _closeOverlaysForTransition #760 と同じ型)。
+        // 閉じずに重ねると、上で設定を開いた時の引き出しの閉じが設定の push と合流して公開の一覧のエントリを
+        // 上書きし、戻る1回で公開の一覧ごと閉じ、進むで引き出しが開いていた。閉じるのは await の後・
+        // _surface().open と同じ同期の塊の中 (クリックの handler で先に閉じると、上の await の間に引き出しの
+        // go(-1) が microtask で飛び、push→replace の引き継ぎが効かない＝#259 型)。開いていなければ何もしない
+        this._closeDrawer();
         // 重なり管理役 (イシュー#367): 一覧は大 (lg)・編集に入ると全画面 (full・_artOpenEditor で setSize)。履歴は従来どおり _modalHistPush/Pop (hist:false)
         this._overlays().open(modal, { kind: 'modal', size: this._artMode === 'edit' || this._artMode === 'form' ? 'full' : 'lg', hist: false });
         if (typeof window.applyIcons === 'function') window.applyIcons(modal);

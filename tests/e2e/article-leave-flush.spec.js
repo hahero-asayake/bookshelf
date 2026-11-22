@@ -63,7 +63,8 @@ test('H3 題名を入れてすぐEscで閉じても、開き直した一覧に�
     await newArticleWithTitle(page, 'H3 すぐ閉じる記事');
     await page.keyboard.press('Escape');
     await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
-    await openArticleList(page, { drawerOpen: true });
+    // イシュー#764: 引き出しから開いた公開の一覧を閉じると引き出しも閉じている (R32) = 引き出しを開き直してから
+    await openArticleList(page);
     await expect(articleRow(page, 'H3 すぐ閉じる記事')).toHaveCount(1);
 });
 
@@ -125,7 +126,8 @@ test('H6 保存先に送れない時は←でその場にとどまり、閉じ�
     await page.keyboard.press('Escape');
     await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
     // 開き直しても、まだ送れていない記事を保存先から読み直して捨てない
-    await openArticleList(page, { drawerOpen: true });
+    // イシュー#764: 引き出しから開いた公開の一覧を閉じると引き出しも閉じている (R32) = 引き出しを開き直してから
+    await openArticleList(page);
     await expect(articleRow(page, 'H6 送れない記事')).toHaveCount(1);
 });
 
