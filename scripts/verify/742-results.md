@@ -46,3 +46,19 @@
 - 検出力：同じ spec を前の版（origin/main を _local/742/main で配信・PORT=8177）で流すと、スマホ幅の 4 件（開く・閉じる・公開の通し・キーボード）が落ち、切り替えと PC の 3 件は通る＝新しい形の違いを捉えている。
 - `npm run lint`：12 本中 0 本失敗。
 - メモ：8143 は他の木のサーバが LISTEN していた（前の版の配信に使えなかった）。
+
+## 5 ほかの画面に及んでいないことの確かめ（step3・HEAD 723970a）
+
+| 何を | 結果 |
+|---|---|
+| 既存 spec（chromium と char-390/768/820/1024）：publish-panel・overlay-front・publish-article-editor・gate/j5-*・char/article・char/publish-hub・char/article-ops-count | 150 通過・0 失敗・128 skip（skip は spec 側の端末の選び分け） |
+| 既存 spec（webkit＝iPhone 13・BACKNAV_WEBKIT=1）：overlay-front・back-nav-matrix（A27/A28 の公開パネルの戻る/×/Esc を含む） | 136 通過・0 失敗（4.3分） |
+| gate/j5-*（gate-webkit・GATE_WEBKIT=1） | 8 通過・0 失敗 |
+| `npm run lint`（全 lint:*） | 12 本中 0 本失敗 |
+| `npm test` | 85 ファイル・1262 通過・0 失敗 |
+| `check:version --range=origin/main..HEAD` | OK |
+| 画像比較（`PORT=8742 node scripts/verify/visual-docker.mjs`・公式コンテナ v1.65.1-resolute・--update-snapshots なし） | 54 件とも通過＝差分 0（計画の「66枚」は数え違いで、テストは54件）。公開パネルは対象外なので、本棚トップ・ほかのシート・設定などに見た目の変化が無い根拠 |
+| `npm run audit` | layout clip 70・overflow 30（=100）／buttons variants 8／image 0／a11y axe 6・input 2・placeholder 12・select 2（=22）。#713 時点（100・8・0・22）と同じ・上限以内 |
+
+- 落ちた件が無いので、既存の spec の期待は直していない（意図した変化で落ちる件も無かった）。
+- 768/820 幅は char の4幅で公開パネルを開く件も通った。形の変化（下から出る）は step5 の画像で「及ぶ画面」として見せる。
