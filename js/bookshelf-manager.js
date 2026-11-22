@@ -84,6 +84,56 @@ class BookshelfManager {
         return chain.map(b => b.name).join(sep);
     }
 
+    // イシュー#746: 本棚を単独で示す所 (通知・確認・選択肢・チップ等) を、親からのパスで出すかの切り替え
+    // (案A・T1・題の分割を1組で戻す)。ハヘロが iPhone で使って承認するまで残す。
+    // 全員を前の形 (名前だけ) に戻す時は SHELF_PATH_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.shelfPath' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    shelfPathOn() {
+        const SHELF_PATH_DEFAULT = true;
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.shelfPath');
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return SHELF_PATH_DEFAULT;
+    }
+
+    // イシュー#746: 根→自身の名前の配列 (ALL=isSpecial は出さない・循環は止める)。
+    // 引数は internalId・slug・本棚の物のどれでもよい。名前に ' / ' が入っていても段は分けない (配列で持つ)。
+    getShelfPath(keyOrShelf) {
+        const key = (keyOrShelf && typeof keyOrShelf === 'object') ? this._keyOf(keyOrShelf) : keyOrShelf;
+        const shelf = this.getById(key) || ((keyOrShelf && typeof keyOrShelf === 'object') ? keyOrShelf : null);
+        if (!shelf) return [];
+        if (shelf.isSpecial) return [shelf.name || ''];
+        const ancestors = this.getAncestors(this._keyOf(shelf)).filter(b => !b.isSpecial && b !== shelf);
+        return ancestors.slice().reverse().concat(shelf).map(b => b.name || '');
+    }
+
+    // イシュー#746: 本棚を単独で示す表示の文字は、この関数だけで作る (呼び元で join しない)。
+    // 切り替えが off なら名前だけ (前の形)。on なら根からのパス (1階層は名前だけ)。
+    // max (字数) を超える時は T1 と同じ省き方 = 根の側の段から「… / 」に替える。本棚自身の名前は必ず残す
+    // (自身だけで max を超えても自身は全部出す)。記事エディタの4か所は getPathLabel を直に使う (#133・切り替えの対象外)。
+    getShelfLabel(keyOrShelf, { max } = {}) {
+        const key = (keyOrShelf && typeof keyOrShelf === 'object') ? this._keyOf(keyOrShelf) : keyOrShelf;
+        const shelf = this.getById(key) || ((keyOrShelf && typeof keyOrShelf === 'object') ? keyOrShelf : null);
+        if (!shelf) return '';
+        if (!this.shelfPathOn() || shelf.isSpecial) return shelf.name || '';
+        const segs = this.getShelfPath(shelf);
+        const SEP = ' / ';
+        let text = segs.join(SEP);
+        if (!max || text.length <= max) return text;
+        for (let k = 1; k < segs.length; k++) {
+            text = '…' + SEP + segs.slice(k).join(SEP);
+            if (text.length <= max) return text;
+        }
+        return text; // 「… / 自身」(1階層なら自身) = 自身は max を超えても全部出す
+    }
+
+    // イシュー#746: 「文」(通知・確認) の中の本棚。長いパスだけ根の側を省き、本文の1文を2行までに収める。
+    getShelfTextLabel(keyOrShelf) {
+        return this.getShelfLabel(keyOrShelf, { max: BookshelfManager.SHELF_LABEL_TEXT_MAX });
+    }
+
     // 循環参照チェック: candidateParent が internalId の子孫でないこと
     canSetParent(internalId, candidateParentId) {
         if (internalId === candidateParentId) return false;
@@ -294,7 +344,7 @@ class BookshelfManager {
     }
 
     // reparent 適用前のプレビュー (mutate しない)。確認ダイアログ用。
-    // { valid, reason, addedToNewParent, targetShelves:[{name, addCount}] }
+    // { valid, reason, addedToNewParent, targetShelves:[{name, key, addCount}] }
     previewReparent(internalId, newParentId) {
         const bs = this.getById(internalId);
         if (!bs) return { valid: false, reason: '本棚が見つかりません' };
@@ -315,7 +365,7 @@ class BookshelfManager {
             const have = new Set(shelf.books || []);
             let addCount = 0;
             for (const asin of subtree) if (!have.has(asin)) addCount++;
-            if (addCount > 0) targetShelves.push({ name: shelf.name, addCount });
+            if (addCount > 0) targetShelves.push({ name: shelf.name, key: this._keyOf(shelf), addCount }); // key はイシュー#746 (確認の文をパスで出す)
             if (this._keyOf(shelf) === targetParent) addedToNewParent = addCount;
         }
         return { valid: true, addedToNewParent, targetShelves };
@@ -500,5 +550,11 @@ class BookshelfManager {
         this.app.userData.notes[asin].rating = rating;
     }
 }
+
+// イシュー#746: 通知・確認の文の中で本棚のパスを省かずに出す字数の上限 (getShelfTextLabel)。
+// 出どころ: スマホ 390 幅の toast は max-width min(92vw,460px)=359px・左右の余白 0.95rem・アイコンと間で約 25px・
+// 字の大きさ 0.88rem (css/bookshelf.css #toast-container/.toast) → 本文の幅は約 290px ≒ 全角 20 字/行。
+// パスの区切り ' / ' は半角なので、24 字のパスに「」と「に追加しました」等を足しても本文の1文は2行までに収まる。
+BookshelfManager.SHELF_LABEL_TEXT_MAX = 24;
 
 window.BookshelfManager = BookshelfManager;

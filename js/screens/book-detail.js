@@ -149,7 +149,7 @@ class _BookDetailMethods {
             <div class="bd-add-bookshelf">
                 <select class="bookshelf-select" data-asin="${esc(book.asin)}">
                     <option value="">本棚を追加...</option>
-                    ${candidateBookshelves.map(bs => `<option value="${esc(bs.id)}">${esc(bs.name)}</option>`).join('')}
+                    ${candidateBookshelves.map(bs => `<option value="${esc(bs.id)}">${esc(typeof this.bookshelfManager?.getShelfLabel === 'function' ? this.bookshelfManager.getShelfLabel(bs) : bs.name)}</option>`).join('')}
                 </select>
                 <button class="btn btn-secondary btn-small add-to-bookshelf" data-asin="${esc(book.asin)}" type="button">${ico('plus')}追加</button>
             </div>

@@ -373,7 +373,7 @@ class _BookshelfListMethods {
             : new Set();
         const candidates = bm.getBookshelves().filter(b => !b.isSpecial && !excludedIds.has(bm._keyOf(b)));
         parentSelect.innerHTML = '<option value="">（トップ階層）</option>' + candidates
-            .map(b => `<option value="${bm._keyOf(b)}">${BookshelfEscape.escapeHtml(b.name)}</option>`)
+            .map(b => `<option value="${bm._keyOf(b)}">${BookshelfEscape.escapeHtml(bm.getShelfLabel(b))}</option>`)
             .join('');
 
         const setIcon = (name) => {

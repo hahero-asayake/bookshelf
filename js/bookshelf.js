@@ -1530,8 +1530,8 @@ class VirtualBookshelf {
         if (pop) pop.hidden = true;
         if (typeof this.renderBookshelfList === 'function') this.renderBookshelfList();
         if (typeof this._renderSidebarTree === 'function') this._renderSidebarTree();
-        const ancMsg = ancestors.length ? `\n（祖先にも自動追加: ${ancestors.map(a => a.name).join('、')}）` : '';
-        toast(`${added} 冊を「${shelf.name}」に追加しました${ancMsg}`);
+        const ancMsg = ancestors.length ? `\n（祖先にも自動追加: ${ancestors.map(a => this.bookshelfManager.getShelfTextLabel(a)).join('、')}）` : '';
+        toast(`${added} 冊を「${this.bookshelfManager.getShelfTextLabel(shelf)}」に追加しました${ancMsg}`);
     }
 
     async _bulkExclude() {
@@ -1624,7 +1624,7 @@ class VirtualBookshelf {
         }
         const asins = [...(this.selectedAsins || [])].filter(a => (curShelf.books || []).includes(a));
         if (!asins.length) { toast('この本棚にある本を選択してください'); return; }
-        if (!(await window.confirmDialog({ message: `選択した ${asins.length} 冊を「${curShelf.name}」から外しますか？\n\n本自体は削除されません（子の本棚に入っている場合はそこからも外れます）。`, danger: true }))) return;
+        if (!(await window.confirmDialog({ message: `選択した ${asins.length} 冊を「${this.bookshelfManager.getShelfTextLabel(curShelf)}」から外しますか？\n\n本自体は削除されません（子の本棚に入っている場合はそこからも外れます）。`, danger: true }))) return;
         for (const asin of asins) {
             this.bookshelfManager.removeBookFromBookshelf(curShelf.internalId, asin);
         }
@@ -1634,7 +1634,7 @@ class VirtualBookshelf {
         this.applyFilters();
         this.updateDisplay();
         if (typeof this._renderSidebarTree === 'function') this._renderSidebarTree();
-        toast(`${asins.length} 冊を「${curShelf.name}」から外しました`);
+        toast(`${asins.length} 冊を「${this.bookshelfManager.getShelfTextLabel(curShelf)}」から外しました`);
     }
 
     search(query) {
@@ -4752,12 +4752,13 @@ class VirtualBookshelf {
         if (!prev.valid) { toast('' + (prev.reason || '移動できません')); return false; }
         const bs = bm.getById(internalId);
         const parent = bm.getById(newParentId);
-        const parentName = parent ? parent.name : '(ルート)';
-        let msg = `「${bs.name}」を「${parentName}」の下へ移動します。\n`;
+        const parentName = parent ? bm.getShelfTextLabel(parent) : '(ルート)';
+        const bsLabel = bm.getShelfTextLabel(bs); // イシュー#746: 確認の文は親からのパス
+        let msg = `「${bsLabel}」を「${parentName}」の下へ移動します。\n`;
         if (prev.targetShelves && prev.targetShelves.length > 0) {
-            const lines = prev.targetShelves.map(t => `　・${t.name}: +${t.addCount} 冊`).join('\n');
+            const lines = prev.targetShelves.map(t => `　・${t.key ? bm.getShelfTextLabel(t.key) : t.name}: +${t.addCount} 冊`).join('\n');
             msg += `\n「子は親の本の中から持つ」制約を保つため、` +
-                   `「${bs.name}」と子本棚の本が移動先の親本棚にも追加されます:\n${lines}`;
+                   `「${bsLabel}」と子本棚の本が移動先の親本棚にも追加されます:\n${lines}`;
         }
         const ok = await confirmDialog({ title: '本棚を移動', message: msg, okLabel: '移動する' });
         if (!ok) return false;
@@ -5853,11 +5854,11 @@ class VirtualBookshelf {
             confirmCallback: async (targets) => {
                 _removedTargets = targets.slice();
                 const cascade = targets.length > 1
-                    ? `\n\n子孫本棚もカスケード削除されます:\n${targets.map(t => `・${t.name}`).join('\n')}`
+                    ? `\n\n子孫本棚もカスケード削除されます:\n${targets.map(t => `・${this.bookshelfManager.getShelfTextLabel(t)}`).join('\n')}`
                     : '';
                 return await confirmDialog({
                     title: '本棚を削除',
-                    message: `本棚「${bookshelf.name}」を削除しますか？${cascade}\n\nこの操作は取り消せません。`,
+                    message: `本棚「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」を削除しますか？${cascade}\n\nこの操作は取り消せません。`,
                     okLabel: '削除する',
                     danger: true
                 });
@@ -5932,7 +5933,7 @@ class VirtualBookshelf {
         }
 
         if ((bookshelf.books || []).includes(asin)) {
-            toast(`この本は既に「${bookshelf.name}」に追加済みです`);
+            toast(`この本は既に「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」に追加済みです`);
             return;
         }
 
@@ -5960,12 +5961,12 @@ class VirtualBookshelf {
         this._onLibraryChanged();
 
         const ancestorMsg = ancestorsToAdd.length > 0
-            ? `\n（祖先にも自動追加: ${ancestorsToAdd.map(a => a.name).join('、')}）`
+            ? `\n（祖先にも自動追加: ${ancestorsToAdd.map(a => this.bookshelfManager.getShelfTextLabel(a)).join('、')}）`
             : '';
         const descendantMsg = propagateTo.length > 0
             ? `\n（子孫にも追加: ${propagateTo.length}個の本棚）`
             : '';
-        toast(`「${bookshelf.name}」に追加しました${ancestorMsg}${descendantMsg}`);
+        toast(`「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」に追加しました${ancestorMsg}${descendantMsg}`);
         bookshelfSelect.value = '';
     }
 
@@ -6045,16 +6046,16 @@ class VirtualBookshelf {
         const bookTitle = book ? book.title : 'この本';
 
         if (!bookshelf.books.includes(asin)) {
-            toast(`この本は「${bookshelf.name}」にありません`);
+            toast(`この本は「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」にありません`);
             return;
         }
 
         const descendants = this.bookshelfManager.getDescendants(bookshelf.internalId);
         const descendantsWithBook = descendants.filter(d => (d.books || []).includes(asin));
 
-        let confirmMsg = `「${bookTitle}」を「${bookshelf.name}」から除外しますか？\n\n本自体は削除されず、この本棚からのみ削除されます。`;
+        let confirmMsg = `「${bookTitle}」を「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」から除外しますか？\n\n本自体は削除されず、この本棚からのみ削除されます。`;
         if (descendantsWithBook.length > 0) {
-            const names = descendantsWithBook.map(d => `・${d.name}`).join('\n');
+            const names = descendantsWithBook.map(d => `・${this.bookshelfManager.getShelfTextLabel(d)}`).join('\n');
             confirmMsg += `\n\n子孫本棚にも含まれているため、自動カスケード削除されます:\n${names}`;
         }
 
@@ -6073,7 +6074,7 @@ class VirtualBookshelf {
         // 左ツリーの本棚の冊数と、ホームの本棚別 Top5 を描き直す (イシュー#615)
         this._onLibraryChanged();
 
-        toast(`「${bookTitle}」を「${bookshelf.name}」から除外しました`);
+        toast(`「${bookTitle}」を「${this.bookshelfManager.getShelfTextLabel(bookshelf)}」から除外しました`);
         this.closeModal();
     }
 
