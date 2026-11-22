@@ -72,3 +72,14 @@
 - 直した版で：shelf-path-label chromium 12件緑・webkit（BACKNAV_WEBKIT=1）12件緑。
 - 関係する spec（一括の吹き出し：book-detail-shelf-add・library-count-refresh・gate/j3-2-create-shelf・char/settings-shelves-nav ／ `_placeAnchoredMenu` を使う記事エディタ：art-canvas-tap-edit・exclude-custom-shelf・article-pc-pane・mde-toolbar-icons・publish-panel・status-bar-over-faces・standard-ops）：155件緑・210件 skip（char の他の幅）・赤0。
 - npm run lint：12本中0本失敗。npm test：1289件緑。
+
+## §3 e2e-diff と前後の画像（step3）
+
+- 流し方：`systemd-run --user --unit=e2e-diff-749 --working-directory=/home/kuroko/worktrees/bookshelf/issue-749 --setenv=PATH=<node の bin>:/usr/bin:/bin <node> scripts/verify/e2e-diff-main.mjs --port=8749 --out=_vault-work/749/e2e-diff/out`（--init-storage なし）。18:59 に始めて 19:07 に終わった（約8分）。
+- base＝origin/main e2c920b・work＝9246d98。
+  - E2E：base 1245 緑・work 1247 緑（足した2件の分）・どちらも赤0・skip 592。新しく落ちた0・新しく通った0・両方で落ちた0（除外 sort-perf-budget 1件は CI と同じ）。
+  - Unit：base・work とも 1289 緑・赤0。
+  - 画像比較（visual・公式コンテナ）：54件中0件が差分。
+- 前後の画像：`_vault-work/749/harness/shoot.mjs`。前＝e2c920b・後＝9246d98 を git archive で `_vault-work/749/snap/` に出し、それぞれを python の http.server（127.0.0.1:8149）で配信した。見本は tests/fixtures/shelves-path.json、起動の差し込みは shelf-path-label.spec.js の boot と同じ。外への通信は止めた。操作は、すべての本 → 複数選択 → 1冊選ぶ → 本棚に追加。開いた所と一覧の末尾を撮った。撮った組は chromium のスマホ390・PC1280 の前後（パスあり・切り替え off）と、webkit（iPhone の UA）のスマホ390 の後。
+- webkit の後：left 8・right 322・幅 314・top 439・bottom 836。上に iOS 向けの保存先の案内が出てボタンが下がるため、吹き出しは下の空きに高さを詰めて出る。s18 は「… / 2026年に読み返したい本」（T1）。
+- ハヘロ向けの頁：`_vault-work/749/hahero/一括追加の吹き出し前後20261122/index.html`
