@@ -59,6 +59,8 @@
          *                true なら data-layer と一緒に data-ov-below-notice を書く (css が top を帯の高さだけ下げる・イシュー#671)。
          *                既定: modal/sheet で layer≠false の面。全画面の popover (ホームのウィジェット選択) は true を明示する
          *   sizeTarget … .ov-* を付ける要素 (既定: root 内の .modal-content / .cfm-box、無ければ root)
+         *   narrow     … 狭幅 (<=900px) の出し方 (イシュー#742)。'fit' = 中身の高さのシートとして下から出す (root に data-ov-narrow="fit")。
+         *                PC 幅は size の段階のまま。省略 = 今の媒体ルール (全画面シート)。開くたびに書き直す (切り替えの値を反映)
          */
         open(elOrId, spec) {
             const s = spec || {};
@@ -107,6 +109,7 @@
                 el.dataset.ovSize = size;
             }
             el.dataset.ovKind = kind;
+            if (s.narrow === 'fit') el.dataset.ovNarrow = 'fit'; else delete el.dataset.ovNarrow;
             if (face.showClass) el.classList.add(face.showClass);
 
             this.stack.push(face);

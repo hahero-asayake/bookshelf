@@ -173,4 +173,21 @@ describe('OverlayManager', () => {
         ov.open(a, { kind: 'modal' });
         expect('ovBelowNotice' in a.dataset).toBe(true);
     });
+
+    // イシュー#742: 狭幅で中身の高さのシートとして下から出す面 (オプトイン)。css は data-ov-narrow="fit" を見る
+    it("narrow:'fit' で開くと root に data-ov-narrow が付き、指定なしで開き直すと消える。ほかの面には付かない", () => {
+        const pub = el('pub', '<div class="modal-content"></div>');
+        const other = el('other', '<div class="modal-content"></div>');
+        ov.open(pub, { kind: 'modal', size: 'md', narrow: 'fit' });
+        ov.open(other, { kind: 'modal', size: 'md' });
+        expect(pub.dataset.ovNarrow).toBe('fit');
+        expect('ovNarrow' in other.dataset).toBe(false);
+        ov.close('other');
+        ov.close('pub');
+        ov.open(pub, { kind: 'modal', size: 'md' }); // 切り替えで前の形に戻した時
+        expect('ovNarrow' in pub.dataset).toBe(false);
+        ov.close('pub');
+        ov.open(pub, { kind: 'modal', size: 'md', narrow: 'bogus' }); // 知らない値は付けない
+        expect('ovNarrow' in pub.dataset).toBe(false);
+    });
 });

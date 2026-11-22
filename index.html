@@ -56,7 +56,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=20260613">
 
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=20260613">
-    <link rel="stylesheet" href="css/bookshelf.css?v=2026111893">
+    <link rel="stylesheet" href="css/bookshelf.css?v=2026112201">
     <!-- 起動に必須で、js が fetch で読むファイル。sw.js の install はこの index.html から先読みの一覧を作るため、
          ここに載せておくと1回開いただけの端末でも電波なしで起動できる (イシュー#597)。
          rel="bookshelf-precache" はブラウザが取得しない印 (sw.js だけが読む)。rel="preload" にすると WebKit は
@@ -1113,7 +1113,7 @@
             <button class="modal-close" id="art-pub-close" aria-label="閉じる">×</button>
             <!-- U1 (イシュー#276): updatedAt > lastBuiltAt (公開中かつ未反映の変更あり) のときだけ見出し/ボタンを「更新」表記に切り替える (_artRenderPublishPanel) -->
             <div class="modal-header"><h2 id="art-pub-title"><span class="h-icon" data-icon="upload-cloud" data-icon-size="20"></span><span id="art-pub-title-text">公開</span></h2></div>
-            <div class="art-pub-body">
+            <div class="art-pub-body" data-ov-scroll>
                 <details class="art-pub-sec art-pub-check" id="art-pub-check">
                     <summary id="art-pub-check-sum"></summary>
                     <ul id="art-pub-check-list" class="art-pub-check-list"></ul>
@@ -1483,7 +1483,7 @@
          dashboard.js・bookshelf.jsが使うため、両方より前に読む。 -->
     <script defer src="js/ui/viewport.js?v=2026110301"></script>
     <script defer src="js/icons.js?v=2026111324"></script>
-    <script defer src="js/overlay-manager.js?v=2026111867"></script>
+    <script defer src="js/overlay-manager.js?v=2026112201"></script>
     <!-- イシュー#509: 出口と重なりの部品 (overlays と NavState を束ねる)。bookshelf.js より前に読む -->
     <script defer src="js/ui/surface.js?v=2026110400"></script>
     <!-- イシュー#517: 並べ替えの部品 (ドラッグでの並べ替え)。dashboard.js・bookshelf.jsより前に読む -->
@@ -1533,7 +1533,7 @@
     <!-- イシュー#525 (U7): 記事エディタ(旧 _art* ほか)。VirtualBookshelf 定義後・インスタンス化
          (bookshelf.js末尾のDOMContentLoadedガード内)より前に、prototypeへ取り付ける
          (イシュー#547 U8f: U7の移し残しだった_reopenArt*クラスタ10個を末尾に追加) -->
-    <script defer src="js/screens/article-editor.js?v=2026111878"></script>
+    <script defer src="js/screens/article-editor.js?v=2026112201"></script>
     <!-- イシュー#537 (U8a): 設定画面(設定モーダルとその各タブ)。article-editor.js と同じ理由で
          VirtualBookshelf 定義後・インスタンス化より前に、prototypeへ取り付ける -->
     <script defer src="js/screens/settings.js?v=2026111730"></script>

@@ -706,6 +706,10 @@ class _ArticleEditorMethods {
             const shrink = window.innerHeight - vv.height;
             const open = shrink > KB_SHRINK_PX && inScope(document.activeElement);
             view.classList.toggle('is-kb-open', open);
+            // イシュー#742: 下から出す公開パネル (data-ov-narrow="fit") は、パネルの入力欄でキーボードが出ている間だけ
+            // 今の全画面の形へ広げる (下端に付いたままだとタグの欄がキーボードの裏に入るため)。css の data-ov-kb-open
+            const pub = document.getElementById('art-publish-modal');
+            if (pub) pub.toggleAttribute('data-ov-kb-open', open && pub.contains(document.activeElement));
             if (open) {
                 const bar = document.getElementById('art-kb-bar');
                 // ②差し戻し2回目 (2026-10-12・実測): top を可視域の下端にすると、バー自身の高さの分だけ
@@ -3502,16 +3506,32 @@ class _ArticleEditorMethods {
         const m = document.getElementById('art-publish-modal');
         if (!m) return;
         const done = document.getElementById('art-pub-done'); if (done) done.hidden = true;
+        m.removeAttribute('data-ov-kb-open'); // イシュー#742: 前に開いた時のキーボード中の印を残さない
         this._artRenderTags();
         this._artRenderPublishPanel();
         // 重なり管理役 (イシュー#367): 中 (md)。記事エディタ (publish-pages-modal) の上に data-layer で積まれる (旧 CSS の z-index 1150 は撤去)
-        this._overlays().open(m, { kind: 'modal', size: 'md', hist: false });
+        // イシュー#742: 狭幅 (<=900px) は中身の高さのシートとして下から出す (narrow:'fit')。切り替えは _artPubSheetOn
+        this._overlays().open(m, { kind: 'modal', size: 'md', hist: false, narrow: this._artPubSheetOn() ? 'fit' : undefined });
         this._surface().open('art-publish-modal', { close: (o) => this._artClosePublishPanel(o), extra: { articleId: this._artEditingId } });
+    }
+
+    // イシュー#742: スマホの公開パネルを中身の高さで下から出すかの切り替え (ハヘロが iPhone で使って承認するまで残す)。
+    // 全員を前の形 (全画面) に戻す時は ART_PUB_SHEET_DEFAULT を false にする (1行)。
+    // 端末ごと: localStorage 'bookshelf.flag.pubSheet' が '0' = 前の形・'1' = 新しい形・それ以外 = 既定。
+    _artPubSheetOn() {
+        const ART_PUB_SHEET_DEFAULT = true;
+        try {
+            const v = window.localStorage.getItem('bookshelf.flag.pubSheet');
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return ART_PUB_SHEET_DEFAULT;
     }
 
     _artClosePublishPanel({ fromHistory = false } = {}) {
         const m = document.getElementById('art-publish-modal');
         if (!m || !m.classList.contains('show')) return;
+        m.removeAttribute('data-ov-kb-open');
         this._overlays().close('art-publish-modal', { reason: fromHistory ? 'history' : 'button' });
         this._surface().close('art-publish-modal', { fromHistory });
     }
