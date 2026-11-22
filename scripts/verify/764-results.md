@@ -59,3 +59,41 @@
 実行したコマンド：
 - `PORT=8164 PLAYWRIGHT_BASE_URL=http://localhost:8164 npx playwright test tests/e2e/back-nav-matrix.spec.js -g "イシュー#764|イシュー#762"`（chromium）
 - 同じ条件に `BACKNAV_WEBKIT=1` と `--project=webkit` を足して webkit
+
+## §2 直し（step2）
+
+②の決裁（tp1・2026-11-23）：
+- (a) ×・Esc は閉じて開く前の画面（引き出しは出ない・R23 と同じ）。ア扱いで、切り替えは付けない。
+- (b) 直しは公開に絞る。検索・本棚を追加は触らない。本棚の木は未測のまま。
+
+### 直したこと（9fc65a5）
+
+- `openPublishPagesModal`（js/screens/article-editor.js）で、await の後・`_overlays().open`／`_surface().open('publish-pages-modal')` の直前に `this._closeDrawer()` を足した。引き出しが開いていなければ何もしない。
+  - 閉じた引き出しの段は、すぐ後の公開の一覧の push に引き継がれる（nav-state の push→replace・17表 K2・#284 K2・#760 の `_closeOverlaysForTransition` と同じ型）。
+  - クリックの handler（bookshelf.js の #sidebar-publish）では閉じない。先に閉じると、open の前の await の間に引き出しの go(-1) が microtask で飛び、引き継ぎが効かない（#259 型）。
+  - 開く入口が何であっても、この1か所を通る。
+- PC は引き出しが無い（`_closeDrawer` は何もしない）ので変わらない。
+- index.html の `js/screens/article-editor.js?v=` を 2026112256 → 2026112302 にした。`check:version --range=origin/main..HEAD` は OK。
+
+### 段の並びの前後（390）
+
+| 操作 | 前 | 後 |
+|---|---|---|
+| 引き出しの「公開」 | [drawer, publish-pages-modal]・引き出し開のまま | [publish-pages-modal]・引き出しは閉じる（段を引き継ぐ） |
+| 案内「保存先を選ぶ」→設定 | [publish-pages-modal, settings-modal]（公開のエントリを上書き） | [publish-pages-modal, settings-modal]（公開の一覧の上に設定の段が積まれる） |
+| 戻る1回 | [] ホーム（公開ごと閉じる） | [publish-pages-modal]（公開の一覧に戻る） |
+| 戻る2回 | アプリの外 | [] 開く前の画面 |
+| 進む | 引き出しが開く | 公開の一覧が開き直る（#291・A42f） |
+| 公開→×／Esc | 公開だけ閉じて引き出しに戻る | 閉じて開く前の画面（引き出しは出ない）＝**見た目の動きが変わる所** |
+
+### E2E
+
+| 対象 | chromium | webkit（iPhone 13・`BACKNAV_WEBKIT=1 --project=webkit`） |
+|---|---|---|
+| R30・R31・R32（× と Esc の2本）・#762 の R26〜R29・X22 | 9 passed | 8 passed・1 skipped（X22＝PC 幅の件） |
+| back-nav-matrix.spec.js 全件 | 全件緑（下の行と同じ実行。A01〜A03・A42f・R22〜R24f・X20・X21・X22 を含む） | 137 passed・6 skipped・失敗0（4.6分） |
+| `#sidebar-publish` を押す spec 7本（article-leave-flush・exclude-export-all-shelf・first-run-drawer-before-first-save・first-run-add-article-drawer・manual-add-reload-all-shelf・article-orphan-draft・ux-p1-nav） | back-nav-matrix 全件と合わせて 186 passed・2 failed → 直して 9/9 passed（下記） | 対象外（webkit の project に入っていない） |
+
+- 落ちた2本は article-leave-flush の H3・H6。公開の一覧を Esc で閉じた後も引き出しが開いたままという前提で、開き直す時に `drawerOpen: true`（引き出しを開かずに「公開」を押す）を使っていた。
+- R32 の決めで、閉じた後の引き出しは閉じている。そこで2本とも引き出しを開き直してから「公開」を押す形に直した。直した後の article-leave-flush は 9 passed（chromium）。
+- PC 1280 の行（X20・X21・X22）は緑のままで、変わらない。
