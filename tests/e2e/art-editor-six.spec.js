@@ -8,7 +8,7 @@
 // 390幅の chromium はこのファイルの describe、webkit (iPhone 相当) は playwright.config の webkit / gate-webkit が流す。
 import { test, expect } from './helpers/test-base.js';
 import { bootAppForTest } from './helpers/gate-setup.js';
-import { setArtBlocks, getArtBlocks, editArtBlockForSetup, waitForArtTextFsEditor } from './helpers/art-editor.js';
+import { setArtBlocks, getArtBlocks, editArtBlockForSetup, waitForArtTextFsEditor, setArtTextFsEditorValue } from './helpers/art-editor.js';
 import { createHubStateForTest, seedHubDataForTest, seedHubLoginForTest, mockHubForTest, waitForHubStartupForTest } from './helpers/gate-hub.js';
 
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -101,10 +101,10 @@ test.describe('PC 1280: #759 の1〜3 (既定＝on)', () => {
         await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form'); // 戻る1回はシートだけ畳む
     });
 
-    test('1: 本ブロックで「本を選ぶ」→ 真ん中のシートで本を選ぶと、シートが自分で閉じる', async ({ page }) => {
+    test('1: 本ブロックを足す → 真ん中のシートで本を選ぶと、シートが自分で閉じる', async ({ page }) => {
         await openEditor(page);
         await insertBlock(page, 'book');
-        await page.locator('#art-blocks .art-book-pick').first().click();
+        // ② artBookBlock (#767-c) が on の既定では、足すとシートが自分で開く (「本を選ぶ」を押さない)
         const side = page.locator('#art-drawer');
         await expect(side).toHaveClass(/is-open/);
         await waitSheetStill(page);
@@ -200,7 +200,9 @@ async function openTextFs(page) {
     await waitForArtTextFsEditor(page);
     await expect(page.locator('#art-blocks .editor-toolbar.mde-iconized')).toBeVisible();
 }
-const fsValue = (page) => page.evaluate(() => window.bookshelf._artTextFsEditor.value());
+// 文章の全画面の md エディタ (CodeMirror の DOM が持つ本体) の中身・選ばれている字 (内部参照を増やさない)
+const fsCm = (page, fn) => page.evaluate((f) => { const cm = document.querySelector('#art-blocks .CodeMirror').CodeMirror; return f === 'sel' ? cm.getSelection() : cm.getValue(); }, fn);
+const fsValue = (page) => fsCm(page, 'val');
 
 for (const dev of [
     { name: 'PC 1280', use: { viewport: { width: 1280, height: 800 } } },
@@ -284,7 +286,7 @@ for (const dev of [
             await menu.locator('.mde-tm-insert').click();
             await expect(page.locator('.mde-table-menu')).toHaveCount(0);
             await expect.poll(() => fsValue(page)).toBe('| 見出し1 | 見出し2 | 見出し3 |\n| --- | --- | --- |\n|   |   |   |\n|   |   |   |\n|   |   |   |\n');
-            const sel = await page.evaluate(() => window.bookshelf._artTextFsEditor.codemirror.getSelection());
+            const sel = await fsCm(page, 'sel');
             expect(sel).toBe('見出し1');
         });
     });
@@ -307,7 +309,7 @@ test.describe('PC 1280: #759-5 文章の全画面で空の時の仮の section',
         expect.soft(st.bg).toBe('rgba(61, 82, 255, 0.035)');
         expect.soft(st.outline).toBe('solid 2px');
         expect.soft(st.border).toBe('none');
-        await page.evaluate(() => window.bookshelf._artTextFsEditor.value('本文です'));
+        await setArtTextFsEditorValue(page, '本文です');
         await expect(ph).toHaveCount(0);
     });
 });

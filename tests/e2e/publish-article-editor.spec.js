@@ -2721,8 +2721,10 @@ test.describe('記事エディタ: ブロック内ボタンからの本追加3�
             bs._artEditBlock('char-legacy-book-0');
         });
 
-        // 空状態ボタン (バー内アイコン+本文中の空状態ボタンの2箇所が同じ .art-book-pick クラスを持つ)
-        expect(await page.locator('.art-book-pick').count()).toBe(2);
+        // イシュー#770 ② artBookBlock (#767-a): 全画面「本を編集」の入口は本の下の1つのボタン (.art-fs-add) だけ
+        // (前の形＝バー内アイコン+空状態ボタンの2箇所は art-book-block-pick.spec の '0' の件で見ている)
+        expect(await page.locator('.art-book-pick').count()).toBe(1);
+        await expect(page.locator('.art-fs-add.art-book-pick')).toHaveText('本を選ぶ（本棚・リストから選ぶ）');
         const closedBox = await page.locator('#art-drawer-list .art-drawer-item').first().boundingBox();
         expect(closedBox.y).toBeGreaterThanOrEqual(844);
 

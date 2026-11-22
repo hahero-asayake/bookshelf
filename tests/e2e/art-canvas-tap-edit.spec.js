@@ -66,7 +66,8 @@ async function pickAndDone(page, touch, title, opener) {
     // 本ブロックは「選ぶ/選び直す」を押した時だけ差し替え対象になる (#166)。本棚は狭幅で引き出しが閉じていれば開く (PCは常駐)
     const narrow = await page.evaluate(() => window.matchMedia('(max-width: 900px)').matches);
     const drawerOpen = await page.locator('#art-drawer.is-open').count();
-    if (opener === '.art-book-pick' || (narrow && !drawerOpen)) await press(page, page.locator(`#art-edit-view ${opener}:visible`).first(), touch);
+    // イシュー#770 ② artBookBlock (#767-c): 「＋ ここに追加→本」で足すと引き出しは自分で開いている＝開いていれば押さない
+    if ((opener === '.art-book-pick' && !drawerOpen) || (narrow && !drawerOpen)) await press(page, page.locator(`#art-edit-view ${opener}:visible`).first(), touch);
     if (narrow) await expect(page.locator('#art-drawer')).toHaveClass(/is-open/);
     await expect(drawerItem).toBeInViewport();
     await press(page, drawerItem, touch);

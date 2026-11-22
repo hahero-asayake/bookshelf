@@ -1255,6 +1255,16 @@ class _ArticleEditorMethods {
         if (col) col.scrollTop = 0;
         // イシュー#276 step3: 文章ブロックは長文メモと同じ EasyMDE を全画面で開く (#247の遅延読込を流用)
         if (b.type === 'text') this._artOpenTextFsEditor(b);
+        // ② artBookBlock (#767-c・d): 本ブロックの全画面の間は引き出しの対象をこのブロックにする (asin が有っても)。
+        // 「＋ ここに追加→本」で作ったばかりで asin が空なら、本棚ブロック (art-fs→art-sheet) と同じ順で引き出しを開く
+        if (b.type === 'book' && this._artBookBlockOn()) {
+            this._artPendingBookBlockId = blockId;
+            this._artRenderDrawer();
+            if (this._artNewBookMarkId === blockId && !b.asin) {
+                this._artNewBookMarkId = null;
+                this._artOpenSheet();
+            }
+        }
     }
 
     // 文章ブロックの全画面編集 (EasyMDE)。長文メモの _openBookMemoInAppEditor と同型。
@@ -1914,7 +1924,15 @@ class _ArticleEditorMethods {
         const sheet = document.getElementById('art-look-sheet');
         if (!sheet) return;
         this._artRenderLookSheet();
+        // ③ artLookList (イシュー#770・#769＝#741 案B): 選択肢を縦一列にする。CSS は #art-look-sheet.is-look-list の時だけ効く
+        sheet.classList.toggle('is-look-list', this._artLookListOn());
         sheet.hidden = false;
+        this._artPlaceLookSheet();
+        if (!this._artLookPlaceBound) {
+            // setInterval では計らない。開いた時・resize・引き出しの開閉の時だけ計る
+            this._artLookPlaceBound = () => this._artPlaceLookSheet();
+            window.addEventListener('resize', this._artLookPlaceBound);
+        }
         this._surface().open('art-look-sheet', { close: (o) => this._artCloseLookSheet(o), extra: { articleId: this._artEditingId } });
     }
 
@@ -1923,6 +1941,30 @@ class _ArticleEditorMethods {
         if (!sheet || sheet.hidden) return;
         sheet.hidden = true;
         this._surface().close('art-look-sheet', { fromHistory });
+    }
+
+    // ③ artLookList の PC の置き場 (#741 案B の place() と同じ式)。記事の列と本の引き出しの間の空きが
+    // 200px 以上なら空きに置き、未満なら記事の列の右端に重ねる (幅228・top 53)。900px以下・off の時は CSS に任せる。
+    _artPlaceLookSheet() {
+        const sheet = document.getElementById('art-look-sheet');
+        if (!sheet || sheet.hidden) return;
+        const panel = sheet.querySelector('.art-add-sheet-panel');
+        if (!panel) return;
+        const clear = () => { ['left', 'top', 'width', 'height', 'maxHeight'].forEach(k => { panel.style[k] = ''; }); delete panel.dataset.lookPlace; };
+        if (!sheet.classList.contains('is-look-list') || window.innerWidth <= 900) { clear(); return; }
+        const col = document.querySelector('#art-edit-view .art-col');
+        const dr = document.getElementById('art-drawer');
+        const c = col && col.getBoundingClientRect();
+        const d = dr && dr.getClientRects().length ? dr.getBoundingClientRect() : null;
+        const colRight = c ? c.right : window.innerWidth / 2;
+        const drLeft = d && d.width ? d.left : window.innerWidth - 16;
+        const gap = drLeft - colRight;
+        let left; let width;
+        if (gap >= 200) { left = colRight + 8; width = gap - 16; } else { width = 228; left = drLeft - 8 - width; }
+        const top = 53;
+        const h = Math.min(window.innerHeight - top - 16, 760);
+        panel.dataset.lookPlace = [Math.round(left), Math.round(width), top, Math.round(h)].join(',');
+        Object.assign(panel.style, { left: left + 'px', width: width + 'px', top: top + 'px', height: h + 'px', maxHeight: h + 'px' });
     }
 
     _artRenderLookSheet() {
@@ -1974,12 +2016,17 @@ class _ArticleEditorMethods {
         if (b.type === 'book') {
             // イシュー#166: 対象が常に明確な「本を選ぶ/差し替え」の入口をブロック内に置く (FAB廃止に伴う代替)。
             // 押したブロックへ入るよう _artPendingBookBlockId をここでセットしてからシートを開く (900px超は右パネル常時表示)。
-            const pickBtn = `<button type="button" class="art-block-ic art-book-pick" title="${b.asin ? 'この本を選び直す' : 'この本を選ぶ'}"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'book-plus'}" data-icon-size="14"></span></button>`;
+            // ② artBookBlock (#767・#758 memo754): 全画面「本を編集」の対象では、入口を本の下の1つのボタン
+            // (本棚の「本を追加」と同じ .art-fs-add) にし、バーの入口と空の時の「+ 本を選ぶ」は描かない。短文メモの欄も置く
+            const fsBook = this._artFsBlockId === b.id && this._artBookBlockOn();
+            const pickBtn = fsBook ? '' : `<button type="button" class="art-block-ic art-book-pick" title="${b.asin ? 'この本を選び直す' : 'この本を選ぶ'}"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'book-plus'}" data-icon-size="14"></span></button>`;
             const bar = this._artBlockBar({ id: b.id, kind: '本', summary, extra: pickBtn });
+            const fsPick = fsBook ? `<div class="art-block-body art-book-fs-body"><div class="art-fs-actions"><button type="button" class="art-fs-add art-book-pick"><span class="h-icon" data-icon="${b.asin ? 'refresh-cw' : 'plus'}" data-icon-size="16"></span>${b.asin ? '本を替える（本棚・リストから選ぶ）' : '本を選ぶ（本棚・リストから選ぶ）'}</button></div></div>` : '';
             if (!b.asin) {
                 return `<div class="art-block${collapsed ? ' is-collapsed' : ''}" data-block-id="${esc(b.id)}" data-index="${index}">
                     ${bar}
-                    ${collapsed ? '' : '<div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>'}
+                    ${collapsed || fsBook ? '' : '<div class="art-block-body"><button type="button" class="pp-empty pp-empty-btn art-book-pick" title="この本を選ぶ">+ 本を選ぶ</button></div>'}
+                    ${fsPick}
                 </div>`;
             }
             const { book, excluded } = this._artBookState(b.asin);
@@ -1994,10 +2041,12 @@ class _ArticleEditorMethods {
                     <div class="art-block-book-info">
                         <div class="art-item-title">${esc(title)}</div>
                         <div class="art-item-author">${esc(author)}</div>
+                        ${fsBook ? `<input type="text" class="art-fs-memo" data-asin="${esc(b.asin)}" value="${esc(this.bookshelfManager.resolveMemo(b.asin) || '')}" placeholder="短文メモを書く" aria-label="${esc(title)}の短文メモ">` : ''}
                         ${excluded ? this._artExcludedMark() : ''}
                     </div>
                     ${this._artChips(show, 'art-book-show-toggle')}
                 </div>`}
+                ${collapsed ? '' : fsPick}
             </div>`;
         }
         if (b.type === 'shelf') return this._artRenderShelfBlock(b, index);
@@ -2319,6 +2368,12 @@ class _ArticleEditorMethods {
                     this._artOpenSheet();
                 });
             });
+            // ② artBookBlock (#758 memo754): 本ブロックの短文メモの欄は本棚の行と同じ保存予約へ結ぶ (新しい保存の処理は作らない)
+            if (block.type === 'book') {
+                el.querySelectorAll('.art-fs-memo').forEach(inp => {
+                    inp.addEventListener('input', () => this._artScheduleMemoSave(inp.dataset.asin, inp.value));
+                });
+            }
             // イシュー#166: 本棚ブロックの「このブロックに追加」入口。バー内クリックは既存の
             // ブロック全体クリック (アクティブ化のみ) とバブリングするため stopPropagation で二重実行を防ぐ。
             const shelfAddBtn = el.querySelector('.art-shelf-add');
@@ -2568,6 +2623,8 @@ class _ArticleEditorMethods {
             // 追加直後は「本の引き出し」からの追加先として即アクティブにする (ブロックをクリックしなくても使える)
             this._artActiveShelfBlockId = newBlock.id;
         } else return;
+        // ② artBookBlock (#767-c): 「＋ ここに追加→本」で作った本ブロックの印 (全画面で開いた時に引き出しを自分で開く・次の挿入で消す)
+        this._artNewBookMarkId = type === 'book' ? newBlock.id : null;
         if (!this._artDraft.blocks) this._artDraft.blocks = [];
         this._artDraft.blocks.splice(index, 0, newBlock);
         this._artRenderBlocks();
@@ -3045,6 +3102,7 @@ class _ArticleEditorMethods {
         // イシュー#168: ユーザー操作の畳み (art-drawer-user-collapsed) を毎回の再描画で反映する。
         // 棚が空のときの自動 art-drawer-collapsed (この直後) とは別クラスなので独立して付け外しできる。
         if (wrap) wrap.classList.toggle('art-drawer-user-collapsed', !!this._artDrawerUserCollapsed);
+        this._artPlaceLookSheet(); // ③ 引き出しの開閉で見た目の縦一列の置き場が変わる
         this._artRenderDrawerTargetHint();
         const shelf = this.bookshelfManager.getById(this._artResolveSourceShelfId());
         // 見える本だけ (除外した本は所属に残るが、引き出しには並べず N にも数えない・イシュー#670)
@@ -3070,7 +3128,8 @@ class _ArticleEditorMethods {
             return;
         }
         if (addAllBtn) {
-            addAllBtn.hidden = false;
+            // ② artBookBlock (#767): 本ブロックが対象の時は1冊なので「表示中のN冊を追加」を出さない
+            addAllBtn.hidden = !!(this._artPendingBookBlockId && this._artBookBlockOn());
             addAllBtn.textContent = `表示中の${filteredAsins.length}冊を追加`;
         }
         // X3(イシュー#528・U6統合): 1件の中身はBookList.drawerItemInnerHtmlへ寄せた(#430のNEWバッジ撤去を反映)。
@@ -3124,12 +3183,26 @@ class _ArticleEditorMethods {
         // 旧イシュー#165の自動クローズ(900px以下)はここで廃止する(単発クリック追加は元々閉じない経路のまま)。
     }
 
+    // ② artBookBlock (#767): 全画面「本を編集」の本ブロック。off・全画面でない・本でない時は null
+    _artFsBookBlock() {
+        if (!this._artFsBlockId || !this._artBookBlockOn()) return null;
+        const ev = document.getElementById('art-edit-view');
+        if (!ev || ev.dataset.artMode !== 'form') return null;
+        const b = this._artFindBlock(this._artFsBlockId);
+        return b && b.type === 'book' ? b : null;
+    }
+
     _artOnDrawerBookClick(asin) {
+        // ② artBookBlock (#767-d): 全画面の本ブロックの間は、押した本をいつもそのブロックへ差し替える (本棚ブロックを作らない)
+        const fsBook = this._artFsBookBlock();
+        if (fsBook) this._artPendingBookBlockId = fsBook.id;
         if (this._artPendingBookBlockId) {
             const block = this._artFindBlock(this._artPendingBookBlockId);
             this._artPendingBookBlockId = null;
             if (block && block.type === 'book') {
                 block.asin = asin;
+                // ② (#767-d): 全画面の間は引き出しの対象をこのブロックのままにする (PC の右の列で2冊目を押しても差し替え)
+                if (fsBook) this._artPendingBookBlockId = fsBook.id;
                 this._artRenderBlocks();
                 this._artRenderDrawer();
                 this._artScheduleSave();

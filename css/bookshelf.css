@@ -8527,6 +8527,32 @@ body.select-mode .drag-handle { display: none; }
 .art-lk-th i { font-style: normal; font-size: 13px; font-weight: 700; }
 .art-lk-th b { width: 16px; height: 4px; border-radius: 2px; }
 .art-lk-col[aria-checked="true"] .art-lk-th { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* イシュー#770 ③ artLookList (#769＝#741 案B): 見た目の選択肢を縦一列にする (#art-look-sheet.is-look-list・_artOpenLookSheet が付ける)。
+   押した時の処理は今のまま。PC の位置と幅は _artPlaceLookSheet が記事の列と本の引き出しの間に合わせる */
+#art-look-sheet.is-look-list .art-add-sheet-backdrop { background: transparent; }
+#art-look-sheet.is-look-list .art-lk-lays, #art-look-sheet.is-look-list .art-lk-cols { display: flex; flex-direction: column; gap: 0; }
+#art-look-sheet.is-look-list .art-lk-sec { margin: 10px 4px 4px; }
+#art-look-sheet.is-look-list .art-lk-lay, #art-look-sheet.is-look-list .art-lk-col {
+    flex: none; flex-direction: row; align-items: center; justify-content: flex-start;
+    gap: 12px; min-height: 48px; width: 100%; padding: 4px 8px; border: none; border-bottom: 1px solid var(--line);
+    border-radius: 0; background: none; font-size: 15px; color: var(--fg); text-align: left; position: relative;
+}
+#art-look-sheet.is-look-list .art-lk-lay .h-icon { width: 44px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; flex: none; }
+#art-look-sheet.is-look-list .art-lk-th { width: 44px; height: 36px; flex: none; padding: 0 5px 4px; }
+#art-look-sheet.is-look-list .art-lk-th i { font-size: 12px; }
+#art-look-sheet.is-look-list .art-lk-th b { width: 10px; }
+#art-look-sheet.is-look-list [aria-checked="true"] { background: var(--accent-bg); font-weight: 700; }
+#art-look-sheet.is-look-list [aria-checked="true"]::after { content: "✓"; position: absolute; right: 12px; color: var(--accent-text); font-size: 18px; font-weight: 700; }
+#art-look-sheet.is-look-list .art-lk-col[aria-checked="true"] .art-lk-th { outline: none; }
+/* スマホ：画面の約45%まで。中で送る */
+@media (max-width: 900px) {
+    #art-look-sheet.is-look-list .art-add-sheet-panel { max-height: 45dvh; overflow-y: auto; box-shadow: 0 -4px 18px rgba(0, 0, 0, .18); }
+}
+@media (min-width: 901px) {
+    #art-look-sheet.is-look-list .art-add-sheet-panel { transform: none; bottom: auto; border-radius: 12px; box-shadow: 0 4px 18px rgba(0, 0, 0, .18);
+        overflow-y: auto; max-width: none; padding: 8px 6px 12px; }
+    #art-look-sheet.is-look-list .art-lk-lay, #art-look-sheet.is-look-list .art-lk-col { font-size: 13px; gap: 8px; }
+}
 /* ヘッダー: スマホは1行 (構成A・イシュー#276・②決裁2026-10-12)。
    閲覧= ← / タイトル(省略) / 編集 / ⋯。編集= ← / タイトル+状態表示 / ⋯ (見た目・公開/更新・完了は
    #art-edit-bottom-bar へ移設)。タイトルは編集状態でも記事の h1 で直接打つ (#275) ため、
@@ -8603,6 +8629,9 @@ body.select-mode .drag-handle { display: none; }
 /* 並び順を揃える: 「＋本を追加」の隣の小さいテキストボタン (②決裁 step5) */
 .art-fs-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .art-fs-actions .art-fs-add { flex: 1; margin-top: 0; }
+/* イシュー#770 ② artBookBlock (#767): 全画面「本を編集」の本の下の入口。寸法は上の .art-fs-actions/.art-fs-add のまま。
+   行の左右の端を本棚の「本を追加」の行にそろえる (padding だけ)。 */
+#art-edit-view[data-art-mode="form"] .art-block > .art-book-fs-body { padding: 0; }
 .art-fs-sort-btn { flex: 0 0 auto; border: none; background: none; color: var(--accent-text); font-size: 12px; padding: 6px 2px; cursor: pointer;
     text-decoration: underline; text-underline-offset: 3px; }
 .art-fs-sort-btn[disabled] { color: var(--fg2); text-decoration: none; cursor: default; opacity: 0.6; }
