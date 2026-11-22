@@ -24,3 +24,25 @@
 ## 3 単体
 
 - `npm test`：85 ファイル・1262 通過・0 失敗（2 todo）。`tests/unit/overlay-manager.test.js` に narrow:'fit' の1件を足した（13 件通過）。
+
+## 4 新しい E2E（step2・tests/e2e/art-publish-sheet.spec.js）
+
+保存先・公開先はハブの模擬（gate-hub.js・本物の保存と公開の経路）。利用者と同じ操作（tap/click）で、新しい記事→本棚ブロックに本1冊→公開パネル。
+
+| 幅 | 件 | 確かめる事 |
+|---|---|---|
+| 390×844（iPhone の UA・タッチ） | 開く | 下端=画面の下端・上端≥48・高さ<画面・上の点が暗い所（root）・×はパネルの中の右上（上端+≤32・右端−≤24・absolute）・「閉じる」「公開する」が画面内 |
+| 390×844 | 閉じる | ×（tap）・枠外（パネルより上の暗い所を tap）・戻る（goBack）で、パネルだけ閉じてエディタが残る |
+| 390×844 | 公開までの通し | 公開する→同意して公開→公開URLの行が画面内・下端は画面の下端のまま |
+| 390×844 | 切り替え | localStorage bookshelf.flag.pubSheet='0' → 全画面・×は fixed（前の形） |
+| 390×844 | キーボード | FakeVisualViewport でタグの欄にフォーカス→可視域を55%に→data-ov-kb-open・全画面の高さ・欄の下端が可視域の中。外して戻すと中身の高さに戻る |
+| 1280×800 | 開く | 矩形が前の版（origin/main b9d95ec を git archive して配り同じ測り方で実測：top 125.78・height 548.44・left 280・right 1000）と同じ |
+| 1280×800 | 閉じる | ×・枠外（mouse 5,5）・戻る |
+| 1280×800 | 公開までの通し | 公開URLの行が出る |
+
+結果（PORT=8142）：
+- chromium：8 件通過・0 件失敗。--repeat-each=3 で 24 件通過。
+- webkit（iPhone 13・BACKNAV_WEBKIT=1・playwright.config.js の webkit の testMatch に足した）：スマホ幅 5 件通過・PC 幅 3 件は skip（iPhone の project のため）。--repeat-each=3 で 15 件通過。
+- 検出力：同じ spec を前の版（origin/main を _local/742/main で配信・PORT=8177）で流すと、スマホ幅の 4 件（開く・閉じる・公開の通し・キーボード）が落ち、切り替えと PC の 3 件は通る＝新しい形の違いを捉えている。
+- `npm run lint`：12 本中 0 本失敗。
+- メモ：8143 は他の木のサーバが LISTEN していた（前の版の配信に使えなかった）。
