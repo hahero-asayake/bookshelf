@@ -264,9 +264,60 @@ class StorageAdapter {
         return { ok: true, value: out };
     }
 
-    static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError }) {
+    /**
+     * 切り替え bookshelf.flag.ownWriteMatch (イシュー#771)。既定 on。'0' で前の形 (自分の送った中身を見分けない)。
+     * 全員を前の形へ戻す時は OWN_WRITE_MATCH_DEFAULT を false にする (読む所はここ1か所)。
+     */
+    static ownWriteMatchOn() {
+        const OWN_WRITE_MATCH_DEFAULT = true;
+        try {
+            const v = globalThis.localStorage ? globalThis.localStorage.getItem('bookshelf.flag.ownWriteMatch') : null;
+            if (v === '0') return false;
+            if (v === '1') return true;
+        } catch (_) { /* no-op: ストレージ不可時は既定 */ }
+        return OWN_WRITE_MATCH_DEFAULT;
+    }
+
+    /**
+     * 「結果待ち」の送信 (イシュー#771)。このタブがファイルへ送ったが、応答を受け取れなかった中身 (ファイルごと最大3件)。
+     * iPhone が裏に回って止まる・10秒の中断・通信の失敗では、保存先には入ったのに応答だけが消えることがある。
+     * 送る前に notePending で記録し、応答を受けたら (成功も 4xx/5xx も) clearPending で消す＝通信の失敗の時だけ残る。
+     * 次の保存が 412 になった時、保存先の最新がこのどれかなら自分の版とみなす (recoverFromConflict の ownContents)。
+     * @param {Map<string,string[]>} map
+     */
+    static notePending(map, path, content) {
+        if (typeof content !== 'string') return;
+        const list = (map.get(path) || []).filter((c) => c !== content);
+        list.push(content);
+        while (list.length > StorageAdapter.PENDING_MAX) list.shift();
+        map.set(path, list);
+    }
+
+    static clearPending(map, path, content) {
+        if (content === undefined) { map.delete(path); return; }
+        const list = (map.get(path) || []).filter((c) => c !== content);
+        if (list.length) map.set(path, list); else map.delete(path);
+    }
+
+    /**
+     * 412 の後の判定 (1件ずつ書く時の芯)。
+     *   (1) 最新＝今書きたい中身 (wantContent) → 送らずに成功 (onSame で控えを最新にする・まとめ保存と同じ)
+     *   (2) 最新＝結果待ちの自分の送信 (ownContents のどれか) → 自分の版。控え＝最新にして1回だけ送り直す
+     *   (3) 最新＝控えの中身 (knownContent) → 版の控えがずれていただけ。送り直す
+     *   それ以外 → 他の場所の変更。上書きせず makeRemoteChangedError を投げる
+     * (1)(2) は bookshelf.flag.ownWriteMatch が on の時だけ (イシュー#771)。
+     */
+    static async recoverFromConflict({ getLatest, knownContent, retryPut, makeRemoteChangedError, wantContent, ownContents, onSame }) {
         const latest = await getLatest();
         const latestContent = latest ? latest.content : null;
+        if (latest && latestContent !== null && StorageAdapter.ownWriteMatchOn()) {
+            if (wantContent !== undefined && latestContent === wantContent) {
+                return onSame ? onSame(latest) : undefined;
+            }
+            if (Array.isArray(ownContents) && ownContents.includes(latestContent)) {
+                return retryPut(latest);
+            }
+        }
         // 以前は `latestContent !== null` を先に見ていたため、相手が削除して latestContent が
         // null になったケースが素通りして retryPut(null=無条件PUT) に落ち、削除された直後の
         // ファイルを盲目的に再作成してしまっていた (イシュー#381・バッチ側の同種ギャップと対で修正)。
@@ -365,5 +416,7 @@ class VersionCache {
 
 // 項目ごとに合わせてよいファイル (イシュー#612・ADR-163)。短文メモ・評価 (本ごと) と、共通の設定 (キーごと・更新時刻の表)
 StorageAdapter.MERGEABLE_PATHS = ['private/notes.json', 'private/settings.json'];
+// 結果待ちの送信をファイルごとに何件まで覚えるか (イシュー#771)
+StorageAdapter.PENDING_MAX = 3;
 window.StorageAdapter = StorageAdapter;
 window.VersionCache = VersionCache;

@@ -87,6 +87,8 @@ class HubStorageAdapter extends StorageAdapter {
         // 直前に自分が認識していたリモート本文 (412 リカバリの本文比較に使う)。
         // _writeQueues は同一パスへの write/delete の直列化 (イシュー#374・案D、github-adapter.js と同じ型)。
         this._lastKnownContent = new Map();
+        // 結果待ちの送信 { path: [中身,...] } (イシュー#771・StorageAdapter.notePending)。応答が消えた自分の書き込みを見分ける
+        this._pendingWrites = new Map();
         this._writeQueues = new Map();
         this._batch = null;
         // ===== R (イシュー#391 の共通部品を使う・#392 step4/5 ②承認) =====
@@ -317,12 +319,7 @@ class HubStorageAdapter extends StorageAdapter {
 
     async _commitBatchOnce(entries) {
         if (entries.length === 0) return true; // 送る物が無い (全部が保存先と同じ中身、または削除対象が既に無い)。覚えた ETag は捨てない
-        const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries }),
-            timeoutMs: BATCH_TIMEOUT_MS
-        });
+        const res = await this._postBatch(entries);
         if (res.status === 409) {
             // worker 側の補償ロールバック自体が失敗した (partial:true・ADR-xxx 参照)。
             // この回では直せない状態なので、盲目的な再送はせずそのまま呼び出し元へ伝える。
@@ -332,6 +329,21 @@ class HubStorageAdapter extends StorageAdapter {
         if (!res.ok) throw this._err(res, 'POST data/batch');
         this._rememberBatchResult(entries, res);
         return true;
+    }
+
+    // まとめ保存の POST 1回分。送る前に put の中身を「結果待ち」に記録し、応答を受けたら (成否を問わず) 消す。
+    // 通信の失敗・中断で応答が来なかった時だけ残る＝次の 412 で自分の送信を見分ける (イシュー#771)
+    async _postBatch(entries) {
+        const puts = entries.filter((e) => e.op === 'put' && !e.stamp);
+        for (const e of puts) StorageAdapter.notePending(this._pendingWrites, e.path, e.content);
+        const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries }),
+            timeoutMs: BATCH_TIMEOUT_MS
+        });
+        for (const e of puts) StorageAdapter.clearPending(this._pendingWrites, e.path, e.content);
+        return res;
     }
 
     /**
@@ -370,8 +382,12 @@ class HubStorageAdapter extends StorageAdapter {
                 this._lastKnownContent.set(e.path, wantContent === null ? undefined : wantContent);
                 continue; // 再送不要
             }
-            if (latestContent !== null && knownContent !== undefined && latestContent === knownContent) {
-                // 自分の ETag キャッシュがズレていただけ (リモートは自分が最後に認識した内容のまま)
+            const ownSent = latestContent !== null && StorageAdapter.ownWriteMatchOn()
+                && (this._pendingWrites.get(e.path) || []).includes(latestContent);
+            if (ownSent || (latestContent !== null && knownContent !== undefined && latestContent === knownContent)) {
+                // 自分の ETag キャッシュがズレていただけ (リモートは自分が最後に認識した内容のまま)。
+                // または、最新が応答を受けられなかった自分の送信 (イシュー#771) → 自分の版とみなして控えを最新にし送り直す
+                if (ownSent) this._lastKnownContent.set(e.path, latestContent);
                 const next = { ...e, ifMatch: latestEtag };
                 delete next.ifNoneMatch;
                 if (!next.ifMatch) delete next.ifMatch;
@@ -401,10 +417,7 @@ class HubStorageAdapter extends StorageAdapter {
             throw new HubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
         }
         if (retry.length === 0) return true; // 衝突した件は全部、既に望む中身だった (ETag は上で覚え直した)
-        const res2 = await this._fetch('POST', `${this.apiBase}/data/batch`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: retry }),
-            timeoutMs: BATCH_TIMEOUT_MS
-        });
+        const res2 = await this._postBatch(retry);
         if (res2.status === 409 || res2.status === 412) {
             throw new HubConflictError('batch conflict on hub (data changed since read)', null);
         }
@@ -484,6 +497,7 @@ class HubStorageAdapter extends StorageAdapter {
         try {
             await this._putOnce(path, text, etag);
             this._lastKnownContent.set(path, text);
+            StorageAdapter.clearPending(this._pendingWrites, path); // 保存先の今＝text と分かった＝前の結果待ちは要らない
         } catch (e) {
             if (!(e instanceof HubConflictError)) throw e;
             await this._recoverFromConflictAndRetry(path, text);
@@ -493,7 +507,11 @@ class HubStorageAdapter extends StorageAdapter {
     async _putOnce(path, text, etag) {
         const headers = { 'Content-Type': 'text/plain; charset=utf-8' };
         if (etag) headers['If-Match'] = etag;
+        // 送る前に「結果待ち」に記録し、応答を受けたら (成功も 4xx/5xx も) 消す。通信の失敗・10秒の中断・abort の時は
+        // _fetch が投げる＝記録が残り、次の 412 で「保存先の最新＝自分の送信」を見分けられる (イシュー#771)
+        StorageAdapter.notePending(this._pendingWrites, path, text);
         const res = await this._fetch('PUT', this._dataUrl(path), { method: 'PUT', headers, body: text });
+        StorageAdapter.clearPending(this._pendingWrites, path, text);
         if (res.status === 412) throw new HubConflictError(`etag conflict on ${path}`, path);
         if (res.status === 413) throw new HubQuotaError('ハブの保存容量上限に達しました');
         if (!res.ok) throw this._err(res, `PUT ${path}`);
@@ -524,6 +542,13 @@ class HubStorageAdapter extends StorageAdapter {
                     return { content: res.body, token: res.headers.get('ETag') || undefined };
                 },
                 knownContent,
+                wantContent: text,
+                ownContents: this._pendingWrites.get(path) || [],
+                onSame: (latest) => {
+                    // 保存先が既に書きたい中身 (応答の消えた自分の送信が入っていた等)。送らずに控えを最新にする (イシュー#771)
+                    if (latest.token) this._etagCache.set(path, latest.token);
+                    StorageAdapter.clearPending(this._pendingWrites, path);
+                },
                 retryPut: async (latest) => {
                     if (latest && latest.token) {
                         this._etagCache.set(path, latest.token);
@@ -537,6 +562,7 @@ class HubStorageAdapter extends StorageAdapter {
                 }
             });
             this._lastKnownContent.set(path, text);
+            StorageAdapter.clearPending(this._pendingWrites, path);
             console.warn(`[HubStorageAdapter] 412 on ${path}: リトライで回復しました`);
         } catch (e2) {
             if (e2 instanceof HubConflictError) {
