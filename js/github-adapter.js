@@ -76,6 +76,9 @@ class GitHubAdapter extends StorageAdapter {
         this.token = token;
         this._shaCache = new Map();
         this._lastKnownContent = new Map();
+        // 結果待ちの送信と書き込みの世代 (イシュー#771・hub-adapter.js と同じ型。StorageAdapter.notePending / bumpWriteGen)
+        this._pendingWrites = new Map();
+        this._writeGens = new Map();
         this._writeQueues = new Map();
         // 409 リトライの発火をアプリ層へ伝える (path, status) => void。
         // status: 'retrying' | 'recovered' | 'conflict' | 'remote-changed'。イシュー#142。
@@ -196,12 +199,15 @@ class GitHubAdapter extends StorageAdapter {
     // tree に存在しない path (=リモートに無い) なら null (readJSON/readText の「不存在」と同じ扱い)。
     async _tryReadFromShaCache(path) {
         if (!this._shaCacheEnabled) return undefined;
+        const wgen = StorageAdapter.writeGen(this._writeGens, path);
         const shaMap = await this._ensureRemoteShaMap();
         const fullPath = this._fullPath(path);
         const remoteSha = shaMap[fullPath];
         // remoteSha===undefined (tree未取得=ネットワーク不調等、または「本当に存在しない」) なら
         // VersionCache.read が undefined を返す=通常取得にフォールバックする(振る舞い不変)。
         const cached = this._versionCache.read(fullPath, remoteSha);
+        // 木の一覧を待つ間に同じファイルの書き込みが始まった・終わった時は、一覧の sha は古いかもしれない＝取り直す (イシュー#771 H2)
+        if (cached !== undefined && !StorageAdapter.readIsFresh(this._writeGens, path, wgen)) return undefined;
         if (cached !== undefined) {
             this._shaCache.set(path, remoteSha);
             this._lastKnownContent.set(path, cached);
@@ -216,12 +222,8 @@ class GitHubAdapter extends StorageAdapter {
     async readJSON(path) {
         const cached = await this._tryReadFromShaCache(path);
         if (cached !== undefined) return cached.trim() ? JSON.parse(cached) : null;
-        const content = await this._getContent(path);
-        if (!content || content.type !== 'file') return null;
-        const text = this._decodeBase64(content.content);
-        this._shaCache.set(path, content.sha);
-        this._lastKnownContent.set(path, text);
-        this._rememberShaCache(path, content.sha, text);
+        const text = await this._readFresh(path);
+        if (text === null) return null;
         return text.trim() ? JSON.parse(text) : null;
     }
 
@@ -233,9 +235,17 @@ class GitHubAdapter extends StorageAdapter {
     async readText(path, hooks) {
         const cached = await this._tryReadFromShaCache(path);
         if (cached !== undefined) return cached;
+        return this._readFresh(path, hooks);
+    }
+
+    // 保存先から本文を取り、sha と中身を控える。読みの間に同じファイルの書き込みが始まった・終わった時は、
+    // この応答は書き込みより古いかもしれないので控えを上書きしない (イシュー#771 H2・hub-adapter.js の _read と同じ)
+    async _readFresh(path, hooks) {
+        const wgen = StorageAdapter.writeGen(this._writeGens, path);
         const content = await this._getContent(path, hooks);
         if (!content || content.type !== 'file') return null;
         const text = this._decodeBase64(content.content);
+        if (!StorageAdapter.readIsFresh(this._writeGens, path, wgen)) return text;
         this._shaCache.set(path, content.sha);
         this._lastKnownContent.set(path, text);
         this._rememberShaCache(path, content.sha, text);
@@ -411,12 +421,15 @@ class GitHubAdapter extends StorageAdapter {
         });
         if (!newCommitRes.ok) throw this._batchError(newCommitRes, 'create commit');
 
-        // 6. Ref を更新 (force: false = 楽観ロック)
+        // 6. Ref を更新 (force: false = 楽観ロック)。送る前に put の中身を「結果待ち」に記録し、応答を受けたら消す (イシュー#771)
+        for (const w of written) StorageAdapter.notePending(this._pendingWrites, w.path, w.content);
+        for (const e of entries) StorageAdapter.bumpWriteGen(this._writeGens, e.path); // 読みの応答が控えを巻き戻さない (イシュー#771 H2)
         const updateRefRes = await StorageAdapter.fetchJSON(refUrl, {
             method: 'PATCH',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ sha: newCommitRes.json.sha, force: false })
         });
+        for (const w of written) StorageAdapter.clearPending(this._pendingWrites, w.path, w.content);
         if (updateRefRes.status === 422) {
             throw new GitHubConflictError(`Branch ${this.branch} was updated since batch start`, this.branch);
         }
@@ -425,6 +438,7 @@ class GitHubAdapter extends StorageAdapter {
         // 書いたパスは、作った blob の sha と中身で覚え直す (全部捨てると、次のまとめ保存で古い版を見分けられない・
         // イシュー#616)。消したパスは忘れる。書いていないパスの sha はこの commit で変わらないので、そのまま残す
         for (const w of written) { this._shaCache.set(w.path, w.sha); this._lastKnownContent.set(w.path, w.content); }
+        for (const e of entries) StorageAdapter.bumpWriteGen(this._writeGens, e.path);
         for (const e of entries) {
             if (e.op === 'delete') { this._shaCache.delete(e.path); this._lastKnownContent.delete(e.path); }
             else if (e.encoding === 'base64') { this._shaCache.delete(e.path); this._lastKnownContent.delete(e.path); }
@@ -455,6 +469,11 @@ class GitHubAdapter extends StorageAdapter {
             if (latest === e.content) continue;
             const knownContent = this._lastKnownContent.get(e.path);
             if (latest !== null && knownContent !== undefined && latest === knownContent) continue;
+            // 最新が応答を受けられなかった自分の送信 (イシュー#771) → 自分の版。控えを最新にしてそのまま書く
+            if (latest !== null && StorageAdapter.ownWriteMatchOn() && (this._pendingWrites.get(e.path) || []).includes(latest)) {
+                this._lastKnownContent.set(e.path, latest);
+                continue;
+            }
             console.error(`[GitHubAdapter] ${e.path} はリモートで内容が変わっている。上書きせず中断します`);
             throw new GitHubRemoteChangedError(`${e.path} は他の場所で更新されています。内容を確認して保存し直してください。`, e.path);
         }
@@ -579,11 +598,15 @@ class GitHubAdapter extends StorageAdapter {
         };
         if (sha) body.sha = sha;
 
+        // 送る前に「結果待ち」に記録し、応答を受けたら (成否を問わず) 消す。通信の失敗・中断の時だけ残る＝
+        // 次の 409 で「保存先の最新＝自分の送信」を見分ける (イシュー#771・hub-adapter.js の _putOnce と同じ)
+        StorageAdapter.notePending(this._pendingWrites, path, content);
         const { status, ok, statusText, body: text, json } = await StorageAdapter.fetchJSON(url, {
             method: 'PUT',
             headers: { ...this._headers(), 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
+        StorageAdapter.clearPending(this._pendingWrites, path, content);
         if (status === 401) throw new GitHubAuthError('GitHub authentication failed');
         if (status === 409) {
             throw new GitHubConflictError(`sha conflict on ${path}`, path);
@@ -630,7 +653,10 @@ class GitHubAdapter extends StorageAdapter {
     }
 
     async _write(path, text) {
-        return this._enqueue(path, () => this._writeOnce(path, text));
+        return this._enqueue(path, async () => {
+            StorageAdapter.bumpWriteGen(this._writeGens, path);
+            try { return await this._writeOnce(path, text); } finally { StorageAdapter.bumpWriteGen(this._writeGens, path); }
+        });
     }
 
     async _writeOnce(path, text) {
@@ -648,6 +674,7 @@ class GitHubAdapter extends StorageAdapter {
             const newSha = await this._putContent(path, text, { sha });
             if (newSha) this._shaCache.set(path, newSha);
             this._lastKnownContent.set(path, text);
+            StorageAdapter.clearPending(this._pendingWrites, path); // 保存先の今＝text と分かった＝前の結果待ちは要らない
         } catch (e) {
             if (!(e instanceof GitHubConflictError)) throw e;
             await this._recoverFromConflictAndRetry(path, text);
@@ -676,6 +703,9 @@ class GitHubAdapter extends StorageAdapter {
                     return { content: this._decodeBase64(latest.content), token: latest.sha };
                 },
                 knownContent,
+                wantContent: text,
+                ownContents: this._pendingWrites.get(path) || [],
+                onSame: (latest) => latest.token, // 保存先が既に書きたい中身＝送らずに、その sha を控える (イシュー#771)
                 retryPut: async (latest) => {
                     if (latest && latest.token) {
                         this._shaCache.set(path, latest.token);
@@ -691,6 +721,7 @@ class GitHubAdapter extends StorageAdapter {
             });
             if (retrySha) this._shaCache.set(path, retrySha);
             this._lastKnownContent.set(path, text);
+            StorageAdapter.clearPending(this._pendingWrites, path);
             console.warn(`[GitHubAdapter] 409 on ${path}: リトライで回復しました`);
             this._notifyWriteStatus(path, 'recovered');
         } catch (e2) {

@@ -1,6 +1,6 @@
 // イシュー#771: 自分の書き込みを「他の場所で更新されています」と見誤る（誤検出）の回帰。
 // H1（応答の消えた自分の書き込み）は step3 で直した＝StorageAdapter.recoverFromConflict の (1)(2) と結果待ちの記録。
-// H2（読みが書きに追い越される）は step4 で直す＝今は it.fails で「誤検出が起きる」ことを固定している。
+// H2（読みが書きに追い越される）は step4 で直した＝書き込みの世代（StorageAdapter.bumpWriteGen）で、読みの応答が控えを巻き戻さない。
 // 本当に他の端末が書いた時は HubRemoteChangedError のまま（検出そのものは残す）。切り替え bookshelf.flag.ownWriteMatch='0' で前の形。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -179,7 +179,7 @@ describe('#771 H1 応答の消えた自分の書き込み', () => {
 });
 
 describe('#771 H2 読みが書きに追い越される', () => {
-    it.fails('書き込み中に始まった GET の応答が後から届いても、次の保存が誤検出にならない', async () => {
+    it('書き込み中に始まった GET の応答が後から届いても、次の保存が誤検出にならない', async () => {
         const hub = fakeHub({ [ART]: JSON.stringify(doc(0)) });
         let release;
         hub.st.holdNextGet = new Promise((r) => { release = r; });
@@ -187,12 +187,14 @@ describe('#771 H2 読みが書きに追い越される', () => {
         await vi.waitFor(() => expect(hub.st.getReceived).toBe(1));
         await adapter.writeJSON(ART, doc(1)); // HEAD v1 → PUT → v2（控え＝v2/doc(1)）
         release();
-        await reading; // 控えを v1/doc(0) で上書き
+        expect(await reading).toEqual(doc(0)); // 読みは古い中身を返す（呼び手は書き込みを待ってから読む＝openPublishPagesModal #595）
+        expect(adapter._etagCache.get(ART)).toBe('"v2"'); // 控えは巻き戻らない
         await adapter.writeJSON(ART, doc(2));
         expect(JSON.parse(hub.files.get(ART).body)).toEqual(doc(2));
     });
 
-    it('（現状の固定）上の手順では HubRemoteChangedError が出る＝誤検出', async () => {
+    it("切り替え '0' では前の形（読みの応答が控えを v1 に戻し、次の保存が誤検出）", async () => {
+        localStorage.setItem('bookshelf.flag.ownWriteMatch', '0');
         const hub = fakeHub({ [ART]: JSON.stringify(doc(0)) });
         let release;
         hub.st.holdNextGet = new Promise((r) => { release = r; });
@@ -200,7 +202,7 @@ describe('#771 H2 読みが書きに追い越される', () => {
         await vi.waitFor(() => expect(hub.st.getReceived).toBe(1));
         await adapter.writeJSON(ART, doc(1));
         release();
-        expect(await reading).toEqual(doc(0)); // 読みは古い中身を返す（呼び手がこれで手元の一覧を上書きすると書いた記事が消える）
+        expect(await reading).toEqual(doc(0));
         await expect(adapter.writeJSON(ART, doc(2))).rejects.toBeInstanceOf(HubRemoteChangedError);
     });
 });

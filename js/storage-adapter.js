@@ -293,6 +293,20 @@ class StorageAdapter {
         map.set(path, list);
     }
 
+    /**
+     * 書き込みの世代 (イシュー#771 H2)。同じファイルの書き込みが始まる時と終わる時に1つ進める。
+     * 読みは始める前に writeGen で世代を取り、応答を受けた時に同じかを見る。違えば (読みの間に書き込みが始まった・終わった)
+     * その応答は書き込みより古いかもしれないので、版と中身の控えを上書きしない。切り替え ownWriteMatch が '0' なら常に上書きする (前の形)。
+     * @param {Map<string,number>} map
+     */
+    static bumpWriteGen(map, path) { map.set(path, (map.get(path) || 0) + 1); }
+
+    static writeGen(map, path) { return map.get(path) || 0; }
+
+    static readIsFresh(map, path, gen) {
+        return !StorageAdapter.ownWriteMatchOn() || StorageAdapter.writeGen(map, path) === gen;
+    }
+
     static clearPending(map, path, content) {
         if (content === undefined) { map.delete(path); return; }
         const list = (map.get(path) || []).filter((c) => c !== content);

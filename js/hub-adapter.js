@@ -89,6 +89,8 @@ class HubStorageAdapter extends StorageAdapter {
         this._lastKnownContent = new Map();
         // 結果待ちの送信 { path: [中身,...] } (イシュー#771・StorageAdapter.notePending)。応答が消えた自分の書き込みを見分ける
         this._pendingWrites = new Map();
+        // 書き込みの世代 { path: n } (イシュー#771 H2・StorageAdapter.bumpWriteGen)。読みの応答が書き込みの控えを巻き戻さないため
+        this._writeGens = new Map();
         this._writeQueues = new Map();
         this._batch = null;
         // ===== R (イシュー#391 の共通部品を使う・#392 step4/5 ②承認) =====
@@ -139,12 +141,15 @@ class HubStorageAdapter extends StorageAdapter {
     // readJSON/readText の先頭で使う。ヒットすれば本文、ミスなら undefined (通常の GET にフォールバック)。
     async _tryReadFromEtagCache(path) {
         const gen = this._remoteListingGen;
+        const wgen = StorageAdapter.writeGen(this._writeGens, path);
         const etagMap = await this._ensureRemoteEtagMap();
         // 一覧を待つ間に控えを捨てられた (forgetRemoteListing) 時は、捨てる前に取り始めた一覧は古いかもしれないので使わない
         // (古い中身と版を控えに戻さない)。ミス扱いにして本文を取り直す
         if (gen !== this._remoteListingGen) return undefined;
         const remoteEtag = etagMap[path]; // 一覧に無い(フォールバック対象/本当に存在しない) なら undefined
         const cached = this._versionCache.read(path, remoteEtag);
+        // 一覧を待つ間に同じファイルの書き込みが始まった・終わった時は、一覧の版は古いかもしれない＝ミス扱いで取り直す (イシュー#771 H2)
+        if (cached !== undefined && !StorageAdapter.readIsFresh(this._writeGens, path, wgen)) return undefined;
         if (cached !== undefined) {
             if (remoteEtag) this._etagCache.set(path, remoteEtag);
             this._lastKnownContent.set(path, cached);
@@ -336,14 +341,19 @@ class HubStorageAdapter extends StorageAdapter {
     async _postBatch(entries) {
         const puts = entries.filter((e) => e.op === 'put' && !e.stamp);
         for (const e of puts) StorageAdapter.notePending(this._pendingWrites, e.path, e.content);
-        const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entries }),
-            timeoutMs: BATCH_TIMEOUT_MS
-        });
-        for (const e of puts) StorageAdapter.clearPending(this._pendingWrites, e.path, e.content);
-        return res;
+        for (const e of entries) StorageAdapter.bumpWriteGen(this._writeGens, e.path);
+        try {
+            const res = await this._fetch('POST', `${this.apiBase}/data/batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries }),
+                timeoutMs: BATCH_TIMEOUT_MS
+            });
+            for (const e of puts) StorageAdapter.clearPending(this._pendingWrites, e.path, e.content);
+            return res;
+        } finally {
+            for (const e of entries) StorageAdapter.bumpWriteGen(this._writeGens, e.path);
+        }
     }
 
     /**
@@ -464,9 +474,13 @@ class HubStorageAdapter extends StorageAdapter {
     async _read(path, hooks) {
         const cached = await this._tryReadFromEtagCache(path);
         if (cached !== undefined) return cached;
+        const wgen = StorageAdapter.writeGen(this._writeGens, path);
         const res = await this._fetch('GET', this._dataUrl(path), {}, hooks);
         if (res.status === 404) return null;
         if (!res.ok) throw this._err(res, `GET ${path}`);
+        // 読みの間に同じファイルの書き込みが始まった・終わった＝この応答は書き込みより古いかもしれない。
+        // 控え (版・中身) は書き込みの側が持っているので上書きしない (イシュー#771 H2)
+        if (!StorageAdapter.readIsFresh(this._writeGens, path, wgen)) return res.body;
         const etag = res.headers.get('ETag');
         if (etag) {
             this._etagCache.set(path, etag);
@@ -479,7 +493,10 @@ class HubStorageAdapter extends StorageAdapter {
     // 同一パスへの write/delete を直列化する (同一タブ内の並行呼び出し対策・イシュー#374案D)。
     // github-adapter.js の _write/_enqueue と同じ型 (StorageAdapter._enqueue を共用)。
     async _write(path, text) {
-        return StorageAdapter._enqueue(this._writeQueues, path, () => this._writeOnce(path, text));
+        return StorageAdapter._enqueue(this._writeQueues, path, async () => {
+            StorageAdapter.bumpWriteGen(this._writeGens, path);
+            try { return await this._writeOnce(path, text); } finally { StorageAdapter.bumpWriteGen(this._writeGens, path); }
+        });
     }
 
     async _writeOnce(path, text) {

@@ -1,5 +1,5 @@
-// イシュー#771 step1: GitHub でも、応答の消えた自分の書き込みを「他の場所で更新されています」と見誤る（H1）回帰。
-// 直しはまだ＝it.fails で今の誤検出を固定（step4 で it に戻す）。
+// イシュー#771: GitHub でも、応答の消えた自分の書き込みを「他の場所で更新されています」と見誤る（H1）回帰。
+// step4 で直した（結果待ちの記録＋StorageAdapter.recoverFromConflict の (1)(2)）。'0' で前の形に戻る。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 await import('../../js/storage-adapter.js');
@@ -44,18 +44,72 @@ const steps = () => [
 ];
 
 describe('#771 H1 GitHub 応答の消えた自分の書き込み', () => {
-    it.fails('応答が消えた後の次の保存が「他の場所で更新」にならない', async () => {
-        mockFetch(steps());
+    it('応答が消えた後の次の保存が「他の場所で更新」にならない（最新＝自分の B → s2 で1回だけ送り直す）', async () => {
+        const calls = mockFetch(steps());
         await adapter.readText('private/articles.json');
         await expect(adapter.writeText('private/articles.json', 'B')).rejects.toThrow();
         await adapter.writeText('private/articles.json', 'C');
+        expect(calls.filter((c) => c.method === 'PUT').map((c) => c.sha)).toEqual(['s1', 's1', 's2']);
+        expect(adapter._shaCache.get('private/articles.json')).toBe('s3');
+        expect(adapter._pendingWrites.has('private/articles.json')).toBe(false);
     });
 
-    it('（現状の固定）GitHubRemoteChangedError が出る＝誤検出', async () => {
+    it('応答が消えた後、同じ中身の再送は送らずに成功する', async () => {
+        const calls = mockFetch([
+            () => contentRes('A', 's1'),
+            () => { throw new TypeError('Load failed'); },
+            () => putConflictRes(),
+            () => contentRes('B', 's2'),
+        ]);
+        await adapter.readText('private/articles.json');
+        await expect(adapter.writeText('private/articles.json', 'B')).rejects.toThrow();
+        await adapter.writeText('private/articles.json', 'B');
+        expect(calls.filter((c) => c.method === 'PUT').length).toBe(2);
+        expect(adapter._shaCache.get('private/articles.json')).toBe('s2');
+    });
+
+    it('応答が消えた後に別の端末が書いていたら、今までどおり GitHubRemoteChangedError', async () => {
+        mockFetch([
+            () => contentRes('A', 's1'),
+            () => { throw new TypeError('Load failed'); },
+            () => putConflictRes(),
+            () => contentRes('X（他の端末）', 's9'),
+        ]);
+        await adapter.readText('private/articles.json');
+        await expect(adapter.writeText('private/articles.json', 'B')).rejects.toThrow();
+        await expect(adapter.writeText('private/articles.json', 'C')).rejects.toBeInstanceOf(GitHubRemoteChangedError);
+    });
+
+    it("切り替え bookshelf.flag.ownWriteMatch='0' では前の形（GitHubRemoteChangedError＝誤検出）", async () => {
+        localStorage.setItem('bookshelf.flag.ownWriteMatch', '0');
         const calls = mockFetch(steps());
         await adapter.readText('private/articles.json');
         await expect(adapter.writeText('private/articles.json', 'B')).rejects.toThrow();
         await expect(adapter.writeText('private/articles.json', 'C')).rejects.toBeInstanceOf(GitHubRemoteChangedError);
         expect(calls.filter((c) => c.method === 'PUT').map((c) => c.sha)).toEqual(['s1', 's1']);
+    });
+});
+
+describe('#771 H2 GitHub 読みが書きに追い越される', () => {
+    it('書き込み中に始まった読みの応答が後から届いても、控えを古い版に戻さない', async () => {
+        let release;
+        let readStarted = false;
+        const hold = new Promise((r) => { release = r; });
+        adapter._shaCacheEnabled = false; // 木の一覧を使わず、本文の GET を直接止める
+        mockFetch([
+            async () => { readStarted = true; await hold; return contentRes('A', 's1'); }, // 読み（古い A を掴んだまま止まる）
+            () => putOkRes('s2'),                                      // 書く B（控えの s1 で送る）
+            () => putOkRes('s3'),                                      // 書く C（s2 で通る）
+        ]);
+        adapter._shaCache.set('private/articles.json', 's1');
+        adapter._lastKnownContent.set('private/articles.json', 'A');
+        const reading = adapter.readText('private/articles.json');
+        await vi.waitFor(() => expect(readStarted).toBe(true));
+        await adapter.writeText('private/articles.json', 'B');
+        release();
+        expect(await reading).toBe('A');
+        expect(adapter._shaCache.get('private/articles.json')).toBe('s2'); // 読みの s1 で巻き戻らない
+        await adapter.writeText('private/articles.json', 'C');
+        expect(adapter._shaCache.get('private/articles.json')).toBe('s3');
     });
 });
