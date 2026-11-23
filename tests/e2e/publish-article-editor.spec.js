@@ -228,7 +228,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
 
         // debounce (600ms) 経過を待って保存完了を確認
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await closePublishPanelIfOpen(page);
         await goBack(page);
@@ -256,7 +256,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await expect(page.locator('.art-shelf-item')).toHaveCount(2);
 
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         expect(errors).toEqual([]);
     });
 
@@ -273,7 +273,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         const markdown = (await getArtBlocks(page))[0].markdown;
         expect(markdown).toBe('## はじめに\n\n本文。');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         expect(errors).toEqual([]);
     });
 
@@ -283,7 +283,7 @@ test.describe('記事エディタ: 作成→編集の基本経路', () => {
         await page.click('#art-new');
         await page.fill('#art-title', '削除するテスト記事');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await closePublishPanelIfOpen(page);
         await page.click('#art-more-btn'); // イシュー#230: 削除・公開の取消は ⋯ メニューの中
         await page.click('#art-del');
@@ -314,7 +314,7 @@ test.describe('記事下書きの localStorage バックアップと復元 (イ�
         // 下書きが即座に画面へ反映されている (リロード不要)
         await expect(page.locator('#art-title')).toHaveValue('下書きから復元されたタイトル');
         // 復元は自動でリモートへフラッシュされ、下書きが消える設計
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         const remainingDraft = await page.evaluate(() => localStorage.getItem('bookshelf_art_draft_new'));
         expect(remainingDraft).toBeNull();
         expect(errors).toEqual([]);
@@ -331,7 +331,7 @@ test.describe('記事下書きの localStorage バックアップと復元 (イ�
         expect(draftDuringEdit).toBe('下書き保存対象');
 
         await flushArtRemoteNow(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         const draftAfterSave = await page.evaluate((id) => localStorage.getItem(`bookshelf_art_draft_${id}`), await getArtEditingId(page));
         expect(draftAfterSave).toBeNull();
         expect(errors).toEqual([]);
@@ -839,7 +839,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -872,7 +872,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         // イシュー#770 (#759-1): PC でも引き出しは真ん中のシート＝本棚ブロックで開いたままの幕を閉じてから次を押す
         await closeArtSheet(page);
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         // 無料プラン (ハブ) は初回公開時に同意ダイアログが挟まる
@@ -928,7 +928,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '## はじめに\n\n本文サンプル。');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -986,7 +986,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1024,7 +1024,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文1');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -1054,7 +1054,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文2');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         hubCaptured.files = null;
         await publishViaPanel(page);
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1090,7 +1090,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文1');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -1105,7 +1105,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文2');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         hubCaptured.files = null;
         await publishViaPanel(page);
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1149,7 +1149,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
 
         await page.locator('.art-item-show-toggle[data-show-key="rating"]').first().click();
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1170,7 +1170,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await page.click('.cfm-ok');
@@ -1200,7 +1200,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.index).not.toBeNull();
@@ -1220,7 +1220,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await page.click('.cfm-ok');
         await expect.poll(() => hubCaptured.files).not.toBeNull();
@@ -1248,7 +1248,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await closePublishPanelIfOpen(page);
         await goBack(page);
@@ -1272,7 +1272,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1303,7 +1303,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
@@ -1347,7 +1347,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         // GitHub 公開は adapter 差し替え無しでは実ネットワークに出てしまうため、ストアへ直接
         // published:true + publicId を与えて一覧再描画だけで検証する (他の GitHub 公開テストと同じ型)。
         await page.evaluate(async (id) => {
@@ -1375,7 +1375,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -1528,7 +1528,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await publishViaPanel(page);
         await expect(page.locator('.cfm-box')).toBeVisible();
         await page.click('.cfm-ok');
@@ -1609,7 +1609,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
         await addBlock(page, 'text', 'first');
         await fillTextBlock(page, '本文');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await closePublishPanelIfOpen(page);
         await goBack(page);
         // イシュー#442: 一覧の記事行から直接「公開」ボタンを押す(publishViaPanelは記事編集画面前提のため不適)
@@ -1652,7 +1652,7 @@ test.describe('記事エディタ: 公開結線 (PublishArticleGenerator.build �
             await addBlock(page, 'text', 'first');
             await fillTextBlock(page, '本文');
             await flushArtSaveAndRemote(page);
-            await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+            await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
             await closePublishPanelIfOpen(page);
             await goBack(page);
             await page.setViewportSize(vp);
@@ -1892,7 +1892,7 @@ test.describe('記事エディタ: 引き出しの本棚セレクタ (イシュ�
         await expect(page.locator('.art-shelf-item').first()).toContainText('フィクスチャの本 3');
 
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         expect(errors).toEqual([]);
     });
 
@@ -2218,7 +2218,7 @@ test.describe('記事エディタ: 星(評価)トグル (イシュー#135)', () 
         await ratingToggle.click();
         await expect(ratingToggle).toHaveClass(/is-on/);
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 
         // articles.json 相当の書込結果を退避し、reload 後の新しい adapter へ再注入する
         // (bootApp の Map はブラウザコンテキストごと消えるため、reload では自動的に持ち越されない)。
@@ -2288,7 +2288,7 @@ test.describe('保存/読込の失敗が画面に出る (イシュー#35)', () =
             window.bookshelf.storage.adapter.writeJSON = async (path, data) => { mem.set(path, data); };
         });
         await page.click('#art-save-retry');
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await expect(page.locator('#art-save-status')).not.toHaveClass(/is-error/);
         await expect(page.locator('#art-save-retry')).toBeHidden();
     });
@@ -2443,14 +2443,14 @@ test.describe('記事エディタ: 一覧⇄編集ビューの相互排他表示
         await page.click('#art-new');
         await page.fill('#art-title', '記事1');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await closePublishPanelIfOpen(page);
         await goBack(page);
 
         await page.click('#art-new');
         await page.fill('#art-title', '記事2');
         await flushArtSaveAndRemote(page);
-        await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+        await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
         await closePublishPanelIfOpen(page);
         await goBack(page);
 

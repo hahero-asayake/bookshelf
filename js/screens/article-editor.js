@@ -1440,7 +1440,9 @@ class _ArticleEditorMethods {
         this._artRenderBlocks();
         this._artRenderDrawerShelfSelect();
         this._artRenderDrawer();
-        this._artSetSaveStatus('');
+        // イシュー#771 ④: 既存の記事を開いた時は、最後に保存した時刻を出しておく (新規は空)
+        const openedArt = id && this._artSavedStampOn() && this.publishArticleStore ? this.publishArticleStore.get(id) : null;
+        this._artSetSaveStatus(openedArt && openedArt.updatedAt && !restoredFromDraft ? this._artSavedStampText(openedArt.updatedAt) : '');
         this._artRefreshPublishBadge(); // U1 (イシュー#276): 公開中・未反映の変更ありなら開いた直後から出す
         this._artSetMode('view'); // イシュー#268: 開いた直後は閲覧状態 (公開ページと同じ見た目)
         this._artShowEditor();
@@ -3076,6 +3078,35 @@ class _ArticleEditorMethods {
         return this._artFlagOn('writeEntry', ART_WRITE_ENTRY_DEFAULT);
     }
 
+    // イシュー#771 ③(a)→題の初期値: 本の詳細・本棚から作った記事の題を、本の題名・本棚名で始める
+    // (一覧で見分けて消しやすくするため・ハヘロ決裁 2026-11-24)。人が書き換えたらそちらを使う。公開の一覧の「新しい記事」は無題のまま
+    _artEntryTitleOn() {
+        const ART_ENTRY_TITLE_DEFAULT = true;
+        return this._artFlagOn('artEntryTitle', ART_ENTRY_TITLE_DEFAULT);
+    }
+
+    // イシュー#771 ④(b): 保存の状態をいつも出す (送る前は「保存中…」・送れたら「✓ 保存済み 21:00」を残す・送れない時は今のエラー文)
+    _artSavedStampOn() {
+        const ART_SAVED_STAMP_DEFAULT = true;
+        return this._artFlagOn('artSavedStamp', ART_SAVED_STAMP_DEFAULT);
+    }
+
+    // イシュー#771 ④: 「✓ 保存済み HH:MM」(端末の時刻・24時間)
+    _artSavedStampText(ms) {
+        const d = new Date(ms || Date.now());
+        return `✓ 保存済み ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // イシュー#771 ③: 入口から作った記事の題の初期値を入れる (題がまだ空の時だけ)
+    _artApplyEntryTitle(title) {
+        if (!this._artEntryTitleOn() || !this._artDraft || this._artDraft.title) return;
+        const t = String(title || '').trim();
+        if (!t) return;
+        this._artDraft.title = t;
+        const el = document.getElementById('art-title');
+        if (el) el.value = t;
+    }
+
     // ⑤ writeEntry: 新しい記事を開いて編集の状態にする (本の詳細と本棚の画面の入口で共通)。
     // 公開の一覧を開くのは左ナビの「公開」(#sidebar-publish) と同じ道 (#760: 設定等の面を閉じてから開く)。
     // srcKey があれば記事の元の本棚にする (すべての本は除く・_artOnDrawerShelfChange と同じ欄)。
@@ -3107,6 +3138,8 @@ class _ArticleEditorMethods {
             const srcKey = this._artShelfViewKey();
             if (!(await this._artStartNewArticle(srcKey))) return;
             this._artDraft.blocks = [{ id: PublishArticleStore._newId('blk'), type: 'book', asin, show: { shortMemo: false, longMemo: false, rating: false } }];
+            const { book } = this._artBookState(asin);
+            this._artApplyEntryTitle(book && book.title);
             this._artRenderBlocks();
             this._artRenderDrawer();
             this._artScheduleSave();
@@ -3120,6 +3153,8 @@ class _ArticleEditorMethods {
         this._artStartBusy = true;
         try {
             if (!(await this._artStartNewArticle(key))) return;
+            const shelf = this.bookshelfManager.getById(key);
+            this._artApplyEntryTitle(shelf && shelf.name);
             this._artInsertBlock('shelf', 0);
             const search = document.getElementById('art-drawer-search');
             if (search) search.value = '';
@@ -3302,7 +3337,7 @@ class _ArticleEditorMethods {
     // ===== 保存 (autosave, debounce) / 公開 =====
 
     _artScheduleSave() {
-        this._artSetSaveStatus('編集中…');
+        this._artSetSaveStatus(this._artSavedStampOn() ? '保存中…' : '編集中…');
         if (this._artSaveTimer) clearTimeout(this._artSaveTimer);
         this._artSaveTimer = setTimeout(() => this._artFlushSave(), 600);
     }
@@ -3436,7 +3471,7 @@ class _ArticleEditorMethods {
             const sentAt = Date.now();
             const sentIds = this.publishArticleStore.articles().map((a) => a.id);
             await this.publishArticleStore.retryPersist();
-            this._artSetSaveStatus('保存しました');
+            this._artSetSaveStatus(this._artSavedStampOn() ? this._artSavedStampText() : '保存しました');
             this._artRefreshPublishBadge(); // U1: 公開中・未反映のままなら「保存しました」をこの表示で上書きする
             this._artSettleDeliveredDrafts(sentIds, sentAt);
             return { ok: true };

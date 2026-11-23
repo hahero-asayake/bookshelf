@@ -170,7 +170,7 @@ async function createArticleWithBook(page, title) {
     await closeArtSheet(page);
     await leaveForm(page);
     await flushArtSaveAndRemote(page);
-    await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+    await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
     const id = await getArtEditingId(page);
     await showArtList(page);
     return id;

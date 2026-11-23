@@ -124,7 +124,7 @@ async function createArticle(page, title) {
     await addBlock(page, 'text', 'first');
     await fillTextBlock(page, '本文サンプル。');
     await flushArtSaveAndRemote(page);
-    await expect(page.locator('#art-save-status')).toHaveText('保存しました', { timeout: 3000 });
+    await expect(page.locator('#art-save-status')).toHaveText(/^(保存しました|✓ 保存済み \d{1,2}:\d{2})$/, { timeout: 3000 }); // #771 ④
 }
 
 test('(1) username 未設定でハブ公開しようとするとブロックされ、設定を促すダイアログが出る', async ({ page }) => {
