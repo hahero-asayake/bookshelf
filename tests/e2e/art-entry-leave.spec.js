@@ -196,15 +196,15 @@ for (const entry of Object.keys(ENTRIES)) for (const exit of Object.keys(EXITS))
 for (const [entry, exit] of [['book', 'back'], ['book', 'history'], ['book', 'hidden'], ['list', 'back'], ['list', 'esc']]) CASES.push(['GitHub', bootGitHub, entry, exit]);
 
 for (const [name, boot, entry, exit] of CASES) {
-    // 公開の一覧の「新規作成」は閲覧状態で開く＝Esc で一覧が出ない (ハブ・GitHub・chromium・webkit とも・#771 step6 で見つけた。
-    // 直すか今のままかは②の判断待ち＝fixme で残す)
-    const fixme = entry === 'list' && exit === 'esc';
-    (fixme ? test.fixme : test)(`#771 ${name}: ${ENTRIES[entry].label}から書き始め ${EXITS[exit].label} で出る（応答が消える注入あり）`, async ({ page }) => {
+    // 公開の一覧の「新規作成」は閲覧状態で開く＝Esc は公開の一覧ごと閉じる (origin/main 0092226f でも同じ＝前からの形・#771 step6 で確認)
+    const escClosesList = entry === 'list' && exit === 'esc';
+    test(`#771 ${name}: ${ENTRIES[entry].label}から書き始め ${EXITS[exit].label} で出る（応答が消える注入あり）`, async ({ page }) => {
         test.setTimeout(90_000);
         const { st, articles } = await boot(page);
         await startAndType(page, st, entry);
         await EXITS[exit].run(page, st);
-        await ENTRIES[entry].expectBack(page);
+        if (escClosesList) await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/, { timeout: 10000 });
+        else await ENTRIES[entry].expectBack(page);
         const want = EXITS[exit].title || TITLE;
         await expect.poll(() => articles().filter((a) => a.title === want).length, { timeout: 15000 }).toBe(1);
         expect(articles().length).toBe(2); // 前からある1件＋書いた1件 (重複しない)

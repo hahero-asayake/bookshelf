@@ -473,7 +473,21 @@ class BookshelfStorage {
     listFiles(dirPath) { return this.adapter.listFiles(dirPath); }
     readText(path) { return this.adapter.readText(path); }
     readJSON(path) { return this.adapter.readJSON(path); }
-    writeJSON(path, data) { return this.serialWrite(() => this.adapter.writeJSON(path, data)); }
+    writeJSON(path, data) {
+        const run = this.serialWrite(() => this.adapter.writeJSON(path, data));
+        // イシュー#771 H2: パスごとに「送っている途中 (行列に入れた〜終わる) の書き込み」を控える (waitPathWrite で待つ)
+        if (!this._pathWrites) this._pathWrites = new Map();
+        const done = run.then(() => {}, () => {});
+        this._pathWrites.set(path, done);
+        done.then(() => { if (this._pathWrites.get(path) === done) this._pathWrites.delete(path); });
+        return run;
+    }
+    // イシュー#771 H2: そのパスに送っている途中の書き込みがある時だけ、終わるのを待つ (無ければすぐ返る)。
+    // 行列全体は待たない＝最初の保存の前 (書くのを止めている間・#639) 等、他の書き込みの番待ちで止まらない
+    waitPathWrite(path) {
+        const p = this._pathWrites && this._pathWrites.get(path);
+        return p || Promise.resolve();
+    }
 
     // ===== バッチ書き込み =====
     //

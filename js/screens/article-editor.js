@@ -114,9 +114,9 @@ class _ArticleEditorMethods {
         if (this._isSyncReady() && !unsent) {
             let loaded = false;
             // イシュー#771 H2: 送っている途中の書き込み (裏へ回った時の送信等) が終わってから読む。読みの応答が書き込みより
-            // 古い中身を返すと、手元の一覧を書く前の中身で上書きしてしまう。行列に何もしない関数を流して、前の書き込みを待つ
-            // (行列の中から行列を呼ばない決まり storage.js serialWrite は守れる)
-            if (this.storage && typeof this.storage.serialWrite === 'function') await this.storage.serialWrite(() => {});
+            // 古い中身を返すと、手元の一覧を書く前の中身で上書きしてしまう。記事のファイルに送っている途中の書き込みがある時だけ待つ
+            // (行列全体は待たない＝最初の保存の前は他の書き込みの番待ちで一覧が開かなくなった・#771 step6 のリグレ)
+            if (this.storage && typeof this.storage.waitPathWrite === 'function') await this.storage.waitPathWrite(window.PUBLISH_ARTICLES_PATH || 'private/publish/articles.json');
             try {
                 await this.publishArticleStore.load();
                 loaded = true;
