@@ -220,6 +220,7 @@ test.describe('ハヘロ向け実機チェックリスト §6 自動化 (イシ�
 
     test('CHK5 記事: 全画面→編集→閲覧→一覧→閉じる、戻る4回を1段ずつ', async ({ page }, ti) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の4段)。新しい形は back-nav-matrix A32n
         let before;
         const v = await runCase(page, ti, 'CHK5', { ms: 3000, expectFinal: { openModals: (m) => m.length === 0 } }, async (p) => {
             before = await snapState(p);

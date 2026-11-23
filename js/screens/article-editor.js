@@ -388,7 +388,7 @@ class _ArticleEditorMethods {
 
     // イシュー#771 artSwipeExit: 編集・閲覧からの戻る(スワイプ)を ← と同じ関数・同じ行き先にする (スワイプ1回=←1回)
     _artSwipeExitOn() {
-        const ART_SWIPE_EXIT_DEFAULT = false; // #771: #279 決裁(編集→戻る＝閲覧の1段)・#599 R3/R8/R9 と食い違うため②の判断まで off
+        const ART_SWIPE_EXIT_DEFAULT = true;
         return this._artFlagOn('artSwipeExit', ART_SWIPE_EXIT_DEFAULT);
     }
 

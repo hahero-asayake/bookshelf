@@ -95,7 +95,7 @@ test('#771 ②: 本の詳細から書き始めた記事は ← で本の詳細�
 
 test('#771 スワイプ: 本の詳細から書き始めた編集画面で戻る1回＝← と同じ（保存して本の詳細へ）', async ({ page }) => {
     test.setTimeout(90_000);
-    const { articles } = await bootHub(page, { artSwipeExit: '1' }); // 既定 off (②の判断待ち)
+    const { articles } = await bootHub(page);
     await writeFromBookAndBack(page);
     await page.locator('#art-title').fill('スワイプで戻る題');
     await page.goBack();
@@ -114,7 +114,7 @@ test("#771 ②='0': 前の形（← で公開の一覧へ）", async ({ page }) 
 
 test('#771 スワイプ: 送れなかった時は編集画面にとどまり、エラーを出したまま（段を積み直す）', async ({ page }) => {
     test.setTimeout(90_000);
-    await bootHub(page, { artSwipeExit: '1' }); // 既定 off (②の判断待ち)
+    await bootHub(page);
     await writeFromBookAndBack(page);
     await flushArtSaveAndRemote(page);
     await page.route('**/data/private/publish/articles.json*', (route) => (route.request().method() === 'PUT' ? route.abort('failed') : route.fallback()));

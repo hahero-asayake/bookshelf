@@ -228,8 +228,35 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
     });
 
     // ===== #279 多段の一気通貫 =====
+    // #771 (ハヘロ決裁 2026-11-24 00:06): 編集からの戻る＝← と同じ (一覧へ・閲覧の段も畳む)。前の形 artSwipeExit='0' は #279 の4段
+    test('A32n 記事(#771): 全画面→編集→一覧→閉じる を戻る1回ずつ (編集からの戻る＝←)', async ({ page }, ti) => {
+        const errors = await bootApp(page);
+        const r = recorder(ti, 'A32n');
+        const before = await snap(page);
+        await openNewArticleEdit(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-ins-btn').last().tap();
+        await tap(page, '#art-add-sheet [data-block-type="text"]');
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'form');
+        await back(page);
+        await r.step(page, 'back1');
+        expect.soft(await page.locator('#art-edit-view').getAttribute('data-art-mode'), '1回目=編集へ').toBe('edit');
+        await back(page);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await r.step(page, 'back2');
+        expect.soft((await snap(page)).stack, '2回目=一覧へ (閲覧の段も畳む)').toEqual(['publish-pages-modal']);
+        await back(page);
+        await r.step(page, 'back3');
+        const after = await snap(page);
+        expect.soft(after.openModals, '3回目=閉じる').toEqual([]);
+        expectSameHistory(before, after);
+        await r.save(page);
+        expect(errors).toEqual([]);
+    });
+
     test('A32 記事: 全画面→編集→閲覧→一覧→閉じる を戻る1回ずつ', async ({ page }, ti) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)
         const r = recorder(ti, 'A32');
         const before = await snap(page);
         await openNewArticleEdit(page);
@@ -258,6 +285,7 @@ test.describe('戻る網羅マトリクス (イシュー#284)', () => {
 
     test('A34 記事: 同じ4段を history.back() (B1) で', async ({ page }, ti) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)
         const r = recorder(ti, 'A34');
         const before = await snap(page);
         await openNewArticleEdit(page);
@@ -969,7 +997,18 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
             await back(page);
         }
     }));
+    test('A07n/A08n (#771) 閲覧→編集(変更あり)→戻る＝← と同じ (保存して一覧)', async ({ page }, ti) => caseRun(page, ti, 'A08n', async (r) => {
+        await newArticleView(page);
+        await tap(page, '#art-mode-edit');
+        await page.fill('#art-title', '戻る771変更');
+        await back(page);
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await r.step(page, 'back1');
+        expect.soft((await snap(page)).stack).toEqual(['publish-pages-modal']);
+        expect.soft(await draftHas(page, '戻る771変更'), '保存').toBe(true);
+    }));
     test('A07/A08 閲覧→編集(変更あり)→戻る＝閲覧・保存', async ({ page }, ti) => caseRun(page, ti, 'A08', async (r) => {
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)
         await newArticleView(page);
         await tap(page, '#art-mode-edit');
         await page.fill('#art-title', '戻る284変更');
@@ -1124,7 +1163,9 @@ test.describe('戻る網羅マトリクス 残り2 記事エディタ (イシュ
         expect.soft(s.artMode).toBe('view');
         expect.soft(s.stack).toEqual(['publish-pages-modal']); // 編集/閲覧の段は畳まれ、一覧の段だけ残る(段が余らない)
     }));
+    // #771: 編集→戻る＝閲覧は前の形 (artSwipeExit='0') だけの動き。新しい形で閲覧へ戻るのは「完了」(A10)
     test('A38 閲覧で下へスクロール→編集→戻る＝閲覧の同じ位置 (D07)', async ({ page }, ti) => caseRun(page, ti, 'A38', async (r) => {
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)
         await newArticleView(page);
         await tap(page, '#art-mode-edit');
         for (let i = 0; i < 3; i++) { await insText(page); await setArtTextFsEditorValue(page, '段落\n\n'.repeat(30)); await back(page); }
@@ -1661,7 +1702,7 @@ test.describe('進む 網羅 (イシュー#291)', () => {
 
     test('A45f 記事編集状態: 戻った後に進むと開き直る (#291・開き直す方針・stateにarticleId)', async ({ page }, ti) => {
         await forwardCheck(page, ti, 'A45f',
-            async (p) => { await newArticleView(p); await tap(p, '#art-mode-edit'); },
+            async (p) => { await p.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); /* #771: 前の形 */ await newArticleView(p); await tap(p, '#art-mode-edit'); },
             (s) => expect.soft(s.stack).not.toContain('art-edit-mode'),
             (s) => expect.soft(s.stack, '進むと開く').toContain('art-edit-mode'));
     });

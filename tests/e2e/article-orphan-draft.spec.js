@@ -122,6 +122,9 @@ test('R2 新規記事に題名を入れて1秒後 (端末には作られたが�
 });
 
 test('R3 保存先へ届かないまま新規記事を2本作って再読込しても、2本とも一覧に戻る', async ({ page }) => {
+    // #771: 端末の戻るを ← と同じ道 (届くのを待つ) にする切り替え artSwipeExit の前の形 ('0') で確かめる (#599 の決まり)。
+    // 新しい形 (届かなければとどまる) は下の R9n
+    await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0'));
     const TITLE_A = '599 R3 1本目の記事';
     const TITLE_B = '599 R3 2本目の記事';
 
@@ -282,6 +285,9 @@ test('R7 戻った記事が保存先へ届かないうちにもう一度再読�
 });
 
 test('R8 前に届かなかった別の記事の直しは、ほかの記事を保存しても消えず、開くと戻る', async ({ page }) => {
+    // #771: 端末の戻るを ← と同じ道 (届くのを待つ) にする切り替え artSwipeExit の前の形 ('0') で確かめる (#599 の決まり)。
+    // 新しい形 (届かなければとどまる) は下の R9n
+    await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0'));
     const TITLE_OLD = '599 R8 元の題名';
     const TITLE_NEW = '599 R8 直した題名';
     const TITLE_OTHER = '599 R8 ほかの記事';
@@ -330,6 +336,9 @@ test('R8 前に届かなかった別の記事の直しは、ほかの記事を�
 });
 
 test('R9 一覧へ戻ってから再読込した時も、記事が一覧に戻って知らせが出て、「保存できていない変更があります。」は残らない', async ({ page }) => {
+    // #771: 端末の戻るを ← と同じ道 (届くのを待つ) にする切り替え artSwipeExit の前の形 ('0') で確かめる (#599 の決まり)。
+    // 新しい形 (届かなければとどまる) は下の R9n
+    await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0'));
     const TITLE = '599 R9 一覧で再読込した記事';
 
     await test.step('前提: 次に再読込するまで、記事のファイルへの書き込みを宙づりにする (保存先へ届かない)', async () => {
@@ -393,4 +402,17 @@ test('R6 新規記事を作ってすぐ削除すると、再読込しても甦�
         await expect(listView(page)).toBeVisible({ timeout: 10000 });
         await expect(articleRow(page, TITLE)).toHaveCount(0);
     });
+});
+
+test('R9n (#771 artSwipeExit 新しい形) 保存先へ届かない間は、端末の戻るでも ← と同じくその場にとどまる', async ({ page }) => {
+    const TITLE = '771 R9n とどまる記事';
+    holdHubArticleWritesUntilReloadForTest(page, hub);
+    await tapToArticleList(page);
+    await tapNewArticleAndType(page, TITLE);
+    await page.waitForTimeout(1000);
+    await page.goBack();
+    await page.waitForTimeout(1500);
+    await expect(editView(page)).toBeVisible();
+    await expect(titleInput(page)).toHaveValue(TITLE);
+    await expect(listView(page)).toBeHidden();
 });
