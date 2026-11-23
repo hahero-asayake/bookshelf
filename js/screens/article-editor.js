@@ -368,14 +368,67 @@ class _ArticleEditorMethods {
     // 確認ダイアログは出さない)。出る前に保存をflushしきり(ローカル反映→リモートへ即送信)、成功した時だけ
     // 公開の一覧へ(_artShowListが編集/閲覧の段を畳む)。失敗した時はその場にとどまる(状態表示は
     // _artFlushSave/_artFlushRemoteが既に出す。ブラウザの戻るはここを通らない=行き先は変えない)
-    async _artExitEditToList() {
+    async _artExitEditToList({ fromHistory = false } = {}) {
         // イシュー#595: 閲覧状態でも同じにする(新規作成は閲覧状態で開き、題名はそのまま打てる。
         // 旧実装は編集/フォーム状態の時だけ確定したため、題名を入れて600ms以内に←で戻ると、
         // 記事がまだ作られていない一覧を描いていた)。失敗した時にとどまるのも編集状態と同じ。
         await this._artSettlePendingSave();
         const r = await this._artFlushRemoteNow();
-        if (!r || !r.ok) return false; // 保存できなかった=その場にとどまる
+        if (!r || !r.ok) {
+            // 保存できなかった=その場にとどまる。イシュー#771 artSwipeExit: 戻る(スワイプ)は履歴が先に1段動いているので、
+            // 外れた段(閲覧・編集)を積み直して、←の「とどまる」と同じ見え方にする (画面とエラー表示はそのまま)
+            if (fromHistory) this._artRepushEditFaces();
+            return false;
+        }
+        // イシュー#771 ② artEntryReturn: 本の詳細・本棚から書き始めた記事は、その入口へ帰る (公開の一覧も閉じる)
+        if (this._artEntryRoute && this._artLeaveToEntry()) return true;
         this._artShowList({ skipSave: true });
+        return true;
+    }
+
+    // イシュー#771 artSwipeExit: 編集・閲覧からの戻る(スワイプ)を ← と同じ関数・同じ行き先にする (スワイプ1回=←1回)
+    _artSwipeExitOn() {
+        const ART_SWIPE_EXIT_DEFAULT = false; // #771: #279 決裁(編集→戻る＝閲覧の1段)・#599 R3/R8/R9 と食い違うため②の判断まで off
+        return this._artFlagOn('artSwipeExit', ART_SWIPE_EXIT_DEFAULT);
+    }
+
+    // イシュー#771 ② artEntryReturn: ←・×・Esc・スワイプの行き先を、書き始めた本の詳細・本棚にする
+    _artEntryReturnOn() {
+        const ART_ENTRY_RETURN_DEFAULT = true;
+        return this._artFlagOn('artEntryReturn', ART_ENTRY_RETURN_DEFAULT);
+    }
+
+    // 編集・閲覧の段を閉じる戻る (art-edit-mode / art-viewing の close fromHistory) の受け口
+    _artOnEditFaceBack(o, fallback) {
+        if (o && o.fromHistory && this._artSwipeExitOn()) return this._artExitEditToList({ fromHistory: true });
+        return fallback(o);
+    }
+
+    // 送れなかった戻るの後に、外れた閲覧・編集の段を積み直す (_artShowEditor/_artSetMode と同じ open)
+    _artRepushEditFaces() {
+        const st = this._modalHistStack || [];
+        const has = (id) => st.some((e) => e.id === id);
+        if (!has('art-viewing')) this._surface().open('art-viewing', { close: (o) => this._artOnEditFaceBack(o, (x) => this._artShowList(x)), extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
+        if ((this._artMode === 'edit' || this._artMode === 'form') && !has('art-edit-mode')) this._surface().open('art-edit-mode', { close: (o) => this._artOnEditFaceBack(o, (x) => this._artCompleteEdit(x)), extra: { articleId: this._artEditingId } });
+    }
+
+    // イシュー#771 ②: 公開の一覧ごと閉じて入口 (控えた route) へ帰る。閉じ方は × と同じ closePublish (1 apply で記事の段も外す)。
+    // 公開パネルが開いている等、closePublish が外さない段がある時は false (呼び出し元は一覧へ戻る今の形)
+    _artLeaveToEntry() {
+        const route = this._artEntryRoute;
+        const st = this._modalHistStack || [];
+        if (!route || st.some((e) => e.id === 'art-publish-modal')) return false;
+        this._artEntryRoute = null;
+        this._artCloseSheet();
+        for (const id of ['art-edit-mode', 'art-viewing']) if (st.some((e) => e.id === id)) this._overlays().close(id, { reason: 'program' });
+        this._artMode = 'view';
+        document.getElementById('art-list-view').hidden = false;
+        document.getElementById('art-edit-view').hidden = true;
+        const content = document.querySelector('.art-modal-content');
+        if (content) content.classList.remove('art-editing');
+        this._overlays().setSize('publish-pages-modal', 'lg');
+        this._overlays().close('publish-pages-modal', { reason: 'button' });
+        this.nav.closePublish(route);
         return true;
     }
 
@@ -385,6 +438,7 @@ class _ArticleEditorMethods {
     // 編集中の変更はここで保存してから一覧へ戻す (②指示「編集中に一覧へ戻る時は保存してから戻る」)。
     // skipSave: 削除直後 (_artEditingId が既に削除済みの記事を指す) は保存するとエラーになるため呼び出し元が true を渡す。
     _artShowList({ skipSave = false } = {}) {
+        this._artEntryRoute = null; // イシュー#771 ②: 一覧に出たら入口の控えは消す (以後は一覧から開いた記事と同じ)
         this._artCloseSheet(); // ビュー切替でボトムシートも畳む (開いていなければ no-op)
         // イシュー#595: 戻る操作など await できない経路でも、保留中の保存を確定してから一覧を描き直す
         // (確定はawaitできないので、下の同期の描画のあとで、確定が済んだら一覧をもう一度描く)
@@ -434,7 +488,7 @@ class _ArticleEditorMethods {
         this._overlays().setSize('publish-pages-modal', 'full');
         // イシュー#468: 記事個別ページを開く操作そのものに #/publish/<id> への route 変化を1 applyで乗せる
         // (新規記事は _artOpenEditor が確定した仮id・既存記事は実id。編集/閲覧のサブ状態はURLで区別しない、ADR-147)
-        this._surface().open('art-viewing', { close: (o) => this._artShowList(o), extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
+        this._surface().open('art-viewing', { close: (o) => this._artOnEditFaceBack(o, (x) => this._artShowList(x)), extra: { articleId: this._artEditingId }, route: { view: 'publish', id: this._artEditingId } });
     }
 
     // 記事の中の本の状態 (イシュー#669)。蔵書 (this.books) に無く除外一覧にある本は「除外中」＝公開に出ない
@@ -795,7 +849,7 @@ class _ArticleEditorMethods {
         const newMode = (mode === 'edit' || mode === 'form') ? mode : 'view';
         const prevMode = this._artMode;
         if (prevMode === 'view' && newMode === 'edit') {
-            this._surface().open('art-edit-mode', { close: (o) => this._artCompleteEdit(o), extra: { articleId: this._artEditingId } });
+            this._surface().open('art-edit-mode', { close: (o) => this._artOnEditFaceBack(o, (x) => this._artCompleteEdit(x)), extra: { articleId: this._artEditingId } });
         } else if (prevMode === 'edit' && newMode === 'view') {
             this._surface().close('art-edit-mode', {});
         }
@@ -1390,6 +1444,7 @@ class _ArticleEditorMethods {
     }
 
     _artOpenEditor(id) {
+        this._artEntryRoute = null; // イシュー#771 ②: 別の記事を開いたら入口の控えは消す (_artStartNewArticle が開いた後に入れ直す)
         // イシュー#595: 前の記事の保存予約が残っていれば、下書きを差し替える前に確定する
         // (残したままだと、予約が次に開いた記事の下書きで発火し、前の記事の入力が消える)
         this._artSettlePendingSave().catch(() => {});
@@ -3113,7 +3168,10 @@ class _ArticleEditorMethods {
     async _artStartNewArticle(srcKey) {
         if (typeof this._closePageFacesForNav === 'function') this._closePageFacesForNav();
         await this.openPublishPagesModal();
+        // イシュー#771 ②: 入口 (公開の一覧を開く前にいた画面＝本の詳細 #book/・本棚) を控える。_artOpenEditor が消すので後で入れる
+        const entryRoute = this._artEntryReturnOn() ? this._artPublishReturnRoute : null;
         this._artOpenEditor(null);
+        this._artEntryRoute = entryRoute || null;
         if (this._artMode !== 'edit') this._artSetMode('edit');
         const src = srcKey ? this.bookshelfManager.getById(srcKey) : null;
         if (src && !src.isSpecial) this._artDraft.sourceShelfId = src.internalId || src.id;
