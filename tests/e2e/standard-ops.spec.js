@@ -384,8 +384,27 @@ test.describe('スマホ戻る (履歴統合)', () => {
 
     // イシュー#279 (②承認4段構造): 編集→閲覧→一覧→エディタを閉じる、の4段を1回のgoBackで1段だけ
     // 閉じる。編集中のブロック追加は、一覧へ戻る前に保存される。
+    test('記事エディタ (#771 artSwipeExit): 編集からの戻るは ← と同じ (保存して一覧)・次の戻るでエディタを閉じる', async ({ page }) => {
+        const errors = await bootApp(page);
+        await openEditorInEditMode(page);
+        const frame = page.frameLocator('#art-canvas-frame');
+        await frame.locator('.art-cv-ins-btn').last().click();
+        await page.click('#art-add-sheet [data-block-type="text"]');
+        await page.goBack(); // 文章ブロック全画面→完了→edit
+        await expect(page.locator('#art-edit-view')).toHaveAttribute('data-art-mode', 'edit');
+        await page.goBack(); // edit→一覧 (閲覧の段も畳む・保存してから)
+        await expect(page.locator('#art-list-view')).toBeVisible();
+        await expect(page.locator('#publish-pages-modal')).toHaveClass(/show/);
+        await expect(page.locator('#art-list .pp-row')).toHaveCount(1);
+        await page.goBack(); // 一覧→エディタごと閉じる
+        await expect(page.locator('#publish-pages-modal')).not.toHaveClass(/show/);
+        expect(page.url()).toContain('index.html');
+        expect(errors).toEqual([]);
+    });
+
     test('記事エディタ: 戻るは編集→閲覧→一覧→エディタを閉じる、の順に1段ずつ (イシュー#279)', async ({ page }) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)。新しい形は下の (#771) の test
         await openEditorInEditMode(page);
         const frame = page.frameLocator('#art-canvas-frame');
         await frame.locator('.art-cv-ins-btn').last().click();

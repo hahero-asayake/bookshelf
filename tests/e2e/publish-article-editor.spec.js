@@ -1676,6 +1676,7 @@ test.describe('記事エディタ: スマホでの操作 (390x844・タッチ有
 
     test('プレビューを開いて戻ると、プレビューだけ閉じエディタは残る (履歴統合)', async ({ page }) => {
         const errors = await bootApp(page);
+        await page.evaluate(() => localStorage.setItem('bookshelf.flag.artSwipeExit', '0')); // #771: 前の形 (#279 の1段ずつ)。新しい形の編集からの戻るは standard-ops の (#771) の test
         await page.evaluate(() => window.bookshelf.openPublishPagesModal());
         await page.click('#art-new');
         await addBlock(page, 'text', 'first');
